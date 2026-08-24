@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup Label="Settings">
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <NoWarn>NETSDK1233</NoWarn>
+  </PropertyGroup>
+
+  <!-- Shared assembly version. Projects opt in by mapping their AssemblyVersion /
+       FileVersion / Version to this property, so bumping the version here restamps them all on the next build. -->
+  <PropertyGroup Label="Versioning">
+    <ProjectAssemblyVersion>0.1.0</ProjectAssemblyVersion>
+  </PropertyGroup>
+</Project>

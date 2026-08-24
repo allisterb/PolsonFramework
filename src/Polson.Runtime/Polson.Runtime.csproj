@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Polson</RootNamespace>
+  </PropertyGroup>
+  
+  <ItemGroup>
+   <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
+   <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
+	<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+	<PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+	<PackageReference Include="Serilog.Sinks.Map" Version="2.0.0" />
+	<PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+	<PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+	<PackageReference Include="SerilogTimings" Version="3.1.0" />
+  </ItemGroup>
+
+</Project>

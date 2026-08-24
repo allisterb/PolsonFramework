@@ -1,12 +1,334 @@
-﻿namespace Polson.Tests.Drawing;
+namespace Polson.Tests.Drawing;
 
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using Polson.Drawing.Svg;
+using Polson.MCPServer;
+using Xunit;
 
 public class DrawingTests : TestsRuntime
 {
+    #region SnapPaper and Primitives Tests
     [Fact]
-    public void Test1()
+    public void TestCreatePaperAndPrimitives()
     {
+        var paper = Snap.Create(800, 600);
+        Assert.NotNull(paper);
+        Assert.Equal(800f, paper.Width);
+        Assert.Equal(600f, paper.Height);
 
+        var rect = paper.Rect(10, 20, 100, 50, 5, 5);
+        Assert.NotNull(rect);
+        Assert.Equal("rect", rect.Type);
+        Assert.Equal(10f, rect.X);
+        Assert.Equal(20f, rect.Y);
+        Assert.Equal(100f, rect.Width);
+        Assert.Equal(50f, rect.Height);
+
+        var circle = paper.Circle(100, 100, 40);
+        Assert.NotNull(circle);
+        Assert.Equal("circle", circle.Type);
+        Assert.Equal(100f, circle.Cx);
+        Assert.Equal(100f, circle.Cy);
+        Assert.Equal(40f, circle.R);
+
+        var ellipse = paper.Ellipse(200, 150, 60, 30);
+        Assert.NotNull(ellipse);
+        Assert.Equal("ellipse", ellipse.Type);
+        Assert.Equal(200f, ellipse.Cx);
+        Assert.Equal(150f, ellipse.Cy);
+        Assert.Equal(60f, ellipse.Rx);
+        Assert.Equal(30f, ellipse.Ry);
+
+        var line = paper.Line(0, 0, 100, 100);
+        Assert.NotNull(line);
+        Assert.Equal("line", line.Type);
+        Assert.Equal(0f, line.X1);
+        Assert.Equal(100f, line.X2);
+
+        var path = paper.Path("M10 10 L50 50 L10 50 Z");
+        Assert.NotNull(path);
+        Assert.Equal("path", path.Type);
+        Assert.NotEmpty(path.D);
+
+        var group = paper.G(rect, circle);
+        Assert.NotNull(group);
+        Assert.Equal("g", group.Type);
+        Assert.Equal(2, group.Children().Count);
     }
+    #endregion
+
+    #region Attribute Parsing and Manipulation Tests
+    [Fact]
+    public void TestAttributesAndStyles()
+    {
+        var paper = Snap.Create(500, 500);
+        var rect = paper.Rect(0, 0, 100, 100);
+
+        rect.Attr("fill", "#ff0000");
+        rect.Attr("stroke", "#0000ff");
+        rect.Attr("stroke-width", 4);
+        rect.Attr("opacity", 0.5f);
+
+        Assert.Equal("#FF0000", rect.Attr("fill")?.ToString());
+        Assert.Equal("#0000FF", rect.Attr("stroke")?.ToString());
+        Assert.Equal(4f, Convert.ToSingle(rect.Attr("stroke-width")));
+        Assert.Equal(0.5f, Convert.ToSingle(rect.Attr("opacity")));
+
+        // Dictionary attr application
+        rect.Attr(new Dictionary<string, object?>
+        {
+            ["fill"] = "#00ff00",
+            ["stroke-width"] = 8
+        });
+
+        Assert.Equal("#00FF00", rect.Attr("fill")?.ToString());
+        Assert.Equal(8f, Convert.ToSingle(rect.Attr("stroke-width")));
+    }
+
+    [Fact]
+    public void TestColorParsing()
+    {
+        var colHex3 = SnapAttributes.ParseColor("#f00");
+        Assert.Equal(Color.FromArgb(255, 255, 0, 0), colHex3);
+
+        var colHex6 = SnapAttributes.ParseColor("#00ff00");
+        Assert.Equal(Color.FromArgb(255, 0, 255, 0), colHex6);
+
+        var colRgb = SnapAttributes.ParseColor("rgb(0, 0, 255)");
+        Assert.Equal(Color.FromArgb(255, 0, 0, 255), colRgb);
+
+        var colRgba = SnapAttributes.ParseColor("rgba(255, 255, 0, 0.5)");
+        Assert.Equal(Color.FromArgb(127, 255, 255, 0), colRgba);
+
+        var colNamed = SnapAttributes.ParseColor("cyan");
+        Assert.Equal(Color.Cyan.ToArgb(), colNamed.ToArgb());
+    }
+    #endregion
+
+    #region Transform Parser Tests
+    [Fact]
+    public void TestTransformShorthand()
+    {
+        var matrix1 = SnapTransformParser.ParseToMatrix("t10,20");
+        Assert.Equal(10f, matrix1.E);
+        Assert.Equal(20f, matrix1.F);
+
+        var matrix2 = SnapTransformParser.ParseToMatrix("s2,3");
+        Assert.Equal(2f, matrix2.A);
+        Assert.Equal(3f, matrix2.D);
+
+        var matrix3 = SnapTransformParser.ParseToMatrix("r90");
+        Assert.True(MathF.Abs(matrix3.A) < 1e-4f);
+        Assert.True(MathF.Abs(matrix3.B - 1f) < 1e-4f);
+        Assert.True(MathF.Abs(matrix3.C - (-1f)) < 1e-4f);
+        Assert.True(MathF.Abs(matrix3.D) < 1e-4f);
+
+        // Compound transform
+        var matrixCompound = SnapTransformParser.ParseToMatrix("t10,20s2");
+        Assert.Equal(2f, matrixCompound.A);
+        Assert.Equal(2f, matrixCompound.D);
+        Assert.Equal(10f, matrixCompound.E);
+        Assert.Equal(20f, matrixCompound.F);
+    }
+    #endregion
+
+    #region Path Measurement Tests
+    [Fact]
+    public void TestPathMeasurement()
+    {
+        var linePath = "M0 0 L100 0";
+        var totalLength = SnapPathMeasurement.GetTotalLength(linePath);
+        Assert.True(MathF.Abs(totalLength - 100f) < 0.1f);
+
+        var midPoint = SnapPathMeasurement.GetPointAtLength(linePath, 50f);
+        Assert.True(MathF.Abs(midPoint.X - 50f) < 0.1f);
+        Assert.True(MathF.Abs(midPoint.Y) < 0.1f);
+        Assert.True(MathF.Abs(midPoint.Alpha) < 0.1f);
+
+        var boxPath = "M10 20 L110 20 L110 70 L10 70 Z";
+        var bbox = SnapPathMeasurement.GetBBox(boxPath);
+        Assert.True(MathF.Abs(bbox.X - 10f) < 0.1f);
+        Assert.True(MathF.Abs(bbox.Y - 20f) < 0.1f);
+        Assert.True(MathF.Abs(bbox.Width - 100f) < 0.1f);
+        Assert.True(MathF.Abs(bbox.Height - 50f) < 0.1f);
+        Assert.True(MathF.Abs(bbox.Cx - 60f) < 0.1f);
+        Assert.True(MathF.Abs(bbox.Cy - 45f) < 0.1f);
+    }
+    #endregion
+
+    #region Gradients and Definitions Tests
+    [Fact]
+    public void TestGradientCreationAndStops()
+    {
+        var paper = Snap.Create(600, 600);
+        var grad = paper.Gradient("l(0,0,1,1)#ff0000-#00ff00-#0000ff");
+        Assert.NotNull(grad);
+
+        var stops = grad.Stops();
+        Assert.Equal(3, stops.Count);
+
+        var rect = paper.Rect(50, 50, 200, 200);
+        rect.Attr("fill", grad);
+
+        var xml = paper.ToString();
+        Assert.Contains("linearGradient", xml);
+        Assert.Contains("stop", xml);
+    }
+    #endregion
+
+    #region Hierarchy and Manipulation Tests
+    [Fact]
+    public void TestHierarchyAndQuerySelectors()
+    {
+        var paper = Snap.Create(600, 600);
+        var g1 = paper.G();
+        var c1 = paper.Circle(50, 50, 25);
+        c1.ID = "mainCircle";
+        c1.Attr("class", "clickable highlight");
+
+        var c2 = paper.Circle(150, 150, 25);
+        c2.Attr("class", "clickable");
+
+        g1.Add(c1, c2);
+
+        Assert.Equal(2, g1.Children().Count);
+        Assert.Equal(g1.Node, c1.Parent()?.Node);
+
+        var foundById = paper.Select("#mainCircle");
+        Assert.NotNull(foundById);
+        Assert.Equal("mainCircle", foundById.ID);
+
+        var clickables = paper.SelectAll(".clickable");
+        Assert.Equal(2, clickables.Count);
+
+        var allCircles = paper.SelectAll("circle");
+        Assert.Equal(2, allCircles.Count);
+    }
+
+    [Fact]
+    public void TestSnapSvgParse()
+    {
+        var svgStr = "<svg width='300' height='200'><rect id='box' x='10' y='10' width='80' height='80' fill='#ff9900'/></svg>";
+        var paper = Snap.Parse(svgStr);
+        Assert.NotNull(paper);
+
+        var box = paper.Select("#box");
+        Assert.NotNull(box);
+        Assert.Equal("rect", box.Type);
+    }
+    #endregion
+
+    #region Headless Rendering Pipeline Tests
+    [Fact]
+    public void TestRenderToPng()
+    {
+        var paper = Snap.Create(400, 300);
+        paper.Rect(0, 0, 400, 300).Attr("fill", "#222222");
+        paper.Circle(200, 150, 80).Attr("fill", "#ff4444");
+
+        var pngBytes = paper.ToPngBytes(400, 300);
+        Assert.NotNull(pngBytes);
+        Assert.True(pngBytes.Length > 0);
+
+        // Verify PNG magic header: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+        Assert.Equal(0x89, pngBytes[0]);
+        Assert.Equal(0x50, pngBytes[1]);
+        Assert.Equal(0x4E, pngBytes[2]);
+        Assert.Equal(0x47, pngBytes[3]);
+        Assert.Equal(0x0D, pngBytes[4]);
+        Assert.Equal(0x0A, pngBytes[5]);
+        Assert.Equal(0x1A, pngBytes[6]);
+        Assert.Equal(0x0A, pngBytes[7]);
+    }
+    #endregion
+
+    #region Sandboxed Jint JavaScript Execution Tests
+    [Fact]
+    public void TestJsDrawingEngineExecution()
+    {
+        var engine = new JsDrawingEngine();
+        var jsCode = @"
+            var s = Snap(600, 400);
+            var bg = s.rect(0, 0, 600, 400).attr({ fill: '#0f172a' });
+            var sun = s.circle(300, 200, 80).attr({ fill: '#f59e0b', stroke: '#fbbf24', strokeWidth: 3 });
+            var ray = s.line(100, 100, 500, 300).attr({ stroke: '#ffffff', strokeWidth: 2 });
+            console.log('Canvas generated with sun at 300,200');
+            s;
+        ";
+
+        var result = engine.Execute(jsCode, 600, 400);
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(result.PngBytes);
+        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotEmpty(result.SvgXml);
+        Assert.Contains("circle", result.SvgXml);
+        Assert.Contains("rect", result.SvgXml);
+        Assert.Contains("line", result.SvgXml);
+        Assert.Contains("[LOG] Canvas generated with sun at 300,200", result.Logs);
+        Assert.NotNull(result.PngDataUrl);
+        Assert.StartsWith("data:image/png;base64,", result.PngDataUrl);
+    }
+
+    [Fact]
+    public void TestComplexJsSceneWithTransformsAndGradients()
+    {
+        var engine = new JsDrawingEngine();
+        var jsCode = @"
+            var s = Snap(800, 600);
+            var grad = s.gradient('l(0,0,1,1)#1e1b4b-#4338ca-#06b6d4');
+            var bg = s.rect(0, 0, 800, 600).attr({ fill: grad });
+
+            var g = s.g();
+            for (var i = 0; i < 5; i++) {
+                var c = s.circle(400, 300, 40 + i * 30).attr({
+                    fill: 'none',
+                    stroke: '#ffffff',
+                    strokeWidth: 2,
+                    opacity: 0.8 - i * 0.12
+                });
+                g.add(c);
+            }
+            g.transform('r45,400,300');
+
+            var txt = s.text(400, 550, 'Enactive Studio').attr({
+                fill: '#ffffff',
+                fontSize: 32,
+                textAnchor: 'middle'
+            });
+
+            console.log('Complex generative scene rendered.');
+            s;
+        ";
+
+        var result = engine.Execute(jsCode, 800, 600);
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(result.PngBytes);
+        Assert.True(result.PngBytes.Length > 0);
+        Assert.Contains("linearGradient", result.SvgXml);
+        Assert.Contains("Enactive Studio", result.SvgXml);
+        Assert.Contains("[LOG] Complex generative scene rendered.", result.Logs);
+    }
+
+    [Fact]
+    public void TestJsDrawingMcpTools()
+    {
+        var tools = new DrawingMcpTools();
+        var script = @"
+            var s = Snap(400, 400);
+            var p = s.path('M 50 50 L 350 50 L 350 350 Z').attr({ fill: '#6366f1' });
+        ";
+
+        var execResult = tools.ExecuteSvgScript(script, 400, 400);
+        Assert.True(execResult.Success, execResult.Error);
+        Assert.NotNull(execResult.PngBytes);
+
+        var measureResult = tools.MeasureSvgPath("M0 0 L200 0 L200 100", 100);
+        Assert.NotNull(measureResult);
+        Assert.True(measureResult["totalLength"]?.GetValue<float>() > 0);
+        Assert.NotNull(measureResult["pointAtLength"]);
+    }
+    #endregion
 }
 

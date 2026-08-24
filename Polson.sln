@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.37314.3
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Runtime", "Polson.Runtime\Polson.Runtime.csproj", "{151031A1-51E5-EDC9-7434-67135AF547D3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Runtime", "src\Polson.Runtime\Polson.Runtime.csproj", "{151031A1-51E5-EDC9-7434-67135AF547D3}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Docs", "Docs", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
@@ -14,7 +14,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Base", "Base", "{1F4431D7-4
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Drawing", "Drawing", "{197F8A82-3208-431C-A64B-994C3F6AED6B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Drawing.Svg", "Polson.Drawing.Svg\Polson.Drawing.Svg.csproj", "{7850AF24-B246-4959-82F6-A7384FA80097}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Drawing.Svg", "src\Polson.Drawing.Svg\Polson.Drawing.Svg.csproj", "{7850AF24-B246-4959-82F6-A7384FA80097}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -161,6 +161,210 @@ public class SnapElement
         return this;
     }
 
+    #region Child Factory Methods
+    public virtual SnapRect Rect(float x, float y, float width, float height, float rx = 0f, float ry = 0f)
+    {
+        var rect = new SvgRectangle
+        {
+            X = new SvgUnit(x),
+            Y = new SvgUnit(y),
+            Width = new SvgUnit(width),
+            Height = new SvgUnit(height),
+            CornerRadiusX = new SvgUnit(rx),
+            CornerRadiusY = new SvgUnit(ry > 0f ? ry : rx)
+        };
+        Node.Children.Add(rect);
+        return new SnapRect(rect, Paper);
+    }
+
+    public virtual SnapRect rect(float x, float y, float width, float height, float rx = 0f, float ry = 0f) =>
+        Rect(x, y, width, height, rx, ry);
+
+    public virtual SnapCircle Circle(float cx, float cy, float r)
+    {
+        var circle = new SvgCircle
+        {
+            CenterX = new SvgUnit(cx),
+            CenterY = new SvgUnit(cy),
+            Radius = new SvgUnit(r)
+        };
+        Node.Children.Add(circle);
+        return new SnapCircle(circle, Paper);
+    }
+
+    public virtual SnapCircle circle(float cx, float cy, float r) =>
+        Circle(cx, cy, r);
+
+    public virtual SnapEllipse Ellipse(float cx, float cy, float rx, float ry)
+    {
+        var ellipse = new SvgEllipse
+        {
+            CenterX = new SvgUnit(cx),
+            CenterY = new SvgUnit(cy),
+            RadiusX = new SvgUnit(rx),
+            RadiusY = new SvgUnit(ry)
+        };
+        Node.Children.Add(ellipse);
+        return new SnapEllipse(ellipse, Paper);
+    }
+
+    public virtual SnapEllipse ellipse(float cx, float cy, float rx, float ry) =>
+        Ellipse(cx, cy, rx, ry);
+
+    public virtual SnapPath Path(string d = "")
+    {
+        var path = new SvgPath
+        {
+            PathData = SvgPathBuilder.Parse(d)
+        };
+        Node.Children.Add(path);
+        return new SnapPath(path, Paper);
+    }
+
+    public virtual SnapPath path(string d = "") =>
+        Path(d);
+
+    public virtual SnapGroup G(params SnapElement[] elements) => Group(elements);
+    public virtual SnapGroup g(params SnapElement[] elements) => Group(elements);
+
+    public virtual SnapGroup Group(params SnapElement[] elements)
+    {
+        var group = new SvgGroup();
+        Node.Children.Add(group);
+        var snapGroup = new SnapGroup(group, Paper);
+        if (elements != null)
+        {
+            foreach (var el in elements)
+            {
+                if (el != null) snapGroup.Append(el);
+            }
+        }
+        return snapGroup;
+    }
+
+    public virtual SnapGroup group(params SnapElement[] elements) => Group(elements);
+
+    public virtual SnapImage Image(string src, float x = 0f, float y = 0f, float width = 0f, float height = 0f)
+    {
+        var image = new SvgImage
+        {
+            Href = src,
+            X = new SvgUnit(x),
+            Y = new SvgUnit(y),
+            Width = new SvgUnit(width),
+            Height = new SvgUnit(height)
+        };
+        Node.Children.Add(image);
+        return new SnapImage(image, Paper);
+    }
+
+    public virtual SnapImage image(string src, float x = 0f, float y = 0f, float width = 0f, float height = 0f) =>
+        Image(src, x, y, width, height);
+
+    public virtual SnapText Text(float x, float y, object? text)
+    {
+        var textStr = text?.ToString() ?? string.Empty;
+        var svgText = new SvgText
+        {
+            X = new SvgUnitCollection { new SvgUnit(x) },
+            Y = new SvgUnitCollection { new SvgUnit(y) },
+            Text = textStr
+        };
+        Node.Children.Add(svgText);
+        return new SnapText(svgText, Paper);
+    }
+
+    public virtual SnapText text(float x, float y, object? text) =>
+        Text(x, y, text);
+
+    public virtual SnapLine Line(float x1, float y1, float x2, float y2)
+    {
+        var line = new SvgLine
+        {
+            StartX = new SvgUnit(x1),
+            StartY = new SvgUnit(y1),
+            EndX = new SvgUnit(x2),
+            EndY = new SvgUnit(y2)
+        };
+        Node.Children.Add(line);
+        return new SnapLine(line, Paper);
+    }
+
+    public virtual SnapLine line(float x1, float y1, float x2, float y2) =>
+        Line(x1, y1, x2, y2);
+
+    public virtual SnapPolyline Polyline(params float[] points)
+    {
+        var unitCollection = new SvgPointCollection();
+        if (points != null)
+        {
+            for (var i = 0; i < points.Length - 1; i += 2)
+            {
+                unitCollection.Add(new SvgUnit(points[i]));
+                unitCollection.Add(new SvgUnit(points[i + 1]));
+            }
+        }
+        var polyline = new SvgPolyline { Points = unitCollection };
+        Node.Children.Add(polyline);
+        return new SnapPolyline(polyline, Paper);
+    }
+
+    public virtual SnapPolyline polyline(params float[] points) => Polyline(points);
+
+    public virtual SnapPolygon Polygon(params float[] points)
+    {
+        var unitCollection = new SvgPointCollection();
+        if (points != null)
+        {
+            for (var i = 0; i < points.Length - 1; i += 2)
+            {
+                unitCollection.Add(new SvgUnit(points[i]));
+                unitCollection.Add(new SvgUnit(points[i + 1]));
+            }
+        }
+        var polygon = new SvgPolygon { Points = unitCollection };
+        Node.Children.Add(polygon);
+        return new SnapPolygon(polygon, Paper);
+    }
+
+    public virtual SnapPolygon polygon(params float[] points) => Polygon(points);
+
+    public virtual SnapUse Use(object target)
+    {
+        var id = target is SnapElement el ? el.ID : target?.ToString() ?? string.Empty;
+        var use = new SvgUse
+        {
+            ReferencedElement = new Uri(id.StartsWith('#') ? id : "#" + id, UriKind.RelativeOrAbsolute)
+        };
+        Node.Children.Add(use);
+        return new SnapUse(use, Paper);
+    }
+
+    public virtual SnapUse use(object target) => Use(target);
+
+    public virtual SnapElement El(string name, IDictionary<string, object?>? attrs = null)
+    {
+        var element = SnapPaper.CreateElementByName(name);
+        Node.Children.Add(element);
+        var snapEl = Wrap(element, Paper);
+        if (attrs != null)
+        {
+            snapEl.Attr(attrs);
+        }
+        return snapEl;
+    }
+
+    public virtual SnapElement el(string name, IDictionary<string, object?>? attrs = null) =>
+        El(name, attrs);
+
+    public virtual void Clear()
+    {
+        Node.Children.Clear();
+    }
+
+    public virtual void clear() => Clear();
+    #endregion
+
     public virtual SnapElement Remove()
     {
         Node.Parent?.Children.Remove(Node);

@@ -14,7 +14,7 @@ Allows an autonomous Gemini agent to interact with the Polson MCP server using o
 ## Launching
 To run a test session with the Gemini CLI or Antigravity:
 ```bash
-cd tests/agent/mcp-server/gemini
+cd tests/agent/mcp_server/gemini
 agy
 ```
 

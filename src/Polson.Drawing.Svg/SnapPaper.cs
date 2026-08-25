@@ -380,7 +380,7 @@ public class SnapPaper : SnapElement
         return _defs;
     }
 
-    private static SvgElement CreateElementByName(string name) =>
+    internal static SvgElement CreateElementByName(string name) =>
         name.ToLowerInvariant() switch
         {
             "rect" => new SvgRectangle(),

@@ -365,8 +365,22 @@ public class CanvasRenderingContext2D
         using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateFillPaint();
 
-        var (adjX, adjY) = AdjustTextPosition(text, x, y, font);
-        Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, font, paint);
+        if (text.Contains('\n'))
+        {
+            font.GetFontMetrics(out var m);
+            var lineHeight = (m.Descent - m.Ascent) * 1.2f;
+            var lines = text.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, font);
+                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+            }
+        }
+        else
+        {
+            var (adjX, adjY) = AdjustTextPosition(text, x, y, font);
+            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, font, paint);
+        }
     }
 
     public void strokeText(string text, float x, float y, float? maxWidth = null)
@@ -376,8 +390,95 @@ public class CanvasRenderingContext2D
         using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateStrokePaint();
 
-        var (adjX, adjY) = AdjustTextPosition(text, x, y, font);
-        Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, font, paint);
+        if (text.Contains('\n'))
+        {
+            font.GetFontMetrics(out var m);
+            var lineHeight = (m.Descent - m.Ascent) * 1.2f;
+            var lines = text.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, font);
+                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+            }
+        }
+        else
+        {
+            var (adjX, adjY) = AdjustTextPosition(text, x, y, font);
+            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, font, paint);
+        }
+    }
+
+    public void fillWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var paint = _currentState.CreateFillPaint();
+
+        font.GetFontMetrics(out var m);
+        var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
+
+        var wrappedLines = WrapText(text, maxWidth, font);
+        for (var i = 0; i < wrappedLines.Count; i++)
+        {
+            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, font);
+            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+        }
+    }
+
+    public void strokeWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var paint = _currentState.CreateStrokePaint();
+
+        font.GetFontMetrics(out var m);
+        var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
+
+        var wrappedLines = WrapText(text, maxWidth, font);
+        for (var i = 0; i < wrappedLines.Count; i++)
+        {
+            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, font);
+            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+        }
+    }
+
+    private static List<string> WrapText(string text, float maxWidth, SKFont font)
+    {
+        var result = new List<string>();
+        var paragraphs = text.Split('\n');
+
+        foreach (var para in paragraphs)
+        {
+            var words = para.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length == 0)
+            {
+                result.Add(string.Empty);
+                continue;
+            }
+
+            var currentLine = words[0];
+            for (var i = 1; i < words.Length; i++)
+            {
+                var candidate = currentLine + " " + words[i];
+                if (font.MeasureText(candidate) <= maxWidth)
+                {
+                    currentLine = candidate;
+                }
+                else
+                {
+                    result.Add(currentLine);
+                    currentLine = words[i];
+                }
+            }
+            if (!string.IsNullOrEmpty(currentLine))
+            {
+                result.Add(currentLine);
+            }
+        }
+
+        return result;
     }
 
     public Dictionary<string, object> measureText(string text)

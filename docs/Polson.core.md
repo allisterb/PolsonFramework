@@ -11,7 +11,9 @@ The **JSON schema for every parameter and return model type** named below lives 
 Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianros/jint) runtime supporting **ECMAScript 2025** (arrow functions, `let`/`const`, destructuring, template literals, optional chaining `?.`, nullish coalescing `??`, `for...of`, spread `...`, `Array`/`Map`/`Set`/`JSON`, etc.). Tailor generated code to modern JavaScript idioms.
 
 - **Sandbox Security:** `eval` and `new Function` are strictly disabled (`Host.StringCompilationAllowed = false`). Arbitrary external types and reflection are prohibited. Scripts can only interact with the explicit Polson drawing APIs.
-- **Execution Limits:** Scripts are enforced with statement limits (500,000 statements), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
+- **Execution Limits:** Scripts are enforced with statement limits (2,000,000 statements, configurable via `JsDrawingEngine.MaxStatements`), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
+  > [!TIP]
+  > For heavy pixel-level manipulation (such as procedural textures, blurs, or color grading), use native **`Skia.Shader`** or **`Skia.ImageFilter`** pipelines which execute in native SIMD/C++ in < 1ms, rather than running millions of raw per-pixel loop iterations in interpreted JS.
 - **Return Value & Visual Rendering:**
   - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to image bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**, with `"png"` and `"jpeg"` options available) and Base64 URI (`result.ImageDataUri`).
   - For vector scenes (`SnapPaper` / `SnapElement`), `result.SvgXml` contains the serialized SVG XML markup. For 2D canvas raster scripts, `result.SvgXml` retains the last vector image produced by the agent prior to switching to 2D canvas mode.
@@ -153,6 +155,19 @@ Represents any SVG node in the document hierarchy:
 - `element.getPointAtLength(length: number)` → `SnapPoint` — Computes coordinates at `length` (paths only).
 - `element.select(selector: string)` → `SnapElement?` — Finds the first descendant matching a tag name, `#id`, or `.class`.
 - `element.selectAll(selector: string)` → `SnapElement[]` — Finds all matching descendants.
+- `element.rect(x: number, y: number, width: number, height: number, rx?: number, ry?: number)` → `SnapRect` — Creates and appends a child `<rect>`.
+- `element.circle(cx: number, cy: number, r: number)` → `SnapCircle` — Creates and appends a child `<circle>`.
+- `element.ellipse(cx: number, cy: number, rx: number, ry: number)` → `SnapEllipse` — Creates and appends a child `<ellipse>`.
+- `element.path(d?: string)` → `SnapPath` — Creates and appends a child `<path>`.
+- `element.line(x1: number, y1: number, x2: number, y2: number)` → `SnapLine` — Creates and appends a child `<line>`.
+- `element.polyline(...points: number[])` → `SnapPolyline` — Creates and appends a child `<polyline>`.
+- `element.polygon(...points: number[])` → `SnapPolygon` — Creates and appends a child `<polygon>`.
+- `element.text(x: number, y: number, text: any)` → `SnapText` — Creates and appends a child `<text>`.
+- `element.image(src: string, x: number, y: number, width: number, height: number)` → `SnapImage` — Creates and appends a child `<image>`.
+- `element.g(...elements: SnapElement[])` / `element.group(...)` → `SnapGroup` — Creates and appends a nested `<g>`.
+- `element.el(name: string, attrs?: object)` → `SnapElement` — Creates and appends an arbitrary SVG child element.
+- `element.use(target: SnapElement | string)` → `SnapUse` — Creates and appends a child `<use>` element.
+- `element.clear()` → `void` — Removes all child nodes from this container element.
 
 ## `SnapMatrix`
 
@@ -187,8 +202,8 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `canvas.clear(color?: string)` → `void` — Clears canvas with transparent or specified color.
 - `canvas.toBitmap()` → `SkiaBitmapWrapper` — Extracts an editable `SkiaBitmapWrapper` copy.
 - `canvas.toImageData()` → `ImageData` — Extracts a full-canvas `ImageData` pixel buffer.
-- `canvas.ToPngBytes(quality?: number)` → `byte[]` — Encodes canvas to PNG bytes.
-- `canvas.ToDataUrl()` → `string` — Returns base64 `data:image/png;base64,...` data URL.
+- `canvas.toImageBytes(format?: string, quality?: number)` → `byte[]` — Encodes canvas to image bytes (default: WebP Q=85).
+- `canvas.toDataUri(format?: string, quality?: number)` → `string` — Returns base64 `data:image/...;base64,...` data URI.
 
 ## `CanvasRenderingContext2D`
 
@@ -243,8 +258,10 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `ctx.font` — Font specification string: e.g. `"bold 24px Arial"`, `"italic 16px 'Times New Roman'"`.
 - `ctx.textAlign` — Alignment: `"left"`, `"center"`, `"right"`, `"start"`, `"end"`.
 - `ctx.textBaseline` — Baseline: `"top"`, `"middle"`, `"bottom"`, `"alphabetic"`, `"hanging"`.
-- `ctx.fillText(text: string, x: number, y: number, maxWidth?: number)` — Draws filled text.
-- `ctx.strokeText(text: string, x: number, y: number, maxWidth?: number)` — Draws stroked text outline.
+- `ctx.fillText(text: string, x: number, y: number, maxWidth?: number)` — Draws filled text (supports multi-line strings with `\n`).
+- `ctx.strokeText(text: string, x: number, y: number, maxWidth?: number)` — Draws stroked text outline (supports multi-line strings with `\n`).
+- `ctx.fillWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` — Automatically word-wraps and draws filled paragraph text within `maxWidth`.
+- `ctx.strokeWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` — Automatically word-wraps and strokes paragraph text within `maxWidth`.
 - `ctx.measureText(text: string)` → `TextMetrics` — Returns `{ width, actualBoundingBoxAscent, actualBoundingBoxDescent, fontBoundingBoxAscent, fontBoundingBoxDescent }`.
 
 ### Gradients & Patterns

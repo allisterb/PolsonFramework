@@ -437,6 +437,78 @@ public class DrawingTests : TestsRuntime
     }
 
     [Fact]
+    public void TestSnapElementGroupChildFactories()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            var s = Snap(600, 600);
+            var g = s.g();
+            var c = g.circle(100, 100, 50).attr({ fill: '#ff0000' });
+            var r = g.rect(200, 100, 80, 80).attr({ fill: '#00ff00' });
+            var t = g.text(100, 300, 'Nested in Group').attr({ fill: '#0000ff' });
+            var nestedG = g.g();
+            var line = nestedG.line(0, 0, 50, 50).attr({ stroke: '#ffffff' });
+            s;
+        ";
+
+        var result = engine.Execute(script, 600, 600);
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(result.SvgXml);
+        Assert.Contains("<circle", result.SvgXml);
+        Assert.Contains("<rect", result.SvgXml);
+        Assert.Contains("<text", result.SvgXml);
+        Assert.Contains("<line", result.SvgXml);
+        Assert.Contains("Nested in Group", result.SvgXml);
+    }
+
+    [Fact]
+    public void TestCanvas2DMultiLineAndWrappedText()
+    {
+        var canvas = new SkiaCanvas(500, 500);
+        var ctx = canvas.getContext("2d");
+
+        ctx.font = "16px sans-serif";
+        ctx.fillStyle = "#ffffff";
+
+        // Multi-line with \n
+        ctx.fillText("Line 1\nLine 2\nLine 3", 50, 50);
+
+        // Word-wrapped paragraph
+        var paragraph = "This is a long paragraph that should automatically wrap across multiple lines when rendered onto the canvas surface using fillWrappedText.";
+        ctx.fillWrappedText(paragraph, 50, 150, 200);
+
+        var imgBytes = canvas.ToImageBytes();
+        Assert.NotNull(imgBytes);
+        Assert.True(imgBytes.Length > 0);
+    }
+
+    [Fact]
+    public void TestMaxStatementsConfigurable()
+    {
+        var prev = JsDrawingEngine.MaxStatements;
+        try
+        {
+            JsDrawingEngine.MaxStatements = 50_000;
+            var engine = new JsDrawingEngine();
+            // 60,000 iterations will exceed 50,000 statements limit
+            var script = @"
+                var sum = 0;
+                for (var i = 0; i < 60000; i++) {
+                    sum += i;
+                }
+                sum;
+            ";
+            var result = engine.Execute(script);
+            Assert.False(result.Success);
+            Assert.Contains("statements", result.Error?.ToLowerInvariant() ?? "");
+        }
+        finally
+        {
+            JsDrawingEngine.MaxStatements = prev;
+        }
+    }
+
+    [Fact]
     public void TestEncodePerformanceBenchmark()
     {
         var dir = AppContext.BaseDirectory;

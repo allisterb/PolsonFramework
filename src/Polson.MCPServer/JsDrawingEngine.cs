@@ -25,6 +25,8 @@ public class JsDrawingEngine : Runtime
 
     #region Properties
     public static int ScriptTimeoutSeconds { get; set; } = 30;
+
+    public static int MaxStatements { get; set; } = 2_000_000;
     #endregion
 
     #region Methods
@@ -49,7 +51,7 @@ public class JsDrawingEngine : Runtime
                 options.Host.StringCompilationAllowed = false;
                 options.TimeoutInterval(TimeSpan.FromSeconds(ScriptTimeoutSeconds));
                 options.LimitRecursion(100);
-                options.MaxStatements(500_000);
+                options.MaxStatements(MaxStatements);
             });
 
             // Per-session scratch storage

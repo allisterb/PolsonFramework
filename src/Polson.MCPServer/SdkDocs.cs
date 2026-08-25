@@ -36,7 +36,8 @@ public static class SdkDocs
         new("Globals", ["console", "log", "error", "exit", "table", "mina"], "Global Functions"),
         new("Snap", ["Snap", "mina"], "Snap"),
         new("Canvas2D", ["createCanvas", "Canvas"], "Canvas2D"),
-        new("Skia", ["Skia", "SK", "ImageData"], "Skia")
+        new("Skia", ["Skia", "SK", "ImageData"], "Skia"),
+        new("Drawing", ["Drawing"], "Drawing")
     ];
     #endregion
 

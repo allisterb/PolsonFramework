@@ -193,3 +193,117 @@ Bitmap container returned by `Skia.Bitmap.create(...)`, `Skia.Image.load(...)`, 
 }
 ```
 
+---
+
+# Drawing (Constructive Toolkit Schemas)
+
+## `LoomisHead`
+
+Parametric 3D cranial structure model returned by `Drawing.createLoomisHead(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LoomisHead",
+  "type": "object",
+  "properties": {
+    "origin": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "cranialCenter": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "cranialRadius": { "type": "number" },
+    "brow": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "noseBase": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "chin": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "nearEye": { "type": "object", "properties": { "center": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" } } },
+    "farEye": { "type": "object", "properties": { "center": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" } } },
+    "noseWedge": { "type": "object", "properties": { "bridge": { "type": "object" }, "apex": { "type": "object" }, "base": { "type": "object" } } },
+    "mouthGuides": { "type": "object", "properties": { "center": { "type": "object" }, "leftCorner": { "type": "object" }, "rightCorner": { "type": "object" } } }
+  },
+  "required": ["origin", "cranialCenter", "cranialRadius", "brow", "noseBase", "chin", "nearEye", "farEye", "noseWedge", "mouthGuides"]
+}
+```
+
+## `PerspectiveGrid`
+
+Camera projection vanishing point and horizon model returned by `Drawing.createPerspectiveGrid(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PerspectiveGrid",
+  "type": "object",
+  "properties": {
+    "type": { "type": "string", "enum": ["1point", "2point", "3point"] },
+    "horizonY": { "type": "number", "description": "Y coordinate of the horizon line." },
+    "centerOfVisionX": { "type": "number", "description": "X coordinate of the principal point of projection." },
+    "focalLength": { "type": "number", "description": "Camera focal distance d in pixels." },
+    "cameraAngleDeg": { "type": "number", "description": "Yaw angle in degrees." },
+    "vpL": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "vpR": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] }
+  },
+  "required": ["type", "horizonY", "centerOfVisionX", "focalLength", "vpL", "vpR"]
+}
+```
+
+## `PerspectiveBox`
+
+3D projected geometric bounding box model returned by `Drawing.createPerspectiveBox(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PerspectiveBox",
+  "type": "object",
+  "properties": {
+    "vertices": {
+      "type": "array",
+      "items": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+      "minItems": 8,
+      "maxItems": 8
+    },
+    "faces": {
+      "type": "object",
+      "properties": {
+        "top": { "type": "array", "items": { "type": "object" } },
+        "bottom": { "type": "array", "items": { "type": "object" } },
+        "left": { "type": "array", "items": { "type": "object" } },
+        "right": { "type": "array", "items": { "type": "object" } },
+        "backLeft": { "type": "array", "items": { "type": "object" } },
+        "backRight": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["top", "bottom", "left", "right", "backLeft", "backRight"]
+    }
+  },
+  "required": ["vertices", "faces"]
+}
+```
+
+## `MannequinFigure`
+
+Parametric 8-head proportional full-body anatomical joint model returned by `Drawing.createMannequinFigure(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MannequinFigure",
+  "type": "object",
+  "properties": {
+    "headUnit": { "type": "number", "description": "Height of one head unit (totalHeight / 8)." },
+    "totalHeight": { "type": "number", "description": "Total standing figure height in pixels." },
+    "head": { "type": "object", "properties": { "center": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" } } },
+    "neck": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
+    "sternum": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
+    "clavicles": { "type": "object", "properties": { "left": { "type": "object" }, "right": { "type": "object" }, "center": { "type": "object" } } },
+    "ribcage": { "type": "object", "properties": { "center": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" }, "tiltDeg": { "type": "number" } } },
+    "navel": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
+    "pelvis": { "type": "object", "properties": { "center": { "type": "object" }, "leftHip": { "type": "object" }, "rightHip": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" }, "tiltDeg": { "type": "number" } } },
+    "crotch": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
+    "leftArm": { "type": "object", "properties": { "shoulder": { "type": "object" }, "elbow": { "type": "object" }, "wrist": { "type": "object" }, "hand": { "type": "object" } } },
+    "rightArm": { "type": "object", "properties": { "shoulder": { "type": "object" }, "elbow": { "type": "object" }, "wrist": { "type": "object" }, "hand": { "type": "object" } } },
+    "leftLeg": { "type": "object", "properties": { "hip": { "type": "object" }, "knee": { "type": "object" }, "ankle": { "type": "object" }, "foot": { "type": "object" } } },
+    "rightLeg": { "type": "object", "properties": { "hip": { "type": "object" }, "knee": { "type": "object" }, "ankle": { "type": "object" }, "foot": { "type": "object" } } }
+  },
+  "required": ["headUnit", "totalHeight", "head", "neck", "sternum", "clavicles", "ribcage", "navel", "pelvis", "crotch", "leftArm", "rightArm", "leftLeg", "rightLeg"]
+}
+```
+
+

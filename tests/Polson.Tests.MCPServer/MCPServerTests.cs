@@ -38,7 +38,7 @@ public class MCPServerTests : TestsRuntime
 
     #region Tool Execution Direct Tests
     [Fact]
-    public void TestDrawingMcpToolsExecuteScript()
+    public async Task TestDrawingMcpToolsExecuteScript()
     {
         var tools = new DrawingMcpTools();
         var script = @"
@@ -48,7 +48,7 @@ public class MCPServerTests : TestsRuntime
             s;
         ";
 
-        var result = tools.ExecuteScript(script, 400, 300);
+        var result = await tools.ExecuteScript(script, 400, 300);
         Assert.True(result.Success, result.Error);
         Assert.NotNull(result.PngBytes);
         Assert.True(result.PngBytes.Length > 0);

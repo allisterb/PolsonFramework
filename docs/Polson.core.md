@@ -61,6 +61,12 @@ Animation and easing curve generators compatible with Snap.svg:
 - `mina.elastic(n: number)` → `number`
 - `mina.time()` → `number` (current timestamp in milliseconds)
 
+### `Session`
+Per-session scratchpad dictionary that persists across multiple script executions on the same MCP session:
+- `Session[key] = value` — Cache an intermediate computation, configuration, or data structure.
+- `Session[key]` — Retrieve a previously cached value (returns `undefined` if key is not set).
+- `delete Session[key]` — Evict a key from session scratchpad.
+
 ---
 
 # Snap

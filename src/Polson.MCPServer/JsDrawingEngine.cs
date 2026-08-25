@@ -28,7 +28,7 @@ public class JsDrawingEngine : Runtime
     #endregion
 
     #region Methods
-    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600)
+    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null)
     {
         ArgumentNullException.ThrowIfNull(jsScript);
 
@@ -48,6 +48,9 @@ public class JsDrawingEngine : Runtime
                 options.LimitRecursion(100);
                 options.MaxStatements(500_000);
             });
+
+            // Per-session scratch storage
+            engine.SetValue("Session", session?.Storage ?? new Dictionary<string, object?>());
 
             // Pure .NET Console object
             var jsConsole = new JSConsole(result.Logs);

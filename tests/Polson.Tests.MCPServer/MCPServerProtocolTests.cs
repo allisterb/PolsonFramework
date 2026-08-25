@@ -161,6 +161,78 @@ public class MCPServerProtocolTests : TestsRuntime, IAsyncLifetime
         Assert.Contains("done early", text);
         Assert.DoesNotContain("should not run", text);
     }
+
+    [Fact]
+    public async Task SessionStoragePersistsAcrossExecuteCalls()
+    {
+        await using var client = await NewClientAsync();
+
+        // 1. First execution writes to Session dictionary
+        var w = await client.CallToolAsync("ExecuteScript", new Dictionary<string, object?>
+        {
+            ["script"] = "Session['color'] = '#ec4899'; Session['radius'] = 75; log('stored');"
+        });
+        Assert.True(w.IsError != true, $"Write failed: {Text(w)}");
+        Assert.Contains("stored", Text(w));
+
+        // 2. Second execution on the SAME session reads from Session dictionary
+        var r = await client.CallToolAsync("ExecuteScript", new Dictionary<string, object?>
+        {
+            ["script"] = "var s = Snap(200, 200); s.circle(100, 100, Session['radius']).attr('fill', Session['color']); log('radius=' + Session['radius']); s;"
+        });
+        Assert.True(r.IsError != true, $"Read failed: {Text(r)}");
+        var text = Text(r);
+        Assert.Contains("radius=75", text);
+        Assert.Contains("pngBytes", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SessionStorageIsIsolatedBetweenSessions()
+    {
+        await using var client1 = await NewClientAsync();
+        await using var client2 = await NewClientAsync();
+
+        await client1.CallToolAsync("ExecuteScript", new Dictionary<string, object?>
+        {
+            ["script"] = "Session['secret'] = 'client1_val';"
+        });
+
+        var r = await client2.CallToolAsync("ExecuteScript", new Dictionary<string, object?>
+        {
+            ["script"] = "log('secret=' + (Session['secret'] === undefined ? 'unset' : Session['secret']));"
+        });
+
+        Assert.True(r.IsError != true, $"Client2 check failed: {Text(r)}");
+        Assert.Contains("secret=unset", Text(r));
+    }
+
+    [Fact]
+    public async Task HistoryToolReturnsRecentScripts()
+    {
+        await using var client = await NewClientAsync();
+
+        var script1 = "var a = 1; log(a);";
+        var script2 = "var b = 2; log(b);";
+        var script3 = "var c = 3; log(c);";
+
+        await client.CallToolAsync("ExecuteScript", new Dictionary<string, object?> { ["script"] = script1 });
+        await client.CallToolAsync("ExecuteScript", new Dictionary<string, object?> { ["script"] = script2 });
+        await client.CallToolAsync("ExecuteScript", new Dictionary<string, object?> { ["script"] = script3 });
+
+        // Default: last 1 script
+        var h1 = await client.CallToolAsync("History", new Dictionary<string, object?>());
+        Assert.True(h1.IsError != true, $"History call failed: {Text(h1)}");
+        var text1 = Text(h1);
+        Assert.Contains("var c = 3", text1);
+        Assert.DoesNotContain("var a = 1", text1);
+
+        // Specific n = 2: last 2 scripts
+        var h2 = await client.CallToolAsync("History", new Dictionary<string, object?> { ["n"] = 2 });
+        Assert.True(h2.IsError != true, $"History(2) call failed: {Text(h2)}");
+        var text2 = Text(h2);
+        Assert.Contains("var b = 2", text2);
+        Assert.Contains("var c = 3", text2);
+    }
     #endregion
 
     #region Resource Protocol Tests

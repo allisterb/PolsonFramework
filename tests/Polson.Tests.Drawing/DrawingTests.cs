@@ -312,7 +312,7 @@ public class DrawingTests : TestsRuntime
     }
 
     [Fact]
-    public void TestJsDrawingMcpTools()
+    public async Task TestJsDrawingMcpTools()
     {
         var tools = new DrawingMcpTools();
         var script = @"
@@ -320,7 +320,7 @@ public class DrawingTests : TestsRuntime
             var p = s.path('M 50 50 L 350 50 L 350 350 Z').attr({ fill: '#6366f1' });
         ";
 
-        var execResult = tools.ExecuteSvgScript(script, 400, 400);
+        var execResult = await tools.ExecuteSvgScript(script, 400, 400);
         Assert.True(execResult.Success, execResult.Error);
         Assert.NotNull(execResult.PngBytes);
 

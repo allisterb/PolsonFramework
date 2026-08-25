@@ -24,16 +24,26 @@ public class PolsonMCPServer : Runtime
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
 
+        var registry = new SessionRegistry();
+        builder.Services.AddSingleton(registry);
+        builder.Services.AddHostedService<IdleSessionSweeper>();
+
         builder.Logging
             .ClearProviders()
             .AddProvider(loggerProvider)
             .SetMinimumLevel(LogLevel.Trace);
 
         var mcp = builder.Services.AddMcpServer();
-        RegisterToolsAndResources(mcp);
+        RegisterToolsAndResources(mcp, registry);
         mcp.WithStdioServerTransport();
 
         var app = builder.Build();
+
+        app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() =>
+        {
+            registry.Dispose();
+        });
+
         Info("Polson MCP server started in stdio transport mode (project directory: {0}).", projectDir ?? Directory.GetCurrentDirectory());
 
         await app.RunAsync();
@@ -48,6 +58,10 @@ public class PolsonMCPServer : Runtime
     public static WebApplication BuildHttpApp(IConfigurationRoot? config = null, int? port = null, string? projectDir = null)
     {
         var builder = WebApplication.CreateBuilder();
+
+        var registry = new SessionRegistry();
+        builder.Services.AddSingleton(registry);
+        builder.Services.AddHostedService<IdleSessionSweeper>();
 
         if (port.HasValue)
         {
@@ -76,7 +90,7 @@ public class PolsonMCPServer : Runtime
         });
 
         var mcp = builder.Services.AddMcpServer();
-        RegisterToolsAndResources(mcp);
+        RegisterToolsAndResources(mcp, registry);
 
 #pragma warning disable MCP9004
         mcp.WithHttpTransport(options =>
@@ -90,6 +104,11 @@ public class PolsonMCPServer : Runtime
 
         app.UseCors(CorsPolicyName);
         app.MapMcp();
+
+        app.Lifetime.ApplicationStopping.Register(() =>
+        {
+            registry.Dispose();
+        });
 
         app.Lifetime.ApplicationStarted.Register(() =>
         {
@@ -116,9 +135,9 @@ public class PolsonMCPServer : Runtime
         return app;
     }
 
-    private static void RegisterToolsAndResources(IMcpServerBuilder mcp)
+    private static void RegisterToolsAndResources(IMcpServerBuilder mcp, SessionRegistry registry)
     {
-        mcp.WithTools<DrawingMcpTools>();
+        mcp.WithTools(new DrawingMcpTools(new JsDrawingEngine(), registry));
         mcp.WithResources<PolsonResources>();
         mcp.WithResources(PolsonResources.AreaResources(PolsonResources.Docs));
     }

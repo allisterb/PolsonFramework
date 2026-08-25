@@ -329,6 +329,107 @@ public class DrawingTests : TestsRuntime
         Assert.True(measureResult["totalLength"]?.GetValue<float>() > 0);
         Assert.NotNull(measureResult["pointAtLength"]);
     }
+
+    [Fact]
+    public void TestSandboxSecurityEvalDisabled()
+    {
+        var engine = new JsDrawingEngine();
+        var script = "eval('1 + 1');";
+        var result = engine.Execute(script);
+        Assert.False(result.Success);
+        Assert.Contains("String compilation has been disabled", result.Error);
+    }
+
+    [Fact]
+    public void TestSandboxSecurityNoClrTypes()
+    {
+        var engine = new JsDrawingEngine();
+        var script = "typeof System;";
+        var result = engine.Execute(script);
+        Assert.True(result.Success);
+        Assert.Equal("undefined", result.ReturnValue?.ToString());
+    }
+
+    [Fact]
+    public void TestJSConsoleAndMina()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            console.log('Test log message');
+            console.info('Test info message');
+            console.warn('Test warn message');
+            console.error('Test error message');
+            console.debug('Test debug message');
+
+            var easeVal = mina.easeout(0.5);
+            var bounceVal = mina.bounce(0.5);
+            var linearVal = mina.linear(0.75);
+
+            var s = Snap(200, 200);
+            s.circle(100, 100, linearVal * 50);
+            s;
+        ";
+
+        var result = engine.Execute(script, 200, 200);
+        Assert.True(result.Success, result.Error);
+        Assert.Contains("[LOG] Test log message", result.Logs);
+        Assert.Contains("[INFO] Test info message", result.Logs);
+        Assert.Contains("[WARN] Test warn message", result.Logs);
+        Assert.Contains("[ERROR] Test error message", result.Logs);
+        Assert.Contains("[DEBUG] Test debug message", result.Logs);
+    }
+
+    [Fact]
+    public void TestSnapFunctionAndStaticHelpers()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            var s = Snap(500, 500);
+            var m = Snap.matrix(1, 0, 0, 1, 10, 20);
+            var len = Snap.path.getTotalLength('M0 0 L100 0');
+            var pt = Snap.path.getPointAtLength('M0 0 L100 0', 50);
+            var bbox = Snap.path.getBBox('M10 20 L110 20 L110 70 L10 70 Z');
+            var rgb = Snap.rgb(255, 0, 0);
+            var hsl = Snap.hsl(120, 100, 50);
+            var fmt = Snap.format('{0} x {1}', [100, 200]);
+            var parsed = Snap.parse('<circle cx=""50"" cy=""50"" r=""25""/>');
+            var rad = Snap.rad(180);
+            var deg = Snap.deg(Math.PI);
+            var ang = Snap.angle(0, 0, 10, 10);
+            var snapped = Snap.snapTo([10, 20, 30], 21, 5);
+
+            s.circle(pt.x, pt.y, 25).attr({ fill: rgb });
+            s;
+        ";
+
+        var result = engine.Execute(script, 500, 500);
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(result.PngBytes);
+        Assert.Contains("circle", result.SvgXml);
+    }
+
+    [Fact]
+    public void TestGlobalFunctionsAndExit()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            log('Hello from global log');
+            error('Global error notice');
+            table([{ name: 'circle', count: 5 }, { name: 'rect', count: 12 }]);
+            var s = Snap(300, 300);
+            s.rect(0, 0, 300, 300).attr({ fill: '#ffcc00' });
+            exit('Early exit for testing');
+        ";
+
+        var result = engine.Execute(script, 300, 300);
+        Assert.True(result.Success, result.Error);
+        Assert.Contains("[LOG] Hello from global log", result.Logs);
+        Assert.Contains("[ERROR] Global error notice", result.Logs);
+        Assert.Contains("[EXIT] Early exit for testing", result.Logs);
+        Assert.Contains("Early exit for testing", result.ReturnValue?.ToString());
+        Assert.NotNull(result.PngBytes);
+        Assert.Contains("rect", result.SvgXml);
+    }
     #endregion
 }
 

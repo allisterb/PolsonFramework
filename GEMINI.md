@@ -142,11 +142,13 @@ Agents are assigned specific archetypal roles to divide creative labor:
 *   **Active Memory Queries:** Agents must explicitly query the Vertex AI RAG tool for design/lighting principles when attempting unfamiliar aesthetic styles.
 
 ## 7. Project implementation
-The project is written in .NET and C#. 
-- Polson.Runtime at src/Polson.Runtime provides global base types and features like logging for all other projects.
-- Polson.MCPServer at src/Polson.MCPServer provides the constrained JavaScript execution engine and MCP server implementation.
-- Polson.Drawing.Svg at src/Polson.Drawing.Svg for the Snap-svg compatible JS API.
-- Polson.Tests.Drawting at tests/Polson.Tests.Drawing for unit tests of the Snap-svg compatible JS API and rendering pipeline.
+* The project is written in .NET and C# and is organized into the following sub-projects: 
+    - Polson.Runtime at src/Polson.Runtime provides global base types and features like logging for all other projects.
+    - Polson.MCPServer at src/Polson.MCPServer provides the constrained JavaScript execution engine and MCP server implementation.
+    - Polson.Drawing.Svg at src/Polson.Drawing.Svg for the Snap-svg compatible JS API.
+    - Polson.Tests.Drawting at tests/Polson.Tests.Drawing for unit tests of the Snap-svg compatible JS API and rendering pipeline.
+* Logging is provided by the Polson.Runtime project and is available to all other projects by either using the static Runtime methods or in a class inheriting from Runtime. Configure the logging system in a static constructor of the entry assembly.
+* Test classes should inherit from Ploson.Tests.TestsRuntime from from the Polson.Runtime project.
 
 ## 8. Project coding instructions:
 - When generating new C# code, please follow the existing coding style.

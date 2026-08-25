@@ -1,15 +1,20 @@
 namespace Polson.MCPServer;
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using Jint;
 using Jint.Native;
 using Jint.Runtime;
+using Jint.Runtime.Interop;
 using Polson.Drawing.Svg;
 
-public class JsDrawingEngine
+public class JsDrawingEngine : Runtime
 {
     #region Constructors
     public JsDrawingEngine(int timeoutSeconds = 15)
@@ -30,99 +35,152 @@ public class JsDrawingEngine
         var result = new DrawingExecutionResult();
         var sw = Stopwatch.StartNew();
         var papers = new List<SnapPaper>();
+        var exitRequested = false;
+        string? exitMessage = null;
 
         try
         {
             var engine = new Engine(options =>
             {
+                options.Host.StringCompilationAllowed = false;
                 options.TimeoutInterval(TimeSpan.FromSeconds(TimeoutSeconds));
                 options.LimitRecursion(100);
                 options.MaxStatements(500_000);
-                options.AllowClr();
             });
 
-            // Console bindings
-            engine.SetValue("__raw_log", new Action<object?>(args =>
+            // Pure .NET Console object
+            var jsConsole = new JSConsole(result.Logs);
+            engine.SetValue("console", jsConsole);
+
+            // Pure .NET Mina animation/easing object
+            var mina = new Mina();
+            engine.SetValue("mina", mina);
+
+            // Global logging & exit helpers
+            engine.SetValue("log", new Action<string>(msg =>
             {
-                var msg = FormatLogArg(args);
                 result.Logs.Add("[LOG] " + msg);
                 Runtime.Info("[JS LOG] {0}", msg);
             }));
-            engine.SetValue("__raw_info", new Action<object?>(args =>
+
+            engine.SetValue("error", new Action<string>(msg =>
             {
-                var msg = FormatLogArg(args);
-                result.Logs.Add("[INFO] " + msg);
-                Runtime.Info("[JS INFO] {0}", msg);
-            }));
-            engine.SetValue("__raw_warn", new Action<object?>(args =>
-            {
-                var msg = FormatLogArg(args);
-                result.Logs.Add("[WARN] " + msg);
-                Runtime.Warn("[JS WARN] {0}", msg);
-            }));
-            engine.SetValue("__raw_error", new Action<object?>(args =>
-            {
-                var msg = FormatLogArg(args);
                 result.Logs.Add("[ERROR] " + msg);
                 Runtime.Error("[JS ERROR] {0}", msg);
             }));
 
-            engine.Execute(@"
-                var console = {
-                    log: function() { __raw_log(Array.prototype.slice.call(arguments)); },
-                    info: function() { __raw_info(Array.prototype.slice.call(arguments)); },
-                    warn: function() { __raw_warn(Array.prototype.slice.call(arguments)); },
-                    error: function() { __raw_error(Array.prototype.slice.call(arguments)); }
-                };
-            ");
-
-            // Snap factory function
-            Func<object?, object?, SnapPaper> snapFactory = (w, h) =>
+            engine.SetValue("exit", new Action<string>(msg =>
             {
+                exitMessage = msg;
+                exitRequested = true;
+                throw new ExitException(msg);
+            }));
+
+            engine.SetValue("table", new ClrFunction(engine, "table", (_, args) =>
+            {
+                var tableStr = RenderTable(args);
+                result.Logs.Add(tableStr);
+                Runtime.Info(tableStr);
+                return JsValue.Undefined;
+            }));
+
+            // Pure .NET Snap function & namespace
+            var snapFunc = new ClrFunction(engine, "Snap", (_, args) =>
+            {
+                var w = args.Length > 0 && !args[0].IsUndefined() ? args[0].ToObject() : null;
+                var h = args.Length > 1 && !args[1].IsUndefined() ? args[1].ToObject() : null;
                 var paper = Snap.Create(w ?? defaultWidth, h ?? defaultHeight);
                 papers.Add(paper);
-                return paper;
-            };
+                return JsValue.FromObject(engine, paper);
+            });
 
-            engine.SetValue("Snap", snapFactory);
+            snapFunc.Set("version", Snap.Version);
 
-            // Snap static helpers
-            engine.Execute(@"
-                Snap.version = '0.5.1';
-                Snap.matrix = function(a, b, c, d, e, f) { return new Polson.Drawing.Svg.SnapMatrix(a, b, c, d, e, f); };
-                Snap.path = {
-                    getTotalLength: function(d) { return Polson.Drawing.Svg.SnapPathMeasurement.GetTotalLength(d); },
-                    getPointAtLength: function(d, len) { return Polson.Drawing.Svg.SnapPathMeasurement.GetPointAtLength(d, len); },
-                    getBBox: function(d) { return Polson.Drawing.Svg.SnapPathMeasurement.GetBBox(d); }
-                };
-                Snap.rgb = function(r, g, b, a) { return Polson.Drawing.Svg.Snap.Rgb(r, g, b, a == null ? 1 : a); };
-                Snap.hsl = function(h, s, l, a) { return Polson.Drawing.Svg.Snap.Hsl(h, s, l, a == null ? 1 : a); };
-                Snap.format = function(template, args) { return Polson.Drawing.Svg.Snap.Format(template, args); };
-                Snap.parse = function(svg) { return Polson.Drawing.Svg.Snap.Parse(svg); };
-                Snap.rad = function(deg) { return Polson.Drawing.Svg.Snap.Rad(deg); };
-                Snap.deg = function(rad) { return Polson.Drawing.Svg.Snap.Deg(rad); };
-                Snap.angle = function(x1, y1, x2, y2) { return Polson.Drawing.Svg.Snap.Angle(x1, y1, x2, y2); };
+            snapFunc.Set("matrix", new ClrFunction(engine, "matrix", (_, args) =>
+            {
+                float ToFloat(JsValue v, float def = 0f) =>
+                    v.IsUndefined() || v.IsNull() ? def : Convert.ToSingle(v.ToObject(), CultureInfo.InvariantCulture);
 
-                var mina = {
-                    linear: function(n) { return n; },
-                    easeout: function(n) { return Math.sin(n * Math.PI / 2); },
-                    easein: function(n) { return 1 - Math.cos(n * Math.PI / 2); },
-                    easeinout: function(n) { return .5 * (1 - Math.cos(Math.PI * n)); },
-                    bounce: function(n) {
-                        var s = 7.5625, p = 2.75, l;
-                        if (n < (1 / p)) { l = s * n * n; }
-                        else if (n < (2 / p)) { n -= (1.5 / p); l = s * n * n + .75; }
-                        else if (n < (2.5 / p)) { n -= (2.25 / p); l = s * n * n + .9375; }
-                        else { n -= (2.625 / p); l = s * n * n + .984375; }
-                        return l;
-                    },
-                    elastic: function(n) {
-                        if (n == 0 || n == 1) return n;
-                        var p = .3, s = p / 4;
-                        return Math.pow(2, -10 * n) * Math.sin((n - s) * (2 * Math.PI) / p) + 1;
-                    }
-                };
-            ");
+                var a = args.Length > 0 ? ToFloat(args[0], 1f) : 1f;
+                var b = args.Length > 1 ? ToFloat(args[1], 0f) : 0f;
+                var c = args.Length > 2 ? ToFloat(args[2], 0f) : 0f;
+                var d = args.Length > 3 ? ToFloat(args[3], 1f) : 1f;
+                var e = args.Length > 4 ? ToFloat(args[4], 0f) : 0f;
+                var f = args.Length > 5 ? ToFloat(args[5], 0f) : 0f;
+                return JsValue.FromObject(engine, new SnapMatrix(a, b, c, d, e, f));
+            }));
+
+            snapFunc.Set("path", JsValue.FromObject(engine, new SnapPathApi()));
+
+            snapFunc.Set("rgb", new ClrFunction(engine, "rgb", (_, args) =>
+            {
+                var r = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToInt32(args[0].ToObject()) : 0;
+                var g = args.Length > 1 && !args[1].IsUndefined() ? Convert.ToInt32(args[1].ToObject()) : 0;
+                var b = args.Length > 2 && !args[2].IsUndefined() ? Convert.ToInt32(args[2].ToObject()) : 0;
+                var a = args.Length > 3 && !args[3].IsUndefined() && !args[3].IsNull()
+                    ? Convert.ToSingle(args[3].ToObject(), CultureInfo.InvariantCulture)
+                    : 1f;
+                return Snap.Rgb(r, g, b, a);
+            }));
+
+            snapFunc.Set("hsl", new ClrFunction(engine, "hsl", (_, args) =>
+            {
+                var h = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToSingle(args[0].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                var s = args.Length > 1 && !args[1].IsUndefined() ? Convert.ToSingle(args[1].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                var l = args.Length > 2 && !args[2].IsUndefined() ? Convert.ToSingle(args[2].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                var a = args.Length > 3 && !args[3].IsUndefined() && !args[3].IsNull()
+                    ? Convert.ToSingle(args[3].ToObject(), CultureInfo.InvariantCulture)
+                    : 1f;
+                return Snap.Hsl(h, s, l, a);
+            }));
+
+            snapFunc.Set("format", new ClrFunction(engine, "format", (_, args) =>
+            {
+                var template = args.Length > 0 ? args[0].ToString() : string.Empty;
+                var rest = args.Skip(1).Select(x => x.ToObject()).ToArray();
+                return Snap.Format(template, rest!);
+            }));
+
+            snapFunc.Set("parse", new ClrFunction(engine, "parse", (_, args) =>
+            {
+                var svg = args.Length > 0 ? args[0].ToString() : string.Empty;
+                var paper = Snap.Parse(svg);
+                papers.Add(paper);
+                return JsValue.FromObject(engine, paper);
+            }));
+
+            snapFunc.Set("rad", new ClrFunction(engine, "rad", (_, args) =>
+            {
+                var deg = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToSingle(args[0].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                return Snap.Rad(deg);
+            }));
+
+            snapFunc.Set("deg", new ClrFunction(engine, "deg", (_, args) =>
+            {
+                var rad = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToSingle(args[0].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                return Snap.Deg(rad);
+            }));
+
+            snapFunc.Set("angle", new ClrFunction(engine, "angle", (_, args) =>
+            {
+                var x1 = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToSingle(args[0].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                var y1 = args.Length > 1 && !args[1].IsUndefined() ? Convert.ToSingle(args[1].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                var x2 = args.Length > 2 && !args[2].IsUndefined() ? Convert.ToSingle(args[2].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                var y2 = args.Length > 3 && !args[3].IsUndefined() ? Convert.ToSingle(args[3].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                return Snap.Angle(x1, y1, x2, y2);
+            }));
+
+            snapFunc.Set("snapTo", new ClrFunction(engine, "snapTo", (_, args) =>
+            {
+                var arr = args.Length > 0 && args[0].ToObject() is object[] objArr
+                    ? objArr.Select(x => Convert.ToSingle(x, CultureInfo.InvariantCulture)).ToArray()
+                    : [];
+                var val = args.Length > 1 && !args[1].IsUndefined() ? Convert.ToSingle(args[1].ToObject(), CultureInfo.InvariantCulture) : 0f;
+                var tol = args.Length > 2 && !args[2].IsUndefined() ? Convert.ToSingle(args[2].ToObject(), CultureInfo.InvariantCulture) : 10f;
+                return Snap.SnapTo(arr, val, tol);
+            }));
+
+            engine.SetValue("Snap", snapFunc);
 
             var evalResult = engine.Evaluate(jsScript);
             sw.Stop();
@@ -157,6 +215,23 @@ public class JsDrawingEngine
                 result.ReturnValue = evalResult.ToObject();
             }
         }
+        catch (Exception ex) when (exitRequested || ex is ExitException || ex.InnerException is ExitException)
+        {
+            sw.Stop();
+            result.ExecutionTimeMs = sw.ElapsedMilliseconds;
+            result.Success = true;
+            var exitText = exitMessage ?? ex.Message;
+            result.Logs.Add("[EXIT] " + exitText);
+            Runtime.Info("[JS EXIT] {0}", exitText);
+            result.ReturnValue = exitText;
+
+            if (papers.Count > 0)
+            {
+                var finalPaper = papers.Last();
+                result.SvgXml = finalPaper.ToString();
+                result.PngBytes = finalPaper.ToPngBytes(defaultWidth, defaultHeight);
+            }
+        }
         catch (JavaScriptException jsex)
         {
             sw.Stop();
@@ -177,21 +252,133 @@ public class JsDrawingEngine
         return result;
     }
 
-    private static string FormatLogArg(object? arg)
+    #region ASCII Table Rendering
+    internal static string RenderTable(JsValue[] args)
     {
-        if (arg is null) return string.Empty;
-        if (arg is object[] arr) return string.Join(" ", arr.Select(a => a?.ToString() ?? "null"));
-        if (arg is System.Collections.IEnumerable enumerable && arg is not string)
+        if (args.Length == 0 || args[0].IsNull() || args[0].IsUndefined()) return "(empty table)";
+
+        var first = args[0].ToObject();
+        var headerNames = args.Length >= 2 && Rows(first) is { } maybe && maybe.All(v => Record(v) is null && Cells(v) is null)
+            ? maybe.Select(CellText).ToArray()
+            : null;
+        var rowsValue = headerNames is not null ? args[1].ToObject() : first;
+
+        if (Rows(rowsValue) is not { } rows)
+            return $"(table: expected an array of rows, got {Describe(rowsValue)})";
+
+        var rowList = rows.ToList();
+        if (rowList.Count == 0) return "(empty table)";
+
+        var columns = headerNames?.ToList() ?? [];
+        if (headerNames is null)
         {
-            var items = new List<string>();
-            foreach (var item in enumerable)
-            {
-                items.Add(item?.ToString() ?? "null");
-            }
-            return string.Join(" ", items);
+            foreach (var row in rowList)
+                foreach (var name in Record(row)?.Keys ?? [])
+                    if (!columns.Contains(name, StringComparer.Ordinal)) columns.Add(name);
+            if (columns.Count == 0) columns.Add("value");
         }
-        return arg.ToString() ?? string.Empty;
+
+        var grid = rowList.Select(row => Record(row) is { } record
+                ? columns.Select(c => CellText(Lookup(record, c))).ToArray<object?>()
+                : Cells(row) is { } cells ? cells.Select(CellText).ToArray<object?>()
+                : [CellText(row)])
+            .ToArray();
+        return RenderAsciiTable(columns.ToArray(), grid);
+
+        static IEnumerable<object?>? Rows(object? v) => v switch
+        {
+            null or string => null,
+            IDictionary<string, object?> => null,
+            IEnumerable e => e.Cast<object?>(),
+            _ => null,
+        };
+
+        static IEnumerable<object?>? Cells(object? v) =>
+            v is not string and not IDictionary<string, object?> and IEnumerable e ? e.Cast<object?>() : null;
+
+        static IReadOnlyDictionary<string, object?>? Record(object? v)
+        {
+            if (v is IDictionary<string, object?> dict) return dict.AsReadOnly();
+            if (v is null or string or IEnumerable || v.GetType().IsPrimitive
+                || v is decimal or DateTime or DateTimeOffset or TimeSpan or Guid or Enum) return null;
+            var map = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var p in v.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (p.GetIndexParameters().Length > 0) continue;
+                try { map[p.Name] = p.GetValue(v); } catch { map[p.Name] = string.Empty; }
+            }
+            return map.Count > 0 ? map : null;
+        }
+
+        static object? Lookup(IReadOnlyDictionary<string, object?> record, string column) =>
+            record.TryGetValue(column, out var v) ? v
+            : record.FirstOrDefault(kv => string.Equals(kv.Key, column, StringComparison.OrdinalIgnoreCase)).Value;
+
+        static string CellText(object? v) => v switch
+        {
+            null => string.Empty,
+            bool b => b ? "true" : "false",
+            string s => s,
+            IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+            IEnumerable e => string.Join(", ", e.Cast<object?>().Take(5).Select(CellText)),
+            _ => v.ToString() ?? string.Empty,
+        };
+
+        static string Describe(object? v) => v is null ? "null" : v is string s ? $"the string \"{s}\"" : v.GetType().Name;
     }
+
+    internal static string RenderAsciiTable(string[]? headers, object?[][]? rows)
+    {
+        headers ??= [];
+        rows ??= [];
+
+        var cols = headers.Length;
+        foreach (var r in rows) cols = Math.Max(cols, r?.Length ?? 0);
+        if (cols == 0) return "(empty table)";
+
+        string[] Header() => Array.ConvertAll(Pad(headers, cols), Cell);
+        var grid = new List<string[]> { Header() };
+        grid.AddRange(rows.Select(r => Array.ConvertAll(Pad(r ?? [], cols), Cell)));
+
+        var widths = new int[cols];
+        foreach (var row in grid)
+            for (var c = 0; c < cols; c++)
+                widths[c] = Math.Max(widths[c], row[c].Length);
+
+        var separator = "+" + string.Join("+", widths.Select(w => new string('-', w + 2))) + "+";
+        string Line(string[] row) =>
+            "| " + string.Join(" | ", row.Select((c, i) => c.PadRight(widths[i]))) + " |";
+
+        var sb = new StringBuilder();
+        sb.AppendLine(separator);
+        sb.AppendLine(Line(grid[0]));
+        sb.AppendLine(separator);
+        for (var i = 1; i < grid.Count; i++) sb.AppendLine(Line(grid[i]));
+        sb.Append(separator);
+        return sb.ToString();
+
+        static object?[] Pad(object?[] row, int cols)
+        {
+            if (row.Length == cols) return row;
+            var padded = new object?[cols];
+            Array.Copy(row, padded, Math.Min(row.Length, cols));
+            return padded;
+        }
+
+        static string Cell(object? v)
+        {
+            var s = v switch
+            {
+                null => string.Empty,
+                bool b => b ? "true" : "false",
+                string str => str,
+                IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+                _ => v.ToString() ?? string.Empty,
+            };
+            return s.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
+        }
+    }
+    #endregion
     #endregion
 }
 

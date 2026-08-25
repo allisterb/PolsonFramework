@@ -1110,5 +1110,381 @@ public class ConstructiveDrawingToolkit
         };
     }
     #endregion
+
+    #region Volumetric Lighting & Cast Shadows
+    public Dictionary<string, object?> projectCastShadow(object lightSource, float groundY, object objectVerticesOrBounds, object? options = null)
+    {
+        var light = ExtractPoint(lightSource);
+        var opt = options as IDictionary;
+        var shadowColor = opt?["shadowColor"]?.ToString() ?? "#1c2733";
+        var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.65f;
+        var penumbraBlur = opt != null && opt.Contains("penumbraBlur") ? Convert.ToSingle(opt["penumbraBlur"], CultureInfo.InvariantCulture) : 6f;
+
+        var shadowPts = new List<Dictionary<string, object?>>();
+        var basePts = new List<Dictionary<string, object?>>();
+
+        if (objectVerticesOrBounds is IDictionary b && b.Contains("width") && b.Contains("height"))
+        {
+            var bx = Convert.ToSingle(b["x"], CultureInfo.InvariantCulture);
+            var by = Convert.ToSingle(b["y"], CultureInfo.InvariantCulture);
+            var bw = Convert.ToSingle(b["width"], CultureInfo.InvariantCulture);
+            var bh = Convert.ToSingle(b["height"], CultureInfo.InvariantCulture);
+
+            var topL = new Point2D(bx, by);
+            var topR = new Point2D(bx + bw, by);
+            var botL = new Point2D(bx, groundY);
+            var botR = new Point2D(bx + bw, groundY);
+
+            Point2D Project(Point2D top)
+            {
+                var dy = top.Y - light.Y;
+                if (MathF.Abs(dy) < 0.001f) dy = 0.001f;
+                var t = (groundY - light.Y) / dy;
+                return new Point2D(light.X + t * (top.X - light.X), groundY);
+            }
+
+            var sL = Project(topL);
+            var sR = Project(topR);
+
+            shadowPts.Add(ToDict(botL));
+            shadowPts.Add(ToDict(sL));
+            shadowPts.Add(ToDict(sR));
+            shadowPts.Add(ToDict(botR));
+        }
+        else if (objectVerticesOrBounds is IList list)
+        {
+            foreach (var item in list)
+            {
+                var pt = ExtractPoint(item);
+                var dy = pt.Y - light.Y;
+                if (MathF.Abs(dy) < 0.001f) dy = 0.001f;
+                var t = (groundY - light.Y) / dy;
+                var s = new Point2D(light.X + t * (pt.X - light.X), groundY);
+                shadowPts.Add(ToDict(s));
+            }
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["shadowPolygon"] = shadowPts,
+            ["groundY"] = groundY,
+            ["shadowColor"] = shadowColor,
+            ["opacity"] = opacity,
+            ["penumbraBlur"] = penumbraBlur
+        };
+    }
+
+    public void drawCastShadow(CanvasRenderingContext2D ctx, object shadowPolygonOrResult, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        IList? pts = null;
+        var shadowColor = "#1c2733";
+        var opacity = 0.65f;
+        var blur = 6f;
+
+        if (shadowPolygonOrResult is IDictionary res && res.Contains("shadowPolygon"))
+        {
+            pts = res["shadowPolygon"] as IList;
+            if (res.Contains("shadowColor")) shadowColor = res["shadowColor"]?.ToString() ?? shadowColor;
+            if (res.Contains("opacity")) opacity = Convert.ToSingle(res["opacity"], CultureInfo.InvariantCulture);
+            if (res.Contains("penumbraBlur")) blur = Convert.ToSingle(res["penumbraBlur"], CultureInfo.InvariantCulture);
+        }
+        else if (shadowPolygonOrResult is IList list)
+        {
+            pts = list;
+        }
+
+        var opt = options as IDictionary;
+        if (opt != null)
+        {
+            if (opt.Contains("shadowColor")) shadowColor = opt["shadowColor"]?.ToString() ?? shadowColor;
+            if (opt.Contains("opacity")) opacity = Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture);
+            if (opt.Contains("blur")) blur = Convert.ToSingle(opt["blur"], CultureInfo.InvariantCulture);
+        }
+
+        if (pts == null || pts.Count < 3) return;
+
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        ctx.fillStyle = shadowColor;
+        if (blur > 0.5f)
+        {
+            ctx.shadowColor = shadowColor;
+            ctx.shadowBlur = blur;
+        }
+
+        ctx.beginPath();
+        var first = ExtractPoint(pts[0]);
+        ctx.moveTo(first.X, first.Y);
+        for (var i = 1; i < pts.Count; i++)
+        {
+            var p = ExtractPoint(pts[i]);
+            ctx.lineTo(p.X, p.Y);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    public void renderVolumetricSphere(CanvasRenderingContext2D ctx, float cx, float cy, float radius, object? lightDirection = null, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        var opt = options as IDictionary;
+        var baseColor = opt?["baseColor"]?.ToString() ?? "#c4a382";
+        var shadowColor = opt?["shadowColor"]?.ToString() ?? "#3a281e";
+        var highlightColor = opt?["highlightColor"]?.ToString() ?? "#fff6e8";
+        var bounceColor = opt?["bounceColor"]?.ToString() ?? "#556e8c";
+        var drawGroundShadow = opt == null || !opt.Contains("drawGroundShadow") || Convert.ToBoolean(opt["drawGroundShadow"]);
+
+        var lDir = ExtractPoint(lightDirection, -0.6f, -0.6f);
+        var len = MathF.Sqrt(lDir.X * lDir.X + lDir.Y * lDir.Y);
+        if (len < 0.001f) len = 1f;
+        var lx = lDir.X / len;
+        var ly = lDir.Y / len;
+
+        ctx.save();
+
+        // 1. Ground Cast Shadow (if enabled)
+        if (drawGroundShadow)
+        {
+            var groundY = cy + radius + 8f;
+            var shadowCx = cx - lx * (radius * 0.7f);
+            var shadowRx = radius * 1.15f;
+            var shadowRy = radius * 0.28f;
+
+            ctx.save();
+            ctx.fillStyle = "#1c140e";
+            ctx.globalAlpha = 0.55f;
+            ctx.shadowColor = "#1c140e";
+            ctx.shadowBlur = 8f;
+            ctx.beginPath();
+            ctx.ellipse(shadowCx, groundY, shadowRx, shadowRy, 0f, 0f, MathF.PI * 2f);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 2. Base Sphere Fill & 3D Lighting Radial Gradient
+        var lightSpotX = cx + lx * (radius * 0.45f);
+        var lightSpotY = cy + ly * (radius * 0.45f);
+
+        var grad = ctx.createRadialGradient(lightSpotX, lightSpotY, radius * 0.1f, cx, cy, radius * 1.05f);
+        grad.addColorStop(0.0f, highlightColor);
+        grad.addColorStop(0.35f, baseColor);
+        grad.addColorStop(0.75f, shadowColor);
+        grad.addColorStop(1.0f, shadowColor);
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0f, MathF.PI * 2f);
+        ctx.fill();
+
+        // 3. Ambient Bounce / Reflected Light on shadow side
+        var bounceSpotX = cx - lx * (radius * 0.65f);
+        var bounceSpotY = cy - ly * (radius * 0.65f);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0f, MathF.PI * 2f);
+        ctx.clip();
+
+        var bounceGrad = ctx.createRadialGradient(bounceSpotX, bounceSpotY, radius * 0.05f, bounceSpotX, bounceSpotY, radius * 0.75f);
+        bounceGrad.addColorStop(0.0f, bounceColor);
+        bounceGrad.addColorStop(1.0f, "rgba(0,0,0,0)");
+
+        ctx.globalAlpha = 0.45f;
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = bounceGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0f, MathF.PI * 2f);
+        ctx.fill();
+        ctx.restore();
+
+        // 4. Specular Highlight Glint
+        ctx.save();
+        ctx.fillStyle = "#ffffff";
+        ctx.globalAlpha = 0.85f;
+        ctx.beginPath();
+        ctx.ellipse(lightSpotX - 2f, lightSpotY - 2f, radius * 0.18f, radius * 0.12f, -0.3f, 0f, MathF.PI * 2f);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.restore();
+    }
+
+    public void renderVolumetricCylinder(CanvasRenderingContext2D ctx, float x, float y, float width, float height, object? lightDirection = null, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        var opt = options as IDictionary;
+        var baseColor = opt?["baseColor"]?.ToString() ?? "#c4a382";
+        var shadowColor = opt?["shadowColor"]?.ToString() ?? "#3a281e";
+        var highlightColor = opt?["highlightColor"]?.ToString() ?? "#fff6e8";
+        var bounceColor = opt?["bounceColor"]?.ToString() ?? "#556e8c";
+
+        var ry = width * 0.22f;
+        var rx = width * 0.5f;
+        var cx = x + rx;
+
+        ctx.save();
+
+        // 1. Cylinder Body Longitudinal Gradient
+        var grad = ctx.createLinearGradient(x, y, x + width, y);
+        grad.addColorStop(0.0f, shadowColor);
+        grad.addColorStop(0.25f, highlightColor);
+        grad.addColorStop(0.55f, baseColor);
+        grad.addColorStop(0.85f, shadowColor);
+        grad.addColorStop(1.0f, bounceColor);
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(x, y + ry);
+        ctx.lineTo(x, y + height - ry);
+        ctx.ellipse(cx, y + height - ry, rx, ry, 0f, 0f, MathF.PI);
+        ctx.lineTo(x + width, y + ry);
+        ctx.ellipse(cx, y + ry, rx, ry, 0f, 0f, MathF.PI);
+        ctx.closePath();
+        ctx.fill();
+
+        // 2. Top Elliptical Cap
+        var topGrad = ctx.createRadialGradient(cx, y + ry * 0.6f, rx * 0.1f, cx, y + ry, rx);
+        topGrad.addColorStop(0.0f, highlightColor);
+        topGrad.addColorStop(1.0f, baseColor);
+
+        ctx.fillStyle = topGrad;
+        ctx.beginPath();
+        ctx.ellipse(cx, y + ry, rx, ry, 0f, 0f, MathF.PI * 2f);
+        ctx.fill();
+
+        // Top cap stroke
+        ctx.strokeStyle = shadowColor;
+        ctx.lineWidth = 1.5f;
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    public Dictionary<string, object?> createThreePointLighting(object? options = null)
+    {
+        var opt = options as IDictionary;
+        var keyColor = opt?["keyColor"]?.ToString() ?? "#fff3d6";
+        var fillColor = opt?["fillColor"]?.ToString() ?? "#8cb5db";
+        var rimColor = opt?["rimColor"]?.ToString() ?? "#ffffff";
+
+        var keyAngleDeg = opt != null && opt.Contains("keyAngleDeg") ? Convert.ToSingle(opt["keyAngleDeg"], CultureInfo.InvariantCulture) : -45f;
+        var fillAngleDeg = opt != null && opt.Contains("fillAngleDeg") ? Convert.ToSingle(opt["fillAngleDeg"], CultureInfo.InvariantCulture) : 60f;
+        var rimAngleDeg = opt != null && opt.Contains("rimAngleDeg") ? Convert.ToSingle(opt["rimAngleDeg"], CultureInfo.InvariantCulture) : 135f;
+
+        return new Dictionary<string, object?>
+        {
+            ["keyLight"] = new Dictionary<string, object?> { ["angleDeg"] = keyAngleDeg, ["color"] = keyColor, ["intensity"] = 0.75f },
+            ["fillLight"] = new Dictionary<string, object?> { ["angleDeg"] = fillAngleDeg, ["color"] = fillColor, ["intensity"] = 0.30f },
+            ["rimLight"] = new Dictionary<string, object?> { ["angleDeg"] = rimAngleDeg, ["color"] = rimColor, ["intensity"] = 0.90f }
+        };
+    }
+
+    public void drawRimLight(CanvasRenderingContext2D ctx, object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        var color = rimColor?.ToString() ?? "#ffffff";
+        var rad = (lightAngleDeg * MathF.PI) / 180f;
+        var nx = MathF.Cos(rad);
+        var ny = MathF.Sin(rad);
+
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = thickness;
+        ctx.lineCap = "round";
+
+        if (boundsOrPts is IDictionary b && b.Contains("x") && b.Contains("width"))
+        {
+            var bx = Convert.ToSingle(b["x"], CultureInfo.InvariantCulture);
+            var by = Convert.ToSingle(b["y"], CultureInfo.InvariantCulture);
+            var bw = Convert.ToSingle(b["width"], CultureInfo.InvariantCulture);
+            var bh = Convert.ToSingle(b["height"], CultureInfo.InvariantCulture);
+
+            ctx.beginPath();
+            if (nx > 0)
+            {
+                ctx.moveTo(bx + bw, by + 4f);
+                ctx.lineTo(bx + bw, by + bh - 4f);
+            }
+            else
+            {
+                ctx.moveTo(bx, by + 4f);
+                ctx.lineTo(bx, by + bh - 4f);
+            }
+            ctx.stroke();
+        }
+        else if (boundsOrPts is IList pts && pts.Count >= 2)
+        {
+            ctx.beginPath();
+            var first = ExtractPoint(pts[0]);
+            ctx.moveTo(first.X + nx * 2f, first.Y + ny * 2f);
+            for (var i = 1; i < pts.Count; i++)
+            {
+                var p = ExtractPoint(pts[i]);
+                ctx.lineTo(p.X + nx * 2f, p.Y + ny * 2f);
+            }
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    public SKShader createVolumetricSphereShader(object? options = null)
+    {
+        var opt = options as IDictionary;
+        var lightColor = opt?["lightColor"]?.ToString() ?? "#fff6e8";
+        var baseColor = opt?["baseColor"]?.ToString() ?? "#c4a382";
+        var shadowColor = opt?["shadowColor"]?.ToString() ?? "#3a281e";
+
+        var lc = SkiaColorParser.Parse(lightColor);
+        var bc = SkiaColorParser.Parse(baseColor);
+        var sc = SkiaColorParser.Parse(shadowColor);
+
+        const string sksl = @"
+            uniform float2 u_center;
+            uniform float u_radius;
+            uniform float3 u_lightDir;
+            uniform float4 u_lightColor;
+            uniform float4 u_baseColor;
+            uniform float4 u_shadowColor;
+
+            half4 main(float2 coord) {
+                float2 d = (coord - u_center) / u_radius;
+                float distSq = dot(d, d);
+                if (distSq > 1.0) {
+                    return half4(0.0);
+                }
+                float nz = sqrt(1.0 - distSq);
+                float3 normal = float3(d.x, d.y, nz);
+
+                float diff = max(0.0, dot(normal, normalize(u_lightDir)));
+                float4 litColor = mix(u_shadowColor, u_baseColor, diff);
+
+                // Specular glint
+                float3 halfVec = normalize(u_lightDir + float3(0.0, 0.0, 1.0));
+                float spec = pow(max(0.0, dot(normal, halfVec)), 24.0);
+                litColor += u_lightColor * spec * 0.8;
+
+                return half4(litColor);
+            }
+        ";
+
+        var uniforms = new Dictionary<string, object>
+        {
+            ["u_center"] = new[] { 400f, 300f },
+            ["u_radius"] = 150f,
+            ["u_lightDir"] = new[] { 0.577f, -0.577f, 0.577f },
+            ["u_lightColor"] = new[] { lc.Red / 255f, lc.Green / 255f, lc.Blue / 255f, 1f },
+            ["u_baseColor"] = new[] { bc.Red / 255f, bc.Green / 255f, bc.Blue / 255f, 1f },
+            ["u_shadowColor"] = new[] { sc.Red / 255f, sc.Green / 255f, sc.Blue / 255f, 1f }
+        };
+
+        var skiaShaderApi = new SkiaShaderApi();
+        return skiaShaderApi.sksl(sksl, uniforms);
+    }
+    #endregion
 }
+
 

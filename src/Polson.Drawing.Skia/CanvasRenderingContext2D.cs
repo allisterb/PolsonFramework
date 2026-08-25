@@ -762,6 +762,21 @@ public class CanvasRenderingContext2D
 
     public void drawPerspectiveCylinder(object grid, float anchorX, float anchorY, float radius, float height, object? options = null) =>
         _toolkit.drawPerspectiveCylinder(this, grid, anchorX, anchorY, radius, height, options);
+
+    public void drawCastShadow(object lightSource, float groundY, object objectVerticesOrBounds, object? options = null)
+    {
+        var shadow = _toolkit.projectCastShadow(lightSource, groundY, objectVerticesOrBounds, options);
+        _toolkit.drawCastShadow(this, shadow, options);
+    }
+
+    public void renderVolumetricSphere(float cx, float cy, float radius, object? lightDirection = null, object? options = null) =>
+        _toolkit.renderVolumetricSphere(this, cx, cy, radius, lightDirection, options);
+
+    public void renderVolumetricCylinder(float x, float y, float width, float height, object? lightDirection = null, object? options = null) =>
+        _toolkit.renderVolumetricCylinder(this, x, y, width, height, lightDirection, options);
+
+    public void drawRimLight(object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f) =>
+        _toolkit.drawRimLight(this, boundsOrPts, lightAngleDeg, rimColor, thickness);
     #endregion
     #endregion
 

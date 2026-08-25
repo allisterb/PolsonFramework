@@ -379,5 +379,124 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.NotNull(result.ImageBytes);
         Assert.True(result.ImageBytes.Length > 1000);
     }
+
+    [Fact]
+    public void TestCastShadowProjectionAndDrawing()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var light = new Dictionary<string, object?> { ["x"] = 150f, ["y"] = 100f };
+        var boxBounds = new Dictionary<string, object?> { ["x"] = 350f, ["y"] = 300f, ["width"] = 100f, ["height"] = 150f };
+
+        var shadow = toolkit.projectCastShadow(light, 450f, boxBounds);
+        Assert.NotNull(shadow);
+        var poly = (IList<Dictionary<string, object?>>)shadow["shadowPolygon"]!;
+        Assert.Equal(4, poly.Count);
+
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+        toolkit.drawCastShadow(ctx, shadow);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestVolumetricSphereRendering()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+
+        toolkit.renderVolumetricSphere(ctx, 400f, 300f, 120f, new Dictionary<string, object?> { ["x"] = -0.6f, ["y"] = -0.6f });
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestVolumetricCylinderRendering()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+
+        toolkit.renderVolumetricCylinder(ctx, 300f, 200f, 150f, 250f);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestThreePointLightingSetupAndRimLight()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var lighting = toolkit.createThreePointLighting();
+        Assert.NotNull(lighting);
+        Assert.True(lighting.ContainsKey("keyLight"));
+        Assert.True(lighting.ContainsKey("fillLight"));
+        Assert.True(lighting.ContainsKey("rimLight"));
+
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+        toolkit.drawRimLight(ctx, new Dictionary<string, object?> { ["x"] = 300f, ["y"] = 200f, ["width"] = 150f, ["height"] = 200f }, 135f, "#ffffff", 3f);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestVolumetricSphereShaderCompilation()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var shader = toolkit.createVolumetricSphereShader();
+        Assert.NotNull(shader);
+
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+        ctx.fillStyle = shader;
+        ctx.fillRect(0, 0, 800, 600);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestJavaScriptEngineLightingIntegration()
+    {
+        var engine = new JsDrawingEngine();
+        const string script = @"
+            const canvas = createCanvas(800, 600);
+            const ctx = canvas.getContext('2d');
+
+            // 1. Cast shadow
+            ctx.drawCastShadow({ x: 120, y: 80 }, 500, { x: 300, y: 350, width: 120, height: 150 }, { opacity: 0.6 });
+
+            // 2. Volumetric sphere with ground bounce & highlight
+            ctx.renderVolumetricSphere(360, 420, 80, { x: -0.6, y: -0.6 }, {
+                baseColor: '#c89a74',
+                shadowColor: '#3c2415',
+                highlightColor: '#fff5e6',
+                bounceColor: '#6384a6'
+            });
+
+            // 3. Volumetric cylinder
+            ctx.renderVolumetricCylinder(520, 320, 90, 180);
+
+            // 4. Rim light kicker
+            ctx.drawRimLight({ x: 520, y: 320, width: 90, height: 180 }, 135, '#ffffff', 3.0);
+
+            canvas;
+        ";
+
+        var result = engine.Execute(script);
+        Assert.NotNull(result);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 1000);
+    }
     #endregion
 }

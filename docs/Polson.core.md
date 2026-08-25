@@ -428,5 +428,15 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.subdividePerspectiveQuad(quadObj: Point[], uCount: number, vCount: number)` → `Point[][][]` — Subdivides a 4-point quadrilateral into foreshortened perspective cells using projective interpolation.
 - `Drawing.verifyPerspectiveConvergence(linesList: Point[][], expectedVp: Point, maxToleranceDeg?: number)` → `{ passed: boolean, maxAngularErrorDeg: number, message: string }` — Tests whether drawn lines correctly converge to the vanishing point.
 
+## Volumetric Lighting & Cast Shadows
+- `Drawing.projectCastShadow(lightSource: Point, groundY: number, objectVerticesOrBounds: Point[] | Rect, options?: { shadowColor?: string, opacity?: number, penumbraBlur?: number })` → `object` — Projects ground shadow footprint polygon with umbra and penumbra falloff.
+- `Drawing.drawCastShadow(ctx: CanvasRenderingContext2D, shadowPolygonOrResult: object, options?: { shadowColor?: string, opacity?: number, blur?: number })` — Renders grounded cast shadow with contact occlusion crevice.
+- `Drawing.renderVolumetricSphere(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number, lightDirection?: Point, options?: { baseColor?: string, shadowColor?: string, highlightColor?: string, bounceColor?: string, drawGroundShadow?: boolean })` — Renders 6-zone tonal sphere (highlight, halftone, core shadow, ambient bounce, occlusion, and ground shadow).
+- `Drawing.renderVolumetricCylinder(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, lightDirection?: Point, options?: { baseColor?: string, shadowColor?: string, highlightColor?: string, bounceColor?: string })` — Renders cylindrical volume with longitudinal core shadow and ambient bounce.
+- `Drawing.createThreePointLighting(options?: { keyAngleDeg?: number, fillAngleDeg?: number, rimAngleDeg?: number, keyColor?: string, fillColor?: string, rimColor?: string })` → `object` — Three-point studio lighting setup (Key, Fill, Rim/Kicker).
+- `Drawing.drawRimLight(ctx: CanvasRenderingContext2D, boundsOrPts: Rect | Point[], lightAngleDeg: number, rimColor?: string, thickness?: number)` — Renders high-contrast silhouette rim lighting.
+- `Drawing.createVolumetricSphereShader(options?: { lightColor?: string, baseColor?: string, shadowColor?: string })` → `SKShader` — SkSL procedural 3D sphere lighting shader.
+
+
 
 

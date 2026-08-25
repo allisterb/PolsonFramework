@@ -121,10 +121,15 @@ All agent logic, coordination protocols, and artifact management must adhere to 
 ### Milestone 2: 2D Canvas & Post-Processing Extensions
 *   **Tasks:** Expose `SkiaSharp` canvas drawing APIs and `Magick.NET` post-processing filters to the Jint sandbox environment for hybrid vector/raster workflows.
 
-### Milestone 3: Python Antigravity SDK Orchestration & PubSub Bus
+### Milestone 3: MCP server and CLI launcher
+* **Tasks:** 
+    1. Build the MCP server and CLI launcher to run the .NET MCP server
+    2. Write an agent-tester harness to allow the MCP server and drawing APIs to be used by an agent.
+ 
+### Milestone 4: Python Antigravity SDK Orchestration & PubSub Bus
 *   **Tasks:** Build the Python orchestrator, lifecycle hooks, trigger handlers for "peeking", and the local PubSub message bus.
-
-### Milestone 4: Cloud RAG Engine, Memory Bank & Multi-Agent Git Setup
+        
+### Milestone 5: Cloud RAG Engine, Memory Bank & Multi-Agent Git Setup
 *   **Tasks:** Integrate Vertex AI RAG tools, Agent Platform Memory Bank, and automate private Git fork initialization and PR handling for the Facilitator agent.
 
 ## 5. Agent Roles & Behaviors

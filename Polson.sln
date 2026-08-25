@@ -9,6 +9,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Docs", "Docs", "{02EA681E-C
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
 		GEMINI.md = GEMINI.md
+		LICENSE = LICENSE
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Base", "Base", "{1F4431D7-4908-4E3F-B7B5-7F049A132EA8}"
@@ -26,6 +27,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Tests.Drawing", "tests\Polson.Tests.Drawing\Polson.Tests.Drawing.csproj", "{04F0A7A5-F5AD-4B59-95C4-4568CE8B4BFD}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Drawing.Skia", "src\Polson.Drawing.Skia\Polson.Drawing.Skia.csproj", "{1C8C98AD-7EBE-44D6-3365-B481C40AB7A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.CLI", "src\Polson.CLI\Polson.CLI.csproj", "{8EBED04F-5231-478A-9612-C2D47A15AFDF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Tests.MCPServer", "tests\Polson.Tests.MCPServer\Polson.Tests.MCPServer.csproj", "{0A16DFAA-6F37-4E7E-B148-13DEC325396A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -53,6 +58,14 @@ Global
 		{1C8C98AD-7EBE-44D6-3365-B481C40AB7A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1C8C98AD-7EBE-44D6-3365-B481C40AB7A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1C8C98AD-7EBE-44D6-3365-B481C40AB7A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8EBED04F-5231-478A-9612-C2D47A15AFDF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8EBED04F-5231-478A-9612-C2D47A15AFDF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8EBED04F-5231-478A-9612-C2D47A15AFDF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8EBED04F-5231-478A-9612-C2D47A15AFDF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0A16DFAA-6F37-4E7E-B148-13DEC325396A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0A16DFAA-6F37-4E7E-B148-13DEC325396A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0A16DFAA-6F37-4E7E-B148-13DEC325396A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0A16DFAA-6F37-4E7E-B148-13DEC325396A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -63,6 +76,8 @@ Global
 		{A2527E29-984A-4465-B473-8F820FFD772D} = {A4143B36-6E75-4308-B2B6-4DCE55992386}
 		{04F0A7A5-F5AD-4B59-95C4-4568CE8B4BFD} = {8EC751EC-0FE7-4024-8D29-3E77BCBFC55F}
 		{1C8C98AD-7EBE-44D6-3365-B481C40AB7A1} = {197F8A82-3208-431C-A64B-994C3F6AED6B}
+		{8EBED04F-5231-478A-9612-C2D47A15AFDF} = {A4143B36-6E75-4308-B2B6-4DCE55992386}
+		{0A16DFAA-6F37-4E7E-B148-13DEC325396A} = {8EC751EC-0FE7-4024-8D29-3E77BCBFC55F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {2DF37766-8B92-4747-B457-BA77EC32B15D}

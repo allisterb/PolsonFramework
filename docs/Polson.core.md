@@ -10,8 +10,8 @@ The **JSON schema for every parameter and return model type** named below lives 
 
 Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianros/jint) runtime supporting **ECMAScript 2025** (arrow functions, `let`/`const`, destructuring, template literals, optional chaining `?.`, nullish coalescing `??`, `for...of`, spread `...`, `Array`/`Map`/`Set`/`JSON`, etc.). Tailor generated code to modern JavaScript idioms.
 
-- **Sandbox Security:** `eval` and `new Function` are strictly disabled (`Host.StringCompilationAllowed = false`). Arbitrary CLR types and reflection are prohibited. Scripts can only interact with the explicit Polson drawing APIs.
-- **Execution Limits:** Scripts are enforced with statement limits (500,000 statements), recursion depth limits (100 frames), and execution timeouts (15 seconds).
+- **Sandbox Security:** `eval` and `new Function` are strictly disabled (`Host.StringCompilationAllowed = false`). Arbitrary external types and reflection are prohibited. Scripts can only interact with the explicit Polson drawing APIs.
+- **Execution Limits:** Scripts are enforced with statement limits (500,000 statements), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
 - **Return Value & Visual Rendering:**
   - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the output headlessly to PNG bytes (`result.PngBytes`) and SVG XML (for vector trees).
   - If a script creates one or more canvases or Snap papers without explicitly returning them, the last created canvas/paper is rendered automatically.
@@ -25,7 +25,7 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 The following global functions and objects are injected directly into the script scope:
 
 ### `console`
-The pure .NET logging console:
+The logging console:
 - `console.log(...args: any[])` — Record an informational line.
 - `console.info(...args: any[])` — Alias for `console.log`.
 - `console.warn(...args: any[])` — Record a warning log line.
@@ -50,7 +50,7 @@ Renders an array of records or scalar values as an aligned ASCII grid in the log
 - `table(values)`: Formats an array of primitive values under a single column.
 
 ### `mina`
-Pure .NET animation and easing curve generators compatible with Snap.svg:
+Animation and easing curve generators compatible with Snap.svg:
 - `mina.linear(n: number)` → `number`
 - `mina.easein(n: number)` → `number`
 - `mina.easeout(n: number)` → `number`
@@ -65,7 +65,7 @@ Pure .NET animation and easing curve generators compatible with Snap.svg:
 
 # Snap
 
-Snap.svg-compatible retained-mode vector graphics API. Backed by `Svg.Skia` and `SvgElement` trees.
+Snap.svg-compatible retained-mode vector graphics API.
 
 ## `Snap` Namespace & Factory
 
@@ -145,7 +145,7 @@ Represents any SVG node in the document hierarchy:
 
 # Canvas2D
 
-Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D, backed by SkiaSharp (`SKBitmap`, `SKCanvas`, `SKFont`).
+Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 
 ## Canvas Factory
 
@@ -197,8 +197,8 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D, backed by S
 - `ctx.resetTransform()` — Resets transform to identity.
 
 ### Styling & Shaders
-- `ctx.fillStyle` — Fill style: CSS color string (`"#ff0000"`, `"rgba(0,0,0,0.5)"`, `"hsl(200, 50%, 50%)"`), `CanvasGradient`, `CanvasPattern`, or `SKShader`.
-- `ctx.strokeStyle` — Stroke style: color string, `CanvasGradient`, `CanvasPattern`, or `SKShader`.
+- `ctx.fillStyle` — Fill style: CSS color string (`"#ff0000"`, `"rgba(0,0,0,0.5)"`, `"hsl(200, 50%, 50%)"`), `CanvasGradient`, `CanvasPattern`, or shader.
+- `ctx.strokeStyle` — Stroke style: color string, `CanvasGradient`, `CanvasPattern`, or shader.
 - `ctx.lineWidth` — Stroke thickness in pixels (default 1).
 - `ctx.lineCap` — Cap style: `"butt"`, `"round"`, `"square"`.
 - `ctx.lineJoin` — Join style: `"miter"`, `"round"`, `"bevel"`.
@@ -208,9 +208,9 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D, backed by S
 - `ctx.shadowColor` — Drop shadow color string.
 - `ctx.shadowBlur` — Gaussian blur sigma for shadows.
 - `ctx.shadowOffsetX` / `ctx.shadowOffsetY` — Horizontal and vertical shadow offset.
-- `ctx.filter` — Direct `SKImageFilter` (e.g. `Skia.ImageFilter.blur(5, 5)`).
-- `ctx.colorFilter` — Direct `SKColorFilter` (e.g. `Skia.ColorFilter.colorMatrix(...)`).
-- `ctx.pathEffect` — Direct `SKPathEffect` (e.g. `Skia.PathEffect.corner(10)` or `Skia.PathEffect.dash([10, 5])`).
+- `ctx.filter` — Image filter (e.g. `Skia.ImageFilter.blur(5, 5)`).
+- `ctx.colorFilter` — Color filter (e.g. `Skia.ColorFilter.colorMatrix(...)`).
+- `ctx.pathEffect` — Path effect (e.g. `Skia.PathEffect.corner(10)` or `Skia.PathEffect.dash([10, 5])`).
 
 ### Typography
 - `ctx.font` — Font specification string: e.g. `"bold 24px Arial"`, `"italic 16px 'Times New Roman'"`.
@@ -242,7 +242,7 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D, backed by S
 
 # Skia
 
-Skia native procedural shaders, image filters, color matrix transforms, path effects, and bitmap manipulation.
+Skia procedural shaders, image filters, color matrix transforms, path effects, and bitmap manipulation.
 
 ## `Skia.Shader`
 
@@ -256,7 +256,7 @@ Skia native procedural shaders, image filters, color matrix transforms, path eff
 
 ## `Skia.ImageFilter`
 
-- `Skia.ImageFilter.blur(sigmaX: number, sigmaY: number)` → `SKImageFilter` — Native Gaussian blur.
+- `Skia.ImageFilter.blur(sigmaX: number, sigmaY: number)` → `SKImageFilter` — Gaussian blur.
 - `Skia.ImageFilter.dropShadow(dx: number, dy: number, sigmaX: number, sigmaY: number, color: string)` → `SKImageFilter` — Drop shadow image filter.
 - `Skia.ImageFilter.dilate(radiusX: number, radiusY: number)` → `SKImageFilter` — Morphological dilation.
 - `Skia.ImageFilter.erode(radiusX: number, radiusY: number)` → `SKImageFilter` — Morphological erosion.
@@ -296,7 +296,7 @@ Skia native procedural shaders, image filters, color matrix transforms, path eff
 - `bitmap.toPngBytes(quality?: number)` → `byte[]` — Encodes to PNG byte array.
 - `bitmap.toDataUrl()` → `string` — Returns `data:image/png;base64,...` URL.
 - `bitmap.clone()` → `SkiaBitmapWrapper` — Deep clones bitmap.
-- `bitmap.dispose()` — Releases native Skia memory.
+- `bitmap.dispose()` — Releases native bitmap memory.
 
 ## `ImageData`
 

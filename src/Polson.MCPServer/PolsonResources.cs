@@ -32,11 +32,18 @@ public class PolsonResources
         using var stream = assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Failed to open stream for '{resourceName}'");
         using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
+        var content = reader.ReadToEnd();
+
+        if (name.Contains("Polson.core.md", StringComparison.OrdinalIgnoreCase))
+        {
+            content = content.Replace("{{SCRIPT_TIMEOUT_SECONDS}}", JsDrawingEngine.ScriptTimeoutSeconds.ToString());
+        }
+
+        return content;
     }
 
     public static string Index(SdkDocSet set) =>
-        Memo($"{set.Label}/index", () => SdkDocs.BuildIndex(set));
+        Memo($"{set.Label}/index/{JsDrawingEngine.ScriptTimeoutSeconds}", () => SdkDocs.BuildIndex(set));
 
     public static string SchemaSignpost(SdkDocSet set) =>
         Memo($"{set.Label}/schema-signpost", () => SdkDocs.BuildSchemaSignpost(set));

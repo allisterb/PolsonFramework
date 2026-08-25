@@ -21,6 +21,30 @@ public class DocResourcesTests : TestsRuntime
         Assert.True(schema.Length > 0);
         Assert.Contains("DrawingExecutionResult", schema);
     }
+
+    [Fact]
+    public void TestNoImplementationMentionsInDocs()
+    {
+        var core = PolsonResources.Docs.Core();
+        Assert.DoesNotContain(".NET", core, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SkiaSharp", core, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Svg.Skia", core, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TestDynamicScriptTimeoutInDocs()
+    {
+        JsDrawingEngine.ScriptTimeoutSeconds = 30;
+        var core30 = PolsonResources.Docs.Core();
+        Assert.Contains("30 seconds", core30);
+
+        JsDrawingEngine.ScriptTimeoutSeconds = 45;
+        var core45 = PolsonResources.Docs.Core();
+        Assert.Contains("45 seconds", core45);
+
+        // Reset to default
+        JsDrawingEngine.ScriptTimeoutSeconds = 30;
+    }
     #endregion
 
     #region Index & Map Generation Tests

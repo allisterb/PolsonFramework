@@ -18,14 +18,13 @@ using Polson.Drawing.Svg;
 public class JsDrawingEngine : Runtime
 {
     #region Constructors
-    public JsDrawingEngine(int timeoutSeconds = 15)
+    public JsDrawingEngine()
     {
-        TimeoutSeconds = timeoutSeconds;
     }
     #endregion
 
     #region Properties
-    public int TimeoutSeconds { get; set; }
+    public static int ScriptTimeoutSeconds { get; set; } = 30;
     #endregion
 
     #region Methods
@@ -45,7 +44,7 @@ public class JsDrawingEngine : Runtime
             var engine = new Engine(options =>
             {
                 options.Host.StringCompilationAllowed = false;
-                options.TimeoutInterval(TimeSpan.FromSeconds(TimeoutSeconds));
+                options.TimeoutInterval(TimeSpan.FromSeconds(ScriptTimeoutSeconds));
                 options.LimitRecursion(100);
                 options.MaxStatements(500_000);
             });

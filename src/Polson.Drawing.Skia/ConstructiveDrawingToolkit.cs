@@ -1485,6 +1485,451 @@ public class ConstructiveDrawingToolkit
         return skiaShaderApi.sksl(sksl, uniforms);
     }
     #endregion
+
+    #region Full-Body Anatomy, Mannequins & Expressions
+    public Dictionary<string, object?> createMannequinFigure(float originX, float originY, float totalHeight = 560f, object? options = null)
+    {
+        var opt = options as IDictionary;
+        var H = totalHeight / 8f;
+        var shoulderTiltDeg = opt != null && opt.Contains("shoulderTiltDeg") ? Convert.ToSingle(opt["shoulderTiltDeg"], CultureInfo.InvariantCulture) : -6f;
+        var pelvicTiltDeg = opt != null && opt.Contains("pelvicTiltDeg") ? Convert.ToSingle(opt["pelvicTiltDeg"], CultureInfo.InvariantCulture) : 6f;
+        var spineOffset = opt != null && opt.Contains("spineOffset") ? Convert.ToSingle(opt["spineOffset"], CultureInfo.InvariantCulture) : 6f;
+
+        var radShoulder = (shoulderTiltDeg * MathF.PI) / 180f;
+        var radPelvis = (pelvicTiltDeg * MathF.PI) / 180f;
+
+        // Head (0.0H to 1.0H)
+        var headY = originY + H * 0.5f;
+        var headCenter = new Point2D(originX, headY);
+
+        // Neck (1.0H to 1.3H)
+        var neckCenter = new Point2D(originX + spineOffset * 0.2f, originY + H * 1.15f);
+
+        // Shoulders / Clavicles (1.4H)
+        var shoulderY = originY + H * 1.4f;
+        var shoulderSpan = H * 1.8f;
+        var leftShoulder = new Point2D(originX - MathF.Cos(radShoulder) * (shoulderSpan * 0.5f), shoulderY - MathF.Sin(radShoulder) * (shoulderSpan * 0.5f));
+        var rightShoulder = new Point2D(originX + MathF.Cos(radShoulder) * (shoulderSpan * 0.5f), shoulderY + MathF.Sin(radShoulder) * (shoulderSpan * 0.5f));
+        var sternalNotch = new Point2D(originX + spineOffset * 0.3f, shoulderY);
+
+        // Ribcage (1.4H to 2.8H)
+        var ribcageCenter = new Point2D(originX + spineOffset * 0.6f, originY + H * 2.1f);
+        var ribcageRx = H * 0.85f;
+        var ribcageRy = H * 0.70f;
+
+        // Navel (3.0H)
+        var navel = new Point2D(originX + spineOffset * 0.8f, originY + H * 3.0f);
+
+        // Pelvis (3.2H to 4.0H)
+        var pelvisY = originY + H * 3.6f;
+        var pelvisSpan = H * 1.4f;
+        var leftHip = new Point2D(originX - MathF.Cos(radPelvis) * (pelvisSpan * 0.5f), pelvisY - MathF.Sin(radPelvis) * (pelvisSpan * 0.5f));
+        var rightHip = new Point2D(originX + MathF.Cos(radPelvis) * (pelvisSpan * 0.5f), pelvisY + MathF.Sin(radPelvis) * (pelvisSpan * 0.5f));
+        var pelvisCenter = new Point2D(originX + spineOffset * 0.4f, pelvisY);
+        var crotch = new Point2D(originX, originY + H * 4.0f);
+
+        // Left Arm (Shoulder -> Elbow 2.8H -> Wrist 4.0H -> Hand 4.8H)
+        var leftElbow = new Point2D(leftShoulder.X - H * 0.3f, originY + H * 2.8f);
+        var leftWrist = new Point2D(leftShoulder.X - H * 0.2f, originY + H * 4.0f);
+        var leftHand = new Point2D(leftWrist.X - 2f, leftWrist.Y + H * 0.75f);
+
+        // Right Arm
+        var rightElbow = new Point2D(rightShoulder.X + H * 0.35f, originY + H * 2.85f);
+        var rightWrist = new Point2D(rightShoulder.X + H * 0.25f, originY + H * 4.0f);
+        var rightHand = new Point2D(rightWrist.X + 2f, rightWrist.Y + H * 0.75f);
+
+        // Left Leg (Hip -> Knee 6.0H -> Ankle 7.8H -> Foot 8.0H)
+        var leftKnee = new Point2D(leftHip.X + H * 0.05f, originY + H * 6.0f);
+        var leftAnkle = new Point2D(leftKnee.X - H * 0.05f, originY + H * 7.8f);
+        var leftFoot = new Point2D(leftAnkle.X - H * 0.15f, originY + H * 8.0f);
+
+        // Right Leg
+        var rightKnee = new Point2D(rightHip.X - H * 0.05f, originY + H * 6.0f);
+        var rightAnkle = new Point2D(rightKnee.X + H * 0.05f, originY + H * 7.8f);
+        var rightFoot = new Point2D(rightAnkle.X + H * 0.15f, originY + H * 8.0f);
+
+        return new Dictionary<string, object?>
+        {
+            ["headUnit"] = H,
+            ["totalHeight"] = totalHeight,
+            ["head"] = new Dictionary<string, object?> { ["center"] = ToDict(headCenter), ["rx"] = H * 0.36f, ["ry"] = H * 0.50f },
+            ["neck"] = ToDict(neckCenter),
+            ["sternum"] = ToDict(sternalNotch),
+            ["clavicles"] = new Dictionary<string, object?> { ["left"] = ToDict(leftShoulder), ["right"] = ToDict(rightShoulder), ["center"] = ToDict(sternalNotch) },
+            ["ribcage"] = new Dictionary<string, object?> { ["center"] = ToDict(ribcageCenter), ["rx"] = ribcageRx, ["ry"] = ribcageRy, ["tiltDeg"] = shoulderTiltDeg },
+            ["navel"] = ToDict(navel),
+            ["pelvis"] = new Dictionary<string, object?> { ["center"] = ToDict(pelvisCenter), ["leftHip"] = ToDict(leftHip), ["rightHip"] = ToDict(rightHip), ["rx"] = H * 0.70f, ["ry"] = H * 0.45f, ["tiltDeg"] = pelvicTiltDeg },
+            ["crotch"] = ToDict(crotch),
+            ["leftArm"] = new Dictionary<string, object?> { ["shoulder"] = ToDict(leftShoulder), ["elbow"] = ToDict(leftElbow), ["wrist"] = ToDict(leftWrist), ["hand"] = ToDict(leftHand) },
+            ["rightArm"] = new Dictionary<string, object?> { ["shoulder"] = ToDict(rightShoulder), ["elbow"] = ToDict(rightElbow), ["wrist"] = ToDict(rightWrist), ["hand"] = ToDict(rightHand) },
+            ["leftLeg"] = new Dictionary<string, object?> { ["hip"] = ToDict(leftHip), ["knee"] = ToDict(leftKnee), ["ankle"] = ToDict(leftAnkle), ["foot"] = ToDict(leftFoot) },
+            ["rightLeg"] = new Dictionary<string, object?> { ["hip"] = ToDict(rightHip), ["knee"] = ToDict(rightKnee), ["ankle"] = ToDict(rightAnkle), ["foot"] = ToDict(rightFoot) }
+        };
+    }
+
+    public void drawMannequinWireframe(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (figureObj is not IDictionary fig) return;
+
+        var opt = options as IDictionary;
+        var blueLine = opt?["blueLineColor"]?.ToString() ?? "#4a90e2";
+        var graphite = opt?["graphiteColor"]?.ToString() ?? "#444444";
+        var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.5f;
+
+        var head = fig["head"] as IDictionary;
+        var headCenter = ExtractPoint(head?["center"]);
+        var headRx = head != null && head.Contains("rx") ? Convert.ToSingle(head["rx"], CultureInfo.InvariantCulture) : 25f;
+        var headRy = head != null && head.Contains("ry") ? Convert.ToSingle(head["ry"], CultureInfo.InvariantCulture) : 35f;
+
+        var neck = ExtractPoint(fig["neck"]);
+        var sternum = ExtractPoint(fig["sternum"]);
+        var navel = ExtractPoint(fig["navel"]);
+        var crotch = ExtractPoint(fig["crotch"]);
+
+        var ribcage = fig["ribcage"] as IDictionary;
+        var ribCenter = ExtractPoint(ribcage?["center"]);
+        var ribRx = ribcage != null && ribcage.Contains("rx") ? Convert.ToSingle(ribcage["rx"], CultureInfo.InvariantCulture) : 60f;
+        var ribRy = ribcage != null && ribcage.Contains("ry") ? Convert.ToSingle(ribcage["ry"], CultureInfo.InvariantCulture) : 50f;
+
+        var pelvis = fig["pelvis"] as IDictionary;
+        var pelCenter = ExtractPoint(pelvis?["center"]);
+        var pelRx = pelvis != null && pelvis.Contains("rx") ? Convert.ToSingle(pelvis["rx"], CultureInfo.InvariantCulture) : 50f;
+        var pelRy = pelvis != null && pelvis.Contains("ry") ? Convert.ToSingle(pelvis["ry"], CultureInfo.InvariantCulture) : 32f;
+
+        var lArm = fig["leftArm"] as IDictionary;
+        var rArm = fig["rightArm"] as IDictionary;
+        var lLeg = fig["leftLeg"] as IDictionary;
+        var rLeg = fig["rightLeg"] as IDictionary;
+
+        ctx.save();
+
+        // 1. Blue-line Skeleton Gesture & Masses
+        ctx.strokeStyle = blueLine;
+        ctx.lineWidth = lineWidth;
+
+        // Head Ellipse
+        ctx.beginPath();
+        ctx.ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
+        ctx.stroke();
+
+        // Spine Line of Action (Cervical -> Thoracic -> Lumbar -> Sacral)
+        ctx.beginPath();
+        ctx.moveTo(headCenter.X, headCenter.Y + headRy);
+        ctx.lineTo(neck.X, neck.Y);
+        ctx.quadraticCurveTo(sternum.X, sternum.Y, ribCenter.X, ribCenter.Y);
+        ctx.quadraticCurveTo(navel.X, navel.Y, pelCenter.X, pelCenter.Y);
+        ctx.lineTo(crotch.X, crotch.Y);
+        ctx.stroke();
+
+        // Ribcage Egg
+        ctx.beginPath();
+        ctx.ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
+        ctx.stroke();
+
+        // Pelvic Basin
+        ctx.beginPath();
+        ctx.ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
+        ctx.stroke();
+
+        // 2. Graphite Limb Bones & Joint Hinges
+        ctx.strokeStyle = graphite;
+        ctx.lineWidth = lineWidth * 1.25f;
+
+        void DrawLimb(Point2D a, Point2D b, Point2D c, Point2D d)
+        {
+            ctx.beginPath();
+            ctx.moveTo(a.X, a.Y);
+            ctx.lineTo(b.X, b.Y);
+            ctx.lineTo(c.X, c.Y);
+            ctx.lineTo(d.X, d.Y);
+            ctx.stroke();
+
+            // Joint hinges
+            ctx.beginPath();
+            ctx.arc(b.X, b.Y, 5f, 0f, MathF.PI * 2f);
+            ctx.arc(c.X, c.Y, 4f, 0f, MathF.PI * 2f);
+            ctx.stroke();
+        }
+
+        if (lArm != null) DrawLimb(ExtractPoint(lArm["shoulder"]), ExtractPoint(lArm["elbow"]), ExtractPoint(lArm["wrist"]), ExtractPoint(lArm["hand"]));
+        if (rArm != null) DrawLimb(ExtractPoint(rArm["shoulder"]), ExtractPoint(rArm["elbow"]), ExtractPoint(rArm["wrist"]), ExtractPoint(rArm["hand"]));
+        if (lLeg != null) DrawLimb(ExtractPoint(lLeg["hip"]), ExtractPoint(lLeg["knee"]), ExtractPoint(lLeg["ankle"]), ExtractPoint(lLeg["foot"]));
+        if (rLeg != null) DrawLimb(ExtractPoint(rLeg["hip"]), ExtractPoint(rLeg["knee"]), ExtractPoint(rLeg["ankle"]), ExtractPoint(rLeg["foot"]));
+
+        ctx.restore();
+    }
+
+    public void drawMannequinSolid(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (figureObj is not IDictionary fig) return;
+
+        var opt = options as IDictionary;
+        var fillColor = opt?["fillColor"]?.ToString() ?? "#dbe7f2";
+        var shadowColor = opt?["shadowColor"]?.ToString() ?? "#9bbcd9";
+        var strokeColor = opt?["strokeColor"]?.ToString() ?? "#2d547d";
+        var strokeWidth = opt != null && opt.Contains("strokeWidth") ? Convert.ToSingle(opt["strokeWidth"], CultureInfo.InvariantCulture) : 1.8f;
+
+        var H = fig.Contains("headUnit") ? Convert.ToSingle(fig["headUnit"], CultureInfo.InvariantCulture) : 70f;
+
+        ctx.save();
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = strokeWidth;
+
+        // 1. Shaded Limbs (Tapered Cylinders)
+        void DrawCylinderLimb(Point2D a, Point2D b, float r1, float r2)
+        {
+            var dx = b.X - a.X;
+            var dy = b.Y - a.Y;
+            var dist = MathF.Sqrt(dx * dx + dy * dy);
+            if (dist < 0.001f) dist = 1f;
+            var nx = -dy / dist;
+            var ny = dx / dist;
+
+            ctx.beginPath();
+            ctx.moveTo(a.X - nx * r1, a.Y - ny * r1);
+            ctx.lineTo(b.X - nx * r2, b.Y - ny * r2);
+            ctx.lineTo(b.X + nx * r2, b.Y + ny * r2);
+            ctx.lineTo(a.X + nx * r1, a.Y + ny * r1);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        var lLeg = fig["leftLeg"] as IDictionary;
+        var rLeg = fig["rightLeg"] as IDictionary;
+        var lArm = fig["leftArm"] as IDictionary;
+        var rArm = fig["rightArm"] as IDictionary;
+
+        // Legs
+        if (lLeg != null)
+        {
+            DrawCylinderLimb(ExtractPoint(lLeg["hip"]), ExtractPoint(lLeg["knee"]), H * 0.28f, H * 0.20f);
+            DrawCylinderLimb(ExtractPoint(lLeg["knee"]), ExtractPoint(lLeg["ankle"]), H * 0.20f, H * 0.14f);
+        }
+        if (rLeg != null)
+        {
+            DrawCylinderLimb(ExtractPoint(rLeg["hip"]), ExtractPoint(rLeg["knee"]), H * 0.28f, H * 0.20f);
+            DrawCylinderLimb(ExtractPoint(rLeg["knee"]), ExtractPoint(rLeg["ankle"]), H * 0.20f, H * 0.14f);
+        }
+
+        // Pelvis
+        var pelvis = fig["pelvis"] as IDictionary;
+        var pelCenter = ExtractPoint(pelvis?["center"]);
+        var pelRx = pelvis != null && pelvis.Contains("rx") ? Convert.ToSingle(pelvis["rx"], CultureInfo.InvariantCulture) : H * 0.70f;
+        var pelRy = pelvis != null && pelvis.Contains("ry") ? Convert.ToSingle(pelvis["ry"], CultureInfo.InvariantCulture) : H * 0.45f;
+        ctx.beginPath();
+        ctx.ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
+        ctx.fill();
+        ctx.stroke();
+
+        // Ribcage
+        var ribcage = fig["ribcage"] as IDictionary;
+        var ribCenter = ExtractPoint(ribcage?["center"]);
+        var ribRx = ribcage != null && ribcage.Contains("rx") ? Convert.ToSingle(ribcage["rx"], CultureInfo.InvariantCulture) : H * 0.85f;
+        var ribRy = ribcage != null && ribcage.Contains("ry") ? Convert.ToSingle(ribcage["ry"], CultureInfo.InvariantCulture) : H * 0.70f;
+        ctx.beginPath();
+        ctx.ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
+        ctx.fill();
+        ctx.stroke();
+
+        // Arms
+        if (lArm != null)
+        {
+            DrawCylinderLimb(ExtractPoint(lArm["shoulder"]), ExtractPoint(lArm["elbow"]), H * 0.22f, H * 0.16f);
+            DrawCylinderLimb(ExtractPoint(lArm["elbow"]), ExtractPoint(lArm["wrist"]), H * 0.16f, H * 0.12f);
+        }
+        if (rArm != null)
+        {
+            DrawCylinderLimb(ExtractPoint(rArm["shoulder"]), ExtractPoint(rArm["elbow"]), H * 0.22f, H * 0.16f);
+            DrawCylinderLimb(ExtractPoint(rArm["elbow"]), ExtractPoint(rArm["wrist"]), H * 0.16f, H * 0.12f);
+        }
+
+        // Head
+        var head = fig["head"] as IDictionary;
+        var headCenter = ExtractPoint(head?["center"]);
+        var headRx = head != null && head.Contains("rx") ? Convert.ToSingle(head["rx"], CultureInfo.InvariantCulture) : H * 0.36f;
+        var headRy = head != null && head.Contains("ry") ? Convert.ToSingle(head["ry"], CultureInfo.InvariantCulture) : H * 0.50f;
+        ctx.beginPath();
+        ctx.ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    public void drawTorsoMusculature(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (figureObj is not IDictionary fig) return;
+
+        var opt = options as IDictionary;
+        var strokeColor = opt?["strokeColor"]?.ToString() ?? "#1a2938";
+        var strokeWidth = opt != null && opt.Contains("strokeWidth") ? Convert.ToSingle(opt["strokeWidth"], CultureInfo.InvariantCulture) : 2.0f;
+        var H = fig.Contains("headUnit") ? Convert.ToSingle(fig["headUnit"], CultureInfo.InvariantCulture) : 70f;
+
+        var sternum = ExtractPoint(fig["sternum"]);
+        var navel = ExtractPoint(fig["navel"]);
+        var clavicles = fig["clavicles"] as IDictionary;
+        var leftClav = ExtractPoint(clavicles?["left"]);
+        var rightClav = ExtractPoint(clavicles?["right"]);
+
+        ctx.save();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = strokeWidth;
+        ctx.lineCap = "round";
+
+        // 1. Clavicle Handlebars
+        ctx.beginPath();
+        ctx.moveTo(leftClav.X, leftClav.Y);
+        ctx.quadraticCurveTo((leftClav.X + sternum.X) * 0.5f, sternum.Y + 4f, sternum.X, sternum.Y);
+        ctx.quadraticCurveTo((rightClav.X + sternum.X) * 0.5f, sternum.Y + 4f, rightClav.X, rightClav.Y);
+        ctx.stroke();
+
+        // 2. Pectoralis Major Chest Plates
+        var pecY = sternum.Y + H * 0.55f;
+        var pecW = H * 0.65f;
+
+        // Left Pectoral
+        ctx.beginPath();
+        ctx.moveTo(sternum.X, sternum.Y + 8f);
+        ctx.lineTo(sternum.X, pecY);
+        ctx.quadraticCurveTo(sternum.X - pecW * 0.5f, pecY + 6f, leftClav.X + 8f, pecY - 8f);
+        ctx.lineTo(leftClav.X + 4f, leftClav.Y + 8f);
+        ctx.stroke();
+
+        // Right Pectoral
+        ctx.beginPath();
+        ctx.moveTo(sternum.X, sternum.Y + 8f);
+        ctx.lineTo(sternum.X, pecY);
+        ctx.quadraticCurveTo(sternum.X + pecW * 0.5f, pecY + 6f, rightClav.X - 8f, pecY - 8f);
+        ctx.lineTo(rightClav.X - 4f, rightClav.Y + 8f);
+        ctx.stroke();
+
+        // 3. Linea Alba & Rectus Abdominis Six-Pack
+        ctx.beginPath();
+        ctx.moveTo(sternum.X, pecY);
+        ctx.lineTo(navel.X, navel.Y + H * 0.4f);
+        ctx.stroke();
+
+        for (var i = 1; i <= 2; i++)
+        {
+            var tierY = pecY + (navel.Y - pecY) * (i * 0.33f);
+            ctx.beginPath();
+            ctx.moveTo(sternum.X - H * 0.35f, tierY);
+            ctx.lineTo(sternum.X + H * 0.35f, tierY);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    public Dictionary<string, object?> applyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
+    {
+        if (headObj is not IDictionary head)
+            throw new ArgumentException("headObj must be a valid Loomis head dictionary", nameof(headObj));
+
+        // Create shallow clone of dictionary to avoid mutating caller unpredictably
+        var res = new Dictionary<string, object?>();
+        foreach (DictionaryEntry de in head)
+            res[de.Key.ToString()!] = de.Value;
+
+        var unit = head["unit"] as IDictionary;
+        var H = unit != null && unit.Contains("H") ? Convert.ToSingle(unit["H"], CultureInfo.InvariantCulture) : 200f;
+        var scale = MathF.Max(0.1f, MathF.Min(2.0f, intensity));
+
+        var nearEye = head["nearEye"] as IDictionary;
+        var farEye = head["farEye"] as IDictionary;
+        var mouth = head["mouthGuides"] as IDictionary;
+        var brow = ExtractPoint(head["brow"]);
+
+        var exp = expressionType.Trim().ToLowerInvariant();
+
+        switch (exp)
+        {
+            case "joy":
+            case "happy":
+                // Lift mouth corners up
+                if (mouth != null)
+                {
+                    var left = ExtractPoint(mouth["leftCorner"]);
+                    var right = ExtractPoint(mouth["rightCorner"]);
+                    var mDict = new Dictionary<string, object?>(mouth.Count);
+                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
+                    mDict["leftCorner"] = ToDict(new Point2D(left.X, left.Y - H * 0.05f * scale));
+                    mDict["rightCorner"] = ToDict(new Point2D(right.X, right.Y - H * 0.05f * scale));
+                    res["mouthGuides"] = mDict;
+                }
+                break;
+
+            case "anger":
+            case "angry":
+                // Pull brow down and in
+                res["brow"] = ToDict(new Point2D(brow.X, brow.Y + H * 0.06f * scale));
+                break;
+
+            case "fear":
+            case "scared":
+                // Raise brow high, drop mouth open
+                res["brow"] = ToDict(new Point2D(brow.X, brow.Y - H * 0.07f * scale));
+                if (mouth != null)
+                {
+                    var center = ExtractPoint(mouth["center"]);
+                    var mDict = new Dictionary<string, object?>(mouth.Count);
+                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
+                    mDict["center"] = ToDict(new Point2D(center.X, center.Y + H * 0.06f * scale));
+                    res["mouthGuides"] = mDict;
+                }
+                break;
+
+            case "sadness":
+            case "sad":
+                // Pull mouth corners down
+                if (mouth != null)
+                {
+                    var left = ExtractPoint(mouth["leftCorner"]);
+                    var right = ExtractPoint(mouth["rightCorner"]);
+                    var mDict = new Dictionary<string, object?>(mouth.Count);
+                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
+                    mDict["leftCorner"] = ToDict(new Point2D(left.X, left.Y + H * 0.05f * scale));
+                    mDict["rightCorner"] = ToDict(new Point2D(right.X, right.Y + H * 0.05f * scale));
+                    res["mouthGuides"] = mDict;
+                }
+                break;
+
+            case "surprise":
+                // Raise brow high & drop mouth center
+                res["brow"] = ToDict(new Point2D(brow.X, brow.Y - H * 0.08f * scale));
+                if (mouth != null)
+                {
+                    var center = ExtractPoint(mouth["center"]);
+                    var mDict = new Dictionary<string, object?>(mouth.Count);
+                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
+                    mDict["center"] = ToDict(new Point2D(center.X, center.Y + H * 0.08f * scale));
+                    res["mouthGuides"] = mDict;
+                }
+                break;
+
+            case "disgust":
+                // Raise upper lip
+                if (mouth != null)
+                {
+                    var center = ExtractPoint(mouth["center"]);
+                    var mDict = new Dictionary<string, object?>(mouth.Count);
+                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
+                    mDict["upperLipY"] = center.Y - H * 0.06f * scale;
+                    res["mouthGuides"] = mDict;
+                }
+                break;
+        }
+
+        res["expression"] = exp;
+        return res;
+    }
+    #endregion
 }
+
 
 

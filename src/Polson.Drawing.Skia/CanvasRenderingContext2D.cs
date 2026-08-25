@@ -777,6 +777,17 @@ public class CanvasRenderingContext2D
 
     public void drawRimLight(object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f) =>
         _toolkit.drawRimLight(this, boundsOrPts, lightAngleDeg, rimColor, thickness);
+
+    public void drawMannequin(object figure, bool solid = false, object? options = null)
+    {
+        if (solid)
+            _toolkit.drawMannequinSolid(this, figure, options);
+        else
+            _toolkit.drawMannequinWireframe(this, figure, options);
+    }
+
+    public void drawTorsoMusculature(object figure, object? options = null) =>
+        _toolkit.drawTorsoMusculature(this, figure, options);
     #endregion
     #endregion
 

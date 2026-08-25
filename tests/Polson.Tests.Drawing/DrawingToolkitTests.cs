@@ -498,5 +498,123 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.NotNull(result.ImageBytes);
         Assert.True(result.ImageBytes.Length > 1000);
     }
+
+    [Fact]
+    public void TestMannequinFigureCreation()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var fig = toolkit.createMannequinFigure(400f, 50f, 560f);
+
+        Assert.NotNull(fig);
+        Assert.Equal(70f, Convert.ToSingle(fig["headUnit"]));
+        Assert.True(fig.ContainsKey("head"));
+        Assert.True(fig.ContainsKey("ribcage"));
+        Assert.True(fig.ContainsKey("pelvis"));
+        Assert.True(fig.ContainsKey("leftArm"));
+        Assert.True(fig.ContainsKey("rightLeg"));
+
+        var leftArm = (Dictionary<string, object?>)fig["leftArm"]!;
+        Assert.True(leftArm.ContainsKey("shoulder"));
+        Assert.True(leftArm.ContainsKey("elbow"));
+        Assert.True(leftArm.ContainsKey("wrist"));
+        Assert.True(leftArm.ContainsKey("hand"));
+    }
+
+    [Fact]
+    public void TestMannequinWireframeAndSolidRendering()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var fig = toolkit.createMannequinFigure(400f, 50f, 520f);
+
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+
+        // 1. Draw solid
+        toolkit.drawMannequinSolid(ctx, fig);
+
+        // 2. Draw wireframe on top
+        toolkit.drawMannequinWireframe(ctx, fig);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestTorsoMusculatureRendering()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var fig = toolkit.createMannequinFigure(400f, 50f, 520f);
+
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+
+        toolkit.drawTorsoMusculature(ctx, fig);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestFacialExpressionsModifiers()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.createLoomisHead(400f, 300f, 200f);
+
+        var joyHead = toolkit.applyFacialExpression(head, "joy", 1.2f);
+        Assert.NotNull(joyHead);
+        Assert.Equal("joy", joyHead["expression"]);
+
+        var angerHead = toolkit.applyFacialExpression(head, "anger", 1.5f);
+        Assert.NotNull(angerHead);
+        Assert.Equal("anger", angerHead["expression"]);
+
+        var fearHead = toolkit.applyFacialExpression(head, "fear", 1.0f);
+        Assert.NotNull(fearHead);
+        Assert.Equal("fear", fearHead["expression"]);
+
+        var sadHead = toolkit.applyFacialExpression(head, "sadness", 1.0f);
+        Assert.NotNull(sadHead);
+        Assert.Equal("sadness", sadHead["expression"]);
+    }
+
+    [Fact]
+    public void TestJavaScriptEngineAnatomyIntegration()
+    {
+        var engine = new JsDrawingEngine();
+        const string script = @"
+            const canvas = createCanvas(800, 600);
+            const ctx = canvas.getContext('2d');
+
+            // 1. Create full-body 8-head mannequin
+            const fig = Drawing.createMannequinFigure(400, 40, 520, {
+                shoulderTiltDeg: -8,
+                pelvicTiltDeg: 8,
+                spineOffset: 10
+            });
+
+            // 2. Draw solid volumetric mannequin
+            ctx.drawMannequin(fig, true, {
+                fillColor: '#d6e4f0',
+                strokeColor: '#2b4d6f'
+            });
+
+            // 3. Draw torso musculature contours
+            ctx.drawTorsoMusculature(fig, { strokeColor: '#1a334d', strokeWidth: 2.2 });
+
+            // 4. Test Loomis head with Expression
+            const head = Drawing.createLoomisHead(150, 150, 140);
+            const happyHead = Drawing.applyFacialExpression(head, 'joy', 1.2);
+            Drawing.drawComicMouth(ctx, happyHead.mouthGuides);
+
+            canvas;
+        ";
+
+        var result = engine.Execute(script);
+        Assert.NotNull(result);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 1000);
+    }
     #endregion
 }

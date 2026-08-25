@@ -14,9 +14,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\*.md" Link="docs\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Polson.Runtime\Polson.Runtime.csproj" />
     <ProjectReference Include="..\Polson.Drawing.Svg\Polson.Drawing.Svg.csproj" />
     <ProjectReference Include="..\Polson.Drawing.Skia\Polson.Drawing.Skia.csproj" />
   </ItemGroup>
 
 </Project>
+

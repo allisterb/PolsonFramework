@@ -105,7 +105,7 @@ internal class Program : Runtime
             : opts.ScriptFile;
 
         var engine = new JsDrawingEngine();
-        var result = engine.Execute(script, opts.Width, opts.Height);
+        var result = engine.Execute(script, opts.Width, opts.Height, null, opts.Format, opts.Quality);
 
         AnsiConsole.MarkupLine($"[bold]Script Execution:[/] {(result.Success ? "[green]Success[/]" : "[red]Failed[/]")} ({result.ExecutionTimeMs}ms)");
 
@@ -119,11 +119,15 @@ internal class Program : Runtime
             AnsiConsole.MarkupLine($"[bold red]Error:[/] {Markup.Escape(result.Error)}");
         }
 
-        if (result.PngBytes != null && result.PngBytes.Length > 0 && !string.IsNullOrWhiteSpace(opts.OutPng))
+        if (result.ImageBytes != null && result.ImageBytes.Length > 0)
         {
-            var pngPath = Path.GetFullPath(opts.OutPng);
-            File.WriteAllBytes(pngPath, result.PngBytes);
-            AnsiConsole.MarkupLine($"[bold green]Rendered PNG saved:[/] {pngPath} ({result.PngBytes.Length:N0} bytes)");
+            var ext = result.ImageFormat == "png" ? ".png" : (result.ImageFormat == "jpeg" ? ".jpg" : ".webp");
+            var outPath = !string.IsNullOrWhiteSpace(opts.OutImg)
+                ? Path.GetFullPath(opts.OutImg)
+                : Path.GetFullPath($"output{ext}");
+
+            File.WriteAllBytes(outPath, result.ImageBytes);
+            AnsiConsole.MarkupLine($"[bold green]Rendered {result.ImageFormat.ToUpperInvariant()} saved:[/] {outPath} ({result.ImageBytes.Length:N0} bytes)");
         }
 
         if (!string.IsNullOrWhiteSpace(result.SvgXml) && !string.IsNullOrWhiteSpace(opts.OutSvg))

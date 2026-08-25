@@ -3,6 +3,7 @@ namespace Polson.MCPServer;
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using Polson.Drawing.Skia;
 
 public class DrawingExecutionResult
 {
@@ -19,11 +20,13 @@ public class DrawingExecutionResult
 
     public string SvgXml { get; set; }
 
-    public byte[]? PngBytes { get; set; }
+    public byte[]? ImageBytes { get; set; }
 
-    public string? PngDataUrl =>
-        PngBytes != null && PngBytes.Length > 0
-            ? "data:image/png;base64," + Convert.ToBase64String(PngBytes)
+    public string ImageFormat { get; set; } = "webp";
+
+    public string? ImageDataUri =>
+        ImageBytes != null && ImageBytes.Length > 0
+            ? SkiaImageEncoder.ToDataUri(ImageBytes, ImageFormat)
             : null;
 
     public List<string> Logs { get; set; }
@@ -36,4 +39,3 @@ public class DrawingExecutionResult
     public object? ReturnValue { get; set; }
     #endregion
 }
-

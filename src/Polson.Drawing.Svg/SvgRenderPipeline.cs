@@ -8,15 +8,15 @@ using SkiaSharp;
 public static class SvgRenderPipeline
 {
     #region Methods
-    public static byte[] RenderToPng(SvgDocument document, int? width = null, int? height = null, SKColor? background = null)
+    public static byte[] RenderToImage(SvgDocument document, int? width = null, int? height = null, string format = "webp", int quality = 85, SKColor? background = null)
     {
         ArgumentNullException.ThrowIfNull(document);
 
         var xml = SerializeDocument(document);
-        return RenderToPng(xml, width, height, background);
+        return RenderToImage(xml, width, height, format, quality, background);
     }
 
-    public static byte[] RenderToPng(string svgXml, int? width = null, int? height = null, SKColor? background = null)
+    public static byte[] RenderToImage(string svgXml, int? width = null, int? height = null, string format = "webp", int quality = 85, SKColor? background = null)
     {
         ArgumentNullException.ThrowIfNull(svgXml);
 
@@ -61,9 +61,16 @@ public static class SvgRenderPipeline
             canvas.DrawPicture(skSvg.Picture, in matrix);
         }
 
+        var encFormat = (format?.Trim().ToLowerInvariant()) switch
+        {
+            "png" => SKEncodedImageFormat.Png,
+            "jpeg" or "jpg" => SKEncodedImageFormat.Jpeg,
+            _ => SKEncodedImageFormat.Webp,
+        };
+
         using var image = SKImage.FromBitmap(bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        return data.ToArray();
+        using var data = image.Encode(encFormat, Math.Clamp(quality, 1, 100));
+        return data?.ToArray() ?? Array.Empty<byte>();
     }
 
     public static SKBitmap RenderToBitmap(SvgDocument document, int? width = null, int? height = null, SKColor? background = null)
@@ -102,10 +109,10 @@ public static class SvgRenderPipeline
         return bitmap;
     }
 
-    public static void SavePng(SvgDocument document, string filePath, int? width = null, int? height = null, SKColor? background = null)
+    public static void SaveImage(SvgDocument document, string filePath, int? width = null, int? height = null, string format = "webp", int quality = 85, SKColor? background = null)
     {
-        var pngBytes = RenderToPng(document, width, height, background);
-        File.WriteAllBytes(filePath, pngBytes);
+        var imgBytes = RenderToImage(document, width, height, format, quality, background);
+        File.WriteAllBytes(filePath, imgBytes);
     }
 
     private static string SerializeDocument(SvgDocument document)
@@ -118,4 +125,3 @@ public static class SvgRenderPipeline
     }
     #endregion
 }
-

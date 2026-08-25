@@ -32,7 +32,7 @@ public class ServerOptions : Options
     #endregion
 }
 
-[Verb("eval", HelpText = "Execute a JavaScript drawing file and save rendered PNG and SVG output.")]
+[Verb("eval", HelpText = "Execute a JavaScript drawing file and save rendered image and SVG output.")]
 public class EvalOptions : Options
 {
     #region Properties
@@ -45,11 +45,16 @@ public class EvalOptions : Options
     [Option("height", Required = false, Default = 600, HelpText = "Viewport height in pixels (default: 600).")]
     public int Height { get; set; } = 600;
 
-    [Option("png", Required = false, Default = "output.png", HelpText = "Output path for the rendered PNG file.")]
-    public string? OutPng { get; set; } = "output.png";
+    [Option("format", Required = false, Default = "webp", HelpText = "Output image format ('webp', 'png', 'jpeg'; default: 'webp').")]
+    public string Format { get; set; } = "webp";
+
+    [Option("quality", Required = false, Default = 85, HelpText = "Image encoding quality (1-100; default: 85).")]
+    public int Quality { get; set; } = 85;
+
+    [Option("img", Required = false, HelpText = "Custom output path for the rendered image file (defaults to output.<format>).")]
+    public string? OutImg { get; set; }
 
     [Option("svg", Required = false, Default = "output.svg", HelpText = "Output path for the rendered SVG XML file.")]
     public string? OutSvg { get; set; } = "output.svg";
     #endregion
 }
-

@@ -3,6 +3,7 @@ namespace Polson.Tests.Drawing;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 using Polson.MCPServer;
 using Xunit;
@@ -222,25 +223,28 @@ public class DrawingTests : TestsRuntime
 
     #region Headless Rendering Pipeline Tests
     [Fact]
-    public void TestRenderToPng()
+    public void TestRenderToWebpAndPng()
     {
         var paper = Snap.Create(400, 300);
         paper.Rect(0, 0, 400, 300).Attr("fill", "#222222");
         paper.Circle(200, 150, 80).Attr("fill", "#ff4444");
 
-        var pngBytes = paper.ToPngBytes(400, 300);
+        // 1. Default: WebP
+        var webpBytes = paper.ToImageBytes(400, 300);
+        Assert.NotNull(webpBytes);
+        Assert.True(webpBytes.Length > 0);
+        // Verify WebP magic header: RIFF .... WEBP
+        Assert.Equal((byte)'R', webpBytes[0]);
+        Assert.Equal((byte)'I', webpBytes[1]);
+        Assert.Equal((byte)'F', webpBytes[2]);
+        Assert.Equal((byte)'F', webpBytes[3]);
+
+        // 2. Explicit PNG
+        var pngBytes = paper.ToImageBytes(400, 300, format: "png");
         Assert.NotNull(pngBytes);
         Assert.True(pngBytes.Length > 0);
-
-        // Verify PNG magic header: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
         Assert.Equal(0x89, pngBytes[0]);
         Assert.Equal(0x50, pngBytes[1]);
-        Assert.Equal(0x4E, pngBytes[2]);
-        Assert.Equal(0x47, pngBytes[3]);
-        Assert.Equal(0x0D, pngBytes[4]);
-        Assert.Equal(0x0A, pngBytes[5]);
-        Assert.Equal(0x1A, pngBytes[6]);
-        Assert.Equal(0x0A, pngBytes[7]);
     }
     #endregion
 
@@ -260,15 +264,16 @@ public class DrawingTests : TestsRuntime
 
         var result = engine.Execute(jsCode, 600, 400);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
-        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
+        Assert.Equal("webp", result.ImageFormat);
         Assert.NotEmpty(result.SvgXml);
         Assert.Contains("circle", result.SvgXml);
         Assert.Contains("rect", result.SvgXml);
         Assert.Contains("line", result.SvgXml);
         Assert.Contains("[LOG] Canvas generated with sun at 300,200", result.Logs);
-        Assert.NotNull(result.PngDataUrl);
-        Assert.StartsWith("data:image/png;base64,", result.PngDataUrl);
+        Assert.NotNull(result.ImageDataUri);
+        Assert.StartsWith("data:image/webp;base64,", result.ImageDataUri);
     }
 
     [Fact]
@@ -304,8 +309,8 @@ public class DrawingTests : TestsRuntime
 
         var result = engine.Execute(jsCode, 800, 600);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
-        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
         Assert.Contains("linearGradient", result.SvgXml);
         Assert.Contains("Enactive Studio", result.SvgXml);
         Assert.Contains("[LOG] Complex generative scene rendered.", result.Logs);
@@ -322,7 +327,7 @@ public class DrawingTests : TestsRuntime
 
         var execResult = await tools.ExecuteSvgScript(script, 400, 400);
         Assert.True(execResult.Success, execResult.Error);
-        Assert.NotNull(execResult.PngBytes);
+        Assert.NotNull(execResult.ImageBytes);
 
         var measureResult = tools.MeasureSvgPath("M0 0 L200 0 L200 100", 100);
         Assert.NotNull(measureResult);
@@ -404,7 +409,7 @@ public class DrawingTests : TestsRuntime
 
         var result = engine.Execute(script, 500, 500);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
+        Assert.NotNull(result.ImageBytes);
         Assert.Contains("circle", result.SvgXml);
     }
 
@@ -427,8 +432,76 @@ public class DrawingTests : TestsRuntime
         Assert.Contains("[ERROR] Global error notice", result.Logs);
         Assert.Contains("[EXIT] Early exit for testing", result.Logs);
         Assert.Contains("Early exit for testing", result.ReturnValue?.ToString());
-        Assert.NotNull(result.PngBytes);
+        Assert.NotNull(result.ImageBytes);
         Assert.Contains("rect", result.SvgXml);
+    }
+
+    [Fact]
+    public void TestEncodePerformanceBenchmark()
+    {
+        var dir = AppContext.BaseDirectory;
+        string? scriptPath = null;
+        while (!string.IsNullOrEmpty(dir))
+        {
+            var candidate = Path.Combine(dir, "tests", "agent", "mcp_server", "gemini", "artwork.js");
+            if (File.Exists(candidate))
+            {
+                scriptPath = candidate;
+                break;
+            }
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+
+        Assert.NotNull(scriptPath);
+
+        var script = File.ReadAllText(scriptPath);
+        var engine = new JsDrawingEngine();
+
+        // 1. Warmup run
+        engine.Execute(script, 1200, 900, format: "webp", quality: 90);
+
+        var preRender = engine.Execute(script, 1200, 900);
+        var canvas = (Polson.Drawing.Skia.SkiaCanvas)preRender.ReturnValue!;
+        var bitmap = canvas.Bitmap;
+
+        var formats = new (string format, int quality)[]
+        {
+            ("png", 100),
+            ("webp", 95),
+            ("webp", 90),
+            ("webp", 85),
+            ("webp", 80),
+            ("webp", 75),
+            ("jpeg", 85)
+        };
+
+        const int iterations = 5;
+        Console.WriteLine("\n=================== ENCODE & EXECUTION BENCHMARK ===================");
+        foreach (var (fmt, q) in formats)
+        {
+            // Pure encode time
+            var swPure = System.Diagnostics.Stopwatch.StartNew();
+            long pureBytes = 0;
+            for (int i = 0; i < iterations; i++)
+            {
+                var bytes = SkiaImageEncoder.Encode(bitmap, fmt, q);
+                pureBytes = bytes.Length;
+            }
+            swPure.Stop();
+            var avgPureMs = swPure.ElapsedMilliseconds / (double)iterations;
+
+            // Full end-to-end execution time (JS parsing + Canvas 2D render + Image encode)
+            var swTotal = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < iterations; i++)
+            {
+                engine.Execute(script, 1200, 900, format: fmt, quality: q);
+            }
+            swTotal.Stop();
+            var avgTotalMs = swTotal.ElapsedMilliseconds / (double)iterations;
+
+            Console.WriteLine($"[BENCHMARK] Format={fmt,-4} Q={q,-2} | PureEncode={avgPureMs,5:F1}ms | TotalTime={avgTotalMs,5:F1}ms | Size={pureBytes,8:N0} bytes");
+        }
+        Console.WriteLine("===================================================================\n");
     }
     #endregion
 }

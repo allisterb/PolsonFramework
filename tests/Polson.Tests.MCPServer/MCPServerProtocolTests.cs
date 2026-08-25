@@ -74,7 +74,8 @@ public class MCPServerProtocolTests : TestsRuntime, IAsyncLifetime
         Assert.True(r.IsError != true, $"CallToolAsync failed: {Text(r)}");
         var text = Text(r);
         Assert.Contains("success", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("pngBytes", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("imageBytes", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("webp", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -183,7 +184,7 @@ public class MCPServerProtocolTests : TestsRuntime, IAsyncLifetime
         Assert.True(r.IsError != true, $"Read failed: {Text(r)}");
         var text = Text(r);
         Assert.Contains("radius=75", text);
-        Assert.Contains("pngBytes", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("imageBytes", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

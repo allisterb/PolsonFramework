@@ -28,11 +28,14 @@ public class JsDrawingEngine : Runtime
     #endregion
 
     #region Methods
-    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null)
+    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85)
     {
         ArgumentNullException.ThrowIfNull(jsScript);
 
-        var result = new DrawingExecutionResult();
+        var result = new DrawingExecutionResult
+        {
+            ImageFormat = SkiaImageEncoder.NormalizeFormatName(format)
+        };
         var sw = Stopwatch.StartNew();
         var papers = new List<SnapPaper>();
         var canvases = new List<SkiaCanvas>();
@@ -249,22 +252,22 @@ public class JsDrawingEngine : Runtime
             if (evalResult.ToObject() is SkiaCanvas c)
             {
                 result.ReturnValue = c;
-                result.PngBytes = c.ToPngBytes();
+                result.ImageBytes = c.ToImageBytes(format, quality);
             }
             else if (evalResult.ToObject() is CanvasRenderingContext2D ctx)
             {
                 result.ReturnValue = ctx;
-                result.PngBytes = ctx.Canvas.ToPngBytes();
+                result.ImageBytes = ctx.Canvas.ToImageBytes(format, quality);
             }
             else if (evalResult.ToObject() is SkiaBitmapWrapper bw)
             {
                 result.ReturnValue = bw;
-                result.PngBytes = bw.ToPngBytes();
+                result.ImageBytes = bw.ToImageBytes(format, quality);
             }
             else if (evalResult.ToObject() is ImageData imgData)
             {
                 result.ReturnValue = imgData;
-                result.PngBytes = imgData.ToPngBytes();
+                result.ImageBytes = imgData.ToImageBytes(format, quality);
             }
             else if (evalResult.ToObject() is SnapPaper p)
             {
@@ -280,7 +283,7 @@ public class JsDrawingEngine : Runtime
             {
                 var lastCanvas = canvases.Last();
                 result.ReturnValue = evalResult.ToObject();
-                result.PngBytes = lastCanvas.ToPngBytes();
+                result.ImageBytes = lastCanvas.ToImageBytes(format, quality);
             }
             else if (papers.Count > 0)
             {
@@ -295,7 +298,7 @@ public class JsDrawingEngine : Runtime
             if (finalPaper != null)
             {
                 result.SvgXml = finalPaper.ToString();
-                result.PngBytes = finalPaper.ToPngBytes(defaultWidth, defaultHeight);
+                result.ImageBytes = finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality);
             }
         }
         catch (Exception ex) when (exitRequested || ex is ExitException || ex.InnerException is ExitException)
@@ -310,13 +313,13 @@ public class JsDrawingEngine : Runtime
 
             if (canvases.Count > 0)
             {
-                result.PngBytes = canvases.Last().ToPngBytes();
+                result.ImageBytes = canvases.Last().ToImageBytes(format, quality);
             }
             else if (papers.Count > 0)
             {
                 var finalPaper = papers.Last();
                 result.SvgXml = finalPaper.ToString();
-                result.PngBytes = finalPaper.ToPngBytes(defaultWidth, defaultHeight);
+                result.ImageBytes = finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality);
             }
         }
         catch (JavaScriptException jsex)

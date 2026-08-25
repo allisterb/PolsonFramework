@@ -13,10 +13,31 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 - **Sandbox Security:** `eval` and `new Function` are strictly disabled (`Host.StringCompilationAllowed = false`). Arbitrary external types and reflection are prohibited. Scripts can only interact with the explicit Polson drawing APIs.
 - **Execution Limits:** Scripts are enforced with statement limits (500,000 statements), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
 - **Return Value & Visual Rendering:**
-  - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the output headlessly to PNG bytes (`result.PngBytes`) and SVG XML (for vector trees).
+  - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to image bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**, with `"png"` and `"jpeg"` options available) and Base64 URI (`result.ImageDataUri`).
+  - For vector scenes (`SnapPaper` / `SnapElement`), `result.SvgXml` contains the serialized SVG XML markup. For 2D canvas raster scripts, `result.SvgXml` retains the last vector image produced by the agent prior to switching to 2D canvas mode.
   - If a script creates one or more canvases or Snap papers without explicitly returning them, the last created canvas/paper is rendered automatically.
 - **Logging & Output:** Output via `console.log(...)`, `log(...)`, `error(...)`, or `table(...)`.
 - **Early Termination:** Use `exit(message)` to terminate execution immediately and cleanly return the specified message without a failure status.
+
+---
+
+## Image Formats & Encoding Quality Trade-offs
+
+When calling `ExecuteScript` or `RenderSvg`, agents can supply optional `format` (`"webp"`, `"png"`, `"jpeg"`) and `quality` (`1`–`100`, default `85`) parameters to balance visual fidelity against message transfer speed over MCP JSON-RPC:
+
+| Format / Setting | Pure Encode Time | Total Roundtrip | Wire Payload | Compression vs PNG | Best Used For |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`webp` @ Q=85 (Default)** | **~114 ms** | **~200 ms** | **~113 KB** | **3.9× smaller** | **General purpose / balanced.** Pristine lines, gradients, and drop shadows with fast encoding. |
+| **`webp` @ Q=90–95** | ~160 ms | ~195 ms | ~135–180 KB | 2.4×–3.3× smaller | **High-precision vector art.** Ultra-fine strokes, sub-pixel path details, or high-contrast hairline illustrations. |
+| **`webp` @ Q=75–80** | ~114–160 ms | ~160–175 ms | ~83–97 KB | 4.6×–5.3× smaller | **Heavy procedural scenes.** Dense multi-layer canvas bitmaps, Perlin noise fields, or rapid drafting iterations. |
+| **`jpeg` @ Q=85** | **~26 ms** | **~65 ms** | **~200 KB** | 2.2× smaller | **Ultra-fast raster passes.** Opaque photos/textures where transparency (alpha channel) is not required. |
+| **`png` @ Q=100** | ~150 ms | ~220 ms | ~445 KB | 1.0× (Baseline) | **Lossless reference.** Bit-exact verification or debugging raw pixel data. |
+
+> [!TIP]
+> **Agent Decision Rule**:
+> - Use the default **`webp` @ Q=85** for most collaborative iterations.
+> - Bump to **Q=90–95** if you notice subtle artifacts in thin hairline vectors or subtle gradient ramps.
+> - Drop to **Q=75–80** or switch to **`jpeg`** when generating dense multi-pass textures or complex procedural raster canvases to maximize messaging speed and conserve context window bandwidth.
 
 ---
 
@@ -112,8 +133,8 @@ Represents the root SVG canvas surface:
 - `paper.use(element: SnapElement)` → `SnapElement` — Creates a `<use>` element referencing another element.
 - `paper.clear()` → `void` — Removes all child nodes from the document.
 - `paper.toString()` → `string` — Serializes the document tree to an SVG XML string.
-- `paper.toPngBytes(width?: number, height?: number)` → `byte[]` — Headlessly renders the SVG to a PNG byte buffer.
-- `paper.toDataUrl(width?: number, height?: number)` → `string` — Renders to a `data:image/png;base64,...` URL.
+- `paper.toImageBytes(width?: number, height?: number, format?: string, quality?: number)` → `byte[]` — Headlessly renders the SVG to image bytes (default: WebP Q=85).
+- `paper.toDataUri(format?: string, width?: number, height?: number, quality?: number)` → `string` — Renders to a `data:image/...;base64,...` URI (defaults to `format: 'svg'`).
 
 ## `SnapElement`
 

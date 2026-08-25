@@ -50,8 +50,8 @@ public class MCPServerTests : TestsRuntime
 
         var result = await tools.ExecuteScript(script, 400, 300);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
-        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
         Assert.NotNull(result.SvgXml);
     }
 
@@ -63,8 +63,8 @@ public class MCPServerTests : TestsRuntime
 
         var result = tools.RenderSvg(svg, 200, 200);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
-        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
     }
 
     [Fact]

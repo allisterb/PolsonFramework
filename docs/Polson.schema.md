@@ -18,37 +18,45 @@ The result envelope produced by executing a JavaScript drawing script:
   "title": "DrawingExecutionResult",
   "type": "object",
   "properties": {
-    "Success": {
+    "success": {
       "type": "boolean",
       "description": "True if the script executed to completion without unhandled exceptions or syntax errors."
     },
-    "Error": {
+    "error": {
       "type": ["string", "null"],
       "description": "Error diagnostic message if execution failed."
     },
-    "SvgXml": {
+    "svgXml": {
       "type": ["string", "null"],
-      "description": "Rendered SVG XML markup when an SVG document is produced."
+      "description": "Rendered SVG XML markup when a vector SVG document is produced."
     },
-    "PngBytes": {
+    "imageBytes": {
       "type": ["array", "null"],
       "items": { "type": "integer", "minimum": 0, "maximum": 255 },
-      "description": "Rendered PNG image byte stream."
+      "description": "Rendered image byte stream (encoded as WebP, PNG, or JPEG; default: WebP Q=85)."
     },
-    "Logs": {
+    "imageFormat": {
+      "type": "string",
+      "description": "The format of the encoded image ('webp', 'png', 'jpeg')."
+    },
+    "imageDataUri": {
+      "type": ["string", "null"],
+      "description": "The rendered image formatted as a base64 Data URI ('data:image/...;base64,...')."
+    },
+    "logs": {
       "type": "array",
       "items": { "type": "string" },
       "description": "Accumulated log messages from console.log, log, error, table, and exit calls."
     },
-    "ExecutionTimeMs": {
+    "executionTimeMs": {
       "type": "integer",
       "description": "Script execution duration in milliseconds."
     },
-    "ReturnValue": {
+    "returnValue": {
       "description": "The raw evaluation return value from the script."
     }
   },
-  "required": ["Success", "Logs", "ExecutionTimeMs"]
+  "required": ["success", "logs", "executionTimeMs", "imageFormat"]
 }
 ```
 

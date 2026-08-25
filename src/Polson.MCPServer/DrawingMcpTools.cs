@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
 public class DrawingMcpTools
@@ -34,11 +35,13 @@ public class DrawingMcpTools
 
     #region Methods
     [McpServerTool(Name = "ExecuteScript")]
-    [Description("Executes a JavaScript drawing script inside the sandboxed graphics engine, supporting Snap.svg vector graphics, HTML5 2D Canvas, and Skia procedural shaders, filters, and image processing. Automatically renders returned paper/canvas/bitmap/image-data to PNG bytes and SVG markup.")]
+    [Description("Executes a JavaScript drawing script inside the sandboxed graphics engine, supporting Snap.svg vector graphics, HTML5 2D Canvas, and Skia procedural shaders, filters, and image processing. Automatically renders returned paper/canvas/bitmap/image-data to WebP/PNG/JPEG bytes and SVG markup.")]
     public async Task<DrawingExecutionResult> ExecuteScript(
         [Description("The JavaScript code to execute.")] string script,
         [Description("Default canvas / SVG viewport width in pixels (default 800).")] int? width = null,
         [Description("Default canvas / SVG viewport height in pixels (default 600).")] int? height = null,
+        [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
+        [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
         RequestContext<CallToolRequestParams>? context = null,
         IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
@@ -56,7 +59,9 @@ public class DrawingMcpTools
         session.EnterCall();
         try
         {
-            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session), cancellationToken);
+            var fmt = format ?? "webp";
+            var q = quality ?? 85;
+            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q), cancellationToken);
             return await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
         }
         finally
@@ -65,8 +70,8 @@ public class DrawingMcpTools
         }
     }
 
-    public Task<DrawingExecutionResult> ExecuteSvgScript(string script, int? width = null, int? height = null)
-        => ExecuteScript(script, width, height);
+    public Task<DrawingExecutionResult> ExecuteSvgScript(string script, int? width = null, int? height = null, string? format = null, int? quality = null)
+        => ExecuteScript(script, width, height, format, quality);
 
     [McpServerTool(Name = "History")]
     [Description("Returns the last n scripts executed by the agent in this session. If n is null or omitted, returns the last script.")]
@@ -86,24 +91,29 @@ public class DrawingMcpTools
     }
 
     [McpServerTool(Name = "RenderSvg")]
-    [Description("Headlessly renders raw SVG XML markup to a PNG byte array.")]
+    [Description("Headlessly renders raw SVG XML markup to a WebP/PNG/JPEG byte array.")]
     public DrawingExecutionResult RenderSvg(
         [Description("The SVG XML string to render.")] string svgXml,
         [Description("Target image width in pixels (optional, defaults to SVG width or 800).")] int? width = null,
-        [Description("Target image height in pixels (optional, defaults to SVG height or 600).")] int? height = null)
+        [Description("Target image height in pixels (optional, defaults to SVG height or 600).")] int? height = null,
+        [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
+        [Description("Image encoding quality (1-100; default 85).")] int? quality = null)
     {
         ArgumentNullException.ThrowIfNull(svgXml);
 
+        var fmt = format ?? "webp";
+        var q = quality ?? 85;
         var result = new DrawingExecutionResult
         {
-            SvgXml = svgXml
+            SvgXml = svgXml,
+            ImageFormat = SkiaImageEncoder.NormalizeFormatName(fmt)
         };
 
         try
         {
-            var png = SvgRenderPipeline.RenderToPng(svgXml, width, height);
+            var imgBytes = SvgRenderPipeline.RenderToImage(svgXml, width, height, fmt, q);
             result.Success = true;
-            result.PngBytes = png;
+            result.ImageBytes = imgBytes;
         }
         catch (Exception ex)
         {
@@ -187,4 +197,3 @@ public class DrawingMcpTools
     }
     #endregion
 }
-

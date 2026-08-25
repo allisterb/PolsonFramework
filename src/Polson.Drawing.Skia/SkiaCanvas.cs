@@ -50,18 +50,23 @@ public class SkiaCanvas : IDisposable
     public ImageData toImageData() =>
         getContext("2d").getImageData(0, 0, Width, Height);
 
-    public byte[] ToPngBytes(int quality = 100)
+    public byte[] ToImageBytes(string format = "webp", int quality = 85) =>
+        SkiaImageEncoder.Encode(Bitmap, format, quality);
+
+    public byte[] toImageBytes(string format = "webp", int quality = 85) =>
+        ToImageBytes(format, quality);
+
+    public string ToDataUri(string format = "webp", int quality = 85)
     {
-        using var image = SKImage.FromBitmap(Bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, quality);
-        return data.ToArray();
+        var bytes = ToImageBytes(format, quality);
+        return SkiaImageEncoder.ToDataUri(bytes, format);
     }
 
-    public string ToDataUrl()
-    {
-        var bytes = ToPngBytes();
-        return "data:image/png;base64," + Convert.ToBase64String(bytes);
-    }
+    public string toDataUri(string format = "webp", int quality = 85) =>
+        ToDataUri(format, quality);
+
+    public string toDataURL(string format = "webp", int quality = 85) =>
+        ToDataUri(format, quality);
 
     public void Dispose()
     {
@@ -75,4 +80,3 @@ public class SkiaCanvas : IDisposable
     private CanvasRenderingContext2D? _context;
     #endregion
 }
-

@@ -20,9 +20,9 @@ public class ImageAndBitmapTests : TestsRuntime
         var pixel = bmp.getPixel(10, 10);
         Assert.Equal("#FF0000FF", pixel);
 
-        var pngBytes = bmp.ToPngBytes();
-        Assert.NotNull(pngBytes);
-        Assert.True(pngBytes.Length > 0);
+        var webpBytes = bmp.ToImageBytes();
+        Assert.NotNull(webpBytes);
+        Assert.True(webpBytes.Length > 0);
     }
 
     [Fact]
@@ -68,9 +68,9 @@ public class ImageAndBitmapTests : TestsRuntime
         // 9-param drawImage: sx, sy, sw, sh, dx, dy, dw, dh
         ctx.drawImage(sourceBmp, 25, 25, 50, 50, 100, 100, 200, 200);
 
-        var pngBytes = canvas.ToPngBytes();
-        Assert.NotNull(pngBytes);
-        Assert.True(pngBytes.Length > 0);
+        var imgBytes = canvas.ToImageBytes();
+        Assert.NotNull(imgBytes);
+        Assert.True(imgBytes.Length > 0);
     }
     #endregion
 
@@ -116,7 +116,7 @@ public class ImageAndBitmapTests : TestsRuntime
 
         Assert.Equal(200, filteredBmp.Width);
         Assert.Equal(200, filteredBmp.Height);
-        Assert.NotNull(filteredBmp.ToPngBytes());
+        Assert.NotNull(filteredBmp.ToImageBytes());
     }
     #endregion
 
@@ -156,9 +156,8 @@ public class ImageAndBitmapTests : TestsRuntime
 
         var result = engine.Execute(jsCode, 400, 400);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
-        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
     }
     #endregion
 }
-

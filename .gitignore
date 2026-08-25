@@ -432,3 +432,4 @@ FodyWeavers.xsd
 reference/*
 tests/agent/**/*.png
 tests/agent/**/*.svg
+tests/agent/**/*.webp

@@ -43,18 +43,27 @@ public class ImageData
     #endregion
 
     #region Methods
-    public byte[] ToPngBytes(int quality = 100)
+    public byte[] ToImageBytes(string format = "webp", int quality = 85)
     {
         using var tempBmp = new SKBitmap(new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
         var pixels = tempBmp.GetPixelSpan();
         Data.CopyTo(pixels);
-        using var skImg = SKImage.FromBitmap(tempBmp);
-        using var pngData = skImg.Encode(SKEncodedImageFormat.Png, quality);
-        return pngData.ToArray();
+        return SkiaImageEncoder.Encode(tempBmp, format, quality);
     }
 
-    public string ToDataUrl() =>
-        "data:image/png;base64," + Convert.ToBase64String(ToPngBytes());
+    public byte[] toImageBytes(string format = "webp", int quality = 85) =>
+        ToImageBytes(format, quality);
+
+    public string ToDataUri(string format = "webp", int quality = 85)
+    {
+        var bytes = ToImageBytes(format, quality);
+        return SkiaImageEncoder.ToDataUri(bytes, format);
+    }
+
+    public string toDataUri(string format = "webp", int quality = 85) =>
+        ToDataUri(format, quality);
+
+    public string toDataURL(string format = "webp", int quality = 85) =>
+        ToDataUri(format, quality);
     #endregion
 }
-

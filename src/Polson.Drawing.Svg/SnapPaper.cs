@@ -311,19 +311,38 @@ public class SnapPaper : SnapElement
         return sw.ToString();
     }
 
-    public string ToDataUrl()
+    public string ToDataUri(string format = "svg", int? width = null, int? height = null, int quality = 85)
     {
-        var xml = ToString();
-        var bytes = Encoding.UTF8.GetBytes(xml);
-        var base64 = Convert.ToBase64String(bytes);
-        return "data:image/svg+xml;base64," + base64;
+        if (string.Equals(format, "svg", StringComparison.OrdinalIgnoreCase))
+        {
+            var xml = ToString();
+            var bytes = Encoding.UTF8.GetBytes(xml);
+            return "data:image/svg+xml;base64," + Convert.ToBase64String(bytes);
+        }
+        var imgBytes = ToImageBytes(width, height, format, quality);
+        var mime = (format.ToLowerInvariant()) switch
+        {
+            "png" => "image/png",
+            "jpeg" or "jpg" => "image/jpeg",
+            _ => "image/webp"
+        };
+        return $"data:{mime};base64,{Convert.ToBase64String(imgBytes)}";
     }
 
-    public byte[] ToPngBytes(int? width = null, int? height = null) =>
-        SvgRenderPipeline.RenderToPng(Document, width, height);
+    public string toDataUri(string format = "svg", int? width = null, int? height = null, int quality = 85) =>
+        ToDataUri(format, width, height, quality);
 
-    public void SavePng(string filePath, int? width = null, int? height = null) =>
-        SvgRenderPipeline.SavePng(Document, filePath, width, height);
+    public string toDataURL(string format = "svg", int? width = null, int? height = null, int quality = 85) =>
+        ToDataUri(format, width, height, quality);
+
+    public byte[] ToImageBytes(int? width = null, int? height = null, string format = "webp", int quality = 85) =>
+        SvgRenderPipeline.RenderToImage(Document, width, height, format, quality);
+
+    public byte[] toImageBytes(int? width = null, int? height = null, string format = "webp", int quality = 85) =>
+        ToImageBytes(width, height, format, quality);
+
+    public void SaveImage(string filePath, int? width = null, int? height = null, string format = "webp", int quality = 85) =>
+        SvgRenderPipeline.SaveImage(Document, filePath, width, height, format, quality);
 
     private static SvgDocument CreateDocument(float width, float height) =>
         new()

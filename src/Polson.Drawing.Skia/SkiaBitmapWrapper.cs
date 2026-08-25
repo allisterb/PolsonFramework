@@ -158,15 +158,23 @@ public class SkiaBitmapWrapper : IDisposable
         return new SkiaBitmapWrapper(filtered);
     }
 
-    public byte[] ToPngBytes(int quality = 100)
+    public byte[] ToImageBytes(string format = "webp", int quality = 85) =>
+        SkiaImageEncoder.Encode(Bitmap, format, quality);
+
+    public byte[] toImageBytes(string format = "webp", int quality = 85) =>
+        ToImageBytes(format, quality);
+
+    public string ToDataUri(string format = "webp", int quality = 85)
     {
-        using var image = SKImage.FromBitmap(Bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, quality);
-        return data.ToArray();
+        var bytes = ToImageBytes(format, quality);
+        return SkiaImageEncoder.ToDataUri(bytes, format);
     }
 
-    public string ToDataUrl() =>
-        "data:image/png;base64," + Convert.ToBase64String(ToPngBytes());
+    public string toDataUri(string format = "webp", int quality = 85) =>
+        ToDataUri(format, quality);
+
+    public string toDataURL(string format = "webp", int quality = 85) =>
+        ToDataUri(format, quality);
 
     public SkiaBitmapWrapper clone() =>
         new(Bitmap.Copy());

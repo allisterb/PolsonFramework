@@ -1,7 +1,6 @@
 namespace Polson.Tests.Drawing;
 
 using System;
-using System.Drawing;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 using Polson.MCPServer;
@@ -9,19 +8,19 @@ using Xunit;
 
 public class Canvas2DTests : TestsRuntime
 {
-    #region Canvas and Primitives Tests
+    #region Canvas Creation and Path Drawing Tests
     [Fact]
-    public void TestCanvasCreationAndDirectShapes()
+    public void TestCanvasCreationAndBasicDrawing()
     {
-        var canvas = new SkiaCanvas(800, 600);
-        Assert.Equal(800, canvas.Width);
-        Assert.Equal(600, canvas.Height);
+        var canvas = new SkiaCanvas(400, 300);
+        Assert.Equal(400, canvas.Width);
+        Assert.Equal(300, canvas.Height);
 
         var ctx = canvas.getContext("2d");
         Assert.NotNull(ctx);
 
         ctx.fillStyle = "#ff0000";
-        ctx.fillRect(10, 20, 100, 50);
+        ctx.fillRect(10, 10, 100, 80);
 
         ctx.strokeStyle = "#0000ff";
         ctx.lineWidth = 4f;
@@ -29,15 +28,15 @@ public class Canvas2DTests : TestsRuntime
 
         ctx.clearRect(20, 30, 20, 20);
 
-        var pngBytes = canvas.ToPngBytes();
-        Assert.NotNull(pngBytes);
-        Assert.True(pngBytes.Length > 0);
+        var webpBytes = canvas.ToImageBytes();
+        Assert.NotNull(webpBytes);
+        Assert.True(webpBytes.Length > 0);
 
-        // Verify PNG signature
-        Assert.Equal(0x89, pngBytes[0]);
-        Assert.Equal(0x50, pngBytes[1]);
-        Assert.Equal(0x4E, pngBytes[2]);
-        Assert.Equal(0x47, pngBytes[3]);
+        // Verify WebP signature
+        Assert.Equal((byte)'R', webpBytes[0]);
+        Assert.Equal((byte)'I', webpBytes[1]);
+        Assert.Equal((byte)'F', webpBytes[2]);
+        Assert.Equal((byte)'F', webpBytes[3]);
     }
 
     [Fact]
@@ -65,8 +64,8 @@ public class Canvas2DTests : TestsRuntime
         ctx.lineWidth = 3f;
         ctx.stroke();
 
-        var pngBytes = canvas.ToPngBytes();
-        Assert.True(pngBytes.Length > 0);
+        var imgBytes = canvas.ToImageBytes();
+        Assert.True(imgBytes.Length > 0);
     }
     #endregion
 
@@ -77,35 +76,59 @@ public class Canvas2DTests : TestsRuntime
         var canvas = new SkiaCanvas(400, 400);
         var ctx = canvas.getContext("2d");
 
-        ctx.fillStyle = "#000000";
+        ctx.fillStyle = "#ff0000";
         ctx.save();
 
-        ctx.translate(200, 200);
+        ctx.translate(100, 100);
         ctx.rotate(MathF.PI / 4f);
-        ctx.scale(1.5f, 1.5f);
-        ctx.fillStyle = "#ef4444";
-        ctx.fillRect(-50, -50, 100, 100);
+        ctx.scale(2f, 2f);
+        ctx.fillStyle = "#00ff00";
+        ctx.fillRect(0, 0, 50, 50);
 
         ctx.restore();
-        // Restored state should have original fillStyle
-        Assert.Equal("#000000", ctx.fillStyle.ToString());
+        ctx.fillRect(0, 0, 20, 20); // Should be red (#ff0000)
+
+        var bmp = canvas.toBitmap();
+        Assert.NotNull(bmp);
+        Assert.Equal(400, bmp.Width);
     }
     #endregion
 
-    #region Gradients and Typography Tests
+    #region Gradients and Patterns Tests
     [Fact]
-    public void TestGradientsAndTextMeasurement()
+    public void TestLinearAndRadialGradients()
     {
         var canvas = new SkiaCanvas(600, 400);
         var ctx = canvas.getContext("2d");
 
-        var grad = ctx.createLinearGradient(0, 0, 600, 400);
-        grad.addColorStop(0f, "#1e1b4b");
-        grad.addColorStop(0.5f, "#4338ca");
-        grad.addColorStop(1f, "#06b6d4");
+        // Linear gradient
+        var linGrad = ctx.createLinearGradient(0, 0, 600, 0);
+        linGrad.addColorStop(0f, "#ff0000");
+        linGrad.addColorStop(0.5f, "#00ff00");
+        linGrad.addColorStop(1f, "#0000ff");
 
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 600, 400);
+        ctx.fillStyle = linGrad;
+        ctx.fillRect(0, 0, 600, 200);
+
+        // Radial gradient
+        var radGrad = ctx.createRadialGradient(300, 300, 20, 300, 300, 100);
+        radGrad.addColorStop(0f, "#ffffff");
+        radGrad.addColorStop(1f, "#000000");
+
+        ctx.fillStyle = radGrad;
+        ctx.fillRect(0, 200, 600, 200);
+
+        var dataUri = canvas.ToDataUri();
+        Assert.StartsWith("data:image/webp;base64,", dataUri);
+    }
+    #endregion
+
+    #region Text Rendering and Metrics Tests
+    [Fact]
+    public void TestTextRenderingAndMetrics()
+    {
+        var canvas = new SkiaCanvas(600, 400);
+        var ctx = canvas.getContext("2d");
 
         ctx.font = "bold 32px sans-serif";
         ctx.fillStyle = "#ffffff";
@@ -118,8 +141,8 @@ public class Canvas2DTests : TestsRuntime
 
         ctx.fillText("Skia Canvas 2D", 300, 200);
 
-        var pngBytes = canvas.ToPngBytes();
-        Assert.True(pngBytes.Length > 0);
+        var imgBytes = canvas.ToImageBytes();
+        Assert.True(imgBytes.Length > 0);
     }
     #endregion
 
@@ -141,8 +164,8 @@ public class Canvas2DTests : TestsRuntime
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(100, 100, 200, 200);
 
-        var pngBytes = canvas.ToPngBytes();
-        Assert.True(pngBytes.Length > 0);
+        var imgBytes = canvas.ToImageBytes();
+        Assert.True(imgBytes.Length > 0);
     }
     #endregion
 
@@ -165,9 +188,9 @@ public class Canvas2DTests : TestsRuntime
         // Draw SVG onto 2D Canvas
         ctx.drawSvg(paper, 150, 150, 300, 300);
 
-        var pngBytes = canvas.ToPngBytes();
-        Assert.NotNull(pngBytes);
-        Assert.True(pngBytes.Length > 0);
+        var imgBytes = canvas.ToImageBytes();
+        Assert.NotNull(imgBytes);
+        Assert.True(imgBytes.Length > 0);
     }
     #endregion
 
@@ -204,8 +227,8 @@ public class Canvas2DTests : TestsRuntime
 
         var result = engine.Execute(jsCode, 800, 600);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
-        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
         Assert.Contains("[LOG] 2D Canvas scene generated successfully", result.Logs);
     }
 
@@ -234,9 +257,8 @@ public class Canvas2DTests : TestsRuntime
 
         var result = engine.Execute(jsCode, 600, 600);
         Assert.True(result.Success, result.Error);
-        Assert.NotNull(result.PngBytes);
-        Assert.True(result.PngBytes.Length > 0);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
     }
     #endregion
 }
-

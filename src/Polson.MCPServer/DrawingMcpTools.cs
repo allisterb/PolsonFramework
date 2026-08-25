@@ -1,7 +1,9 @@
 namespace Polson.MCPServer;
 
 using System;
+using System.ComponentModel;
 using System.Text.Json.Nodes;
+using ModelContextProtocol.Server;
 using Polson.Drawing.Svg;
 
 public class DrawingMcpTools
@@ -18,13 +20,26 @@ public class DrawingMcpTools
     #endregion
 
     #region Methods
-    public DrawingExecutionResult ExecuteSvgScript(string script, int? width = null, int? height = null)
+    [McpServerTool(Name = "ExecuteScript")]
+    [Description("Executes a JavaScript drawing script inside the sandboxed graphics engine, supporting Snap.svg vector graphics, HTML5 2D Canvas, and Skia procedural shaders, filters, and image processing. Automatically renders returned paper/canvas/bitmap/image-data to PNG bytes and SVG markup.")]
+    public DrawingExecutionResult ExecuteScript(
+        [Description("The JavaScript code to execute.")] string script,
+        [Description("Default canvas / SVG viewport width in pixels (default 800).")] int? width = null,
+        [Description("Default canvas / SVG viewport height in pixels (default 600).")] int? height = null)
     {
         ArgumentNullException.ThrowIfNull(script);
         return Engine.Execute(script, width ?? 800, height ?? 600);
     }
 
-    public DrawingExecutionResult RenderSvg(string svgXml, int? width = null, int? height = null)
+    public DrawingExecutionResult ExecuteSvgScript(string script, int? width = null, int? height = null)
+        => ExecuteScript(script, width, height);
+
+    [McpServerTool(Name = "RenderSvg")]
+    [Description("Headlessly renders raw SVG XML markup to a PNG byte array.")]
+    public DrawingExecutionResult RenderSvg(
+        [Description("The SVG XML string to render.")] string svgXml,
+        [Description("Target image width in pixels (optional, defaults to SVG width or 800).")] int? width = null,
+        [Description("Target image height in pixels (optional, defaults to SVG height or 600).")] int? height = null)
     {
         ArgumentNullException.ThrowIfNull(svgXml);
 
@@ -48,7 +63,11 @@ public class DrawingMcpTools
         return result;
     }
 
-    public JsonObject MeasureSvgPath(string pathData, float? length = null)
+    [McpServerTool(Name = "MeasureSvgPath")]
+    [Description("Measures an SVG path definition to calculate its total length, bounding box, and optional point coordinates at length.")]
+    public JsonObject MeasureSvgPath(
+        [Description("The SVG path data string (e.g. 'M10 10 L50 50 Z').")] string pathData,
+        [Description("Optional distance along the path to sample coordinates and tangent angle.")] float? length = null)
     {
         ArgumentNullException.ThrowIfNull(pathData);
 

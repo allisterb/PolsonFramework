@@ -2,6 +2,7 @@ namespace Polson.MCPServer;
 
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 public class DrawingExecutionResult
 {
@@ -31,6 +32,7 @@ public class DrawingExecutionResult
 
     public string? Error { get; set; }
 
+    [JsonIgnore]
     public object? ReturnValue { get; set; }
     #endregion
 }

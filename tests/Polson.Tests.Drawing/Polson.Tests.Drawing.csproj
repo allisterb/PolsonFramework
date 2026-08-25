@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Polson.Drawing.Svg\Polson.Drawing.Svg.csproj" />
+    <ProjectReference Include="..\..\src\Polson.Drawing.Skia\Polson.Drawing.Skia.csproj" />
     <ProjectReference Include="..\..\src\Polson.MCPServer\Polson.MCPServer.csproj" />
     <ProjectReference Include="..\..\src\Polson.Runtime\Polson.Runtime.csproj" />
   </ItemGroup>

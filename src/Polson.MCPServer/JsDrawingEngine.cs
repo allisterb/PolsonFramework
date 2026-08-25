@@ -12,6 +12,7 @@ using Jint;
 using Jint.Native;
 using Jint.Runtime;
 using Jint.Runtime.Interop;
+using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
 public class JsDrawingEngine : Runtime
@@ -35,6 +36,7 @@ public class JsDrawingEngine : Runtime
         var result = new DrawingExecutionResult();
         var sw = Stopwatch.StartNew();
         var papers = new List<SnapPaper>();
+        var canvases = new List<SkiaCanvas>();
         var exitRequested = false;
         string? exitMessage = null;
 
@@ -55,6 +57,11 @@ public class JsDrawingEngine : Runtime
             // Pure .NET Mina animation/easing object
             var mina = new Mina();
             engine.SetValue("mina", mina);
+
+            // Pure .NET Skia API namespace
+            var skiaApi = new SkiaApi();
+            engine.SetValue("Skia", skiaApi);
+            engine.SetValue("SK", skiaApi);
 
             // Global logging & exit helpers
             engine.SetValue("log", new Action<string>(msg =>
@@ -83,6 +90,31 @@ public class JsDrawingEngine : Runtime
                 Runtime.Info(tableStr);
                 return JsValue.Undefined;
             }));
+
+            // 2D Canvas factory functions
+            Func<JsValue[], SkiaCanvas> canvasFactory = args =>
+            {
+                var w = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToInt32(args[0].ToObject()) : defaultWidth;
+                var h = args.Length > 1 && !args[1].IsUndefined() ? Convert.ToInt32(args[1].ToObject()) : defaultHeight;
+                var canvas = new SkiaCanvas(w, h);
+                canvases.Add(canvas);
+                return canvas;
+            };
+
+            var canvasConstructor = new ClrFunction(engine, "Canvas", (_, args) =>
+            {
+                var c = canvasFactory(args);
+                return JsValue.FromObject(engine, c);
+            });
+
+            var createCanvasFunc = new ClrFunction(engine, "createCanvas", (_, args) =>
+            {
+                var c = canvasFactory(args);
+                return JsValue.FromObject(engine, c);
+            });
+
+            engine.SetValue("Canvas", canvasConstructor);
+            engine.SetValue("createCanvas", createCanvasFunc);
 
             // Pure .NET Snap function & namespace
             var snapFunc = new ClrFunction(engine, "Snap", (_, args) =>
@@ -189,7 +221,17 @@ public class JsDrawingEngine : Runtime
             result.Success = true;
 
             SnapPaper? finalPaper = null;
-            if (evalResult.ToObject() is SnapPaper p)
+            if (evalResult.ToObject() is SkiaCanvas c)
+            {
+                result.ReturnValue = c;
+                result.PngBytes = c.ToPngBytes();
+            }
+            else if (evalResult.ToObject() is CanvasRenderingContext2D ctx)
+            {
+                result.ReturnValue = ctx;
+                result.PngBytes = ctx.Canvas.ToPngBytes();
+            }
+            else if (evalResult.ToObject() is SnapPaper p)
             {
                 finalPaper = p;
                 result.ReturnValue = p;
@@ -199,9 +241,19 @@ public class JsDrawingEngine : Runtime
                 finalPaper = el.Paper;
                 result.ReturnValue = el;
             }
+            else if (canvases.Count > 0)
+            {
+                var lastCanvas = canvases.Last();
+                result.ReturnValue = evalResult.ToObject();
+                result.PngBytes = lastCanvas.ToPngBytes();
+            }
             else if (papers.Count > 0)
             {
                 finalPaper = papers.Last();
+                result.ReturnValue = evalResult.ToObject();
+            }
+            else
+            {
                 result.ReturnValue = evalResult.ToObject();
             }
 
@@ -209,10 +261,6 @@ public class JsDrawingEngine : Runtime
             {
                 result.SvgXml = finalPaper.ToString();
                 result.PngBytes = finalPaper.ToPngBytes(defaultWidth, defaultHeight);
-            }
-            else
-            {
-                result.ReturnValue = evalResult.ToObject();
             }
         }
         catch (Exception ex) when (exitRequested || ex is ExitException || ex.InnerException is ExitException)
@@ -225,7 +273,11 @@ public class JsDrawingEngine : Runtime
             Runtime.Info("[JS EXIT] {0}", exitText);
             result.ReturnValue = exitText;
 
-            if (papers.Count > 0)
+            if (canvases.Count > 0)
+            {
+                result.PngBytes = canvases.Last().ToPngBytes();
+            }
+            else if (papers.Count > 0)
             {
                 var finalPaper = papers.Last();
                 result.SvgXml = finalPaper.ToString();

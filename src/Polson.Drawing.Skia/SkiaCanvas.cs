@@ -19,6 +19,9 @@ public class SkiaCanvas : IDisposable
     #endregion
 
     #region Properties
+    public int width => Width;
+    public int height => Height;
+
     public int Width { get; }
     public int Height { get; }
     public SKBitmap Bitmap { get; }
@@ -40,6 +43,12 @@ public class SkiaCanvas : IDisposable
         var skColor = string.IsNullOrEmpty(color) ? SKColors.Transparent : SkiaColorParser.Parse(color);
         SkCanvas.Clear(skColor);
     }
+
+    public SkiaBitmapWrapper toBitmap() =>
+        new(Bitmap.Copy());
+
+    public ImageData toImageData() =>
+        getContext("2d").getImageData(0, 0, Width, Height);
 
     public byte[] ToPngBytes(int quality = 100)
     {

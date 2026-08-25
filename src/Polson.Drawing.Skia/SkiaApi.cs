@@ -3,6 +3,7 @@ namespace Polson.Drawing.Skia;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using SkiaSharp;
 
@@ -13,6 +14,54 @@ public class SkiaApi
     public SkiaImageFilterApi ImageFilter { get; } = new();
     public SkiaColorFilterApi ColorFilter { get; } = new();
     public SkiaPathEffectApi PathEffect { get; } = new();
+    public SkiaImageApi Image { get; } = new();
+    public SkiaBitmapFactoryApi Bitmap { get; } = new();
+    #endregion
+}
+
+public class SkiaImageApi
+{
+    #region Methods
+    public SkiaBitmapWrapper load(string filePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        if (!File.Exists(filePath))
+            throw new FileNotFoundException($"Image file not found: {filePath}", filePath);
+
+        using var stream = File.OpenRead(filePath);
+        var bmp = SKBitmap.Decode(stream);
+        if (bmp == null)
+            throw new InvalidOperationException($"Failed to decode image from {filePath}");
+
+        return new SkiaBitmapWrapper(bmp);
+    }
+
+    public SkiaBitmapWrapper fromDataUrl(string dataUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataUrl);
+        var commaIdx = dataUrl.IndexOf(',');
+        var base64 = commaIdx >= 0 ? dataUrl[(commaIdx + 1)..] : dataUrl;
+        var bytes = Convert.FromBase64String(base64);
+        return fromBytes(bytes);
+    }
+
+    public SkiaBitmapWrapper fromBytes(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        var bmp = SKBitmap.Decode(bytes);
+        if (bmp == null)
+            throw new InvalidOperationException("Failed to decode image from byte buffer");
+
+        return new SkiaBitmapWrapper(bmp);
+    }
+    #endregion
+}
+
+public class SkiaBitmapFactoryApi
+{
+    #region Methods
+    public SkiaBitmapWrapper create(int width, int height) =>
+        new(width, height);
     #endregion
 }
 
@@ -68,6 +117,21 @@ public class SkiaShaderApi
         var positions = ParsePositions(posObj);
         var tm = ParseTileMode(tileMode);
         return SKShader.CreateRadialGradient(new SKPoint(cx, cy), radius, colors, positions, tm);
+    }
+
+    public SKShader bitmap(object bitmapObj, string tileX = "clamp", string tileY = "clamp")
+    {
+        var bmp = bitmapObj switch
+        {
+            SkiaBitmapWrapper bw => bw.Bitmap,
+            SkiaCanvas sc => sc.Bitmap,
+            SKBitmap b => b,
+            _ => throw new ArgumentException("Invalid bitmap object", nameof(bitmapObj))
+        };
+
+        var tx = ParseTileMode(tileX);
+        var ty = ParseTileMode(tileY);
+        return SKShader.CreateBitmap(bmp, tx, ty);
     }
 
     private static SKColor[] ParseColors(object obj)

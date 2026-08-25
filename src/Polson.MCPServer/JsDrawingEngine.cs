@@ -214,6 +214,29 @@ public class JsDrawingEngine : Runtime
 
             engine.SetValue("Snap", snapFunc);
 
+            var imageDataConstructor = new ClrFunction(engine, "ImageData", (_, args) =>
+            {
+                if (args.Length >= 2 && args[0].ToObject() is object[] or byte[])
+                {
+                    var data = args[0].ToObject() is byte[] b
+                        ? b
+                        : ((object[])args[0].ToObject()!).Select(x => Convert.ToByte(x, CultureInfo.InvariantCulture)).ToArray();
+                    var w = Convert.ToInt32(args[1].ToObject(), CultureInfo.InvariantCulture);
+                    var h = args.Length > 2
+                        ? Convert.ToInt32(args[2].ToObject(), CultureInfo.InvariantCulture)
+                        : (data.Length / Math.Max(1, w * 4));
+                    return JsValue.FromObject(engine, new ImageData(data, w, h));
+                }
+                else if (args.Length >= 2)
+                {
+                    var w = Convert.ToInt32(args[0].ToObject(), CultureInfo.InvariantCulture);
+                    var h = Convert.ToInt32(args[1].ToObject(), CultureInfo.InvariantCulture);
+                    return JsValue.FromObject(engine, new ImageData(w, h));
+                }
+                return JsValue.FromObject(engine, new ImageData(1, 1));
+            });
+            engine.SetValue("ImageData", imageDataConstructor);
+
             var evalResult = engine.Evaluate(jsScript);
             sw.Stop();
 
@@ -230,6 +253,16 @@ public class JsDrawingEngine : Runtime
             {
                 result.ReturnValue = ctx;
                 result.PngBytes = ctx.Canvas.ToPngBytes();
+            }
+            else if (evalResult.ToObject() is SkiaBitmapWrapper bw)
+            {
+                result.ReturnValue = bw;
+                result.PngBytes = bw.ToPngBytes();
+            }
+            else if (evalResult.ToObject() is ImageData imgData)
+            {
+                result.ReturnValue = imgData;
+                result.PngBytes = imgData.ToPngBytes();
             }
             else if (evalResult.ToObject() is SnapPaper p)
             {

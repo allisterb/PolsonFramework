@@ -463,22 +463,46 @@ public class CanvasRenderingContext2D
     public CanvasGradient createConicGradient(float startAngle, float x, float y) =>
         new(startAngle, x, y);
 
-    public CanvasPattern createPattern(SKBitmap bitmap, string repetition = "repeat") =>
-        new(bitmap, repetition);
+    public CanvasPattern createPattern(object imageObj, string repetition = "repeat")
+    {
+        var bmp = ExtractBitmap(imageObj) ?? throw new ArgumentException("Invalid image object for pattern");
+        return new CanvasPattern(bmp, repetition);
+    }
     #endregion
 
     #region Image & Cross-Engine SVG Drawing
-    public void drawImage(object imageObj, float dx, float dy, float? dWidth = null, float? dHeight = null)
+    public void drawImage(object imageObj, float arg1, float arg2, float? arg3 = null, float? arg4 = null,
+        float? arg5 = null, float? arg6 = null, float? arg7 = null, float? arg8 = null)
     {
-        var sampling = new SKSamplingOptions(SKFilterMode.Linear);
-        if (imageObj is SkiaCanvas otherCanvas)
+        var bmp = ExtractBitmap(imageObj);
+        if (bmp == null)
         {
-            var destRect = SKRect.Create(dx, dy, dWidth ?? otherCanvas.Width, dHeight ?? otherCanvas.Height);
-            Canvas.SkCanvas.DrawBitmap(otherCanvas.Bitmap, destRect, sampling, null);
+            if (imageObj is SnapPaper paper)
+            {
+                drawSvg(paper, arg1, arg2, arg3, arg4);
+            }
+            return;
         }
-        else if (imageObj is SKBitmap bmp)
+
+        var sampling = new SKSamplingOptions(SKFilterMode.Linear);
+
+        // 9-parameter overload: sx, sy, sw, sh, dx, dy, dw, dh
+        if (arg5.HasValue && arg6.HasValue && arg7.HasValue && arg8.HasValue)
         {
-            var destRect = SKRect.Create(dx, dy, dWidth ?? bmp.Width, dHeight ?? bmp.Height);
+            var srcRect = SKRect.Create(arg1, arg2, arg3!.Value, arg4!.Value);
+            var destRect = SKRect.Create(arg5.Value, arg6.Value, arg7.Value, arg8.Value);
+            Canvas.SkCanvas.DrawBitmap(bmp, srcRect, destRect, sampling, null);
+        }
+        // 5-parameter overload: dx, dy, dw, dh
+        else if (arg3.HasValue && arg4.HasValue)
+        {
+            var destRect = SKRect.Create(arg1, arg2, arg3.Value, arg4.Value);
+            Canvas.SkCanvas.DrawBitmap(bmp, destRect, sampling, null);
+        }
+        // 3-parameter overload: dx, dy
+        else
+        {
+            var destRect = SKRect.Create(arg1, arg2, bmp.Width, bmp.Height);
             Canvas.SkCanvas.DrawBitmap(bmp, destRect, sampling, null);
         }
     }
@@ -512,6 +536,85 @@ public class CanvasRenderingContext2D
             }
         }
     }
+
+    public ImageData getImageData(int sx, int sy, int sw, int sh)
+    {
+        var w = Math.Max(1, sw);
+        var h = Math.Max(1, sh);
+        var imgData = new ImageData(w, h);
+
+        var rect = SKRectI.Create(sx, sy, w, h);
+        using var subset = new SKBitmap();
+        if (Canvas.Bitmap.ExtractSubset(subset, rect) && subset.ColorType == SKColorType.Rgba8888)
+        {
+            var span = subset.GetPixelSpan();
+            for (var y = 0; y < h; y++)
+            {
+                var srcRow = span.Slice(y * subset.RowBytes, w * 4);
+                var dstRow = imgData.Data.AsSpan(y * w * 4, w * 4);
+                srcRow.CopyTo(dstRow);
+            }
+        }
+        else
+        {
+            for (var y = 0; y < h; y++)
+            {
+                for (var x = 0; x < w; x++)
+                {
+                    var srcX = sx + x;
+                    var srcY = sy + y;
+                    if (srcX >= 0 && srcX < Canvas.Bitmap.Width && srcY >= 0 && srcY < Canvas.Bitmap.Height)
+                    {
+                        var color = Canvas.Bitmap.GetPixel(srcX, srcY);
+                        var idx = (y * w + x) * 4;
+                        imgData.Data[idx + 0] = color.Red;
+                        imgData.Data[idx + 1] = color.Green;
+                        imgData.Data[idx + 2] = color.Blue;
+                        imgData.Data[idx + 3] = color.Alpha;
+                    }
+                }
+            }
+        }
+        return imgData;
+    }
+
+    public void putImageData(ImageData imageData, int dx, int dy)
+    {
+        ArgumentNullException.ThrowIfNull(imageData);
+
+        var w = imageData.Width;
+        var h = imageData.Height;
+        var data = imageData.Data;
+
+        for (var y = 0; y < h; y++)
+        {
+            for (var x = 0; x < w; x++)
+            {
+                var dstX = dx + x;
+                var dstY = dy + y;
+                if (dstX >= 0 && dstX < Canvas.Bitmap.Width && dstY >= 0 && dstY < Canvas.Bitmap.Height)
+                {
+                    var idx = (y * w + x) * 4;
+                    var color = new SKColor(data[idx + 0], data[idx + 1], data[idx + 2], data[idx + 3]);
+                    Canvas.Bitmap.SetPixel(dstX, dstY, color);
+                }
+            }
+        }
+    }
+
+    public ImageData createImageData(int width, int height) =>
+        new(width, height);
+
+    public ImageData createImageData(ImageData other) =>
+        new(other.Width, other.Height);
+
+    private static SKBitmap? ExtractBitmap(object obj) => obj switch
+    {
+        SkiaBitmapWrapper bw => bw.Bitmap,
+        SkiaCanvas sc => sc.Bitmap,
+        SKBitmap b => b,
+        _ => null
+    };
     #endregion
     #endregion
 
@@ -521,3 +624,4 @@ public class CanvasRenderingContext2D
     private readonly CanvasPath _currentPath;
     #endregion
 }
+

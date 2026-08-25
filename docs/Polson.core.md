@@ -290,6 +290,8 @@ Skia procedural shaders, image filters, color matrix transforms, path effects, a
 
 ## `Skia.Shader`
 
+- `Skia.Shader.sksl(skslCode: string, uniforms?: object, children?: object)` → `SKShader` — Compiles and instantiates a custom **SkSL (Skia Shading Language)** procedural pixel shader executed headlessly on CPU/SIMD.
+- `Skia.Shader.custom(skslCode: string, uniforms?: object, children?: object)` → `SKShader` — Alias for `sksl`.
 - `Skia.Shader.perlinNoiseTurbulence(baseFreqX: number, baseFreqY: number, octaves: number, seed: number, tileSizeX?: number, tileSizeY?: number)` → `SKShader` — Generates procedural Perlin turbulence noise.
 - `Skia.Shader.perlinNoiseFractal(baseFreqX: number, baseFreqY: number, octaves: number, seed: number, tileSizeX?: number, tileSizeY?: number)` → `SKShader` — Generates procedural fractal noise.
 - `Skia.Shader.twoPointConical(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number, colors: string[], positions?: number[], tileMode?: string)` → `SKShader` — 2-point conical gradient.
@@ -298,8 +300,36 @@ Skia procedural shaders, image filters, color matrix transforms, path effects, a
 - `Skia.Shader.radial(cx: number, cy: number, radius: number, colors: string[], positions?: number[], tileMode?: string)` → `SKShader` — Radial gradient shader.
 - `Skia.Shader.bitmap(bitmap: SkiaBitmapWrapper | SkiaCanvas, tileX?: string, tileY?: string)` → `SKShader` — Bitmap texture shader (`tileMode`: `"clamp"`, `"repeat"`, `"mirror"`, `"decal"`).
 
+### Custom SkSL Shader Example
+```javascript
+const canvas = createCanvas(800, 600);
+const ctx = canvas.getContext('2d');
+
+// SkSL shader with uniforms
+const sksl = `
+    uniform float2 u_resolution;
+    uniform float4 u_color1;
+    uniform float4 u_color2;
+
+    half4 main(float2 coord) {
+        float2 uv = coord / u_resolution;
+        float d = length(uv - 0.5) * 2.0;
+        float ring = sin(d * 12.0) * 0.5 + 0.5;
+        return mix(u_color1, u_color2, ring);
+    }
+`;
+
+ctx.fillStyle = Skia.Shader.sksl(sksl, {
+    u_resolution: [800, 600],
+    u_color1: [0.1, 0.2, 0.8, 1.0],
+    u_color2: [1.0, 0.6, 0.0, 1.0]
+});
+ctx.fillRect(0, 0, 800, 600);
+```
+
 ## `Skia.ImageFilter`
 
+- `Skia.ImageFilter.runtimeShader(skslCode: string, uniforms?: object)` → `SKImageFilter` — Compiles a custom SkSL image filter evaluating input pixels.
 - `Skia.ImageFilter.blur(sigmaX: number, sigmaY: number)` → `SKImageFilter` — Gaussian blur.
 - `Skia.ImageFilter.dropShadow(dx: number, dy: number, sigmaX: number, sigmaY: number, color: string)` → `SKImageFilter` — Drop shadow image filter.
 - `Skia.ImageFilter.dilate(radiusX: number, radiusY: number)` → `SKImageFilter` — Morphological dilation.
@@ -308,6 +338,7 @@ Skia procedural shaders, image filters, color matrix transforms, path effects, a
 
 ## `Skia.ColorFilter`
 
+- `Skia.ColorFilter.runtimeEffect(skslCode: string, uniforms?: object)` → `SKColorFilter` — Compiles a custom SkSL color filter (`half4 main(half4 inColor)`).
 - `Skia.ColorFilter.colorMatrix(matrix20: number[])` → `SKColorFilter` — 4x5 color transformation matrix (20 floats).
 - `Skia.ColorFilter.blend(color: string, blendMode?: string)` → `SKColorFilter` — Color tint blend filter.
 - `Skia.ColorFilter.highContrast(grayscale?: boolean, invertStyle?: string, contrast?: number)` → `SKColorFilter` — High contrast filter (`invertStyle`: `"none"`, `"brightness"`, `"lightness"`).

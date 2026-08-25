@@ -8,8 +8,8 @@ This is a **test harness** for evaluating the Polson code-mode Model Context Pro
 |---|---|
 | **Role** | AI Visual Artist & Graphics Programmer |
 | **Compute** | Polson Graphics MCP server (`polson`), executing sandboxed ECMAScript 2025 |
-| **Drawing Engines** | Snap.svg (vector), HTML5 2D Canvas (raster), Skia procedural shaders, filters & image manipulation |
-| **Task** | Reproduce the reference instructional illustration in `reference_images/id1.png` |
+| **Drawing Engines** | Snap.svg (vector), HTML5 2D Canvas (raster), Skia procedural shaders, custom SkSL shaders, filters & image manipulation |
+| **Task** | Transform Mona Lisa in `reference_images/Mona_Lisa,_retouched.jpg` to a natural, luminous blonde |
 
 ---
 
@@ -41,31 +41,35 @@ This restriction is fundamental to this harness: it evaluates whether the publis
 
 ---
 
-## Visual Task Prompt
+## Creative Task Prompt
 
-> **Task: Reproduce the instructional perspective lighting diagram in `reference_images/id1.png`**
+> **Task: Make Mona Lisa a natural, luminous blonde**
 
-### Visual Reference Breakdown (`reference_images/id1.png`)
-- **Page Layout & Dimensions**: Portrait orientation (e.g. 900×1200 or 1200×1600). White background page with structured border panels and right-side typography.
-- **Top Panel**:
-  - Outlined bounding frame with horizon line across middle.
-  - Lightbulb icon hanging from above with vertical ground drop line to an orange ground point.
-  - Perspective projection rays (orange lines) extending from light source through top vertices of a blue 3D cube, and from the ground point through bottom vertices of the cube.
-  - Resulting blue cast shadow polygon on the ground plane.
-- **Middle Panel**:
-  - Same light source and cube setup with cast shadow rays receding to the **"Right Vanishing Point"** labeled in orange bold text on the horizon line.
-- **Bottom Left Panel**:
-  - Wireframe 3D cube showing construction lines with light source and ground point ray projections.
-- **Bottom Right Panel**:
-  - Blue 3D cube with shadow receding to the left with an arrow pointing towards **"To Left Vanishing Point"** in orange bold text.
-- **Explanatory Typography**:
-  - Crisp serif/sans-serif text matching the book column ("Just as with the pole, we plot lines from the light source...", "The lines of the shadow we plotted recede to the same vanishing point...", "We can find lines of a shadow when part of the form...").
-- **Footer**:
-  - Bottom bar with "Properties Of Light", an orange sun gear icon, and the page number badge "287" in an orange rounded box.
+### Image Asset
+The high-resolution reference painting is located at:
+`reference_images/Mona_Lisa,_retouched.jpg`
 
-### Creative & Technical Guidelines
-- You may use Snap.svg for crisp vector geometry and typography, HTML5 2D Canvas for diagram rendering, or a hybrid approach via `drawSvg`.
-- Iterate step-by-step: construct the geometric perspective system, place the panels, format the text, and refine the colors.
+You can load this image in JavaScript using:
+```javascript
+const img = Skia.Image.load('reference_images/Mona_Lisa,_retouched.jpg');
+```
+
+### Visual & Aesthetic Objectives
+- **Target Hair Transformation**:
+  - Transform her dark brown/black locks and framing curls into a rich, natural blonde (e.g. golden blonde, honey/amber highlights, with natural dark-blonde roots and soft shadowed depth).
+- **Preserve Painting Integrity**:
+  - Do not paint flat cartoon blocks over the hair. The transformation must preserve the **underlying brushstroke textures, hair wave details, chiaroscuro shading, transparent veil / sfumato edges, and craquelure (surface oil paint cracks)**.
+- **Isolate Face & Skin**:
+  - Ensure her face, forehead, cheeks, hands, neck, and the background renaissance landscape retain their original skin tones, hues, and values without discoloration.
+
+### Recommended Techniques & Capabilities
+You have access to the full Polson drawing and shader suite:
+1. **Custom SkSL Shaders (`Skia.Shader.sksl(code, uniforms, children)`)**:
+   - Write custom SkSL procedural pixel shaders to sample the painting (`u_image.eval(coord)`), perform color space math (e.g. RGB to HSV/HSL), apply spatial falloffs around the hair region, and remap dark hair luminance into golden blonde tones.
+2. **Canvas2D Layer Compositing**:
+   - Use `ctx.drawImage(img, 0, 0)`, clipping paths (`ctx.save()`, `ctx.clip()`, `ctx.restore()`), and blend modes (`ctx.globalCompositeOperation = 'soft-light' | 'color' | 'overlay' | 'screen'`).
+3. **Procedural Shaders & Filters**:
+   - Combine with `Skia.ImageFilter.runtimeShader`, `Skia.ColorFilter.runtimeEffect`, or subtle noise/highlight passes.
 
 ---
 
@@ -73,7 +77,7 @@ This restriction is fundamental to this harness: it evaluates whether the publis
 
 Upon completing the task, produce the following deliverables in this directory:
 
-1. **`artwork.js`**: The complete JavaScript script that generates the full reproduced diagram page.
-2. **`findings.md`**: Your structured report evaluating the Polson SDK and MCP server experience when responding to a visual prompt:
-   - Tag each item with: **`[positive]`**, **`[friction]`**, **`[bug]`**, or **`[nit]`**.
-   - Note specifically how easy it was to construct perspective lines, coordinate systems, and typography using the Polson SDK.
+1. **`artwork.js`**: The complete, clean JavaScript script that produces your final rendered artwork when executed.
+2. **`findings.md`**: Your structured report evaluating the Polson SDK and MCP server experience:
+   - Tag each item with: **`[positive]`**, **`[friction]`**, **`[bug]`**, or **`[nit]`**
+   - Specifically evaluate the newly added **custom SkSL shader / filter system**, image loading ergonomics, performance, and color manipulation fidelity.

@@ -134,6 +134,145 @@ public class SkiaShaderApi
         return SKShader.CreateBitmap(bmp, tx, ty);
     }
 
+    public SKShader sksl(string skslCode, object? uniformsObj = null, object? childrenObj = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(skslCode);
+        using var effect = SKRuntimeEffect.CreateShader(skslCode, out var errors);
+        if (effect == null || !string.IsNullOrEmpty(errors))
+        {
+            throw new InvalidOperationException($"SkSL compilation error: {errors}");
+        }
+
+        var uniforms = PopulateUniforms(effect, uniformsObj);
+        var children = PopulateChildren(effect, childrenObj);
+
+        if (children != null)
+        {
+            uniforms ??= new SKRuntimeEffectUniforms(effect);
+            return effect.ToShader(uniforms, children);
+        }
+
+        return uniforms != null ? effect.ToShader(uniforms) : effect.ToShader();
+    }
+
+    public SKShader custom(string skslCode, object? uniformsObj = null, object? childrenObj = null) =>
+        sksl(skslCode, uniformsObj, childrenObj);
+
+    internal static SKRuntimeEffectUniforms? PopulateUniforms(SKRuntimeEffect effect, object? uniformsObj)
+    {
+        if (uniformsObj == null) return null;
+
+        var uniforms = new SKRuntimeEffectUniforms(effect);
+
+        if (uniformsObj is IDictionary dict)
+        {
+            foreach (DictionaryEntry entry in dict)
+            {
+                var key = entry.Key?.ToString();
+                if (string.IsNullOrEmpty(key)) continue;
+
+                SetUniformValue(uniforms, key, entry.Value);
+            }
+        }
+        else if (uniformsObj is IDictionary<string, object?> strDict)
+        {
+            foreach (var kvp in strDict)
+            {
+                SetUniformValue(uniforms, kvp.Key, kvp.Value);
+            }
+        }
+
+        return uniforms;
+    }
+
+    private static void SetUniformValue(SKRuntimeEffectUniforms uniforms, string name, object? val)
+    {
+        if (val == null) return;
+
+        if (val is float f)
+        {
+            uniforms[name] = f;
+        }
+        else if (val is double d)
+        {
+            uniforms[name] = (float)d;
+        }
+        else if (val is int i)
+        {
+            uniforms[name] = i;
+        }
+        else if (val is float[] fArr)
+        {
+            uniforms[name] = fArr;
+        }
+        else if (val is int[] iArr)
+        {
+            uniforms[name] = iArr;
+        }
+        else if (val is string s && (s.StartsWith('#') || s.StartsWith("rgb") || s.StartsWith("hsl")))
+        {
+            var col = SkiaColorParser.Parse(s);
+            uniforms[name] = new[] { col.Red / 255f, col.Green / 255f, col.Blue / 255f, col.Alpha / 255f };
+        }
+        else if (val is IEnumerable enumerable and not string)
+        {
+            var list = new List<float>();
+            foreach (var item in enumerable)
+            {
+                list.Add(Convert.ToSingle(item));
+            }
+            uniforms[name] = list.ToArray();
+        }
+        else
+        {
+            try
+            {
+                uniforms[name] = Convert.ToSingle(val);
+            }
+            catch
+            {
+                // Ignore unrecognized uniform
+            }
+        }
+    }
+
+    internal static SKRuntimeEffectChildren? PopulateChildren(SKRuntimeEffect effect, object? childrenObj)
+    {
+        if (childrenObj == null) return null;
+
+        var children = new SKRuntimeEffectChildren(effect);
+
+        if (childrenObj is IDictionary dict)
+        {
+            foreach (DictionaryEntry entry in dict)
+            {
+                var key = entry.Key?.ToString();
+                if (string.IsNullOrEmpty(key)) continue;
+
+                var shader = ResolveShader(entry.Value);
+                if (shader != null) children[key] = shader;
+            }
+        }
+        else if (childrenObj is IDictionary<string, object?> strDict)
+        {
+            foreach (var kvp in strDict)
+            {
+                var shader = ResolveShader(kvp.Value);
+                if (shader != null) children[kvp.Key] = shader;
+            }
+        }
+
+        return children;
+    }
+
+    private static SKShader? ResolveShader(object? obj) => obj switch
+    {
+        SKShader s => s,
+        SkiaBitmapWrapper bw => SKShader.CreateBitmap(bw.Bitmap, SKShaderTileMode.Clamp, SKShaderTileMode.Clamp),
+        SkiaCanvas sc => SKShader.CreateBitmap(sc.Bitmap, SKShaderTileMode.Clamp, SKShaderTileMode.Clamp),
+        _ => null
+    };
+
     private static SKColor[] ParseColors(object obj)
     {
         if (obj is IEnumerable enumerable and not string)
@@ -192,12 +331,38 @@ public class SkiaImageFilterApi
 
     public SKImageFilter colorFilter(SKColorFilter filter) =>
         SKImageFilter.CreateColorFilter(filter);
+
+    public SKImageFilter runtimeShader(string skslCode, object? uniformsObj = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(skslCode);
+        using var effect = SKRuntimeEffect.CreateShader(skslCode, out var errors);
+        if (effect == null || !string.IsNullOrEmpty(errors))
+        {
+            throw new InvalidOperationException($"SkSL compilation error: {errors}");
+        }
+
+        var uniforms = SkiaShaderApi.PopulateUniforms(effect, uniformsObj);
+        var shader = uniforms != null ? effect.ToShader(uniforms) : effect.ToShader();
+        return SKImageFilter.CreateShader(shader);
+    }
     #endregion
 }
 
 public class SkiaColorFilterApi
 {
     #region Methods
+    public SKColorFilter runtimeEffect(string skslCode, object? uniformsObj = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(skslCode);
+        using var effect = SKRuntimeEffect.CreateColorFilter(skslCode, out var errors);
+        if (effect == null || !string.IsNullOrEmpty(errors))
+        {
+            throw new InvalidOperationException($"SkSL color filter compilation error: {errors}");
+        }
+
+        var uniforms = SkiaShaderApi.PopulateUniforms(effect, uniformsObj);
+        return uniforms != null ? effect.ToColorFilter(uniforms) : effect.ToColorFilter();
+    }
     public SKColorFilter colorMatrix(object matrixObj)
     {
         var list = new List<float>();

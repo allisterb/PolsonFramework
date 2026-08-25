@@ -6,6 +6,7 @@ using System.Drawing;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 using Polson.MCPServer;
+using SkiaSharp;
 using Xunit;
 
 public class DrawingTests : TestsRuntime
@@ -506,6 +507,153 @@ public class DrawingTests : TestsRuntime
         {
             JsDrawingEngine.MaxStatements = prev;
         }
+    }
+
+    [Fact]
+    public void TestSkSLRuntimeEffect()
+    {
+        var sksl = @"
+            uniform float2 u_resolution;
+            uniform float4 u_color;
+
+            half4 main(float2 coord) {
+                float2 uv = coord / u_resolution;
+                return half4(uv.x, uv.y, u_color.b, 1.0);
+            }
+        ";
+
+        using var effect = SKRuntimeEffect.CreateShader(sksl, out var errors);
+        Assert.Null(errors);
+        Assert.NotNull(effect);
+
+        var uniforms = new SKRuntimeEffectUniforms(effect)
+        {
+            ["u_resolution"] = new[] { 400f, 400f },
+            ["u_color"] = new[] { 1f, 0f, 0.5f, 1f }
+        };
+
+        using var shader = effect.ToShader(uniforms);
+        Assert.NotNull(shader);
+
+        using var surface = SKSurface.Create(new SKImageInfo(400, 400));
+        using var paint = new SKPaint { Shader = shader };
+        surface.Canvas.DrawRect(0, 0, 400, 400, paint);
+
+        using var image = surface.Snapshot();
+        Assert.NotNull(image);
+        Assert.Equal(400, image.Width);
+        Assert.Equal(400, image.Height);
+    }
+
+    [Fact]
+    public void TestSkSLShaderInJavaScriptEngine()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            const canvas = createCanvas(400, 400);
+            const ctx = canvas.getContext('2d');
+
+            const sksl = `
+                uniform float2 u_resolution;
+                uniform float4 u_color1;
+                uniform float4 u_color2;
+
+                half4 main(float2 coord) {
+                    float2 uv = coord / u_resolution;
+                    float d = length(uv - 0.5) * 2.0;
+                    float ring = sin(d * 10.0) * 0.5 + 0.5;
+                    return mix(u_color1, u_color2, ring);
+                }
+            `;
+
+            const shader = Skia.Shader.sksl(sksl, {
+                u_resolution: [400, 400],
+                u_color1: [0.1, 0.2, 0.8, 1.0],
+                u_color2: [1.0, 0.6, 0.0, 1.0]
+            });
+
+            ctx.fillStyle = shader;
+            ctx.fillRect(0, 0, 400, 400);
+            canvas;
+        ";
+
+        var result = engine.Execute(script);
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 0);
+    }
+
+    [Fact]
+    public void TestSkSLImageFilterInJavaScriptEngine()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            const canvas = createCanvas(300, 300);
+            const ctx = canvas.getContext('2d');
+
+            const sksl = `
+                uniform shader u_image;
+                uniform float u_intensity;
+
+                half4 main(float2 coord) {
+                    half4 c = u_image.eval(coord);
+                    half gray = dot(c.rgb, half3(0.299, 0.587, 0.114));
+                    return mix(c, half4(gray, gray, gray, c.a), u_intensity);
+                }
+            `;
+
+            ctx.filter = Skia.ImageFilter.runtimeShader(sksl, { u_intensity: 0.8 });
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(50, 50, 200, 200);
+            canvas;
+        ";
+
+        var result = engine.Execute(script);
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(result.ImageBytes);
+    }
+
+    [Fact]
+    public void TestSkSLColorFilterInJavaScriptEngine()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            const canvas = createCanvas(200, 200);
+            const ctx = canvas.getContext('2d');
+
+            const sksl = `
+                half4 main(half4 inColor) {
+                    return half4(1.0 - inColor.r, 1.0 - inColor.g, 1.0 - inColor.b, inColor.a);
+                }
+            `;
+
+            ctx.colorFilter = Skia.ColorFilter.runtimeEffect(sksl);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(0, 0, 200, 200);
+            canvas;
+        ";
+
+        var result = engine.Execute(script);
+        Assert.True(result.Success, result.Error);
+        Assert.NotNull(result.ImageBytes);
+    }
+
+    [Fact]
+    public void TestSkSLCompilationErrorDiagnostics()
+    {
+        var engine = new JsDrawingEngine();
+        var script = @"
+            const sksl = `
+                half4 main(float2 coord) {
+                    this is invalid syntax !!!
+                }
+            `;
+            Skia.Shader.sksl(sksl);
+        ";
+
+        var result = engine.Execute(script);
+        Assert.False(result.Success);
+        Assert.Contains("SkSL compilation error", result.Error);
     }
 
     [Fact]

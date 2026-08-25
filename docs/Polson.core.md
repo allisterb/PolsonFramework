@@ -223,7 +223,9 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `ctx.arcTo(x1: number, y1: number, x2: number, y2: number, radius: number)` — Adds a tangent arc between two control points.
 - `ctx.ellipse(x: number, y: number, radiusX: number, radiusY: number, rotation: number, startAngle: number, endAngle: number, anticlockwise?: boolean)` — Adds an elliptical arc.
 - `ctx.bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number)` — Adds a cubic Bézier curve segment.
+- `ctx.sCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number)` — CSI grammar alias for `bezierCurveTo` (reversing S-curve).
 - `ctx.quadraticCurveTo(cpx: number, cpy: number, x: number, y: number)` — Adds a quadratic Bézier curve segment.
+- `ctx.cCurveTo(cpx: number, cpy: number, x: number, y: number)` — CSI grammar alias for `quadraticCurveTo` (single-direction C-curve).
 - `ctx.fill(path?: CanvasPath)` — Fills the current or specified `CanvasPath`.
 - `ctx.stroke(path?: CanvasPath)` — Strokes the current or specified `CanvasPath`.
 - `ctx.clip(path?: CanvasPath)` — Intersects the clipping region with the current or specified path.
@@ -281,6 +283,12 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `ctx.getImageData(sx: number, sy: number, sw: number, sh: number)` → `ImageData` — Extracts pixel buffer for direct byte manipulation.
 - `ctx.putImageData(imageData: ImageData, dx: number, dy: number)` — Writes raw pixel buffer back to canvas.
 - `ctx.createImageData(width: number, height: number)` → `ImageData` — Allocates blank RGBA pixel buffer.
+
+### Constructive Drawing & Inking
+- `ctx.drawTaperedStroke(start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` — Subdivides cubic Bézier curve with sine-tapered normal envelope and anti-aliased fill.
+- `ctx.drawFeathering(origin: Point | number, angleDeg: number, count: number, length: number, spacing: number, strokeColor?: string, lineWidth?: number)` — Directional parallel hatching lines along shadow boundaries.
+- `ctx.drawCrossContourHatch(cx: number, cy: number, rx: number, ry: number, startAngle: number, endAngle: number, count?: number, strokeColor?: string, lineWidth?: number)` — Elliptical cross-contour hatching arcs for cylindrical anatomical volumes.
+- `ctx.drawHairRibbon(root: Point | number, tip: Point | number, bendFactor: number, width: number, fillTop: string | SKShader, fillUnderside: string | SKShader, strokeColor?: string, strokeWidth?: number)` — Twisting 3D hair ribbon with highlight facet, shaded underside streak, and contour outline.
 
 ---
 
@@ -380,4 +388,45 @@ ctx.fillRect(0, 0, 800, 600);
 - `imageData.data` → `byte[]` — Flat array of RGBA byte values `[r0, g0, b0, a0, r1, g1, b1, a1, ...]`.
 - `imageData.toPngBytes(quality?: number)` → `byte[]` — Encodes pixel buffer to PNG bytes.
 - `imageData.toDataUrl()` → `string` — Returns base64 data URL.
+
+---
+
+# Drawing (Constructive Drawing Toolkit)
+
+Algorithmic drawing and constructive anatomy engine based on classical studio techniques (*Imaginative Drawing* Chapter 1, Loomis method, 3D hair ribbons, and procedural comic shaders).
+
+Also accessible via `Skia.Drawing`.
+
+## Loomis Head & Feature Construction
+- `Drawing.createLoomisHead(originX: number, originY: number, headHeight: number, yawDeg?: number, pitchDeg?: number)` → `object` — Computes all 3D head landmarks, proportional ratios (Rule of Thirds, 1/5th eye width), temporal ovals, eye sockets, nose wedge, mouth guides, and jaw angles.
+- `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
+- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight.
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` — Renders nose bridge, apex, nostril, and under-plane shadow.
+- `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string })` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow.
+
+## Inking, Feathering & Ribbons
+- `Drawing.drawTaperedStroke(ctx: CanvasRenderingContext2D, start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` — Smooth tapered Bézier inking stroke.
+- `Drawing.drawFeathering(ctx: CanvasRenderingContext2D, origin: Point | number, angleDeg: number, count: number, length: number, spacing: number, strokeColor?: string, lineWidth?: number)` — Directional feathering hatch lines.
+- `Drawing.drawCrossContourHatch(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, startAngle: number, endAngle: number, count?: number, strokeColor?: string, lineWidth?: number)` — Cross-contour cylindrical arcs.
+- `Drawing.drawHairRibbon(ctx: CanvasRenderingContext2D, root: Point | number, tip: Point | number, bendFactor: number, width: number, fillTop: string | SKShader, fillUnderside: string | SKShader, strokeColor?: string, strokeWidth?: number)` — 3D twisting hair ribbon.
+
+## Material & Shader Presets
+- `Drawing.createHalftoneDotShader(options?: { dotSpacing?: number, shadowColor?: string, resolution?: number[] })` → `SKShader` — SkSL Ben-Day halftone dot shader.
+- `Drawing.createRopeFiberShader(frequencyX?: number, frequencyY?: number, octaves?: number, seed?: number)` → `SKShader` — Hemp rope/cordage texture shader.
+- `Drawing.createAtmosphericCloudShader(frequencyX?: number, frequencyY?: number, octaves?: number, seed?: number)` → `SKShader` — Atmospheric fractal cloud noise shader.
+
+## Measurement & Plumb Checks
+- `Drawing.verifyPlumbAlignment(topPoint: Point, bottomPoint: Point, maxTolerance?: number)` → `{ aligned: boolean, deltaX: number, message: string }` — Validates vertical alignment between anatomical landmarks.
+- `Drawing.computeRelativeDistance(headHeight: number, pointA: Point, pointB: Point)` → `number` — Computes distance in head-length units ($d / H$).
+
+## Linear Perspective & 3D Forms
+- `Drawing.createPerspectiveGrid(options?: { type?: '1point' | '2point' | '3point', horizonY?: number, centerOfVisionX?: number, focalLength?: number, cameraAngleDeg?: number, tiltAngleDeg?: number })` → `object` — Computes vanishing points ($VP_L, VP_R, VP_V$), horizon line, and center of vision.
+- `Drawing.drawPerspectiveGrid(ctx: CanvasRenderingContext2D, gridObj: object, options?: { lineColor?: string, horizonColor?: string, lineCount?: number, lineWidth?: number })` — Renders horizon and perspective grid fan lines.
+- `Drawing.createPerspectiveBox(gridObj: object, anchorX: number, anchorY: number, width: number, height: number, depth: number)` → `object` — Projects 3D box computing all 8 vertices ($V_0 \dots V_7$) and 6 quadrilateral faces.
+- `Drawing.drawPerspectiveBox(ctx: CanvasRenderingContext2D, boxObj: object, options?: { topFill?: string, leftFill?: string, rightFill?: string, strokeColor?: string, strokeWidth?: number, drawHiddenLines?: boolean })` — Renders solid shaded or wireframe 3D perspective box.
+- `Drawing.drawPerspectiveCylinder(ctx: CanvasRenderingContext2D, gridObj: object, anchorX: number, anchorY: number, radius: number, height: number, options?: { topFill?: string, sideFill?: string, strokeColor?: string, strokeWidth?: number })` — Projects 3D cylinder with top/bottom tangent ellipses.
+- `Drawing.subdividePerspectiveQuad(quadObj: Point[], uCount: number, vCount: number)` → `Point[][][]` — Subdivides a 4-point quadrilateral into foreshortened perspective cells using projective interpolation.
+- `Drawing.verifyPerspectiveConvergence(linesList: Point[][], expectedVp: Point, maxToleranceDeg?: number)` → `{ passed: boolean, maxAngularErrorDeg: number, message: string }` — Tests whether drawn lines correctly converge to the vanishing point.
+
+
 

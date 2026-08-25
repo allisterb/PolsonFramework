@@ -43,33 +43,34 @@ This restriction is fundamental to this harness: it evaluates whether the publis
 
 ## Creative Task Prompt
 
-> **Task: Make Mona Lisa a natural, luminous blonde**
+You are tasked with recreating the reference illustration located at:
+`reference_images/comic1.png`
 
-### Image Asset
-The high-resolution reference painting is located at:
-`reference_images/Mona_Lisa,_retouched.jpg`
+---
 
-You can load this image in JavaScript using:
-```javascript
-const img = Skia.Image.load('reference_images/Mona_Lisa,_retouched.jpg');
-```
+### Phase 1: Visual & Structural Analysis (Do this first)
 
-### Visual & Aesthetic Objectives
-- **Target Hair Transformation**:
-  - Transform her dark brown/black locks and framing curls into a rich, natural blonde (e.g. golden blonde, honey/amber highlights, with natural dark-blonde roots and soft shadowed depth).
-- **Preserve Painting Integrity**:
-  - Do not paint flat cartoon blocks over the hair. The transformation must preserve the **underlying brushstroke textures, hair wave details, chiaroscuro shading, transparent veil / sfumato edges, and craquelure (surface oil paint cracks)**.
-- **Isolate Face & Skin**:
-  - Ensure her face, forehead, cheeks, hands, neck, and the background renaissance landscape retain their original skin tones, hues, and values without discoloration.
+Before writing any drawing code, perform an autonomous inspection of the reference image:
+1. **Asset Inspection**: Load `reference_images/comic1.png` using the Polson SDK to inspect its dimensions, aspect ratio, and composition.
+2. **Palette & Shading Extraction**: Sample key regions (skin, hair, bandana, clothing, sky, rigging) to identify base colors, cel-shading ramps, and highlight values.
+3. **Layer Decomposition**: Break down the visual structure into distinct rendering layers (background atmosphere, rigging geometry, character flats, shadow planes, inked linework, and specular accents).
+4. **Implementation Plan**: Formulate a structured step-by-step plan detailing:
+   - Chosen drawing API(s) (Canvas2D, Snap.svg, custom SkSL shaders, or hybrid).
+   - Layer ordering and compositing strategy (blend modes, clipping paths, path effects).
+   - Strategy for expressive inked linework (variable stroke widths, tapering, hatching).
 
-### Recommended Techniques & Capabilities
-You have access to the full Polson drawing and shader suite:
-1. **Custom SkSL Shaders (`Skia.Shader.sksl(code, uniforms, children)`)**:
-   - Write custom SkSL procedural pixel shaders to sample the painting (`u_image.eval(coord)`), perform color space math (e.g. RGB to HSV/HSL), apply spatial falloffs around the hair region, and remap dark hair luminance into golden blonde tones.
-2. **Canvas2D Layer Compositing**:
-   - Use `ctx.drawImage(img, 0, 0)`, clipping paths (`ctx.save()`, `ctx.clip()`, `ctx.restore()`), and blend modes (`ctx.globalCompositeOperation = 'soft-light' | 'color' | 'overlay' | 'screen'`).
-3. **Procedural Shaders & Filters**:
-   - Combine with `Skia.ImageFilter.runtimeShader`, `Skia.ColorFilter.runtimeEffect`, or subtle noise/highlight passes.
+Present your analysis and plan clearly in your notes/logs before proceeding to code execution.
+
+
+
+### Phase 2: Execution & Visual Reproduction
+
+Execute your plan to reproduce the illustration with high aesthetic fidelity:
+- Maintain clean layer separation and sharp comic art styling.
+- Capture the dynamic windblown hair, expressive facial features, ship rigging, and cel-shaded lighting.
+- Render headless snapshots to visually verify your progress and calibrate alignment.
+
+
 
 ---
 

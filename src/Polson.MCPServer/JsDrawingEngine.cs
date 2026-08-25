@@ -70,6 +70,10 @@ public class JsDrawingEngine : Runtime
             engine.SetValue("Skia", skiaApi);
             engine.SetValue("SK", skiaApi);
 
+            // Pure .NET Constructive Drawing Toolkit
+            var drawingToolkit = new ConstructiveDrawingToolkit();
+            engine.SetValue("Drawing", drawingToolkit);
+
             // Global logging & exit helpers
             engine.SetValue("log", new Action<string>(msg =>
             {

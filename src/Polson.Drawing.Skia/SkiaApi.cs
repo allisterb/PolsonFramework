@@ -16,6 +16,7 @@ public class SkiaApi
     public SkiaPathEffectApi PathEffect { get; } = new();
     public SkiaImageApi Image { get; } = new();
     public SkiaBitmapFactoryApi Bitmap { get; } = new();
+    public ConstructiveDrawingToolkit Drawing { get; } = new();
     #endregion
 }
 

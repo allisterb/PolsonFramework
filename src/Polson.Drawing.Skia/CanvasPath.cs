@@ -143,10 +143,16 @@ public class CanvasPath : IDisposable
         Path.CubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
     }
 
+    public void sCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y) =>
+        bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+
     public void quadraticCurveTo(float cpx, float cpy, float x, float y)
     {
         Path.QuadTo(cpx, cpy, x, y);
     }
+
+    public void cCurveTo(float cpx, float cpy, float x, float y) =>
+        quadraticCurveTo(cpx, cpy, x, y);
 
     public void addPath(CanvasPath other)
     {

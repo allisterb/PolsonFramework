@@ -331,10 +331,16 @@ public class CanvasRenderingContext2D
         _currentPath.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
     }
 
+    public void sCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y) =>
+        bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+
     public void quadraticCurveTo(float cpx, float cpy, float x, float y)
     {
         _currentPath.quadraticCurveTo(cpx, cpy, x, y);
     }
+
+    public void cCurveTo(float cpx, float cpy, float x, float y) =>
+        quadraticCurveTo(cpx, cpy, x, y);
 
     public void fill(object? pathOrFillRule = null)
     {
@@ -716,6 +722,46 @@ public class CanvasRenderingContext2D
         SKBitmap b => b,
         _ => null
     };
+    #endregion
+
+    #region Constructive Drawing & Inking
+    private static readonly ConstructiveDrawingToolkit _toolkit = new();
+
+    public void drawTaperedStroke(object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null) =>
+        _toolkit.drawTaperedStroke(this, start, cp1, cp2, end, maxThickness, fillOrStrokeStyle ?? fillStyle);
+
+    public void drawTaperedStroke(float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null) =>
+        _toolkit.drawTaperedStroke(this, sx, sy, cp1x, cp1y, cp2x, cp2y, ex, ey, maxThickness, fillOrStrokeStyle ?? fillStyle);
+
+    public void drawFeathering(object origin, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f) =>
+        _toolkit.drawFeathering(this, origin, angleDeg, count, length, spacing, strokeColor ?? strokeStyle, lineWidth);
+
+    public void drawFeathering(float ox, float oy, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f) =>
+        _toolkit.drawFeathering(this, ox, oy, angleDeg, count, length, spacing, strokeColor ?? strokeStyle, lineWidth);
+
+    public void drawCrossContourHatch(float cx, float cy, float rx, float ry, float startAngle, float endAngle, int count = 8, object? strokeColor = null, float lineWidth = 1.2f) =>
+        _toolkit.drawCrossContourHatch(this, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor ?? strokeStyle, lineWidth);
+
+    public void drawHairRibbon(object root, object tip, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f) =>
+        _toolkit.drawHairRibbon(this, root, tip, bendFactor, width, fillTop, fillUnderside, strokeColor ?? strokeStyle, strokeWidth);
+
+    public void drawHairRibbon(float rx, float ry, float tx, float ty, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f) =>
+        _toolkit.drawHairRibbon(this, rx, ry, tx, ty, bendFactor, width, fillTop, fillUnderside, strokeColor ?? strokeStyle, strokeWidth);
+
+    public void drawPerspectiveGrid(object grid, object? options = null) =>
+        _toolkit.drawPerspectiveGrid(this, grid, options);
+
+    public void drawPerspectiveBox(object box, object? options = null) =>
+        _toolkit.drawPerspectiveBox(this, box, options);
+
+    public void drawPerspectiveBox(object grid, float anchorX, float anchorY, float width, float height, float depth, object? options = null)
+    {
+        var box = _toolkit.createPerspectiveBox(grid, anchorX, anchorY, width, height, depth);
+        _toolkit.drawPerspectiveBox(this, box, options);
+    }
+
+    public void drawPerspectiveCylinder(object grid, float anchorX, float anchorY, float radius, float height, object? options = null) =>
+        _toolkit.drawPerspectiveCylinder(this, grid, anchorX, anchorY, radius, height, options);
     #endregion
     #endregion
 

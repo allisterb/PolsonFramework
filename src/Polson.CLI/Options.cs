@@ -32,3 +32,24 @@ public class ServerOptions : Options
     #endregion
 }
 
+[Verb("eval", HelpText = "Execute a JavaScript drawing file and save rendered PNG and SVG output.")]
+public class EvalOptions : Options
+{
+    #region Properties
+    [Value(0, MetaName = "script-file", Required = true, HelpText = "Path to the JavaScript script file or raw code to execute.")]
+    public string ScriptFile { get; set; } = string.Empty;
+
+    [Option("width", Required = false, Default = 800, HelpText = "Viewport width in pixels (default: 800).")]
+    public int Width { get; set; } = 800;
+
+    [Option("height", Required = false, Default = 600, HelpText = "Viewport height in pixels (default: 600).")]
+    public int Height { get; set; } = 600;
+
+    [Option("png", Required = false, Default = "output.png", HelpText = "Output path for the rendered PNG file.")]
+    public string? OutPng { get; set; } = "output.png";
+
+    [Option("svg", Required = false, Default = "output.svg", HelpText = "Output path for the rendered SVG XML file.")]
+    public string? OutSvg { get; set; } = "output.svg";
+    #endregion
+}
+

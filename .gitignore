@@ -430,3 +430,5 @@ FodyWeavers.xsd
 
 **/*appsettings.json
 reference/*
+tests/agent/**/*.png
+tests/agent/**/*.svg

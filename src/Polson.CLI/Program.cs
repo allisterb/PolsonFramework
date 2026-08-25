@@ -1,4 +1,4 @@
-﻿namespace Polson.CLI;
+namespace Polson.CLI;
 
 using System;
 using System.IO;
@@ -26,16 +26,18 @@ internal class Program : Runtime
     static async Task Main(string[] args)
     {
         var isHttp = args.Contains("--http", StringComparer.OrdinalIgnoreCase);
+        var isEval = args.Length > 0 && string.Equals(args[0], "eval", StringComparison.OrdinalIgnoreCase);
+        var isHelp = args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h", StringComparer.OrdinalIgnoreCase);
         var isDebug = args.Contains("--debug", StringComparer.OrdinalIgnoreCase);
 
-        if (isHttp || args.Length == 0 || args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h", StringComparer.OrdinalIgnoreCase))
+        if (isHttp || isEval || isHelp)
         {
             PrintLogo();
             Runtime.WithFileAndConsoleLogging("Polson", "CLI", isDebug);
         }
         else
         {
-            // Stdio transport: standard output is reserved for JSON-RPC messages; logs go to files/stderr
+            // Stdio transport: standard output is strictly reserved for JSON-RPC framing; logs go to file/stderr
             Runtime.WithFileLogging("Polson", "CLI", isDebug);
         }
 
@@ -45,17 +47,18 @@ internal class Program : Runtime
             with.HelpWriter = Console.Error;
         });
 
-        var result = parser.ParseArguments<ServerOptions>(args);
+        var result = parser.ParseArguments<ServerOptions, EvalOptions>(args);
         try
         {
             await result.MapResult(
-                async opts => await HandleServerArgs(opts),
+                async (ServerOptions opts) => await HandleServerArgs(opts),
+                async (EvalOptions opts) => await HandleEvalArgs(opts),
                 errs => Task.CompletedTask
             );
         }
         catch (Exception ex)
         {
-            if (isHttp)
+            if (isHttp || isEval)
             {
                 AnsiConsole.WriteException(ex);
             }
@@ -93,6 +96,44 @@ internal class Program : Runtime
                 JsDrawingEngine.ScriptTimeoutSeconds, projectDir);
             await PolsonMCPServer.RunStdioAsync(config, projectDir);
         }
+    }
+
+    static Task HandleEvalArgs(EvalOptions opts)
+    {
+        var script = File.Exists(opts.ScriptFile)
+            ? File.ReadAllText(opts.ScriptFile)
+            : opts.ScriptFile;
+
+        var engine = new JsDrawingEngine();
+        var result = engine.Execute(script, opts.Width, opts.Height);
+
+        AnsiConsole.MarkupLine($"[bold]Script Execution:[/] {(result.Success ? "[green]Success[/]" : "[red]Failed[/]")} ({result.ExecutionTimeMs}ms)");
+
+        foreach (var log in result.Logs)
+        {
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(log)}[/]");
+        }
+
+        if (!result.Success && !string.IsNullOrEmpty(result.Error))
+        {
+            AnsiConsole.MarkupLine($"[bold red]Error:[/] {Markup.Escape(result.Error)}");
+        }
+
+        if (result.PngBytes != null && result.PngBytes.Length > 0 && !string.IsNullOrWhiteSpace(opts.OutPng))
+        {
+            var pngPath = Path.GetFullPath(opts.OutPng);
+            File.WriteAllBytes(pngPath, result.PngBytes);
+            AnsiConsole.MarkupLine($"[bold green]Rendered PNG saved:[/] {pngPath} ({result.PngBytes.Length:N0} bytes)");
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.SvgXml) && !string.IsNullOrWhiteSpace(opts.OutSvg))
+        {
+            var svgPath = Path.GetFullPath(opts.OutSvg);
+            File.WriteAllText(svgPath, result.SvgXml);
+            AnsiConsole.MarkupLine($"[bold green]Rendered SVG saved:[/] {svgPath} ({result.SvgXml.Length:N0} chars)");
+        }
+
+        return Task.CompletedTask;
     }
 
     static void PrintLogo()

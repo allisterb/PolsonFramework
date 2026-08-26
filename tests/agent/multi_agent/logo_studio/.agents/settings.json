@@ -1,0 +1,9 @@
+{
+  "defaultAgent": "geometer",
+  "mcpServers": {
+    "polson": {
+      "command": "dotnet",
+      "args": ["run", "--project", "../../../../src/Polson.CLI/Polson.CLI.csproj", "--", "server"]
+    }
+  }
+}

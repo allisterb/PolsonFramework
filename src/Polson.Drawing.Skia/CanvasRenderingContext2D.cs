@@ -798,6 +798,37 @@ public class CanvasRenderingContext2D
     public void drawLeadingLines(object originPoints, object focalPoint, object? options = null) =>
         _toolkit.drawLeadingLines(this, originPoints, focalPoint, options);
     #endregion
+
+    #region Logo Design Toolkit
+    private static readonly LogoDesignToolkit _logoToolkit = new();
+
+    public void drawSquircle(float x, float y, float width, float height, object? options = null) =>
+        _logoToolkit.DrawSquircle(this, x, y, width, height, options);
+
+    public void drawGoldenSpiral(float cx, float cy, float startRadius = 20f, float turns = 2.5f, object? options = null) =>
+        _logoToolkit.DrawGoldenSpiral(this, cx, cy, startRadius, turns, options);
+
+    public void drawIsometricGrid(float width, float height, float cellSize = 40f, object? options = null) =>
+        _logoToolkit.DrawIsometricGrid(this, width, height, cellSize, options);
+
+    public void drawPolarGrid(float cx, float cy, object? rings = null, int radialSlices = 12, object? options = null) =>
+        _logoToolkit.DrawPolarGrid(this, cx, cy, rings, radialSlices, options);
+
+    public void drawEmblemBadge(float cx, float cy, float radius, string type = "shield", object? options = null) =>
+        _logoToolkit.DrawEmblemBadge(this, cx, cy, radius, type, options);
+
+    public void drawClearSpaceGuide(object markBounds, float xDimension = 40f, object? options = null) =>
+        _logoToolkit.DrawClearSpaceGuide(this, markBounds, xDimension, options);
+
+    public void generateFaviconScaleTest(object drawMarkFn, object? options = null) =>
+        _logoToolkit.GenerateFaviconScaleTest(this, drawMarkFn, options);
+
+    public void generateMonochromeTest(object drawMarkFn, float width = 800f, float height = 600f) =>
+        _logoToolkit.GenerateMonochromeTest(this, drawMarkFn, width, height);
+
+    public void generateBrandPresentationSheet(object options) =>
+        _logoToolkit.GenerateBrandPresentationSheet(this, options);
+    #endregion
     #endregion
 
     #region Fields

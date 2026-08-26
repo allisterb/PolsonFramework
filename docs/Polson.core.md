@@ -453,8 +453,62 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.createNotanPalette(type?: 'binary' | 'classic3' | 'highKey' | 'lowKey')` → `object` — Returns curated tonal palettes for value keying.
 - `Drawing.subdivideProportions(bounds: Rect, direction?: 'horizontal' | 'vertical', ratios?: object)` → `{ big: Rect, medium: Rect, small: Rect }` — Subdivides spatial layout according to the 70-20-10 ("Big, Medium, Small") proportional design law.
 
+---
 
+# Logo (Logo Design Toolkit)
 
+Algorithmic logo design and brand identity toolkit based on George Bokhua's *Principles of Logo Design* (golden ratio geometry, optical balance, negative space, bone effect, rational gridding) and Tubik Studio's *Logo Design* (taxonomies, squircle app icon containers, multi-scale favicon stress-testing, and brand style boards).
 
+Also accessible via `Skia.Logo`.
 
+## Golden Ratio & Geometric Construction
+- `Logo.createGoldenCircles(cx: number, cy: number, baseRadius: number, count?: number, direction?: 'growing' | 'shrinking')` → `{ circles: Array<{ cx: number, cy: number, radius: number, phiFactor: number }>, phi: number, bounds: Rect }` — Calculates concentric/tangent circle sets scaled by the Fibonacci ratio $\Phi = 1.61803398875$.
+- `Logo.drawGoldenSpiral(ctx: CanvasRenderingContext2D, cx: number, cy: number, startRadius?: number, turns?: number, options?: { strokeColor?: string, lineWidth?: number, clockwise?: boolean, drawGoldenRectangles?: boolean, rectStrokeColor?: string })` — Renders logarithmic golden spiral ($r = a \cdot e^{b\theta}$).
+- `Logo.createTangentBlend(p1: Point, corner: Point, p2: Point, radius: number)` → `{ arcStart: Point, arcEnd: Point, arcCenter: Point, tangentDistance: number, cornerAngleDeg: number, sweepAngleDeg: number }` — Calculates exact circular fillet tangency between two rays without broken kinks.
+
+## Grids & Monograms
+- `Logo.createIsometricGrid(width: number, height: number, cellSize?: number)` → `{ width: number, height: number, cellSize: number, dx: number, dy: number, nodeRows: Point[][] }` — Generates 30°/60° isometric construction grid.
+- `Logo.drawIsometricGrid(ctx: CanvasRenderingContext2D, width: number, height: number, cellSize?: number, options?: { lineColor?: string, lineWidth?: number })` — Renders isometric grid guide lines.
+- `Logo.createPolarGrid(cx: number, cy: number, rings?: number[], radialSlices?: number)` → `{ cx: number, cy: number, radii: number[], rayAngles: number[] }` — Polar concentric guide grid for roundels and circular crests.
+- `Logo.drawPolarGrid(ctx: CanvasRenderingContext2D, cx: number, cy: number, rings?: number[], radialSlices?: number, options?: { lineColor?: string, lineWidth?: number })` — Renders polar guide grid.
+- `Logo.createMonogramGrid(type?: '2x2' | '3x3' | 'diamond' | 'hex', size?: number, originX?: number, originY?: number)` → `{ type: string, size: number, nodes: Record<string, Point> }` — Node matrices for interlocking lettermarks and monograms.
+
+## Graphic Devices & Enclosures
+- `Logo.createSquirclePath(x: number, y: number, width: number, height: number, exponent?: number)` → `SKPath` — Generates continuous-curvature superellipse path ($|2x/w|^n + |2y/h|^n = 1$) for modern app icon containers.
+- `Logo.drawSquircle(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, options?: { fill?: string, stroke?: string, strokeWidth?: number, exponent?: number })` — Renders filled/stroked continuous curvature squircle.
+- `Logo.drawEmblemBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number, type?: 'shield' | 'hexagon' | 'diamond' | 'scallop' | 'circle', options?: { fill?: string, stroke?: string, strokeWidth?: number, points?: number })` — Renders geometric emblem crest containers.
+- `Logo.drawClearSpaceGuide(ctx: CanvasRenderingContext2D, markBounds: Rect, xDimension?: number, options?: { color?: string, fill?: string, showLabels?: boolean })` — Visualizes protective clear space boundary and dimension blocks ($X$).
+
+## Optical Tuning & Perception Fixes
+- `Logo.correctBoneEffect(p1: Point, p2: Point, strokeWidth: number, pinchCorrectionFactor?: number)` → `Point[]` — Computes 6-point outward parabolic polygon correcting optical dumbbell/bone narrowing illusion in connecting bars.
+- `Logo.computeOvershoot(baseHeight: number, shape?: 'circle' | 'triangle' | 'arch')` → `number` — Computes $1.5\%–3.0\%$ vertical overshoot offset for circular and pointed apexes.
+- `Logo.computeOpticalCenter(pointsOrBounds: Point[] | Rect, shapeType?: 'triangle' | 'arrow' | 'general')` → `Point` — Computes visual center of gravity ($Y \approx 42\%–48\%$).
+
+## Scale Stress-Testing & Brand Sheets
+- `Logo.generateFaviconScaleTest(ctx: CanvasRenderingContext2D, drawMarkFn: (ctx: CanvasRenderingContext2D, size: number) => void, options?: object)` — Side-by-side multi-scale legibility ladder ($16\text{px}, 24\text{px}, 32\text{px}, 48\text{px}, 64\text{px}, 128\text{px}, 256\text{px}$).
+- `Logo.generateMonochromeTest(ctx: CanvasRenderingContext2D, drawMarkFn: (ctx: CanvasRenderingContext2D, size: number) => void, width?: number, height?: number)` — 4-way contrast test board (Positive Black, Negative White Knockout, Grayscale, App Icon Squircle).
+- `Logo.generateBrandPresentationSheet(ctx: CanvasRenderingContext2D, options: { brandName: string, tagline?: string, primaryColor?: string, secondaryColor?: string, darkColor?: string, lightColor?: string, drawMark: (ctx: CanvasRenderingContext2D, size: number) => void })` — Complete executive brand identity presentation board with logo lockup, color chips, and clear space guides.
+
+---
+
+# VectorLogo & Snap.svg Logo Methods
+
+Retained-mode SVG vector logo construction methods available directly on `SnapPaper` (`paper`), `Snap.path`, and the global `VectorLogo` object.
+
+## SnapPaper Vector Methods
+- `paper.squircle(x: number, y: number, width: number, height: number, exponent?: number)` → `SnapPath` — Appends a Lamé superellipse squircle path element to the paper.
+- `paper.goldenSpiral(startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `SnapPath` — Appends a logarithmic golden spiral path ($r = a \cdot e^{b\theta}$) to the paper.
+- `paper.emblemBadge(cx: number, cy: number, width: number, height: number, style?: 'shield' | 'hexagon' | 'diamond' | 'scallop' | 'circle')` → `SnapPath` — Appends a geometric badge outline to the paper.
+- `paper.goldenCircles(cx: number, cy: number, baseRadius: number, count?: number)` → `SnapGroup` — Appends a group containing $\Phi$-scaled concentric circles.
+- `paper.isometricGrid(width: number, height: number, spacing?: number)` → `SnapGroup` — Appends a group containing 30°/60° isometric construction grid lines.
+- `paper.polarGrid(cx: number, cy: number, maxRadius: number, ringCount?: number, rayCount?: number)` → `SnapGroup` — Appends a group containing polar concentric rings and radial spokes.
+- `paper.monogramMatrix(x: number, y: number, width: number, height: number, type?: '2x2' | '3x3' | '4x4')` → `SnapGroup` — Appends monogram matrix grid guides and node anchor circles.
+- `paper.clearSpaceGuide(x: number, y: number, width: number, height: number, margin?: number)` → `SnapGroup` — Appends clear space boundary guides and dimension blocks ($X$).
+
+## Path Shorthand Helpers (`Snap.path` & `VectorLogo`)
+- `Snap.path.squircle(x: number, y: number, width: number, height: number, exponent?: number)` → `string` — Returns SVG `d` path string.
+- `Snap.path.goldenSpiral(startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `string` — Returns SVG `d` path string.
+- `Snap.path.emblemBadge(cx: number, cy: number, width: number, height: number, style?: string)` → `string` — Returns SVG `d` path string.
+- `Snap.path.tangentFillet(x1: number, y1: number, cornerX: number, cornerY: number, x2: number, y2: number, radius: number)` → `string` — Returns SVG `d` fillet path string.
+- `Snap.path.boneEffect(startX: number, startY: number, endX: number, endY: number, maxBulge?: number, controlT?: number)` → `string` — Returns SVG `d` stem bulge path string.
 

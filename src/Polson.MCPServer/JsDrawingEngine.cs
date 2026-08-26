@@ -74,6 +74,14 @@ public class JsDrawingEngine : Runtime
             var drawingToolkit = new ConstructiveDrawingToolkit();
             engine.SetValue("Drawing", drawingToolkit);
 
+            // Pure .NET Logo Design Toolkit
+            var logoToolkit = new LogoDesignToolkit();
+            engine.SetValue("Logo", logoToolkit);
+
+            // Pure .NET Vector Logo Design Toolkit (Snap.svg)
+            var vectorLogoToolkit = new VectorLogoToolkit();
+            engine.SetValue("VectorLogo", vectorLogoToolkit);
+
             // Global logging & exit helpers
             engine.SetValue("log", new Action<string>(msg =>
             {

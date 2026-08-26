@@ -334,5 +334,130 @@ Harmonic composition armature grid and focal power points model returned by `Dra
 }
 ```
 
+---
 
+# Logo (Logo Design Toolkit Schemas)
 
+Data structures returned by `Logo` toolkit methods.
+
+## `GoldenCircles`
+
+Concentric/tangent circle geometry returned by `Logo.createGoldenCircles(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GoldenCircles",
+  "type": "object",
+  "properties": {
+    "circles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": { "type": "integer" },
+          "cx": { "type": "number" },
+          "cy": { "type": "number" },
+          "radius": { "type": "number" },
+          "phiFactor": { "type": "number" }
+        },
+        "required": ["index", "cx", "cy", "radius", "phiFactor"]
+      }
+    },
+    "phi": { "type": "number" },
+    "bounds": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      },
+      "required": ["x", "y", "width", "height"]
+    }
+  },
+  "required": ["circles", "phi", "bounds"]
+}
+```
+
+## `TangentBlend`
+
+Tangent circular fillet geometry returned by `Logo.createTangentBlend(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TangentBlend",
+  "type": "object",
+  "properties": {
+    "arcStart": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "arcEnd": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "arcCenter": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "tangentDistance": { "type": "number" },
+    "cornerAngleDeg": { "type": "number" },
+    "sweepAngleDeg": { "type": "number" }
+  },
+  "required": ["arcStart", "arcEnd", "arcCenter", "tangentDistance", "cornerAngleDeg", "sweepAngleDeg"]
+}
+```
+
+## `IsometricGrid`
+
+Isometric construction grid model returned by `Logo.createIsometricGrid(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IsometricGrid",
+  "type": "object",
+  "properties": {
+    "width": { "type": "number" },
+    "height": { "type": "number" },
+    "cellSize": { "type": "number" },
+    "dx": { "type": "number" },
+    "dy": { "type": "number" },
+    "nodeRows": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "col": { "type": "integer" },
+            "row": { "type": "integer" }
+          },
+          "required": ["x", "y", "col", "row"]
+        }
+      }
+    }
+  },
+  "required": ["width", "height", "cellSize", "dx", "dy", "nodeRows"]
+}
+```
+
+## `MonogramGrid`
+
+Monogram matrix nodes returned by `Logo.createMonogramGrid(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MonogramGrid",
+  "type": "object",
+  "properties": {
+    "type": { "type": "string", "enum": ["2x2", "3x3", "diamond", "hex"] },
+    "size": { "type": "number" },
+    "nodes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+        "required": ["x", "y"]
+      }
+    }
+  },
+  "required": ["type", "size", "nodes"]
+}
+```

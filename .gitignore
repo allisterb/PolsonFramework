@@ -432,6 +432,8 @@ FodyWeavers.xsd
 reference/*
 *.png
 *.svg
-*.webp
+!src/Polson.Drawing.Svg/
+!src/Polson.Drawing.Svg/*.cs
+!src/Polson.Drawing.Svg/*.csproj
 *.webp
 *.jpg

@@ -43,6 +43,9 @@ public class SnapPaper : SnapElement
     }
 
     public SnapElement Defs => _defs ??= EnsureDefs();
+
+    public VectorLogoToolkit VectorLogo { get; } = new();
+    public VectorLogoToolkit Logo => VectorLogo;
     #endregion
 
     #region Methods
@@ -168,6 +171,32 @@ public class SnapPaper : SnapElement
         Document.Children.Add(polygon);
         return new SnapPolygon(polygon, this);
     }
+
+    #region Vector Logo Methods
+    public SnapPath Squircle(float x, float y, float width, float height, float exponent = 4.5f) =>
+        VectorLogo.Squircle(this, x, y, width, height, exponent);
+
+    public SnapPath GoldenSpiral(float startX, float startY, float initialRadius, float turns = 3f, int segmentsPerTurn = 36) =>
+        VectorLogo.GoldenSpiral(this, startX, startY, initialRadius, turns, segmentsPerTurn);
+
+    public SnapPath EmblemBadge(float cx, float cy, float width, float height, string style = "shield") =>
+        VectorLogo.EmblemBadge(this, cx, cy, width, height, style);
+
+    public SnapGroup GoldenCircles(float cx, float cy, float baseRadius, int count = 5) =>
+        VectorLogo.GoldenCircles(this, cx, cy, baseRadius, count);
+
+    public SnapGroup IsometricGrid(float width, float height, float spacing = 40f) =>
+        VectorLogo.IsometricGrid(this, width, height, spacing);
+
+    public SnapGroup PolarGrid(float cx, float cy, float maxRadius, int ringCount = 5, int rayCount = 12) =>
+        VectorLogo.PolarGrid(this, cx, cy, maxRadius, ringCount, rayCount);
+
+    public SnapGroup MonogramMatrix(float x, float y, float width, float height, string type = "3x3") =>
+        VectorLogo.MonogramMatrix(this, x, y, width, height, type);
+
+    public SnapGroup ClearSpaceGuide(float x, float y, float width, float height, float margin = 24f) =>
+        VectorLogo.ClearSpaceGuide(this, x, y, width, height, margin);
+    #endregion
 
     public SnapLinearGradient GradientLinear(float x1, float y1, float x2, float y2)
     {

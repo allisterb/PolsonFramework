@@ -151,7 +151,7 @@ Agents are assigned specific archetypal roles to divide creative labor:
     - Polson.Runtime at src/Polson.Runtime provides global base types and features like logging for all other projects.
     - Polson.MCPServer at src/Polson.MCPServer provides the constrained JavaScript execution engine and MCP server implementation.
     - Polson.Drawing.Svg at src/Polson.Drawing.Svg for the Snap-svg compatible JS API.
-    - Polson.Tests.Drawting at tests/Polson.Tests.Drawing for unit tests of the Snap-svg compatible JS API and rendering pipeline.
+    - Polson.Tests.Drawing at tests/Polson.Tests.Drawing for unit tests of the Snap-svg compatible JS API and rendering pipeline.
 * Logging is provided by the Polson.Runtime project and is available to all other projects by either using the static Runtime methods or in a class inheriting from Runtime. Configure the logging system in a static constructor of the entry assembly.
 * Test classes should inherit from Ploson.Tests.TestsRuntime from from the Polson.Runtime project.
 
@@ -162,7 +162,7 @@ Agents are assigned specific archetypal roles to divide creative labor:
 - Prefer functional programming paradigms and constructs where appropriate.
 - Prefer concise code over more verbose constructs.
 - Avoid modifying external library code located in the @ext directory. Changes should be limited to the code in the @src directory only whenever possible.
-
+- Jint will match a JS call like `createGoldenCircles(...)` to .NET `CreateGoldenCircles(...)` so follow the standard .NET method and property naming conventions for the drawing toolkits.
 
 ## 9. Project coding style:
 - Use the existing #regions in a file to organize class constructors, indexers, events, properties, methods, fields, and child types.

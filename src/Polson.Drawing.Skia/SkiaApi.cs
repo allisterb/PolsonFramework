@@ -17,6 +17,7 @@ public class SkiaApi
     public SkiaImageApi Image { get; } = new();
     public SkiaBitmapFactoryApi Bitmap { get; } = new();
     public ConstructiveDrawingToolkit Drawing { get; } = new();
+    public LogoDesignToolkit Logo { get; } = new();
     #endregion
 }
 

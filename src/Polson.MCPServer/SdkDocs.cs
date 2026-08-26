@@ -37,7 +37,9 @@ public static class SdkDocs
         new("Snap", ["Snap", "mina"], "Snap"),
         new("Canvas2D", ["createCanvas", "Canvas"], "Canvas2D"),
         new("Skia", ["Skia", "SK", "ImageData"], "Skia"),
-        new("Drawing", ["Drawing"], "Drawing")
+        new("Drawing", ["Drawing"], "Drawing"),
+        new("Logo", ["Logo"], "Logo"),
+        new("VectorLogo", ["VectorLogo", "vectorLogo"], "VectorLogo")
     ];
     #endregion
 

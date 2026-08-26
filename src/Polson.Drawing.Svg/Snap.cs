@@ -10,6 +10,9 @@ public static class Snap
 {
     #region Properties
     public static string Version => "0.5.1";
+    public static SnapPathApi path { get; } = new();
+    public static VectorLogoToolkit vectorLogo { get; } = new();
+    public static VectorLogoToolkit logo => vectorLogo;
     #endregion
 
     #region Methods

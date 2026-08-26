@@ -16,6 +16,7 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
   > For heavy pixel-level manipulation (such as procedural textures, blurs, or color grading), use native **`Skia.Shader`** or **`Skia.ImageFilter`** pipelines which execute in native SIMD/C++ in < 1ms, rather than running millions of raw per-pixel loop iterations in interpreted JS.
 - **Return Value & Visual Rendering:**
   - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to image bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**, with `"png"` and `"jpeg"` options available) and Base64 URI (`result.ImageDataUri`).
+  - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
   - For vector scenes (`SnapPaper` / `SnapElement`), `result.SvgXml` contains the serialized SVG XML markup. For 2D canvas raster scripts, `result.SvgXml` retains the last vector image produced by the agent prior to switching to 2D canvas mode.
   - If a script creates one or more canvases or Snap papers without explicitly returning them, the last created canvas/paper is rendered automatically.
 - **Logging & Output:** Output via `console.log(...)`, `log(...)`, `error(...)`, or `table(...)`.
@@ -443,6 +444,15 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.drawMannequinSolid(ctx: CanvasRenderingContext2D, figureObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders shaded volumetric 3D masses (cranial sphere, ribcage egg, pelvic basin, limb cylinders, and box hands/feet).
 - `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders pectorals, deltoids, clavicle handlebars, neck sternocleidomastoid cords, and rectus abdominis six-pack grid.
 - `Drawing.applyFacialExpression(headObj: object, expressionType: 'joy' | 'anger' | 'fear' | 'sadness' | 'surprise' | 'disgust', intensity?: number)` → `object` — Modifies Loomis head brow, eye, and mouth landmarks according to the 6 universal muscle expressions.
+
+## Compositional Armatures, Notan & Visual Emphasis
+- `Drawing.createCompositionGrid(width: number, height: number, type?: 'ruleOfThirds' | 'goldenRatio' | 'dynamicSymmetry' | 'triangle', options?: object)` → `object` — Computes harmonic grid lines and focal power points.
+- `Drawing.drawCompositionGrid(ctx: CanvasRenderingContext2D, gridObjOrType: object | string, options?: { lineColor?: string, pointColor?: string, lineWidth?: number, opacity?: number })` — Renders non-repro blue / cyan guide armatures on canvas.
+- `Drawing.drawVignette(ctx: CanvasRenderingContext2D, width: number, height: number, options?: { vignetteColor?: string, intensity?: number, radius?: number })` — Renders smooth radial inverse falloff vignette.
+- `Drawing.drawLeadingLines(ctx: CanvasRenderingContext2D, originPoints: Point[], focalPoint: Point, options?: { lineColor?: string, lineWidth?: number, opacity?: number })` — Renders directional guide vectors steering viewer gaze toward the subject.
+- `Drawing.createNotanPalette(type?: 'binary' | 'classic3' | 'highKey' | 'lowKey')` → `object` — Returns curated tonal palettes for value keying.
+- `Drawing.subdivideProportions(bounds: Rect, direction?: 'horizontal' | 'vertical', ratios?: object)` → `{ big: Rect, medium: Rect, small: Rect }` — Subdivides spatial layout according to the 70-20-10 ("Big, Medium, Small") proportional design law.
+
 
 
 

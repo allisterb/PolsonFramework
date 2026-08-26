@@ -33,15 +33,23 @@ The result envelope produced by executing a JavaScript drawing script:
     "imageBytes": {
       "type": ["array", "null"],
       "items": { "type": "integer", "minimum": 0, "maximum": 255 },
-      "description": "Rendered image byte stream (encoded as WebP, PNG, or JPEG; default: WebP Q=85)."
+      "description": "Rendered image byte stream (encoded as WebP, PNG, or JPEG; default: WebP Q=85). Omitted when saved to disk via outFile unless includeBytes is true."
+    },
+    "imageFilePath": {
+      "type": ["string", "null"],
+      "description": "Absolute file path on disk where the rendered image was saved (when outFile is specified)."
+    },
+    "svgFilePath": {
+      "type": ["string", "null"],
+      "description": "Absolute file path on disk where the rendered SVG markup was saved (when outSvg is specified)."
+    },
+    "imageSize": {
+      "type": "integer",
+      "description": "Length of the rendered image in bytes."
     },
     "imageFormat": {
       "type": "string",
       "description": "The format of the encoded image ('webp', 'png', 'jpeg')."
-    },
-    "imageDataUri": {
-      "type": ["string", "null"],
-      "description": "The rendered image formatted as a base64 Data URI ('data:image/...;base64,...')."
     },
     "logs": {
       "type": "array",
@@ -305,5 +313,26 @@ Parametric 8-head proportional full-body anatomical joint model returned by `Dra
   "required": ["headUnit", "totalHeight", "head", "neck", "sternum", "clavicles", "ribcage", "navel", "pelvis", "crotch", "leftArm", "rightArm", "leftLeg", "rightLeg"]
 }
 ```
+
+## `CompositionGrid`
+
+Harmonic composition armature grid and focal power points model returned by `Drawing.createCompositionGrid(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompositionGrid",
+  "type": "object",
+  "properties": {
+    "type": { "type": "string", "enum": ["ruleOfThirds", "goldenRatio", "dynamicSymmetry", "triangle"] },
+    "width": { "type": "number" },
+    "height": { "type": "number" },
+    "lines": { "type": "array", "items": { "type": "array", "items": { "type": "object" } } },
+    "powerPoints": { "type": "object" }
+  },
+  "required": ["type", "width", "height", "lines", "powerPoints"]
+}
+```
+
 
 

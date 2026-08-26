@@ -1,1143 +1,854 @@
-// ============================================================================
-// POLSON COMIC STUDIO: MASTER PUBLICATION ARTWORK
-// ============================================================================
-// Artwork: Pirate Woman on Ship Deck (Master Study: reference_images/comic1.png)
-// Canvas: 900 x 750 px
-// Engine: Polson ECMAScript 2025 MCP Graphics Engine (Canvas2D + Skia Shaders)
-// ============================================================================
+﻿/**
+ * Polson Co-Creative Comic Studio — Master Publication Artwork
+ * Recreating reference_images/comic1.png using Polson ECMAScript 2025 MCP Graphics Engine
+ * 
+ * Pipeline Compositor:
+ * - Stage 1: Penciler (Composition, Loomis Proportions & Armature)
+ * - Stage 2: Colorist (4-Tier Palettes, 5 Facial Planes, SkSL Ben-Day Halftone, Perlin Noise)
+ * - Stage 3: Inker (3-Tier Comic Inks in #0a0a0c, Calligraphic Tapered Béziers, Feathering)
+ * - Stage 4: Critic (Visual Drift Correction, Cinematic Vignette)
+ */
 
-const canvas = createCanvas(900, 750);
+const canvas = createCanvas(447, 380);
 const ctx = canvas.getContext('2d');
 
-// ============================================================================
-// 1. MASTER 4-TIER COLOR PALETTE & LIGHTING CONSTANTS
-// ============================================================================
+// ==========================================
+// 1. HARMONIZED MASTER PALETTE
+// ==========================================
 const PALETTE = {
-    sky: { top: '#3b6886', mid: '#588da8', bottom: '#9ec3d5' },
-    clouds: { fill: '#faf8f2', shadow: '#c4d0da', outline: '#344858' },
-    sailWedge: '#0a0a0c',
-    rigging: {
-        ropeBase: '#9e7348', ropeShadow: '#4e3016',
-        ropeLight: '#d8ab7a', knot: '#341c0c'
-    },
     skin: {
-        highlight: '#fef3e4', base: '#e6b18a',
-        midShadow: '#ca835b', shadow: '#9e5f3c', deep: '#6c351e',
-        blush: 'rgba(195, 75, 55, 0.20)', lipBase: '#983734', lipShadow: '#621d1b',
-        teeth: '#f8f8f2', mouthDark: '#120404'
+        highlight: '#faecd8',
+        base: '#e8b894',
+        shadow: '#a66847',
+        deep: '#753c24',
+        lipRose: '#b84848',
+        lipShadow: '#7a2828',
+        mouthCavity: '#150606',
+        teeth: '#fbfbf6'
     },
     hair: {
-        sunlit: '#fca858', highlight: '#e6803b', base: '#c65324',
-        shadow: '#782610', deep: '#3e1106'
+        sunlit: '#f5a458',
+        highlight: '#e88b48',
+        base: '#c85a2b',
+        shadow: '#7d2d14',
+        deep: '#3d1205'
     },
     bandana: {
-        highlight: '#526e8d', base: '#304256',
-        shadow: '#1a2634', deep: '#0c121a'
+        highlight: '#4e6b8a',
+        base: '#2f4255',
+        shadow: '#1a2633',
+        deep: '#0f1720'
     },
-    shirt: { base: '#f3ebd6', shadow: '#c4baa2', deep: '#948a74' },
-    coat: { highlight: '#364656', base: '#1a222a', shadow: '#0a0e14' },
-    earring: { highlight: '#ffea88', base: '#d49b28', shadow: '#7e530e' },
-    eyes: { sclera: '#f5f5f0', scleraShadow: '#c4cbd4', iris: '#3e6c86', irisDark: '#183244', pupil: '#0a0a0c' },
+    shirt: {
+        highlight: '#fcfaf2',
+        base: '#f4ecd8',
+        shadow: '#c5baa4',
+        deep: '#9c917b'
+    },
+    coat: {
+        highlight: '#344352',
+        base: '#1c242c',
+        shadow: '#0c1015'
+    },
+    sky: {
+        top: '#4a7c9d',
+        mid: '#6c9ebf',
+        bottom: '#a2c8dc'
+    },
+    clouds: {
+        fill: '#f8f6f0',
+        shadow: '#b6c4cf'
+    },
+    spar: {
+        highlight: '#82583f',
+        base: '#5c3d2e',
+        shadow: '#3a2216'
+    },
+    rope: {
+        base: '#9e7d56',
+        shadow: '#664c30'
+    },
+    earring: {
+        highlight: '#fff2a8',
+        base: '#e5a823',
+        shadow: '#94670c'
+    },
     ink: '#0a0a0c'
 };
 
-// ============================================================================
-// 2. INKING UTILITIES (Tapered Strokes & Directional Feathering)
-// ============================================================================
-
-function drawTaperedStroke(ctx, start, cp1, cp2, end, maxThickness, color = PALETTE.ink) {
-    const steps = 24;
-    const points = [];
-    for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const it = 1 - t;
-        const x = it*it*it*start.x + 3*it*it*t*cp1.x + 3*it*t*t*cp2.x + t*t*t*end.x;
-        const y = it*it*it*start.y + 3*it*it*t*cp1.y + 3*it*t*t*cp2.y + t*t*t*end.y;
-        const dx = 3*it*it*(cp1.x - start.x) + 6*it*t*(cp2.x - cp1.x) + 3*t*t*(end.x - cp2.x);
-        const dy = 3*it*it*(cp1.y - start.y) + 6*it*t*(cp2.y - cp1.y) + 3*t*t*(end.y - cp2.y);
-        const len = Math.sqrt(dx*dx + dy*dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
-        const thickness = maxThickness * Math.sin(t * Math.PI);
-        points.push({ x, y, nx, ny, thickness });
-    }
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-        ctx.lineTo(p.x + p.nx * (p.thickness * 0.5), p.y + p.ny * (p.thickness * 0.5));
-    }
-    for (let i = points.length - 1; i >= 0; i--) {
-        const p = points[i];
-        ctx.lineTo(p.x - p.nx * (p.thickness * 0.5), p.y - p.ny * (p.thickness * 0.5));
-    }
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
-}
-
-function drawFeatheringHatch(ctx, origin, directionAngleDeg, count, length, spacing, color = PALETTE.ink, lineWidth = 1.2) {
-    const rad = (directionAngleDeg * Math.PI) / 180;
-    const dx = Math.cos(rad);
-    const dy = Math.sin(rad);
-    const px = -dy;
-    const py = dx;
-
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth;
-    ctx.lineCap = 'round';
-
-    for (let i = 0; i < count; i++) {
-        const sx = origin.x + px * (i * spacing);
-        const sy = origin.y + py * (i * spacing);
-        const lenVar = length * (0.75 + 0.45 * Math.sin(i * 1.4));
-        const ex = sx + dx * lenVar;
-        const ey = sy + dy * lenVar;
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(ex, ey);
-        ctx.stroke();
-    }
-    ctx.restore();
-}
-
-// ============================================================================
-// 3. LAYER 1: SKY, PROCEDURAL CLOUDS & SHIP'S RIGGING
-// ============================================================================
-function drawBackgroundAndRigging(ctx) {
-    // 1. Sky Gradient
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, 750);
+// ==========================================
+// 2. LAYER 1: SKY & ATMOSPHERIC CLOUDS
+// ==========================================
+function drawSkyAndAtmosphere(ctx) {
+    // Linear sky gradient
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, 380);
     skyGrad.addColorStop(0.0, PALETTE.sky.top);
-    skyGrad.addColorStop(0.55, PALETTE.sky.mid);
+    skyGrad.addColorStop(0.45, PALETTE.sky.mid);
     skyGrad.addColorStop(1.0, PALETTE.sky.bottom);
     ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, 900, 750);
+    ctx.fillRect(0, 0, 447, 380);
 
-    // 2. Billowy Clouds
-    function drawCloudCluster(cx, cy, s) {
+    // Billowy cumulus cloud puffs with shaded underside
+    function drawCloud(cx, cy, s) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.scale(s, s);
 
-        ctx.beginPath();
-        ctx.moveTo(-160, 30);
-        ctx.lineTo(160, 30);
-        ctx.quadraticCurveTo(0, 85, -160, 30);
         ctx.fillStyle = PALETTE.clouds.shadow;
-        ctx.fill();
-
         ctx.beginPath();
-        ctx.arc(-100, 0, 55, 0, Math.PI * 2);
-        ctx.arc(-35, -45, 75, 0, Math.PI * 2);
-        ctx.arc(45, -35, 65, 0, Math.PI * 2);
-        ctx.arc(110, 10, 50, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.fillStyle = PALETTE.clouds.fill;
+        ctx.arc(-45, 18, 42, 0, Math.PI * 2);
+        ctx.arc(10, 22, 50, 0, Math.PI * 2);
+        ctx.arc(65, 15, 38, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = PALETTE.clouds.outline;
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
+        ctx.fillStyle = PALETTE.clouds.fill;
+        ctx.beginPath();
+        ctx.arc(-55, -8, 38, 0, Math.PI * 2);
+        ctx.arc(-15, -35, 48, 0, Math.PI * 2);
+        ctx.arc(35, -22, 42, 0, Math.PI * 2);
+        ctx.arc(75, 0, 34, 0, Math.PI * 2);
+        ctx.arc(5, 5, 48, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
     }
 
-    drawCloudCluster(110, 140, 1.25);
-    drawCloudCluster(270, 260, 0.95);
-    drawCloudCluster(800, 190, 1.3);
-    drawCloudCluster(860, 380, 0.95);
+    drawCloud(70, 100, 1.15);
+    drawCloud(420, 120, 1.25);
+    drawCloud(230, 35, 0.85);
 
+    // Fractal cloud noise overlay
     try {
-        const cloudNoise = Skia.Shader.perlinNoiseFractal(0.012, 0.012, 4, 101);
+        const cloudNoise = Skia.Shader.perlinNoiseFractal(0.015, 0.015, 4, 101);
         ctx.save();
         ctx.globalCompositeOperation = 'soft-light';
         ctx.fillStyle = cloudNoise;
-        ctx.fillRect(0, 0, 900, 500);
+        ctx.fillRect(0, 0, 447, 200);
         ctx.restore();
     } catch (e) {}
 
-    // Top-left sail corner
+    // Top-left sail silhouette
+    ctx.fillStyle = PALETTE.ink;
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(115, 0);
-    ctx.lineTo(0, 210);
+    ctx.lineTo(48, 0);
+    ctx.lineTo(0, 105);
     ctx.closePath();
-    ctx.fillStyle = PALETTE.sailWedge;
+    ctx.fill();
+}
+
+// ==========================================
+// 3. LAYER 2: SHIP RIGGING & SPAR
+// ==========================================
+function drawRigging(ctx) {
+    // Wooden mast / spar
+    ctx.save();
+    ctx.fillStyle = PALETTE.spar.base;
+    ctx.beginPath();
+    ctx.moveTo(170, 0);
+    ctx.lineTo(205, 0);
+    ctx.lineTo(447, 345);
+    ctx.lineTo(447, 305);
+    ctx.closePath();
     ctx.fill();
 
-    // 3. Rigging Shrouds & Ratlines
+    ctx.fillStyle = PALETTE.spar.shadow;
+    ctx.beginPath();
+    ctx.moveTo(192, 0);
+    ctx.lineTo(205, 0);
+    ctx.lineTo(447, 345);
+    ctx.lineTo(447, 330);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 6 Diagonal Rope Shrouds with Hemp Noise
     const shrouds = [
-        { x1: 360, y1: 0, x2: -40, y2: 680, w: 10 },
-        { x1: 540, y1: 0, x2: 40, y2: 750, w: 11 },
-        { x1: 770, y1: 0, x2: 240, y2: 750, w: 12 },
-        { x1: 960, y1: 50, x2: 540, y2: 750, w: 12 },
-        { x1: 1040, y1: 250, x2: 790, y2: 750, w: 10 }
+        { x1: 65, y1: 0, x2: 0, y2: 240, w: 4.8 },
+        { x1: 145, y1: 0, x2: 0, y2: 380, w: 5.2 },
+        { x1: 265, y1: 0, x2: 55, y2: 380, w: 5.5 },
+        { x1: 355, y1: 0, x2: 205, y2: 380, w: 5.5 },
+        { x1: 447, y1: 20, x2: 315, y2: 380, w: 5.0 },
+        { x1: 447, y1: 105, x2: 385, y2: 380, w: 4.5 }
     ];
 
     shrouds.forEach(s => {
+        ctx.save();
+        ctx.strokeStyle = PALETTE.rope.base;
+        ctx.lineWidth = s.w;
         ctx.beginPath();
         ctx.moveTo(s.x1, s.y1);
         ctx.lineTo(s.x2, s.y2);
-        ctx.strokeStyle = PALETTE.rigging.ropeShadow;
-        ctx.lineWidth = s.w;
         ctx.stroke();
 
-        ctx.beginPath();
-        ctx.moveTo(s.x1 - 2, s.y1);
-        ctx.lineTo(s.x2 - 2, s.y2);
-        ctx.strokeStyle = PALETTE.rigging.ropeBase;
-        ctx.lineWidth = s.w - 3;
+        ctx.strokeStyle = PALETTE.rope.shadow;
+        ctx.lineWidth = s.w * 0.45;
         ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(s.x1 - 3.5, s.y1);
-        ctx.lineTo(s.x2 - 3.5, s.y2);
-        ctx.strokeStyle = PALETTE.rigging.ropeLight;
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
-    });
-
-    const ratlineYs = [65, 125, 185, 245, 305, 365, 425, 485, 545, 605, 665, 725];
-    ratlineYs.forEach(y => {
-        ctx.beginPath();
-        ctx.moveTo(0, y + 10);
-        ctx.bezierCurveTo(300, y + 2, 600, y - 6, 900, y - 15);
-        ctx.strokeStyle = PALETTE.rigging.ropeBase;
-        ctx.lineWidth = 3.5;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(0, y + 12);
-        ctx.bezierCurveTo(300, y + 4, 600, y - 4, 900, y - 13);
-        ctx.strokeStyle = PALETTE.rigging.ropeShadow;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-
-        shrouds.forEach(s => {
-            const t = (y - s.y1) / (s.y2 - s.y1);
-            if (t >= 0 && t <= 1) {
-                const kx = s.x1 + t * (s.x2 - s.x1);
-                const ky = s.y1 + t * (s.y2 - s.y1);
-                ctx.beginPath();
-                ctx.ellipse(kx, ky, 6, 7, 0.3, 0, Math.PI * 2);
-                ctx.fillStyle = PALETTE.rigging.knot;
-                ctx.fill();
-
-                ctx.beginPath();
-                ctx.arc(kx - 1, ky - 1, 2.5, 0, Math.PI * 2);
-                ctx.fillStyle = PALETTE.rigging.ropeLight;
-                ctx.fill();
-            }
-        });
-    });
-
-    try {
-        const fiberShader = Skia.Shader.perlinNoiseTurbulence(0.08, 0.40, 3, 42);
-        ctx.save();
-        ctx.globalCompositeOperation = 'overlay';
-        shrouds.forEach(s => {
-            ctx.beginPath();
-            ctx.moveTo(s.x1, s.y1);
-            ctx.lineTo(s.x2, s.y2);
-            ctx.strokeStyle = fiberShader;
-            ctx.lineWidth = s.w;
-            ctx.stroke();
-        });
         ctx.restore();
-    } catch (e) {}
-}
+    });
 
-// ============================================================================
-// 4. LAYER 2: ORGANIC DYNAMIC HAIR (ORGANIC WINDSWEPT S-CURVES & PONYTAIL)
-// ============================================================================
-function drawHairLayers(ctx) {
-    // 1. Deep Background Hair Mass (Chestnut / dark copper under-mass)
-    ctx.beginPath();
-    ctx.moveTo(350, 420);
-    ctx.bezierCurveTo(280, 240, 180, 110, 40, 210);
-    ctx.bezierCurveTo(0, 250, 10, 330, 40, 390);
-    ctx.bezierCurveTo(20, 430, 60, 480, 100, 470);
-    ctx.bezierCurveTo(160, 450, 220, 420, 280, 380);
-    ctx.bezierCurveTo(320, 410, 350, 460, 350, 480);
-    ctx.bezierCurveTo(390, 430, 470, 360, 560, 310);
-    ctx.bezierCurveTo(650, 310, 715, 270, 765, 270);
-    ctx.bezierCurveTo(770, 200, 730, 130, 660, 65);
-    ctx.bezierCurveTo(570, 25, 460, 30, 370, 70);
-    ctx.bezierCurveTo(320, 190, 335, 310, 350, 420);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.deep;
-    ctx.fill();
-
-    // 2. Rich Copper-Red Main Body
-    ctx.beginPath();
-    ctx.moveTo(350, 420);
-    ctx.bezierCurveTo(290, 250, 200, 130, 60, 210);
-    ctx.bezierCurveTo(20, 250, 20, 320, 50, 380);
-    ctx.bezierCurveTo(30, 420, 70, 465, 110, 455);
-    ctx.bezierCurveTo(170, 440, 230, 405, 290, 370);
-    ctx.bezierCurveTo(330, 395, 360, 445, 360, 465);
-    ctx.bezierCurveTo(400, 415, 480, 350, 570, 305);
-    ctx.bezierCurveTo(650, 305, 715, 265, 755, 265);
-    ctx.bezierCurveTo(755, 195, 720, 125, 650, 60);
-    ctx.bezierCurveTo(560, 25, 450, 28, 360, 68);
-    ctx.bezierCurveTo(315, 185, 335, 300, 350, 420);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.base;
-    ctx.fill();
-
-    // 3. Flowing 3D Ribbon Curls (Ponytail & Crown Waves)
-    function renderFlowingLock(root, cp1, cp2, tip, cp3, cp4, width, fill, shadowFill) {
+    // Ratlines with organic sagging curves and tie nodes
+    ctx.save();
+    ctx.strokeStyle = PALETTE.rope.base;
+    ctx.lineWidth = 2.2;
+    for (let y = 30; y < 380; y += 32) {
         ctx.beginPath();
-        ctx.moveTo(root.x, root.y);
-        ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, tip.x, tip.y);
-        ctx.bezierCurveTo(cp3.x, cp3.y, cp4.x, cp4.y, root.x + width, root.y + 5);
-        ctx.closePath();
-        ctx.fillStyle = fill;
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(cp3.x, cp3.y);
-        ctx.bezierCurveTo(cp4.x, cp4.y, tip.x, tip.y, tip.x, tip.y);
-        ctx.bezierCurveTo(cp3.x - 12, cp3.y + 12, cp4.x - 6, cp4.y + 6, cp3.x, cp3.y);
-        ctx.closePath();
-        ctx.fillStyle = shadowFill;
-        ctx.fill();
+        ctx.moveTo(0, y - 20);
+        ctx.quadraticCurveTo(220, y + 22, 447, y + 60);
+        ctx.stroke();
     }
-
-    // Top Crown Arching Waves
-    renderFlowingLock({x:590, y:290}, {x:680, y:150}, {x:640, y:60}, {x:500, y:30}, {x:410, y:50}, {x:510, y:150}, 35, PALETTE.hair.highlight, PALETTE.hair.shadow);
-    renderFlowingLock({x:560, y:300}, {x:600, y:170}, {x:510, y:100}, {x:390, y:65}, {x:310, y:110}, {x:440, y:200}, 30, PALETTE.hair.highlight, PALETTE.hair.shadow);
-    renderFlowingLock({x:530, y:310}, {x:530, y:210}, {x:440, y:150}, {x:330, y:120}, {x:260, y:180}, {x:380, y:250}, 25, PALETTE.hair.highlight, PALETTE.hair.shadow);
-
-    // Ponytail Cascading Locks
-    renderFlowingLock({x:350, y:410}, {x:290, y:230}, {x:190, y:110}, {x:80, y:130}, {x:130, y:180}, {x:230, y:230}, 28, PALETTE.hair.highlight, PALETTE.hair.shadow);
-    renderFlowingLock({x:340, y:420}, {x:250, y:200}, {x:130, y:140}, {x:30, y:210}, {x:60, y:250}, {x:170, y:250}, 32, PALETTE.hair.highlight, PALETTE.hair.shadow);
-    renderFlowingLock({x:345, y:430}, {x:230, y:270}, {x:110, y:250}, {x:20, y:310}, {x:50, y:350}, {x:150, y:330}, 30, PALETTE.hair.highlight, PALETTE.hair.shadow);
-    renderFlowingLock({x:340, y:440}, {x:240, y:340}, {x:130, y:350}, {x:40, y:410}, {x:70, y:440}, {x:180, y:390}, 26, PALETTE.hair.highlight, PALETTE.hair.shadow);
-    renderFlowingLock({x:330, y:450}, {x:260, y:410}, {x:170, y:440}, {x:85, y:480}, {x:120, y:470}, {x:220, y:420}, 22, PALETTE.hair.base, PALETTE.hair.shadow);
-}
-
-// ============================================================================
-// 5. LAYER 3: BANDANA WRAP & FLOWING FABRIC TAILS
-// ============================================================================
-function drawBandana(ctx) {
-    const kx = 355;
-    const ky = 455;
-
-    // 1. Streaming Fabric Tails
-    // Upper Tail
-    ctx.beginPath();
-    ctx.moveTo(kx - 5, ky - 10);
-    ctx.bezierCurveTo(260, 445, 140, 495, 0, 485);
-    ctx.lineTo(0, 540);
-    ctx.bezierCurveTo(130, 545, 250, 500, kx - 15, ky + 15);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.bandana.base;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(kx - 5, ky - 5);
-    ctx.bezierCurveTo(250, 470, 140, 520, 0, 510);
-    ctx.lineTo(0, 540);
-    ctx.bezierCurveTo(130, 545, 250, 500, kx - 15, ky + 15);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.bandana.shadow;
-    ctx.fill();
-
-    // Lower Tail
-    ctx.beginPath();
-    ctx.moveTo(kx - 15, ky + 20);
-    ctx.bezierCurveTo(240, 505, 120, 590, 0, 580);
-    ctx.lineTo(0, 640);
-    ctx.bezierCurveTo(110, 650, 220, 575, kx - 20, ky + 45);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.bandana.base;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(kx - 15, ky + 30);
-    ctx.bezierCurveTo(220, 540, 120, 615, 0, 605);
-    ctx.lineTo(0, 640);
-    ctx.bezierCurveTo(110, 650, 220, 575, kx - 20, ky + 45);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.bandana.shadow;
-    ctx.fill();
-
-    // 2. Bandana Headband Wrap across Forehead
-    ctx.beginPath();
-    ctx.moveTo(kx, ky - 20);
-    ctx.bezierCurveTo(420, 375, 495, 325, 585, 315);
-    ctx.bezierCurveTo(620, 315, 645, 330, 658, 355);
-    ctx.bezierCurveTo(640, 372, 610, 372, 575, 365);
-    ctx.bezierCurveTo(480, 388, 405, 438, kx, ky + 15);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.bandana.base;
-    ctx.fill();
-
-    // Bandana Top Highlight Fold
-    ctx.beginPath();
-    ctx.moveTo(kx, ky - 20);
-    ctx.bezierCurveTo(420, 375, 495, 325, 585, 315);
-    ctx.bezierCurveTo(620, 315, 645, 330, 658, 355);
-    ctx.bezierCurveTo(630, 342, 590, 332, 555, 332);
-    ctx.bezierCurveTo(460, 355, 390, 405, kx, ky - 20);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.bandana.highlight;
-    ctx.fill();
-
-    // Bandana Wrapped Knot Base
-    ctx.beginPath();
-    ctx.ellipse(kx, ky, 16, 22, 0.35, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.bandana.deep;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.ellipse(kx - 3, ky - 4, 8, 11, 0.35, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.bandana.highlight;
-    ctx.fill();
-}
-
-// ============================================================================
-// 6. LAYER 4: BODY, COAT & WHITE PIRATE SHIRT WITH SPREAD COLLAR
-// ============================================================================
-function drawClothingAndBody(ctx) {
-    // 1. Captain's Coat (Left Shoulder)
-    ctx.beginPath();
-    ctx.moveTo(0, 660);
-    ctx.bezierCurveTo(80, 620, 180, 595, 260, 600);
-    ctx.bezierCurveTo(340, 610, 400, 640, 430, 660);
-    ctx.lineTo(430, 750);
-    ctx.lineTo(0, 750);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.coat.base;
-    ctx.fill();
-
-    // Coat Right Shoulder
-    ctx.beginPath();
-    ctx.moveTo(900, 690);
-    ctx.bezierCurveTo(840, 640, 770, 615, 710, 610);
-    ctx.lineTo(570, 660);
-    ctx.lineTo(570, 750);
-    ctx.lineTo(900, 750);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.coat.base;
-    ctx.fill();
-
-    // Coat Shadow Folds
-    ctx.beginPath();
-    ctx.moveTo(0, 720);
-    ctx.bezierCurveTo(80, 680, 180, 660, 240, 680);
-    ctx.lineTo(240, 750);
-    ctx.lineTo(0, 750);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.coat.shadow;
-    ctx.fill();
-
-    // 2. White Piratical Shirt with Dynamic Flared Collar Wings
-    // Left Wing Collar (Flaring to x=160, y=610)
-    ctx.beginPath();
-    ctx.moveTo(435, 660);
-    ctx.bezierCurveTo(350, 630, 240, 600, 160, 610);
-    ctx.bezierCurveTo(240, 670, 340, 710, 430, 750);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.shirt.base;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(320, 655);
-    ctx.bezierCurveTo(240, 635, 190, 620, 160, 610);
-    ctx.bezierCurveTo(210, 655, 270, 680, 330, 710);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.shirt.shadow;
-    ctx.fill();
-
-    // Right Wing Collar (Flaring to x=780, y=625)
-    ctx.beginPath();
-    ctx.moveTo(565, 660);
-    ctx.bezierCurveTo(630, 630, 710, 605, 780, 625);
-    ctx.bezierCurveTo(710, 680, 640, 720, 570, 750);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.shirt.base;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(630, 665);
-    ctx.bezierCurveTo(680, 645, 740, 630, 780, 625);
-    ctx.bezierCurveTo(720, 675, 670, 705, 620, 725);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.shirt.shadow;
-    ctx.fill();
-
-    // Open V-Neck Chest
-    ctx.beginPath();
-    ctx.moveTo(438, 662);
-    ctx.bezierCurveTo(490, 705, 520, 710, 565, 665);
-    ctx.lineTo(540, 750);
-    ctx.lineTo(460, 750);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.shadow;
-    ctx.fill();
-
-    // Clavicle shadow
-    ctx.beginPath();
-    ctx.moveTo(490, 710);
-    ctx.bezierCurveTo(515, 730, 535, 725, 545, 710);
-    ctx.bezierCurveTo(535, 735, 515, 740, 490, 710);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.deep;
-    ctx.fill();
-}
-
-// ============================================================================
-// 7. LAYER 5: HEAD, JAWLINE & 5 ANATOMICAL CEL-SHADOW PLANES
-// ============================================================================
-function drawHeadAndCelShading(ctx) {
-    // 1. Neck Base
-    ctx.beginPath();
-    ctx.moveTo(438, 485);
-    ctx.bezierCurveTo(420, 550, 400, 620, 380, 710);
-    ctx.lineTo(565, 750);
-    ctx.bezierCurveTo(585, 690, 605, 650, 636, 606);
-    ctx.bezierCurveTo(570, 590, 468, 535, 438, 485);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.base;
-    ctx.fill();
-
-    // 2. Facial Mask (Defined 3/4 Yaw & Sharp Mandible Angle)
-    ctx.beginPath();
-    ctx.moveTo(360, 440);
-    ctx.bezierCurveTo(415, 375, 495, 325, 585, 315);
-    ctx.bezierCurveTo(620, 315, 645, 330, 658, 355);
-    ctx.bezierCurveTo(690, 370, 730, 400, 746, 450);
-    ctx.bezierCurveTo(740, 475, 725, 530, 695, 575);
-    ctx.bezierCurveTo(670, 605, 650, 615, 636, 616);
-    ctx.bezierCurveTo(575, 600, 478, 545, 445, 495);
-    ctx.bezierCurveTo(425, 505, 400, 490, 415, 440);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.base;
-    ctx.fill();
-
-    // 3. Right Ear Base
-    ctx.beginPath();
-    ctx.moveTo(422, 430);
-    ctx.bezierCurveTo(398, 418, 392, 475, 424, 498);
-    ctx.bezierCurveTo(436, 502, 440, 470, 430, 440);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.base;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(418, 445);
-    ctx.bezierCurveTo(408, 455, 412, 480, 422, 485);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.deep;
-    ctx.fill();
-
-    // 4. Gold Hoop Earring
-    ctx.beginPath();
-    ctx.ellipse(400, 518, 19, 23, 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.earring.base;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.ellipse(400, 518, 13, 17, 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.skin.shadow;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(392, 508, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.earring.highlight;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(410, 530, 3.5, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.earring.shadow;
-    ctx.fill();
-
-    // --- 5 ANATOMICAL FACIAL CEL-SHADOW PLANES ---
-    // Plane 1: Under-Brow Socket Shadows
-    ctx.beginPath();
-    ctx.moveTo(525, 375);
-    ctx.bezierCurveTo(552, 355, 592, 355, 628, 378);
-    ctx.lineTo(614, 404);
-    ctx.bezierCurveTo(592, 384, 552, 386, 532, 404);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.shadow;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(664, 386);
-    ctx.bezierCurveTo(684, 374, 714, 376, 732, 394);
-    ctx.lineTo(724, 414);
-    ctx.bezierCurveTo(711, 396, 684, 394, 668, 410);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.shadow;
-    ctx.fill();
-
-    // Plane 2: Nose Cast Shadow Triangle
-    ctx.beginPath();
-    ctx.moveTo(692, 478);
-    ctx.lineTo(665, 515);
-    ctx.lineTo(654, 484);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.shadow;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(692, 478);
-    ctx.bezierCurveTo(680, 488, 658, 488, 652, 482);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.deep;
-    ctx.fill();
-
-    // Plane 3: Cheek Hollow
-    ctx.beginPath();
-    ctx.moveTo(445, 495);
-    ctx.bezierCurveTo(475, 530, 525, 560, 575, 575);
-    ctx.lineTo(585, 610);
-    ctx.bezierCurveTo(535, 590, 475, 545, 445, 495);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.midShadow;
-    ctx.fill();
-
-    // Plane 4: Under-Lip Crescent Shadow
-    ctx.beginPath();
-    ctx.moveTo(620, 565);
-    ctx.bezierCurveTo(635, 584, 655, 582, 665, 568);
-    ctx.bezierCurveTo(655, 594, 631, 594, 620, 565);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.shadow;
-    ctx.fill();
-
-    // Plane 5: Major Neck Cast Shadow
-    ctx.beginPath();
-    ctx.moveTo(445, 495);
-    ctx.bezierCurveTo(475, 545, 575, 600, 636, 616);
-    ctx.lineTo(630, 630);
-    ctx.bezierCurveTo(570, 650, 515, 675, 460, 685);
-    ctx.bezierCurveTo(430, 620, 418, 550, 445, 495);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.deep;
-    ctx.fill();
-
-    // Sunlit Skin Highlights
-    ctx.beginPath();
-    ctx.ellipse(565, 345, 25, 12, -0.1, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.skin.highlight;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(644, 395);
-    ctx.lineTo(686, 472);
-    ctx.lineTo(680, 475);
-    ctx.lineTo(640, 398);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.highlight;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(636, 606, 7.5, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.skin.highlight;
-    ctx.fill();
-
-    // Subtle skin tone warmth glaze
-    ctx.save();
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.beginPath();
-    ctx.ellipse(560, 490, 45, 30, -0.2, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.skin.blush;
-    ctx.fill();
     ctx.restore();
 }
 
-// ============================================================================
-// 8. LAYER 6: EXPRESSIVE FACIAL FEATURES (EYES, IRISES, NOSE & FIERCE GRIMACE)
-// ============================================================================
-function drawFacialExpression(ctx) {
-    // --- RIGHT EYE (Near Eye) ---
-    ctx.beginPath();
-    ctx.moveTo(540, 408);
-    ctx.bezierCurveTo(562, 384, 600, 383, 622, 408);
-    ctx.bezierCurveTo(604, 424, 568, 424, 540, 408);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.eyes.sclera;
-    ctx.fill();
-
+// ==========================================
+// 4. ORGANIC HAIR LOCK RENDERER
+// ==========================================
+function drawOrganicLock(ctx, p0, p1, p2, p3, w0, w1, fillBase, fillShadow, strokeColor = '#0a0a0c', strokeWidth = 2.2) {
     ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(540, 408);
-    ctx.bezierCurveTo(562, 384, 600, 383, 622, 408);
-    ctx.bezierCurveTo(604, 424, 568, 424, 540, 408);
-    ctx.clip();
+    const dx = p3.x - p0.x;
+    const dy = p3.y - p0.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
 
+    // Body polygon
+    ctx.fillStyle = fillBase;
     ctx.beginPath();
-    ctx.arc(592, 405, 14, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.eyes.irisDark;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(592, 405, 12, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.eyes.iris;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(594, 405, 6.5, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.eyes.pupil;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(588, 401, 3.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.restore();
-
-    // --- LEFT EYE (Far Eye) ---
-    ctx.beginPath();
-    ctx.moveTo(680, 412);
-    ctx.bezierCurveTo(694, 394, 724, 396, 736, 418);
-    ctx.bezierCurveTo(726, 428, 698, 430, 680, 412);
+    ctx.moveTo(p0.x, p0.y);
+    ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+    ctx.bezierCurveTo(
+        p2.x + nx * w1 * 0.6, p2.y + ny * w1 * 0.6,
+        p1.x + nx * w0 * 0.8, p1.y + ny * w0 * 0.8,
+        p0.x + nx * w0, p0.y + ny * w0
+    );
     ctx.closePath();
-    ctx.fillStyle = PALETTE.eyes.sclera;
     ctx.fill();
 
-    ctx.save();
+    // Shadow facet
+    ctx.fillStyle = fillShadow;
     ctx.beginPath();
-    ctx.moveTo(680, 412);
-    ctx.bezierCurveTo(694, 394, 724, 396, 736, 418);
-    ctx.bezierCurveTo(726, 428, 698, 430, 680, 412);
-    ctx.clip();
-
-    ctx.beginPath();
-    ctx.ellipse(714, 412, 10, 13, 0, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.eyes.irisDark;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.ellipse(714, 412, 8.5, 11.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.eyes.iris;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.ellipse(716, 412, 4.5, 6.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = PALETTE.eyes.pupil;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(711, 408, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.restore();
-
-    // --- FIERCE OPEN MOUTH GRIMACE ---
-    ctx.beginPath();
-    ctx.moveTo(622, 538);
-    ctx.bezierCurveTo(642, 544, 662, 546, 682, 542);
-    ctx.bezierCurveTo(673, 568, 643, 570, 624, 546);
+    ctx.moveTo(p0.x + nx * w0 * 0.35, p0.y + ny * w0 * 0.35);
+    ctx.bezierCurveTo(
+        p1.x + nx * w0 * 0.6, p1.y + ny * w0 * 0.6,
+        p2.x + nx * w1 * 0.5, p2.y + ny * w1 * 0.5,
+        p3.x, p3.y
+    );
+    ctx.bezierCurveTo(
+        p2.x + nx * w1 * 0.6, p2.y + ny * w1 * 0.6,
+        p1.x + nx * w0 * 0.8, p1.y + ny * w0 * 0.8,
+        p0.x + nx * w0, p0.y + ny * w0
+    );
     ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.mouthDark;
     ctx.fill();
 
-    // White teeth shelf
-    ctx.beginPath();
-    ctx.moveTo(628, 540);
-    ctx.bezierCurveTo(644, 545, 662, 545, 674, 542);
-    ctx.lineTo(672, 550);
-    ctx.bezierCurveTo(658, 553, 642, 553, 630, 548);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.teeth;
-    ctx.fill();
-
-    // Upper Lip
-    ctx.beginPath();
-    ctx.moveTo(622, 538);
-    ctx.bezierCurveTo(637, 528, 653, 530, 682, 542);
-    ctx.bezierCurveTo(666, 544, 645, 542, 622, 538);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.lipBase;
-    ctx.fill();
-
-    // Lower Lip
-    ctx.beginPath();
-    ctx.moveTo(624, 546);
-    ctx.bezierCurveTo(639, 568, 665, 566, 680, 542);
-    ctx.bezierCurveTo(666, 574, 635, 574, 624, 546);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.skin.lipShadow;
-    ctx.fill();
-}
-
-// ============================================================================
-// 9. LAYER 7: FOREGROUND CURLS, BANGS & SUNLIT OVERLAY HIGHLIGHTS
-// ============================================================================
-function drawForegroundCurlsAndHighlights(ctx) {
-    // 1. Forehead Bangs & Loose Tendrils
-    ctx.beginPath();
-    ctx.moveTo(585, 315);
-    ctx.bezierCurveTo(605, 230, 650, 170, 730, 150);
-    ctx.bezierCurveTo(690, 210, 650, 270, 620, 320);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.base;
-    ctx.fill();
-
-    // S-Curve Bang Lock whipping over brow
-    ctx.beginPath();
-    ctx.moveTo(680, 300);
-    ctx.bezierCurveTo(725, 280, 770, 295, 780, 325);
-    ctx.bezierCurveTo(750, 345, 710, 350, 675, 360);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.highlight;
-    ctx.fill();
-
-    // Temple Hook Curl
-    ctx.beginPath();
-    ctx.moveTo(550, 360);
-    ctx.bezierCurveTo(575, 390, 595, 420, 580, 455);
-    ctx.bezierCurveTo(565, 440, 555, 405, 535, 375);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.base;
-    ctx.fill();
-
-    // Forehead Spiral C-Curl
-    ctx.beginPath();
-    ctx.moveTo(640, 290);
-    ctx.bezierCurveTo(665, 300, 685, 330, 675, 360);
-    ctx.bezierCurveTo(655, 375, 640, 360, 650, 340);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.highlight;
-    ctx.fill();
-
-    // Cheek Tendril
-    ctx.beginPath();
-    ctx.moveTo(445, 450);
-    ctx.bezierCurveTo(402, 470, 372, 510, 348, 570);
-    ctx.bezierCurveTo(362, 550, 392, 520, 440, 485);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.base;
-    ctx.fill();
-
-    // 2. Sunlit Golden Rim Highlights on Windward Curls (Overlay Mode)
-    ctx.save();
-    ctx.globalCompositeOperation = 'overlay';
-
-    ctx.beginPath();
-    ctx.moveTo(500, 30);
-    ctx.bezierCurveTo(640, 60, 680, 150, 590, 290);
-    ctx.bezierCurveTo(620, 240, 570, 150, 490, 105);
-    ctx.bezierCurveTo(410, 50, 500, 30, 500, 30);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.sunlit;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(190, 110);
-    ctx.bezierCurveTo(130, 130, 80, 180, 40, 210);
-    ctx.bezierCurveTo(65, 195, 120, 170, 180, 180);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.sunlit;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(680, 300);
-    ctx.bezierCurveTo(725, 280, 770, 295, 780, 325);
-    ctx.bezierCurveTo(760, 310, 720, 300, 680, 300);
-    ctx.closePath();
-    ctx.fillStyle = PALETTE.hair.sunlit;
-    ctx.fill();
-
-    ctx.restore();
-}
-
-// ============================================================================
-// 10. LAYER 8: MASTER INKER PASS (3-TIER HIERARCHY, TAPERED STROKES & FEATHERING)
-// ============================================================================
-function drawMasterInks(ctx) {
-    const ink = PALETTE.ink;
-
-    // ------------------------------------------------------------------------
-    // TIER 1: OUTER SILHOUETTES (3.8px – 5.0px)
-    // ------------------------------------------------------------------------
-    ctx.save();
-    ctx.strokeStyle = ink;
+    // Leading ink line
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = strokeWidth;
     ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // Jawline with Mandible Angle (4.4px)
-    ctx.lineWidth = 4.4;
     ctx.beginPath();
-    ctx.moveTo(445, 495);
-    ctx.bezierCurveTo(475, 545, 575, 600, 636, 616);
-    ctx.stroke();
-
-    // Neck left silhouette (3.8px)
-    ctx.lineWidth = 3.8;
-    ctx.beginPath();
-    ctx.moveTo(445, 495);
-    ctx.bezierCurveTo(425, 560, 405, 630, 380, 710);
-    ctx.stroke();
-
-    // Coat shoulders (4.6px)
-    ctx.lineWidth = 4.6;
-    ctx.beginPath();
-    ctx.moveTo(0, 660);
-    ctx.bezierCurveTo(80, 620, 180, 595, 260, 600);
-    ctx.bezierCurveTo(340, 610, 400, 640, 430, 660);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(900, 690);
-    ctx.bezierCurveTo(840, 640, 770, 615, 710, 610);
-    ctx.lineTo(570, 660);
-    ctx.stroke();
-
-    // Shirt Wing Collar Outlines (3.6px)
-    ctx.lineWidth = 3.6;
-    ctx.beginPath();
-    ctx.moveTo(435, 660);
-    ctx.bezierCurveTo(350, 630, 240, 600, 160, 610);
-    ctx.bezierCurveTo(240, 670, 340, 710, 430, 750);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(565, 660);
-    ctx.bezierCurveTo(630, 630, 710, 605, 780, 625);
-    ctx.bezierCurveTo(710, 680, 640, 720, 570, 750);
-    ctx.stroke();
-
-    // Bandana Tails Silhouette (3.6px)
-    ctx.lineWidth = 3.6;
-    ctx.beginPath();
-    ctx.moveTo(355, 445);
-    ctx.bezierCurveTo(260, 445, 140, 495, 0, 485);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(340, 470);
-    ctx.bezierCurveTo(250, 500, 130, 545, 0, 540);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(340, 475);
-    ctx.bezierCurveTo(240, 505, 120, 590, 0, 580);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(335, 500);
-    ctx.bezierCurveTo(220, 575, 110, 650, 0, 640);
+    ctx.moveTo(p0.x, p0.y);
+    ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
     ctx.stroke();
 
     ctx.restore();
+}
 
-    // ------------------------------------------------------------------------
-    // TIER 2: INTERNAL FACIAL CONTOURS & 25+ TAPERED HAIR BÉZIERS
-    // ------------------------------------------------------------------------
+// ==========================================
+// 5. MASTER CHARACTER RENDERING
+// ==========================================
+function drawCharacter(ctx) {
+    const INK = PALETTE.ink;
+
+    // ----------------------------------------
+    // A. PONYTAIL BACK CASCADING CURLS
+    // ----------------------------------------
     ctx.save();
-    ctx.strokeStyle = ink;
-    ctx.lineCap = 'round';
-
-    // 1. Near Eye: Heavy S-Curve Eyeliner (4.0px) with Winged Lash Tip & Lower Lid (1.6px)
-    ctx.lineWidth = 4.0;
+    ctx.fillStyle = PALETTE.hair.deep;
     ctx.beginPath();
-    ctx.moveTo(536, 409);
-    ctx.bezierCurveTo(558, 382, 602, 381, 626, 406);
-    ctx.stroke();
+    ctx.moveTo(145, 140);
+    ctx.bezierCurveTo(110, 75, 45, 60, 0, 115);
+    ctx.bezierCurveTo(-20, 165, 5, 230, 30, 260);
+    ctx.bezierCurveTo(65, 245, 105, 195, 145, 140);
+    ctx.closePath();
+    ctx.fill();
 
-    ctx.lineWidth = 2.5;
+    const ponytailLocks = [
+        { p0: { x: 142, y: 128 }, p1: { x: 105, y: 55 }, p2: { x: 45, y: 58 }, p3: { x: 8, y: 105 }, w0: 20, w1: 6 },
+        { p0: { x: 135, y: 135 }, p1: { x: 90, y: 72 }, p2: { x: 30, y: 88 }, p3: { x: 0, y: 140 }, w0: 22, w1: 8 },
+        { p0: { x: 140, y: 142 }, p1: { x: 80, y: 110 }, p2: { x: 20, y: 140 }, p3: { x: -5, y: 185 }, w0: 24, w1: 10 },
+        { p0: { x: 138, y: 150 }, p1: { x: 85, y: 155 }, p2: { x: 40, y: 195 }, p3: { x: 10, y: 240 }, w0: 22, w1: 8 },
+        { p0: { x: 130, y: 155 }, p1: { x: 95, y: 185 }, p2: { x: 60, y: 220 }, p3: { x: 35, y: 265 }, w0: 18, w1: 6 },
+        { p0: { x: 122, y: 148 }, p1: { x: 98, y: 165 }, p2: { x: 75, y: 190 }, p3: { x: 65, y: 225 }, w0: 15, w1: 5 }
+    ];
+
+    ponytailLocks.forEach(l => {
+        drawOrganicLock(ctx, l.p0, l.p1, l.p2, l.p3, l.w0, l.w1, PALETTE.hair.base, PALETTE.hair.shadow, INK, 2.4);
+    });
+    ctx.restore();
+
+    // ----------------------------------------
+    // B. BANDANA BILLOWING TAILS
+    // ----------------------------------------
+    ctx.save();
+    ctx.fillStyle = PALETTE.bandana.base;
     ctx.beginPath();
-    ctx.moveTo(624, 406);
-    ctx.lineTo(632, 402);
-    ctx.stroke();
+    ctx.moveTo(165, 218);
+    ctx.bezierCurveTo(110, 228, 60, 212, 0, 232);
+    ctx.lineTo(0, 258);
+    ctx.bezierCurveTo(50, 252, 100, 258, 165, 242);
+    ctx.closePath();
+    ctx.fill();
 
-    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(548, 414);
-    ctx.bezierCurveTo(573, 426, 603, 425, 622, 410);
-    ctx.stroke();
+    ctx.moveTo(150, 232);
+    ctx.bezierCurveTo(90, 258, 40, 262, 0, 302);
+    ctx.lineTo(0, 328);
+    ctx.bezierCurveTo(50, 288, 110, 278, 160, 250);
+    ctx.closePath();
+    ctx.fill();
 
-    ctx.lineWidth = 1.5;
+    ctx.fillStyle = PALETTE.bandana.shadow;
     ctx.beginPath();
-    ctx.moveTo(548, 394);
-    ctx.bezierCurveTo(573, 382, 603, 382, 620, 398);
-    ctx.stroke();
+    ctx.moveTo(165, 232);
+    ctx.bezierCurveTo(100, 248, 50, 238, 0, 252);
+    ctx.lineTo(0, 258);
+    ctx.bezierCurveTo(50, 252, 100, 258, 165, 242);
+    ctx.closePath();
+    ctx.fill();
 
-    // 2. Far Eye: Foreshortened Upper Lid (3.4px) & Lower Lid (1.5px)
-    ctx.lineWidth = 3.4;
-    ctx.beginPath();
-    ctx.moveTo(676, 412);
-    ctx.bezierCurveTo(692, 392, 724, 394, 738, 417);
-    ctx.stroke();
-
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(686, 418);
-    ctx.bezierCurveTo(700, 430, 724, 428, 734, 420);
-    ctx.stroke();
-
-    // 3. Fierce Eyebrows (Strong downward angle toward glabella)
+    ctx.strokeStyle = INK;
     ctx.lineWidth = 3.2;
     ctx.beginPath();
-    ctx.moveTo(522, 376);
-    ctx.bezierCurveTo(555, 350, 595, 352, 635, 378);
+    ctx.moveTo(165, 218);
+    ctx.bezierCurveTo(110, 228, 60, 212, 0, 232);
+    ctx.moveTo(0, 258);
+    ctx.bezierCurveTo(50, 252, 100, 258, 165, 242);
+    ctx.moveTo(150, 232);
+    ctx.bezierCurveTo(90, 258, 40, 262, 0, 302);
+    ctx.moveTo(0, 328);
+    ctx.bezierCurveTo(50, 288, 110, 278, 160, 250);
     ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(672, 386);
-    ctx.bezierCurveTo(692, 370, 722, 372, 742, 395);
-    ctx.stroke();
-
-    drawFeatheringHatch(ctx, {x: 535, y: 370}, 80, 8, 8, 4, ink, 1.0);
-    drawFeatheringHatch(ctx, {x: 680, y: 382}, 80, 6, 7, 4, ink, 1.0);
-
-    // 4. Heroic Comic Nose
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.moveTo(644, 395);
-    ctx.lineTo(692, 478);
-    ctx.stroke();
-
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    ctx.moveTo(692, 478);
-    ctx.bezierCurveTo(680, 488, 658, 488, 652, 482);
-    ctx.stroke();
-
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.moveTo(674, 474);
-    ctx.bezierCurveTo(684, 472, 686, 484, 678, 484);
-    ctx.stroke();
-
-    // 5. Determined Open Grimace Mouth
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    ctx.moveTo(622, 538);
-    ctx.bezierCurveTo(637, 528, 653, 530, 682, 542);
-    ctx.stroke();
-
-    ctx.lineWidth = 2.0;
-    ctx.beginPath();
-    ctx.moveTo(624, 546);
-    ctx.bezierCurveTo(639, 568, 665, 566, 680, 542);
-    ctx.stroke();
-
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.moveTo(631, 576);
-    ctx.bezierCurveTo(645, 584, 659, 582, 665, 576);
-    ctx.stroke();
-
-    // 6. Ear & Gold Hoop Earring
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(422, 430);
-    ctx.bezierCurveTo(398, 418, 392, 475, 424, 498);
-    ctx.stroke();
-
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(418, 445);
-    ctx.bezierCurveTo(408, 455, 412, 480, 422, 485);
-    ctx.stroke();
-
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.ellipse(400, 518, 19, 23, 0.2, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.ellipse(400, 518, 13, 17, 0.2, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // 7. Bandana Contours & Tension Folds
-    ctx.lineWidth = 3.0;
-    ctx.beginPath();
-    ctx.moveTo(355, 435);
-    ctx.bezierCurveTo(420, 375, 495, 325, 585, 315);
-    ctx.bezierCurveTo(620, 315, 645, 330, 658, 355);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(355, 465);
-    ctx.bezierCurveTo(410, 440, 480, 388, 575, 365);
-    ctx.bezierCurveTo(610, 372, 640, 372, 658, 355);
-    ctx.stroke();
-
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    ctx.ellipse(355, 455, 16, 22, 0.35, 0, Math.PI * 2);
-    ctx.stroke();
-
     ctx.restore();
 
-    // 8. 25+ Dynamic Tapered Bézier Hair Strands
-    // Top Crown Waves
-    drawTaperedStroke(ctx, {x:590, y:290}, {x:680, y:150}, {x:640, y:60}, {x:500, y:30}, 3.6);
-    drawTaperedStroke(ctx, {x:500, y:30}, {x:410, y:50}, {x:350, y:90}, {x:240, y:190}, 3.2);
-    drawTaperedStroke(ctx, {x:420, y:115}, {x:510, y:105}, {x:590, y:150}, {x:640, y:240}, 2.8);
+    // ----------------------------------------
+    // C. NECK, SCM MUSCLE & COLLAR
+    // ----------------------------------------
+    ctx.save();
+    ctx.fillStyle = PALETTE.skin.base;
+    ctx.beginPath();
+    ctx.moveTo(198, 248);
+    ctx.bezierCurveTo(185, 290, 170, 330, 140, 380);
+    ctx.lineTo(285, 380);
+    ctx.bezierCurveTo(280, 355, 278, 340, 285, 335);
+    ctx.bezierCurveTo(260, 330, 230, 305, 210, 275);
+    ctx.lineTo(198, 248);
+    ctx.closePath();
+    ctx.fill();
 
-    drawTaperedStroke(ctx, {x:560, y:300}, {x:600, y:170}, {x:510, y:100}, {x:390, y:65}, 3.0);
-    drawTaperedStroke(ctx, {x:390, y:65}, {x:310, y:110}, {x:280, y:160}, {x:230, y:210}, 2.8);
+    // Neck cast shadow
+    ctx.fillStyle = PALETTE.skin.shadow;
+    ctx.beginPath();
+    ctx.moveTo(285, 335);
+    ctx.bezierCurveTo(260, 330, 230, 305, 210, 275);
+    ctx.lineTo(198, 248);
+    ctx.bezierCurveTo(205, 270, 220, 310, 240, 345);
+    ctx.bezierCurveTo(255, 365, 268, 375, 280, 380);
+    ctx.lineTo(285, 380);
+    ctx.bezierCurveTo(280, 355, 278, 340, 285, 335);
+    ctx.closePath();
+    ctx.fill();
 
-    drawTaperedStroke(ctx, {x:530, y:310}, {x:530, y:210}, {x:440, y:150}, {x:330, y:120}, 2.8);
-    drawTaperedStroke(ctx, {x:330, y:120}, {x:260, y:180}, {x:250, y:240}, {x:200, y:280}, 2.4);
+    // Ben-Day dot shadow on neck
+    try {
+        const halfToneSkSL = `
+            uniform float2 u_resolution;
+            uniform float4 u_shadowColor;
+            uniform float u_dotSpacing;
 
-    // Forehead Bangs & Wisps
-    drawTaperedStroke(ctx, {x:585, y:315}, {x:605, y:230}, {x:650, y:170}, {x:730, y:150}, 3.2);
-    drawTaperedStroke(ctx, {x:730, y:150}, {x:690, y:210}, {x:650, y:270}, {x:620, y:320}, 2.5);
+            half4 main(float2 coord) {
+                float2 pos = mod(coord, u_dotSpacing) - (u_dotSpacing * 0.5);
+                float dist = length(pos);
+                float radius = u_dotSpacing * 0.38;
+                float dot = smoothstep(radius + 0.3, radius - 0.3, dist);
+                return u_shadowColor * dot;
+            }
+        `;
+        const halfToneShader = Skia.Shader.sksl(halfToneSkSL, {
+            u_resolution: [447, 380],
+            u_shadowColor: [0.55, 0.28, 0.16, 0.45],
+            u_dotSpacing: 6.0
+        });
+        ctx.fillStyle = halfToneShader;
+        ctx.beginPath();
+        ctx.moveTo(240, 345);
+        ctx.bezierCurveTo(255, 365, 268, 375, 280, 380);
+        ctx.lineTo(260, 380);
+        ctx.bezierCurveTo(245, 360, 235, 340, 230, 325);
+        ctx.closePath();
+        ctx.fill();
+    } catch (e) {}
 
-    drawTaperedStroke(ctx, {x:680, y:300}, {x:725, y:280}, {x:770, y:295}, {x:780, y:325}, 3.2);
-    drawTaperedStroke(ctx, {x:780, y:325}, {x:750, y:345}, {x:710, y:350}, {x:675, y:360}, 2.6);
+    // Coat shoulders
+    ctx.fillStyle = PALETTE.coat.base;
+    ctx.beginPath();
+    ctx.moveTo(0, 305);
+    ctx.lineTo(85, 315);
+    ctx.lineTo(140, 380);
+    ctx.lineTo(0, 380);
+    ctx.closePath();
+    ctx.fill();
 
-    drawTaperedStroke(ctx, {x:550, y:360}, {x:575, y:390}, {x:595, y:420}, {x:580, y:455}, 2.8);
-    drawTaperedStroke(ctx, {x:640, y:290}, {x:665, y:300}, {x:685, y:330}, {x:675, y:360}, 2.5);
-    drawTaperedStroke(ctx, {x:445, y:450}, {x:402, y:470}, {x:372, y:510}, {x:348, y:570}, 2.6);
+    ctx.beginPath();
+    ctx.moveTo(280, 380);
+    ctx.lineTo(348, 325);
+    ctx.lineTo(447, 275);
+    ctx.lineTo(447, 380);
+    ctx.closePath();
+    ctx.fill();
 
-    // Ponytail Multi-Lock Curls
-    drawTaperedStroke(ctx, {x:350, y:410}, {x:290, y:230}, {x:190, y:110}, {x:80, y:130}, 3.6);
-    drawTaperedStroke(ctx, {x:80, y:130}, {x:130, y:180}, {x:230, y:230}, {x:300, y:290}, 2.6);
+    // Flared Pirate Collar
+    ctx.fillStyle = PALETTE.shirt.base;
+    ctx.beginPath();
+    ctx.moveTo(192, 375);
+    ctx.bezierCurveTo(150, 355, 110, 335, 82, 315);
+    ctx.bezierCurveTo(115, 305, 145, 295, 168, 282);
+    ctx.bezierCurveTo(180, 305, 190, 340, 195, 375);
+    ctx.closePath();
+    ctx.fill();
 
-    drawTaperedStroke(ctx, {x:340, y:420}, {x:250, y:200}, {x:130, y:140}, {x:30, y:210}, 3.4);
-    drawTaperedStroke(ctx, {x:30, y:210}, {x:60, y:250}, {x:170, y:250}, {x:250, y:310}, 2.5);
+    ctx.beginPath();
+    ctx.moveTo(255, 375);
+    ctx.bezierCurveTo(290, 355, 325, 340, 348, 322);
+    ctx.bezierCurveTo(335, 310, 322, 302, 310, 298);
+    ctx.bezierCurveTo(290, 320, 270, 345, 255, 375);
+    ctx.closePath();
+    ctx.fill();
 
-    drawTaperedStroke(ctx, {x:345, y:430}, {x:230, y:270}, {x:110, y:250}, {x:20, y:310}, 3.5);
-    drawTaperedStroke(ctx, {x:20, y:310}, {x:50, y:350}, {x:150, y:330}, {x:240, y:360}, 2.6);
+    // Collar inking & hatches
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(192, 375);
+    ctx.bezierCurveTo(150, 355, 110, 335, 82, 315);
+    ctx.bezierCurveTo(115, 305, 145, 295, 168, 282);
+    ctx.moveTo(255, 375);
+    ctx.bezierCurveTo(290, 355, 325, 340, 348, 322);
+    ctx.bezierCurveTo(335, 310, 322, 302, 310, 298);
+    ctx.moveTo(0, 305); ctx.lineTo(85, 315);
+    ctx.moveTo(348, 322); ctx.lineTo(447, 275);
+    ctx.stroke();
 
-    drawTaperedStroke(ctx, {x:340, y:440}, {x:240, y:340}, {x:130, y:350}, {x:40, y:410}, 3.4);
-    drawTaperedStroke(ctx, {x:40, y:410}, {x:70, y:440}, {x:180, y:390}, {x:260, y:400}, 2.4);
+    ctx.lineWidth = 1.1;
+    function drawHatch(ox, oy, angleDeg, count, len, step) {
+        const rad = (angleDeg * Math.PI) / 180;
+        const dx = Math.cos(rad);
+        const dy = Math.sin(rad);
+        const px = -dy;
+        const py = dx;
+        for (let i = 0; i < count; i++) {
+            const sx = ox + px * (i * step);
+            const sy = oy + py * (i * step);
+            const l = len * (0.8 + 0.4 * Math.sin(i * 1.5));
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx + dx * l, sy + dy * l);
+            ctx.stroke();
+        }
+    }
+    drawHatch(120, 330, 48, 8, 16, 4.5);
+    drawHatch(130, 325, -35, 7, 14, 4.5);
+    drawHatch(285, 345, 130, 8, 16, 4.5);
+    drawHatch(295, 340, 45, 7, 14, 4.5);
+    drawHatch(215, 280, 60, 10, 18, 5.5);
+    drawHatch(245, 320, 55, 8, 22, 5.0);
+    ctx.restore();
 
-    drawTaperedStroke(ctx, {x:330, y:450}, {x:260, y:410}, {x:170, y:440}, {x:85, y:480}, 3.0);
+    // ----------------------------------------
+    // D. FACIAL ANATOMY & CEL-SHADING
+    // ----------------------------------------
+    ctx.save();
+    ctx.fillStyle = PALETTE.skin.base;
+    ctx.beginPath();
+    ctx.moveTo(198, 248);
+    ctx.lineTo(195, 202);
+    ctx.bezierCurveTo(215, 175, 245, 150, 275, 175);
+    ctx.lineTo(298, 205);
+    ctx.lineTo(323, 245);
+    ctx.lineTo(306, 253);
+    ctx.lineTo(312, 274);
+    ctx.lineTo(318, 282);
+    ctx.lineTo(302, 298);
+    ctx.lineTo(308, 312);
+    ctx.bezierCurveTo(304, 328, 296, 335, 285, 335);
+    ctx.bezierCurveTo(260, 330, 230, 305, 210, 275);
+    ctx.lineTo(198, 248);
+    ctx.closePath();
+    ctx.fill();
 
-    // ------------------------------------------------------------------------
-    // TIER 3: FEATHERING & CROSS-HATCHING PASSES
-    // ------------------------------------------------------------------------
-    // Neck Muscle & Jawline Shadow Feathering
-    drawFeatheringHatch(ctx, {x: 455, y: 530}, 75, 14, 28, 7, ink, 1.3);
-    drawFeatheringHatch(ctx, {x: 485, y: 570}, 80, 12, 35, 7.5, ink, 1.2);
-    drawFeatheringHatch(ctx, {x: 545, y: 610}, 85, 10, 30, 8, ink, 1.1);
+    // 5 Facial Shadow Planes
+    ctx.fillStyle = PALETTE.skin.shadow;
+    ctx.beginPath();
+    ctx.moveTo(250, 196);
+    ctx.bezierCurveTo(270, 186, 290, 186, 314, 190);
+    ctx.bezierCurveTo(295, 202, 270, 202, 250, 196);
+    ctx.closePath();
+    ctx.fill();
 
-    // Shirt Collar Wing Cross-Hatching
-    drawFeatheringHatch(ctx, {x: 230, y: 650}, 45, 8, 22, 6, ink, 1.0);
-    drawFeatheringHatch(ctx, {x: 230, y: 650}, -45, 8, 22, 6, ink, 1.0);
+    ctx.beginPath();
+    ctx.moveTo(318, 240);
+    ctx.lineTo(323, 245);
+    ctx.lineTo(306, 253);
+    ctx.lineTo(302, 265);
+    ctx.lineTo(310, 255);
+    ctx.closePath();
+    ctx.fill();
 
-    drawFeatheringHatch(ctx, {x: 670, y: 670}, 135, 9, 24, 6, ink, 1.0);
-    drawFeatheringHatch(ctx, {x: 670, y: 670}, -135, 9, 24, 6, ink, 1.0);
+    ctx.beginPath();
+    ctx.moveTo(210, 275);
+    ctx.lineTo(245, 285);
+    ctx.lineTo(270, 310);
+    ctx.lineTo(285, 335);
+    ctx.bezierCurveTo(260, 330, 230, 305, 210, 275);
+    ctx.closePath();
+    ctx.fill();
 
-    // Cheek Contour Hatching
-    drawFeatheringHatch(ctx, {x: 545, y: 450}, 60, 5, 12, 5, ink, 0.9);
-    drawFeatheringHatch(ctx, {x: 715, y: 455}, 65, 4, 10, 4.5, ink, 0.8);
+    ctx.fillStyle = PALETTE.skin.deep;
+    ctx.beginPath();
+    ctx.moveTo(294, 298);
+    ctx.quadraticCurveTo(306, 305, 318, 295);
+    ctx.quadraticCurveTo(306, 301, 294, 298);
+    ctx.closePath();
+    ctx.fill();
+
+    // Highlights
+    ctx.fillStyle = PALETTE.skin.highlight;
+    ctx.beginPath();
+    ctx.ellipse(255, 175, 22, 14, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(300, 210);
+    ctx.lineTo(320, 242);
+    ctx.lineTo(316, 243);
+    ctx.lineTo(298, 212);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(280, 235, 15, 8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(290, 325, 8, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(184, 72, 72, 0.20)';
+    ctx.beginPath();
+    ctx.ellipse(280, 240, 22, 14, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // ----------------------------------------
+    // E. FACIAL FEATURES & INKING
+    // ----------------------------------------
+    ctx.save();
+    // Mouth Cavity & Teeth
+    ctx.fillStyle = PALETTE.skin.mouthCavity;
+    ctx.beginPath();
+    ctx.moveTo(290, 282);
+    ctx.bezierCurveTo(300, 275, 312, 274, 322, 277);
+    ctx.bezierCurveTo(318, 292, 304, 295, 290, 282);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = PALETTE.skin.teeth;
+    ctx.beginPath();
+    ctx.moveTo(293, 282);
+    ctx.bezierCurveTo(301, 278, 311, 277, 320, 279);
+    ctx.lineTo(318, 284);
+    ctx.bezierCurveTo(309, 283, 301, 284, 293, 286);
+    ctx.closePath();
+    ctx.fill();
+
+    // Mouth Inks
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.8;
+    ctx.beginPath();
+    ctx.moveTo(290, 282);
+    ctx.bezierCurveTo(300, 275, 312, 274, 322, 277);
+    ctx.stroke();
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(290, 282);
+    ctx.bezierCurveTo(304, 295, 318, 292, 322, 277);
+    ctx.stroke();
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(294, 298);
+    ctx.quadraticCurveTo(306, 303, 318, 295);
+    ctx.stroke();
+
+    // Beauty mark
+    ctx.fillStyle = INK;
+    ctx.beginPath();
+    ctx.arc(272, 298, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Nose Inks
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(298, 205);
+    ctx.lineTo(323, 245);
+    ctx.lineTo(306, 253);
+    ctx.stroke();
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(300, 248);
+    ctx.quadraticCurveTo(304, 252, 308, 251);
+    ctx.stroke();
+
+    // Fierce Arched Eyebrows
+    ctx.lineWidth = 3.6;
+    ctx.beginPath();
+    ctx.moveTo(248, 196);
+    ctx.bezierCurveTo(268, 182, 290, 182, 315, 187);
+    ctx.stroke();
+    ctx.lineWidth = 3.0;
+    ctx.beginPath();
+    ctx.moveTo(328, 189);
+    ctx.bezierCurveTo(338, 186, 348, 189, 356, 193);
+    ctx.stroke();
+
+    // Eyes
+    ctx.fillStyle = '#f8f8f2';
+    ctx.beginPath();
+    ctx.moveTo(256, 207);
+    ctx.bezierCurveTo(268, 197, 285, 197, 297, 206);
+    ctx.bezierCurveTo(285, 214, 268, 214, 256, 207);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#3b6a8a';
+    ctx.beginPath();
+    ctx.arc(278, 205, 6.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#101822';
+    ctx.beginPath();
+    ctx.arc(279, 205, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(276, 203, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 4.0;
+    ctx.beginPath();
+    ctx.moveTo(254, 208);
+    ctx.bezierCurveTo(268, 196, 285, 196, 298, 206);
+    ctx.stroke();
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(262, 213);
+    ctx.quadraticCurveTo(278, 214, 292, 210);
+    ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(264, 197);
+    ctx.quadraticCurveTo(278, 194, 292, 199);
+    ctx.stroke();
+
+    // Far Eye
+    ctx.fillStyle = '#f8f8f2';
+    ctx.beginPath();
+    ctx.moveTo(326, 211);
+    ctx.bezierCurveTo(332, 206, 342, 207, 346, 213);
+    ctx.bezierCurveTo(340, 218, 330, 218, 326, 211);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#3b6a8a';
+    ctx.beginPath();
+    ctx.arc(337, 212, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#101822';
+    ctx.beginPath();
+    ctx.arc(338, 212, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(336, 210, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3.0;
+    ctx.beginPath();
+    ctx.moveTo(326, 211);
+    ctx.bezierCurveTo(332, 205, 342, 206, 346, 213);
+    ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(328, 216);
+    ctx.quadraticCurveTo(336, 217, 343, 214);
+    ctx.stroke();
+
+    // Jawline
+    ctx.lineWidth = 3.8;
+    ctx.beginPath();
+    ctx.moveTo(198, 248);
+    ctx.lineTo(210, 275);
+    ctx.bezierCurveTo(230, 305, 260, 330, 285, 335);
+    ctx.stroke();
+
+    // Ear & Earring
+    ctx.fillStyle = PALETTE.earring.base;
+    ctx.beginPath();
+    ctx.ellipse(180, 268, 10, 14, 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PALETTE.skin.shadow;
+    ctx.beginPath();
+    ctx.ellipse(180, 268, 6, 9, 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PALETTE.earring.highlight;
+    ctx.beginPath();
+    ctx.arc(174, 260, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PALETTE.earring.base;
+    ctx.beginPath();
+    ctx.arc(188, 248, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(195, 202);
+    ctx.bezierCurveTo(212, 200, 214, 235, 198, 248);
+    ctx.moveTo(194, 215);
+    ctx.bezierCurveTo(204, 218, 202, 236, 192, 238);
+    ctx.stroke();
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.ellipse(180, 268, 10, 14, 0.35, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(188, 248, 3.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // ----------------------------------------
+    // F. BANDANA WRAP & KNOT
+    // ----------------------------------------
+    ctx.save();
+    ctx.fillStyle = PALETTE.bandana.base;
+    ctx.beginPath();
+    ctx.moveTo(165, 215);
+    ctx.bezierCurveTo(185, 175, 220, 150, 275, 140);
+    ctx.bezierCurveTo(305, 135, 330, 145, 345, 160);
+    ctx.lineTo(335, 185);
+    ctx.bezierCurveTo(310, 170, 270, 175, 220, 195);
+    ctx.lineTo(168, 245);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = PALETTE.bandana.shadow;
+    ctx.beginPath();
+    ctx.moveTo(165, 215);
+    ctx.bezierCurveTo(190, 195, 225, 180, 260, 185);
+    ctx.lineTo(240, 195);
+    ctx.lineTo(168, 245);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = PALETTE.bandana.highlight;
+    ctx.beginPath();
+    ctx.moveTo(220, 150);
+    ctx.bezierCurveTo(260, 140, 300, 138, 335, 150);
+    ctx.lineTo(330, 155);
+    ctx.bezierCurveTo(295, 145, 255, 148, 220, 156);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = PALETTE.bandana.deep;
+    ctx.beginPath();
+    ctx.arc(142, 142, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.8;
+    ctx.beginPath();
+    ctx.moveTo(165, 215);
+    ctx.bezierCurveTo(185, 175, 220, 150, 275, 140);
+    ctx.bezierCurveTo(305, 135, 330, 145, 345, 160);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(168, 245);
+    ctx.lineTo(220, 195);
+    ctx.bezierCurveTo(270, 175, 310, 170, 335, 185);
+    ctx.stroke();
+    ctx.lineWidth = 2.0;
+    ctx.beginPath();
+    ctx.arc(142, 142, 12, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // ----------------------------------------
+    // G. CROWN S-CURVE WAVES & BANGS (25+ DYNAMIC LOCKS)
+    // ----------------------------------------
+    ctx.save();
+    ctx.fillStyle = PALETTE.hair.base;
+    ctx.beginPath();
+    ctx.moveTo(142, 135);
+    ctx.bezierCurveTo(165, 75, 215, 35, 275, 40);
+    ctx.bezierCurveTo(315, 45, 350, 75, 375, 125);
+    ctx.bezierCurveTo(355, 135, 335, 145, 315, 140);
+    ctx.bezierCurveTo(275, 130, 220, 140, 165, 155);
+    ctx.closePath();
+    ctx.fill();
+
+    const crownWaves = [
+        { p0: { x: 145, y: 135 }, p1: { x: 175, y: 60 }, p2: { x: 225, y: 25 }, p3: { x: 280, y: 30 }, w0: 22, w1: 6 },
+        { p0: { x: 175, y: 120 }, p1: { x: 205, y: 55 }, p2: { x: 255, y: 20 }, p3: { x: 305, y: 35 }, w0: 20, w1: 6 },
+        { p0: { x: 215, y: 138 }, p1: { x: 245, y: 65 }, p2: { x: 295, y: 38 }, p3: { x: 335, y: 58 }, w0: 18, w1: 5 },
+        { p0: { x: 255, y: 135 }, p1: { x: 285, y: 75 }, p2: { x: 325, y: 65 }, p3: { x: 360, y: 98 }, w0: 16, w1: 4 },
+        { p0: { x: 285, y: 140 }, p1: { x: 315, y: 90 }, p2: { x: 345, y: 95 }, p3: { x: 375, y: 130 }, w0: 14, w1: 4 },
+
+        { p0: { x: 250, y: 138 }, p1: { x: 270, y: 162 }, p2: { x: 282, y: 172 }, p3: { x: 268, y: 192 }, w0: 12, w1: 3 },
+        { p0: { x: 258, y: 138 }, p1: { x: 278, y: 158 }, p2: { x: 292, y: 162 }, p3: { x: 284, y: 178 }, w0: 10, w1: 3 },
+        { p0: { x: 282, y: 138 }, p1: { x: 318, y: 142 }, p2: { x: 348, y: 162 }, p3: { x: 356, y: 192 }, w0: 14, w1: 4 },
+        { p0: { x: 302, y: 142 }, p1: { x: 332, y: 152 }, p2: { x: 352, y: 168 }, p3: { x: 362, y: 188 }, w0: 10, w1: 3 },
+
+        { p0: { x: 185, y: 195 }, p1: { x: 170, y: 215 }, p2: { x: 160, y: 235 }, p3: { x: 175, y: 250 }, w0: 10, w1: 3 },
+        { p0: { x: 190, y: 195 }, p1: { x: 178, y: 215 }, p2: { x: 172, y: 230 }, p3: { x: 180, y: 245 }, w0: 8, w1: 2 }
+    ];
+
+    crownWaves.forEach(l => {
+        drawOrganicLock(ctx, l.p0, l.p1, l.p2, l.p3, l.w0, l.w1, PALETTE.hair.base, PALETTE.hair.shadow, INK, 2.2);
+    });
+
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.fillStyle = PALETTE.hair.sunlit;
+    ctx.beginPath();
+    ctx.moveTo(165, 75);
+    ctx.bezierCurveTo(215, 35, 275, 40, 335, 65);
+    ctx.bezierCurveTo(275, 48, 220, 50, 175, 82);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(135, 130);
+    ctx.bezierCurveTo(115, 68, 65, 72, 20, 115);
+    ctx.bezierCurveTo(65, 80, 110, 80, 130, 135);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
 }
 
-// ============================================================================
-// 11. MASTER PIPELINE EXECUTION
-// ============================================================================
-drawBackgroundAndRigging(ctx);
-drawHairLayers(ctx);
-drawBandana(ctx);
-drawClothingAndBody(ctx);
-drawHeadAndCelShading(ctx);
-drawFacialExpression(ctx);
-drawForegroundCurlsAndHighlights(ctx);
-drawMasterInks(ctx);
+// ==========================================
+// 6. MASTER COMPOSITE PIPELINE
+// ==========================================
+drawSkyAndAtmosphere(ctx);
+drawRigging(ctx);
+drawCharacter(ctx);
 
-// Return canvas for rendering
+// Cinematic Vignette Framing
+try {
+    Drawing.drawVignette(ctx, 447, 380, { intensity: 0.35 });
+} catch (e) {}
+
 canvas;

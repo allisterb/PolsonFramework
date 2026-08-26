@@ -3,6 +3,7 @@ namespace Polson.MCPServer;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -42,6 +43,9 @@ public class DrawingMcpTools
         [Description("Default canvas / SVG viewport height in pixels (default 600).")] int? height = null,
         [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
+        [Description("Optional file path where the rendered image should be saved directly (e.g. 'artifacts/stage1.webp').")] string? outFile = null,
+        [Description("Optional file path where the rendered SVG XML should be saved directly (e.g. 'artifacts/stage1.svg').")] string? outSvg = null,
+        [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null,
         RequestContext<CallToolRequestParams>? context = null,
         IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
@@ -62,7 +66,40 @@ public class DrawingMcpTools
             var fmt = format ?? "webp";
             var q = quality ?? 85;
             var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q), cancellationToken);
-            return await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
+            var result = await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(outFile) && result.ImageBytes != null && result.ImageBytes.Length > 0)
+            {
+                var fullOutPath = Path.GetFullPath(outFile);
+                var dir = Path.GetDirectoryName(fullOutPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                File.WriteAllBytes(fullOutPath, result.ImageBytes);
+                result.ImageFilePath = fullOutPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(outSvg) && !string.IsNullOrWhiteSpace(result.SvgXml))
+            {
+                var fullSvgPath = Path.GetFullPath(outSvg);
+                var dir = Path.GetDirectoryName(fullSvgPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                File.WriteAllText(fullSvgPath, result.SvgXml);
+                result.SvgFilePath = fullSvgPath;
+            }
+
+            result.ImageSize = result.ImageBytes?.Length ?? 0;
+            var shouldIncludeBytes = includeBytes ?? string.IsNullOrWhiteSpace(outFile);
+            if (!shouldIncludeBytes)
+            {
+                result.ImageBytes = null;
+            }
+
+            return result;
         }
         finally
         {
@@ -70,8 +107,16 @@ public class DrawingMcpTools
         }
     }
 
-    public Task<DrawingExecutionResult> ExecuteSvgScript(string script, int? width = null, int? height = null, string? format = null, int? quality = null)
-        => ExecuteScript(script, width, height, format, quality);
+    public Task<DrawingExecutionResult> ExecuteSvgScript(
+        string script,
+        int? width = null,
+        int? height = null,
+        string? format = null,
+        int? quality = null,
+        string? outFile = null,
+        string? outSvg = null,
+        bool? includeBytes = null)
+        => ExecuteScript(script, width, height, format, quality, outFile, outSvg, includeBytes);
 
     [McpServerTool(Name = "History")]
     [Description("Returns the last n scripts executed by the agent in this session. If n is null or omitted, returns the last script.")]
@@ -97,7 +142,9 @@ public class DrawingMcpTools
         [Description("Target image width in pixels (optional, defaults to SVG width or 800).")] int? width = null,
         [Description("Target image height in pixels (optional, defaults to SVG height or 600).")] int? height = null,
         [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
-        [Description("Image encoding quality (1-100; default 85).")] int? quality = null)
+        [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
+        [Description("Optional file path where the rendered image should be saved directly.")] string? outFile = null,
+        [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null)
     {
         ArgumentNullException.ThrowIfNull(svgXml);
 
@@ -114,6 +161,25 @@ public class DrawingMcpTools
             var imgBytes = SvgRenderPipeline.RenderToImage(svgXml, width, height, fmt, q);
             result.Success = true;
             result.ImageBytes = imgBytes;
+
+            if (!string.IsNullOrWhiteSpace(outFile) && imgBytes != null && imgBytes.Length > 0)
+            {
+                var fullOutPath = Path.GetFullPath(outFile);
+                var dir = Path.GetDirectoryName(fullOutPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                File.WriteAllBytes(fullOutPath, imgBytes);
+                result.ImageFilePath = fullOutPath;
+            }
+
+            result.ImageSize = result.ImageBytes?.Length ?? 0;
+            var shouldIncludeBytes = includeBytes ?? string.IsNullOrWhiteSpace(outFile);
+            if (!shouldIncludeBytes)
+            {
+                result.ImageBytes = null;
+            }
         }
         catch (Exception ex)
         {

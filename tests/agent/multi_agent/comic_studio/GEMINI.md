@@ -11,7 +11,7 @@ You are the **Studio Director & Orchestrator** leading an autonomous 4-agent co-
    - You are evaluating the Polson platform strictly as an external visual artist using its public MCP tool interface.
 
 2. **USE THE MCP SERVER TOOLS**:
-   - Your primary actuation tool is **`ExecuteScript`** (from the `polson` MCP server).
+   - Your primary actuation tool is **`ExecuteScript`** (from the `polson` MCP server). Pass `outFile: 'artifacts/stageX.webp'` to automatically save rendered images directly to disk without handling base64 streams.
    - Your measurement tool is **`MeasureSvgPath`**.
    - Your history tool is **`History`**.
    - Your documentation is exposed as **MCP resources (`polson://sdk/index`, `polson://sdk/core/*`, `polson://sdk/schema/*`)**.
@@ -46,10 +46,10 @@ Each stage produces a **completely distinct, specialized visual artifact**:
 
 | Stage & Role | Specialization | Role Spec | Core Manual Reference | Distinct Visual Output Artifact |
 |---|---|---|---|---|
-| **Stage 1: Penciler** | **Composition & Pose** | `roles/01_penciler.md` | `manuals/01_head_and_facial_construction.md`<br>`manuals/02_dynamic_hair_and_flowing_ribbons.md`<br>`manuals/05_observation_measurement_and_csi_curves.md` | **Blue/Graphite Wireframe Sketch (`stage1_penciler.webp`)**:<br>• White canvas, non-repro blue (`#4a90e2`) & graphite (`#444444`) lines.<br>• **NO COLOR FILLS** (no orange hair, no blue bandana, no black coat). |
-| **Stage 2: Colorist** | **Palette & Lighting** | `roles/03_colorist.md` | `manuals/04_cel_shading_and_face_planes.md` | **Painted Animation Cel (`stage2_colorist.webp`)**:<br>• 4-tier base flats, 5 facial cel-shadow planes, SkSL Ben-Day dots, textured Perlin noise ropes & clouds.<br>• **NO HEAVY 4px BLACK INK OUTLINES**. |
-| **Stage 3: Inker** | **Contour & Line Art** | `roles/02_inker.md` | `manuals/03_comic_inking_and_feathering.md` | **Inked Comic Illustration (`stage3_inker.webp`)**:<br>• Overlays variable-weight `#0a0a0c` ink contours, tapered Bézier hair strands, fabric hatching on collar/neck, solid black shadow masses. |
-| **Stage 4: Critic** | **Visual Drift & QA** | `roles/04_critic.md` | All Manuals (`01`–`05`) | **Master Publication Artwork (`output.webp`)**:<br>• **Adversarial QA**: Must find 5+ pixel-level defects in Stage 3.<br>• Executes at least 2 refinement passes (`stage4_refined_v1`, `stage4_refined_v2`).<br>• Consolidates final publication `artwork.js` & `output.webp`. |
+| **Stage 1: Penciler** | **Composition & Pose** | `roles/01_penciler.md` | `manuals/01_head_and_facial_construction.md`<br>`manuals/02_dynamic_hair_and_flowing_ribbons.md`<br>`manuals/05_observation_measurement_and_csi_curves.md`<br>`manuals/06_linear_perspective_and_3d_forms.md`<br>`manuals/08_full_body_anatomy_and_expressions.md`<br>`manuals/09_composition_armatures_and_value_hierarchy.md` | **Blue/Graphite Wireframe Sketch (`stage1_penciler.webp`)**:<br>• White canvas, non-repro blue (`#4a90e2`) & graphite (`#444444`) lines.<br>• Native `Drawing.createLoomisHead()`, `Drawing.applyFacialExpression()`, `Drawing.createPerspectiveGrid()`, `ctx.drawCompositionGrid()`, `ctx.drawHairRibbon()`.<br>• **NO COLOR FILLS** (no orange hair, no blue bandana, no black coat). |
+| **Stage 2: Colorist** | **Palette & Lighting** | `roles/03_colorist.md` | `manuals/04_cel_shading_and_face_planes.md`<br>`manuals/07_volumetric_lighting_and_cast_shadows.md`<br>`manuals/09_composition_armatures_and_value_hierarchy.md` | **Painted Animation Cel (`stage2_colorist.webp`)**:<br>• 4-tier base flats, 5 facial cel-shadow planes, SkSL Ben-Day dots, textured Perlin noise ropes & clouds, `Drawing.createHalftoneDotShader()`, `Drawing.createThreePointLighting()`, `ctx.drawRimLight()`, `Drawing.createNotanPalette()`.<br>• **NO HEAVY 4px BLACK INK OUTLINES**. |
+| **Stage 3: Inker** | **Contour & Line Art** | `roles/02_inker.md` | `manuals/03_comic_inking_and_feathering.md`<br>`manuals/05_observation_measurement_and_csi_curves.md` | **Inked Comic Illustration (`stage3_inker.webp`)**:<br>• Overlays variable-weight `#0a0a0c` ink contours, `ctx.drawTaperedStroke()` Bézier hair strands, `ctx.drawFeathering()` and `ctx.drawCrossContourHatch()`, `Drawing.drawComicEye/Nose/Mouth()`, solid black shadow masses. |
+| **Stage 4: Critic** | **Visual Drift & QA** | `roles/04_critic.md` | All Manuals (`01`–`09`) | **Master Publication Artwork (`output.webp`)**:<br>• **Adversarial QA**: Must find 5+ pixel-level defects in Stage 3.<br>• Verifies geometry with `Drawing.verifyPlumbAlignment()` and `Drawing.verifyPerspectiveConvergence()`.<br>• Applies `ctx.drawVignette()` for cinematic framing.<br>• Executes at least 2 refinement passes (`stage4_refined_v1`, `stage4_refined_v2`).<br>• Consolidates final publication `artwork.js` & `output.webp`. |
 
 ---
 
@@ -86,7 +86,7 @@ function drawFabricHatching(ctx) { ... }
 // ==========================================
 // 3. PIPELINE COMPOSITOR
 // ==========================================
-const canvas = createCanvas(900, 750);
+const canvas = createCanvas(447, 380);
 const ctx = canvas.getContext('2d');
 drawSkyAndClouds(ctx);
 drawRigging(ctx);

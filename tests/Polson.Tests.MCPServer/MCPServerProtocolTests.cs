@@ -102,6 +102,41 @@ public class MCPServerProtocolTests : TestsRuntime, IAsyncLifetime
     }
 
     [Fact]
+    public async Task ExecuteScriptWithOutFile()
+    {
+        await using var client = await NewClientAsync();
+        var tempImg = Path.Combine(Path.GetTempPath(), $"polson_proto_{Guid.NewGuid():N}.webp");
+
+        try
+        {
+            var script = @"
+                var c = createCanvas(150, 150);
+                var ctx = c.getContext('2d');
+                ctx.fillStyle = '#10b981';
+                ctx.fillRect(0, 0, 150, 150);
+                c;
+            ";
+
+            var r = await client.CallToolAsync("ExecuteScript", new Dictionary<string, object?>
+            {
+                ["script"] = script,
+                ["outFile"] = tempImg
+            });
+
+            Assert.True(r.IsError != true, $"CallToolAsync failed: {Text(r)}");
+            var text = Text(r);
+            Assert.Contains("success", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("imageFilePath", text, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(tempImg));
+            Assert.True(new FileInfo(tempImg).Length > 0);
+        }
+        finally
+        {
+            if (File.Exists(tempImg)) File.Delete(tempImg);
+        }
+    }
+
+    [Fact]
     public async Task RenderSvgToolCall()
     {
         await using var client = await NewClientAsync();

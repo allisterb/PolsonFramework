@@ -8,8 +8,8 @@ This is a **test harness** for evaluating the Polson code-mode Model Context Pro
 |---|---|
 | **Role** | AI Visual Artist & Graphics Programmer |
 | **Compute** | Polson Graphics MCP server (`polson`), executing sandboxed ECMAScript 2025 |
-| **Drawing Engines** | Snap.svg (vector), HTML5 2D Canvas (raster), Skia procedural shaders, filters & image manipulation |
-| **Task** | Create an expressive illustration based on the prompt below |
+| **Drawing Engines** | Snap.svg (vector), HTML5 2D Canvas (raster), Skia procedural shaders, SkSL shaders, filters & Constructive Drawing Toolkit |
+| **Task** | Recreate the reference illustration in `reference_images/comic1.png` |
 
 ---
 
@@ -28,28 +28,32 @@ This restriction is fundamental to this harness: it evaluates whether the publis
 1. **Read the MCP resources first:**
    - `polson-sdk-index` (`polson://sdk/index`) is the **map**: the execution model, language support (ECMAScript 2025), sandbox rules, global functions, and the complete inventory of callable objects and model schemas.
    - For each area your code will use, read:
-     - `polson://sdk/core/{Area}` for method signatures, semantics, and examples (`Snap`, `Canvas2D`, `Skia`, `Globals`).
+     - `polson://sdk/core/{Area}` for method signatures, semantics, and examples (`Snap`, `Canvas2D`, `Skia`, `Drawing`, `Globals`).
      - `polson://sdk/schema/{Area}` for returned model structures and data shapes.
    - Call only methods listed in the inventory and access only documented properties.
 
 2. **Execute your code using `ExecuteScript`:**
    - Code executes in a sandboxed modern JavaScript engine.
-   - Returning a `SnapPaper` (or element), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to PNG bytes (`result.PngBytes`) and SVG XML (`result.SvgXml`).
+   - Pass `outFile: 'output.webp'` (or `artifacts/stageX.webp`) to save rendered image outputs directly to disk.
+   - Returning a `SnapPaper` (or element), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to WebP/PNG/JPEG bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**) and SVG XML (`result.SvgXml`).
    - Use `Session['myKey'] = ...` to cache complex intermediate layers, geometries, or color palettes across successive tool calls.
    - Use `console.log(...)` or `log(...)` to record operational notes.
    - Use `History()` to inspect recent scripts sent to the execution engine.
 
 ---
 
-## Creative Task Prompt
+## Creative Task: Recreate `reference_images/comic1.png`
 
-> **Prompt: "Draw a seagull riding a bicycle"**
+Recreate the comic character illustration from `reference_images/comic1.png` ($447 \times 380$ px):
+- **Character**: Fierce auburn-haired pirate woman with dynamic high ponytail, slate headband, and loose windblown forehead curls.
+- **Anatomy & Expression**: Intense rightward gaze, arched brow, defined nose, open mouth showing upper teeth shelf, warm cel-shaded facial planes, and golden hoop earring.
+- **Clothing**: Popped linen shirt collar wings and navy wool coat shoulders with ink cross-hatching.
+- **Background**: Diagonal wooden spar/mast, 5 helical-shaded shroud ropes, cross-ratlines, and billowing cel-shaded cumulus clouds in a coastal blue sky.
 
-### Creative Guidelines
-- **Scene Composition:** Compose a complete, visually engaging scene (e.g. seaside promenade, coastal sky, sandy boardwalk, or road).
-- **Subject Detail:** Capture the playful character of a seagull (beak, eyes, feathered wings/tail, nautical flair or captain's hat) perched atop or pedaling a bicycle (frame, two spoked wheels, handlebars, pedals, seat).
-- **Technique:** You may use Snap.svg vector graphics, HTML5 2D Canvas, native Skia shaders (such as Perlin noise or radial/conical gradients), or a combination of both via `drawSvg` / `drawImage`.
-- **Iteration:** Feel free to execute preliminary blocking/sketches, inspect logs and bounding boxes via `MeasureSvgPath`, and refine your composition step by step.
+### Creative & Technical Approach
+- Use Canvas 2D / Skia for continuous, volumetric Bézier curves and cel-shadow planes.
+- Leverage the **Constructive Drawing Toolkit** (`Drawing.createLoomisHead()`, `Drawing.createPerspectiveGrid()`, `Drawing.drawTaperedStroke()`, `Drawing.drawFeathering()`, `Drawing.createHalftoneDotShader()`, etc.) where appropriate.
+- Save intermediate drafts to `output.webp` via `ExecuteScript(script, outFile: 'output.webp')` and inspect them visually.
 
 ---
 
@@ -58,11 +62,12 @@ This restriction is fundamental to this harness: it evaluates whether the publis
 Upon completing the task, produce the following deliverables in this directory:
 
 1. **`artwork.js`**: The complete, clean JavaScript script that produces your final rendered artwork when executed.
-2. **`findings.md`**: Your structured report evaluating the Polson SDK and MCP server experience:
+2. **`output.webp`**: The final rendered artwork image.
+3. **`findings.md`**: Your structured report evaluating the Polson SDK and MCP server experience:
    - Tag each item with: **`[positive]`**, **`[friction]`**, **`[bug]`**, or **`[nit]`**.
    - Review areas:
      - API discoverability and documentation clarity (`polson://sdk/*`).
-     - Execution model ergonomics and error messaging.
+     - Execution model ergonomics and direct-to-disk rendering (`outFile`).
      - Vector (Snap.svg) vs Raster (Canvas 2D / Skia) integration.
-     - Performance, timeouts, and state persistence (`Session`).
+     - Performance, shaders, and constructive drawing tools.
 

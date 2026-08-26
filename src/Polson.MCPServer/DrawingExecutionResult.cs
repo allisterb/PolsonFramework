@@ -22,8 +22,15 @@ public class DrawingExecutionResult
 
     public byte[]? ImageBytes { get; set; }
 
+    public string? ImageFilePath { get; set; }
+
+    public string? SvgFilePath { get; set; }
+
+    public int ImageSize { get; set; }
+
     public string ImageFormat { get; set; } = "webp";
 
+    [JsonIgnore]
     public string? ImageDataUri =>
         ImageBytes != null && ImageBytes.Length > 0
             ? SkiaImageEncoder.ToDataUri(ImageBytes, ImageFormat)

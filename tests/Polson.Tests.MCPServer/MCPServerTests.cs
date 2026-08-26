@@ -56,6 +56,38 @@ public class MCPServerTests : TestsRuntime
     }
 
     [Fact]
+    public async Task TestDrawingMcpToolsExecuteScriptWithOutFile()
+    {
+        var tools = new DrawingMcpTools();
+        var tempImg = Path.Combine(Path.GetTempPath(), $"polson_test_{Guid.NewGuid():N}.webp");
+        var tempSvg = Path.Combine(Path.GetTempPath(), $"polson_test_{Guid.NewGuid():N}.svg");
+
+        try
+        {
+            var script = @"
+                var c = createCanvas(200, 200);
+                var ctx = c.getContext('2d');
+                ctx.fillStyle = '#f59e0b';
+                ctx.fillRect(0, 0, 200, 200);
+                c;
+            ";
+
+            var result = await tools.ExecuteScript(script, 200, 200, outFile: tempImg, outSvg: tempSvg);
+            Assert.True(result.Success, result.Error);
+            Assert.NotNull(result.ImageFilePath);
+            Assert.True(File.Exists(tempImg));
+            Assert.True(new FileInfo(tempImg).Length > 0);
+            Assert.Null(result.ImageBytes); // Omitted by default when saved to disk to save tokens
+            Assert.True(result.ImageSize > 0);
+        }
+        finally
+        {
+            if (File.Exists(tempImg)) File.Delete(tempImg);
+            if (File.Exists(tempSvg)) File.Delete(tempSvg);
+        }
+    }
+
+    [Fact]
     public void TestDrawingMcpToolsRenderSvg()
     {
         var tools = new DrawingMcpTools();
@@ -65,6 +97,29 @@ public class MCPServerTests : TestsRuntime
         Assert.True(result.Success, result.Error);
         Assert.NotNull(result.ImageBytes);
         Assert.True(result.ImageBytes.Length > 0);
+    }
+
+    [Fact]
+    public void TestDrawingMcpToolsRenderSvgWithOutFile()
+    {
+        var tools = new DrawingMcpTools();
+        var tempImg = Path.Combine(Path.GetTempPath(), $"polson_svg_test_{Guid.NewGuid():N}.webp");
+
+        try
+        {
+            var svg = "<svg width=\"200\" height=\"200\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"200\" height=\"200\" fill=\"#3b82f6\"/></svg>";
+            var result = tools.RenderSvg(svg, 200, 200, outFile: tempImg);
+            Assert.True(result.Success, result.Error);
+            Assert.NotNull(result.ImageFilePath);
+            Assert.True(File.Exists(tempImg));
+            Assert.True(new FileInfo(tempImg).Length > 0);
+            Assert.Null(result.ImageBytes);
+            Assert.True(result.ImageSize > 0);
+        }
+        finally
+        {
+            if (File.Exists(tempImg)) File.Delete(tempImg);
+        }
     }
 
     [Fact]

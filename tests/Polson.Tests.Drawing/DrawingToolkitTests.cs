@@ -616,5 +616,122 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.NotNull(result.ImageBytes);
         Assert.True(result.ImageBytes.Length > 1000);
     }
+
+    [Fact]
+    public void TestCompositionGridCreation()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+
+        // 1. Rule of Thirds
+        var thirds = toolkit.createCompositionGrid(900f, 600f, "ruleOfThirds");
+        Assert.NotNull(thirds);
+        Assert.Equal("ruleOfThirds", thirds["type"]);
+        var pps = (Dictionary<string, object?>)thirds["powerPoints"]!;
+        Assert.True(pps.ContainsKey("topLeft"));
+        Assert.True(pps.ContainsKey("bottomRight"));
+
+        // 2. Golden Ratio
+        var golden = toolkit.createCompositionGrid(900f, 600f, "goldenRatio");
+        Assert.NotNull(golden);
+        Assert.Equal("goldenRatio", golden["type"]);
+
+        // 3. Dynamic Symmetry
+        var dynamicSym = toolkit.createCompositionGrid(900f, 600f, "dynamicSymmetry");
+        Assert.NotNull(dynamicSym);
+        Assert.Equal("dynamicSymmetry", dynamicSym["type"]);
+    }
+
+    [Fact]
+    public void TestCompositionGridAndVignetteRendering()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+
+        // 1. Draw composition grid
+        toolkit.drawCompositionGrid(ctx, "ruleOfThirds");
+
+        // 2. Draw vignette
+        toolkit.drawVignette(ctx, 800f, 600f);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestNotanPaletteAndLeadingLines()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var pal = toolkit.createNotanPalette("classic3");
+        Assert.NotNull(pal);
+        Assert.True(pal.ContainsKey("dominantLight"));
+        Assert.True(pal.ContainsKey("accentDark"));
+
+        var canvas = new SkiaCanvas(800, 600);
+        var ctx = canvas.getContext("2d");
+
+        var origins = new List<object>
+        {
+            new Dictionary<string, object?> { ["x"] = 0f, ["y"] = 0f },
+            new Dictionary<string, object?> { ["x"] = 800f, ["y"] = 0f },
+            new Dictionary<string, object?> { ["x"] = 0f, ["y"] = 600f }
+        };
+        var focal = new Dictionary<string, object?> { ["x"] = 400f, ["y"] = 300f };
+
+        toolkit.drawLeadingLines(ctx, origins, focal);
+
+        var bytes = canvas.ToImageBytes("png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 100);
+    }
+
+    [Fact]
+    public void TestProportionalSubdivision()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var bounds = new Dictionary<string, object?> { ["x"] = 0f, ["y"] = 0f, ["width"] = 1000f, ["height"] = 500f };
+
+        var sub = toolkit.subdivideProportions(bounds, "horizontal");
+        Assert.NotNull(sub);
+        Assert.True(sub.ContainsKey("big"));
+        Assert.True(sub.ContainsKey("medium"));
+        Assert.True(sub.ContainsKey("small"));
+
+        var big = (Dictionary<string, object?>)sub["big"]!;
+        Assert.Equal(700f, Convert.ToSingle(big["width"]));
+    }
+
+    [Fact]
+    public void TestJavaScriptEngineCompositionIntegration()
+    {
+        var engine = new JsDrawingEngine();
+        const string script = @"
+            const canvas = createCanvas(800, 600);
+            const ctx = canvas.getContext('2d');
+
+            // 1. Draw Rule of Thirds armature
+            ctx.drawCompositionGrid('ruleOfThirds');
+
+            // 2. Draw leading lines to focal point
+            ctx.drawLeadingLines([
+                { x: 50, y: 550 },
+                { x: 750, y: 550 }
+            ], { x: 533, y: 200 }); // Top-Right Power Point
+
+            // 3. Proportional layout
+            const layout = Drawing.subdivideProportions({ x: 0, y: 0, width: 800, height: 600 }, 'horizontal');
+
+            // 4. Cinematic vignette
+            ctx.drawVignette({ intensity: 0.65 });
+
+            canvas;
+        ";
+
+        var result = engine.Execute(script);
+        Assert.NotNull(result);
+        Assert.NotNull(result.ImageBytes);
+        Assert.True(result.ImageBytes.Length > 1000);
+    }
     #endregion
 }

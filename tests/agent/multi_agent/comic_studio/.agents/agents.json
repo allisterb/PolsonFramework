@@ -1,0 +1,40 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0",
+  "name": "comic_studio_claude",
+  "description": "Multi-agent comic illustration studio with specialized artistic roles",
+  "orchestrator": {
+    "role": "Studio Director",
+    "promptFile": "../CLAUDE.md"
+  },
+  "subagents": [
+    {
+      "name": "penciler",
+      "role": "Penciler (Composition & Contours)",
+      "description": "Establishes composition, layout, anatomical proportions, and solid vector boundary paths.",
+      "promptFile": "subagents/penciler.md",
+      "tools": ["polson.ExecuteScript", "polson.MeasureSvgPath", "polson.History", "view_file"]
+    },
+    {
+      "name": "colorist",
+      "role": "Colorist (Palette & Lighting)",
+      "description": "Applies 4-tier color palettes, 5 anatomical cel-shadow planes, SkSL dot halftone shaders, and rim lights.",
+      "promptFile": "subagents/colorist.md",
+      "tools": ["polson.ExecuteScript", "polson.History", "view_file"]
+    },
+    {
+      "name": "inker",
+      "role": "Inker (Contour & Line Art)",
+      "description": "Renders crisp calligraphic ink contours, tapered hair strokes, feathering, cross-hatching, and solid blacks.",
+      "promptFile": "subagents/inker.md",
+      "tools": ["polson.ExecuteScript", "polson.MeasureSvgPath", "polson.History", "view_file"]
+    },
+    {
+      "name": "critic",
+      "role": "Vision Critic & QA",
+      "description": "Performs side-by-side gap analysis vs reference image, executes refinement passes, and produces final artwork.",
+      "promptFile": "subagents/critic.md",
+      "tools": ["polson.ExecuteScript", "polson.MeasureSvgPath", "polson.History", "view_file"]
+    }
+  ]
+}

@@ -1929,7 +1929,300 @@ public class ConstructiveDrawingToolkit
         return res;
     }
     #endregion
+
+    #region Composition Armatures, Notan & Visual Emphasis
+    public Dictionary<string, object?> createCompositionGrid(float width, float height, string type = "ruleOfThirds", object? options = null)
+    {
+        var gridType = type.Trim().ToLowerInvariant();
+        var lines = new List<List<Dictionary<string, object?>>>();
+        var powerPoints = new Dictionary<string, object?>();
+
+        switch (gridType)
+        {
+            case "ruleofthirds":
+            case "thirds":
+            default:
+                gridType = "ruleOfThirds";
+                var x1 = width / 3f;
+                var x2 = width * 2f / 3f;
+                var y1 = height / 3f;
+                var y2 = height * 2f / 3f;
+
+                // 2 Vertical Lines
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(x1, 0)), ToDict(new Point2D(x1, height)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(x2, 0)), ToDict(new Point2D(x2, height)) });
+
+                // 2 Horizontal Lines
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, y1)), ToDict(new Point2D(width, y1)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, y2)), ToDict(new Point2D(width, y2)) });
+
+                powerPoints["topLeft"] = ToDict(new Point2D(x1, y1));
+                powerPoints["topRight"] = ToDict(new Point2D(x2, y1));
+                powerPoints["bottomLeft"] = ToDict(new Point2D(x1, y2));
+                powerPoints["bottomRight"] = ToDict(new Point2D(x2, y2));
+                break;
+
+            case "goldenratio":
+            case "goldenspiral":
+            case "fibonacci":
+                gridType = "goldenRatio";
+                const float phi = 1.6180339887f;
+                const float r = 1f / phi; // ~0.618
+
+                var gx1 = width * (1f - r);
+                var gx2 = width * r;
+                var gy1 = height * (1f - r);
+                var gy2 = height * r;
+
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(gx1, 0)), ToDict(new Point2D(gx1, height)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(gx2, 0)), ToDict(new Point2D(gx2, height)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, gy1)), ToDict(new Point2D(width, gy1)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, gy2)), ToDict(new Point2D(width, gy2)) });
+
+                // Diagonal bar
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, 0)), ToDict(new Point2D(width, height)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(width, 0)), ToDict(new Point2D(gx1, height)) });
+
+                powerPoints["goldenEye"] = ToDict(new Point2D(gx2, gy2));
+                powerPoints["secondaryEye"] = ToDict(new Point2D(gx1, gy1));
+                break;
+
+            case "dynamicsymmetry":
+            case "harmonicarmature":
+                gridType = "dynamicSymmetry";
+                // 1. Corner Diagonals
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, 0)), ToDict(new Point2D(width, height)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(width, 0)), ToDict(new Point2D(0, height)) });
+
+                // 2. Midpoint Cross
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(width * 0.5f, 0)), ToDict(new Point2D(width * 0.5f, height)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, height * 0.5f)), ToDict(new Point2D(width, height * 0.5f)) });
+
+                // 3. Midpoint Diamond
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(width * 0.5f, 0)), ToDict(new Point2D(width, height * 0.5f)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(width, height * 0.5f)), ToDict(new Point2D(width * 0.5f, height)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(width * 0.5f, height)), ToDict(new Point2D(0, height * 0.5f)) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(new Point2D(0, height * 0.5f)), ToDict(new Point2D(width * 0.5f, 0)) });
+
+                powerPoints["center"] = ToDict(new Point2D(width * 0.5f, height * 0.5f));
+                powerPoints["harmonicTopLeft"] = ToDict(new Point2D(width * 0.25f, height * 0.25f));
+                powerPoints["harmonicTopRight"] = ToDict(new Point2D(width * 0.75f, height * 0.25f));
+                break;
+
+            case "triangle":
+            case "pyramid":
+                gridType = "triangle";
+                var apex = new Point2D(width * 0.5f, height * 0.15f);
+                var botL = new Point2D(width * 0.10f, height * 0.88f);
+                var botR = new Point2D(width * 0.90f, height * 0.88f);
+
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(apex), ToDict(botL) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(apex), ToDict(botR) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(botL), ToDict(botR) });
+                lines.Add(new List<Dictionary<string, object?>> { ToDict(apex), ToDict(new Point2D(width * 0.5f, height * 0.88f)) });
+
+                powerPoints["apex"] = ToDict(apex);
+                powerPoints["center"] = ToDict(new Point2D(width * 0.5f, height * 0.55f));
+                break;
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = gridType,
+            ["width"] = width,
+            ["height"] = height,
+            ["lines"] = lines,
+            ["powerPoints"] = powerPoints
+        };
+    }
+
+    public void drawCompositionGrid(CanvasRenderingContext2D ctx, object gridObjOrType, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        IDictionary? grid = null;
+
+        if (gridObjOrType is string typeStr)
+        {
+            grid = createCompositionGrid(ctx.Canvas.Width, ctx.Canvas.Height, typeStr, options);
+        }
+        else if (gridObjOrType is IDictionary dict)
+        {
+            grid = dict;
+        }
+
+        if (grid == null) return;
+
+        var opt = options as IDictionary;
+        var lineColor = opt?["lineColor"]?.ToString() ?? "#3ba3d0";
+        var pointColor = opt?["pointColor"]?.ToString() ?? "#e74c3c";
+        var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.2f;
+        var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.45f;
+
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        ctx.strokeStyle = lineColor;
+        ctx.fillStyle = pointColor;
+        ctx.lineWidth = lineWidth;
+
+        // 1. Draw Grid Lines
+        if (grid["lines"] is IList lines)
+        {
+            foreach (var l in lines)
+            {
+                if (l is not IList pts || pts.Count < 2) continue;
+                var a = ExtractPoint(pts[0]);
+                var b = ExtractPoint(pts[1]);
+                ctx.beginPath();
+                ctx.moveTo(a.X, a.Y);
+                ctx.lineTo(b.X, b.Y);
+                ctx.stroke();
+            }
+        }
+
+        // 2. Draw Focal Power Points
+        if (grid["powerPoints"] is IDictionary pps)
+        {
+            foreach (DictionaryEntry de in pps)
+            {
+                var pt = ExtractPoint(de.Value);
+                ctx.beginPath();
+                ctx.arc(pt.X, pt.Y, 5f, 0f, MathF.PI * 2f);
+                ctx.fill();
+            }
+        }
+
+        ctx.restore();
+    }
+
+    public void drawVignette(CanvasRenderingContext2D ctx, float width, float height, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        var opt = options as IDictionary;
+        var vignetteColor = opt?["vignetteColor"]?.ToString() ?? "#080b10";
+        var intensity = opt != null && opt.Contains("intensity") ? Convert.ToSingle(opt["intensity"], CultureInfo.InvariantCulture) : 0.65f;
+        var radius = opt != null && opt.Contains("radius") ? Convert.ToSingle(opt["radius"], CultureInfo.InvariantCulture) : MathF.Max(width, height) * 0.72f;
+
+        var cx = width * 0.5f;
+        var cy = height * 0.5f;
+
+        ctx.save();
+        ctx.globalAlpha = intensity;
+        var grad = ctx.createRadialGradient(cx, cy, radius * 0.35f, cx, cy, radius);
+        grad.addColorStop(0.0f, "rgba(0,0,0,0)");
+        grad.addColorStop(0.65f, "rgba(0,0,0,0.15)");
+        grad.addColorStop(1.0f, vignetteColor);
+
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+    }
+
+    public void drawLeadingLines(CanvasRenderingContext2D ctx, object originPoints, object focalPoint, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        var fp = ExtractPoint(focalPoint);
+        if (originPoints is not IList list || list.Count == 0) return;
+
+        var opt = options as IDictionary;
+        var lineColor = opt?["lineColor"]?.ToString() ?? "#e74c3c";
+        var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.2f;
+        var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.35f;
+
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = lineWidth;
+
+        foreach (var item in list)
+        {
+            var p = ExtractPoint(item);
+            ctx.beginPath();
+            ctx.moveTo(p.X, p.Y);
+            ctx.lineTo(fp.X, fp.Y);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    public Dictionary<string, object?> createNotanPalette(string type = "classic3")
+    {
+        var pal = type.Trim().ToLowerInvariant();
+        return pal switch
+        {
+            "binary" or "2value" => new Dictionary<string, object?>
+            {
+                ["type"] = "binary",
+                ["dominant"] = "#ffffff",
+                ["secondary"] = "#0a0a0c"
+            },
+            "highkey" => new Dictionary<string, object?>
+            {
+                ["type"] = "highKey",
+                ["background"] = "#ffffff",
+                ["formLight"] = "#e2e8f0",
+                ["formMid"] = "#a0aec0",
+                ["darkAccent"] = "#4a5568"
+            },
+            "lowkey" => new Dictionary<string, object?>
+            {
+                ["type"] = "lowKey",
+                ["background"] = "#0c0f14",
+                ["formDark"] = "#1a202c",
+                ["formMid"] = "#3e4c5e",
+                ["rimAccent"] = "#e2e8f0"
+            },
+            _ => new Dictionary<string, object?>
+            {
+                ["type"] = "classic3",
+                ["dominantLight"] = "#f4f6f8",
+                ["secondaryMid"] = "#828c9b",
+                ["accentDark"] = "#181e28"
+            }
+        };
+    }
+
+    public Dictionary<string, object?> subdivideProportions(object bounds, string direction = "horizontal", object? ratios = null)
+    {
+        var b = bounds as IDictionary;
+        var bx = b != null && b.Contains("x") ? Convert.ToSingle(b["x"], CultureInfo.InvariantCulture) : 0f;
+        var by = b != null && b.Contains("y") ? Convert.ToSingle(b["y"], CultureInfo.InvariantCulture) : 0f;
+        var bw = b != null && b.Contains("width") ? Convert.ToSingle(b["width"], CultureInfo.InvariantCulture) : 800f;
+        var bh = b != null && b.Contains("height") ? Convert.ToSingle(b["height"], CultureInfo.InvariantCulture) : 600f;
+
+        var isHoriz = direction.Trim().ToLowerInvariant() == "horizontal";
+
+        // Big: 70%, Medium: 20%, Small: 10%
+        if (isHoriz)
+        {
+            var wBig = bw * 0.70f;
+            var wMed = bw * 0.20f;
+            var wSmall = bw * 0.10f;
+
+            return new Dictionary<string, object?>
+            {
+                ["big"] = new Dictionary<string, object?> { ["x"] = bx, ["y"] = by, ["width"] = wBig, ["height"] = bh },
+                ["medium"] = new Dictionary<string, object?> { ["x"] = bx + wBig, ["y"] = by, ["width"] = wMed, ["height"] = bh },
+                ["small"] = new Dictionary<string, object?> { ["x"] = bx + wBig + wMed, ["y"] = by, ["width"] = wSmall, ["height"] = bh }
+            };
+        }
+        else
+        {
+            var hBig = bh * 0.70f;
+            var hMed = bh * 0.20f;
+            var hSmall = bh * 0.10f;
+
+            return new Dictionary<string, object?>
+            {
+                ["big"] = new Dictionary<string, object?> { ["x"] = bx, ["y"] = by, ["width"] = bw, ["height"] = hBig },
+                ["medium"] = new Dictionary<string, object?> { ["x"] = bx, ["y"] = by + hBig, ["width"] = bw, ["height"] = hMed },
+                ["small"] = new Dictionary<string, object?> { ["x"] = bx, ["y"] = by + hBig + hMed, ["width"] = bw, ["height"] = hSmall }
+            };
+        }
+    }
+    #endregion
 }
+
 
 
 

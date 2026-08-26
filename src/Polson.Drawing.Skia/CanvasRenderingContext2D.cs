@@ -788,6 +788,15 @@ public class CanvasRenderingContext2D
 
     public void drawTorsoMusculature(object figure, object? options = null) =>
         _toolkit.drawTorsoMusculature(this, figure, options);
+
+    public void drawCompositionGrid(object gridObjOrType, object? options = null) =>
+        _toolkit.drawCompositionGrid(this, gridObjOrType, options);
+
+    public void drawVignette(object? options = null) =>
+        _toolkit.drawVignette(this, Canvas.Width, Canvas.Height, options);
+
+    public void drawLeadingLines(object originPoints, object focalPoint, object? options = null) =>
+        _toolkit.drawLeadingLines(this, originPoints, focalPoint, options);
     #endregion
     #endregion
 

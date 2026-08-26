@@ -345,6 +345,7 @@ public class JsDrawingEngine : Runtime
             Runtime.Error(ex, "Script execution error: {0}", ex.Message);
         }
 
+        result.ImageSize = result.ImageBytes?.Length ?? 0;
         return result;
     }
 

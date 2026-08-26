@@ -2,7 +2,7 @@
   "mcpServers": {
     "polson": {
       "command": "dotnet",
-      "args": ["C:/Projects/Polson/src/Polson.CLI/bin/Debug/net10.0/Polson.CLI.dll"]
+      "args": ["C:/Projects/Polson/bin/cli/Polson.CLI.dll", "server"]
     }
   }
 }

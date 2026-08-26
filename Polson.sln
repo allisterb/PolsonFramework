@@ -34,6 +34,19 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Tests.MCPServer", "t
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "agent", "agent", "{AD454CB9-A393-4E4E-985C-45B0D9E3F729}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mcp_server", "mcp_server", "{F4193D1A-B76D-4BB1-AE34-E49F0ACBCA78}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "gemini", "gemini", "{2CC027AD-3534-4DB3-8661-813DD304A135}"
+	ProjectSection(SolutionItems) = preProject
+		tests\agent\mcp_server\gemini\.agents\mcp_config.json = tests\agent\mcp_server\gemini\.agents\mcp_config.json
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "claude", "claude", "{796ED5FA-3F41-4EED-8A49-45873F844903}"
+	ProjectSection(SolutionItems) = preProject
+		tests\agent\mcp_server\claude\.mcp.json = tests\agent\mcp_server\claude\.mcp.json
+		tests\agent\mcp_server\claude\CLAUDE.md = tests\agent\mcp_server\claude\CLAUDE.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -81,6 +94,9 @@ Global
 		{8EBED04F-5231-478A-9612-C2D47A15AFDF} = {A4143B36-6E75-4308-B2B6-4DCE55992386}
 		{0A16DFAA-6F37-4E7E-B148-13DEC325396A} = {8EC751EC-0FE7-4024-8D29-3E77BCBFC55F}
 		{AD454CB9-A393-4E4E-985C-45B0D9E3F729} = {8EC751EC-0FE7-4024-8D29-3E77BCBFC55F}
+		{F4193D1A-B76D-4BB1-AE34-E49F0ACBCA78} = {AD454CB9-A393-4E4E-985C-45B0D9E3F729}
+		{2CC027AD-3534-4DB3-8661-813DD304A135} = {F4193D1A-B76D-4BB1-AE34-E49F0ACBCA78}
+		{796ED5FA-3F41-4EED-8A49-45873F844903} = {F4193D1A-B76D-4BB1-AE34-E49F0ACBCA78}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {2DF37766-8B92-4747-B457-BA77EC32B15D}

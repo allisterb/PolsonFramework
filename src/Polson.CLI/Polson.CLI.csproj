@@ -21,4 +21,19 @@
     <Folder Include="ProjectTemplate\" />
   </ItemGroup>
 
+  <Target Name="CopyOutputToBin" AfterTargets="Build">
+    <ItemGroup>
+      <!-- Grab all files in the current project's build output directory -->
+      <BuildOutputFiles Include="$(TargetDir)**\*.*" />
+    </ItemGroup>
+
+    <!-- Copy them to the central solution directory while preserving subfolders -->
+    <Copy
+      SourceFiles="@(BuildOutputFiles)"
+      DestinationFiles="@(BuildOutputFiles->'$(SolutionDir)bin\cli\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+      OverwriteReadOnlyFiles="true" />
+  </Target>
+
+
 </Project>

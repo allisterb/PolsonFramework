@@ -196,6 +196,9 @@ public class SnapPaper : SnapElement
 
     public SnapGroup ClearSpaceGuide(float x, float y, float width, float height, float margin = 24f) =>
         VectorLogo.ClearSpaceGuide(this, x, y, width, height, margin);
+
+    public SnapPath OgeeCurve(float x1, float y1, float x2, float y2, float amplitude = 25f, float inflectionT = 0.5f) =>
+        VectorLogo.OgeeCurve(this, x1, y1, x2, y2, amplitude, inflectionT);
     #endregion
 
     public SnapLinearGradient GradientLinear(float x1, float y1, float x2, float y2)

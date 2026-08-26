@@ -430,6 +430,8 @@ FodyWeavers.xsd
 
 **/*appsettings.json
 reference/*
+!reference/manuals/
+!reference/manuals/*.md
 *.png
 *.svg
 !src/Polson.Drawing.Svg/

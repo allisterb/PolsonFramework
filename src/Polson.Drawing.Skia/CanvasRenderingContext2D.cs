@@ -829,6 +829,20 @@ public class CanvasRenderingContext2D
     public void generateBrandPresentationSheet(object options) =>
         _logoToolkit.GenerateBrandPresentationSheet(this, options);
     #endregion
+
+    #region LogoType Toolkit
+    private static readonly LogoTypeToolkit _logoTypeToolkit = new();
+
+    public void drawWordmarkLockup(object? drawMarkFn, string brandName, string tagline, object? options = null) =>
+        _logoTypeToolkit.DrawWordmarkLockup(this, drawMarkFn, brandName, tagline, options);
+
+    public void drawOgeeCurve(float x1, float y1, float x2, float y2, float amplitude = 25f, float inflectionT = 0.5f)
+    {
+        using var skPath = _logoTypeToolkit.CreateOgeeCurveSKPath(x1, y1, x2, y2, inflectionT, amplitude);
+        using var paint = _currentState.CreateStrokePaint();
+        Canvas.SkCanvas.DrawPath(skPath, paint);
+    }
+    #endregion
     #endregion
 
     #region Fields

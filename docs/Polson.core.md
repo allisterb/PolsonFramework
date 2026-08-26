@@ -511,4 +511,29 @@ Retained-mode SVG vector logo construction methods available directly on `SnapPa
 - `Snap.path.emblemBadge(cx: number, cy: number, width: number, height: number, style?: string)` → `string` — Returns SVG `d` path string.
 - `Snap.path.tangentFillet(x1: number, y1: number, cornerX: number, cornerY: number, x2: number, y2: number, radius: number)` → `string` — Returns SVG `d` fillet path string.
 - `Snap.path.boneEffect(startX: number, startY: number, endX: number, endY: number, maxBulge?: number, controlT?: number)` → `string` — Returns SVG `d` stem bulge path string.
+- `Snap.path.ogeeCurve(x1: number, y1: number, x2: number, y2: number, amplitude?: number, inflectionT?: number)` → `string` — Returns SVG `d` Ogee S-curve path string.
+
+---
+
+# LogoType (Logotype & Typography Toolkit)
+
+Algorithmic typography, font pairing, optical kerning, and automated brand lockup toolkit synthesized from Robin Williams (*The Non-Designer's Design Book*) and Doyald Young (*Fonts and Logos*).
+
+Also accessible via `Skia.LogoType` and global `LogoType`.
+
+## Optical Kerning & Spacing Mechanics
+- `LogoType.computeOpticalKerning(charLeft: string, charRight: string, fontSize?: number, fontCategory?: string)` → `number` — Computes optimal character spacing in pixels based on glyph boundary silhouettes (straight-to-straight, straight-to-round, round-to-round, diagonal tucking).
+- `LogoType.computeWordmarkTracking(fontSize?: number, isAllCaps?: boolean, role?: 'wordmark' | 'tagline')` → `number` — Returns optical letter-spacing (tight tracking for large display marks, wide tracking $+150\text{‰}–+300\text{‰}$ for all-caps taglines).
+
+## Typographic Scale & Font Harmony
+- `LogoType.calculateTypographicScale(baseSize?: number, ratio?: 'goldenRatio' | 'perfectFifth' | 'augmentedFourth' | 'perfectFourth' | 'majorThird' | 'minorThird', stepsDown?: number, stepsUp?: number)` → `object` — Generates harmonic font size ladder (`micro`, `caption`, `body`, `h4`, `h3`, `h2`, `h1`, `display`).
+- `LogoType.evaluateFontPairing(primaryCategory: string, secondaryCategory: string)` → `{ relationship: 'concordant' | 'conflicting' | 'contrasting', score: number, description: string, recommendations: string[] }` — Evaluates font pairing against the Robin Williams contrast matrix across Size, Weight, Structure, and Form.
+
+## Brand Lockups & Letterform Geometry
+- `LogoType.createOgeeCurvePath(x1: number, y1: number, x2: number, y2: number, inflectionT?: number, amplitude?: number)` → `string` — Generates classical Doyald Young $S$-curve cubic Bézier path.
+- `LogoType.drawWordmarkLockup(ctx: CanvasRenderingContext2D, drawMarkFn: Function, brandName: string, tagline?: string, options?: { layout?: 'horizontal' | 'vertical', x?: number, y?: number, markSize?: number, fontSize?: number, taglineSize?: number, primaryColor?: string, taglineColor?: string })` — Renders balanced brand lockup with optical alignment.
+- `ctx.drawWordmarkLockup(drawMarkFn, brandName, tagline, options)` — Direct canvas context helper.
+- `ctx.drawOgeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` — Direct canvas context helper.
+- `paper.ogeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` → `SnapPath` — Direct Snap.svg paper helper.
+
 

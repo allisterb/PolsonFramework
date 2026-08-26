@@ -39,7 +39,8 @@ public static class SdkDocs
         new("Skia", ["Skia", "SK", "ImageData"], "Skia"),
         new("Drawing", ["Drawing"], "Drawing"),
         new("Logo", ["Logo"], "Logo"),
-        new("VectorLogo", ["VectorLogo", "vectorLogo"], "VectorLogo")
+        new("VectorLogo", ["VectorLogo", "vectorLogo"], "VectorLogo"),
+        new("LogoType", ["LogoType", "logoType", "Typography"], "LogoType")
     ];
     #endregion
 

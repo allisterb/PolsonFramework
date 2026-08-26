@@ -202,6 +202,36 @@ public class VectorLogoToolkit
             "M {0:F2} {1:F2} Q {2:F2} {3:F2} {4:F2} {5:F2}",
             startX, startY, ctrlX, ctrlY, endX, endY);
     }
+
+    public static string CreateOgeeCurvePath(float x1, float y1, float x2, float y2, float inflectionT = 0.5f, float amplitude = 25f)
+    {
+        var dx = x2 - x1;
+        var dy = y2 - y1;
+        var len = MathF.Sqrt(dx * dx + dy * dy);
+        if (len < 0.001f) return string.Format(CultureInfo.InvariantCulture, "M {0:F2} {1:F2} L {2:F2} {3:F2}", x1, y1, x2, y2);
+
+        var nx = -dy / len;
+        var ny = dx / len;
+
+        var t = MathF.Max(0.2f, MathF.Min(0.8f, inflectionT));
+        var midX = x1 + dx * t;
+        var midY = y1 + dy * t;
+
+        var c1x = x1 + dx * (t * 0.4f) + nx * amplitude;
+        var c1y = y1 + dy * (t * 0.4f) + ny * amplitude;
+        var c2x = x1 + dx * (t * 0.8f) + nx * amplitude;
+        var c2y = y1 + dy * (t * 0.8f) + ny * amplitude;
+
+        var remT = 1f - t;
+        var c3x = midX + dx * (remT * 0.3f) - nx * amplitude;
+        var c3y = midY + dy * (remT * 0.3f) - ny * amplitude;
+        var c4x = midX + dx * (remT * 0.7f) - nx * amplitude;
+        var c4y = midY + dy * (remT * 0.7f) - ny * amplitude;
+
+        return string.Format(CultureInfo.InvariantCulture,
+            "M {0:F2} {1:F2} C {2:F2} {3:F2} {4:F2} {5:F2} {6:F2} {7:F2} C {8:F2} {9:F2} {10:F2} {11:F2} {12:F2} {13:F2}",
+            x1, y1, c1x, c1y, c2x, c2y, midX, midY, c3x, c3y, c4x, c4y, x2, y2);
+    }
     #endregion
 
     #region SnapPaper Element Builders
@@ -209,6 +239,13 @@ public class VectorLogoToolkit
     {
         ArgumentNullException.ThrowIfNull(paper);
         var d = CreateSquirclePath(x, y, width, height, exponent);
+        return paper.Path(d);
+    }
+
+    public SnapPath OgeeCurve(SnapPaper paper, float x1, float y1, float x2, float y2, float amplitude = 25f, float inflectionT = 0.5f)
+    {
+        ArgumentNullException.ThrowIfNull(paper);
+        var d = CreateOgeeCurvePath(x1, y1, x2, y2, inflectionT, amplitude);
         return paper.Path(d);
     }
 

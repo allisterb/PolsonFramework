@@ -6,6 +6,8 @@
 
 ## 1. Line Weight Hierarchy (The Three Inking Tiers)
 
+> **Implemented by**: the `maxThickness` argument of `Drawing.drawTaperedStroke(...)`. Pick the tier here, then pass it; the tier *is* the parameter.
+
 Comic inking derives its punch and depth from **stroke weight contrast**:
 
 | Tier | Line Width | Purpose | Applied To |
@@ -18,6 +20,8 @@ Comic inking derives its punch and depth from **stroke weight contrast**:
 
 ## 2. Inking Rules of Thumb
 
+> **Implemented by**: `Drawing.drawTaperedStroke(...)` for weighted contours and `Drawing.drawFeathering(...)` for shadow transitions. These are judgement rules — the calls execute them, they do not decide them for you.
+
 1. **The Light vs Gravity Rule**:
    - Lines facing the **light source** (top/left) should be **thin or broken** ($1.0\text{px} - 1.5\text{px}$).
    - Lines facing **away from light or affected by gravity** (underside of jaw, bottom of hair curls, coat hem) should be **heavy and thick** ($3.5\text{px} - 5.0\text{px}$).
@@ -28,103 +32,79 @@ Comic inking derives its punch and depth from **stroke weight contrast**:
 
 ## 3. Algorithmic Tapered Inking in Canvas2D
 
-```javascript
-/**
- * Strokes a curved line with smooth taper at both start and end.
- */
-function drawTaperedStroke(ctx, start, cp1, cp2, end, maxThickness, inkColor = '#0a0a0c') {
-    // Sample points along the cubic Bezier curve
-    const steps = 24;
-    const points = [];
-    
-    for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const it = 1 - t;
-        
-        // Cubic Bezier interpolation
-        const x = it*it*it*start.x + 3*it*it*t*cp1.x + 3*it*t*t*cp2.x + t*t*t*end.x;
-        const y = it*it*it*start.y + 3*it*it*t*cp1.y + 3*it*t*t*cp2.y + t*t*t*end.y;
-        
-        // Tangent derivative for normal vector
-        const dx = 3*it*it*(cp1.x - start.x) + 6*it*t*(cp2.x - cp1.x) + 3*t*t*(end.x - cp2.x);
-        const dy = 3*it*it*(cp1.y - start.y) + 6*it*t*(cp2.y - cp1.y) + 3*t*t*(end.y - cp2.y);
-        const len = Math.sqrt(dx*dx + dy*dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
-        
-        // Sine envelope for thickness: 0 at start -> max in middle -> 0 at end
-        const thickness = maxThickness * Math.sin(t * Math.PI);
-        points.push({ x, y, nx, ny, thickness });
-    }
+> **Implemented by**: `Drawing.drawTaperedStroke(ctx, start, cp1, cp2, end, maxThickness, fillOrStrokeStyle)`.
 
-    // Construct tapered polygon
-    ctx.beginPath();
-    // Forward pass along left side
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-        ctx.lineTo(p.x + p.nx * (p.thickness * 0.5), p.y + p.ny * (p.thickness * 0.5));
-    }
-    // Backward pass along right side
-    for (let i = points.length - 1; i >= 0; i--) {
-        const p = points[i];
-        ctx.lineTo(p.x - p.nx * (p.thickness * 0.5), p.y - p.ny * (p.thickness * 0.5));
-    }
-    ctx.closePath();
-    ctx.fillStyle = inkColor;
-    ctx.fill();
-}
-```
+`Drawing.drawTaperedStroke(ctx, start, cp1, cp2, end, maxThickness, fillOrStrokeStyle)` samples the cubic Bézier and varies width along its length, so the stroke swells through the middle and closes at both ends.
+
+- Points may be `{ x, y }` objects, or pass ten flat numbers (`sx, sy, cp1x, cp1y, cp2x, cp2y, ex, ey, maxThickness, style`).
+- `fillOrStrokeStyle` accepts a colour string or an `SKShader`.
+
+Choose `maxThickness` from the tier table in §1 — contour silhouette at the heavy end, interior detail at the light end. A constant-width stroke reads as a technical drawing, not as inking.
 
 ---
 
 ## 4. Directional Cross-Hatching & Feathering Recipes
 
+> **Implemented by**: `Drawing.drawFeathering(ctx, origin, angleDeg, count, length, spacing, strokeColor, lineWidth)` and `Drawing.drawCrossContourHatch(ctx, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor, lineWidth)`.
+
 ### Linear Feathering (Shadow Terminator Transitions)
 Feathering uses parallel tapered lines extending from solid black shadow masses into the illuminated zones:
 
-```javascript
-/**
- * Draws directional hatching lines along a curved form (e.g. neck, throat, collar).
- */
-function drawFeatheringHatch(ctx, origin, directionAngleDeg, count, length, spacing, strokeColor = '#0a0a0c') {
-    const rad = (directionAngleDeg * Math.PI) / 180;
-    const dx = Math.cos(rad);
-    const dy = Math.sin(rad);
-    
-    // Perpendicular step direction
-    const px = -dy;
-    const py = dx;
+`Drawing.drawFeathering(ctx, origin, angleDeg, count, length, spacing, strokeColor, lineWidth)` lays a fan of tapering parallel lines from an origin. `Drawing.drawCrossContourHatch(ctx, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor, lineWidth)` bends them around a cylindrical form instead.
 
-    ctx.save();
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 1.2;
-    ctx.lineCap = 'round';
+Pick by intent, not by appearance:
 
-    for (let i = 0; i < count; i++) {
-        const sx = origin.x + px * (i * spacing);
-        const sy = origin.y + py * (i * spacing);
-        
-        // Slight length variation for natural organic feel
-        const lenVar = length * (0.8 + 0.4 * Math.sin(i * 1.5));
-        const ex = sx + dx * lenVar;
-        const ey = sy + dy * lenVar;
+- **Feathering** transitions a **shadow terminator**. Lines run perpendicular to the shadow edge, densest at the dark end.
+- **Cross-contour hatching** describes **volume**. Lines follow surface curvature, so they read as wrapping around the form.
 
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(ex, ey);
-        ctx.stroke();
-    }
-    ctx.restore();
-}
-```
+Both accept a flat-number overload for the origin.
 
 ---
 
 ## 5. Solid Black Ink Placement (Graphic Chiaroscuro)
+
+> **Implemented by**: no dedicated call — solid blacks are `ctx.fill(...)` decisions. Where a black must transition rather than terminate, break it with `Drawing.createHalftoneDotShader(...)` (§5 of Manual 04) instead of a gradient.
 
 A hallmark of professional comic art is the confident use of **solid black ink shapes** (`#0a0a0c`):
 - **Inside the mouth cavity** (behind teeth).
 - **Under the jaw and chin** (cast shadow onto the throat).
 - **In the deepest crevices between hair clumps**.
 - **In the fold troughs of the coat and collar**.
+
+---
+
+## 6. Constructing It: A Runnable Inking Sheet
+
+The tiers of §1 are literally the `maxThickness` argument. This sheet draws all three, then both hatching modes side by side.
+
+```javascript
+// Inking reference sheet: three weight tiers, then feathering vs cross-contour.
+const canvas = createCanvas(760, 540);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#faf8f3';
+ctx.fillRect(0, 0, 760, 540);
+
+// §1 — Tier selection IS the parameter. Same curve, three weights.
+const tiers = [
+    { y: 110, w: 9.0, label: 'contour silhouette' },
+    { y: 230, w: 4.5, label: 'interior form' },
+    { y: 350, w: 1.8, label: 'detail' }
+];
+for (const t of tiers) {
+    Drawing.drawTaperedStroke(ctx,
+        { x: 90, y: t.y },
+        { x: 260, y: t.y - 66 },
+        { x: 470, y: t.y + 66 },
+        { x: 660, y: t.y },
+        t.w, '#0a0a0c');
+    log(t.label + ' -> maxThickness ' + t.w);
+}
+
+// §4 — Feathering transitions a terminator: lines perpendicular to the edge.
+Drawing.drawFeathering(ctx, { x: 120, y: 470 }, 285, 14, 58, 9, '#0a0a0c', 1.2);
+
+// §4 — Cross-contour describes volume: arcs follow the form's curvature.
+Drawing.drawCrossContourHatch(ctx, 520, 470, 110, 42, -0.5, 3.2, 10, '#0a0a0c', 1.2);
+
+canvas;
+```

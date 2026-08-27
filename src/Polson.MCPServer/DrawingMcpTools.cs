@@ -21,10 +21,11 @@ public class DrawingMcpTools
     #endregion
 
     #region Constructors
-    public DrawingMcpTools(JsDrawingEngine? engine = null, SessionRegistry? registry = null)
+    public DrawingMcpTools(JsDrawingEngine? engine = null, SessionRegistry? registry = null, IKnowledgeIndex? knowledge = null)
     {
         Engine = engine ?? new JsDrawingEngine();
         Registry = registry ?? new SessionRegistry();
+        Knowledge = knowledge ?? new LocalKnowledgeIndex();
     }
     #endregion
 
@@ -32,9 +33,63 @@ public class DrawingMcpTools
     public JsDrawingEngine Engine { get; }
 
     public SessionRegistry Registry { get; }
+
+    public IKnowledgeIndex Knowledge { get; }
     #endregion
 
     #region Methods
+    [McpServerTool(Name = "Search")]
+    [Description("Searches the studio's design knowledge and API reference for passages relevant to a technique, " +
+        "and returns them ranked with the SDK calls that implement them. The corpus is the studio manuals — classical " +
+        "drawing, perspective, lighting, anatomy, composition, logo geometry, typography, distilled from the studio " +
+        "reference library — plus the Polson JS SDK core and schema documents. CALL THIS FIRST when you know what you " +
+        "want to draw but not how the studio does it (e.g. 'two point perspective box', 'cast shadow falloff', " +
+        "'golden ratio logo grid', 'optical kerning'). Each result carries a resource URI to read in full.")]
+    public async Task<JsonObject> Search(
+        [Description("What you are trying to do or find, in natural language or as an API name (e.g. 'construct a perspective cylinder').")] string query,
+        [Description("Number of passages to return (1-25; default 5).")] int? k = null,
+        [Description("Corpus to search: 'all' (default), 'manual' for design theory only, 'sdk' for the API reference only.")] string? scope = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var searchScope = scope?.ToLowerInvariant() switch
+        {
+            "manual" or "manuals" or "theory" or "design" => KnowledgeScope.Manual,
+            "sdk" or "api" or "reference" => KnowledgeScope.Sdk,
+            _ => KnowledgeScope.All
+        };
+
+        var hits = await Knowledge.SearchAsync(query, k ?? 5, searchScope, cancellationToken);
+
+        var results = new JsonArray();
+        foreach (var hit in hits)
+        {
+            results.Add(new JsonObject
+            {
+                ["uri"] = hit.Uri,
+                ["title"] = hit.Title,
+                ["section"] = hit.Section,
+                ["source"] = hit.Source,
+                ["score"] = hit.Score,
+                ["apis"] = new JsonArray([.. hit.Apis.Select(a => (JsonNode)JsonValue.Create(a)!)]),
+                ["text"] = hit.Text
+            });
+        }
+
+        return new JsonObject
+        {
+            ["query"] = query,
+            ["scope"] = searchScope.ToString().ToLowerInvariant(),
+            ["backend"] = Knowledge.Name,
+            ["count"] = results.Count,
+            ["results"] = results,
+            ["hint"] = results.Count == 0
+                ? "No passages matched. Try fewer or more general words, or read `polson://manual/index` for the manual catalogue."
+                : "Read the `uri` of a result for the full section. Confirm exact call signatures in `polson://sdk/core/{Area}` before writing the script."
+        };
+    }
+
     [McpServerTool(Name = "ExecuteScript")]
     [Description("Executes a JavaScript drawing script inside the sandboxed graphics engine, supporting Snap.svg vector graphics, HTML5 2D Canvas, and Skia procedural shaders, filters, and image processing. Automatically renders returned paper/canvas/bitmap/image-data to WebP/PNG/JPEG bytes and SVG markup.")]
     public async Task<DrawingExecutionResult> ExecuteScript(

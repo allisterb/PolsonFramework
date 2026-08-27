@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp:polson:*"
+    ],
+    "deny": [
+      "bash:node*",
+      "bash:python*",
+      "bash:npm*"
+    ]
+  }
+}

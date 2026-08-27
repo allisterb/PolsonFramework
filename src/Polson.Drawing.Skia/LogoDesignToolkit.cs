@@ -1028,7 +1028,7 @@ public class LogoDesignToolkit
     #region Scale Stress Testing and Brand Sheets
     public void GenerateFaviconScaleTest(CanvasRenderingContext2D ctx, object drawMarkFn, object? options = null)
     {
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var scales = new[] { 16, 24, 32, 48, 64, 128, 256 };
 
         ctx.save();

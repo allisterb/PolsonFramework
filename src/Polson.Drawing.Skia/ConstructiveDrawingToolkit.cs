@@ -19,7 +19,7 @@ public class ConstructiveDrawingToolkit
 
         if (pt is Point2D p2d) return p2d;
 
-        if (pt is IDictionary dict)
+        if (JsInterop.AsDict(pt) is IDictionary dict)
         {
             var x = dict.Contains("x") ? Convert.ToSingle(dict["x"], CultureInfo.InvariantCulture)
                   : dict.Contains("X") ? Convert.ToSingle(dict["X"], CultureInfo.InvariantCulture)
@@ -169,14 +169,14 @@ public class ConstructiveDrawingToolkit
     public void drawLoomisWireframe(CanvasRenderingContext2D ctx, object headObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (headObj is not IDictionary head)
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
             throw new ArgumentException("headObj must be a valid dictionary from createLoomisHead", nameof(headObj));
 
-        var optDict = options as IDictionary;
+        var optDict = JsInterop.AsDict(options);
         var blueLine = optDict?["blueLineColor"]?.ToString() ?? "#4a90e2";
         var graphite = optDict?["graphiteColor"]?.ToString() ?? "#444444";
 
-        var unit = head["unit"] as IDictionary;
+        var unit = JsInterop.AsDict(head["unit"]);
         var H = unit != null && unit.Contains("H") ? Convert.ToSingle(unit["H"], CultureInfo.InvariantCulture) : 200f;
         var W = unit != null && unit.Contains("W") ? Convert.ToSingle(unit["W"], CultureInfo.InvariantCulture) : 150f;
 
@@ -188,24 +188,24 @@ public class ConstructiveDrawingToolkit
         var mouthCenter = ExtractPoint(head["mouthCenter"]);
         var chin = ExtractPoint(head["chin"]);
 
-        var jaw = head["jaw"] as IDictionary;
+        var jaw = JsInterop.AsDict(head["jaw"]);
         var ear = ExtractPoint(jaw?["ear"]);
         var jawAngle = ExtractPoint(jaw?["angle"]);
         var cheekApex = ExtractPoint(jaw?["cheekApex"]);
 
-        var nearEye = head["nearEye"] as IDictionary;
+        var nearEye = JsInterop.AsDict(head["nearEye"]);
         var nearInner = ExtractPoint(nearEye?["inner"]);
         var nearOuter = ExtractPoint(nearEye?["outer"]);
 
-        var farEye = head["farEye"] as IDictionary;
+        var farEye = JsInterop.AsDict(head["farEye"]);
         var farInner = ExtractPoint(farEye?["inner"]);
         var farOuter = ExtractPoint(farEye?["outer"]);
 
-        var noseWedge = head["noseWedge"] as IDictionary;
+        var noseWedge = JsInterop.AsDict(head["noseWedge"]);
         var bridgeTop = ExtractPoint(noseWedge?["bridgeTop"]);
         var noseApex = ExtractPoint(noseWedge?["apex"]);
 
-        var temporal = head["temporalOval"] as IDictionary;
+        var temporal = JsInterop.AsDict(head["temporalOval"]);
         var tempCx = temporal != null && temporal.Contains("cx") ? Convert.ToSingle(temporal["cx"], CultureInfo.InvariantCulture) : origin.X;
         var tempCy = temporal != null && temporal.Contains("cy") ? Convert.ToSingle(temporal["cy"], CultureInfo.InvariantCulture) : origin.Y;
         var tempRx = temporal != null && temporal.Contains("rx") ? Convert.ToSingle(temporal["rx"], CultureInfo.InvariantCulture) : W * 0.3f;
@@ -288,9 +288,9 @@ public class ConstructiveDrawingToolkit
     public void drawComicEye(CanvasRenderingContext2D ctx, object eyeObj, bool isFar = false, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (eyeObj is not IDictionary eye) return;
+        if (JsInterop.AsDict(eyeObj) is not IDictionary eye) return;
 
-        var optDict = options as IDictionary;
+        var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
         var irisColor = optDict?["irisColor"]?.ToString() ?? "#3b6884";
         var scleraColor = optDict?["scleraColor"]?.ToString() ?? "#f1f4f7";
@@ -368,9 +368,9 @@ public class ConstructiveDrawingToolkit
     public void drawComicNose(CanvasRenderingContext2D ctx, object noseObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (noseObj is not IDictionary nose) return;
+        if (JsInterop.AsDict(noseObj) is not IDictionary nose) return;
 
-        var optDict = options as IDictionary;
+        var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
         var shadowColor = optDict?["shadowColor"]?.ToString() ?? "#b06f4c";
 
@@ -412,9 +412,9 @@ public class ConstructiveDrawingToolkit
     public void drawComicMouth(CanvasRenderingContext2D ctx, object mouthObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (mouthObj is not IDictionary mouth) return;
+        if (JsInterop.AsDict(mouthObj) is not IDictionary mouth) return;
 
-        var optDict = options as IDictionary;
+        var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
         var lipColor = optDict?["lipColor"]?.ToString() ?? "#b84848";
         var teethColor = optDict?["teethColor"]?.ToString() ?? "#fbf8ee";
@@ -654,7 +654,7 @@ public class ConstructiveDrawingToolkit
     #region Procedural Shaders & Material Presets
     public SKShader createHalftoneDotShader(object? options = null)
     {
-        var optDict = options as IDictionary;
+        var optDict = JsInterop.AsDict(options);
         var dotSpacing = optDict != null && optDict.Contains("dotSpacing")
             ? Convert.ToSingle(optDict["dotSpacing"], CultureInfo.InvariantCulture)
             : 6.5f;
@@ -748,7 +748,7 @@ public class ConstructiveDrawingToolkit
 
     public Dictionary<string, object?> createPerspectiveGrid(object? options = null)
     {
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var type = opt?["type"]?.ToString() ?? "2point";
         var horizonY = opt != null && opt.Contains("horizonY") ? Convert.ToSingle(opt["horizonY"], CultureInfo.InvariantCulture) : 300f;
         var cvX = opt != null && opt.Contains("centerOfVisionX") ? Convert.ToSingle(opt["centerOfVisionX"], CultureInfo.InvariantCulture) : 400f;
@@ -798,9 +798,9 @@ public class ConstructiveDrawingToolkit
     public void drawPerspectiveGrid(CanvasRenderingContext2D ctx, object gridObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (gridObj is not IDictionary grid) return;
+        if (JsInterop.AsDict(gridObj) is not IDictionary grid) return;
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var lineColor = opt?["lineColor"]?.ToString() ?? "#dbe7f2";
         var horizonColor = opt?["horizonColor"]?.ToString() ?? "#4a90e2";
         var lineCount = opt != null && opt.Contains("lineCount") ? Convert.ToInt32(opt["lineCount"]) : 14;
@@ -848,7 +848,7 @@ public class ConstructiveDrawingToolkit
 
     public Dictionary<string, object?> createPerspectiveBox(object gridObj, float anchorX, float anchorY, float width, float height, float depth)
     {
-        if (gridObj is not IDictionary grid)
+        if (JsInterop.AsDict(gridObj) is not IDictionary grid)
             throw new ArgumentException("gridObj must be a valid perspective grid dictionary", nameof(gridObj));
 
         var vpL = ExtractPoint(grid["vpL"]);
@@ -909,9 +909,9 @@ public class ConstructiveDrawingToolkit
     public void drawPerspectiveBox(CanvasRenderingContext2D ctx, object boxObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (boxObj is not IDictionary box) return;
+        if (JsInterop.AsDict(boxObj) is not IDictionary box) return;
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var topFill = opt?["topFill"]?.ToString() ?? "#e6f0fa";
         var leftFill = opt?["leftFill"]?.ToString() ?? "#b8d5f2";
         var rightFill = opt?["rightFill"]?.ToString() ?? "#7baad4";
@@ -919,7 +919,7 @@ public class ConstructiveDrawingToolkit
         var strokeWidth = opt != null && opt.Contains("strokeWidth") ? Convert.ToSingle(opt["strokeWidth"], CultureInfo.InvariantCulture) : 1.8f;
         var drawHidden = opt != null && opt.Contains("drawHiddenLines") && Convert.ToBoolean(opt["drawHiddenLines"]);
 
-        var faces = box["faces"] as IDictionary;
+        var faces = JsInterop.AsDict(box["faces"]);
         if (faces == null) return;
 
         void RenderFace(object? faceObj, object? fill)
@@ -971,7 +971,7 @@ public class ConstructiveDrawingToolkit
     public void drawPerspectiveCylinder(CanvasRenderingContext2D ctx, object gridObj, float anchorX, float anchorY, float radius, float height, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var sideFill = opt?["sideFill"]?.ToString() ?? "#b8d5f2";
         var topFill = opt?["topFill"]?.ToString() ?? "#e6f0fa";
         var strokeColor = opt?["strokeColor"]?.ToString() ?? "#2d547d";
@@ -1001,10 +1001,14 @@ public class ConstructiveDrawingToolkit
         // 1. Cylinder Body
         ctx.fillStyle = sideFill;
         ctx.beginPath();
-        ctx.moveTo(v1.X, botCenter.Y);
-        ctx.lineTo(v5.X, topCenter.Y);
-        ctx.ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, 0f, MathF.PI);
-        ctx.lineTo(v2.X, botCenter.Y);
+        // Left contour up, across the FRONT of the top ellipse, right contour down, then back
+        // along the front of the bottom ellipse. Both arcs must start at the tangent extreme they
+        // meet (angle PI on the left, 0 on the right) — sweeping either from the far side folds the
+        // body into a bowtie. The contours sit at center +/- rx so they stay tangent to the arcs.
+        ctx.moveTo(botCenter.X - rx, botCenter.Y);
+        ctx.lineTo(topCenter.X - rx, topCenter.Y);
+        ctx.ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, MathF.PI, 0f, true);
+        ctx.lineTo(botCenter.X + rx, botCenter.Y);
         ctx.ellipse(botCenter.X, botCenter.Y, rx, ry, 0f, 0f, MathF.PI);
         ctx.closePath();
         ctx.fill();
@@ -1013,10 +1017,10 @@ public class ConstructiveDrawingToolkit
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = strokeWidth;
         ctx.beginPath();
-        ctx.moveTo(v1.X, botCenter.Y);
-        ctx.lineTo(v5.X, topCenter.Y);
-        ctx.moveTo(v2.X, botCenter.Y);
-        ctx.lineTo(v6.X, topCenter.Y);
+        ctx.moveTo(botCenter.X - rx, botCenter.Y);
+        ctx.lineTo(topCenter.X - rx, topCenter.Y);
+        ctx.moveTo(botCenter.X + rx, botCenter.Y);
+        ctx.lineTo(topCenter.X + rx, topCenter.Y);
         ctx.stroke();
 
         // Bottom ellipse arc
@@ -1115,52 +1119,66 @@ public class ConstructiveDrawingToolkit
     public Dictionary<string, object?> projectCastShadow(object lightSource, float groundY, object objectVerticesOrBounds, object? options = null)
     {
         var light = ExtractPoint(lightSource);
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var shadowColor = opt?["shadowColor"]?.ToString() ?? "#1c2733";
         var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.65f;
         var penumbraBlur = opt != null && opt.Contains("penumbraBlur") ? Convert.ToSingle(opt["penumbraBlur"], CultureInfo.InvariantCulture) : 6f;
 
-        var shadowPts = new List<Dictionary<string, object?>>();
-        var basePts = new List<Dictionary<string, object?>>();
+        // Every light ray meets the ground line at groundY, so the projected vertices are collinear:
+        // a ground plane seen edge-on in a 2D elevation genuinely has no thickness. The footprint only
+        // becomes a fillable shape once the ground is given an apparent depth, which cannot be derived
+        // from 2D inputs — groundDepth supplies it. The light ray still sets the shadow's length and
+        // direction; groundDepth only adds the dimension the projection cannot know.
+        var basePts = new List<Point2D>();
+        var farPts = new List<Point2D>();
 
-        if (objectVerticesOrBounds is IDictionary b && b.Contains("width") && b.Contains("height"))
+        Point2D ProjectToGround(Point2D top)
+        {
+            var dy = top.Y - light.Y;
+            if (MathF.Abs(dy) < 0.001f) dy = 0.001f;
+            var t = (groundY - light.Y) / dy;
+            return new Point2D(light.X + t * (top.X - light.X), groundY);
+        }
+
+        if (JsInterop.AsDict(objectVerticesOrBounds) is IDictionary b && b.Contains("width") && b.Contains("height"))
         {
             var bx = Convert.ToSingle(b["x"], CultureInfo.InvariantCulture);
             var by = Convert.ToSingle(b["y"], CultureInfo.InvariantCulture);
             var bw = Convert.ToSingle(b["width"], CultureInfo.InvariantCulture);
-            var bh = Convert.ToSingle(b["height"], CultureInfo.InvariantCulture);
 
-            var topL = new Point2D(bx, by);
-            var topR = new Point2D(bx + bw, by);
-            var botL = new Point2D(bx, groundY);
-            var botR = new Point2D(bx + bw, groundY);
-
-            Point2D Project(Point2D top)
-            {
-                var dy = top.Y - light.Y;
-                if (MathF.Abs(dy) < 0.001f) dy = 0.001f;
-                var t = (groundY - light.Y) / dy;
-                return new Point2D(light.X + t * (top.X - light.X), groundY);
-            }
-
-            var sL = Project(topL);
-            var sR = Project(topR);
-
-            shadowPts.Add(ToDict(botL));
-            shadowPts.Add(ToDict(sL));
-            shadowPts.Add(ToDict(sR));
-            shadowPts.Add(ToDict(botR));
+            basePts.Add(new Point2D(bx, groundY));
+            basePts.Add(new Point2D(bx + bw, groundY));
+            farPts.Add(ProjectToGround(new Point2D(bx, by)));
+            farPts.Add(ProjectToGround(new Point2D(bx + bw, by)));
         }
         else if (objectVerticesOrBounds is IList list)
         {
             foreach (var item in list)
             {
                 var pt = ExtractPoint(item);
-                var dy = pt.Y - light.Y;
-                if (MathF.Abs(dy) < 0.001f) dy = 0.001f;
-                var t = (groundY - light.Y) / dy;
-                var s = new Point2D(light.X + t * (pt.X - light.X), groundY);
-                shadowPts.Add(ToDict(s));
+                basePts.Add(new Point2D(pt.X, groundY));
+                farPts.Add(ProjectToGround(pt));
+            }
+        }
+
+        var shadowPts = new List<Dictionary<string, object?>>();
+        var groundDepth = 0f;
+
+        if (basePts.Count >= 2)
+        {
+            // Default the depth from the contact footprint, so a caller that supplies no option still
+            // gets a plausible shadow rather than an invisible sliver.
+            var extent = basePts.Max(p => p.X) - basePts.Min(p => p.X);
+            groundDepth = opt != null && opt.Contains("groundDepth")
+                ? Convert.ToSingle(opt["groundDepth"], CultureInfo.InvariantCulture)
+                : MathF.Max(4f, extent * 0.20f);
+
+            // Contact edge along the ground line, then the projected edge back the other way, lowered
+            // by groundDepth so the band recedes toward the viewer.
+            foreach (var pt in basePts) shadowPts.Add(ToDict(pt));
+            for (var i = farPts.Count - 1; i >= 0; i--)
+            {
+                shadowPts.Add(ToDict(new Point2D(farPts[i].X, groundY + groundDepth)));
             }
         }
 
@@ -1168,6 +1186,7 @@ public class ConstructiveDrawingToolkit
         {
             ["shadowPolygon"] = shadowPts,
             ["groundY"] = groundY,
+            ["groundDepth"] = groundDepth,
             ["shadowColor"] = shadowColor,
             ["opacity"] = opacity,
             ["penumbraBlur"] = penumbraBlur
@@ -1182,7 +1201,7 @@ public class ConstructiveDrawingToolkit
         var opacity = 0.65f;
         var blur = 6f;
 
-        if (shadowPolygonOrResult is IDictionary res && res.Contains("shadowPolygon"))
+        if (JsInterop.AsDict(shadowPolygonOrResult) is IDictionary res && res.Contains("shadowPolygon"))
         {
             pts = res["shadowPolygon"] as IList;
             if (res.Contains("shadowColor")) shadowColor = res["shadowColor"]?.ToString() ?? shadowColor;
@@ -1194,7 +1213,7 @@ public class ConstructiveDrawingToolkit
             pts = list;
         }
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         if (opt != null)
         {
             if (opt.Contains("shadowColor")) shadowColor = opt["shadowColor"]?.ToString() ?? shadowColor;
@@ -1202,7 +1221,29 @@ public class ConstructiveDrawingToolkit
             if (opt.Contains("blur")) blur = Convert.ToSingle(opt["blur"], CultureInfo.InvariantCulture);
         }
 
-        if (pts == null || pts.Count < 3) return;
+        if (pts == null || pts.Count < 3)
+        {
+            throw new ArgumentException(
+                $"drawCastShadow needs a polygon of at least 3 points, got {pts?.Count ?? 0}. " +
+                "Pass the result of Drawing.projectCastShadow(...) or a point list.",
+                nameof(shadowPolygonOrResult));
+        }
+
+        // A polygon with no area fills to nothing. Report it rather than returning quietly, so a shadow
+        // that silently fails to appear is a visible error instead of a mystery.
+        var corners = new List<Point2D>();
+        for (var i = 0; i < pts.Count; i++) corners.Add(ExtractPoint(pts[i]));
+        var spanX = corners.Max(p => p.X) - corners.Min(p => p.X);
+        var spanY = corners.Max(p => p.Y) - corners.Min(p => p.Y);
+
+        if (spanX < 0.5f || spanY < 0.5f)
+        {
+            throw new ArgumentException(
+                $"drawCastShadow was given a degenerate polygon ({spanX:F2} x {spanY:F2}px) that would fill nothing. " +
+                "A ground plane seen edge-on projects to a line: pass a 'groundDepth' option to " +
+                "Drawing.projectCastShadow(...) to give the footprint depth.",
+                nameof(shadowPolygonOrResult));
+        }
 
         ctx.save();
         ctx.globalAlpha = opacity;
@@ -1230,7 +1271,7 @@ public class ConstructiveDrawingToolkit
     public void renderVolumetricSphere(CanvasRenderingContext2D ctx, float cx, float cy, float radius, object? lightDirection = null, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var baseColor = opt?["baseColor"]?.ToString() ?? "#c4a382";
         var shadowColor = opt?["shadowColor"]?.ToString() ?? "#3a281e";
         var highlightColor = opt?["highlightColor"]?.ToString() ?? "#fff6e8";
@@ -1315,7 +1356,7 @@ public class ConstructiveDrawingToolkit
     public void renderVolumetricCylinder(CanvasRenderingContext2D ctx, float x, float y, float width, float height, object? lightDirection = null, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var baseColor = opt?["baseColor"]?.ToString() ?? "#c4a382";
         var shadowColor = opt?["shadowColor"]?.ToString() ?? "#3a281e";
         var highlightColor = opt?["highlightColor"]?.ToString() ?? "#fff6e8";
@@ -1365,7 +1406,7 @@ public class ConstructiveDrawingToolkit
 
     public Dictionary<string, object?> createThreePointLighting(object? options = null)
     {
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var keyColor = opt?["keyColor"]?.ToString() ?? "#fff3d6";
         var fillColor = opt?["fillColor"]?.ToString() ?? "#8cb5db";
         var rimColor = opt?["rimColor"]?.ToString() ?? "#ffffff";
@@ -1395,7 +1436,7 @@ public class ConstructiveDrawingToolkit
         ctx.lineWidth = thickness;
         ctx.lineCap = "round";
 
-        if (boundsOrPts is IDictionary b && b.Contains("x") && b.Contains("width"))
+        if (JsInterop.AsDict(boundsOrPts) is IDictionary b && b.Contains("x") && b.Contains("width"))
         {
             var bx = Convert.ToSingle(b["x"], CultureInfo.InvariantCulture);
             var by = Convert.ToSingle(b["y"], CultureInfo.InvariantCulture);
@@ -1433,7 +1474,7 @@ public class ConstructiveDrawingToolkit
 
     public SKShader createVolumetricSphereShader(object? options = null)
     {
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var lightColor = opt?["lightColor"]?.ToString() ?? "#fff6e8";
         var baseColor = opt?["baseColor"]?.ToString() ?? "#c4a382";
         var shadowColor = opt?["shadowColor"]?.ToString() ?? "#3a281e";
@@ -1489,7 +1530,7 @@ public class ConstructiveDrawingToolkit
     #region Full-Body Anatomy, Mannequins & Expressions
     public Dictionary<string, object?> createMannequinFigure(float originX, float originY, float totalHeight = 560f, object? options = null)
     {
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var H = totalHeight / 8f;
         var shoulderTiltDeg = opt != null && opt.Contains("shoulderTiltDeg") ? Convert.ToSingle(opt["shoulderTiltDeg"], CultureInfo.InvariantCulture) : -6f;
         var pelvicTiltDeg = opt != null && opt.Contains("pelvicTiltDeg") ? Convert.ToSingle(opt["pelvicTiltDeg"], CultureInfo.InvariantCulture) : 6f;
@@ -1570,14 +1611,14 @@ public class ConstructiveDrawingToolkit
     public void drawMannequinWireframe(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (figureObj is not IDictionary fig) return;
+        if (JsInterop.AsDict(figureObj) is not IDictionary fig) return;
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var blueLine = opt?["blueLineColor"]?.ToString() ?? "#4a90e2";
         var graphite = opt?["graphiteColor"]?.ToString() ?? "#444444";
         var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.5f;
 
-        var head = fig["head"] as IDictionary;
+        var head = JsInterop.AsDict(fig["head"]);
         var headCenter = ExtractPoint(head?["center"]);
         var headRx = head != null && head.Contains("rx") ? Convert.ToSingle(head["rx"], CultureInfo.InvariantCulture) : 25f;
         var headRy = head != null && head.Contains("ry") ? Convert.ToSingle(head["ry"], CultureInfo.InvariantCulture) : 35f;
@@ -1587,20 +1628,20 @@ public class ConstructiveDrawingToolkit
         var navel = ExtractPoint(fig["navel"]);
         var crotch = ExtractPoint(fig["crotch"]);
 
-        var ribcage = fig["ribcage"] as IDictionary;
+        var ribcage = JsInterop.AsDict(fig["ribcage"]);
         var ribCenter = ExtractPoint(ribcage?["center"]);
         var ribRx = ribcage != null && ribcage.Contains("rx") ? Convert.ToSingle(ribcage["rx"], CultureInfo.InvariantCulture) : 60f;
         var ribRy = ribcage != null && ribcage.Contains("ry") ? Convert.ToSingle(ribcage["ry"], CultureInfo.InvariantCulture) : 50f;
 
-        var pelvis = fig["pelvis"] as IDictionary;
+        var pelvis = JsInterop.AsDict(fig["pelvis"]);
         var pelCenter = ExtractPoint(pelvis?["center"]);
         var pelRx = pelvis != null && pelvis.Contains("rx") ? Convert.ToSingle(pelvis["rx"], CultureInfo.InvariantCulture) : 50f;
         var pelRy = pelvis != null && pelvis.Contains("ry") ? Convert.ToSingle(pelvis["ry"], CultureInfo.InvariantCulture) : 32f;
 
-        var lArm = fig["leftArm"] as IDictionary;
-        var rArm = fig["rightArm"] as IDictionary;
-        var lLeg = fig["leftLeg"] as IDictionary;
-        var rLeg = fig["rightLeg"] as IDictionary;
+        var lArm = JsInterop.AsDict(fig["leftArm"]);
+        var rArm = JsInterop.AsDict(fig["rightArm"]);
+        var lLeg = JsInterop.AsDict(fig["leftLeg"]);
+        var rLeg = JsInterop.AsDict(fig["rightLeg"]);
 
         ctx.save();
 
@@ -1663,9 +1704,9 @@ public class ConstructiveDrawingToolkit
     public void drawMannequinSolid(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (figureObj is not IDictionary fig) return;
+        if (JsInterop.AsDict(figureObj) is not IDictionary fig) return;
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var fillColor = opt?["fillColor"]?.ToString() ?? "#dbe7f2";
         var shadowColor = opt?["shadowColor"]?.ToString() ?? "#9bbcd9";
         var strokeColor = opt?["strokeColor"]?.ToString() ?? "#2d547d";
@@ -1698,10 +1739,10 @@ public class ConstructiveDrawingToolkit
             ctx.stroke();
         }
 
-        var lLeg = fig["leftLeg"] as IDictionary;
-        var rLeg = fig["rightLeg"] as IDictionary;
-        var lArm = fig["leftArm"] as IDictionary;
-        var rArm = fig["rightArm"] as IDictionary;
+        var lLeg = JsInterop.AsDict(fig["leftLeg"]);
+        var rLeg = JsInterop.AsDict(fig["rightLeg"]);
+        var lArm = JsInterop.AsDict(fig["leftArm"]);
+        var rArm = JsInterop.AsDict(fig["rightArm"]);
 
         // Legs
         if (lLeg != null)
@@ -1716,7 +1757,7 @@ public class ConstructiveDrawingToolkit
         }
 
         // Pelvis
-        var pelvis = fig["pelvis"] as IDictionary;
+        var pelvis = JsInterop.AsDict(fig["pelvis"]);
         var pelCenter = ExtractPoint(pelvis?["center"]);
         var pelRx = pelvis != null && pelvis.Contains("rx") ? Convert.ToSingle(pelvis["rx"], CultureInfo.InvariantCulture) : H * 0.70f;
         var pelRy = pelvis != null && pelvis.Contains("ry") ? Convert.ToSingle(pelvis["ry"], CultureInfo.InvariantCulture) : H * 0.45f;
@@ -1726,7 +1767,7 @@ public class ConstructiveDrawingToolkit
         ctx.stroke();
 
         // Ribcage
-        var ribcage = fig["ribcage"] as IDictionary;
+        var ribcage = JsInterop.AsDict(fig["ribcage"]);
         var ribCenter = ExtractPoint(ribcage?["center"]);
         var ribRx = ribcage != null && ribcage.Contains("rx") ? Convert.ToSingle(ribcage["rx"], CultureInfo.InvariantCulture) : H * 0.85f;
         var ribRy = ribcage != null && ribcage.Contains("ry") ? Convert.ToSingle(ribcage["ry"], CultureInfo.InvariantCulture) : H * 0.70f;
@@ -1748,7 +1789,7 @@ public class ConstructiveDrawingToolkit
         }
 
         // Head
-        var head = fig["head"] as IDictionary;
+        var head = JsInterop.AsDict(fig["head"]);
         var headCenter = ExtractPoint(head?["center"]);
         var headRx = head != null && head.Contains("rx") ? Convert.ToSingle(head["rx"], CultureInfo.InvariantCulture) : H * 0.36f;
         var headRy = head != null && head.Contains("ry") ? Convert.ToSingle(head["ry"], CultureInfo.InvariantCulture) : H * 0.50f;
@@ -1763,16 +1804,16 @@ public class ConstructiveDrawingToolkit
     public void drawTorsoMusculature(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (figureObj is not IDictionary fig) return;
+        if (JsInterop.AsDict(figureObj) is not IDictionary fig) return;
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var strokeColor = opt?["strokeColor"]?.ToString() ?? "#1a2938";
         var strokeWidth = opt != null && opt.Contains("strokeWidth") ? Convert.ToSingle(opt["strokeWidth"], CultureInfo.InvariantCulture) : 2.0f;
         var H = fig.Contains("headUnit") ? Convert.ToSingle(fig["headUnit"], CultureInfo.InvariantCulture) : 70f;
 
         var sternum = ExtractPoint(fig["sternum"]);
         var navel = ExtractPoint(fig["navel"]);
-        var clavicles = fig["clavicles"] as IDictionary;
+        var clavicles = JsInterop.AsDict(fig["clavicles"]);
         var leftClav = ExtractPoint(clavicles?["left"]);
         var rightClav = ExtractPoint(clavicles?["right"]);
 
@@ -1828,7 +1869,7 @@ public class ConstructiveDrawingToolkit
 
     public Dictionary<string, object?> applyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
     {
-        if (headObj is not IDictionary head)
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
             throw new ArgumentException("headObj must be a valid Loomis head dictionary", nameof(headObj));
 
         // Create shallow clone of dictionary to avoid mutating caller unpredictably
@@ -1836,13 +1877,13 @@ public class ConstructiveDrawingToolkit
         foreach (DictionaryEntry de in head)
             res[de.Key.ToString()!] = de.Value;
 
-        var unit = head["unit"] as IDictionary;
+        var unit = JsInterop.AsDict(head["unit"]);
         var H = unit != null && unit.Contains("H") ? Convert.ToSingle(unit["H"], CultureInfo.InvariantCulture) : 200f;
         var scale = MathF.Max(0.1f, MathF.Min(2.0f, intensity));
 
-        var nearEye = head["nearEye"] as IDictionary;
-        var farEye = head["farEye"] as IDictionary;
-        var mouth = head["mouthGuides"] as IDictionary;
+        var nearEye = JsInterop.AsDict(head["nearEye"]);
+        var farEye = JsInterop.AsDict(head["farEye"]);
+        var mouth = JsInterop.AsDict(head["mouthGuides"]);
         var brow = ExtractPoint(head["brow"]);
 
         var exp = expressionType.Trim().ToLowerInvariant();
@@ -2045,14 +2086,14 @@ public class ConstructiveDrawingToolkit
         {
             grid = createCompositionGrid(ctx.Canvas.Width, ctx.Canvas.Height, typeStr, options);
         }
-        else if (gridObjOrType is IDictionary dict)
+        else if (JsInterop.AsDict(gridObjOrType) is IDictionary dict)
         {
             grid = dict;
         }
 
         if (grid == null) return;
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var lineColor = opt?["lineColor"]?.ToString() ?? "#3ba3d0";
         var pointColor = opt?["pointColor"]?.ToString() ?? "#e74c3c";
         var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.2f;
@@ -2080,7 +2121,7 @@ public class ConstructiveDrawingToolkit
         }
 
         // 2. Draw Focal Power Points
-        if (grid["powerPoints"] is IDictionary pps)
+        if (JsInterop.AsDict(grid["powerPoints"]) is IDictionary pps)
         {
             foreach (DictionaryEntry de in pps)
             {
@@ -2097,7 +2138,7 @@ public class ConstructiveDrawingToolkit
     public void drawVignette(CanvasRenderingContext2D ctx, float width, float height, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var vignetteColor = opt?["vignetteColor"]?.ToString() ?? "#080b10";
         var intensity = opt != null && opt.Contains("intensity") ? Convert.ToSingle(opt["intensity"], CultureInfo.InvariantCulture) : 0.65f;
         var radius = opt != null && opt.Contains("radius") ? Convert.ToSingle(opt["radius"], CultureInfo.InvariantCulture) : MathF.Max(width, height) * 0.72f;
@@ -2123,7 +2164,7 @@ public class ConstructiveDrawingToolkit
         var fp = ExtractPoint(focalPoint);
         if (originPoints is not IList list || list.Count == 0) return;
 
-        var opt = options as IDictionary;
+        var opt = JsInterop.AsDict(options);
         var lineColor = opt?["lineColor"]?.ToString() ?? "#e74c3c";
         var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.2f;
         var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.35f;
@@ -2184,7 +2225,7 @@ public class ConstructiveDrawingToolkit
 
     public Dictionary<string, object?> subdivideProportions(object bounds, string direction = "horizontal", object? ratios = null)
     {
-        var b = bounds as IDictionary;
+        var b = JsInterop.AsDict(bounds);
         var bx = b != null && b.Contains("x") ? Convert.ToSingle(b["x"], CultureInfo.InvariantCulture) : 0f;
         var by = b != null && b.Contains("y") ? Convert.ToSingle(b["y"], CultureInfo.InvariantCulture) : 0f;
         var bw = b != null && b.Contains("width") ? Convert.ToSingle(b["width"], CultureInfo.InvariantCulture) : 800f;

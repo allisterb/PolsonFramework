@@ -342,9 +342,10 @@ public class CanvasRenderingContext2D
     public void cCurveTo(float cpx, float cpy, float x, float y) =>
         quadraticCurveTo(cpx, cpy, x, y);
 
-    public void fill(object? pathOrFillRule = null)
+    public void fill(object? pathOrFillRule = null, object? fillRule = null)
     {
         var path = pathOrFillRule is CanvasPath cp ? cp.Path : _currentPath.Path;
+        ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
         using var paint = _currentState.CreateFillPaint();
         Canvas.SkCanvas.DrawPath(path, paint);
     }
@@ -356,10 +357,25 @@ public class CanvasRenderingContext2D
         Canvas.SkCanvas.DrawPath(p, paint);
     }
 
-    public void clip(object? pathOrFillRule = null)
+    public void clip(object? pathOrFillRule = null, object? fillRule = null)
     {
         var path = pathOrFillRule is CanvasPath cp ? cp.Path : _currentPath.Path;
+        ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
         Canvas.SkCanvas.ClipPath(path, SKClipOperation.Intersect, true);
+    }
+
+    /// <summary>
+    /// Applies the Canvas fill rule to a path. Without this, <c>fill('evenodd')</c> silently falls back to
+    /// non-zero winding, which is what makes a counter cut into a mark — the negative space every logo
+    /// relies on — come out solid.
+    /// </summary>
+    private static void ApplyFillRule(SKPath path, string? rule)
+    {
+        if (string.IsNullOrEmpty(rule)) return;
+
+        path.FillType = rule.Equals("evenodd", StringComparison.OrdinalIgnoreCase)
+            ? SKPathFillType.EvenOdd
+            : SKPathFillType.Winding;
     }
     #endregion
 

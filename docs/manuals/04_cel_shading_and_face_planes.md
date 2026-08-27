@@ -6,6 +6,8 @@
 
 ## 1. Directional Light Vectors & Shadow Terminators
 
+> **Implemented by**: `Drawing.createThreePointLighting(options)` for the rig, and `Drawing.renderVolumetricSphere(...)` / `Drawing.renderVolumetricCylinder(...)` where a form can be rendered volumetrically rather than cel-shaded. Manual 07 covers the full six-zone model this section summarises.
+
 In comic illustration, lighting is typically established by a strong **Key Light** coming from an angle (e.g. upper-left, $\approx 45^\circ$).
 
 ```
@@ -32,6 +34,8 @@ In comic illustration, lighting is typically established by a strong **Key Light
 
 ## 2. The 5 Essential Cel-Shading Planes of the 3/4 Face
 
+> **Implemented by**: no dedicated call — the planes are polygons you fill, but their corners come from the `LoomisHead` landmarks (`head.jaw.cheekApex`, `head.temporalOval`, `head.noseWedge`), not from eyeballed coordinates.
+
 When coloring the face, construct these discrete shadow polygon planes:
 
 1. **The Under-Brow Shadow**:
@@ -49,10 +53,12 @@ When coloring the face, construct these discrete shadow polygon planes:
 
 ## 3. Tiered Color Palette Formulations
 
+> **Implemented by**: nothing — these are data. Declare them as constants, as below. For value structure rather than hue, `Drawing.createNotanPalette(type)` returns curated tonal sets (Manual 09 §3).
+
 Comic colorists never use a single flat color. Every surface has a **4-tier color palette**:
 
 ### A. Skin Tone Tier (Golden Mediterranean / Pirate Tone)
-```javascript
+```js
 const SKIN_TIER = {
     highlight: '#faecd8', // Sunlit forehead, nose tip, cheekbone apex
     base:      '#e8b894', // Main facial skin tone
@@ -63,7 +69,7 @@ const SKIN_TIER = {
 ```
 
 ### B. Red Hair Tone Tier (Fiery Copper-Auburn)
-```javascript
+```js
 const HAIR_TIER = {
     sunlit:    '#f5a458', // Blazing gold rim highlights on windward edges
     highlight: '#e88b48', // Warm orange-amber lock surfaces
@@ -74,7 +80,7 @@ const HAIR_TIER = {
 ```
 
 ### C. Bandana & Coat Tier (Weathered Navy / Charcoal)
-```javascript
+```js
 const CLOTHING_TIER = {
     bandanaHighlight: '#4e6b8a',
     bandanaBase:      '#2f4255',
@@ -92,8 +98,10 @@ const CLOTHING_TIER = {
 
 ## 4. Atmospheric Sky & Background Rigging
 
+> **Implemented by**: `ctx.createLinearGradient(...)` for the sky ramp, and `Drawing.createAtmosphericCloudShader(...)` for vapour. The cloud silhouettes themselves are hand-drawn Bézier masses — there is no cloud primitive.
+
 ### Sky Gradient
-```javascript
+```js
 function drawAtmosphericSky(ctx, width, height) {
     const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
     skyGrad.addColorStop(0.0, '#4a7c9d'); // Deeper zenith blue
@@ -107,7 +115,7 @@ function drawAtmosphericSky(ctx, width, height) {
 
 ### Billowy Comic Cloud Masses
 Clouds in comics are constructed using overlapping circular arcs with a **flat, shaded base plane**:
-```javascript
+```js
 function drawComicCloud(ctx, cx, cy, scale = 1.0) {
     ctx.save();
     ctx.translate(cx, cy);
@@ -143,11 +151,25 @@ function drawComicCloud(ctx, cx, cy, scale = 1.0) {
 
 ## 5. Polson SDK Shader & Material Recipes
 
+> **Implemented by**: `Drawing.createHalftoneDotShader(options)`, `Drawing.createRopeFiberShader(fx, fy, octaves, seed)`, and `Drawing.createAtmosphericCloudShader(fx, fy, octaves, seed)` — three presets over `Skia.Shader`. Reach for these before hand-writing SkSL.
+
 To achieve professional comic texture and lighting that elevates drawings far beyond flat vector shapes, use these native Polson SDK shader pipelines:
 
 ### A. Classic Comic Half-Tone / Ben-Day Dot Shading (SkSL)
 In authentic comic printing, cel-shadows blend into skin and cloth via half-tone dots:
-```javascript
+`Drawing.createHalftoneDotShader({ dotSpacing, shadowColor, resolution })` → `SKShader` returns this shader ready to use — reach for it before hand-writing SkSL:
+
+```js
+const halftone = Drawing.createHalftoneDotShader({ dotSpacing: 6.5, shadowColor: '#1c2733' });
+ctx.save();
+ctx.fillStyle = halftone;
+ctx.fill(jawShadowPath);
+ctx.restore();
+```
+
+Drop `dotSpacing` toward `4` for fine 1960s Ben-Day; raise it toward `10` for coarse pulp newsprint. Hand-write the SkSL below only when you need a dot profile the toolkit does not offer, such as elliptical or angled dots.
+
+```js
 const halfToneSkSL = `
     uniform float2 u_resolution;
     uniform float4 u_shadowColor;
@@ -177,39 +199,97 @@ ctx.restore();
 
 ### B. Fibrous Hemp Rope & Wood Mast Texture (`perlinNoiseTurbulence`)
 Give ship rigging authentic twisted cordage fiber rather than flat plastic tubes:
-```javascript
-function drawTexturedShroud(ctx, path, baseColor, width) {
-    ctx.save();
-    // Base stroke
-    ctx.strokeStyle = baseColor;
-    ctx.lineWidth = width;
-    ctx.stroke(path);
+`Drawing.createRopeFiberShader(frequencyX, frequencyY, octaves, seed)` → `SKShader` is exactly this turbulence preset — the stretched-Y noise that reads as twisted cordage. Its defaults (`0.08, 0.40, 3, 42`) are the rope values; raise `frequencyY` for tighter twist.
 
-    // Procedural fiber noise overlay
-    const fiberShader = Skia.Shader.perlinNoiseTurbulence(0.08, 0.40, 3, 42);
-    ctx.globalCompositeOperation = 'overlay';
-    ctx.strokeStyle = fiberShader;
-    ctx.lineWidth = width - 2;
-    ctx.stroke(path);
-    ctx.restore();
-}
+```js
+const fiber = Drawing.createRopeFiberShader();
+ctx.save();
+ctx.strokeStyle = baseColor;          // solid base pass
+ctx.lineWidth = width;
+ctx.stroke(shroudPath);
+ctx.globalCompositeOperation = 'overlay';   // fibre pass rides on top
+ctx.strokeStyle = fiber;
+ctx.lineWidth = width - 2;
+ctx.stroke(shroudPath);
+ctx.restore();
 ```
+
+The two-pass structure matters: the base stroke carries the local colour, the overlay pass carries only texture. A single pass with the shader alone loses the rope's value.
 
 ### C. Organic Cloud Volume (`perlinNoiseFractal`)
 Layer fractal turbulence over cloud puffs for atmospheric sea-air depth:
-```javascript
-function drawAtmosphericClouds(ctx, width, height) {
-    const cloudNoise = Skia.Shader.perlinNoiseFractal(0.012, 0.012, 4, 101);
-    ctx.save();
-    ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = cloudNoise;
-    ctx.fillRect(0, 0, width, height * 0.45);
-    ctx.restore();
-}
+`Drawing.createAtmosphericCloudShader(frequencyX, frequencyY, octaves, seed)` → `SKShader` is the isotropic fractal preset for air and vapour. Its defaults (`0.015, 0.015, 4, 101`) are the sea-air values.
+
+```js
+const cloudNoise = Drawing.createAtmosphericCloudShader();
+ctx.save();
+ctx.globalCompositeOperation = 'soft-light';
+ctx.fillStyle = cloudNoise;
+ctx.fillRect(0, 0, width, height * 0.45);
+ctx.restore();
 ```
+
+`soft-light` is the operative choice — the noise must modulate the sky already painted underneath, not replace it.
 
 ### D. Layer Blending for High-Impact Comic Lighting
 - **`ctx.globalCompositeOperation = 'multiply'`**: Apply dark amber shadow glazes over skin without obscuring black ink hatching.
 - **`ctx.globalCompositeOperation = 'overlay'`**: Paint golden-orange sunlight rim highlights along the windward hair curls and nose ridge.
 - **`ctx.globalCompositeOperation = 'screen'`**: Soften background rigging into atmospheric sky haze.
 
+
+---
+
+## 6. Constructing It: A Runnable Background Plate
+
+Palette as data, sky as a ramp, and the three shader presets doing the work that raw SkSL was doing before.
+
+```javascript
+// Coastal background plate: sky ramp → vapour → rope → Ben-Day shadow plane.
+const canvas = createCanvas(760, 560);
+const ctx = canvas.getContext('2d');
+
+// §3 — Palettes are data. Declare the tier, then reference it.
+const SKIN = { highlight: '#faecd8', base: '#e8c9a0', shadow: '#b07d52', core: '#7d4f2e' };
+
+// §4 — Sky ramp first.
+const sky = ctx.createLinearGradient(0, 0, 0, 560);
+sky.addColorStop(0, '#2f6fa8');
+sky.addColorStop(1, '#bcd9ea');
+ctx.fillStyle = sky;
+ctx.fillRect(0, 0, 760, 560);
+
+// §5C — Vapour modulates the sky beneath it; 'soft-light' is the operative choice.
+const clouds = Drawing.createAtmosphericCloudShader();
+ctx.save();
+ctx.globalCompositeOperation = 'soft-light';
+ctx.fillStyle = clouds;
+ctx.fillRect(0, 0, 760, 250);
+ctx.restore();
+
+// §5B — Rope in two passes: solid base carries colour, overlay carries fibre.
+const fiber = Drawing.createRopeFiberShader();
+ctx.save();
+ctx.strokeStyle = '#8a6a44';
+ctx.lineWidth = 14;
+ctx.beginPath(); ctx.moveTo(120, 560); ctx.lineTo(250, 40); ctx.stroke();
+ctx.globalCompositeOperation = 'overlay';
+ctx.strokeStyle = fiber;
+ctx.lineWidth = 12;
+ctx.beginPath(); ctx.moveTo(120, 560); ctx.lineTo(250, 40); ctx.stroke();
+ctx.restore();
+
+// §5A — Ben-Day dots break a shadow plane where a gradient would go muddy.
+const halftone = Drawing.createHalftoneDotShader({ dotSpacing: 6.5, shadowColor: SKIN.core });
+ctx.save();
+ctx.fillStyle = halftone;
+ctx.beginPath();
+ctx.moveTo(430, 300);
+ctx.lineTo(690, 260);
+ctx.lineTo(660, 470);
+ctx.lineTo(440, 440);
+ctx.closePath();
+ctx.fill();
+ctx.restore();
+
+canvas;
+```

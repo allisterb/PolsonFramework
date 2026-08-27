@@ -137,9 +137,11 @@ public class PolsonMCPServer : Runtime
 
     private static void RegisterToolsAndResources(IMcpServerBuilder mcp, SessionRegistry registry)
     {
-        mcp.WithTools(new DrawingMcpTools(new JsDrawingEngine(), registry));
+        mcp.WithTools(new DrawingMcpTools(new JsDrawingEngine(), registry, new LocalKnowledgeIndex()));
         mcp.WithResources<PolsonResources>();
         mcp.WithResources(PolsonResources.AreaResources(PolsonResources.Docs));
+        mcp.WithResources<PolsonManuals>();
+        mcp.WithResources(PolsonManuals.ManualResources());
     }
     #endregion
 }

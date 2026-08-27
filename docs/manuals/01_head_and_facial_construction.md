@@ -6,6 +6,8 @@
 
 ## 1. The Core Geometric Concept: Cranium Sphere + Facial Mask
 
+> **Implemented by**: `Drawing.createLoomisHead(originX, originY, headHeight, yawDeg, pitchDeg)` → `LoomisHead`, then `Drawing.drawLoomisWireframe(ctx, head, options)` for the non-repro-blue construction pass. Signatures: `polson://sdk/core/Drawing`; model: `polson://sdk/schema/Drawing`.
+
 Human head anatomy is not a collection of floating 2D shapes; it is a **3D volume** composed of two primary masses:
 1. **The Cranial Sphere (Braincase)**: A 3D ball representing the skull.
 2. **The Facial Mask & Jaw Plane**: A tapered wedge/cylinder extending downward and forward from the cranial sphere.
@@ -36,6 +38,8 @@ Human head anatomy is not a collection of floating 2D shapes; it is a **3D volum
 
 ## 2. The Loomis Rule of Thirds (Exact Proportions)
 
+> **Implemented by**: these proportions are already resolved on the returned model — `head.unit.thirdH`, `head.unit.eyeW`, and `head.eyeLineY`. Use `Drawing.computeRelativeDistance(headHeight, a, b)` to measure any two landmarks in head-length units rather than pixels.
+
 The vertical face is divided into **three equal segments**, plus the cranial dome:
 
 | Section | Vertical Bounds | Anatomical Landmarks | Canvas Coordinate Formula |
@@ -60,137 +64,48 @@ The vertical face is divided into **three equal segments**, plus the cranial dom
 
 ## 3. Constructing a 3/4 View Head in Canvas2D
 
+> **Implemented by**: `Drawing.createLoomisHead(...)`. The `yawDeg` argument drives the 3/4 turn; `pitchDeg` tilts it.
+
 In a 3/4 view, the head is rotated around the vertical Y-axis by yaw angle $\theta \approx 30^\circ\text{ to }45^\circ$:
 
-### Mathematical Anchor Point Formulas
-```javascript
-function computeLoomisHeadAnchors(centerX, centerY, radius, yawAngleDeg = 35, tiltAngleDeg = 5) {
-    const rad = (yawAngleDeg * Math.PI) / 180;
-    const tilt = (tiltAngleDeg * Math.PI) / 180;
+`Drawing.createLoomisHead(originX, originY, headHeight, yawDeg, pitchDeg)` performs this construction and returns every landmark below. The yaw term is what produces the 3/4 read: the facial centreline shifts by $\sin\theta$, and far-side features compress by $\cos\theta$.
 
-    // 1. Cranial center and third height
-    const thirdH = radius * 0.65;
-    const halfH = radius * 1.35; // Total head half-height
+$$x_{\text{axis}} = x_{\text{center}} + R \sin\theta \cdot 0.35 \qquad w_{\text{eye,far}} = w_{\text{eye,near}} \cdot \cos\theta \cdot 0.85$$
 
-    // 2. Vertical levels
-    const yCrown = centerY - radius;
-    const yHairline = centerY - radius * 0.55;
-    const yBrow = yHairline + thirdH;
-    const yEye = yBrow + thirdH * 0.25; // Eye line slightly below brow
-    const yNose = yBrow + thirdH;
-    const yMouth = yNose + thirdH * 0.35;
-    const yChin = yNose + thirdH;
+### The Returned `LoomisHead` Landmarks
 
-    // 3. Horizontal 3/4 foreshortening (near side vs far side)
-    const turnOffset = Math.sin(rad) * radius * 0.35;
-    const xCenterAxis = centerX + turnOffset; // Centerline of face
+| Field | Carries | Notes |
+| --- | --- | --- |
+| `head.unit` | `{ H, W, eyeW, thirdH }` | Every other value derives from these. `eyeW` is the §2 eye-width module. |
+| `head.crown`, `head.hairline` | Top dome bounds | The dome above the upper third. |
+| `head.brow`, `head.eyeLineY` | Brow line and eye line | `eyeLineY` is at exactly $H/2$, per §2. |
+| `head.noseBase`, `head.mouthCenter`, `head.chin` | Lower two thirds | Each third is `unit.thirdH` tall. |
+| `head.nearEye`, `head.farEye` | `{ inner, outer, center, width, height }` | Pass straight to `Drawing.drawComicEye(...)`. |
+| `head.noseWedge` | `{ bridgeTop, apex, underNose, nearNostril }` | Pass straight to `Drawing.drawComicNose(...)`. |
+| `head.mouthGuides` | `{ center, leftCorner, rightCorner, upperLipY, lowerLipY }` | Pass straight to `Drawing.drawComicMouth(...)`. |
+| `head.jaw` | `{ ear, angle, chin, cheekApex }` | Ear spans brow→nose vertically, per §2. |
+| `head.temporalOval` | `{ cx, cy, rx, ry }` | The flat temple plane sliced off the sphere (§1). |
 
-    // Far features are compressed by cos(rad)
-    const farScale = Math.cos(rad);
-    const eyeWidthNear = radius * 0.32;
-    const eyeWidthFar = eyeWidthNear * farScale * 0.85;
-
-    return {
-        crown: { x: centerX, y: yCrown },
-        hairline: { x: xCenterAxis, y: yHairline },
-        browCenter: { x: xCenterAxis, y: yBrow },
-        eyeLineY: yEye,
-        noseBase: { x: xCenterAxis, y: yNose },
-        mouthCenter: { x: xCenterAxis, y: yMouth },
-        chin: { x: xCenterAxis + turnOffset * 0.1, y: yChin },
-        
-        // Eyes
-        nearEye: {
-            inner: { x: xCenterAxis + radius * 0.10, y: yEye },
-            outer: { x: xCenterAxis + radius * 0.10 + eyeWidthNear, y: yEye - 3 },
-            center: { x: xCenterAxis + radius * 0.10 + eyeWidthNear * 0.5, y: yEye }
-        },
-        farEye: {
-            inner: { x: xCenterAxis - radius * 0.10, y: yEye },
-            outer: { x: xCenterAxis - radius * 0.10 - eyeWidthFar, y: yEye - 2 },
-            center: { x: xCenterAxis - radius * 0.10 - eyeWidthFar * 0.5, y: yEye }
-        },
-
-        // Jawline anchors
-        ear: { x: centerX - radius * 0.65, y: (yBrow + yNose) / 2 },
-        nearJawAngle: { x: centerX - radius * 0.40, y: yNose + thirdH * 0.2 },
-        farCheekApex: { x: xCenterAxis - eyeWidthFar - radius * 0.12, y: yEye + 10 }
-    };
-}
-```
+> Do not recompute these anchors by hand. The feature renderers consume the sub-objects above directly, so a hand-rolled structure with different key names will not draw.
 
 ---
 
 ## 4. Drawing Facial Features Step-by-Step
 
+> **Implemented by**: `Drawing.drawComicEye(ctx, eyeObj, isFar, options)`, `Drawing.drawComicNose(ctx, noseObj, options)`, and `Drawing.drawComicMouth(ctx, mouthObj, options)` — each consumes the matching sub-object of the `LoomisHead` directly. For an emotional pose, run the head through `Drawing.applyFacialExpression(head, type, intensity)` first (Manual 08 §4).
+
 ### A. The Comic Eye (Intense 3/4 Gaze)
-```javascript
-function drawComicEye(ctx, eye, isFar = false, inkColor = '#0a0a0c', irisColor = '#3b6a8a') {
-    const { inner, outer, center } = eye;
-    const w = Math.abs(outer.x - inner.x);
-    const dir = outer.x > inner.x ? 1 : -1;
 
-    // 1. S-Curve Upper Eyelid (Thick Ink Stroke: 3.5px)
-    ctx.beginPath();
-    ctx.moveTo(inner.x, inner.y);
-    ctx.bezierCurveTo(
-        inner.x + dir * w * 0.3, inner.y - w * 0.45,
-        inner.x + dir * w * 0.7, inner.y - w * 0.40,
-        outer.x, outer.y
-    );
-    ctx.strokeStyle = inkColor;
-    ctx.lineWidth = isFar ? 2.5 : 3.8;
-    ctx.lineCap = 'round';
-    ctx.stroke();
+`Drawing.drawComicEye(ctx, eyeObj, isFar, options)` renders the whole feature — S-curve upper lid, shaded sclera, iris, pupil, and catchlight — from a `head.nearEye` / `head.farEye` object.
 
-    // 2. Iris & Pupil (Set under upper lid with top catchlight)
-    const irisR = w * 0.32;
-    const irisX = center.x + dir * w * 0.08; // slight gaze shift
-    const irisY = center.y - 1;
+- Pass `isFar: true` for the far eye so it is drawn compressed and with a lighter lid weight.
+- `options`: `{ inkColor, irisColor, scleraColor }`.
 
-    ctx.save();
-    // Clip inside eyelid opening
-    ctx.beginPath();
-    ctx.moveTo(inner.x, inner.y);
-    ctx.quadraticCurveTo(center.x, inner.y - w * 0.45, outer.x, outer.y);
-    ctx.quadraticCurveTo(center.x, inner.y + w * 0.25, inner.x, inner.y);
-    ctx.clip();
-
-    // Sclera (White with soft top shadow)
-    ctx.fillStyle = '#f8f8f4';
-    ctx.fill();
-
-    // Iris circle
-    ctx.beginPath();
-    ctx.arc(irisX, irisY, irisR, 0, Math.PI * 2);
-    ctx.fillStyle = irisColor;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    // Dark pupil
-    ctx.beginPath();
-    ctx.arc(irisX, irisY, irisR * 0.45, 0, Math.PI * 2);
-    ctx.fillStyle = '#0a0a0c';
-    ctx.fill();
-
-    // White catchlight dot
-    ctx.beginPath();
-    ctx.arc(irisX - irisR * 0.25, irisY - irisR * 0.25, irisR * 0.22, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-
-    ctx.restore();
-
-    // 3. Lower Eyelid (Delicate thin stroke: 1.5px)
-    ctx.beginPath();
-    ctx.moveTo(inner.x + dir * w * 0.2, inner.y + w * 0.15);
-    ctx.quadraticCurveTo(center.x, inner.y + w * 0.25, outer.x - dir * w * 0.1, outer.y);
-    ctx.strokeStyle = inkColor;
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-}
-```
+**The rules the renderer encodes**, worth knowing so you can judge the output:
+1. **Upper lid is the heaviest line on the face** — a thick S-curve, thickest at the outer third.
+2. **The iris is clipped by the upper lid**, never a free-floating circle.
+3. **The catchlight sits opposite the key light** and is the only pure white in the eye.
+4. **The far eye loses detail, not just width** — compress it and drop the catchlight rather than drawing a smaller copy.
 
 ### B. The Comic Nose (Bridge & Wing in 3/4)
 In 3/4 view, the nose projects out from the far cheek silhouette:
@@ -203,3 +118,35 @@ In 3/4 view, the nose projects out from the far cheek silhouette:
 1. **Upper Lip**: M-shaped Cupid's bow line, darker fill or deep shadow line.
 2. **Mouth Opening**: Angled wedge revealing white teeth shelf and dark mouth cavity (`#2c0d0d`).
 3. **Lower Lip**: Defined by a **subtle shadow crescent** underneath rather than an outline around the whole lip!
+
+---
+
+## 5. Constructing It: A Runnable Head
+
+One construction call, one wireframe pass, then features fed from the model's own sub-objects.
+
+```javascript
+// 3/4 view head: Loomis construction → non-repro-blue guides → inked features.
+const canvas = createCanvas(560, 640);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f6f4ef';
+ctx.fillRect(0, 0, 560, 640);
+
+// §3 — One call resolves the whole construction at a 35° yaw and 4° pitch.
+const head = Drawing.createLoomisHead(280, 90, 420, 35, 4);
+log('thirdH=' + head.unit.thirdH.toFixed(1) +
+    '  eyeW=' + head.unit.eyeW.toFixed(1) +
+    '  eyeLineY=' + head.eyeLineY.toFixed(1));
+
+// §1 — Construction pass: cranial sphere, temporal slice, Loomis thirds.
+Drawing.drawLoomisWireframe(ctx, head);
+
+// §4 — Features consume the model's sub-objects directly. The far eye is
+// passed with isFar = true so it compresses rather than shrinking.
+Drawing.drawComicEye(ctx, head.nearEye, false, { irisColor: '#3b6a8a' });
+Drawing.drawComicEye(ctx, head.farEye, true, { irisColor: '#3b6a8a' });
+Drawing.drawComicNose(ctx, head.noseWedge);
+Drawing.drawComicMouth(ctx, head.mouthGuides);
+
+canvas;
+```

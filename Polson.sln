@@ -8,6 +8,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Docs", "Docs", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		CLAUDE.md = CLAUDE.md
 		GEMINI.md = GEMINI.md
 		LICENSE = LICENSE
 	EndProjectSection
@@ -46,6 +47,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "claude", "claude", "{796ED5
 		tests\agent\mcp_server\claude\.mcp.json = tests\agent\mcp_server\claude\.mcp.json
 		tests\agent\mcp_server\claude\CLAUDE.md = tests\agent\mcp_server\claude\CLAUDE.md
 	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "multi_agent", "multi_agent", "{4484F911-10D8-410E-BF8D-0F68CF3A5E67}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "logo_studio", "logo_studio", "{BE88C417-E703-4AE5-9E9F-2400DD2E6D56}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "gemini", "gemini", "{AB429047-EA15-4691-9421-04955733071B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -97,6 +104,9 @@ Global
 		{F4193D1A-B76D-4BB1-AE34-E49F0ACBCA78} = {AD454CB9-A393-4E4E-985C-45B0D9E3F729}
 		{2CC027AD-3534-4DB3-8661-813DD304A135} = {F4193D1A-B76D-4BB1-AE34-E49F0ACBCA78}
 		{796ED5FA-3F41-4EED-8A49-45873F844903} = {F4193D1A-B76D-4BB1-AE34-E49F0ACBCA78}
+		{4484F911-10D8-410E-BF8D-0F68CF3A5E67} = {8EC751EC-0FE7-4024-8D29-3E77BCBFC55F}
+		{BE88C417-E703-4AE5-9E9F-2400DD2E6D56} = {4484F911-10D8-410E-BF8D-0F68CF3A5E67}
+		{AB429047-EA15-4691-9421-04955733071B} = {BE88C417-E703-4AE5-9E9F-2400DD2E6D56}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {2DF37766-8B92-4747-B457-BA77EC32B15D}

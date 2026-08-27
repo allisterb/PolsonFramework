@@ -7,6 +7,8 @@
 
 ## 1. Classical Geometric Armatures
 
+> **Implemented by**: `Drawing.createCompositionGrid(width, height, type, options)` → `CompositionGrid` with `lines` and `powerPoints`, where `type` is `'ruleOfThirds'`, `'goldenRatio'`, `'dynamicSymmetry'`, or `'triangle'`; render it with `Drawing.drawCompositionGrid(ctx, gridOrType, options)`.
+
 > **Core Insight from the Book (Page 580 & 600)**:
 > Great compositions are anchored on underlying geometric armatures rather than random placement:
 
@@ -27,6 +29,8 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 
 ## 2. Visual Emphasis & The 4 Hierarchical Tools
 
+> **Implemented by**: `Drawing.drawLeadingLines(ctx, originPoints, focalPoint, options)` for tool 2 and `Drawing.drawVignette(ctx, width, height, options)` for tool 3. Tools 1 and 4 are decisions about value and spacing — drive them through `Drawing.createNotanPalette(...)` and `Drawing.subdivideProportions(...)`.
+
 > **Core Insight from the Book (Page 580–595)**:
 > To guide the viewer's eye through a scene:
 >
@@ -38,6 +42,8 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 ---
 
 ## 3. Notan Value Structures
+
+> **Implemented by**: `Drawing.createNotanPalette(type)` → a curated palette for `'binary'`, `'classic3'`, `'highKey'`, or `'lowKey'`. Key names differ per palette (`dominantLight` / `secondaryMid` / `accentDark` for `classic3`; `background` / `formDark` / `formMid` / `rimAccent` for `lowKey`), so read the returned object rather than assuming.
 
 > **Core Insight from the Book (Page 618)**:
 > Before adding detailed color, establish a rock-solid **Notan value hierarchy**:
@@ -54,8 +60,69 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 
 ## 4. The 70-20-10 Proportional Law ("Big, Medium, Small")
 
+> **Implemented by**: `Drawing.subdivideProportions(bounds, direction, ratios)` → `{ big, medium, small }`, each a `Rect` you can hand straight to `ctx.fillRect(...)` or use as a placement region.
+
 > **Core Insight from the Book (Page 627)**:
 > Visual appeal demands varied scale:
 > - **70% Big / Dominant**: The major backdrop, environment mass, or sky.
 > - **20% Medium / Secondary**: The character figure, vehicle, or architectural structure.
 > - **10% Small / Detail**: Micro-flourishes, specular highlights, textures, and facial features.
+
+---
+
+## 5. Symbol → SDK Parameter Map
+
+| Book concept | SDK parameter or field | Notes |
+| --- | --- | --- |
+| Rule of thirds | `type: 'ruleOfThirds'` | Power points: `topLeft`, `topRight`, `bottomLeft`, `bottomRight`. |
+| Golden ratio armature | `type: 'goldenRatio'` | Power points: `goldenEye`, `secondaryEye`. |
+| Dynamic symmetry (14 lines) | `type: 'dynamicSymmetry'` | Power points: `center`, `harmonicTopLeft`, `harmonicTopRight`. |
+| Triangular armature | `type: 'triangle'` | Power points: `apex`, `center`. |
+| $P_1 \dots P_4$ | `grid.powerPoints.*` | Read the names above — they differ per armature type. |
+| Armature lines | `grid.lines` | Array of point pairs, ready to stroke. |
+| Leading lines (tool 2) | `Drawing.drawLeadingLines(ctx, origins, focal, opts)` | Origins are the frame edges the eye enters from. |
+| Vignette (tool 3) | `Drawing.drawVignette(ctx, w, h, opts)` | `intensity` and `radius` control the falloff. |
+| 2-value Notan | `createNotanPalette('binary')` | Keys: `dominant`, `secondary`. |
+| 3-value Notan | `createNotanPalette('classic3')` | Keys: `dominantLight`, `secondaryMid`, `accentDark`. |
+| High key | `createNotanPalette('highKey')` | Keys: `background`, `formLight`, `formMid`, `darkAccent`. |
+| Low key | `createNotanPalette('lowKey')` | Keys: `background`, `formDark`, `formMid`, `rimAccent`. |
+| 70 / 20 / 10 | `bands.big`, `.medium`, `.small` | Each a `Rect`: `{ x, y, width, height }`. |
+
+> The palette key names are **not** uniform across types — that is deliberate, because a low-key scene has no "dominant light". Read the object you got back rather than assuming `classic3` keys.
+
+---
+
+## 6. Constructing It: A Runnable Layout
+
+Value hierarchy is decided *before* anything is drawn. Establish the Notan, block the 70-20-10 masses, place the armature, and only then steer the eye.
+
+```javascript
+// A composition blocked from value structure outward.
+const canvas = createCanvas(960, 600);
+const ctx = canvas.getContext('2d');
+
+// §3 — Notan first. Three values, nothing else, before any detail exists.
+const notan = Drawing.createNotanPalette('classic3');
+ctx.fillStyle = notan.dominantLight;
+ctx.fillRect(0, 0, 960, 600);
+
+// §4 — 70% backdrop, 20% subject band, 10% accent.
+const bands = Drawing.subdivideProportions({ x: 0, y: 0, width: 960, height: 600 }, 'vertical');
+ctx.fillStyle = notan.secondaryMid;
+ctx.fillRect(bands.medium.x, bands.medium.y, bands.medium.width, bands.medium.height);
+ctx.fillStyle = notan.accentDark;
+ctx.fillRect(bands.small.x, bands.small.y, bands.small.width, bands.small.height);
+
+// §1 — The armature and its focal power points.
+const grid = Drawing.createCompositionGrid(960, 600, 'ruleOfThirds');
+Drawing.drawCompositionGrid(ctx, grid, { opacity: 0.5 });
+
+// §2 — Tool 2: converge the eye on a power point. Tool 3: close the frame.
+const focal = grid.powerPoints.topLeft;
+Drawing.drawLeadingLines(ctx, [{ x: 0, y: 600 }, { x: 960, y: 600 }, { x: 960, y: 0 }], focal, { opacity: 0.35 });
+Drawing.drawVignette(ctx, 960, 600, { intensity: 0.55 });
+
+log('Focal power point: ' + focal.x.toFixed(0) + ', ' + focal.y.toFixed(0));
+
+canvas;
+```

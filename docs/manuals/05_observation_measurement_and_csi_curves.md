@@ -7,6 +7,8 @@
 
 ## 1. Relative Distances & The Unit System
 
+> **Implemented by**: `Drawing.createLoomisHead(...)` returns the unit system as `head.unit`, and `Drawing.computeRelativeDistance(headHeight, pointA, pointB)` measures in head-lengths.
+
 > **Core Insight from the Book**: In drawing, artists do NOT memorize absolute global pixel coordinates. They choose a **single fundamental unit of measure** (the **Head Length**, $H_{\text{head}} = Y_{\text{chin}} - Y_{\text{crown}}$) and derive every other distance as a relative proportion.
 
 ```
@@ -25,86 +27,42 @@
 ```
 
 ### Algorithmic Parametric Unit Generator
-```javascript
-/**
- * Computes all facial landmarks parametrically from a single origin and head height.
- */
-function createParametricHead(originX, originY, headHeight, yawAngleDeg = 35) {
-    const H = headHeight;
-    const W = H * 0.72;
-    const rad = (yawAngleDeg * Math.PI) / 180;
-    
-    // 3/4 Perspective Foreshortening Offset
-    const turnX = Math.sin(rad) * (W * 0.22);
-    const centerAxisX = originX + turnX;
-    
-    // Vertical Thirds
-    const yCrown = originY - H * 0.5;
-    const yHairline = originY - H * 0.28;
-    const yBrow = originY - H * 0.05;
-    const yEye = originY + H * 0.02;
-    const yNose = originY + H * 0.20;
-    const yMouth = originY + H * 0.33;
-    const yChin = originY + H * 0.50;
+`Drawing.createLoomisHead(originX, originY, headHeight, yawDeg, pitchDeg)` performs this parametric construction and returns the unit system with it. Read `head.unit` rather than recomputing:
 
-    const eyeW = W * 0.20;
-    const farScale = Math.cos(rad);
+| Field | Meaning |
+| --- | --- |
+| `head.unit.H` | Total head height — the master unit everything else is expressed in. |
+| `head.unit.W` | Head width. |
+| `head.unit.eyeW` | One eye-width. The face is ~5 of these across (Manual 01 §2). |
+| `head.unit.thirdH` | `H / 3` — one Loomis third. |
 
-    return {
-        unit: { H, W, eyeW },
-        crown: { x: originX, y: yCrown },
-        chin: { x: centerAxisX + turnX * 0.1, y: yChin },
-        centerAxisX,
-        browY: yBrow,
-        eyeY: yEye,
-        noseY: yNose,
-        mouthY: yMouth,
-        
-        // Eyes
-        nearEye: {
-            inner: { x: centerAxisX + eyeW * 0.45, y: yEye },
-            outer: { x: centerAxisX + eyeW * 1.45, y: yEye - 3 },
-            center: { x: centerAxisX + eyeW * 0.95, y: yEye }
-        },
-        farEye: {
-            inner: { x: centerAxisX - eyeW * 0.35, y: yEye },
-            outer: { x: centerAxisX - eyeW * (0.35 + farScale), y: yEye - 2 },
-            center: { x: centerAxisX - eyeW * (0.35 + farScale * 0.5), y: yEye }
-        },
-        
-        // Ear & Jaw
-        ear: { x: originX - W * 0.45, y: (yBrow + yNose) * 0.5 },
-        jawAngle: { x: originX - W * 0.28, y: yNose + H * 0.08 }
-    };
-}
-```
+Every landmark on the returned model is already placed against these units, so measurements taken from it are consistent by construction. See Manual 01 §3 for the full landmark table, and `polson://sdk/schema/Drawing` for the exact model.
 
 ---
 
 ## 2. Plumb Lines & Level Lines (Horizontals and Verticals)
+
+> **Implemented by**: `Drawing.verifyPlumbAlignment(topPoint, bottomPoint, maxTolerance)` → `{ aligned, deltaX, message }`.
 
 > **Core Insight from the Book**: Dropping vertical plumb lines and horizontal level lines allows artists to check anatomical alignment without perspective distortion:
 > - *Vertical Plumb Line*: Dropped from the ear crosses the jaw angle and collarbone.
 > - *Horizontal Level Line*: Projected from the chin intersects the far shoulder.
 
 ### Verification Helper in Code
-```javascript
-/**
- * Verifies vertical alignment within a tolerance window.
- */
-function verifyPlumbAlignment(topPoint, bottomPoint, maxDeltaX = 12) {
-    const deltaX = Math.abs(topPoint.x - bottomPoint.x);
-    return {
-        aligned: deltaX <= maxDeltaX,
-        deltaX,
-        message: deltaX <= maxDeltaX ? 'PASS' : `DRIFT: offset by ${deltaX.toFixed(1)}px`
-    };
-}
+`Drawing.verifyPlumbAlignment(topPoint, bottomPoint, maxTolerance)` → `{ aligned, deltaX, message }` performs this check. Run it on the landmark pairs above before committing a pose — it is cheap, and a figure that fails it will look wrong in a way that is hard to diagnose later.
+
+```js
+const plumb = Drawing.verifyPlumbAlignment(head.chin, figure.rightLeg.ankle, 12);
+if (!plumb.aligned) log(plumb.message);   // "DRIFT: offset by 18.4px"
 ```
+
+`Drawing.computeRelativeDistance(headHeight, pointA, pointB)` is the companion measurement: it returns the distance between two landmarks **in head-length units**, which is how §1 wants you to reason about proportion.
 
 ---
 
 ## 3. The "CSI Line" Language for Expressive Contours
+
+> **Implemented by**: raster C/S/I curves are `ctx.quadraticCurveTo` / `ctx.bezierCurveTo` / `ctx.lineTo`, weighted by `Drawing.drawTaperedStroke(...)`. For vector work, `Snap.path.ogeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` returns an S-curve path string directly.
 
 > **Core Insight from the Book**: Complex organic contours must be distilled into three elemental line primitives:
 > 1. **C-Curves**: Single continuous arc in one direction.
@@ -121,7 +79,7 @@ function verifyPlumbAlignment(topPoint, bottomPoint, maxDeltaX = 12) {
 ```
 
 ### The CSI Helper Library in Canvas2D
-```javascript
+```js
 const CSI = {
     // 1. C-Curve: Single-direction quadratic or cubic arc
     C(ctx, start, cp, end) {
@@ -147,6 +105,8 @@ const CSI = {
 
 ## 4. Planar Form & Cross-Contours
 
+> **Implemented by**: `Drawing.drawCrossContourHatch(ctx, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor, lineWidth)` — the arcs follow the form's curvature, which is what makes a plane read as curved rather than flat.
+
 > **Core Insight from the Book**: Curved organic surfaces should be conceived as **discrete planes** with **cross-contour lines** wrapping around them to define cylindrical depth.
 
 - **Cheek Plane**: Triangular planar facet connecting the cheekbone apex, nose wing, and mouth corner.
@@ -168,6 +128,8 @@ const CSI = {
 
 ## 5. Light, Shadow & Two/Three-Value Studies
 
+> **Implemented by**: `Drawing.createNotanPalette(type)` for the value sets, and `Drawing.createCompositionGrid(...)` when the study is about placement as well as value (Manual 09).
+
 > **Core Insight from the Book**:
 > - **Two-Value Study**: Strictly separates the illuminated half of the figure from the shadow half along the **Shadow Terminator**.
 > - **Three-Value Study**: Highlights ($V_1$), Midtones ($V_2$), Core Shadow ($V_3$).
@@ -176,3 +138,35 @@ const CSI = {
 1. **Penciler**: Draws the **Shadow Terminator boundary path** (Two-Value division).
 2. **Colorist**: Fills Midtone base ($V_2$), sunlit highlights ($V_1$), and core shadow planes ($V_3$) using `Skia.Shader.sksl` Ben-Day dots.
 3. **Inker**: Adds Ambient Occlusion ink masses ($V_4$, `#0a0a0c`) in deep crevices.
+
+---
+
+## 6. Constructing It: A Runnable Measurement Pass
+
+Measurement is a pass you run, not an intuition you hope for. Build the figure, then interrogate it in its own units.
+
+```javascript
+// Measurement pass: build → measure in head units → plumb check.
+const canvas = createCanvas(520, 760);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f6f4ef';
+ctx.fillRect(0, 0, 520, 760);
+
+// §1 — The unit system arrives with the model. Never re-derive it.
+const figure = Drawing.createMannequinFigure(260, 60, 640, {
+    shoulderTiltDeg: -6,
+    pelvicTiltDeg: 5
+});
+Drawing.drawMannequinWireframe(ctx, figure);
+log('one head unit = ' + figure.headUnit.toFixed(1) + 'px');
+
+// §1 — Measure in head-lengths, not pixels. The crotch sits at 4.0H.
+const heads = Drawing.computeRelativeDistance(figure.headUnit, figure.head.center, figure.crotch);
+log('head centre -> crotch = ' + heads.toFixed(2) + ' head lengths');
+
+// §2 — Plumb check before committing the pose: sternum over the standing ankle.
+const plumb = Drawing.verifyPlumbAlignment(figure.sternum, figure.rightLeg.ankle, 14);
+log(plumb.message);
+
+canvas;
+```

@@ -30,7 +30,7 @@
     <!-- Copy them to the central solution directory while preserving subfolders -->
     <Copy
       SourceFiles="@(BuildOutputFiles)"
-      DestinationFiles="@(BuildOutputFiles->'$(SolutionDir)bin\cli\%(RecursiveDir)%(Filename)%(Extension)')"
+      DestinationFiles="@(BuildOutputFiles->'$(RepoRoot)bin\cli\%(RecursiveDir)%(Filename)%(Extension)')"
       SkipUnchangedFiles="true"
       OverwriteReadOnlyFiles="true" />
   </Target>

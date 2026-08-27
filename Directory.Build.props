@@ -5,6 +5,12 @@
     <NoWarn>NETSDK1233</NoWarn>
   </PropertyGroup>
 
+  <!-- Repository root. $(SolutionDir) is only set when MSBuild is driven by the .sln, so targets that
+       write to a central directory must use this instead to survive a direct `dotnet build`/`dotnet test`. -->
+  <PropertyGroup Label="Layout">
+    <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
+  </PropertyGroup>
+
   <!-- Shared assembly version. Projects opt in by mapping their AssemblyVersion /
        FileVersion / Version to this property, so bumping the version here restamps them all on the next build. -->
   <PropertyGroup Label="Versioning">

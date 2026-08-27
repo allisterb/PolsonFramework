@@ -166,11 +166,9 @@ public class LogoTypeToolkitTests : TestsRuntime
     [Fact]
     public void RenderTypographyPresentationBoard()
     {
-        var scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "tests", "agent", "multi_agent", "logo_studio", "typography_presentation_board.js");
-        if (!File.Exists(scriptPath))
-        {
-            scriptPath = @"C:\Projects\Polson\tests\agent\multi_agent\logo_studio\typography_presentation_board.js";
-        }
+        // bin/Debug/net10.0 -> Polson.Tests.Drawing -> tests
+        var scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "multi_agent", "logo_studio", "typography_presentation_board.js");
+        Assert.True(File.Exists(scriptPath), $"Fixture not found at {Path.GetFullPath(scriptPath)}");
 
         var js = File.ReadAllText(scriptPath);
         var engine = new JsDrawingEngine();

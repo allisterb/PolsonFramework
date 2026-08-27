@@ -505,6 +505,20 @@ Retained-mode SVG vector logo construction methods available directly on `SnapPa
 - `paper.monogramMatrix(x: number, y: number, width: number, height: number, type?: '2x2' | '3x3' | '4x4')` → `SnapGroup` — Appends monogram matrix grid guides and node anchor circles.
 - `paper.clearSpaceGuide(x: number, y: number, width: number, height: number, margin?: number)` → `SnapGroup` — Appends clear space boundary guides and dimension blocks ($X$).
 
+## `VectorLogo` Paper Methods
+
+The same constructions as `paper.*` above, but called on the global `VectorLogo` object with the target paper as the **first argument**. Use these when the paper is held in a variable rather than being the receiver; `paper.squircle(...)` and `VectorLogo.squircle(paper, ...)` produce identical elements.
+
+- `VectorLogo.squircle(paper: SnapPaper, x: number, y: number, width: number, height: number, exponent?: number)` → `SnapPath` — Appends a Lamé superellipse squircle.
+- `VectorLogo.goldenSpiral(paper: SnapPaper, startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `SnapPath` — Appends a logarithmic golden spiral.
+- `VectorLogo.ogeeCurve(paper: SnapPaper, x1: number, y1: number, x2: number, y2: number, amplitude?: number, inflectionT?: number)` → `SnapPath` — Appends an Ogee S-curve.
+- `VectorLogo.emblemBadge(paper: SnapPaper, cx: number, cy: number, width: number, height: number, style?: 'shield' | 'hexagon' | 'diamond' | 'scallop' | 'circle')` → `SnapPath` — Appends a geometric badge outline.
+- `VectorLogo.goldenCircles(paper: SnapPaper, cx: number, cy: number, baseRadius: number, count?: number)` → `SnapGroup` — Appends $\Phi$-scaled concentric circles.
+- `VectorLogo.isometricGrid(paper: SnapPaper, width: number, height: number, spacing?: number)` → `SnapGroup` — Appends 30°/60° isometric construction guides.
+- `VectorLogo.polarGrid(paper: SnapPaper, cx: number, cy: number, maxRadius: number, ringCount?: number, rayCount?: number)` → `SnapGroup` — Appends polar rings and radial spokes.
+- `VectorLogo.monogramMatrix(paper: SnapPaper, x: number, y: number, width: number, height: number, type?: '2x2' | '3x3' | '4x4')` → `SnapGroup` — Appends monogram matrix guides and node anchors.
+- `VectorLogo.clearSpaceGuide(paper: SnapPaper, x: number, y: number, width: number, height: number, margin?: number)` → `SnapGroup` — Appends clear space boundary guides and $X$ dimension blocks.
+
 ## Path Shorthand Helpers (`Snap.path` & `VectorLogo`)
 - `Snap.path.squircle(x: number, y: number, width: number, height: number, exponent?: number)` → `string` — Returns SVG `d` path string.
 - `Snap.path.goldenSpiral(startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `string` — Returns SVG `d` path string.

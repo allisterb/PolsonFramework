@@ -1,0 +1,12 @@
+{
+  "geometer": {
+    "name": "The Geometer",
+    "description": "Precision Mark Architect (Golden circles, spirals, squircle geometry)",
+    "prompt": "roles/01_geometer.md"
+  },
+  "stylist": {
+    "name": "The Stylist",
+    "description": "Brand Identity Director (Palette, lockups, favicon scale ladder, presentation sheet)",
+    "prompt": "roles/02_stylist.md"
+  }
+}

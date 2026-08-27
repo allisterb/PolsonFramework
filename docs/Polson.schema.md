@@ -215,18 +215,23 @@ Parametric 3D cranial structure model returned by `Drawing.createLoomisHead(...)
   "title": "LoomisHead",
   "type": "object",
   "properties": {
+    "unit": { "type": "object", "description": "Proportional units the whole model is derived from.", "properties": { "H": { "type": "number", "description": "Total head height." }, "W": { "type": "number", "description": "Head width." }, "eyeW": { "type": "number", "description": "One eye-width; the face is ~5 of these across." }, "thirdH": { "type": "number", "description": "H / 3 — one Loomis third." } } },
     "origin": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
-    "cranialCenter": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
-    "cranialRadius": { "type": "number" },
+    "crown": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "hairline": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
     "brow": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "eyeLineY": { "type": "number", "description": "Y of the eye line — half the total head height." },
     "noseBase": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
+    "mouthCenter": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
     "chin": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } }, "required": ["x", "y"] },
-    "nearEye": { "type": "object", "properties": { "center": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" } } },
-    "farEye": { "type": "object", "properties": { "center": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" } } },
-    "noseWedge": { "type": "object", "properties": { "bridge": { "type": "object" }, "apex": { "type": "object" }, "base": { "type": "object" } } },
-    "mouthGuides": { "type": "object", "properties": { "center": { "type": "object" }, "leftCorner": { "type": "object" }, "rightCorner": { "type": "object" } } }
+    "nearEye": { "type": "object", "description": "Accepted directly by Drawing.drawComicEye(...).", "properties": { "inner": { "type": "object" }, "outer": { "type": "object" }, "center": { "type": "object" }, "width": { "type": "number" }, "height": { "type": "number" } } },
+    "farEye": { "type": "object", "description": "Foreshortened by cos(yaw); pass with isFar = true.", "properties": { "inner": { "type": "object" }, "outer": { "type": "object" }, "center": { "type": "object" }, "width": { "type": "number" }, "height": { "type": "number" } } },
+    "noseWedge": { "type": "object", "description": "Accepted directly by Drawing.drawComicNose(...).", "properties": { "bridgeTop": { "type": "object" }, "apex": { "type": "object" }, "underNose": { "type": "object" }, "nearNostril": { "type": "object" } } },
+    "mouthGuides": { "type": "object", "description": "Accepted directly by Drawing.drawComicMouth(...).", "properties": { "center": { "type": "object" }, "leftCorner": { "type": "object" }, "rightCorner": { "type": "object" }, "upperLipY": { "type": "number" }, "lowerLipY": { "type": "number" } } },
+    "jaw": { "type": "object", "properties": { "ear": { "type": "object" }, "angle": { "type": "object" }, "chin": { "type": "object" }, "cheekApex": { "type": "object" } } },
+    "temporalOval": { "type": "object", "description": "The flat temple plane sliced off the cranial sphere.", "properties": { "cx": { "type": "number" }, "cy": { "type": "number" }, "rx": { "type": "number" }, "ry": { "type": "number" } } }
   },
-  "required": ["origin", "cranialCenter", "cranialRadius", "brow", "noseBase", "chin", "nearEye", "farEye", "noseWedge", "mouthGuides"]
+  "required": ["unit", "origin", "crown", "hairline", "brow", "eyeLineY", "noseBase", "mouthCenter", "chin", "nearEye", "farEye", "noseWedge", "mouthGuides", "jaw", "temporalOval"]
 }
 ```
 
@@ -461,3 +466,60 @@ Monogram matrix nodes returned by `Logo.createMonogramGrid(...)`:
   "required": ["type", "size", "nodes"]
 }
 ```
+
+---
+
+# LogoType (Logotype & Typography Schemas)
+
+## `TypographicScale`
+
+Harmonic scale returned by `LogoType.calculateTypographicScale(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TypographicScale",
+  "type": "object",
+  "properties": {
+    "baseSize": { "type": "number" },
+    "ratioName": { "type": "string" },
+    "ratioFactor": { "type": "number" },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "size": { "type": "number" },
+          "lineHeight": { "type": "number" },
+          "tracking": { "type": "number" }
+        },
+        "required": ["name", "size", "lineHeight", "tracking"]
+      }
+    }
+  },
+  "required": ["baseSize", "ratioName", "ratioFactor", "steps"]
+}
+```
+
+## `FontPairingEvaluation`
+
+Evaluation result returned by `LogoType.evaluateFontPairing(...)`:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FontPairingEvaluation",
+  "type": "object",
+  "properties": {
+    "primaryCategory": { "type": "string" },
+    "secondaryCategory": { "type": "string" },
+    "relationship": { "type": "string", "enum": ["concordant", "conflicting", "contrasting"] },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "description": { "type": "string" },
+    "recommendations": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["primaryCategory", "secondaryCategory", "relationship", "score", "description", "recommendations"]
+}
+```
+

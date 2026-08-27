@@ -97,7 +97,11 @@ public class CanvasPath : IDisposable
         var sweepDeg = sweepAngle * 180f / MathF.PI;
 
         var oval = SKRect.Create(x - radius, y - radius, radius * 2f, radius * 2f);
-        if (Path.PointCount == 0)
+
+        // A full sweep has to become its own closed contour. Skia's ArcTo collapses a 360-degree
+        // sweep to nothing, so a circle appended to a non-empty path vanishes silently — taking with
+        // it any counter that a fill rule was meant to cut out of the shape.
+        if (Path.PointCount == 0 || MathF.Abs(sweepDeg) >= 359.99f)
         {
             Path.AddArc(oval, startDeg, sweepDeg);
         }
@@ -135,7 +139,12 @@ public class CanvasPath : IDisposable
         matrix = matrix.PreConcat(rotMatrix);
 
         tempPath.Transform(matrix);
-        Path.AddPath(tempPath);
+
+        // Per the Canvas spec, ellipse() joins the current point to the start of the arc, exactly as
+        // arc() does. Appending as a fresh subpath instead leaves the outline open, so any fill that
+        // mixes ellipse() with lineTo() closes each fragment separately and folds over itself.
+        if (Path.PointCount == 0) Path.AddPath(tempPath);
+        else Path.AddPath(tempPath, SKPathAddMode.Extend);
     }
 
     public void bezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y)

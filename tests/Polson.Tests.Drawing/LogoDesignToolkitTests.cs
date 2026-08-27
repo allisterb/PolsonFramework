@@ -337,7 +337,7 @@ public class LogoDesignToolkitTests : TestsRuntime
         string? artworkPath = null;
         while (!string.IsNullOrEmpty(dir))
         {
-            var candidate = System.IO.Path.Combine(dir, "tests", "agent", "multi_agent", "logo_studio", "artwork.js");
+            var candidate = System.IO.Path.Combine(dir, "tests", "multi_agent", "logo_studio", "artwork.js");
             if (System.IO.File.Exists(candidate))
             {
                 artworkPath = candidate;

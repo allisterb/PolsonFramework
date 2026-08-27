@@ -183,8 +183,8 @@ public class VectorLogoToolkitTests : TestsRuntime
         string? scriptPath = null;
         for (var i = 0; i < 10 && dir != null; i++)
         {
-            var candidate1 = Path.Combine(dir, "tests", "agent", "multi_agent", "logo_studio", "artwork_vector.js");
-            var candidate2 = Path.Combine(dir, "agent", "multi_agent", "logo_studio", "artwork_vector.js");
+            var candidate1 = Path.Combine(dir, "tests", "multi_agent", "logo_studio", "artwork_vector.js");
+            var candidate2 = Path.Combine(dir, "multi_agent", "logo_studio", "artwork_vector.js");
             var candidate3 = Path.Combine(dir, "logo_studio", "artwork_vector.js");
 
             if (File.Exists(candidate1)) { scriptPath = candidate1; break; }

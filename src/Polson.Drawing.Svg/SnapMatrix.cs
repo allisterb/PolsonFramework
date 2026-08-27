@@ -49,6 +49,9 @@ public class SnapMatrix
     #endregion
 
     #region Methods
+    /// <summary>Multiplies by another matrix. Snap.svg spells this both <c>add</c> and <c>mult</c>.</summary>
+    public SnapMatrix Mult(SnapMatrix other) => Add(other);
+
     public SnapMatrix Add(SnapMatrix other)
     {
         ArgumentNullException.ThrowIfNull(other);

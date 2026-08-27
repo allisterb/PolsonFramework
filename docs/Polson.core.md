@@ -139,6 +139,42 @@ Represents the root SVG canvas surface:
 - `paper.toImageBytes(width?: number, height?: number, format?: string, quality?: number)` → `byte[]` — Headlessly renders the SVG to image bytes (default: WebP Q=85).
 - `paper.toDataUri(format?: string, width?: number, height?: number, quality?: number)` → `string` — Renders to a `data:image/...;base64,...` URI (defaults to `format: 'svg'`).
 
+## Paint Servers — Gradients, Masks & Patterns (`SnapPaper`)
+
+Vector fills are not limited to flat colour. A paint server is created on the paper, lands in `<defs>` automatically, and is referenced by id:
+
+```javascript
+const paper = Snap(400, 300);
+const g = paper.gradient('l(0,0,1,0)#ff0000-#0000ff');   // horizontal red → blue
+paper.rect(0, 0, 400, 300).attr({ fill: 'url(#' + g.attr('id') + ')' });
+paper;
+```
+
+- `paper.gradient(descriptor: string)` → `SnapGradient` — Snap.svg shorthand. `l(x1,y1,x2,y2)` for linear, `r(cx,cy,r)` for radial, followed by `-`-separated stops. Coordinates are fractions of the bounding box (`0`–`1`). A stop may carry an explicit offset with `:` — `'l(0,0,1,0)#000-#f00:30%-#fff'`; without one, stops are spaced evenly.
+- `paper.gradientLinear(x1: number, y1: number, x2: number, y2: number)` → `SnapLinearGradient` — Explicit linear gradient; coordinates are fractions of the bounding box.
+- `paper.gradientRadial(cx: number, cy: number, r: number, fx?: number, fy?: number)` → `SnapRadialGradient` — Explicit radial gradient with optional focal point.
+- `paper.mask(...elements: SnapElement[])` → `SnapMask` — Creates a `<mask>` in `<defs>`; reference it with `attr({ mask: 'url(#id)' })`.
+- `paper.ptrn(x: number, y: number, width: number, height: number, vx?: number, vy?: number, vw?: number, vh?: number)` → `SnapPattern` — Creates a tiling `<pattern>`.
+- `paper.defs` → `SnapElement` — The document's `<defs>` container, created on demand. Append to it directly for anything the helpers above do not cover.
+
+### `SnapGradient`
+
+- `gradient.attr('id')` → `string` — The generated id. **This is how you reference the gradient** — every paint server is auto-assigned one.
+- `gradient.addStop(color: string, offsetPercent: number)` → `SnapGradient` — Appends one stop. Chainable.
+- `gradient.setStops(descriptor: string)` → `SnapGradient` — Replaces all stops from a `-`-separated descriptor.
+- `gradient.stops()` → `SnapGradientStop[]` — The current stops.
+- Linear gradients also expose `gradient.x1`, `gradient.y1`, `gradient.x2`, `gradient.y2`; radial ones expose `gradient.cx`, `gradient.cy`, `gradient.r`.
+
+> [!IMPORTANT]
+> By default a gradient is measured against **each shape's own bounding box**, so two shapes sharing one gradient each get the full colour ramp and a visible seam appears where they meet. To anchor the ramp in the **paper's** coordinate space instead — which is what makes a limb built from several overlapping shapes read as one continuous form — switch the gradient to user space and give it absolute coordinates:
+>
+> ```javascript
+> const g = paper.gradient('l(0,0,1,0)#ff0000-#0000ff');
+> g.attr({ gradientUnits: 'userSpaceOnUse', x1: 0, y1: 0, x2: 400, y2: 0 });
+> ```
+>
+> Any SVG attribute the paint server accepts can be set this way; `attr` passes through names it does not specifically handle.
+
 ## `SnapElement`
 
 Represents any SVG node in the document hierarchy:
@@ -166,7 +202,15 @@ Represents any SVG node in the document hierarchy:
 - `element.text(x: number, y: number, text: any)` → `SnapText` — Creates and appends a child `<text>`.
 - `element.image(src: string, x: number, y: number, width: number, height: number)` → `SnapImage` — Creates and appends a child `<image>`.
 - `element.g(...elements: SnapElement[])` / `element.group(...)` → `SnapGroup` — Creates and appends a nested `<g>`.
-- `element.el(name: string, attrs?: object)` → `SnapElement` — Creates and appends an arbitrary SVG child element.
+- `element.el(name: string, attrs?: object)` → `SnapElement` — Creates and appends an SVG child element by tag name. Supported: `rect`, `circle`, `ellipse`, `path`, `g`, `image`, `text`, `tspan`, `textPath`, `line`, `polyline`, `polygon`, `mask`, `clipPath`, `pattern`, `use`, `defs`, `linearGradient`, `radialGradient`, `stop`, `symbol`, `marker`, `svg`. **An unrecognised name throws** rather than silently producing a `<g>`. For gradients prefer `paper.gradient(...)`.
+- `element.id` → `string` — Gets or sets the element's id.
+- `element.type` → `string` — The SVG tag name.
+- `element.parent` → `SnapElement?` — The containing element.
+- `element.children` → `SnapElement[]` — Direct child elements.
+- `element.paper` → `SnapPaper?` — The document this element belongs to.
+- `element.add(...elements: SnapElement[])` → `SnapElement` — Appends children.
+- `element.before(other: SnapElement)` / `element.after(other: SnapElement)` → `SnapElement` — Moves this element immediately before or after `other` in document order, which is how you control z-order after construction.
+- `element.toSkPath()` → `SKPath` — Converts the element's geometry to a Skia path, for measurement or raster compositing.
 - `element.use(target: SnapElement | string)` → `SnapUse` — Creates and appends a child `<use>` element.
 - `element.clear()` → `void` — Removes all child nodes from this container element.
 
@@ -183,6 +227,11 @@ Represents any SVG node in the document hierarchy:
 - `matrix.invert()` → `SnapMatrix` — Returns the inverted matrix.
 - `matrix.clone()` → `SnapMatrix` — Clones the matrix.
 - `matrix.toTransformString()` → `string` — Formats matrix as standard SVG `matrix(a,b,c,d,e,f)`.
+- `matrix.a`, `matrix.b`, `matrix.c`, `matrix.d`, `matrix.e`, `matrix.f` → `number` — The six affine components, read-only.
+- `matrix.determinant` → `number`, `matrix.isIdentity` → `boolean` — Matrix state checks.
+- `matrix.add(other: SnapMatrix)` → `SnapMatrix` — Snap.svg's spelling of `mult`; identical behaviour.
+- `matrix.multLeft(other: SnapMatrix)` → `SnapMatrix` — Pre-multiplies instead of post-multiplying.
+- `matrix.transformPoint(x: number, y: number)` → `SnapPoint` — Applies the matrix to a single point.
 
 ---
 
@@ -205,6 +254,7 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `canvas.toImageData()` → `ImageData` — Extracts a full-canvas `ImageData` pixel buffer.
 - `canvas.toImageBytes(format?: string, quality?: number)` → `byte[]` — Encodes canvas to image bytes (default: WebP Q=85).
 - `canvas.toDataUri(format?: string, quality?: number)` → `string` — Returns base64 `data:image/...;base64,...` data URI.
+- `canvas.bitmap` → `SkiaBitmapWrapper` — The canvas's live backing bitmap (unlike `toBitmap()`, which copies).
 
 ## `CanvasRenderingContext2D`
 
@@ -284,6 +334,14 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `ctx.getImageData(sx: number, sy: number, sw: number, sh: number)` → `ImageData` — Extracts pixel buffer for direct byte manipulation.
 - `ctx.putImageData(imageData: ImageData, dx: number, dy: number)` — Writes raw pixel buffer back to canvas.
 - `ctx.createImageData(width: number, height: number)` → `ImageData` — Allocates blank RGBA pixel buffer.
+
+### Toolkit Shortcuts on the Context
+
+Every `Drawing.*` and `Logo.*` method whose first parameter is a context is also available directly on `ctx`, with that first argument dropped. `Drawing.drawPerspectiveGrid(ctx, grid, options)` and `ctx.drawPerspectiveGrid(grid, options)` are the same call:
+
+`ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
+
+Parameters and semantics are documented under `polson://sdk/core/Drawing` and `polson://sdk/core/Logo`. Use whichever reads better; the shortcut form suits long chains on one context.
 
 ### Constructive Drawing & Inking
 - `ctx.drawTaperedStroke(start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` — Subdivides cubic Bézier curve with sine-tapered normal envelope and anti-aliased fill.
@@ -378,6 +436,8 @@ ctx.fillRect(0, 0, 800, 600);
 - `bitmap.applyFilter(filter: SKImageFilter)` → `SkiaBitmapWrapper` — Returns new bitmap with image filter applied.
 - `bitmap.applyColorFilter(filter: SKColorFilter)` → `SkiaBitmapWrapper` — Returns new bitmap with color filter applied.
 - `bitmap.toPngBytes(quality?: number)` → `byte[]` — Encodes to PNG byte array.
+- `bitmap.toImageBytes(format?: string, quality?: number)` → `byte[]` — Encodes in any supported format (default WebP Q=85).
+- `bitmap.toDataUri(format?: string, quality?: number)` → `string` — Base64 data URI in the given format.
 - `bitmap.toDataUrl()` → `string` — Returns `data:image/png;base64,...` URL.
 - `bitmap.clone()` → `SkiaBitmapWrapper` — Deep clones bitmap.
 - `bitmap.dispose()` — Releases native bitmap memory.
@@ -388,6 +448,8 @@ ctx.fillRect(0, 0, 800, 600);
 - `imageData.height` → `number` — Height in pixels.
 - `imageData.data` → `byte[]` — Flat array of RGBA byte values `[r0, g0, b0, a0, r1, g1, b1, a1, ...]`.
 - `imageData.toPngBytes(quality?: number)` → `byte[]` — Encodes pixel buffer to PNG bytes.
+- `imageData.toImageBytes(format?: string, quality?: number)` → `byte[]` — Encodes the buffer in any supported format (default WebP Q=85).
+- `imageData.toDataUri(format?: string, quality?: number)` → `string` — Base64 data URI in the given format.
 - `imageData.toDataUrl()` → `string` — Returns base64 data URL.
 
 ---
@@ -478,6 +540,8 @@ Also accessible via `Skia.Logo`.
 
 ## Graphic Devices & Enclosures
 - `Logo.createSquirclePath(x: number, y: number, width: number, height: number, exponent?: number)` → `SKPath` — Generates continuous-curvature superellipse path ($|2x/w|^n + |2y/h|^n = 1$) for modern app icon containers.
+- `Logo.createSquircleSvgPath(x, y, width, height, exponent?)` → `string`, `Logo.createGoldenSpiralSvgPath(startX, startY, initialRadius, turns?, segmentsPerTurn?)` → `string` — SVG `d` string variants of the squircle and spiral, for vector use.
+- `Logo.createEmblemBadgeSvgPath(cx: number, cy: number, width: number, height: number, style?: string)` → `string` — The badge outline as an SVG `d` string rather than an `SKPath`.
 - `Logo.drawSquircle(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, options?: { fill?: string, stroke?: string, strokeWidth?: number, exponent?: number })` — Renders filled/stroked continuous curvature squircle.
 - `Logo.drawEmblemBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number, type?: 'shield' | 'hexagon' | 'diamond' | 'scallop' | 'circle', options?: { fill?: string, stroke?: string, strokeWidth?: number, points?: number })` — Renders geometric emblem crest containers.
 - `Logo.drawClearSpaceGuide(ctx: CanvasRenderingContext2D, markBounds: Rect, xDimension?: number, options?: { color?: string, fill?: string, showLabels?: boolean })` — Visualizes protective clear space boundary and dimension blocks ($X$).
@@ -507,6 +571,19 @@ Retained-mode SVG vector logo construction methods available directly on `SnapPa
 - `paper.polarGrid(cx: number, cy: number, maxRadius: number, ringCount?: number, rayCount?: number)` → `SnapGroup` — Appends a group containing polar concentric rings and radial spokes.
 - `paper.monogramMatrix(x: number, y: number, width: number, height: number, type?: '2x2' | '3x3' | '4x4')` → `SnapGroup` — Appends monogram matrix grid guides and node anchor circles.
 - `paper.clearSpaceGuide(x: number, y: number, width: number, height: number, margin?: number)` → `SnapGroup` — Appends clear space boundary guides and dimension blocks ($X$).
+- `paper.svg(x: number, y: number, width: number, height: number)` → `SnapElement` — Appends a nested `<svg>` viewport with its own coordinate space.
+- `paper.width` / `paper.height` → `number` — Document dimensions; both are settable.
+
+### Path-String Variants (`VectorLogo`)
+
+The same constructions as strings rather than elements, for when you want to compose or transform the `d` data yourself:
+
+- `VectorLogo.createSquirclePath(x, y, width, height, exponent?)` → `string`
+- `VectorLogo.createGoldenSpiralPath(startX, startY, initialRadius, turns?, segmentsPerTurn?)` → `string`
+- `VectorLogo.createEmblemBadgePath(cx, cy, width, height, style?)` → `string`
+- `VectorLogo.createTangentFilletPath(x1, y1, cornerX, cornerY, x2, y2, radius)` → `string`
+- `VectorLogo.createBoneEffectPath(startX, startY, endX, endY, maxBulge?, controlT?)` → `string`
+- `VectorLogo.createOgeeCurvePath(x1, y1, x2, y2, inflectionT?, amplitude?)` → `string`
 
 ## `VectorLogo` Paper Methods
 
@@ -545,9 +622,12 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 ## Typographic Scale & Font Harmony
 - `LogoType.calculateTypographicScale(baseSize?: number, ratio?: 'goldenRatio' | 'perfectFifth' | 'augmentedFourth' | 'perfectFourth' | 'majorThird' | 'minorThird', stepsDown?: number, stepsUp?: number)` → `object` — Generates harmonic font size ladder (`micro`, `caption`, `body`, `h4`, `h3`, `h2`, `h1`, `display`).
 - `LogoType.evaluateFontPairing(primaryCategory: string, secondaryCategory: string)` → `{ relationship: 'concordant' | 'conflicting' | 'contrasting', score: number, description: string, recommendations: string[] }` — Evaluates font pairing against the Robin Williams contrast matrix across Size, Weight, Structure, and Form.
+- `LogoType.getGlyphShapeType(char: string)` → `string` — Classifies a glyph silhouette as straight, round, diagonal or open, which is what drives the kerning table.
+- `LogoType.getRatioFactor(ratioName: string)` → `number` — The numeric multiplier behind a named harmonic ratio.
 
 ## Brand Lockups & Letterform Geometry
 - `LogoType.createOgeeCurvePath(x1: number, y1: number, x2: number, y2: number, inflectionT?: number, amplitude?: number)` → `string` — Generates classical Doyald Young $S$-curve cubic Bézier path.
+- `LogoType.createOgeeCurveSKPath(x1: number, y1: number, x2: number, y2: number, inflectionT?: number, amplitude?: number)` → `SKPath` — The same Ogee curve as a Skia path, for filling or stroking on a canvas.
 - `LogoType.drawWordmarkLockup(ctx: CanvasRenderingContext2D, drawMarkFn: Function, brandName: string, tagline?: string, options?: { layout?: 'horizontal' | 'vertical', x?: number, y?: number, markSize?: number, fontSize?: number, taglineSize?: number, primaryColor?: string, taglineColor?: string })` — Renders balanced brand lockup with optical alignment.
 - `ctx.drawWordmarkLockup(drawMarkFn, brandName, tagline, options)` — Direct canvas context helper.
 - `ctx.drawOgeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` — Direct canvas context helper.

@@ -35,6 +35,9 @@ public class SnapPathApi
 
     public string BoneEffect(float startX, float startY, float endX, float endY, float maxBulge = 4f, float controlT = 0.5f) =>
         VectorLogoToolkit.CreateBoneEffectPath(startX, startY, endX, endY, maxBulge, controlT);
+
+    public string OgeeCurve(float x1, float y1, float x2, float y2, float amplitude = 25f, float inflectionT = 0.5f) =>
+        VectorLogoToolkit.CreateOgeeCurvePath(x1, y1, x2, y2, inflectionT, amplitude);
     #endregion
 }
 

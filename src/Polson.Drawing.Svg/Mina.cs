@@ -49,6 +49,26 @@ public class Mina
         float p = 0.3f, s = p / 4f;
         return MathF.Pow(2f, -10f * n) * MathF.Sin((n - s) * (2f * MathF.PI) / p) + 1f;
     }
+
+    /// <summary>Overshoots backwards before easing in, matching Snap.svg's <c>mina.backin</c>.</summary>
+    public float Backin(float n)
+    {
+        if (n == 0f || n == 1f) return n;
+        const float s = 1.70158f;
+        return n * n * ((s + 1f) * n - s);
+    }
+
+    /// <summary>Eases out past the target and settles back, matching Snap.svg's <c>mina.backout</c>.</summary>
+    public float Backout(float n)
+    {
+        if (n == 0f || n == 1f) return n;
+        const float s = 1.70158f;
+        n -= 1f;
+        return n * n * ((s + 1f) * n + s) + 1f;
+    }
+
+    /// <summary>Milliseconds since the Unix epoch, for timing an animation trajectory.</summary>
+    public double Time() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     #endregion
 }
 

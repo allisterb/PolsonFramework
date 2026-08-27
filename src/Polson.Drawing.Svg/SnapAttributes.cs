@@ -298,9 +298,12 @@ public static partial class SnapAttributes
 
         if (str.StartsWith("url(", StringComparison.OrdinalIgnoreCase) && str.EndsWith(')'))
         {
+            // Keep the whole `url(#id)` form as the deferred id. Handing over the bare `#id` makes the
+            // server serialise as `fill:#id`, which then reads back as a colour literal and renders
+            // black — a paint-server reference silently degraded into a nonsense colour.
             var uriStr = str[4..^1].Trim('\'', '"', ' ');
 #pragma warning disable CS0618
-            return new SvgDeferredPaintServer(context?.OwnerDocument, uriStr);
+            return new SvgDeferredPaintServer(context?.OwnerDocument, $"url({uriStr})");
 #pragma warning restore CS0618
         }
 

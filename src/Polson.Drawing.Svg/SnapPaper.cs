@@ -207,6 +207,20 @@ public class SnapPaper : SnapElement
         VectorLogo.OgeeCurve(this, x1, y1, x2, y2, amplitude, inflectionT);
     #endregion
 
+    /// <summary>Appends a nested <c>&lt;svg&gt;</c> viewport, for placing a sub-scene in its own coordinate space.</summary>
+    public SnapElement Svg(float x, float y, float width, float height)
+    {
+        var fragment = new SvgFragment
+        {
+            X = new SvgUnit(x),
+            Y = new SvgUnit(y),
+            Width = new SvgUnit(width),
+            Height = new SvgUnit(height)
+        };
+        Document.Children.Add(fragment);
+        return new SnapElement(fragment, this);
+    }
+
     public SnapLinearGradient GradientLinear(float x1, float y1, float x2, float y2)
     {
         var grad = new SvgLinearGradientServer
@@ -309,7 +323,7 @@ public class SnapPaper : SnapElement
 
     public SnapUse Use(object target)
     {
-        var id = target is SnapElement el ? el.ID : target?.ToString() ?? string.Empty;
+        var id = target is SnapElement el ? el.Id : target?.ToString() ?? string.Empty;
         var use = new SvgUse
         {
             ReferencedElement = new Uri(id.StartsWith('#') ? id : "#" + id, UriKind.RelativeOrAbsolute)
@@ -414,6 +428,14 @@ public class SnapPaper : SnapElement
         return _defs;
     }
 
+    /// <summary>
+    /// Maps an SVG tag name onto its element type.
+    /// <para>
+    /// Unknown names throw rather than falling back to a group: <c>el('linearGradient')</c> quietly
+    /// returning a <c>&lt;g&gt;</c> produces a document that serialises and renders without complaint
+    /// but has silently lost the element the caller asked for.
+    /// </para>
+    /// </summary>
     internal static SvgElement CreateElementByName(string name) =>
         name.ToLowerInvariant() switch
         {
@@ -424,6 +446,8 @@ public class SnapPaper : SnapElement
             "g" or "group" => new SvgGroup(),
             "image" => new SvgImage(),
             "text" => new SvgText(),
+            "tspan" => new SvgTextSpan(),
+            "textpath" or "text-path" => new SvgTextPath(),
             "line" => new SvgLine(),
             "polyline" => new SvgPolyline(),
             "polygon" => new SvgPolygon(),
@@ -431,7 +455,20 @@ public class SnapPaper : SnapElement
             "clippath" or "clip-path" => new SvgClipPath(),
             "pattern" => new SvgPatternServer(),
             "use" => new SvgUse(),
-            _ => new SvgGroup()
+            "defs" => new SvgDefinitionList(),
+            "lineargradient" or "linear-gradient" => new SvgLinearGradientServer(),
+            "radialgradient" or "radial-gradient" => new SvgRadialGradientServer(),
+            "stop" => new SvgGradientStop(),
+            "symbol" => new SvgSymbol(),
+            "marker" => new SvgMarker(),
+            
+            "svg" => new SvgFragment(),
+            _ => throw new ArgumentException(
+                $"'{name}' is not an SVG element this adapter can create. Supported: rect, circle, ellipse, path, " +
+                "g, image, text, tspan, textPath, line, polyline, polygon, mask, clipPath, pattern, use, defs, " +
+                "linearGradient, radialGradient, stop, symbol, marker, svg. For gradients prefer " +
+                "paper.gradient(...), paper.gradientLinear(...) or paper.gradientRadial(...).",
+                nameof(name))
         };
     #endregion
 

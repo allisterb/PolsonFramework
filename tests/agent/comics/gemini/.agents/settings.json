@@ -1,0 +1,62 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp:polson:Search",
+      "mcp:polson:ExecuteScript",
+      "mcp:polson:RenderSvg",
+      "mcp:polson:MeasureSvgPath",
+      "mcp:polson:History",
+      "read:*",
+      "write:*",
+      "edit:*",
+      "glob:*",
+      "grep:*"
+    ],
+    "deny": [
+      "bash:*",
+      "shell:*",
+      "run_command:*",
+      "run_terminal_command:*",
+      "web_fetch:*",
+      "web_search:*",
+      "task:*",
+
+      "read:C:/Projects/Polson/src/**",
+      "read:C:/Projects/Polson/docs/**",
+      "read:C:/Projects/Polson/reference/**",
+      "read:C:/Projects/Polson/bin/**",
+      "read:C:/Projects/Polson/CLAUDE.md",
+      "read:C:/Projects/Polson/GEMINI.md",
+      "read:C:/Projects/Polson/README.md",
+      "read:C:/Projects/Polson/Polson.sln",
+      "read:C:/Projects/Polson/Directory.Build.props",
+      "read:C:/Projects/Polson/tests/Polson.Tests.Drawing/**",
+      "read:C:/Projects/Polson/tests/Polson.Tests.MCPServer/**",
+      "read:C:/Projects/Polson/tests/multi_agent/**",
+      "read:C:/Projects/Polson/tests/agent/logo_designer/**",
+      "read:C:/Projects/Polson/tests/agent/comics/claude/**",
+
+      "glob:C:/Projects/Polson/src/**",
+      "glob:C:/Projects/Polson/docs/**",
+      "glob:C:/Projects/Polson/reference/**",
+      "glob:C:/Projects/Polson/tests/multi_agent/**",
+      "glob:C:/Projects/Polson/tests/agent/comics/claude/**",
+
+      "grep:C:/Projects/Polson/src/**",
+      "grep:C:/Projects/Polson/docs/**",
+      "grep:C:/Projects/Polson/reference/**",
+      "grep:C:/Projects/Polson/tests/multi_agent/**",
+      "grep:C:/Projects/Polson/tests/agent/comics/claude/**",
+
+      "write:C:/Projects/Polson/src/**",
+      "write:C:/Projects/Polson/docs/**",
+      "write:C:/Projects/Polson/reference/**",
+      "write:C:/Projects/Polson/tests/agent/comics/claude/**",
+
+      "edit:C:/Projects/Polson/src/**",
+      "edit:C:/Projects/Polson/docs/**",
+      "edit:C:/Projects/Polson/reference/**",
+      "edit:C:/Projects/Polson/tests/agent/comics/claude/**"
+    ]
+  }
+}

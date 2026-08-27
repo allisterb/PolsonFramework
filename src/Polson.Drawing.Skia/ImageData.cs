@@ -46,6 +46,9 @@ public class ImageData
     #endregion
 
     #region Methods
+    /// <summary>PNG shorthand for <see cref="ToImageBytes"/>, the spelling the SDK reference documents.</summary>
+    public byte[] ToPngBytes(int quality = 100) => ToImageBytes("png", quality);
+
     public byte[] ToImageBytes(string format = "webp", int quality = 85)
     {
         using var tempBmp = new SKBitmap(new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));

@@ -31,7 +31,7 @@ public class SnapElement
 
     public virtual string Type => GetElementType(Node);
 
-    public string ID
+    public string Id
     {
         get => Node.ID;
         set => Node.ID = value;
@@ -312,7 +312,7 @@ public class SnapElement
 
     public virtual SnapUse Use(object target)
     {
-        var id = target is SnapElement el ? el.ID : target?.ToString() ?? string.Empty;
+        var id = target is SnapElement el ? el.Id : target?.ToString() ?? string.Empty;
         var use = new SvgUse
         {
             ReferencedElement = new Uri(id.StartsWith('#') ? id : "#" + id, UriKind.RelativeOrAbsolute)

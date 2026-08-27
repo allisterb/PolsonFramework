@@ -187,7 +187,7 @@ public class DrawingTests : TestsRuntime
         var paper = Snap.Create(600, 600);
         var g1 = paper.G();
         var c1 = paper.Circle(50, 50, 25);
-        c1.ID = "mainCircle";
+        c1.Id = "mainCircle";
         c1.Attr("class", "clickable highlight");
 
         var c2 = paper.Circle(150, 150, 25);
@@ -200,7 +200,7 @@ public class DrawingTests : TestsRuntime
 
         var foundById = paper.Select("#mainCircle");
         Assert.NotNull(foundById);
-        Assert.Equal("mainCircle", foundById.ID);
+        Assert.Equal("mainCircle", foundById.Id);
 
         var clickables = paper.SelectAll(".clickable");
         Assert.Equal(2, clickables.Count);

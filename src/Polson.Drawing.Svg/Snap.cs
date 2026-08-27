@@ -6,13 +6,19 @@ using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 
+/// <summary>Snap.svg-compatible entry point and factory.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public static class Snap
 {
     #region Properties
     public static string Version => "0.5.1";
-    public static SnapPathApi path { get; } = new();
-    public static VectorLogoToolkit vectorLogo { get; } = new();
-    public static VectorLogoToolkit logo => vectorLogo;
+    public static SnapPathApi Path { get; } = new();
+    public static VectorLogoToolkit VectorLogo { get; } = new();
+    public static VectorLogoToolkit Logo => VectorLogo;
     #endregion
 
     #region Methods

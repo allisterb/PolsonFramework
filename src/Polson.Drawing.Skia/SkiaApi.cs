@@ -7,6 +7,12 @@ using System.IO;
 using System.Linq;
 using SkiaSharp;
 
+/// <summary>Root of the <c>Skia</c> namespace: shaders, filters, images and bitmaps.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaApi
 {
     #region Properties
@@ -22,10 +28,16 @@ public class SkiaApi
     #endregion
 }
 
+/// <summary>The <c>Skia.Image</c> sub-namespace.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaImageApi
 {
     #region Methods
-    public SkiaBitmapWrapper load(string filePath)
+    public SkiaBitmapWrapper Load(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         if (!File.Exists(filePath))
@@ -39,16 +51,16 @@ public class SkiaImageApi
         return new SkiaBitmapWrapper(bmp);
     }
 
-    public SkiaBitmapWrapper fromDataUrl(string dataUrl)
+    public SkiaBitmapWrapper FromDataUrl(string dataUrl)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataUrl);
         var commaIdx = dataUrl.IndexOf(',');
         var base64 = commaIdx >= 0 ? dataUrl[(commaIdx + 1)..] : dataUrl;
         var bytes = Convert.FromBase64String(base64);
-        return fromBytes(bytes);
+        return FromBytes(bytes);
     }
 
-    public SkiaBitmapWrapper fromBytes(byte[] bytes)
+    public SkiaBitmapWrapper FromBytes(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         var bmp = SKBitmap.Decode(bytes);
@@ -60,18 +72,30 @@ public class SkiaImageApi
     #endregion
 }
 
+/// <summary>The <c>Skia.Bitmap</c> sub-namespace.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaBitmapFactoryApi
 {
     #region Methods
-    public SkiaBitmapWrapper create(int width, int height) =>
+    public SkiaBitmapWrapper Create(int width, int height) =>
         new(width, height);
     #endregion
 }
 
+/// <summary>The <c>Skia.Shader</c> sub-namespace, including SkSL compilation.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaShaderApi
 {
     #region Methods
-    public SKShader perlinNoiseTurbulence(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, float tileSizeX = 0, float tileSizeY = 0)
+    public SKShader PerlinNoiseTurbulence(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, float tileSizeX = 0, float tileSizeY = 0)
     {
         if (tileSizeX > 0 && tileSizeY > 0)
         {
@@ -81,7 +105,7 @@ public class SkiaShaderApi
         return SKShader.CreatePerlinNoiseTurbulence(baseFrequencyX, baseFrequencyY, numOctaves, seed);
     }
 
-    public SKShader perlinNoiseFractal(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, float tileSizeX = 0, float tileSizeY = 0)
+    public SKShader PerlinNoiseFractal(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, float tileSizeX = 0, float tileSizeY = 0)
     {
         if (tileSizeX > 0 && tileSizeY > 0)
         {
@@ -91,7 +115,7 @@ public class SkiaShaderApi
         return SKShader.CreatePerlinNoiseFractalNoise(baseFrequencyX, baseFrequencyY, numOctaves, seed);
     }
 
-    public SKShader twoPointConical(float x0, float y0, float r0, float x1, float y1, float r1, object colorsObj, object? posObj = null, string tileMode = "clamp")
+    public SKShader TwoPointConical(float x0, float y0, float r0, float x1, float y1, float r1, object colorsObj, object? posObj = null, string tileMode = "clamp")
     {
         var colors = ParseColors(colorsObj);
         var positions = ParsePositions(posObj);
@@ -99,14 +123,14 @@ public class SkiaShaderApi
         return SKShader.CreateTwoPointConicalGradient(new SKPoint(x0, y0), r0, new SKPoint(x1, y1), r1, colors, positions, tm);
     }
 
-    public SKShader sweep(float cx, float cy, object colorsObj, object? posObj = null, float startAngleDeg = 0f, float endAngleDeg = 360f)
+    public SKShader Sweep(float cx, float cy, object colorsObj, object? posObj = null, float startAngleDeg = 0f, float endAngleDeg = 360f)
     {
         var colors = ParseColors(colorsObj);
         var positions = ParsePositions(posObj);
         return SKShader.CreateSweepGradient(new SKPoint(cx, cy), colors, positions, SKShaderTileMode.Clamp, startAngleDeg, endAngleDeg);
     }
 
-    public SKShader linear(float x0, float y0, float x1, float y1, object colorsObj, object? posObj = null, string tileMode = "clamp")
+    public SKShader Linear(float x0, float y0, float x1, float y1, object colorsObj, object? posObj = null, string tileMode = "clamp")
     {
         var colors = ParseColors(colorsObj);
         var positions = ParsePositions(posObj);
@@ -114,7 +138,7 @@ public class SkiaShaderApi
         return SKShader.CreateLinearGradient(new SKPoint(x0, y0), new SKPoint(x1, y1), colors, positions, tm);
     }
 
-    public SKShader radial(float cx, float cy, float radius, object colorsObj, object? posObj = null, string tileMode = "clamp")
+    public SKShader Radial(float cx, float cy, float radius, object colorsObj, object? posObj = null, string tileMode = "clamp")
     {
         var colors = ParseColors(colorsObj);
         var positions = ParsePositions(posObj);
@@ -122,7 +146,7 @@ public class SkiaShaderApi
         return SKShader.CreateRadialGradient(new SKPoint(cx, cy), radius, colors, positions, tm);
     }
 
-    public SKShader bitmap(object bitmapObj, string tileX = "clamp", string tileY = "clamp")
+    public SKShader Bitmap(object bitmapObj, string tileX = "clamp", string tileY = "clamp")
     {
         var bmp = bitmapObj switch
         {
@@ -137,7 +161,7 @@ public class SkiaShaderApi
         return SKShader.CreateBitmap(bmp, tx, ty);
     }
 
-    public SKShader sksl(string skslCode, object? uniformsObj = null, object? childrenObj = null)
+    public SKShader Sksl(string skslCode, object? uniformsObj = null, object? childrenObj = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(skslCode);
         using var effect = SKRuntimeEffect.CreateShader(skslCode, out var errors);
@@ -158,8 +182,8 @@ public class SkiaShaderApi
         return uniforms != null ? effect.ToShader(uniforms) : effect.ToShader();
     }
 
-    public SKShader custom(string skslCode, object? uniformsObj = null, object? childrenObj = null) =>
-        sksl(skslCode, uniformsObj, childrenObj);
+    public SKShader Custom(string skslCode, object? uniformsObj = null, object? childrenObj = null) =>
+        Sksl(skslCode, uniformsObj, childrenObj);
 
     internal static SKRuntimeEffectUniforms? PopulateUniforms(SKRuntimeEffect effect, object? uniformsObj)
     {
@@ -314,28 +338,34 @@ public class SkiaShaderApi
     #endregion
 }
 
+/// <summary>The <c>Skia.ImageFilter</c> sub-namespace.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaImageFilterApi
 {
     #region Methods
-    public SKImageFilter blur(float sigmaX, float sigmaY) =>
+    public SKImageFilter Blur(float sigmaX, float sigmaY) =>
         SKImageFilter.CreateBlur(sigmaX, sigmaY);
 
-    public SKImageFilter dropShadow(float dx, float dy, float sigmaX, float sigmaY, string color)
+    public SKImageFilter DropShadow(float dx, float dy, float sigmaX, float sigmaY, string color)
     {
         var skColor = SkiaColorParser.Parse(color);
         return SKImageFilter.CreateDropShadow(dx, dy, sigmaX, sigmaY, skColor);
     }
 
-    public SKImageFilter dilate(int radiusX, int radiusY) =>
+    public SKImageFilter Dilate(int radiusX, int radiusY) =>
         SKImageFilter.CreateDilate(radiusX, radiusY);
 
-    public SKImageFilter erode(int radiusX, int radiusY) =>
+    public SKImageFilter Erode(int radiusX, int radiusY) =>
         SKImageFilter.CreateErode(radiusX, radiusY);
 
-    public SKImageFilter colorFilter(SKColorFilter filter) =>
+    public SKImageFilter ColorFilter(SKColorFilter filter) =>
         SKImageFilter.CreateColorFilter(filter);
 
-    public SKImageFilter runtimeShader(string skslCode, object? uniformsObj = null)
+    public SKImageFilter RuntimeShader(string skslCode, object? uniformsObj = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(skslCode);
         using var effect = SKRuntimeEffect.CreateShader(skslCode, out var errors);
@@ -351,10 +381,16 @@ public class SkiaImageFilterApi
     #endregion
 }
 
+/// <summary>The <c>Skia.ColorFilter</c> sub-namespace.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaColorFilterApi
 {
     #region Methods
-    public SKColorFilter runtimeEffect(string skslCode, object? uniformsObj = null)
+    public SKColorFilter RuntimeEffect(string skslCode, object? uniformsObj = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(skslCode);
         using var effect = SKRuntimeEffect.CreateColorFilter(skslCode, out var errors);
@@ -366,7 +402,7 @@ public class SkiaColorFilterApi
         var uniforms = SkiaShaderApi.PopulateUniforms(effect, uniformsObj);
         return uniforms != null ? effect.ToColorFilter(uniforms) : effect.ToColorFilter();
     }
-    public SKColorFilter colorMatrix(object matrixObj)
+    public SKColorFilter ColorMatrix(object matrixObj)
     {
         var list = new List<float>();
         if (matrixObj is IEnumerable enumerable and not string)
@@ -393,14 +429,14 @@ public class SkiaColorFilterApi
         return SKColorFilter.CreateColorMatrix(id);
     }
 
-    public SKColorFilter blend(string color, string blendMode = "srcOver")
+    public SKColorFilter Blend(string color, string blendMode = "srcOver")
     {
         var skColor = SkiaColorParser.Parse(color);
         var bm = ParseBlendMode(blendMode);
         return SKColorFilter.CreateBlendMode(skColor, bm);
     }
 
-    public SKColorFilter highContrast(bool grayscale = true, string invertStyle = "none", float contrast = 0.5f)
+    public SKColorFilter HighContrast(bool grayscale = true, string invertStyle = "none", float contrast = 0.5f)
     {
         var style = invertStyle.ToLowerInvariant() switch
         {
@@ -448,10 +484,16 @@ public class SkiaColorFilterApi
     #endregion
 }
 
+/// <summary>The <c>Skia.PathEffect</c> sub-namespace.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaPathEffectApi
 {
     #region Methods
-    public SKPathEffect dash(object intervalsObj, float phase = 0f)
+    public SKPathEffect Dash(object intervalsObj, float phase = 0f)
     {
         var list = new List<float>();
         if (intervalsObj is IEnumerable enumerable and not string)
@@ -465,10 +507,10 @@ public class SkiaPathEffectApi
         return SKPathEffect.CreateDash(arr, phase);
     }
 
-    public SKPathEffect corner(float radius) =>
+    public SKPathEffect Corner(float radius) =>
         SKPathEffect.CreateCorner(radius);
 
-    public SKPathEffect discrete(float segLength, float deviation, uint seed = 0) =>
+    public SKPathEffect Discrete(float segLength, float deviation, uint seed = 0) =>
         SKPathEffect.CreateDiscrete(segLength, deviation, seed);
     #endregion
 }

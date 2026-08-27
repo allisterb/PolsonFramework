@@ -466,17 +466,17 @@ public class DrawingTests : TestsRuntime
     public void TestCanvas2DMultiLineAndWrappedText()
     {
         var canvas = new SkiaCanvas(500, 500);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.font = "16px sans-serif";
-        ctx.fillStyle = "#ffffff";
+        ctx.Font = "16px sans-serif";
+        ctx.FillStyle = "#ffffff";
 
         // Multi-line with \n
-        ctx.fillText("Line 1\nLine 2\nLine 3", 50, 50);
+        ctx.FillText("Line 1\nLine 2\nLine 3", 50, 50);
 
         // Word-wrapped paragraph
         var paragraph = "This is a long paragraph that should automatically wrap across multiple lines when rendered onto the canvas surface using fillWrappedText.";
-        ctx.fillWrappedText(paragraph, 50, 150, 200);
+        ctx.FillWrappedText(paragraph, 50, 150, 200);
 
         var imgBytes = canvas.ToImageBytes();
         Assert.NotNull(imgBytes);

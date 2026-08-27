@@ -8,6 +8,12 @@ using System.Linq;
 using System.Text;
 using SkiaSharp;
 
+/// <summary>Typography, optical kerning and brand lockup toolkit (Studio Manual 11).</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class LogoTypeToolkit
 {
     #region Nested Types
@@ -278,7 +284,7 @@ public class LogoTypeToolkit
         var brandFontSize = Convert.ToSingle(LogoDesignToolkit.GetProp(options, "fontSize") ?? 38f, CultureInfo.InvariantCulture);
         var taglineFontSize = Convert.ToSingle(LogoDesignToolkit.GetProp(options, "taglineSize") ?? 12f, CultureInfo.InvariantCulture);
 
-        ctx.save();
+        ctx.Save();
 
         if (layout == "vertical" || layout == "stacked")
         {
@@ -288,26 +294,26 @@ public class LogoTypeToolkit
 
             if (drawMarkFn != null)
             {
-                ctx.save();
-                ctx.translate(markX, markY);
+                ctx.Save();
+                ctx.Translate(markX, markY);
                 LogoDesignToolkit.InvokeCallback(drawMarkFn, [ctx, markSize]);
-                ctx.restore();
+                ctx.Restore();
             }
 
             // Wordmark below mark
-            ctx.fillStyle = primaryColor;
-            ctx.font = $"700 {brandFontSize}px sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "top";
+            ctx.FillStyle = primaryColor;
+            ctx.Font = $"700 {brandFontSize}px sans-serif";
+            ctx.TextAlign = "center";
+            ctx.TextBaseline = "top";
             var textY = markY + markSize + 18f;
-            ctx.fillText(brandName ?? string.Empty, markX + markSize * 0.5f, textY);
+            ctx.FillText(brandName ?? string.Empty, markX + markSize * 0.5f, textY);
 
             // Tagline below wordmark
             if (!string.IsNullOrWhiteSpace(tagline))
             {
-                ctx.fillStyle = taglineColor;
-                ctx.font = $"500 {taglineFontSize}px sans-serif";
-                ctx.fillText(tagline.ToUpperInvariant(), markX + markSize * 0.5f, textY + brandFontSize + 8f);
+                ctx.FillStyle = taglineColor;
+                ctx.Font = $"500 {taglineFontSize}px sans-serif";
+                ctx.FillText(tagline.ToUpperInvariant(), markX + markSize * 0.5f, textY + brandFontSize + 8f);
             }
         }
         else
@@ -318,35 +324,35 @@ public class LogoTypeToolkit
 
             if (drawMarkFn != null)
             {
-                ctx.save();
-                ctx.translate(markX, markY);
+                ctx.Save();
+                ctx.Translate(markX, markY);
                 LogoDesignToolkit.InvokeCallback(drawMarkFn, [ctx, markSize]);
-                ctx.restore();
+                ctx.Restore();
             }
 
             var textStartX = markX + markSize + 24f;
             var midY = markY + markSize * 0.5f;
 
             // Brand Wordmark
-            ctx.fillStyle = primaryColor;
-            ctx.font = $"700 {brandFontSize}px sans-serif";
-            ctx.textAlign = "left";
-            ctx.textBaseline = string.IsNullOrWhiteSpace(tagline) ? "middle" : "alphabetic";
+            ctx.FillStyle = primaryColor;
+            ctx.Font = $"700 {brandFontSize}px sans-serif";
+            ctx.TextAlign = "left";
+            ctx.TextBaseline = string.IsNullOrWhiteSpace(tagline) ? "middle" : "alphabetic";
 
             var wordmarkY = string.IsNullOrWhiteSpace(tagline) ? midY : midY + 4f;
-            ctx.fillText(brandName ?? string.Empty, textStartX, wordmarkY);
+            ctx.FillText(brandName ?? string.Empty, textStartX, wordmarkY);
 
             // Tagline
             if (!string.IsNullOrWhiteSpace(tagline))
             {
-                ctx.fillStyle = taglineColor;
-                ctx.font = $"500 {taglineFontSize}px sans-serif";
-                ctx.textBaseline = "top";
-                ctx.fillText(tagline.ToUpperInvariant(), textStartX + 1f, wordmarkY + 6f);
+                ctx.FillStyle = taglineColor;
+                ctx.Font = $"500 {taglineFontSize}px sans-serif";
+                ctx.TextBaseline = "top";
+                ctx.FillText(tagline.ToUpperInvariant(), textStartX + 1f, wordmarkY + 6f);
             }
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
     #endregion
 }

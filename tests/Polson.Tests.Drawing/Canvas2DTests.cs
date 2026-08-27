@@ -16,17 +16,17 @@ public class Canvas2DTests : TestsRuntime
         Assert.Equal(400, canvas.Width);
         Assert.Equal(300, canvas.Height);
 
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
         Assert.NotNull(ctx);
 
-        ctx.fillStyle = "#ff0000";
-        ctx.fillRect(10, 10, 100, 80);
+        ctx.FillStyle = "#ff0000";
+        ctx.FillRect(10, 10, 100, 80);
 
-        ctx.strokeStyle = "#0000ff";
-        ctx.lineWidth = 4f;
-        ctx.strokeRect(150, 20, 100, 50);
+        ctx.StrokeStyle = "#0000ff";
+        ctx.LineWidth = 4f;
+        ctx.StrokeRect(150, 20, 100, 50);
 
-        ctx.clearRect(20, 30, 20, 20);
+        ctx.ClearRect(20, 30, 20, 20);
 
         var webpBytes = canvas.ToImageBytes();
         Assert.NotNull(webpBytes);
@@ -43,26 +43,26 @@ public class Canvas2DTests : TestsRuntime
     public void TestPathConstructionAndArcs()
     {
         var canvas = new SkiaCanvas(500, 500);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.beginPath();
-        ctx.moveTo(50, 50);
-        ctx.lineTo(200, 50);
-        ctx.lineTo(200, 200);
-        ctx.closePath();
-        ctx.fillStyle = "#10b981";
-        ctx.fill();
+        ctx.BeginPath();
+        ctx.MoveTo(50, 50);
+        ctx.LineTo(200, 50);
+        ctx.LineTo(200, 200);
+        ctx.ClosePath();
+        ctx.FillStyle = "#10b981";
+        ctx.Fill();
 
-        ctx.beginPath();
-        ctx.arc(350, 200, 50, 0, MathF.PI * 2f);
-        ctx.fillStyle = "#3b82f6";
-        ctx.fill();
+        ctx.BeginPath();
+        ctx.Arc(350, 200, 50, 0, MathF.PI * 2f);
+        ctx.FillStyle = "#3b82f6";
+        ctx.Fill();
 
-        ctx.beginPath();
-        ctx.roundRect(50, 300, 150, 100, 20f);
-        ctx.strokeStyle = "#f59e0b";
-        ctx.lineWidth = 3f;
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.RoundRect(50, 300, 150, 100, 20f);
+        ctx.StrokeStyle = "#f59e0b";
+        ctx.LineWidth = 3f;
+        ctx.Stroke();
 
         var imgBytes = canvas.ToImageBytes();
         Assert.True(imgBytes.Length > 0);
@@ -74,21 +74,21 @@ public class Canvas2DTests : TestsRuntime
     public void TestStateStackAndTransforms()
     {
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.fillStyle = "#ff0000";
-        ctx.save();
+        ctx.FillStyle = "#ff0000";
+        ctx.Save();
 
-        ctx.translate(100, 100);
-        ctx.rotate(MathF.PI / 4f);
-        ctx.scale(2f, 2f);
-        ctx.fillStyle = "#00ff00";
-        ctx.fillRect(0, 0, 50, 50);
+        ctx.Translate(100, 100);
+        ctx.Rotate(MathF.PI / 4f);
+        ctx.Scale(2f, 2f);
+        ctx.FillStyle = "#00ff00";
+        ctx.FillRect(0, 0, 50, 50);
 
-        ctx.restore();
-        ctx.fillRect(0, 0, 20, 20); // Should be red (#ff0000)
+        ctx.Restore();
+        ctx.FillRect(0, 0, 20, 20); // Should be red (#ff0000)
 
-        var bmp = canvas.toBitmap();
+        var bmp = canvas.ToBitmap();
         Assert.NotNull(bmp);
         Assert.Equal(400, bmp.Width);
     }
@@ -99,24 +99,24 @@ public class Canvas2DTests : TestsRuntime
     public void TestLinearAndRadialGradients()
     {
         var canvas = new SkiaCanvas(600, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         // Linear gradient
-        var linGrad = ctx.createLinearGradient(0, 0, 600, 0);
-        linGrad.addColorStop(0f, "#ff0000");
-        linGrad.addColorStop(0.5f, "#00ff00");
-        linGrad.addColorStop(1f, "#0000ff");
+        var linGrad = ctx.CreateLinearGradient(0, 0, 600, 0);
+        linGrad.AddColorStop(0f, "#ff0000");
+        linGrad.AddColorStop(0.5f, "#00ff00");
+        linGrad.AddColorStop(1f, "#0000ff");
 
-        ctx.fillStyle = linGrad;
-        ctx.fillRect(0, 0, 600, 200);
+        ctx.FillStyle = linGrad;
+        ctx.FillRect(0, 0, 600, 200);
 
         // Radial gradient
-        var radGrad = ctx.createRadialGradient(300, 300, 20, 300, 300, 100);
-        radGrad.addColorStop(0f, "#ffffff");
-        radGrad.addColorStop(1f, "#000000");
+        var radGrad = ctx.CreateRadialGradient(300, 300, 20, 300, 300, 100);
+        radGrad.AddColorStop(0f, "#ffffff");
+        radGrad.AddColorStop(1f, "#000000");
 
-        ctx.fillStyle = radGrad;
-        ctx.fillRect(0, 200, 600, 200);
+        ctx.FillStyle = radGrad;
+        ctx.FillRect(0, 200, 600, 200);
 
         var dataUri = canvas.ToDataUri();
         Assert.StartsWith("data:image/webp;base64,", dataUri);
@@ -128,18 +128,18 @@ public class Canvas2DTests : TestsRuntime
     public void TestTextRenderingAndMetrics()
     {
         var canvas = new SkiaCanvas(600, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.font = "bold 32px sans-serif";
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
+        ctx.Font = "bold 32px sans-serif";
+        ctx.FillStyle = "#ffffff";
+        ctx.TextAlign = "center";
+        ctx.TextBaseline = "middle";
 
-        var metrics = ctx.measureText("Skia Canvas 2D");
+        var metrics = ctx.MeasureText("Skia Canvas 2D");
         Assert.NotNull(metrics);
         Assert.True(Convert.ToSingle(metrics["width"]) > 0);
 
-        ctx.fillText("Skia Canvas 2D", 300, 200);
+        ctx.FillText("Skia Canvas 2D", 300, 200);
 
         var imgBytes = canvas.ToImageBytes();
         Assert.True(imgBytes.Length > 0);
@@ -151,18 +151,18 @@ public class Canvas2DTests : TestsRuntime
     public void TestSkiaProceduralNoiseAndFilters()
     {
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
         var skia = new SkiaApi();
 
         // Procedural Perlin noise
-        var noise = skia.Shader.perlinNoiseTurbulence(0.05f, 0.05f, 4, 12345);
-        ctx.fillStyle = noise;
-        ctx.fillRect(0, 0, 400, 400);
+        var noise = skia.Shader.PerlinNoiseTurbulence(0.05f, 0.05f, 4, 12345);
+        ctx.FillStyle = noise;
+        ctx.FillRect(0, 0, 400, 400);
 
         // Native Gaussian Blur filter
-        ctx.filter = skia.ImageFilter.blur(5f, 5f);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(100, 100, 200, 200);
+        ctx.Filter = skia.ImageFilter.Blur(5f, 5f);
+        ctx.FillStyle = "#ffffff";
+        ctx.FillRect(100, 100, 200, 200);
 
         var imgBytes = canvas.ToImageBytes();
         Assert.True(imgBytes.Length > 0);
@@ -174,11 +174,11 @@ public class Canvas2DTests : TestsRuntime
     public void TestCrossEngineSvgDrawing()
     {
         var canvas = new SkiaCanvas(600, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         // Background in Canvas 2D
-        ctx.fillStyle = "#0f172a";
-        ctx.fillRect(0, 0, 600, 600);
+        ctx.FillStyle = "#0f172a";
+        ctx.FillRect(0, 0, 600, 600);
 
         // Vector SVG object created via Snap
         var paper = Snap.Create(300, 300);
@@ -186,7 +186,7 @@ public class Canvas2DTests : TestsRuntime
         paper.Rect(100, 100, 100, 100).Attr("fill", "#ec4899");
 
         // Draw SVG onto 2D Canvas
-        ctx.drawSvg(paper, 150, 150, 300, 300);
+        ctx.DrawSvg(paper, 150, 150, 300, 300);
 
         var imgBytes = canvas.ToImageBytes();
         Assert.NotNull(imgBytes);

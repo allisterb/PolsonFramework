@@ -51,11 +51,8 @@ This restriction is fundamental to this harness: it evaluates whether the publis
 
 ## Creative Task: Recreate `reference_images/comic1.png`
 
-Recreate the comic character illustration from `reference_images/comic1.png` ($447 \times 380$ px):
-- **Character**: Fierce auburn-haired pirate woman with dynamic high ponytail, slate headband, and loose windblown forehead curls.
-- **Anatomy & Expression**: Intense rightward gaze, arched brow, defined nose, open mouth showing upper teeth shelf, warm cel-shaded facial planes, and golden hoop earring.
-- **Clothing**: Popped linen shirt collar wings and navy wool coat shoulders with ink cross-hatching.
-- **Background**: Diagonal wooden spar/mast, 5 helical-shaded shroud ropes, cross-ratlines, and billowing cel-shaded cumulus clouds in a coastal blue sky.
+Recreate the comic character illustration from `reference_images/comic2.png`
+
 
 ### Creative & Technical Approach
 - Use Canvas 2D / Skia for continuous, volumetric Bézier curves and cel-shadow planes.

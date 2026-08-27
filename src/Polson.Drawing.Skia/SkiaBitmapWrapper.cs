@@ -3,6 +3,12 @@ namespace Polson.Drawing.Skia;
 using System;
 using SkiaSharp;
 
+/// <summary>Editable bitmap with post-processing and encoding helpers.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaBitmapWrapper : IDisposable
 {
     #region Constructors
@@ -20,16 +26,13 @@ public class SkiaBitmapWrapper : IDisposable
     #endregion
 
     #region Properties
-    public int width => Bitmap.Width;
-    public int height => Bitmap.Height;
-
     public int Width => Bitmap.Width;
     public int Height => Bitmap.Height;
     public SKBitmap Bitmap { get; }
     #endregion
 
     #region Methods
-    public SkiaBitmapWrapper extractSubset(int x, int y, int width, int height)
+    public SkiaBitmapWrapper ExtractSubset(int x, int y, int width, int height)
     {
         var clampedX = Math.Clamp(x, 0, Bitmap.Width);
         var clampedY = Math.Clamp(y, 0, Bitmap.Height);
@@ -53,7 +56,7 @@ public class SkiaBitmapWrapper : IDisposable
         return new SkiaBitmapWrapper(copy);
     }
 
-    public SkiaBitmapWrapper resize(int targetWidth, int targetHeight, string quality = "linear")
+    public SkiaBitmapWrapper Resize(int targetWidth, int targetHeight, string quality = "linear")
     {
         var tw = Math.Max(1, targetWidth);
         var th = Math.Max(1, targetHeight);
@@ -78,7 +81,7 @@ public class SkiaBitmapWrapper : IDisposable
         return new SkiaBitmapWrapper(resized);
     }
 
-    public SkiaBitmapWrapper rotate(float angleDeg)
+    public SkiaBitmapWrapper Rotate(float angleDeg)
     {
         var rad = angleDeg * MathF.PI / 180f;
         var sin = MathF.Abs(MathF.Sin(rad));
@@ -99,7 +102,7 @@ public class SkiaBitmapWrapper : IDisposable
         return new SkiaBitmapWrapper(rotated);
     }
 
-    public SkiaBitmapWrapper flip(string direction = "horizontal")
+    public SkiaBitmapWrapper Flip(string direction = "horizontal")
     {
         var info = new SKImageInfo(Bitmap.Width, Bitmap.Height, Bitmap.ColorType, Bitmap.AlphaType);
         var flipped = new SKBitmap(info);
@@ -116,7 +119,7 @@ public class SkiaBitmapWrapper : IDisposable
         return new SkiaBitmapWrapper(flipped);
     }
 
-    public string getPixel(int x, int y)
+    public string GetPixel(int x, int y)
     {
         if (x < 0 || x >= Bitmap.Width || y < 0 || y >= Bitmap.Height)
             return "#00000000";
@@ -124,7 +127,7 @@ public class SkiaBitmapWrapper : IDisposable
         return $"#{c.Red:X2}{c.Green:X2}{c.Blue:X2}{c.Alpha:X2}";
     }
 
-    public void setPixel(int x, int y, string color)
+    public void SetPixel(int x, int y, string color)
     {
         if (x < 0 || x >= Bitmap.Width || y < 0 || y >= Bitmap.Height)
             return;
@@ -132,7 +135,7 @@ public class SkiaBitmapWrapper : IDisposable
         Bitmap.SetPixel(x, y, c);
     }
 
-    public SkiaBitmapWrapper applyFilter(SKImageFilter filter)
+    public SkiaBitmapWrapper ApplyFilter(SKImageFilter filter)
     {
         var info = new SKImageInfo(Bitmap.Width, Bitmap.Height, Bitmap.ColorType, Bitmap.AlphaType);
         var filtered = new SKBitmap(info);
@@ -145,7 +148,7 @@ public class SkiaBitmapWrapper : IDisposable
         return new SkiaBitmapWrapper(filtered);
     }
 
-    public SkiaBitmapWrapper applyColorFilter(SKColorFilter colorFilter)
+    public SkiaBitmapWrapper ApplyColorFilter(SKColorFilter colorFilter)
     {
         var info = new SKImageInfo(Bitmap.Width, Bitmap.Height, Bitmap.ColorType, Bitmap.AlphaType);
         var filtered = new SKBitmap(info);
@@ -161,22 +164,16 @@ public class SkiaBitmapWrapper : IDisposable
     public byte[] ToImageBytes(string format = "webp", int quality = 85) =>
         SkiaImageEncoder.Encode(Bitmap, format, quality);
 
-    public byte[] toImageBytes(string format = "webp", int quality = 85) =>
-        ToImageBytes(format, quality);
-
     public string ToDataUri(string format = "webp", int quality = 85)
     {
         var bytes = ToImageBytes(format, quality);
         return SkiaImageEncoder.ToDataUri(bytes, format);
     }
 
-    public string toDataUri(string format = "webp", int quality = 85) =>
+    public string ToDataURL(string format = "webp", int quality = 85) =>
         ToDataUri(format, quality);
 
-    public string toDataURL(string format = "webp", int quality = 85) =>
-        ToDataUri(format, quality);
-
-    public SkiaBitmapWrapper clone() =>
+    public SkiaBitmapWrapper Clone() =>
         new(Bitmap.Copy());
 
     public void Dispose()

@@ -8,6 +8,12 @@ using System.Linq;
 using System.Text;
 using System.Xml;
 
+/// <summary>Root SVG document — the object a vector script draws onto.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SnapPaper : SnapElement
 {
     #region Constructors
@@ -361,17 +367,13 @@ public class SnapPaper : SnapElement
         return $"data:{mime};base64,{Convert.ToBase64String(imgBytes)}";
     }
 
-    public string toDataUri(string format = "svg", int? width = null, int? height = null, int quality = 85) =>
-        ToDataUri(format, width, height, quality);
 
-    public string toDataURL(string format = "svg", int? width = null, int? height = null, int quality = 85) =>
+    public string ToDataURL(string format = "svg", int? width = null, int? height = null, int quality = 85) =>
         ToDataUri(format, width, height, quality);
 
     public byte[] ToImageBytes(int? width = null, int? height = null, string format = "webp", int quality = 85) =>
         SvgRenderPipeline.RenderToImage(Document, width, height, format, quality);
 
-    public byte[] toImageBytes(int? width = null, int? height = null, string format = "webp", int quality = 85) =>
-        ToImageBytes(width, height, format, quality);
 
     public void SaveImage(string filePath, int? width = null, int? height = null, string format = "webp", int quality = 85) =>
         SvgRenderPipeline.SaveImage(Document, filePath, width, height, format, quality);

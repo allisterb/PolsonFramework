@@ -3,6 +3,12 @@ namespace Polson.Drawing.Skia;
 using System;
 using SkiaSharp;
 
+/// <summary>Raster canvas surface — the root object a raster script draws onto.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SkiaCanvas : IDisposable
 {
     #region Constructors
@@ -19,8 +25,6 @@ public class SkiaCanvas : IDisposable
     #endregion
 
     #region Properties
-    public int width => Width;
-    public int height => Height;
 
     public int Width { get; }
     public int Height { get; }
@@ -29,7 +33,7 @@ public class SkiaCanvas : IDisposable
     #endregion
 
     #region Methods
-    public CanvasRenderingContext2D getContext(string contextType = "2d")
+    public CanvasRenderingContext2D GetContext(string contextType = "2d")
     {
         if (!string.Equals(contextType, "2d", StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException($"Context type '{contextType}' is not supported. Only '2d' is supported.");
@@ -38,23 +42,20 @@ public class SkiaCanvas : IDisposable
         return _context;
     }
 
-    public void clear(string? color = null)
+    public void Clear(string? color = null)
     {
         var skColor = string.IsNullOrEmpty(color) ? SKColors.Transparent : SkiaColorParser.Parse(color);
         SkCanvas.Clear(skColor);
     }
 
-    public SkiaBitmapWrapper toBitmap() =>
+    public SkiaBitmapWrapper ToBitmap() =>
         new(Bitmap.Copy());
 
-    public ImageData toImageData() =>
-        getContext("2d").getImageData(0, 0, Width, Height);
+    public ImageData ToImageData() =>
+        GetContext("2d").GetImageData(0, 0, Width, Height);
 
     public byte[] ToImageBytes(string format = "webp", int quality = 85) =>
         SkiaImageEncoder.Encode(Bitmap, format, quality);
-
-    public byte[] toImageBytes(string format = "webp", int quality = 85) =>
-        ToImageBytes(format, quality);
 
     public string ToDataUri(string format = "webp", int quality = 85)
     {
@@ -62,10 +63,7 @@ public class SkiaCanvas : IDisposable
         return SkiaImageEncoder.ToDataUri(bytes, format);
     }
 
-    public string toDataUri(string format = "webp", int quality = 85) =>
-        ToDataUri(format, quality);
-
-    public string toDataURL(string format = "webp", int quality = 85) =>
+    public string ToDataURL(string format = "webp", int quality = 85) =>
         ToDataUri(format, quality);
 
     public void Dispose()

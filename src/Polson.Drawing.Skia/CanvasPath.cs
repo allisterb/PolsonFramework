@@ -7,6 +7,12 @@ using SkiaSharp;
 
 #pragma warning disable CS0618
 
+/// <summary>Retained Canvas 2D path, mirroring the DOM <c>Path2D</c> interface.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class CanvasPath : IDisposable
 {
     #region Constructors
@@ -31,17 +37,17 @@ public class CanvasPath : IDisposable
     #endregion
 
     #region Methods
-    public void beginPath()
+    public void BeginPath()
     {
         Path.Reset();
     }
 
-    public void moveTo(float x, float y)
+    public void MoveTo(float x, float y)
     {
         Path.MoveTo(x, y);
     }
 
-    public void lineTo(float x, float y)
+    public void LineTo(float x, float y)
     {
         if (Path.PointCount == 0)
         {
@@ -53,17 +59,17 @@ public class CanvasPath : IDisposable
         }
     }
 
-    public void closePath()
+    public void ClosePath()
     {
         Path.Close();
     }
 
-    public void rect(float x, float y, float width, float height)
+    public void Rect(float x, float y, float width, float height)
     {
         Path.AddRect(SKRect.Create(x, y, width, height));
     }
 
-    public void roundRect(float x, float y, float width, float height, object? radii = null)
+    public void RoundRect(float x, float y, float width, float height, object? radii = null)
     {
         var r = ParseRadii(radii);
         var rect = SKRect.Create(x, y, width, height);
@@ -78,7 +84,7 @@ public class CanvasPath : IDisposable
         Path.AddRoundRect(rrect);
     }
 
-    public void arc(float x, float y, float radius, float startAngle, float endAngle, bool anticlockwise = false)
+    public void Arc(float x, float y, float radius, float startAngle, float endAngle, bool anticlockwise = false)
     {
         if (radius < 0) throw new ArgumentOutOfRangeException(nameof(radius), "Radius must be non-negative");
 
@@ -111,12 +117,12 @@ public class CanvasPath : IDisposable
         }
     }
 
-    public void arcTo(float x1, float y1, float x2, float y2, float radius)
+    public void ArcTo(float x1, float y1, float x2, float y2, float radius)
     {
         Path.ArcTo(x1, y1, x2, y2, radius);
     }
 
-    public void ellipse(float x, float y, float radiusX, float radiusY, float rotation, float startAngle, float endAngle, bool anticlockwise = false)
+    public void Ellipse(float x, float y, float radiusX, float radiusY, float rotation, float startAngle, float endAngle, bool anticlockwise = false)
     {
         if (radiusX < 0 || radiusY < 0) throw new ArgumentOutOfRangeException("Radii must be non-negative");
 
@@ -147,23 +153,23 @@ public class CanvasPath : IDisposable
         else Path.AddPath(tempPath, SKPathAddMode.Extend);
     }
 
-    public void bezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y)
+    public void BezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y)
     {
         Path.CubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
     }
 
-    public void sCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y) =>
-        bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+    public void SCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y) =>
+        BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
 
-    public void quadraticCurveTo(float cpx, float cpy, float x, float y)
+    public void QuadraticCurveTo(float cpx, float cpy, float x, float y)
     {
         Path.QuadTo(cpx, cpy, x, y);
     }
 
-    public void cCurveTo(float cpx, float cpy, float x, float y) =>
-        quadraticCurveTo(cpx, cpy, x, y);
+    public void CCurveTo(float cpx, float cpy, float x, float y) =>
+        QuadraticCurveTo(cpx, cpy, x, y);
 
-    public void addPath(CanvasPath other)
+    public void AddPath(CanvasPath other)
     {
         ArgumentNullException.ThrowIfNull(other);
         Path.AddPath(other.Path);

@@ -39,7 +39,7 @@ public class LogoDesignToolkitTests : TestsRuntime
     {
         var toolkit = new LogoDesignToolkit();
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         toolkit.DrawGoldenSpiral(ctx, 400f, 300f, 20f, 3f, new Dictionary<string, object?>
         {
@@ -92,7 +92,7 @@ public class LogoDesignToolkitTests : TestsRuntime
         Assert.True(Convert.ToSingle(grid["dy"]) > 15f);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         toolkit.DrawIsometricGrid(ctx, 800f, 600f, 40f);
         var bytes = canvas.ToImageBytes("png");
@@ -105,7 +105,7 @@ public class LogoDesignToolkitTests : TestsRuntime
     {
         var toolkit = new LogoDesignToolkit();
         var canvas = new SkiaCanvas(600, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         toolkit.DrawPolarGrid(ctx, 300f, 300f, new object[] { 50f, 100f, 150f, 200f }, 12);
         var bytes = canvas.ToImageBytes("png");
@@ -144,7 +144,7 @@ public class LogoDesignToolkitTests : TestsRuntime
         Assert.False(path.IsEmpty);
 
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         toolkit.DrawSquircle(ctx, 50f, 50f, 300f, 300f, new Dictionary<string, object?>
         {
@@ -164,7 +164,7 @@ public class LogoDesignToolkitTests : TestsRuntime
     {
         var toolkit = new LogoDesignToolkit();
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         toolkit.DrawEmblemBadge(ctx, 150f, 300f, 100f, "shield", new Dictionary<string, object?> { ["fill"] = "#0f172a" });
         toolkit.DrawEmblemBadge(ctx, 400f, 300f, 100f, "hexagon", new Dictionary<string, object?> { ["fill"] = "#1e293b" });
@@ -180,7 +180,7 @@ public class LogoDesignToolkitTests : TestsRuntime
     {
         var toolkit = new LogoDesignToolkit();
         var canvas = new SkiaCanvas(600, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         toolkit.DrawClearSpaceGuide(ctx, new Dictionary<string, object?>
         {
@@ -239,14 +239,14 @@ public class LogoDesignToolkitTests : TestsRuntime
     {
         var toolkit = new LogoDesignToolkit();
         var canvas = new SkiaCanvas(1000, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         Action<CanvasRenderingContext2D, float> drawMark = (c, size) =>
         {
-            c.fillStyle = "#2563eb";
-            c.beginPath();
-            c.arc(size * 0.5f, size * 0.5f, size * 0.4f, 0, MathF.PI * 2f);
-            c.fill();
+            c.FillStyle = "#2563eb";
+            c.BeginPath();
+            c.Arc(size * 0.5f, size * 0.5f, size * 0.4f, 0, MathF.PI * 2f);
+            c.Fill();
         };
 
         toolkit.GenerateFaviconScaleTest(ctx, drawMark);
@@ -261,12 +261,12 @@ public class LogoDesignToolkitTests : TestsRuntime
     {
         var toolkit = new LogoDesignToolkit();
         var canvas = new SkiaCanvas(1200, 800);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         Action<CanvasRenderingContext2D, float> drawMark = (c, size) =>
         {
-            c.fillStyle = "#38bdf8";
-            c.fillRect(size * 0.2f, size * 0.2f, size * 0.6f, size * 0.6f);
+            c.FillStyle = "#38bdf8";
+            c.FillRect(size * 0.2f, size * 0.2f, size * 0.6f, size * 0.6f);
         };
 
         toolkit.GenerateBrandPresentationSheet(ctx, new Dictionary<string, object?>
@@ -417,7 +417,7 @@ public class LogoDesignToolkitTests : TestsRuntime
         var result = engine.Execute(js);
         var fn = result.ReturnValue;
         var canvas = new Polson.Drawing.Skia.SkiaCanvas(100, 100);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
         LogoDesignToolkit.InvokeCallback(fn, ctx, 50f);
     }
 

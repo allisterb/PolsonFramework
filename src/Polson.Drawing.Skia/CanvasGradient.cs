@@ -12,6 +12,12 @@ public enum GradientType
     Conic
 }
 
+/// <summary>Canvas 2D gradient handle returned by the gradient factory methods.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class CanvasGradient
 {
     #region Constructors
@@ -49,7 +55,7 @@ public class CanvasGradient
     #endregion
 
     #region Methods
-    public CanvasGradient addColorStop(float offset, string color)
+    public CanvasGradient AddColorStop(float offset, string color)
     {
         var skColor = SkiaColorParser.Parse(color);
         _colorStops.Add((Math.Clamp(offset, 0f, 1f), skColor));

@@ -8,6 +8,12 @@ using Polson.Drawing.Svg;
 using SkiaSharp;
 using SKSvg = global::Svg.Skia.SKSvg;
 
+/// <summary>HTML5 Canvas 2D rendering context, implemented over SkiaSharp.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class CanvasRenderingContext2D
 {
     #region Constructors
@@ -23,7 +29,7 @@ public class CanvasRenderingContext2D
     #region Properties
     public SkiaCanvas Canvas { get; }
 
-    public object fillStyle
+    public object FillStyle
     {
         get => _currentState.FillGradient != null ? (object)_currentState.FillGradient
              : _currentState.FillPattern != null ? (object)_currentState.FillPattern
@@ -59,7 +65,7 @@ public class CanvasRenderingContext2D
         }
     }
 
-    public object strokeStyle
+    public object StrokeStyle
     {
         get => _currentState.StrokeGradient != null ? (object)_currentState.StrokeGradient
              : _currentState.StrokePattern != null ? (object)_currentState.StrokePattern
@@ -95,13 +101,13 @@ public class CanvasRenderingContext2D
         }
     }
 
-    public float lineWidth
+    public float LineWidth
     {
         get => _currentState.LineWidth;
         set => _currentState.LineWidth = Math.Max(0.0001f, value);
     }
 
-    public string lineCap
+    public string LineCap
     {
         get => _currentState.LineCap.ToString().ToLowerInvariant();
         set => _currentState.LineCap = value.ToLowerInvariant() switch
@@ -112,7 +118,7 @@ public class CanvasRenderingContext2D
         };
     }
 
-    public string lineJoin
+    public string LineJoin
     {
         get => _currentState.LineJoin.ToString().ToLowerInvariant();
         set => _currentState.LineJoin = value.ToLowerInvariant() switch
@@ -123,49 +129,49 @@ public class CanvasRenderingContext2D
         };
     }
 
-    public float miterLimit
+    public float MiterLimit
     {
         get => _currentState.MiterLimit;
         set => _currentState.MiterLimit = Math.Max(0.0001f, value);
     }
 
-    public float globalAlpha
+    public float GlobalAlpha
     {
         get => _currentState.GlobalAlpha;
         set => _currentState.GlobalAlpha = Math.Clamp(value, 0f, 1f);
     }
 
-    public string globalCompositeOperation
+    public string GlobalCompositeOperation
     {
         get => _currentState.BlendMode.ToString().ToLowerInvariant();
         set => _currentState.BlendMode = SkiaColorFilterApi.ParseBlendMode(value);
     }
 
-    public string shadowColor
+    public string ShadowColor
     {
         get => $"#{_currentState.ShadowColor.Red:X2}{_currentState.ShadowColor.Green:X2}{_currentState.ShadowColor.Blue:X2}";
         set => _currentState.ShadowColor = SkiaColorParser.Parse(value);
     }
 
-    public float shadowBlur
+    public float ShadowBlur
     {
         get => _currentState.ShadowBlur;
         set => _currentState.ShadowBlur = Math.Max(0f, value);
     }
 
-    public float shadowOffsetX
+    public float ShadowOffsetX
     {
         get => _currentState.ShadowOffsetX;
         set => _currentState.ShadowOffsetX = value;
     }
 
-    public float shadowOffsetY
+    public float ShadowOffsetY
     {
         get => _currentState.ShadowOffsetY;
         set => _currentState.ShadowOffsetY = value;
     }
 
-    public string font
+    public string Font
     {
         get => _currentState.Font;
         set
@@ -177,31 +183,31 @@ public class CanvasRenderingContext2D
         }
     }
 
-    public string textAlign
+    public string TextAlign
     {
         get => _currentState.TextAlign;
         set => _currentState.TextAlign = value.ToLowerInvariant();
     }
 
-    public string textBaseline
+    public string TextBaseline
     {
         get => _currentState.TextBaseline;
         set => _currentState.TextBaseline = value.ToLowerInvariant();
     }
 
-    public SKImageFilter? filter
+    public SKImageFilter? Filter
     {
         get => _currentState.ImageFilter;
         set => _currentState.ImageFilter = value;
     }
 
-    public SKColorFilter? colorFilter
+    public SKColorFilter? ColorFilter
     {
         get => _currentState.ColorFilter;
         set => _currentState.ColorFilter = value;
     }
 
-    public SKPathEffect? pathEffect
+    public SKPathEffect? PathEffect
     {
         get => _currentState.PathEffect;
         set => _currentState.PathEffect = value;
@@ -210,13 +216,13 @@ public class CanvasRenderingContext2D
 
     #region Methods
     #region State Stack
-    public void save()
+    public void Save()
     {
         _states.Push(new CanvasState(_currentState));
         Canvas.SkCanvas.Save();
     }
 
-    public void restore()
+    public void Restore()
     {
         if (_states.Count > 0)
         {
@@ -227,53 +233,53 @@ public class CanvasRenderingContext2D
     #endregion
 
     #region Transformations
-    public void translate(float x, float y)
+    public void Translate(float x, float y)
     {
         Canvas.SkCanvas.Translate(x, y);
     }
 
-    public void rotate(float angleRadians)
+    public void Rotate(float angleRadians)
     {
         Canvas.SkCanvas.RotateRadians(angleRadians);
     }
 
-    public void scale(float sx, float sy)
+    public void Scale(float sx, float sy)
     {
         Canvas.SkCanvas.Scale(sx, sy);
     }
 
-    public void transform(float a, float b, float c, float d, float e, float f)
+    public void Transform(float a, float b, float c, float d, float e, float f)
     {
         var matrix = new SKMatrix(a, c, e, b, d, f, 0, 0, 1);
         Canvas.SkCanvas.Concat(in matrix);
     }
 
-    public void setTransform(float a = 1f, float b = 0f, float c = 0f, float d = 1f, float e = 0f, float f = 0f)
+    public void SetTransform(float a = 1f, float b = 0f, float c = 0f, float d = 1f, float e = 0f, float f = 0f)
     {
-        resetTransform();
-        transform(a, b, c, d, e, f);
+        ResetTransform();
+        Transform(a, b, c, d, e, f);
     }
 
-    public void resetTransform()
+    public void ResetTransform()
     {
         Canvas.SkCanvas.ResetMatrix();
     }
     #endregion
 
     #region Rectangles
-    public void fillRect(float x, float y, float width, float height)
+    public void FillRect(float x, float y, float width, float height)
     {
         using var paint = _currentState.CreateFillPaint();
         Canvas.SkCanvas.DrawRect(SKRect.Create(x, y, width, height), paint);
     }
 
-    public void strokeRect(float x, float y, float width, float height)
+    public void StrokeRect(float x, float y, float width, float height)
     {
         using var paint = _currentState.CreateStrokePaint();
         Canvas.SkCanvas.DrawRect(SKRect.Create(x, y, width, height), paint);
     }
 
-    public void clearRect(float x, float y, float width, float height)
+    public void ClearRect(float x, float y, float width, float height)
     {
         using var paint = new SKPaint { BlendMode = SKBlendMode.Clear };
         Canvas.SkCanvas.DrawRect(SKRect.Create(x, y, width, height), paint);
@@ -281,68 +287,68 @@ public class CanvasRenderingContext2D
     #endregion
 
     #region Paths
-    public void beginPath()
+    public void BeginPath()
     {
-        _currentPath.beginPath();
+        _currentPath.BeginPath();
     }
 
-    public void closePath()
+    public void ClosePath()
     {
-        _currentPath.closePath();
+        _currentPath.ClosePath();
     }
 
-    public void moveTo(float x, float y)
+    public void MoveTo(float x, float y)
     {
-        _currentPath.moveTo(x, y);
+        _currentPath.MoveTo(x, y);
     }
 
-    public void lineTo(float x, float y)
+    public void LineTo(float x, float y)
     {
-        _currentPath.lineTo(x, y);
+        _currentPath.LineTo(x, y);
     }
 
-    public void rect(float x, float y, float width, float height)
+    public void Rect(float x, float y, float width, float height)
     {
-        _currentPath.rect(x, y, width, height);
+        _currentPath.Rect(x, y, width, height);
     }
 
-    public void roundRect(float x, float y, float width, float height, object? radii = null)
+    public void RoundRect(float x, float y, float width, float height, object? radii = null)
     {
-        _currentPath.roundRect(x, y, width, height, radii);
+        _currentPath.RoundRect(x, y, width, height, radii);
     }
 
-    public void arc(float x, float y, float radius, float startAngle, float endAngle, bool anticlockwise = false)
+    public void Arc(float x, float y, float radius, float startAngle, float endAngle, bool anticlockwise = false)
     {
-        _currentPath.arc(x, y, radius, startAngle, endAngle, anticlockwise);
+        _currentPath.Arc(x, y, radius, startAngle, endAngle, anticlockwise);
     }
 
-    public void arcTo(float x1, float y1, float x2, float y2, float radius)
+    public void ArcTo(float x1, float y1, float x2, float y2, float radius)
     {
-        _currentPath.arcTo(x1, y1, x2, y2, radius);
+        _currentPath.ArcTo(x1, y1, x2, y2, radius);
     }
 
-    public void ellipse(float x, float y, float radiusX, float radiusY, float rotation, float startAngle, float endAngle, bool anticlockwise = false)
+    public void Ellipse(float x, float y, float radiusX, float radiusY, float rotation, float startAngle, float endAngle, bool anticlockwise = false)
     {
-        _currentPath.ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle, anticlockwise);
+        _currentPath.Ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle, anticlockwise);
     }
 
-    public void bezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y)
+    public void BezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y)
     {
-        _currentPath.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+        _currentPath.BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
     }
 
-    public void sCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y) =>
-        bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+    public void SCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y) =>
+        BezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
 
-    public void quadraticCurveTo(float cpx, float cpy, float x, float y)
+    public void QuadraticCurveTo(float cpx, float cpy, float x, float y)
     {
-        _currentPath.quadraticCurveTo(cpx, cpy, x, y);
+        _currentPath.QuadraticCurveTo(cpx, cpy, x, y);
     }
 
-    public void cCurveTo(float cpx, float cpy, float x, float y) =>
-        quadraticCurveTo(cpx, cpy, x, y);
+    public void CCurveTo(float cpx, float cpy, float x, float y) =>
+        QuadraticCurveTo(cpx, cpy, x, y);
 
-    public void fill(object? pathOrFillRule = null, object? fillRule = null)
+    public void Fill(object? pathOrFillRule = null, object? fillRule = null)
     {
         var path = pathOrFillRule is CanvasPath cp ? cp.Path : _currentPath.Path;
         ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
@@ -350,14 +356,14 @@ public class CanvasRenderingContext2D
         Canvas.SkCanvas.DrawPath(path, paint);
     }
 
-    public void stroke(CanvasPath? path = null)
+    public void Stroke(CanvasPath? path = null)
     {
         var p = path != null ? path.Path : _currentPath.Path;
         using var paint = _currentState.CreateStrokePaint();
         Canvas.SkCanvas.DrawPath(p, paint);
     }
 
-    public void clip(object? pathOrFillRule = null, object? fillRule = null)
+    public void Clip(object? pathOrFillRule = null, object? fillRule = null)
     {
         var path = pathOrFillRule is CanvasPath cp ? cp.Path : _currentPath.Path;
         ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
@@ -365,7 +371,7 @@ public class CanvasRenderingContext2D
     }
 
     /// <summary>
-    /// Applies the Canvas fill rule to a path. Without this, <c>fill('evenodd')</c> silently falls back to
+    /// Applies the Canvas Fill rule to a path. Without this, <c>Fill('evenodd')</c> silently falls back to
     /// non-zero winding, which is what makes a counter cut into a mark — the negative space every logo
     /// relies on — come out solid.
     /// </summary>
@@ -380,93 +386,93 @@ public class CanvasRenderingContext2D
     #endregion
 
     #region Typography
-    public void fillText(string text, float x, float y, float? maxWidth = null)
+    public void FillText(string text, float x, float y, float? maxWidth = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateFillPaint();
 
         if (text.Contains('\n'))
         {
-            font.GetFontMetrics(out var m);
+            Font.GetFontMetrics(out var m);
             var lineHeight = (m.Descent - m.Ascent) * 1.2f;
             var lines = text.Split('\n');
             for (var i = 0; i < lines.Length; i++)
             {
-                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, font);
-                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, Font);
+                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
             }
         }
         else
         {
-            var (adjX, adjY) = AdjustTextPosition(text, x, y, font);
-            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, font, paint);
+            var (adjX, adjY) = AdjustTextPosition(text, x, y, Font);
+            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, Font, paint);
         }
     }
 
-    public void strokeText(string text, float x, float y, float? maxWidth = null)
+    public void StrokeText(string text, float x, float y, float? maxWidth = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateStrokePaint();
 
         if (text.Contains('\n'))
         {
-            font.GetFontMetrics(out var m);
+            Font.GetFontMetrics(out var m);
             var lineHeight = (m.Descent - m.Ascent) * 1.2f;
             var lines = text.Split('\n');
             for (var i = 0; i < lines.Length; i++)
             {
-                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, font);
-                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, Font);
+                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
             }
         }
         else
         {
-            var (adjX, adjY) = AdjustTextPosition(text, x, y, font);
-            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, font, paint);
+            var (adjX, adjY) = AdjustTextPosition(text, x, y, Font);
+            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, Font, paint);
         }
     }
 
-    public void fillWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
+    public void FillWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateFillPaint();
 
-        font.GetFontMetrics(out var m);
+        Font.GetFontMetrics(out var m);
         var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
 
-        var wrappedLines = WrapText(text, maxWidth, font);
+        var wrappedLines = WrapText(text, maxWidth, Font);
         for (var i = 0; i < wrappedLines.Count; i++)
         {
-            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, font);
-            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, Font);
+            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
         }
     }
 
-    public void strokeWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
+    public void StrokeWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateStrokePaint();
 
-        font.GetFontMetrics(out var m);
+        Font.GetFontMetrics(out var m);
         var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
 
-        var wrappedLines = WrapText(text, maxWidth, font);
+        var wrappedLines = WrapText(text, maxWidth, Font);
         for (var i = 0; i < wrappedLines.Count; i++)
         {
-            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, font);
-            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, font, paint);
+            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, Font);
+            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
         }
     }
 
-    private static List<string> WrapText(string text, float maxWidth, SKFont font)
+    private static List<string> WrapText(string text, float maxWidth, SKFont Font)
     {
         var result = new List<string>();
         var paragraphs = text.Split('\n');
@@ -484,7 +490,7 @@ public class CanvasRenderingContext2D
             for (var i = 1; i < words.Length; i++)
             {
                 var candidate = currentLine + " " + words[i];
-                if (font.MeasureText(candidate) <= maxWidth)
+                if (Font.MeasureText(candidate) <= maxWidth)
                 {
                     currentLine = candidate;
                 }
@@ -503,12 +509,12 @@ public class CanvasRenderingContext2D
         return result;
     }
 
-    public Dictionary<string, object> measureText(string text)
+    public Dictionary<string, object> MeasureText(string text)
     {
         text ??= string.Empty;
-        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
-        var width = font.MeasureText(text);
-        font.GetFontMetrics(out var metrics);
+        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        var width = Font.MeasureText(text);
+        Font.GetFontMetrics(out var metrics);
 
         return new Dictionary<string, object>
         {
@@ -520,10 +526,10 @@ public class CanvasRenderingContext2D
         };
     }
 
-    private (float x, float y) AdjustTextPosition(string text, float x, float y, SKFont font)
+    private (float x, float y) AdjustTextPosition(string text, float x, float y, SKFont Font)
     {
-        var width = font.MeasureText(text);
-        font.GetFontMetrics(out var metrics);
+        var width = Font.MeasureText(text);
+        Font.GetFontMetrics(out var metrics);
 
         var adjX = _currentState.TextAlign switch
         {
@@ -577,16 +583,16 @@ public class CanvasRenderingContext2D
     #endregion
 
     #region Gradients & Patterns
-    public CanvasGradient createLinearGradient(float x0, float y0, float x1, float y1) =>
+    public CanvasGradient CreateLinearGradient(float x0, float y0, float x1, float y1) =>
         new(x0, y0, x1, y1);
 
-    public CanvasGradient createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1) =>
+    public CanvasGradient CreateRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1) =>
         new(x0, y0, r0, x1, y1, r1);
 
-    public CanvasGradient createConicGradient(float startAngle, float x, float y) =>
+    public CanvasGradient CreateConicGradient(float startAngle, float x, float y) =>
         new(startAngle, x, y);
 
-    public CanvasPattern createPattern(object imageObj, string repetition = "repeat")
+    public CanvasPattern CreatePattern(object imageObj, string repetition = "repeat")
     {
         var bmp = ExtractBitmap(imageObj) ?? throw new ArgumentException("Invalid image object for pattern");
         return new CanvasPattern(bmp, repetition);
@@ -594,7 +600,7 @@ public class CanvasRenderingContext2D
     #endregion
 
     #region Image & Cross-Engine SVG Drawing
-    public void drawImage(object imageObj, float arg1, float arg2, float? arg3 = null, float? arg4 = null,
+    public void DrawImage(object imageObj, float arg1, float arg2, float? arg3 = null, float? arg4 = null,
         float? arg5 = null, float? arg6 = null, float? arg7 = null, float? arg8 = null)
     {
         var bmp = ExtractBitmap(imageObj);
@@ -602,7 +608,7 @@ public class CanvasRenderingContext2D
         {
             if (imageObj is SnapPaper paper)
             {
-                drawSvg(paper, arg1, arg2, arg3, arg4);
+                DrawSvg(paper, arg1, arg2, arg3, arg4);
             }
             return;
         }
@@ -630,7 +636,7 @@ public class CanvasRenderingContext2D
         }
     }
 
-    public void drawSvg(object svgObj, float x = 0, float y = 0, float? width = null, float? height = null)
+    public void DrawSvg(object svgObj, float x = 0, float y = 0, float? width = null, float? height = null)
     {
         if (svgObj is SnapPaper paper)
         {
@@ -660,15 +666,15 @@ public class CanvasRenderingContext2D
         }
     }
 
-    public ImageData getImageData(int sx, int sy, int sw, int sh)
+    public ImageData GetImageData(int sx, int sy, int sw, int sh)
     {
         var w = Math.Max(1, sw);
         var h = Math.Max(1, sh);
         var imgData = new ImageData(w, h);
 
-        var rect = SKRectI.Create(sx, sy, w, h);
+        var Rect = SKRectI.Create(sx, sy, w, h);
         using var subset = new SKBitmap();
-        if (Canvas.Bitmap.ExtractSubset(subset, rect) && subset.ColorType == SKColorType.Rgba8888)
+        if (Canvas.Bitmap.ExtractSubset(subset, Rect) && subset.ColorType == SKColorType.Rgba8888)
         {
             var span = subset.GetPixelSpan();
             for (var y = 0; y < h; y++)
@@ -701,7 +707,7 @@ public class CanvasRenderingContext2D
         return imgData;
     }
 
-    public void putImageData(ImageData imageData, int dx, int dy)
+    public void PutImageData(ImageData imageData, int dx, int dy)
     {
         ArgumentNullException.ThrowIfNull(imageData);
 
@@ -725,10 +731,10 @@ public class CanvasRenderingContext2D
         }
     }
 
-    public ImageData createImageData(int width, int height) =>
+    public ImageData CreateImageData(int width, int height) =>
         new(width, height);
 
-    public ImageData createImageData(ImageData other) =>
+    public ImageData CreateImageData(ImageData other) =>
         new(other.Width, other.Height);
 
     private static SKBitmap? ExtractBitmap(object obj) => obj switch
@@ -743,116 +749,116 @@ public class CanvasRenderingContext2D
     #region Constructive Drawing & Inking
     private static readonly ConstructiveDrawingToolkit _toolkit = new();
 
-    public void drawTaperedStroke(object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null) =>
-        _toolkit.drawTaperedStroke(this, start, cp1, cp2, end, maxThickness, fillOrStrokeStyle ?? fillStyle);
+    public void DrawTaperedStroke(object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null) =>
+        _toolkit.DrawTaperedStroke(this, start, cp1, cp2, end, maxThickness, fillOrStrokeStyle ?? FillStyle);
 
-    public void drawTaperedStroke(float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null) =>
-        _toolkit.drawTaperedStroke(this, sx, sy, cp1x, cp1y, cp2x, cp2y, ex, ey, maxThickness, fillOrStrokeStyle ?? fillStyle);
+    public void DrawTaperedStroke(float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null) =>
+        _toolkit.DrawTaperedStroke(this, sx, sy, cp1x, cp1y, cp2x, cp2y, ex, ey, maxThickness, fillOrStrokeStyle ?? FillStyle);
 
-    public void drawFeathering(object origin, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f) =>
-        _toolkit.drawFeathering(this, origin, angleDeg, count, length, spacing, strokeColor ?? strokeStyle, lineWidth);
+    public void DrawFeathering(object origin, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float LineWidth = 1.2f) =>
+        _toolkit.DrawFeathering(this, origin, angleDeg, count, length, spacing, strokeColor ?? StrokeStyle, LineWidth);
 
-    public void drawFeathering(float ox, float oy, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f) =>
-        _toolkit.drawFeathering(this, ox, oy, angleDeg, count, length, spacing, strokeColor ?? strokeStyle, lineWidth);
+    public void DrawFeathering(float ox, float oy, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float LineWidth = 1.2f) =>
+        _toolkit.DrawFeathering(this, ox, oy, angleDeg, count, length, spacing, strokeColor ?? StrokeStyle, LineWidth);
 
-    public void drawCrossContourHatch(float cx, float cy, float rx, float ry, float startAngle, float endAngle, int count = 8, object? strokeColor = null, float lineWidth = 1.2f) =>
-        _toolkit.drawCrossContourHatch(this, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor ?? strokeStyle, lineWidth);
+    public void DrawCrossContourHatch(float cx, float cy, float rx, float ry, float startAngle, float endAngle, int count = 8, object? strokeColor = null, float LineWidth = 1.2f) =>
+        _toolkit.DrawCrossContourHatch(this, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor ?? StrokeStyle, LineWidth);
 
-    public void drawHairRibbon(object root, object tip, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f) =>
-        _toolkit.drawHairRibbon(this, root, tip, bendFactor, width, fillTop, fillUnderside, strokeColor ?? strokeStyle, strokeWidth);
+    public void DrawHairRibbon(object root, object tip, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f) =>
+        _toolkit.DrawHairRibbon(this, root, tip, bendFactor, width, fillTop, fillUnderside, strokeColor ?? StrokeStyle, strokeWidth);
 
-    public void drawHairRibbon(float rx, float ry, float tx, float ty, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f) =>
-        _toolkit.drawHairRibbon(this, rx, ry, tx, ty, bendFactor, width, fillTop, fillUnderside, strokeColor ?? strokeStyle, strokeWidth);
+    public void DrawHairRibbon(float rx, float ry, float tx, float ty, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f) =>
+        _toolkit.DrawHairRibbon(this, rx, ry, tx, ty, bendFactor, width, fillTop, fillUnderside, strokeColor ?? StrokeStyle, strokeWidth);
 
-    public void drawPerspectiveGrid(object grid, object? options = null) =>
-        _toolkit.drawPerspectiveGrid(this, grid, options);
+    public void DrawPerspectiveGrid(object grid, object? options = null) =>
+        _toolkit.DrawPerspectiveGrid(this, grid, options);
 
-    public void drawPerspectiveBox(object box, object? options = null) =>
-        _toolkit.drawPerspectiveBox(this, box, options);
+    public void DrawPerspectiveBox(object box, object? options = null) =>
+        _toolkit.DrawPerspectiveBox(this, box, options);
 
-    public void drawPerspectiveBox(object grid, float anchorX, float anchorY, float width, float height, float depth, object? options = null)
+    public void DrawPerspectiveBox(object grid, float anchorX, float anchorY, float width, float height, float depth, object? options = null)
     {
-        var box = _toolkit.createPerspectiveBox(grid, anchorX, anchorY, width, height, depth);
-        _toolkit.drawPerspectiveBox(this, box, options);
+        var box = _toolkit.CreatePerspectiveBox(grid, anchorX, anchorY, width, height, depth);
+        _toolkit.DrawPerspectiveBox(this, box, options);
     }
 
-    public void drawPerspectiveCylinder(object grid, float anchorX, float anchorY, float radius, float height, object? options = null) =>
-        _toolkit.drawPerspectiveCylinder(this, grid, anchorX, anchorY, radius, height, options);
+    public void DrawPerspectiveCylinder(object grid, float anchorX, float anchorY, float radius, float height, object? options = null) =>
+        _toolkit.DrawPerspectiveCylinder(this, grid, anchorX, anchorY, radius, height, options);
 
-    public void drawCastShadow(object lightSource, float groundY, object objectVerticesOrBounds, object? options = null)
+    public void DrawCastShadow(object lightSource, float groundY, object objectVerticesOrBounds, object? options = null)
     {
-        var shadow = _toolkit.projectCastShadow(lightSource, groundY, objectVerticesOrBounds, options);
-        _toolkit.drawCastShadow(this, shadow, options);
+        var shadow = _toolkit.ProjectCastShadow(lightSource, groundY, objectVerticesOrBounds, options);
+        _toolkit.DrawCastShadow(this, shadow, options);
     }
 
-    public void renderVolumetricSphere(float cx, float cy, float radius, object? lightDirection = null, object? options = null) =>
-        _toolkit.renderVolumetricSphere(this, cx, cy, radius, lightDirection, options);
+    public void RenderVolumetricSphere(float cx, float cy, float radius, object? lightDirection = null, object? options = null) =>
+        _toolkit.RenderVolumetricSphere(this, cx, cy, radius, lightDirection, options);
 
-    public void renderVolumetricCylinder(float x, float y, float width, float height, object? lightDirection = null, object? options = null) =>
-        _toolkit.renderVolumetricCylinder(this, x, y, width, height, lightDirection, options);
+    public void RenderVolumetricCylinder(float x, float y, float width, float height, object? lightDirection = null, object? options = null) =>
+        _toolkit.RenderVolumetricCylinder(this, x, y, width, height, lightDirection, options);
 
-    public void drawRimLight(object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f) =>
-        _toolkit.drawRimLight(this, boundsOrPts, lightAngleDeg, rimColor, thickness);
+    public void DrawRimLight(object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f) =>
+        _toolkit.DrawRimLight(this, boundsOrPts, lightAngleDeg, rimColor, thickness);
 
-    public void drawMannequin(object figure, bool solid = false, object? options = null)
+    public void DrawMannequin(object figure, bool solid = false, object? options = null)
     {
         if (solid)
-            _toolkit.drawMannequinSolid(this, figure, options);
+            _toolkit.DrawMannequinSolid(this, figure, options);
         else
-            _toolkit.drawMannequinWireframe(this, figure, options);
+            _toolkit.DrawMannequinWireframe(this, figure, options);
     }
 
-    public void drawTorsoMusculature(object figure, object? options = null) =>
-        _toolkit.drawTorsoMusculature(this, figure, options);
+    public void DrawTorsoMusculature(object figure, object? options = null) =>
+        _toolkit.DrawTorsoMusculature(this, figure, options);
 
-    public void drawCompositionGrid(object gridObjOrType, object? options = null) =>
-        _toolkit.drawCompositionGrid(this, gridObjOrType, options);
+    public void DrawCompositionGrid(object gridObjOrType, object? options = null) =>
+        _toolkit.DrawCompositionGrid(this, gridObjOrType, options);
 
-    public void drawVignette(object? options = null) =>
-        _toolkit.drawVignette(this, Canvas.Width, Canvas.Height, options);
+    public void DrawVignette(object? options = null) =>
+        _toolkit.DrawVignette(this, Canvas.Width, Canvas.Height, options);
 
-    public void drawLeadingLines(object originPoints, object focalPoint, object? options = null) =>
-        _toolkit.drawLeadingLines(this, originPoints, focalPoint, options);
+    public void DrawLeadingLines(object originPoints, object focalPoint, object? options = null) =>
+        _toolkit.DrawLeadingLines(this, originPoints, focalPoint, options);
     #endregion
 
     #region Logo Design Toolkit
     private static readonly LogoDesignToolkit _logoToolkit = new();
 
-    public void drawSquircle(float x, float y, float width, float height, object? options = null) =>
+    public void DrawSquircle(float x, float y, float width, float height, object? options = null) =>
         _logoToolkit.DrawSquircle(this, x, y, width, height, options);
 
-    public void drawGoldenSpiral(float cx, float cy, float startRadius = 20f, float turns = 2.5f, object? options = null) =>
+    public void DrawGoldenSpiral(float cx, float cy, float startRadius = 20f, float turns = 2.5f, object? options = null) =>
         _logoToolkit.DrawGoldenSpiral(this, cx, cy, startRadius, turns, options);
 
-    public void drawIsometricGrid(float width, float height, float cellSize = 40f, object? options = null) =>
+    public void DrawIsometricGrid(float width, float height, float cellSize = 40f, object? options = null) =>
         _logoToolkit.DrawIsometricGrid(this, width, height, cellSize, options);
 
-    public void drawPolarGrid(float cx, float cy, object? rings = null, int radialSlices = 12, object? options = null) =>
+    public void DrawPolarGrid(float cx, float cy, object? rings = null, int radialSlices = 12, object? options = null) =>
         _logoToolkit.DrawPolarGrid(this, cx, cy, rings, radialSlices, options);
 
-    public void drawEmblemBadge(float cx, float cy, float radius, string type = "shield", object? options = null) =>
+    public void DrawEmblemBadge(float cx, float cy, float radius, string type = "shield", object? options = null) =>
         _logoToolkit.DrawEmblemBadge(this, cx, cy, radius, type, options);
 
-    public void drawClearSpaceGuide(object markBounds, float xDimension = 40f, object? options = null) =>
+    public void DrawClearSpaceGuide(object markBounds, float xDimension = 40f, object? options = null) =>
         _logoToolkit.DrawClearSpaceGuide(this, markBounds, xDimension, options);
 
-    public void generateFaviconScaleTest(object drawMarkFn, object? options = null) =>
+    public void GenerateFaviconScaleTest(object drawMarkFn, object? options = null) =>
         _logoToolkit.GenerateFaviconScaleTest(this, drawMarkFn, options);
 
-    public void generateMonochromeTest(object drawMarkFn, float width = 800f, float height = 600f) =>
+    public void GenerateMonochromeTest(object drawMarkFn, float width = 800f, float height = 600f) =>
         _logoToolkit.GenerateMonochromeTest(this, drawMarkFn, width, height);
 
-    public void generateBrandPresentationSheet(object options) =>
+    public void GenerateBrandPresentationSheet(object options) =>
         _logoToolkit.GenerateBrandPresentationSheet(this, options);
     #endregion
 
     #region LogoType Toolkit
     private static readonly LogoTypeToolkit _logoTypeToolkit = new();
 
-    public void drawWordmarkLockup(object? drawMarkFn, string brandName, string tagline, object? options = null) =>
+    public void DrawWordmarkLockup(object? drawMarkFn, string brandName, string tagline, object? options = null) =>
         _logoTypeToolkit.DrawWordmarkLockup(this, drawMarkFn, brandName, tagline, options);
 
-    public void drawOgeeCurve(float x1, float y1, float x2, float y2, float amplitude = 25f, float inflectionT = 0.5f)
+    public void DrawOgeeCurve(float x1, float y1, float x2, float y2, float amplitude = 25f, float inflectionT = 0.5f)
     {
         using var skPath = _logoTypeToolkit.CreateOgeeCurveSKPath(x1, y1, x2, y2, inflectionT, amplitude);
         using var paint = _currentState.CreateStrokePaint();

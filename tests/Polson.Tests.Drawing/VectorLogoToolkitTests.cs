@@ -122,13 +122,13 @@ public class VectorLogoToolkitTests : TestsRuntime
     [Fact]
     public void TestSnapPathApi()
     {
-        var d = Snap.path.squircle(0, 0, 100, 100);
+        var d = Snap.Path.Squircle(0, 0, 100, 100);
         Assert.NotEmpty(d);
 
-        var totalLen = Snap.path.getTotalLength(d);
+        var totalLen = Snap.Path.GetTotalLength(d);
         Assert.True(totalLen > 0);
 
-        var pt = Snap.path.getPointAtLength(d, totalLen * 0.5f);
+        var pt = Snap.Path.GetPointAtLength(d, totalLen * 0.5f);
         Assert.True(pt.X >= 0);
     }
     #endregion

@@ -43,9 +43,9 @@
 
 ## 2. Cast Shadow Geometric Projection
 
-> **Implemented by**: `Drawing.projectCastShadow(lightSource, groundY, verticesOrBounds, options)` → `{ shadowPolygon, groundY, groundDepth, shadowColor, opacity, penumbraBlur }`, then `Drawing.drawCastShadow(ctx, shadow, options)`.
+> **Implemented by**: `Drawing.projectCastShadow(lightSource, groundYOrGrid, verticesOrBounds, options)`, then `Drawing.drawCastShadow(ctx, shadow, options)`. Argument 2 is either a ground-line `Y` or a `PerspectiveGrid` — see the two models below. Signatures: `polson://sdk/core/Drawing`.
 >
-> **Why `groundDepth` exists.** Follow the construction below literally and every projected vertex lands on the ground line — $L_{\text{ground}}$ and $B_i$ both sit at `groundY`, so that second ray *is* the ground line. That is not an error in the maths: a ground plane seen edge-on in a 2D elevation has no thickness, and its shadow really is a segment. The footprint only becomes a fillable shape once the ground is given an apparent depth, which no amount of 2D projection can supply. `options.groundDepth` is that missing dimension; it defaults to about a fifth of the contact footprint's width. The light ray still fixes the shadow's **length and direction** — `groundDepth` only adds the recession.
+> **Two ground models — argument 2 chooses.** Pass a **number** for a ground *line*, or a **`PerspectiveGrid`** for a ground *plane*.
 >
 > `Drawing.drawCastShadow(...)` throws on a zero-area polygon rather than quietly drawing nothing, so a shadow that fails to appear reports itself.
 
@@ -58,6 +58,29 @@
 >    - Project a ray from $L_{\text{ground}}$ through the corresponding base vertex $B_i = (x_i, \text{groundY})$.
 >    - The intersection point $S_i$ is the shadow vertex on the ground plane!
 > 3. Connect shadow vertices $S_i$ to base points $B_i$ to form the **Cast Shadow Footprint Polygon**.
+
+### Model A — the ground line (2D elevation)
+
+Follow the construction below literally with a scalar `groundY` and every projected vertex lands on the ground line: $L_{\text{ground}}$ and $B_i$ both sit at `groundY`, so that second ray *is* the ground line. That is not an error in the maths — a ground plane seen edge-on has no thickness, and its shadow really is a segment. `options.groundDepth` supplies the recession that 2D inputs cannot, defaulting to about a fifth of the contact width. The light ray still fixes the shadow's **length and direction**; `groundDepth` only adds the missing dimension.
+
+Use this when the scene has no perspective construction — a character on a notional floor, a product on a plain ground.
+
+### Model B — the ground plane (perspective)
+
+Pass the `PerspectiveGrid` from Manual 06 instead and the construction becomes exact, because the horizon defines a real plane:
+
+1. The light is read as the **vanishing point of the light rays**. Their ground projections therefore converge on $VP_{\text{shadow}} = (L_x, HL_y)$ — on the horizon, directly beneath the light.
+2. Each shadow vertex is the intersection of the ray $L \rightarrow V_i$ with the ground ray $VP_{\text{shadow}} \rightarrow B_i$.
+3. Contact points at different depths sit at different image heights, so the footprint comes out as a genuine receding quad — **narrowing with distance, no `groundDepth` needed**.
+
+This is the classical architectural method, and it is why a `PerspectiveBox` is the ideal caster: it already carries all eight vertices, so each top vertex has its true contact point. A bare point list has tops only and is rejected rather than guessed at.
+
+Two configurations are refused with a message instead of nonsense coordinates:
+
+- **Shadow at or beyond the horizon.** A light too near the horizon throws a shadow of infinite length. Raise it, or move it further from the horizon.
+- **Rays parallel to the ground rays.** The shadow never lands. Move the light off the horizon line or out from directly above the object.
+
+> Where is the light? Below the horizon in image terms means **behind the viewer**, and shadows recede away from camera — the lower it sits (the closer to the horizon from below), the longer they stretch. Above the horizon means the light is **in front**, and shadows come toward the viewer instead.
 
 ---
 
@@ -98,8 +121,11 @@
 | Umbra / penumbra (zone 6) | `options.opacity`, `options.penumbraBlur` | Larger blur = larger apparent light source. |
 | $L = (L_x, L_y)$ | `lightSource` as `{ x, y }` | Argument 1 of `projectCastShadow`. |
 | $Y = \text{groundY}$ | `groundY` | Argument 2; also returned on the shadow object. |
-| $S_i$ footprint | `shadow.shadowPolygon` | The projected polygon of §2: contact edge, then the projected edge lowered by `groundDepth`. |
-| (not in the book) | `options.groundDepth` | Apparent depth of the ground plane. Defaults to ~20% of the contact width. See §2. |
+| $S_i$ footprint | `shadow.shadowPolygon` | Contact edge first, then the projected edge walked back. |
+| (not in the book) | `options.groundDepth` | Apparent ground depth, **model A only**. Defaults to ~20% of the contact width. |
+| $HL_y$ | `grid.horizonY` | Model B: pass the whole grid as argument 2. |
+| $VP_{\text{shadow}}$ | `shadow.vpShadow` | Model B: on the horizon, directly beneath the light. |
+| Which model ran | `shadow.model` | `'groundLine'` or `'perspective'`. |
 | Key / Fill / Rim | `rig.keyLight`, `.fillLight`, `.rimLight` | Each `{ angleDeg, color, intensity }`. |
 
 > Note the default intensities returned by `Drawing.createThreePointLighting(...)` — key `0.75`, fill `0.30`, rim `0.90` — match the ~70/30/90 ratios of §4.
@@ -164,6 +190,56 @@ Drawing.renderVolumetricSphere(ctx, 450, 380, 90, key, {
 // §4 — Drawing.drawRimLight(ctx, boundsOrPts, angleDeg, color, thickness) adds the
 // kicker. Give it a silhouette point list, not a bounds rect: against a rect it can
 // only stroke the rectangle's edge, which reads as a stray line on a curved form.
+
+canvas;
+```
+
+### Model B in practice: a shadow on a perspective ground plane
+
+The same call, given Manual 06's grid instead of a scalar. Note what is *absent*: no `groundDepth`. The recession comes from the geometry, so the footprint narrows toward the horizon on its own.
+
+```javascript
+// A box on a perspective ground plane, with its true projective shadow.
+const canvas = createCanvas(900, 600);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f2efe8';
+ctx.fillRect(0, 0, 900, 600);
+
+// Manual 06 §1 — the ground plane. Its horizon is what makes the shadow exact.
+const grid = Drawing.createPerspectiveGrid({
+    type: '2point',
+    horizonY: 200,
+    centerOfVisionX: 450,
+    focalLength: 900,
+    cameraAngleDeg: 35
+});
+Drawing.drawPerspectiveGrid(ctx, grid, { lineCount: 14, lineWidth: 0.5 });
+
+// Manual 06 §2 — the caster. A PerspectiveBox already carries all eight vertices,
+// so every top vertex has its true contact point and nothing has to be guessed.
+const box = Drawing.createPerspectiveBox(grid, 430, 470, 150, 150, 170);
+
+// §2 model B — the light sits just below the horizon, so it is behind the viewer
+// and low: shadows stretch away from camera toward the horizon. Move it further
+// below the horizon to raise the sun and shorten them.
+const shadow = Drawing.projectCastShadow({ x: 150, y: 250 }, grid, box, {
+    shadowColor: '#3a4d66',
+    opacity: 0.5,
+    penumbraBlur: 6
+});
+log('model=' + shadow.model +
+    '  vpShadow=' + shadow.vpShadow.x.toFixed(0) + ',' + shadow.vpShadow.y.toFixed(0));
+
+// Shadow first, so the box overlaps its own contact edge (§1, zone 6).
+Drawing.drawCastShadow(ctx, shadow);
+
+Drawing.drawPerspectiveBox(ctx, box, {
+    topFill: '#d9dee6',
+    leftFill: '#9aa5b4',
+    rightFill: '#5d6878',
+    strokeColor: '#232a34',
+    strokeWidth: 1.5
+});
 
 canvas;
 ```

@@ -42,8 +42,8 @@ public class CastShadowTests : TestsRuntime
     [Fact]
     public void TestGroundDepthDefaultsFromContactWidth()
     {
-        var narrow = Toolkit.projectCastShadow(Point(250f, 90f), 470f, Bounds(360f, 300f, 100f, 180f));
-        var wide = Toolkit.projectCastShadow(Point(250f, 90f), 470f, Bounds(360f, 300f, 400f, 180f));
+        var narrow = Toolkit.ProjectCastShadow(Point(250f, 90f), 470f, Bounds(360f, 300f, 100f, 180f));
+        var wide = Toolkit.ProjectCastShadow(Point(250f, 90f), 470f, Bounds(360f, 300f, 400f, 180f));
 
         Assert.Equal(20f, Convert.ToSingle(narrow["groundDepth"]), 3);
         Assert.Equal(80f, Convert.ToSingle(wide["groundDepth"]), 3);
@@ -52,7 +52,7 @@ public class CastShadowTests : TestsRuntime
     [Fact]
     public void TestExplicitGroundDepthOverridesTheDefault()
     {
-        var shadow = Toolkit.projectCastShadow(
+        var shadow = Toolkit.ProjectCastShadow(
             Point(250f, 90f), 470f, Bounds(360f, 300f, 180f, 180f),
             new Dictionary<string, object?> { ["groundDepth"] = 34f });
 
@@ -95,15 +95,99 @@ public class CastShadowTests : TestsRuntime
     }
     #endregion
 
+    #region Perspective Ground Plane Tests
+    [Fact]
+    public void TestGridSelectsThePerspectiveModel()
+    {
+        var line = Toolkit.ProjectCastShadow(Point(250f, 90f), 470f, Bounds(360f, 300f, 180f, 180f));
+        var plane = Toolkit.ProjectCastShadow(Point(150f, 250f), Grid(), Box());
+
+        Assert.Equal("groundLine", line["model"]);
+        Assert.Equal("perspective", plane["model"]);
+    }
+
+    [Fact]
+    public void TestPerspectiveFootprintRecedesWithoutAGroundDepthHint()
+    {
+        var shadow = Toolkit.ProjectCastShadow(Point(150f, 250f), Grid(), Box());
+        var polygon = Polygon(shadow);
+
+        // Eight points: four contact, four shadow. No groundDepth is involved at all.
+        Assert.Equal(8, polygon.Count);
+        Assert.Null(shadow.GetValueOrDefault("groundDepth"));
+        Assert.True(SpanY(polygon) > 1f);
+
+        // The shadow vertices lie further from the viewer than the contact points they came from.
+        var contactY = polygon.Take(4).Min(p => p.Y);
+        Assert.True(polygon.Skip(4).All(p => p.Y < contactY),
+            "A light behind the viewer must throw the shadow away from camera, toward the horizon.");
+    }
+
+    [Fact]
+    public void TestShadowVanishingPointSitsOnTheHorizonBeneathTheLight()
+    {
+        var shadow = Toolkit.ProjectCastShadow(Point(150f, 250f), Grid(), Box());
+        var vp = (IDictionary)shadow["vpShadow"]!;
+
+        Assert.Equal(150f, Convert.ToSingle(vp["x"]), 3);
+        Assert.Equal(200f, Convert.ToSingle(vp["y"]), 3);
+        Assert.Equal(200f, Convert.ToSingle(shadow["horizonY"]), 3);
+    }
+
+    [Fact]
+    public void TestLowerSunStretchesThePerspectiveShadow()
+    {
+        // Closer to the horizon from below means a lower sun behind the viewer.
+        var high = Reach(Toolkit.ProjectCastShadow(Point(150f, 400f), Grid(), Box()));
+        var low = Reach(Toolkit.ProjectCastShadow(Point(150f, 250f), Grid(), Box()));
+
+        Assert.True(low > high, $"A lower sun must stretch the shadow: high={high:F1} low={low:F1}");
+    }
+
+    [Fact]
+    public void TestShadowBeyondTheHorizonIsRefused()
+    {
+        // A light above the horizon here throws the shadow to infinity rather than onto the ground.
+        var error = Assert.Throws<ArgumentException>(() =>
+            Toolkit.ProjectCastShadow(Point(250f, 60f), Grid(), Box()));
+
+        Assert.Contains("horizon", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TestBarePointListIsRefusedInPerspectiveMode()
+    {
+        var error = Assert.Throws<ArgumentException>(() => Toolkit.ProjectCastShadow(
+            Point(150f, 250f), Grid(), new object[] { Point(360f, 300f), Point(540f, 300f) }));
+
+        Assert.Contains("contact points", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TestTopBasePairsAreAcceptedInPerspectiveMode()
+    {
+        var pairs = new object[]
+        {
+            new Dictionary<string, object?> { ["top"] = Point(400f, 320f), ["base"] = Point(400f, 460f) },
+            new Dictionary<string, object?> { ["top"] = Point(520f, 330f), ["base"] = Point(520f, 440f) }
+        };
+
+        var polygon = Polygon(Toolkit.ProjectCastShadow(Point(150f, 250f), Grid(), pairs));
+
+        Assert.Equal(4, polygon.Count);
+        Assert.True(SpanY(polygon) > 1f);
+    }
+    #endregion
+
     #region Degenerate Input Tests
     [Fact]
     public void TestDrawingAZeroAreaPolygonThrowsRatherThanDrawingNothing()
     {
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
         var flat = new object[] { Point(100f, 300f), Point(200f, 300f), Point(300f, 300f) };
 
-        var error = Assert.Throws<ArgumentException>(() => Toolkit.drawCastShadow(ctx, flat));
+        var error = Assert.Throws<ArgumentException>(() => Toolkit.DrawCastShadow(ctx, flat));
         Assert.Contains("degenerate", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("groundDepth", error.Message, StringComparison.Ordinal);
     }
@@ -112,9 +196,9 @@ public class CastShadowTests : TestsRuntime
     public void TestDrawingTooFewPointsThrows()
     {
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        Assert.Throws<ArgumentException>(() => Toolkit.drawCastShadow(ctx, new object[] { Point(10f, 10f) }));
+        Assert.Throws<ArgumentException>(() => Toolkit.DrawCastShadow(ctx, new object[] { Point(10f, 10f) }));
     }
     #endregion
 
@@ -122,13 +206,26 @@ public class CastShadowTests : TestsRuntime
     private static ConstructiveDrawingToolkit Toolkit { get; } = new();
 
     private static Dictionary<string, object?> Project(object light, float groundY, object shape) =>
-        Toolkit.projectCastShadow(light, groundY, shape);
+        Toolkit.ProjectCastShadow(light, groundY, shape);
 
     private static Dictionary<string, object?> Bounds(float x, float y, float width, float height) =>
         new() { ["x"] = x, ["y"] = y, ["width"] = width, ["height"] = height };
 
     private static Dictionary<string, object?> Point(float x, float y) =>
         new() { ["x"] = x, ["y"] = y };
+
+    private static Dictionary<string, object?> Grid() => Toolkit.CreatePerspectiveGrid(
+        new Dictionary<string, object?>
+        {
+            ["type"] = "2point",
+            ["horizonY"] = 200f,
+            ["centerOfVisionX"] = 450f,
+            ["focalLength"] = 900f,
+            ["cameraAngleDeg"] = 35f
+        });
+
+    private static Dictionary<string, object?> Box() =>
+        Toolkit.CreatePerspectiveBox(Grid(), 430f, 470f, 150f, 150f, 170f);
 
     private static List<(float X, float Y)> Polygon(Dictionary<string, object?> shadow) =>
         [.. ((IList)shadow["shadowPolygon"]!).Cast<object>().Select(p =>

@@ -2,18 +2,24 @@ namespace Polson.Drawing.Svg;
 
 using System;
 
+/// <summary>Snap.svg easing and animation helpers.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class Mina
 {
     #region Methods
-    public float linear(float n) => n;
+    public float Linear(float n) => n;
 
-    public float easeout(float n) => MathF.Sin(n * MathF.PI / 2f);
+    public float Easeout(float n) => MathF.Sin(n * MathF.PI / 2f);
 
-    public float easein(float n) => 1f - MathF.Cos(n * MathF.PI / 2f);
+    public float Easein(float n) => 1f - MathF.Cos(n * MathF.PI / 2f);
 
-    public float easeinout(float n) => 0.5f * (1f - MathF.Cos(MathF.PI * n));
+    public float Easeinout(float n) => 0.5f * (1f - MathF.Cos(MathF.PI * n));
 
-    public float bounce(float n)
+    public float Bounce(float n)
     {
         float s = 7.5625f, p = 2.75f;
         if (n < (1f / p))
@@ -37,7 +43,7 @@ public class Mina
         }
     }
 
-    public float elastic(float n)
+    public float Elastic(float n)
     {
         if (n == 0f || n == 1f) return n;
         float p = 0.3f, s = p / 4f;

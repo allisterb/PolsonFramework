@@ -6,6 +6,12 @@ using System.Collections.Generic;
 using System.Globalization;
 using SkiaSharp;
 
+/// <summary>Constructive drawing, perspective, lighting and anatomy toolkit (Studio Manuals 01-09).</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class ConstructiveDrawingToolkit
 {
     #region Nested Helper Types
@@ -44,7 +50,7 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Loomis Head Construction
-    public Dictionary<string, object?> createLoomisHead(float originX, float originY, float headHeight, float yawDeg = 35f, float pitchDeg = 0f)
+    public Dictionary<string, object?> CreateLoomisHead(float originX, float originY, float headHeight, float yawDeg = 35f, float pitchDeg = 0f)
     {
         var H = headHeight;
         var W = H * 0.72f;
@@ -166,11 +172,11 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void drawLoomisWireframe(CanvasRenderingContext2D ctx, object headObj, object? options = null)
+    public void DrawLoomisWireframe(CanvasRenderingContext2D ctx, object headObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(headObj) is not IDictionary head)
-            throw new ArgumentException("headObj must be a valid dictionary from createLoomisHead", nameof(headObj));
+            throw new ArgumentException("headObj must be a valid dictionary from CreateLoomisHead", nameof(headObj));
 
         var optDict = JsInterop.AsDict(options);
         var blueLine = optDict?["blueLineColor"]?.ToString() ?? "#4a90e2";
@@ -211,36 +217,36 @@ public class ConstructiveDrawingToolkit
         var tempRx = temporal != null && temporal.Contains("rx") ? Convert.ToSingle(temporal["rx"], CultureInfo.InvariantCulture) : W * 0.3f;
         var tempRy = temporal != null && temporal.Contains("ry") ? Convert.ToSingle(temporal["ry"], CultureInfo.InvariantCulture) : H * 0.25f;
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Blue-line Construction Sphere & Proportions
-        ctx.strokeStyle = blueLine;
-        ctx.lineWidth = 1.5f;
+        ctx.StrokeStyle = blueLine;
+        ctx.LineWidth = 1.5f;
 
         // Cranial Sphere
-        ctx.beginPath();
-        ctx.arc(origin.X, origin.Y - H * 0.08f, H * 0.42f, 0f, MathF.PI * 2f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Arc(origin.X, origin.Y - H * 0.08f, H * 0.42f, 0f, MathF.PI * 2f);
+        ctx.Stroke();
 
         // Temporal Slice Oval
-        ctx.beginPath();
-        ctx.ellipse(tempCx, tempCy, tempRx, tempRy, 0f, 0f, MathF.PI * 2f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(tempCx, tempCy, tempRx, tempRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Stroke();
 
         // Central 3/4 Facial Meridian Arc
-        ctx.beginPath();
-        ctx.moveTo(crown.X, crown.Y);
-        ctx.bezierCurveTo(hairline.X + 8f, hairline.Y, brow.X + 8f, brow.Y, noseBase.X, noseBase.Y);
-        ctx.bezierCurveTo(mouthCenter.X, mouthCenter.Y, chin.X, chin.Y - 10f, chin.X, chin.Y);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(crown.X, crown.Y);
+        ctx.BezierCurveTo(hairline.X + 8f, hairline.Y, brow.X + 8f, brow.Y, noseBase.X, noseBase.Y);
+        ctx.BezierCurveTo(mouthCenter.X, mouthCenter.Y, chin.X, chin.Y - 10f, chin.X, chin.Y);
+        ctx.Stroke();
 
         // Horizontal Guide Lines (Hairline, Brow, Eye, Nose, Mouth, Chin)
         void DrawGuide(Point2D pt, float widthSpan)
         {
-            ctx.beginPath();
-            ctx.moveTo(pt.X - widthSpan * 0.5f, pt.Y);
-            ctx.lineTo(pt.X + widthSpan * 0.5f, pt.Y);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(pt.X - widthSpan * 0.5f, pt.Y);
+            ctx.LineTo(pt.X + widthSpan * 0.5f, pt.Y);
+            ctx.Stroke();
         }
 
         DrawGuide(hairline, W * 0.7f);
@@ -249,43 +255,43 @@ public class ConstructiveDrawingToolkit
         DrawGuide(chin, W * 0.45f);
 
         // 2. Graphite Pencil Contours (Jawline, Eyes, Nose, Mouth, Ear)
-        ctx.strokeStyle = graphite;
-        ctx.lineWidth = 2.0f;
+        ctx.StrokeStyle = graphite;
+        ctx.LineWidth = 2.0f;
 
         // Jawline path: ear -> jaw angle -> chin -> cheek apex
-        ctx.beginPath();
-        ctx.moveTo(ear.X, ear.Y);
-        ctx.lineTo(jawAngle.X, jawAngle.Y);
-        ctx.quadraticCurveTo(chin.X - 10f, chin.Y + 4f, chin.X, chin.Y);
-        ctx.quadraticCurveTo(chin.X + 15f, chin.Y - 5f, cheekApex.X, cheekApex.Y);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(ear.X, ear.Y);
+        ctx.LineTo(jawAngle.X, jawAngle.Y);
+        ctx.QuadraticCurveTo(chin.X - 10f, chin.Y + 4f, chin.X, chin.Y);
+        ctx.QuadraticCurveTo(chin.X + 15f, chin.Y - 5f, cheekApex.X, cheekApex.Y);
+        ctx.Stroke();
 
         // Eye Socket Guidelines
-        ctx.beginPath();
-        ctx.moveTo(nearInner.X, nearInner.Y);
-        ctx.quadraticCurveTo(nearInner.X + (nearOuter.X - nearInner.X) * 0.5f, nearInner.Y - 12f, nearOuter.X, nearOuter.Y);
-        ctx.moveTo(farInner.X, farInner.Y);
-        ctx.quadraticCurveTo(farInner.X + (farOuter.X - farInner.X) * 0.5f, farInner.Y - 10f, farOuter.X, farOuter.Y);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(nearInner.X, nearInner.Y);
+        ctx.QuadraticCurveTo(nearInner.X + (nearOuter.X - nearInner.X) * 0.5f, nearInner.Y - 12f, nearOuter.X, nearOuter.Y);
+        ctx.MoveTo(farInner.X, farInner.Y);
+        ctx.QuadraticCurveTo(farInner.X + (farOuter.X - farInner.X) * 0.5f, farInner.Y - 10f, farOuter.X, farOuter.Y);
+        ctx.Stroke();
 
         // Nose Wedge Guideline
-        ctx.beginPath();
-        ctx.moveTo(bridgeTop.X, bridgeTop.Y);
-        ctx.lineTo(noseApex.X, noseApex.Y);
-        ctx.lineTo(noseBase.X, noseBase.Y);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(bridgeTop.X, bridgeTop.Y);
+        ctx.LineTo(noseApex.X, noseApex.Y);
+        ctx.LineTo(noseBase.X, noseBase.Y);
+        ctx.Stroke();
 
         // Ear Outline
-        ctx.beginPath();
-        ctx.arc(ear.X, ear.Y, H * 0.08f, 0f, MathF.PI * 2f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Arc(ear.X, ear.Y, H * 0.08f, 0f, MathF.PI * 2f);
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
     #endregion
 
     #region Comic Feature Drawing Helpers
-    public void drawComicEye(CanvasRenderingContext2D ctx, object eyeObj, bool isFar = false, object? options = null)
+    public void DrawComicEye(CanvasRenderingContext2D ctx, object eyeObj, bool isFar = false, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(eyeObj) is not IDictionary eye) return;
@@ -303,18 +309,18 @@ public class ConstructiveDrawingToolkit
         if (w <= 0.1f) w = 24f;
         var dir = outer.X > inner.X ? 1f : -1f;
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Sclera fill inside eyelid bounds
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(inner.X, inner.Y);
-        ctx.bezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
-        ctx.quadraticCurveTo(center.X, inner.Y + w * 0.25f, inner.X, inner.Y);
-        ctx.closePath();
-        ctx.fillStyle = scleraColor;
-        ctx.fill();
-        ctx.clip();
+        ctx.Save();
+        ctx.BeginPath();
+        ctx.MoveTo(inner.X, inner.Y);
+        ctx.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
+        ctx.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, inner.X, inner.Y);
+        ctx.ClosePath();
+        ctx.FillStyle = scleraColor;
+        ctx.Fill();
+        ctx.Clip();
 
         // 2. Iris & Pupil
         var irisR = w * 0.32f;
@@ -322,50 +328,50 @@ public class ConstructiveDrawingToolkit
         var irisY = center.Y - 1f;
 
         // Iris
-        ctx.beginPath();
-        ctx.arc(irisX, irisY, irisR, 0f, MathF.PI * 2f);
-        ctx.fillStyle = irisColor;
-        ctx.fill();
+        ctx.BeginPath();
+        ctx.Arc(irisX, irisY, irisR, 0f, MathF.PI * 2f);
+        ctx.FillStyle = irisColor;
+        ctx.Fill();
 
         // Dark iris rim
-        ctx.strokeStyle = inkColor;
-        ctx.lineWidth = 1.2f;
-        ctx.stroke();
+        ctx.StrokeStyle = inkColor;
+        ctx.LineWidth = 1.2f;
+        ctx.Stroke();
 
         // Pupil
-        ctx.beginPath();
-        ctx.arc(irisX, irisY, irisR * 0.45f, 0f, MathF.PI * 2f);
-        ctx.fillStyle = inkColor;
-        ctx.fill();
+        ctx.BeginPath();
+        ctx.Arc(irisX, irisY, irisR * 0.45f, 0f, MathF.PI * 2f);
+        ctx.FillStyle = inkColor;
+        ctx.Fill();
 
         // White catchlight
-        ctx.beginPath();
-        ctx.arc(irisX - irisR * 0.25f, irisY - irisR * 0.25f, irisR * 0.22f, 0f, MathF.PI * 2f);
-        ctx.fillStyle = "#ffffff";
-        ctx.fill();
+        ctx.BeginPath();
+        ctx.Arc(irisX - irisR * 0.25f, irisY - irisR * 0.25f, irisR * 0.22f, 0f, MathF.PI * 2f);
+        ctx.FillStyle = "#ffffff";
+        ctx.Fill();
 
-        ctx.restore();
+        ctx.Restore();
 
         // 3. Thick Inked S-Curve Upper Eyelid
-        ctx.strokeStyle = inkColor;
-        ctx.lineWidth = isFar ? 2.6f : 3.8f;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(inner.X, inner.Y);
-        ctx.bezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
-        ctx.stroke();
+        ctx.StrokeStyle = inkColor;
+        ctx.LineWidth = isFar ? 2.6f : 3.8f;
+        ctx.LineCap = "round";
+        ctx.BeginPath();
+        ctx.MoveTo(inner.X, inner.Y);
+        ctx.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
+        ctx.Stroke();
 
         // 4. Delicate Lower Eyelid
-        ctx.lineWidth = 1.6f;
-        ctx.beginPath();
-        ctx.moveTo(inner.X + dir * w * 0.2f, inner.Y + w * 0.15f);
-        ctx.quadraticCurveTo(center.X, inner.Y + w * 0.25f, outer.X - dir * w * 0.1f, outer.Y);
-        ctx.stroke();
+        ctx.LineWidth = 1.6f;
+        ctx.BeginPath();
+        ctx.MoveTo(inner.X + dir * w * 0.2f, inner.Y + w * 0.15f);
+        ctx.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, outer.X - dir * w * 0.1f, outer.Y);
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawComicNose(CanvasRenderingContext2D ctx, object noseObj, object? options = null)
+    public void DrawComicNose(CanvasRenderingContext2D ctx, object noseObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(noseObj) is not IDictionary nose) return;
@@ -379,37 +385,37 @@ public class ConstructiveDrawingToolkit
         var underNose = ExtractPoint(nose["underNose"]);
         var nearNostril = ExtractPoint(nose["nearNostril"]);
 
-        ctx.save();
+        ctx.Save();
 
         // Shaded Under-Nose Plane
-        ctx.fillStyle = shadowColor;
-        ctx.beginPath();
-        ctx.moveTo(apex.X, apex.Y);
-        ctx.lineTo(nearNostril.X, nearNostril.Y);
-        ctx.lineTo(underNose.X, underNose.Y);
-        ctx.closePath();
-        ctx.fill();
+        ctx.FillStyle = shadowColor;
+        ctx.BeginPath();
+        ctx.MoveTo(apex.X, apex.Y);
+        ctx.LineTo(nearNostril.X, nearNostril.Y);
+        ctx.LineTo(underNose.X, underNose.Y);
+        ctx.ClosePath();
+        ctx.Fill();
 
         // Inked Nose Bridge
-        ctx.strokeStyle = inkColor;
-        ctx.lineWidth = 2.4f;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(bridgeTop.X, bridgeTop.Y);
-        ctx.lineTo(apex.X, apex.Y);
-        ctx.lineTo(underNose.X, underNose.Y);
-        ctx.stroke();
+        ctx.StrokeStyle = inkColor;
+        ctx.LineWidth = 2.4f;
+        ctx.LineCap = "round";
+        ctx.BeginPath();
+        ctx.MoveTo(bridgeTop.X, bridgeTop.Y);
+        ctx.LineTo(apex.X, apex.Y);
+        ctx.LineTo(underNose.X, underNose.Y);
+        ctx.Stroke();
 
         // Nostril Teardrop
-        ctx.lineWidth = 2.0f;
-        ctx.beginPath();
-        ctx.arc(nearNostril.X, nearNostril.Y, 3.5f, 0.2f, MathF.PI * 1.5f);
-        ctx.stroke();
+        ctx.LineWidth = 2.0f;
+        ctx.BeginPath();
+        ctx.Arc(nearNostril.X, nearNostril.Y, 3.5f, 0.2f, MathF.PI * 1.5f);
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawComicMouth(CanvasRenderingContext2D ctx, object mouthObj, object? options = null)
+    public void DrawComicMouth(CanvasRenderingContext2D ctx, object mouthObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(mouthObj) is not IDictionary mouth) return;
@@ -424,57 +430,57 @@ public class ConstructiveDrawingToolkit
         var left = ExtractPoint(mouth["leftCorner"]);
         var right = ExtractPoint(mouth["rightCorner"]);
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Mouth Opening / Cavity
-        ctx.fillStyle = cavityColor;
-        ctx.beginPath();
-        ctx.moveTo(left.X, left.Y);
-        ctx.quadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
-        ctx.quadraticCurveTo(center.X, center.Y + 12f, left.X, left.Y);
-        ctx.closePath();
-        ctx.fill();
+        ctx.FillStyle = cavityColor;
+        ctx.BeginPath();
+        ctx.MoveTo(left.X, left.Y);
+        ctx.QuadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
+        ctx.QuadraticCurveTo(center.X, center.Y + 12f, left.X, left.Y);
+        ctx.ClosePath();
+        ctx.Fill();
 
         // 2. Teeth Shelf (Upper teeth band)
-        ctx.fillStyle = teethColor;
-        ctx.beginPath();
-        ctx.moveTo(left.X + 3f, left.Y);
-        ctx.quadraticCurveTo(center.X, center.Y - 2f, right.X - 3f, right.Y);
-        ctx.lineTo(right.X - 4f, right.Y + 4f);
-        ctx.quadraticCurveTo(center.X, center.Y + 3f, left.X + 4f, left.Y + 3f);
-        ctx.closePath();
-        ctx.fill();
+        ctx.FillStyle = teethColor;
+        ctx.BeginPath();
+        ctx.MoveTo(left.X + 3f, left.Y);
+        ctx.QuadraticCurveTo(center.X, center.Y - 2f, right.X - 3f, right.Y);
+        ctx.LineTo(right.X - 4f, right.Y + 4f);
+        ctx.QuadraticCurveTo(center.X, center.Y + 3f, left.X + 4f, left.Y + 3f);
+        ctx.ClosePath();
+        ctx.Fill();
 
         // 3. Inked Mouth Outline & Upper Lip
-        ctx.strokeStyle = inkColor;
-        ctx.lineWidth = 2.4f;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(left.X, left.Y);
-        ctx.quadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
-        ctx.stroke();
+        ctx.StrokeStyle = inkColor;
+        ctx.LineWidth = 2.4f;
+        ctx.LineCap = "round";
+        ctx.BeginPath();
+        ctx.MoveTo(left.X, left.Y);
+        ctx.QuadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
+        ctx.Stroke();
 
         // 4. Lower Lip Shadow Crescent
-        ctx.fillStyle = lipColor;
-        ctx.beginPath();
-        ctx.arc(center.X, center.Y + 16f, 6f, 0.2f, MathF.PI - 0.2f);
-        ctx.fill();
+        ctx.FillStyle = lipColor;
+        ctx.BeginPath();
+        ctx.Arc(center.X, center.Y + 16f, 6f, 0.2f, MathF.PI - 0.2f);
+        ctx.Fill();
 
-        ctx.restore();
+        ctx.Restore();
     }
     #endregion
 
     #region Tapered Strokes, Feathering & Hair Ribbons
-    public void drawTaperedStroke(CanvasRenderingContext2D ctx, object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null)
+    public void DrawTaperedStroke(CanvasRenderingContext2D ctx, object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null)
     {
         var s = ExtractPoint(start);
         var c1 = ExtractPoint(cp1);
         var c2 = ExtractPoint(cp2);
         var e = ExtractPoint(end);
-        drawTaperedStroke(ctx, s.X, s.Y, c1.X, c1.Y, c2.X, c2.Y, e.X, e.Y, maxThickness, fillOrStrokeStyle);
+        DrawTaperedStroke(ctx, s.X, s.Y, c1.X, c1.Y, c2.X, c2.Y, e.X, e.Y, maxThickness, fillOrStrokeStyle);
     }
 
-    public void drawTaperedStroke(CanvasRenderingContext2D ctx, float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null)
+    public void DrawTaperedStroke(CanvasRenderingContext2D ctx, float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         const int steps = 24;
@@ -502,40 +508,40 @@ public class ConstructiveDrawingToolkit
             points[i] = (x, y, nx, ny, thickness);
         }
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
+        ctx.Save();
+        ctx.BeginPath();
+        ctx.MoveTo(points[0].x, points[0].y);
 
         // Forward pass along positive normal
         for (var i = 0; i <= steps; i++)
         {
             var p = points[i];
-            ctx.lineTo(p.x + p.nx * (p.thickness * 0.5f), p.y + p.ny * (p.thickness * 0.5f));
+            ctx.LineTo(p.x + p.nx * (p.thickness * 0.5f), p.y + p.ny * (p.thickness * 0.5f));
         }
 
         // Backward pass along negative normal
         for (var i = steps; i >= 0; i--)
         {
             var p = points[i];
-            ctx.lineTo(p.x - p.nx * (p.thickness * 0.5f), p.y - p.ny * (p.thickness * 0.5f));
+            ctx.LineTo(p.x - p.nx * (p.thickness * 0.5f), p.y - p.ny * (p.thickness * 0.5f));
         }
 
-        ctx.closePath();
+        ctx.ClosePath();
 
         if (fillOrStrokeStyle != null)
-            ctx.fillStyle = fillOrStrokeStyle;
+            ctx.FillStyle = fillOrStrokeStyle;
 
-        ctx.fill();
-        ctx.restore();
+        ctx.Fill();
+        ctx.Restore();
     }
 
-    public void drawFeathering(CanvasRenderingContext2D ctx, object origin, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f)
+    public void DrawFeathering(CanvasRenderingContext2D ctx, object origin, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f)
     {
         var pt = ExtractPoint(origin);
-        drawFeathering(ctx, pt.X, pt.Y, angleDeg, count, length, spacing, strokeColor, lineWidth);
+        DrawFeathering(ctx, pt.X, pt.Y, angleDeg, count, length, spacing, strokeColor, lineWidth);
     }
 
-    public void drawFeathering(CanvasRenderingContext2D ctx, float ox, float oy, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f)
+    public void DrawFeathering(CanvasRenderingContext2D ctx, float ox, float oy, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var rad = (angleDeg * MathF.PI) / 180f;
@@ -544,10 +550,10 @@ public class ConstructiveDrawingToolkit
         var px = -dy;
         var py = dx;
 
-        ctx.save();
-        if (strokeColor != null) ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWidth;
-        ctx.lineCap = "round";
+        ctx.Save();
+        if (strokeColor != null) ctx.StrokeStyle = strokeColor;
+        ctx.LineWidth = lineWidth;
+        ctx.LineCap = "round";
 
         for (var i = 0; i < count; i++)
         {
@@ -557,42 +563,42 @@ public class ConstructiveDrawingToolkit
             var ex = sx + dx * lenVar;
             var ey = sy + dy * lenVar;
 
-            ctx.beginPath();
-            ctx.moveTo(sx, sy);
-            ctx.lineTo(ex, ey);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(sx, sy);
+            ctx.LineTo(ex, ey);
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawCrossContourHatch(CanvasRenderingContext2D ctx, float cx, float cy, float rx, float ry, float startAngle, float endAngle, int count = 8, object? strokeColor = null, float lineWidth = 1.2f)
+    public void DrawCrossContourHatch(CanvasRenderingContext2D ctx, float cx, float cy, float rx, float ry, float startAngle, float endAngle, int count = 8, object? strokeColor = null, float lineWidth = 1.2f)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        ctx.save();
-        if (strokeColor != null) ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWidth;
+        ctx.Save();
+        if (strokeColor != null) ctx.StrokeStyle = strokeColor;
+        ctx.LineWidth = lineWidth;
 
         for (var i = 0; i < count; i++)
         {
             var t = (float)i / Math.Max(1, count - 1);
             var y = cy - ry * 0.5f + t * ry;
-            ctx.beginPath();
-            ctx.ellipse(cx, y, rx, ry * 0.25f, 0f, startAngle, endAngle);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.Ellipse(cx, y, rx, ry * 0.25f, 0f, startAngle, endAngle);
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawHairRibbon(CanvasRenderingContext2D ctx, object root, object tip, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f)
+    public void DrawHairRibbon(CanvasRenderingContext2D ctx, object root, object tip, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f)
     {
         var r = ExtractPoint(root);
         var t = ExtractPoint(tip);
-        drawHairRibbon(ctx, r.X, r.Y, t.X, t.Y, bendFactor, width, fillTop, fillUnderside, strokeColor, strokeWidth);
+        DrawHairRibbon(ctx, r.X, r.Y, t.X, t.Y, bendFactor, width, fillTop, fillUnderside, strokeColor, strokeWidth);
     }
 
-    public void drawHairRibbon(CanvasRenderingContext2D ctx, float rx, float ry, float tx, float ty, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f)
+    public void DrawHairRibbon(CanvasRenderingContext2D ctx, float rx, float ry, float tx, float ty, float bendFactor, float width, object fillTop, object fillUnderside, object? strokeColor = null, float strokeWidth = 2.0f)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var dx = tx - rx;
@@ -615,44 +621,44 @@ public class ConstructiveDrawingToolkit
         var cp4x = rootLowerX + dx * 0.30f + nx * (bendFactor * 0.7f);
         var cp4y = rootLowerY + dy * 0.30f + ny * (bendFactor * 0.7f);
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Top Ribbon Surface
-        ctx.beginPath();
-        ctx.moveTo(rx, ry);
-        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
-        ctx.bezierCurveTo(cp3x, cp3y, cp4x, cp4y, rootLowerX, rootLowerY);
-        ctx.closePath();
+        ctx.BeginPath();
+        ctx.MoveTo(rx, ry);
+        ctx.BezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
+        ctx.BezierCurveTo(cp3x, cp3y, cp4x, cp4y, rootLowerX, rootLowerY);
+        ctx.ClosePath();
 
-        ctx.fillStyle = fillTop;
-        ctx.fill();
+        ctx.FillStyle = fillTop;
+        ctx.Fill();
 
         if (strokeColor != null)
         {
-            ctx.strokeStyle = strokeColor;
-            ctx.lineWidth = strokeWidth;
-            ctx.lineJoin = "round";
-            ctx.stroke();
+            ctx.StrokeStyle = strokeColor;
+            ctx.LineWidth = strokeWidth;
+            ctx.LineJoin = "round";
+            ctx.Stroke();
         }
 
         // 2. Inner Highlight / Underside Streak
-        ctx.beginPath();
-        ctx.moveTo(rx + dx * 0.15f + nx * (width * 0.3f), ry + dy * 0.15f + ny * (width * 0.3f));
-        ctx.bezierCurveTo(
+        ctx.BeginPath();
+        ctx.MoveTo(rx + dx * 0.15f + nx * (width * 0.3f), ry + dy * 0.15f + ny * (width * 0.3f));
+        ctx.BezierCurveTo(
             cp1x + nx * (width * 0.2f), cp1y + ny * (width * 0.2f),
             cp2x + nx * (width * 0.2f), cp2y + ny * (width * 0.2f),
             tx - dx * 0.1f, ty - dy * 0.1f
         );
-        ctx.strokeStyle = fillUnderside;
-        ctx.lineWidth = MathF.Max(1.2f, strokeWidth * 0.75f);
-        ctx.stroke();
+        ctx.StrokeStyle = fillUnderside;
+        ctx.LineWidth = MathF.Max(1.2f, strokeWidth * 0.75f);
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
     #endregion
 
     #region Procedural Shaders & Material Presets
-    public SKShader createHalftoneDotShader(object? options = null)
+    public SKShader CreateHalftoneDotShader(object? options = null)
     {
         var optDict = JsInterop.AsDict(options);
         var dotSpacing = optDict != null && optDict.Contains("dotSpacing")
@@ -692,24 +698,24 @@ public class ConstructiveDrawingToolkit
         };
 
         var skiaShaderApi = new SkiaShaderApi();
-        return skiaShaderApi.sksl(sksl, uniforms);
+        return skiaShaderApi.Sksl(sksl, uniforms);
     }
 
-    public SKShader createRopeFiberShader(float frequencyX = 0.08f, float frequencyY = 0.40f, int octaves = 3, int seed = 42)
+    public SKShader CreateRopeFiberShader(float frequencyX = 0.08f, float frequencyY = 0.40f, int octaves = 3, int seed = 42)
     {
         var skiaShaderApi = new SkiaShaderApi();
-        return skiaShaderApi.perlinNoiseTurbulence(frequencyX, frequencyY, octaves, seed);
+        return skiaShaderApi.PerlinNoiseTurbulence(frequencyX, frequencyY, octaves, seed);
     }
 
-    public SKShader createAtmosphericCloudShader(float frequencyX = 0.015f, float frequencyY = 0.015f, int octaves = 4, int seed = 101)
+    public SKShader CreateAtmosphericCloudShader(float frequencyX = 0.015f, float frequencyY = 0.015f, int octaves = 4, int seed = 101)
     {
         var skiaShaderApi = new SkiaShaderApi();
-        return skiaShaderApi.perlinNoiseFractal(frequencyX, frequencyY, octaves, seed);
+        return skiaShaderApi.PerlinNoiseFractal(frequencyX, frequencyY, octaves, seed);
     }
     #endregion
 
     #region Visual Measurement Helpers
-    public Dictionary<string, object?> verifyPlumbAlignment(object topPoint, object bottomPoint, float maxTolerance = 12f)
+    public Dictionary<string, object?> VerifyPlumbAlignment(object topPoint, object bottomPoint, float maxTolerance = 12f)
     {
         var p1 = ExtractPoint(topPoint);
         var p2 = ExtractPoint(bottomPoint);
@@ -724,7 +730,7 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public float computeRelativeDistance(float headHeight, object pointA, object pointB)
+    public float ComputeRelativeDistance(float headHeight, object pointA, object pointB)
     {
         if (headHeight <= 0.001f) return 0f;
         var p1 = ExtractPoint(pointA);
@@ -746,7 +752,7 @@ public class ConstructiveDrawingToolkit
         return new Point2D(p1.X + t * (p2.X - p1.X), p1.Y + t * (p2.Y - p1.Y));
     }
 
-    public Dictionary<string, object?> createPerspectiveGrid(object? options = null)
+    public Dictionary<string, object?> CreatePerspectiveGrid(object? options = null)
     {
         var opt = JsInterop.AsDict(options);
         var type = opt?["type"]?.ToString() ?? "2point";
@@ -795,7 +801,7 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void drawPerspectiveGrid(CanvasRenderingContext2D ctx, object gridObj, object? options = null)
+    public void DrawPerspectiveGrid(CanvasRenderingContext2D ctx, object gridObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(gridObj) is not IDictionary grid) return;
@@ -810,11 +816,11 @@ public class ConstructiveDrawingToolkit
         var vpL = ExtractPoint(grid["vpL"]);
         var vpR = ExtractPoint(grid["vpR"]);
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Vanishing Point Rays
-        ctx.strokeStyle = lineColor;
-        ctx.lineWidth = lineWidth;
+        ctx.StrokeStyle = lineColor;
+        ctx.LineWidth = lineWidth;
 
         var w = ctx.Canvas.Width;
         var h = ctx.Canvas.Height;
@@ -823,30 +829,30 @@ public class ConstructiveDrawingToolkit
         {
             var targetY = horizonY + (i + 1) * ((h - horizonY) / lineCount);
             // Left VP rays
-            ctx.beginPath();
-            ctx.moveTo(vpL.X, vpL.Y);
-            ctx.lineTo(w + 200f, targetY);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(vpL.X, vpL.Y);
+            ctx.LineTo(w + 200f, targetY);
+            ctx.Stroke();
 
             // Right VP rays
-            ctx.beginPath();
-            ctx.moveTo(vpR.X, vpR.Y);
-            ctx.lineTo(-200f, targetY);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(vpR.X, vpR.Y);
+            ctx.LineTo(-200f, targetY);
+            ctx.Stroke();
         }
 
         // 2. Horizon Line
-        ctx.strokeStyle = horizonColor;
-        ctx.lineWidth = lineWidth * 1.5f;
-        ctx.beginPath();
-        ctx.moveTo(0, horizonY);
-        ctx.lineTo(w, horizonY);
-        ctx.stroke();
+        ctx.StrokeStyle = horizonColor;
+        ctx.LineWidth = lineWidth * 1.5f;
+        ctx.BeginPath();
+        ctx.MoveTo(0, horizonY);
+        ctx.LineTo(w, horizonY);
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public Dictionary<string, object?> createPerspectiveBox(object gridObj, float anchorX, float anchorY, float width, float height, float depth)
+    public Dictionary<string, object?> CreatePerspectiveBox(object gridObj, float anchorX, float anchorY, float width, float height, float depth)
     {
         if (JsInterop.AsDict(gridObj) is not IDictionary grid)
             throw new ArgumentException("gridObj must be a valid perspective grid dictionary", nameof(gridObj));
@@ -906,7 +912,7 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void drawPerspectiveBox(CanvasRenderingContext2D ctx, object boxObj, object? options = null)
+    public void DrawPerspectiveBox(CanvasRenderingContext2D ctx, object boxObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(boxObj) is not IDictionary box) return;
@@ -925,50 +931,50 @@ public class ConstructiveDrawingToolkit
         void RenderFace(object? faceObj, object? fill)
         {
             if (faceObj is not IList pts || pts.Count < 3) return;
-            ctx.beginPath();
+            ctx.BeginPath();
             var first = ExtractPoint(pts[0]);
-            ctx.moveTo(first.X, first.Y);
+            ctx.MoveTo(first.X, first.Y);
             for (var i = 1; i < pts.Count; i++)
             {
                 var p = ExtractPoint(pts[i]);
-                ctx.lineTo(p.X, p.Y);
+                ctx.LineTo(p.X, p.Y);
             }
-            ctx.closePath();
+            ctx.ClosePath();
             if (fill != null)
             {
-                ctx.fillStyle = fill;
-                ctx.fill();
+                ctx.FillStyle = fill;
+                ctx.Fill();
             }
             if (strokeColor != null)
             {
-                ctx.strokeStyle = strokeColor;
-                ctx.lineWidth = strokeWidth;
-                ctx.lineJoin = "round";
-                ctx.stroke();
+                ctx.StrokeStyle = strokeColor;
+                ctx.LineWidth = strokeWidth;
+                ctx.LineJoin = "round";
+                ctx.Stroke();
             }
         }
 
-        ctx.save();
+        ctx.Save();
 
         if (drawHidden)
         {
-            ctx.save();
-            ctx.strokeStyle = "#9bbcd9";
-            ctx.lineWidth = strokeWidth * 0.7f;
+            ctx.Save();
+            ctx.StrokeStyle = "#9bbcd9";
+            ctx.LineWidth = strokeWidth * 0.7f;
             RenderFace(faces["bottom"], null);
             RenderFace(faces["backLeft"], null);
             RenderFace(faces["backRight"], null);
-            ctx.restore();
+            ctx.Restore();
         }
 
         RenderFace(faces["left"], leftFill);
         RenderFace(faces["right"], rightFill);
         RenderFace(faces["top"], topFill);
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawPerspectiveCylinder(CanvasRenderingContext2D ctx, object gridObj, float anchorX, float anchorY, float radius, float height, object? options = null)
+    public void DrawPerspectiveCylinder(CanvasRenderingContext2D ctx, object gridObj, float anchorX, float anchorY, float radius, float height, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var opt = JsInterop.AsDict(options);
@@ -977,7 +983,7 @@ public class ConstructiveDrawingToolkit
         var strokeColor = opt?["strokeColor"]?.ToString() ?? "#2d547d";
         var strokeWidth = opt != null && opt.Contains("strokeWidth") ? Convert.ToSingle(opt["strokeWidth"], CultureInfo.InvariantCulture) : 1.8f;
 
-        var box = createPerspectiveBox(gridObj, anchorX, anchorY, radius * 2f, height, radius * 2f);
+        var box = CreatePerspectiveBox(gridObj, anchorX, anchorY, radius * 2f, height, radius * 2f);
         var verts = (IList)box["vertices"]!;
 
         var v0 = ExtractPoint(verts[0]);
@@ -996,49 +1002,49 @@ public class ConstructiveDrawingToolkit
         var rx = MathF.Abs(v2.X - v1.X) * 0.5f;
         var ry = MathF.Abs(v0.Y - v3.Y) * 0.45f;
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Cylinder Body
-        ctx.fillStyle = sideFill;
-        ctx.beginPath();
+        ctx.FillStyle = sideFill;
+        ctx.BeginPath();
         // Left contour up, across the FRONT of the top ellipse, right contour down, then back
         // along the front of the bottom ellipse. Both arcs must start at the tangent extreme they
         // meet (angle PI on the left, 0 on the right) — sweeping either from the far side folds the
         // body into a bowtie. The contours sit at center +/- rx so they stay tangent to the arcs.
-        ctx.moveTo(botCenter.X - rx, botCenter.Y);
-        ctx.lineTo(topCenter.X - rx, topCenter.Y);
-        ctx.ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, MathF.PI, 0f, true);
-        ctx.lineTo(botCenter.X + rx, botCenter.Y);
-        ctx.ellipse(botCenter.X, botCenter.Y, rx, ry, 0f, 0f, MathF.PI);
-        ctx.closePath();
-        ctx.fill();
+        ctx.MoveTo(botCenter.X - rx, botCenter.Y);
+        ctx.LineTo(topCenter.X - rx, topCenter.Y);
+        ctx.Ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, MathF.PI, 0f, true);
+        ctx.LineTo(botCenter.X + rx, botCenter.Y);
+        ctx.Ellipse(botCenter.X, botCenter.Y, rx, ry, 0f, 0f, MathF.PI);
+        ctx.ClosePath();
+        ctx.Fill();
 
         // Contour edges
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = strokeWidth;
-        ctx.beginPath();
-        ctx.moveTo(botCenter.X - rx, botCenter.Y);
-        ctx.lineTo(topCenter.X - rx, topCenter.Y);
-        ctx.moveTo(botCenter.X + rx, botCenter.Y);
-        ctx.lineTo(topCenter.X + rx, topCenter.Y);
-        ctx.stroke();
+        ctx.StrokeStyle = strokeColor;
+        ctx.LineWidth = strokeWidth;
+        ctx.BeginPath();
+        ctx.MoveTo(botCenter.X - rx, botCenter.Y);
+        ctx.LineTo(topCenter.X - rx, topCenter.Y);
+        ctx.MoveTo(botCenter.X + rx, botCenter.Y);
+        ctx.LineTo(topCenter.X + rx, topCenter.Y);
+        ctx.Stroke();
 
         // Bottom ellipse arc
-        ctx.beginPath();
-        ctx.ellipse(botCenter.X, botCenter.Y, rx, ry, 0f, 0f, MathF.PI);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(botCenter.X, botCenter.Y, rx, ry, 0f, 0f, MathF.PI);
+        ctx.Stroke();
 
         // 2. Top Elliptical Cap
-        ctx.fillStyle = topFill;
-        ctx.beginPath();
-        ctx.ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, 0f, MathF.PI * 2f);
-        ctx.fill();
-        ctx.stroke();
+        ctx.FillStyle = topFill;
+        ctx.BeginPath();
+        ctx.Ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, 0f, MathF.PI * 2f);
+        ctx.Fill();
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public List<List<Dictionary<string, object?>>> subdividePerspectiveQuad(object quadObj, int uCount, int vCount)
+    public List<List<Dictionary<string, object?>>> SubdividePerspectiveQuad(object quadObj, int uCount, int vCount)
     {
         if (quadObj is not IList pts || pts.Count < 4)
             throw new ArgumentException("quadObj must contain 4 points [P0, P1, P2, P3]", nameof(quadObj));
@@ -1081,7 +1087,7 @@ public class ConstructiveDrawingToolkit
         return grid;
     }
 
-    public Dictionary<string, object?> verifyPerspectiveConvergence(object linesList, object expectedVp, float maxToleranceDeg = 5f)
+    public Dictionary<string, object?> VerifyPerspectiveConvergence(object linesList, object expectedVp, float maxToleranceDeg = 5f)
     {
         var vp = ExtractPoint(expectedVp);
         if (linesList is not IList lines || lines.Count == 0)
@@ -1116,7 +1122,13 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Volumetric Lighting & Cast Shadows
-    public Dictionary<string, object?> projectCastShadow(object lightSource, float groundY, object objectVerticesOrBounds, object? options = null)
+    /// <summary>
+    /// Projects a cast shadow onto the ground. <paramref name="groundOrGrid"/> selects the model:
+    /// a number is a ground <em>line</em> at that Y (a 2D elevation, where depth comes from
+    /// <c>options.groundDepth</c>); a <c>PerspectiveGrid</c> is a ground <em>plane</em>, and the
+    /// footprint is then a true projective shadow needing no depth hint.
+    /// </summary>
+    public Dictionary<string, object?> ProjectCastShadow(object lightSource, object groundOrGrid, object objectVerticesOrBounds, object? options = null)
     {
         var light = ExtractPoint(lightSource);
         var opt = JsInterop.AsDict(options);
@@ -1124,41 +1136,36 @@ public class ConstructiveDrawingToolkit
         var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.65f;
         var penumbraBlur = opt != null && opt.Contains("penumbraBlur") ? Convert.ToSingle(opt["penumbraBlur"], CultureInfo.InvariantCulture) : 6f;
 
-        // Every light ray meets the ground line at groundY, so the projected vertices are collinear:
-        // a ground plane seen edge-on in a 2D elevation genuinely has no thickness. The footprint only
-        // becomes a fillable shape once the ground is given an apparent depth, which cannot be derived
-        // from 2D inputs — groundDepth supplies it. The light ray still sets the shadow's length and
-        // direction; groundDepth only adds the dimension the projection cannot know.
+        var grid = JsInterop.AsDict(groundOrGrid);
+        var hasHorizon = grid != null && grid.Contains("horizonY");
+
+        var pairs = ExtractShadowCasters(objectVerticesOrBounds, hasHorizon ? null : Convert.ToSingle(groundOrGrid, CultureInfo.InvariantCulture));
+
+        return hasHorizon
+            ? ProjectOntoGroundPlane(light, Convert.ToSingle(grid!["horizonY"], CultureInfo.InvariantCulture), pairs, shadowColor, opacity, penumbraBlur)
+            : ProjectOntoGroundLine(light, Convert.ToSingle(groundOrGrid, CultureInfo.InvariantCulture), pairs, opt, shadowColor, opacity, penumbraBlur);
+    }
+
+    /// <summary>
+    /// The 2D elevation model. Every light ray meets the ground line at the same Y, so the projected
+    /// vertices are collinear — a ground plane seen edge-on has no thickness. <c>groundDepth</c>
+    /// supplies the recession the projection cannot know; the light still sets length and direction.
+    /// </summary>
+    private static Dictionary<string, object?> ProjectOntoGroundLine(
+        Point2D light, float groundY, List<(Point2D Base, Point2D Top)> pairs,
+        IDictionary? opt, string shadowColor, float opacity, float penumbraBlur)
+    {
         var basePts = new List<Point2D>();
         var farPts = new List<Point2D>();
 
-        Point2D ProjectToGround(Point2D top)
+        foreach (var (basePt, top) in pairs)
         {
             var dy = top.Y - light.Y;
             if (MathF.Abs(dy) < 0.001f) dy = 0.001f;
             var t = (groundY - light.Y) / dy;
-            return new Point2D(light.X + t * (top.X - light.X), groundY);
-        }
 
-        if (JsInterop.AsDict(objectVerticesOrBounds) is IDictionary b && b.Contains("width") && b.Contains("height"))
-        {
-            var bx = Convert.ToSingle(b["x"], CultureInfo.InvariantCulture);
-            var by = Convert.ToSingle(b["y"], CultureInfo.InvariantCulture);
-            var bw = Convert.ToSingle(b["width"], CultureInfo.InvariantCulture);
-
-            basePts.Add(new Point2D(bx, groundY));
-            basePts.Add(new Point2D(bx + bw, groundY));
-            farPts.Add(ProjectToGround(new Point2D(bx, by)));
-            farPts.Add(ProjectToGround(new Point2D(bx + bw, by)));
-        }
-        else if (objectVerticesOrBounds is IList list)
-        {
-            foreach (var item in list)
-            {
-                var pt = ExtractPoint(item);
-                basePts.Add(new Point2D(pt.X, groundY));
-                farPts.Add(ProjectToGround(pt));
-            }
+            basePts.Add(new Point2D(basePt.X, groundY));
+            farPts.Add(new Point2D(light.X + t * (top.X - light.X), groundY));
         }
 
         var shadowPts = new List<Dictionary<string, object?>>();
@@ -1173,8 +1180,6 @@ public class ConstructiveDrawingToolkit
                 ? Convert.ToSingle(opt["groundDepth"], CultureInfo.InvariantCulture)
                 : MathF.Max(4f, extent * 0.20f);
 
-            // Contact edge along the ground line, then the projected edge back the other way, lowered
-            // by groundDepth so the band recedes toward the viewer.
             foreach (var pt in basePts) shadowPts.Add(ToDict(pt));
             for (var i = farPts.Count - 1; i >= 0; i--)
             {
@@ -1185,6 +1190,7 @@ public class ConstructiveDrawingToolkit
         return new Dictionary<string, object?>
         {
             ["shadowPolygon"] = shadowPts,
+            ["model"] = "groundLine",
             ["groundY"] = groundY,
             ["groundDepth"] = groundDepth,
             ["shadowColor"] = shadowColor,
@@ -1193,7 +1199,143 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void drawCastShadow(CanvasRenderingContext2D ctx, object shadowPolygonOrResult, object? options = null)
+    /// <summary>
+    /// The perspective model — the classical architectural construction, and the reason a
+    /// <c>PerspectiveGrid</c> is worth passing.
+    /// <para>
+    /// The light is read as the vanishing point of the light rays, so its ground-projected rays
+    /// converge on the horizon directly beneath it. Each shadow vertex is the meeting of the ray
+    /// through the top vertex with the ground ray through the matching contact point. Because contact
+    /// points at different depths sit at different image heights, the footprint comes out as a real
+    /// receding quad — no <c>groundDepth</c> hint required.
+    /// </para>
+    /// </summary>
+    private static Dictionary<string, object?> ProjectOntoGroundPlane(
+        Point2D light, float horizonY, List<(Point2D Base, Point2D Top)> pairs,
+        string shadowColor, float opacity, float penumbraBlur)
+    {
+        var vpShadow = new Point2D(light.X, horizonY);
+        var basePts = new List<Point2D>();
+        var shadowVerts = new List<Point2D>();
+
+        foreach (var (basePt, top) in pairs)
+        {
+            var hit = IntersectLines(light, top, vpShadow, basePt)
+                ?? throw new ArgumentException(
+                    $"The light ray through ({top.X:F1}, {top.Y:F1}) runs parallel to the ground ray through its " +
+                    $"contact point ({basePt.X:F1}, {basePt.Y:F1}), so the shadow never lands. Move the light off " +
+                    "the horizon line, or away from directly above the object.",
+                    nameof(light));
+
+            if (hit.Y <= horizonY)
+            {
+                throw new ArgumentException(
+                    $"The shadow of ({top.X:F1}, {top.Y:F1}) falls at or beyond the horizon (y {hit.Y:F1} <= " +
+                    $"horizonY {horizonY:F1}), which is infinitely far away. Raise the light above the object, " +
+                    "or move it further from the horizon.",
+                    nameof(light));
+            }
+
+            basePts.Add(basePt);
+            shadowVerts.Add(hit);
+        }
+
+        var shadowPts = new List<Dictionary<string, object?>>();
+        if (basePts.Count >= 2)
+        {
+            foreach (var pt in basePts) shadowPts.Add(ToDict(pt));
+            for (var i = shadowVerts.Count - 1; i >= 0; i--) shadowPts.Add(ToDict(shadowVerts[i]));
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["shadowPolygon"] = shadowPts,
+            ["model"] = "perspective",
+            ["horizonY"] = horizonY,
+            ["groundY"] = basePts.Count > 0 ? basePts.Max(p => p.Y) : horizonY,
+            ["vpShadow"] = ToDict(vpShadow),
+            ["shadowColor"] = shadowColor,
+            ["opacity"] = opacity,
+            ["penumbraBlur"] = penumbraBlur
+        };
+    }
+
+    /// <summary>
+    /// Resolves the caster into (contact point, top vertex) pairs. A <c>PerspectiveBox</c> already
+    /// carries both, which is what makes the perspective model exact; a bounds rect supplies the top
+    /// and bottom edges; a bare point list is tops only, so it needs a ground line to stand on.
+    /// </summary>
+    private static List<(Point2D Base, Point2D Top)> ExtractShadowCasters(object shape, float? groundY)
+    {
+        var pairs = new List<(Point2D, Point2D)>();
+        var dict = JsInterop.AsDict(shape);
+
+        if (dict != null && dict.Contains("vertices") && dict["vertices"] is IList verts && verts.Count >= 8)
+        {
+            // PerspectiveBox: V0..V3 are the base, V4..V7 the matching top. The bottom face walks
+            // V0, V1, V3, V2 (Manual 06 section 2), so follow that order or the quad self-crosses.
+            foreach (var i in new[] { 0, 1, 3, 2 })
+            {
+                pairs.Add((ExtractPoint(verts[i]), ExtractPoint(verts[i + 4])));
+            }
+            return pairs;
+        }
+
+        if (dict != null && dict.Contains("width") && dict.Contains("height"))
+        {
+            var bx = Convert.ToSingle(dict["x"], CultureInfo.InvariantCulture);
+            var by = Convert.ToSingle(dict["y"], CultureInfo.InvariantCulture);
+            var bw = Convert.ToSingle(dict["width"], CultureInfo.InvariantCulture);
+            var bh = Convert.ToSingle(dict["height"], CultureInfo.InvariantCulture);
+
+            pairs.Add((new Point2D(bx, by + bh), new Point2D(bx, by)));
+            pairs.Add((new Point2D(bx + bw, by + bh), new Point2D(bx + bw, by)));
+            return pairs;
+        }
+
+        if (shape is IList list)
+        {
+            foreach (var item in list)
+            {
+                var entry = JsInterop.AsDict(item);
+                if (entry != null && entry.Contains("top") && entry.Contains("base"))
+                {
+                    pairs.Add((ExtractPoint(entry["base"]), ExtractPoint(entry["top"])));
+                    continue;
+                }
+
+                var top = ExtractPoint(item);
+                if (groundY is not float line)
+                {
+                    throw new ArgumentException(
+                        "A bare point list gives top vertices with no contact points, so it cannot be projected " +
+                        "onto a perspective ground plane. Pass a PerspectiveBox from Drawing.createPerspectiveBox(...), " +
+                        "a bounds rect, or a list of { top, base } pairs.",
+                        nameof(shape));
+                }
+                pairs.Add((new Point2D(top.X, line), top));
+            }
+        }
+
+        return pairs;
+    }
+
+    /// <summary>Meeting point of the lines through (a1, a2) and (b1, b2); null when they are parallel.</summary>
+    private static Point2D? IntersectLines(Point2D a1, Point2D a2, Point2D b1, Point2D b2)
+    {
+        var dxA = a2.X - a1.X;
+        var dyA = a2.Y - a1.Y;
+        var dxB = b2.X - b1.X;
+        var dyB = b2.Y - b1.Y;
+
+        var denominator = (dxA * dyB) - (dyA * dxB);
+        if (MathF.Abs(denominator) < 1e-5f) return null;
+
+        var t = (((b1.X - a1.X) * dyB) - ((b1.Y - a1.Y) * dxB)) / denominator;
+        return new Point2D(a1.X + (t * dxA), a1.Y + (t * dyA));
+    }
+
+    public void DrawCastShadow(CanvasRenderingContext2D ctx, object shadowPolygonOrResult, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         IList? pts = null;
@@ -1224,7 +1366,7 @@ public class ConstructiveDrawingToolkit
         if (pts == null || pts.Count < 3)
         {
             throw new ArgumentException(
-                $"drawCastShadow needs a polygon of at least 3 points, got {pts?.Count ?? 0}. " +
+                $"DrawCastShadow needs a polygon of at least 3 points, got {pts?.Count ?? 0}. " +
                 "Pass the result of Drawing.projectCastShadow(...) or a point list.",
                 nameof(shadowPolygonOrResult));
         }
@@ -1239,36 +1381,36 @@ public class ConstructiveDrawingToolkit
         if (spanX < 0.5f || spanY < 0.5f)
         {
             throw new ArgumentException(
-                $"drawCastShadow was given a degenerate polygon ({spanX:F2} x {spanY:F2}px) that would fill nothing. " +
+                $"DrawCastShadow was given a degenerate polygon ({spanX:F2} x {spanY:F2}px) that would fill nothing. " +
                 "A ground plane seen edge-on projects to a line: pass a 'groundDepth' option to " +
                 "Drawing.projectCastShadow(...) to give the footprint depth.",
                 nameof(shadowPolygonOrResult));
         }
 
-        ctx.save();
-        ctx.globalAlpha = opacity;
-        ctx.fillStyle = shadowColor;
+        ctx.Save();
+        ctx.GlobalAlpha = opacity;
+        ctx.FillStyle = shadowColor;
         if (blur > 0.5f)
         {
-            ctx.shadowColor = shadowColor;
-            ctx.shadowBlur = blur;
+            ctx.ShadowColor = shadowColor;
+            ctx.ShadowBlur = blur;
         }
 
-        ctx.beginPath();
+        ctx.BeginPath();
         var first = ExtractPoint(pts[0]);
-        ctx.moveTo(first.X, first.Y);
+        ctx.MoveTo(first.X, first.Y);
         for (var i = 1; i < pts.Count; i++)
         {
             var p = ExtractPoint(pts[i]);
-            ctx.lineTo(p.X, p.Y);
+            ctx.LineTo(p.X, p.Y);
         }
-        ctx.closePath();
-        ctx.fill();
+        ctx.ClosePath();
+        ctx.Fill();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void renderVolumetricSphere(CanvasRenderingContext2D ctx, float cx, float cy, float radius, object? lightDirection = null, object? options = null)
+    public void RenderVolumetricSphere(CanvasRenderingContext2D ctx, float cx, float cy, float radius, object? lightDirection = null, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var opt = JsInterop.AsDict(options);
@@ -1284,7 +1426,7 @@ public class ConstructiveDrawingToolkit
         var lx = lDir.X / len;
         var ly = lDir.Y / len;
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Ground Cast Shadow (if enabled)
         if (drawGroundShadow)
@@ -1294,66 +1436,66 @@ public class ConstructiveDrawingToolkit
             var shadowRx = radius * 1.15f;
             var shadowRy = radius * 0.28f;
 
-            ctx.save();
-            ctx.fillStyle = "#1c140e";
-            ctx.globalAlpha = 0.55f;
-            ctx.shadowColor = "#1c140e";
-            ctx.shadowBlur = 8f;
-            ctx.beginPath();
-            ctx.ellipse(shadowCx, groundY, shadowRx, shadowRy, 0f, 0f, MathF.PI * 2f);
-            ctx.fill();
-            ctx.restore();
+            ctx.Save();
+            ctx.FillStyle = "#1c140e";
+            ctx.GlobalAlpha = 0.55f;
+            ctx.ShadowColor = "#1c140e";
+            ctx.ShadowBlur = 8f;
+            ctx.BeginPath();
+            ctx.Ellipse(shadowCx, groundY, shadowRx, shadowRy, 0f, 0f, MathF.PI * 2f);
+            ctx.Fill();
+            ctx.Restore();
         }
 
         // 2. Base Sphere Fill & 3D Lighting Radial Gradient
         var lightSpotX = cx + lx * (radius * 0.45f);
         var lightSpotY = cy + ly * (radius * 0.45f);
 
-        var grad = ctx.createRadialGradient(lightSpotX, lightSpotY, radius * 0.1f, cx, cy, radius * 1.05f);
-        grad.addColorStop(0.0f, highlightColor);
-        grad.addColorStop(0.35f, baseColor);
-        grad.addColorStop(0.75f, shadowColor);
-        grad.addColorStop(1.0f, shadowColor);
+        var grad = ctx.CreateRadialGradient(lightSpotX, lightSpotY, radius * 0.1f, cx, cy, radius * 1.05f);
+        grad.AddColorStop(0.0f, highlightColor);
+        grad.AddColorStop(0.35f, baseColor);
+        grad.AddColorStop(0.75f, shadowColor);
+        grad.AddColorStop(1.0f, shadowColor);
 
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0f, MathF.PI * 2f);
-        ctx.fill();
+        ctx.FillStyle = grad;
+        ctx.BeginPath();
+        ctx.Arc(cx, cy, radius, 0f, MathF.PI * 2f);
+        ctx.Fill();
 
         // 3. Ambient Bounce / Reflected Light on shadow side
         var bounceSpotX = cx - lx * (radius * 0.65f);
         var bounceSpotY = cy - ly * (radius * 0.65f);
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0f, MathF.PI * 2f);
-        ctx.clip();
+        ctx.Save();
+        ctx.BeginPath();
+        ctx.Arc(cx, cy, radius, 0f, MathF.PI * 2f);
+        ctx.Clip();
 
-        var bounceGrad = ctx.createRadialGradient(bounceSpotX, bounceSpotY, radius * 0.05f, bounceSpotX, bounceSpotY, radius * 0.75f);
-        bounceGrad.addColorStop(0.0f, bounceColor);
-        bounceGrad.addColorStop(1.0f, "rgba(0,0,0,0)");
+        var bounceGrad = ctx.CreateRadialGradient(bounceSpotX, bounceSpotY, radius * 0.05f, bounceSpotX, bounceSpotY, radius * 0.75f);
+        bounceGrad.AddColorStop(0.0f, bounceColor);
+        bounceGrad.AddColorStop(1.0f, "rgba(0,0,0,0)");
 
-        ctx.globalAlpha = 0.45f;
-        ctx.globalCompositeOperation = "screen";
-        ctx.fillStyle = bounceGrad;
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0f, MathF.PI * 2f);
-        ctx.fill();
-        ctx.restore();
+        ctx.GlobalAlpha = 0.45f;
+        ctx.GlobalCompositeOperation = "screen";
+        ctx.FillStyle = bounceGrad;
+        ctx.BeginPath();
+        ctx.Arc(cx, cy, radius, 0f, MathF.PI * 2f);
+        ctx.Fill();
+        ctx.Restore();
 
         // 4. Specular Highlight Glint
-        ctx.save();
-        ctx.fillStyle = "#ffffff";
-        ctx.globalAlpha = 0.85f;
-        ctx.beginPath();
-        ctx.ellipse(lightSpotX - 2f, lightSpotY - 2f, radius * 0.18f, radius * 0.12f, -0.3f, 0f, MathF.PI * 2f);
-        ctx.fill();
-        ctx.restore();
+        ctx.Save();
+        ctx.FillStyle = "#ffffff";
+        ctx.GlobalAlpha = 0.85f;
+        ctx.BeginPath();
+        ctx.Ellipse(lightSpotX - 2f, lightSpotY - 2f, radius * 0.18f, radius * 0.12f, -0.3f, 0f, MathF.PI * 2f);
+        ctx.Fill();
+        ctx.Restore();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void renderVolumetricCylinder(CanvasRenderingContext2D ctx, float x, float y, float width, float height, object? lightDirection = null, object? options = null)
+    public void RenderVolumetricCylinder(CanvasRenderingContext2D ctx, float x, float y, float width, float height, object? lightDirection = null, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var opt = JsInterop.AsDict(options);
@@ -1366,45 +1508,45 @@ public class ConstructiveDrawingToolkit
         var rx = width * 0.5f;
         var cx = x + rx;
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Cylinder Body Longitudinal Gradient
-        var grad = ctx.createLinearGradient(x, y, x + width, y);
-        grad.addColorStop(0.0f, shadowColor);
-        grad.addColorStop(0.25f, highlightColor);
-        grad.addColorStop(0.55f, baseColor);
-        grad.addColorStop(0.85f, shadowColor);
-        grad.addColorStop(1.0f, bounceColor);
+        var grad = ctx.CreateLinearGradient(x, y, x + width, y);
+        grad.AddColorStop(0.0f, shadowColor);
+        grad.AddColorStop(0.25f, highlightColor);
+        grad.AddColorStop(0.55f, baseColor);
+        grad.AddColorStop(0.85f, shadowColor);
+        grad.AddColorStop(1.0f, bounceColor);
 
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.moveTo(x, y + ry);
-        ctx.lineTo(x, y + height - ry);
-        ctx.ellipse(cx, y + height - ry, rx, ry, 0f, 0f, MathF.PI);
-        ctx.lineTo(x + width, y + ry);
-        ctx.ellipse(cx, y + ry, rx, ry, 0f, 0f, MathF.PI);
-        ctx.closePath();
-        ctx.fill();
+        ctx.FillStyle = grad;
+        ctx.BeginPath();
+        ctx.MoveTo(x, y + ry);
+        ctx.LineTo(x, y + height - ry);
+        ctx.Ellipse(cx, y + height - ry, rx, ry, 0f, 0f, MathF.PI);
+        ctx.LineTo(x + width, y + ry);
+        ctx.Ellipse(cx, y + ry, rx, ry, 0f, 0f, MathF.PI);
+        ctx.ClosePath();
+        ctx.Fill();
 
         // 2. Top Elliptical Cap
-        var topGrad = ctx.createRadialGradient(cx, y + ry * 0.6f, rx * 0.1f, cx, y + ry, rx);
-        topGrad.addColorStop(0.0f, highlightColor);
-        topGrad.addColorStop(1.0f, baseColor);
+        var topGrad = ctx.CreateRadialGradient(cx, y + ry * 0.6f, rx * 0.1f, cx, y + ry, rx);
+        topGrad.AddColorStop(0.0f, highlightColor);
+        topGrad.AddColorStop(1.0f, baseColor);
 
-        ctx.fillStyle = topGrad;
-        ctx.beginPath();
-        ctx.ellipse(cx, y + ry, rx, ry, 0f, 0f, MathF.PI * 2f);
-        ctx.fill();
+        ctx.FillStyle = topGrad;
+        ctx.BeginPath();
+        ctx.Ellipse(cx, y + ry, rx, ry, 0f, 0f, MathF.PI * 2f);
+        ctx.Fill();
 
         // Top cap stroke
-        ctx.strokeStyle = shadowColor;
-        ctx.lineWidth = 1.5f;
-        ctx.stroke();
+        ctx.StrokeStyle = shadowColor;
+        ctx.LineWidth = 1.5f;
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public Dictionary<string, object?> createThreePointLighting(object? options = null)
+    public Dictionary<string, object?> CreateThreePointLighting(object? options = null)
     {
         var opt = JsInterop.AsDict(options);
         var keyColor = opt?["keyColor"]?.ToString() ?? "#fff3d6";
@@ -1423,7 +1565,7 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void drawRimLight(CanvasRenderingContext2D ctx, object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f)
+    public void DrawRimLight(CanvasRenderingContext2D ctx, object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var color = rimColor?.ToString() ?? "#ffffff";
@@ -1431,10 +1573,10 @@ public class ConstructiveDrawingToolkit
         var nx = MathF.Cos(rad);
         var ny = MathF.Sin(rad);
 
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = thickness;
-        ctx.lineCap = "round";
+        ctx.Save();
+        ctx.StrokeStyle = color;
+        ctx.LineWidth = thickness;
+        ctx.LineCap = "round";
 
         if (JsInterop.AsDict(boundsOrPts) is IDictionary b && b.Contains("x") && b.Contains("width"))
         {
@@ -1443,36 +1585,36 @@ public class ConstructiveDrawingToolkit
             var bw = Convert.ToSingle(b["width"], CultureInfo.InvariantCulture);
             var bh = Convert.ToSingle(b["height"], CultureInfo.InvariantCulture);
 
-            ctx.beginPath();
+            ctx.BeginPath();
             if (nx > 0)
             {
-                ctx.moveTo(bx + bw, by + 4f);
-                ctx.lineTo(bx + bw, by + bh - 4f);
+                ctx.MoveTo(bx + bw, by + 4f);
+                ctx.LineTo(bx + bw, by + bh - 4f);
             }
             else
             {
-                ctx.moveTo(bx, by + 4f);
-                ctx.lineTo(bx, by + bh - 4f);
+                ctx.MoveTo(bx, by + 4f);
+                ctx.LineTo(bx, by + bh - 4f);
             }
-            ctx.stroke();
+            ctx.Stroke();
         }
         else if (boundsOrPts is IList pts && pts.Count >= 2)
         {
-            ctx.beginPath();
+            ctx.BeginPath();
             var first = ExtractPoint(pts[0]);
-            ctx.moveTo(first.X + nx * 2f, first.Y + ny * 2f);
+            ctx.MoveTo(first.X + nx * 2f, first.Y + ny * 2f);
             for (var i = 1; i < pts.Count; i++)
             {
                 var p = ExtractPoint(pts[i]);
-                ctx.lineTo(p.X + nx * 2f, p.Y + ny * 2f);
+                ctx.LineTo(p.X + nx * 2f, p.Y + ny * 2f);
             }
-            ctx.stroke();
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public SKShader createVolumetricSphereShader(object? options = null)
+    public SKShader CreateVolumetricSphereShader(object? options = null)
     {
         var opt = JsInterop.AsDict(options);
         var lightColor = opt?["lightColor"]?.ToString() ?? "#fff6e8";
@@ -1523,12 +1665,12 @@ public class ConstructiveDrawingToolkit
         };
 
         var skiaShaderApi = new SkiaShaderApi();
-        return skiaShaderApi.sksl(sksl, uniforms);
+        return skiaShaderApi.Sksl(sksl, uniforms);
     }
     #endregion
 
     #region Full-Body Anatomy, Mannequins & Expressions
-    public Dictionary<string, object?> createMannequinFigure(float originX, float originY, float totalHeight = 560f, object? options = null)
+    public Dictionary<string, object?> CreateMannequinFigure(float originX, float originY, float totalHeight = 560f, object? options = null)
     {
         var opt = JsInterop.AsDict(options);
         var H = totalHeight / 8f;
@@ -1608,7 +1750,7 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void drawMannequinWireframe(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
+    public void DrawMannequinWireframe(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(figureObj) is not IDictionary fig) return;
@@ -1643,54 +1785,54 @@ public class ConstructiveDrawingToolkit
         var lLeg = JsInterop.AsDict(fig["leftLeg"]);
         var rLeg = JsInterop.AsDict(fig["rightLeg"]);
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Blue-line Skeleton Gesture & Masses
-        ctx.strokeStyle = blueLine;
-        ctx.lineWidth = lineWidth;
+        ctx.StrokeStyle = blueLine;
+        ctx.LineWidth = lineWidth;
 
         // Head Ellipse
-        ctx.beginPath();
-        ctx.ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Stroke();
 
         // Spine Line of Action (Cervical -> Thoracic -> Lumbar -> Sacral)
-        ctx.beginPath();
-        ctx.moveTo(headCenter.X, headCenter.Y + headRy);
-        ctx.lineTo(neck.X, neck.Y);
-        ctx.quadraticCurveTo(sternum.X, sternum.Y, ribCenter.X, ribCenter.Y);
-        ctx.quadraticCurveTo(navel.X, navel.Y, pelCenter.X, pelCenter.Y);
-        ctx.lineTo(crotch.X, crotch.Y);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(headCenter.X, headCenter.Y + headRy);
+        ctx.LineTo(neck.X, neck.Y);
+        ctx.QuadraticCurveTo(sternum.X, sternum.Y, ribCenter.X, ribCenter.Y);
+        ctx.QuadraticCurveTo(navel.X, navel.Y, pelCenter.X, pelCenter.Y);
+        ctx.LineTo(crotch.X, crotch.Y);
+        ctx.Stroke();
 
         // Ribcage Egg
-        ctx.beginPath();
-        ctx.ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Stroke();
 
         // Pelvic Basin
-        ctx.beginPath();
-        ctx.ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Stroke();
 
         // 2. Graphite Limb Bones & Joint Hinges
-        ctx.strokeStyle = graphite;
-        ctx.lineWidth = lineWidth * 1.25f;
+        ctx.StrokeStyle = graphite;
+        ctx.LineWidth = lineWidth * 1.25f;
 
         void DrawLimb(Point2D a, Point2D b, Point2D c, Point2D d)
         {
-            ctx.beginPath();
-            ctx.moveTo(a.X, a.Y);
-            ctx.lineTo(b.X, b.Y);
-            ctx.lineTo(c.X, c.Y);
-            ctx.lineTo(d.X, d.Y);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(a.X, a.Y);
+            ctx.LineTo(b.X, b.Y);
+            ctx.LineTo(c.X, c.Y);
+            ctx.LineTo(d.X, d.Y);
+            ctx.Stroke();
 
             // Joint hinges
-            ctx.beginPath();
-            ctx.arc(b.X, b.Y, 5f, 0f, MathF.PI * 2f);
-            ctx.arc(c.X, c.Y, 4f, 0f, MathF.PI * 2f);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.Arc(b.X, b.Y, 5f, 0f, MathF.PI * 2f);
+            ctx.Arc(c.X, c.Y, 4f, 0f, MathF.PI * 2f);
+            ctx.Stroke();
         }
 
         if (lArm != null) DrawLimb(ExtractPoint(lArm["shoulder"]), ExtractPoint(lArm["elbow"]), ExtractPoint(lArm["wrist"]), ExtractPoint(lArm["hand"]));
@@ -1698,10 +1840,10 @@ public class ConstructiveDrawingToolkit
         if (lLeg != null) DrawLimb(ExtractPoint(lLeg["hip"]), ExtractPoint(lLeg["knee"]), ExtractPoint(lLeg["ankle"]), ExtractPoint(lLeg["foot"]));
         if (rLeg != null) DrawLimb(ExtractPoint(rLeg["hip"]), ExtractPoint(rLeg["knee"]), ExtractPoint(rLeg["ankle"]), ExtractPoint(rLeg["foot"]));
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawMannequinSolid(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
+    public void DrawMannequinSolid(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(figureObj) is not IDictionary fig) return;
@@ -1714,10 +1856,10 @@ public class ConstructiveDrawingToolkit
 
         var H = fig.Contains("headUnit") ? Convert.ToSingle(fig["headUnit"], CultureInfo.InvariantCulture) : 70f;
 
-        ctx.save();
-        ctx.fillStyle = fillColor;
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = strokeWidth;
+        ctx.Save();
+        ctx.FillStyle = fillColor;
+        ctx.StrokeStyle = strokeColor;
+        ctx.LineWidth = strokeWidth;
 
         // 1. Shaded Limbs (Tapered Cylinders)
         void DrawCylinderLimb(Point2D a, Point2D b, float r1, float r2)
@@ -1729,14 +1871,14 @@ public class ConstructiveDrawingToolkit
             var nx = -dy / dist;
             var ny = dx / dist;
 
-            ctx.beginPath();
-            ctx.moveTo(a.X - nx * r1, a.Y - ny * r1);
-            ctx.lineTo(b.X - nx * r2, b.Y - ny * r2);
-            ctx.lineTo(b.X + nx * r2, b.Y + ny * r2);
-            ctx.lineTo(a.X + nx * r1, a.Y + ny * r1);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(a.X - nx * r1, a.Y - ny * r1);
+            ctx.LineTo(b.X - nx * r2, b.Y - ny * r2);
+            ctx.LineTo(b.X + nx * r2, b.Y + ny * r2);
+            ctx.LineTo(a.X + nx * r1, a.Y + ny * r1);
+            ctx.ClosePath();
+            ctx.Fill();
+            ctx.Stroke();
         }
 
         var lLeg = JsInterop.AsDict(fig["leftLeg"]);
@@ -1761,20 +1903,20 @@ public class ConstructiveDrawingToolkit
         var pelCenter = ExtractPoint(pelvis?["center"]);
         var pelRx = pelvis != null && pelvis.Contains("rx") ? Convert.ToSingle(pelvis["rx"], CultureInfo.InvariantCulture) : H * 0.70f;
         var pelRy = pelvis != null && pelvis.Contains("ry") ? Convert.ToSingle(pelvis["ry"], CultureInfo.InvariantCulture) : H * 0.45f;
-        ctx.beginPath();
-        ctx.ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
-        ctx.fill();
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Fill();
+        ctx.Stroke();
 
         // Ribcage
         var ribcage = JsInterop.AsDict(fig["ribcage"]);
         var ribCenter = ExtractPoint(ribcage?["center"]);
         var ribRx = ribcage != null && ribcage.Contains("rx") ? Convert.ToSingle(ribcage["rx"], CultureInfo.InvariantCulture) : H * 0.85f;
         var ribRy = ribcage != null && ribcage.Contains("ry") ? Convert.ToSingle(ribcage["ry"], CultureInfo.InvariantCulture) : H * 0.70f;
-        ctx.beginPath();
-        ctx.ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
-        ctx.fill();
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Fill();
+        ctx.Stroke();
 
         // Arms
         if (lArm != null)
@@ -1793,15 +1935,15 @@ public class ConstructiveDrawingToolkit
         var headCenter = ExtractPoint(head?["center"]);
         var headRx = head != null && head.Contains("rx") ? Convert.ToSingle(head["rx"], CultureInfo.InvariantCulture) : H * 0.36f;
         var headRy = head != null && head.Contains("ry") ? Convert.ToSingle(head["ry"], CultureInfo.InvariantCulture) : H * 0.50f;
-        ctx.beginPath();
-        ctx.ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
-        ctx.fill();
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.Ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Fill();
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawTorsoMusculature(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
+    public void DrawTorsoMusculature(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         if (JsInterop.AsDict(figureObj) is not IDictionary fig) return;
@@ -1817,57 +1959,57 @@ public class ConstructiveDrawingToolkit
         var leftClav = ExtractPoint(clavicles?["left"]);
         var rightClav = ExtractPoint(clavicles?["right"]);
 
-        ctx.save();
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = strokeWidth;
-        ctx.lineCap = "round";
+        ctx.Save();
+        ctx.StrokeStyle = strokeColor;
+        ctx.LineWidth = strokeWidth;
+        ctx.LineCap = "round";
 
         // 1. Clavicle Handlebars
-        ctx.beginPath();
-        ctx.moveTo(leftClav.X, leftClav.Y);
-        ctx.quadraticCurveTo((leftClav.X + sternum.X) * 0.5f, sternum.Y + 4f, sternum.X, sternum.Y);
-        ctx.quadraticCurveTo((rightClav.X + sternum.X) * 0.5f, sternum.Y + 4f, rightClav.X, rightClav.Y);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(leftClav.X, leftClav.Y);
+        ctx.QuadraticCurveTo((leftClav.X + sternum.X) * 0.5f, sternum.Y + 4f, sternum.X, sternum.Y);
+        ctx.QuadraticCurveTo((rightClav.X + sternum.X) * 0.5f, sternum.Y + 4f, rightClav.X, rightClav.Y);
+        ctx.Stroke();
 
         // 2. Pectoralis Major Chest Plates
         var pecY = sternum.Y + H * 0.55f;
         var pecW = H * 0.65f;
 
         // Left Pectoral
-        ctx.beginPath();
-        ctx.moveTo(sternum.X, sternum.Y + 8f);
-        ctx.lineTo(sternum.X, pecY);
-        ctx.quadraticCurveTo(sternum.X - pecW * 0.5f, pecY + 6f, leftClav.X + 8f, pecY - 8f);
-        ctx.lineTo(leftClav.X + 4f, leftClav.Y + 8f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(sternum.X, sternum.Y + 8f);
+        ctx.LineTo(sternum.X, pecY);
+        ctx.QuadraticCurveTo(sternum.X - pecW * 0.5f, pecY + 6f, leftClav.X + 8f, pecY - 8f);
+        ctx.LineTo(leftClav.X + 4f, leftClav.Y + 8f);
+        ctx.Stroke();
 
         // Right Pectoral
-        ctx.beginPath();
-        ctx.moveTo(sternum.X, sternum.Y + 8f);
-        ctx.lineTo(sternum.X, pecY);
-        ctx.quadraticCurveTo(sternum.X + pecW * 0.5f, pecY + 6f, rightClav.X - 8f, pecY - 8f);
-        ctx.lineTo(rightClav.X - 4f, rightClav.Y + 8f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(sternum.X, sternum.Y + 8f);
+        ctx.LineTo(sternum.X, pecY);
+        ctx.QuadraticCurveTo(sternum.X + pecW * 0.5f, pecY + 6f, rightClav.X - 8f, pecY - 8f);
+        ctx.LineTo(rightClav.X - 4f, rightClav.Y + 8f);
+        ctx.Stroke();
 
         // 3. Linea Alba & Rectus Abdominis Six-Pack
-        ctx.beginPath();
-        ctx.moveTo(sternum.X, pecY);
-        ctx.lineTo(navel.X, navel.Y + H * 0.4f);
-        ctx.stroke();
+        ctx.BeginPath();
+        ctx.MoveTo(sternum.X, pecY);
+        ctx.LineTo(navel.X, navel.Y + H * 0.4f);
+        ctx.Stroke();
 
         for (var i = 1; i <= 2; i++)
         {
             var tierY = pecY + (navel.Y - pecY) * (i * 0.33f);
-            ctx.beginPath();
-            ctx.moveTo(sternum.X - H * 0.35f, tierY);
-            ctx.lineTo(sternum.X + H * 0.35f, tierY);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(sternum.X - H * 0.35f, tierY);
+            ctx.LineTo(sternum.X + H * 0.35f, tierY);
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public Dictionary<string, object?> applyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
+    public Dictionary<string, object?> ApplyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
     {
         if (JsInterop.AsDict(headObj) is not IDictionary head)
             throw new ArgumentException("headObj must be a valid Loomis head dictionary", nameof(headObj));
@@ -1972,7 +2114,7 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Composition Armatures, Notan & Visual Emphasis
-    public Dictionary<string, object?> createCompositionGrid(float width, float height, string type = "ruleOfThirds", object? options = null)
+    public Dictionary<string, object?> CreateCompositionGrid(float width, float height, string type = "ruleOfThirds", object? options = null)
     {
         var gridType = type.Trim().ToLowerInvariant();
         var lines = new List<List<Dictionary<string, object?>>>();
@@ -2077,14 +2219,14 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void drawCompositionGrid(CanvasRenderingContext2D ctx, object gridObjOrType, object? options = null)
+    public void DrawCompositionGrid(CanvasRenderingContext2D ctx, object gridObjOrType, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         IDictionary? grid = null;
 
         if (gridObjOrType is string typeStr)
         {
-            grid = createCompositionGrid(ctx.Canvas.Width, ctx.Canvas.Height, typeStr, options);
+            grid = CreateCompositionGrid(ctx.Canvas.Width, ctx.Canvas.Height, typeStr, options);
         }
         else if (JsInterop.AsDict(gridObjOrType) is IDictionary dict)
         {
@@ -2099,11 +2241,11 @@ public class ConstructiveDrawingToolkit
         var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.2f;
         var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.45f;
 
-        ctx.save();
-        ctx.globalAlpha = opacity;
-        ctx.strokeStyle = lineColor;
-        ctx.fillStyle = pointColor;
-        ctx.lineWidth = lineWidth;
+        ctx.Save();
+        ctx.GlobalAlpha = opacity;
+        ctx.StrokeStyle = lineColor;
+        ctx.FillStyle = pointColor;
+        ctx.LineWidth = lineWidth;
 
         // 1. Draw Grid Lines
         if (grid["lines"] is IList lines)
@@ -2113,10 +2255,10 @@ public class ConstructiveDrawingToolkit
                 if (l is not IList pts || pts.Count < 2) continue;
                 var a = ExtractPoint(pts[0]);
                 var b = ExtractPoint(pts[1]);
-                ctx.beginPath();
-                ctx.moveTo(a.X, a.Y);
-                ctx.lineTo(b.X, b.Y);
-                ctx.stroke();
+                ctx.BeginPath();
+                ctx.MoveTo(a.X, a.Y);
+                ctx.LineTo(b.X, b.Y);
+                ctx.Stroke();
             }
         }
 
@@ -2126,16 +2268,16 @@ public class ConstructiveDrawingToolkit
             foreach (DictionaryEntry de in pps)
             {
                 var pt = ExtractPoint(de.Value);
-                ctx.beginPath();
-                ctx.arc(pt.X, pt.Y, 5f, 0f, MathF.PI * 2f);
-                ctx.fill();
+                ctx.BeginPath();
+                ctx.Arc(pt.X, pt.Y, 5f, 0f, MathF.PI * 2f);
+                ctx.Fill();
             }
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public void drawVignette(CanvasRenderingContext2D ctx, float width, float height, object? options = null)
+    public void DrawVignette(CanvasRenderingContext2D ctx, float width, float height, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var opt = JsInterop.AsDict(options);
@@ -2146,19 +2288,19 @@ public class ConstructiveDrawingToolkit
         var cx = width * 0.5f;
         var cy = height * 0.5f;
 
-        ctx.save();
-        ctx.globalAlpha = intensity;
-        var grad = ctx.createRadialGradient(cx, cy, radius * 0.35f, cx, cy, radius);
-        grad.addColorStop(0.0f, "rgba(0,0,0,0)");
-        grad.addColorStop(0.65f, "rgba(0,0,0,0.15)");
-        grad.addColorStop(1.0f, vignetteColor);
+        ctx.Save();
+        ctx.GlobalAlpha = intensity;
+        var grad = ctx.CreateRadialGradient(cx, cy, radius * 0.35f, cx, cy, radius);
+        grad.AddColorStop(0.0f, "rgba(0,0,0,0)");
+        grad.AddColorStop(0.65f, "rgba(0,0,0,0.15)");
+        grad.AddColorStop(1.0f, vignetteColor);
 
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
+        ctx.FillStyle = grad;
+        ctx.FillRect(0, 0, width, height);
+        ctx.Restore();
     }
 
-    public void drawLeadingLines(CanvasRenderingContext2D ctx, object originPoints, object focalPoint, object? options = null)
+    public void DrawLeadingLines(CanvasRenderingContext2D ctx, object originPoints, object focalPoint, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var fp = ExtractPoint(focalPoint);
@@ -2169,24 +2311,24 @@ public class ConstructiveDrawingToolkit
         var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.2f;
         var opacity = opt != null && opt.Contains("opacity") ? Convert.ToSingle(opt["opacity"], CultureInfo.InvariantCulture) : 0.35f;
 
-        ctx.save();
-        ctx.globalAlpha = opacity;
-        ctx.strokeStyle = lineColor;
-        ctx.lineWidth = lineWidth;
+        ctx.Save();
+        ctx.GlobalAlpha = opacity;
+        ctx.StrokeStyle = lineColor;
+        ctx.LineWidth = lineWidth;
 
         foreach (var item in list)
         {
             var p = ExtractPoint(item);
-            ctx.beginPath();
-            ctx.moveTo(p.X, p.Y);
-            ctx.lineTo(fp.X, fp.Y);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(p.X, p.Y);
+            ctx.LineTo(fp.X, fp.Y);
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
-    public Dictionary<string, object?> createNotanPalette(string type = "classic3")
+    public Dictionary<string, object?> CreateNotanPalette(string type = "classic3")
     {
         var pal = type.Trim().ToLowerInvariant();
         return pal switch
@@ -2223,7 +2365,7 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public Dictionary<string, object?> subdivideProportions(object bounds, string direction = "horizontal", object? ratios = null)
+    public Dictionary<string, object?> SubdivideProportions(object bounds, string direction = "horizontal", object? ratios = null)
     {
         var b = JsInterop.AsDict(bounds);
         var bx = b != null && b.Contains("x") ? Convert.ToSingle(b["x"], CultureInfo.InvariantCulture) : 0f;

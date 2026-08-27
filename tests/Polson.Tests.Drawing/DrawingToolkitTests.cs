@@ -14,7 +14,7 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestLoomisHeadParametricCalculation()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var head = toolkit.createLoomisHead(500, 400, 200, 35f, 0f);
+        var head = toolkit.CreateLoomisHead(500, 400, 200, 35f, 0f);
 
         Assert.NotNull(head);
         Assert.True(head.ContainsKey("unit"));
@@ -36,12 +36,12 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestLoomisWireframeRendering()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var head = toolkit.createLoomisHead(400, 300, 220, 30f, 0f);
+        var head = toolkit.CreateLoomisHead(400, 300, 220, 30f, 0f);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        toolkit.drawLoomisWireframe(ctx, head);
+        toolkit.DrawLoomisWireframe(ctx, head);
 
         // Verify non-empty raster rendering
         var bytes = canvas.ToImageBytes("png");
@@ -53,15 +53,15 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestComicEyeNoseMouthRendering()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var head = toolkit.createLoomisHead(400, 300, 200, 35f, 0f);
+        var head = toolkit.CreateLoomisHead(400, 300, 200, 35f, 0f);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        toolkit.drawComicEye(ctx, head["nearEye"]!, false);
-        toolkit.drawComicEye(ctx, head["farEye"]!, true);
-        toolkit.drawComicNose(ctx, head["noseWedge"]!);
-        toolkit.drawComicMouth(ctx, head["mouthGuides"]!);
+        toolkit.DrawComicEye(ctx, head["nearEye"]!, false);
+        toolkit.DrawComicEye(ctx, head["farEye"]!, true);
+        toolkit.DrawComicNose(ctx, head["noseWedge"]!);
+        toolkit.DrawComicMouth(ctx, head["mouthGuides"]!);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -72,9 +72,9 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestTaperedStrokeRendering()
     {
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.drawTaperedStroke(50, 50, 150, 20, 250, 180, 350, 350, 8f, "#0a0a0c");
+        ctx.DrawTaperedStroke(50, 50, 150, 20, 250, 180, 350, 350, 8f, "#0a0a0c");
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -85,10 +85,10 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestFeatheringAndCrossContour()
     {
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.drawFeathering(100, 100, 45f, 10, 30f, 6f, "#0a0a0c", 1.5f);
-        ctx.drawCrossContourHatch(200, 200, 80f, 120f, 0f, MathF.PI, 6, "#555555", 1.2f);
+        ctx.DrawFeathering(100, 100, 45f, 10, 30f, 6f, "#0a0a0c", 1.5f);
+        ctx.DrawCrossContourHatch(200, 200, 80f, 120f, 0f, MathF.PI, 6, "#555555", 1.2f);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -99,9 +99,9 @@ public class DrawingToolkitTests : TestsRuntime
     public void Test3DHairRibbonRendering()
     {
         var canvas = new SkiaCanvas(500, 500);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.drawHairRibbon(
+        ctx.DrawHairRibbon(
             new Dictionary<string, object?> { ["x"] = 250f, ["y"] = 100f },
             new Dictionary<string, object?> { ["x"] = 50f, ["y"] = 350f },
             40f,
@@ -121,7 +121,7 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestHalftoneDotShaderPreset()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var shader = toolkit.createHalftoneDotShader(new Dictionary<string, object?>
+        var shader = toolkit.CreateHalftoneDotShader(new Dictionary<string, object?>
         {
             ["dotSpacing"] = 6.0f,
             ["shadowColor"] = "#b06f4c",
@@ -131,9 +131,9 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.NotNull(shader);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
-        ctx.fillStyle = shader;
-        ctx.fillRect(0, 0, 800, 600);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = shader;
+        ctx.FillRect(0, 0, 800, 600);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -144,18 +144,18 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestRopeAndCloudShaderPresets()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var ropeShader = toolkit.createRopeFiberShader();
-        var cloudShader = toolkit.createAtmosphericCloudShader();
+        var ropeShader = toolkit.CreateRopeFiberShader();
+        var cloudShader = toolkit.CreateAtmosphericCloudShader();
 
         Assert.NotNull(ropeShader);
         Assert.NotNull(cloudShader);
 
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
-        ctx.fillStyle = ropeShader;
-        ctx.fillRect(0, 0, 200, 400);
-        ctx.fillStyle = cloudShader;
-        ctx.fillRect(200, 0, 200, 400);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = ropeShader;
+        ctx.FillRect(0, 0, 200, 400);
+        ctx.FillStyle = cloudShader;
+        ctx.FillRect(200, 0, 200, 400);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -170,13 +170,13 @@ public class DrawingToolkitTests : TestsRuntime
         var pt2 = new Dictionary<string, object?> { ["x"] = 105f, ["y"] = 250f };
         var pt3 = new Dictionary<string, object?> { ["x"] = 140f, ["y"] = 250f };
 
-        var check1 = toolkit.verifyPlumbAlignment(pt1, pt2, 10f);
+        var check1 = toolkit.VerifyPlumbAlignment(pt1, pt2, 10f);
         Assert.True((bool)check1["aligned"]!);
 
-        var check2 = toolkit.verifyPlumbAlignment(pt1, pt3, 10f);
+        var check2 = toolkit.VerifyPlumbAlignment(pt1, pt3, 10f);
         Assert.False((bool)check2["aligned"]!);
 
-        var relDist = toolkit.computeRelativeDistance(200f, pt1, pt2);
+        var relDist = toolkit.ComputeRelativeDistance(200f, pt1, pt2);
         Assert.True(relDist > 0.9f && relDist < 1.1f);
     }
 
@@ -229,7 +229,7 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestPerspectiveGridCalculation()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var grid2p = toolkit.createPerspectiveGrid(new Dictionary<string, object?>
+        var grid2p = toolkit.CreatePerspectiveGrid(new Dictionary<string, object?>
         {
             ["type"] = "2point",
             ["horizonY"] = 300f,
@@ -248,8 +248,8 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.Equal(1200f, Convert.ToSingle(vpR["x"]));
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
-        toolkit.drawPerspectiveGrid(ctx, grid2p);
+        var ctx = canvas.GetContext("2d");
+        toolkit.DrawPerspectiveGrid(ctx, grid2p);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -260,7 +260,7 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestPerspectiveBoxProjection()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var grid = toolkit.createPerspectiveGrid(new Dictionary<string, object?>
+        var grid = toolkit.CreatePerspectiveGrid(new Dictionary<string, object?>
         {
             ["horizonY"] = 250f,
             ["centerOfVisionX"] = 400f,
@@ -268,7 +268,7 @@ public class DrawingToolkitTests : TestsRuntime
             ["cameraAngleDeg"] = 40f
         });
 
-        var box = toolkit.createPerspectiveBox(grid, 400f, 450f, 180f, 120f, 150f);
+        var box = toolkit.CreatePerspectiveBox(grid, 400f, 450f, 180f, 120f, 150f);
         Assert.NotNull(box);
 
         var verts = (IList<Dictionary<string, object?>>)box["vertices"]!;
@@ -280,8 +280,8 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.True(faces.ContainsKey("right"));
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
-        toolkit.drawPerspectiveBox(ctx, box, new Dictionary<string, object?> { ["drawHiddenLines"] = true });
+        var ctx = canvas.GetContext("2d");
+        toolkit.DrawPerspectiveBox(ctx, box, new Dictionary<string, object?> { ["drawHiddenLines"] = true });
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -292,7 +292,7 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestPerspectiveCylinderRendering()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var grid = toolkit.createPerspectiveGrid(new Dictionary<string, object?>
+        var grid = toolkit.CreatePerspectiveGrid(new Dictionary<string, object?>
         {
             ["horizonY"] = 200f,
             ["centerOfVisionX"] = 400f,
@@ -300,8 +300,8 @@ public class DrawingToolkitTests : TestsRuntime
         });
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
-        toolkit.drawPerspectiveCylinder(ctx, grid, 400f, 420f, 60f, 140f);
+        var ctx = canvas.GetContext("2d");
+        toolkit.DrawPerspectiveCylinder(ctx, grid, 400f, 420f, 60f, 140f);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -320,7 +320,7 @@ public class DrawingToolkitTests : TestsRuntime
             new() { ["x"] = 100f, ["y"] = 500f }
         };
 
-        var cells = toolkit.subdividePerspectiveQuad(quad, 3, 2);
+        var cells = toolkit.SubdividePerspectiveQuad(quad, 3, 2);
         Assert.NotNull(cells);
         Assert.Equal(6, cells.Count); // 3 x 2 cells
         Assert.Equal(4, cells[0].Count); // each cell has 4 vertices
@@ -338,7 +338,7 @@ public class DrawingToolkitTests : TestsRuntime
             new List<object> { new Dictionary<string, object?> { ["x"] = 200f, ["y"] = 600f }, new Dictionary<string, object?> { ["x"] = 600f, ["y"] = 450f } }
         };
 
-        var check = toolkit.verifyPerspectiveConvergence(goodLines, vp, 5f);
+        var check = toolkit.VerifyPerspectiveConvergence(goodLines, vp, 5f);
         Assert.True((bool)check["passed"]!);
     }
 
@@ -387,14 +387,14 @@ public class DrawingToolkitTests : TestsRuntime
         var light = new Dictionary<string, object?> { ["x"] = 150f, ["y"] = 100f };
         var boxBounds = new Dictionary<string, object?> { ["x"] = 350f, ["y"] = 300f, ["width"] = 100f, ["height"] = 150f };
 
-        var shadow = toolkit.projectCastShadow(light, 450f, boxBounds);
+        var shadow = toolkit.ProjectCastShadow(light, 450f, boxBounds);
         Assert.NotNull(shadow);
         var poly = (IList<Dictionary<string, object?>>)shadow["shadowPolygon"]!;
         Assert.Equal(4, poly.Count);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
-        toolkit.drawCastShadow(ctx, shadow);
+        var ctx = canvas.GetContext("2d");
+        toolkit.DrawCastShadow(ctx, shadow);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -406,9 +406,9 @@ public class DrawingToolkitTests : TestsRuntime
     {
         var toolkit = new ConstructiveDrawingToolkit();
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        toolkit.renderVolumetricSphere(ctx, 400f, 300f, 120f, new Dictionary<string, object?> { ["x"] = -0.6f, ["y"] = -0.6f });
+        toolkit.RenderVolumetricSphere(ctx, 400f, 300f, 120f, new Dictionary<string, object?> { ["x"] = -0.6f, ["y"] = -0.6f });
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -420,9 +420,9 @@ public class DrawingToolkitTests : TestsRuntime
     {
         var toolkit = new ConstructiveDrawingToolkit();
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        toolkit.renderVolumetricCylinder(ctx, 300f, 200f, 150f, 250f);
+        toolkit.RenderVolumetricCylinder(ctx, 300f, 200f, 150f, 250f);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -433,15 +433,15 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestThreePointLightingSetupAndRimLight()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var lighting = toolkit.createThreePointLighting();
+        var lighting = toolkit.CreateThreePointLighting();
         Assert.NotNull(lighting);
         Assert.True(lighting.ContainsKey("keyLight"));
         Assert.True(lighting.ContainsKey("fillLight"));
         Assert.True(lighting.ContainsKey("rimLight"));
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
-        toolkit.drawRimLight(ctx, new Dictionary<string, object?> { ["x"] = 300f, ["y"] = 200f, ["width"] = 150f, ["height"] = 200f }, 135f, "#ffffff", 3f);
+        var ctx = canvas.GetContext("2d");
+        toolkit.DrawRimLight(ctx, new Dictionary<string, object?> { ["x"] = 300f, ["y"] = 200f, ["width"] = 150f, ["height"] = 200f }, 135f, "#ffffff", 3f);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -452,13 +452,13 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestVolumetricSphereShaderCompilation()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var shader = toolkit.createVolumetricSphereShader();
+        var shader = toolkit.CreateVolumetricSphereShader();
         Assert.NotNull(shader);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
-        ctx.fillStyle = shader;
-        ctx.fillRect(0, 0, 800, 600);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = shader;
+        ctx.FillRect(0, 0, 800, 600);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -503,7 +503,7 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestMannequinFigureCreation()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var fig = toolkit.createMannequinFigure(400f, 50f, 560f);
+        var fig = toolkit.CreateMannequinFigure(400f, 50f, 560f);
 
         Assert.NotNull(fig);
         Assert.Equal(70f, Convert.ToSingle(fig["headUnit"]));
@@ -524,16 +524,16 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestMannequinWireframeAndSolidRendering()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var fig = toolkit.createMannequinFigure(400f, 50f, 520f);
+        var fig = toolkit.CreateMannequinFigure(400f, 50f, 520f);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         // 1. Draw solid
-        toolkit.drawMannequinSolid(ctx, fig);
+        toolkit.DrawMannequinSolid(ctx, fig);
 
         // 2. Draw wireframe on top
-        toolkit.drawMannequinWireframe(ctx, fig);
+        toolkit.DrawMannequinWireframe(ctx, fig);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -544,12 +544,12 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestTorsoMusculatureRendering()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var fig = toolkit.createMannequinFigure(400f, 50f, 520f);
+        var fig = toolkit.CreateMannequinFigure(400f, 50f, 520f);
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        toolkit.drawTorsoMusculature(ctx, fig);
+        toolkit.DrawTorsoMusculature(ctx, fig);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -560,21 +560,21 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestFacialExpressionsModifiers()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var head = toolkit.createLoomisHead(400f, 300f, 200f);
+        var head = toolkit.CreateLoomisHead(400f, 300f, 200f);
 
-        var joyHead = toolkit.applyFacialExpression(head, "joy", 1.2f);
+        var joyHead = toolkit.ApplyFacialExpression(head, "joy", 1.2f);
         Assert.NotNull(joyHead);
         Assert.Equal("joy", joyHead["expression"]);
 
-        var angerHead = toolkit.applyFacialExpression(head, "anger", 1.5f);
+        var angerHead = toolkit.ApplyFacialExpression(head, "anger", 1.5f);
         Assert.NotNull(angerHead);
         Assert.Equal("anger", angerHead["expression"]);
 
-        var fearHead = toolkit.applyFacialExpression(head, "fear", 1.0f);
+        var fearHead = toolkit.ApplyFacialExpression(head, "fear", 1.0f);
         Assert.NotNull(fearHead);
         Assert.Equal("fear", fearHead["expression"]);
 
-        var sadHead = toolkit.applyFacialExpression(head, "sadness", 1.0f);
+        var sadHead = toolkit.ApplyFacialExpression(head, "sadness", 1.0f);
         Assert.NotNull(sadHead);
         Assert.Equal("sadness", sadHead["expression"]);
     }
@@ -623,7 +623,7 @@ public class DrawingToolkitTests : TestsRuntime
         var toolkit = new ConstructiveDrawingToolkit();
 
         // 1. Rule of Thirds
-        var thirds = toolkit.createCompositionGrid(900f, 600f, "ruleOfThirds");
+        var thirds = toolkit.CreateCompositionGrid(900f, 600f, "ruleOfThirds");
         Assert.NotNull(thirds);
         Assert.Equal("ruleOfThirds", thirds["type"]);
         var pps = (Dictionary<string, object?>)thirds["powerPoints"]!;
@@ -631,12 +631,12 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.True(pps.ContainsKey("bottomRight"));
 
         // 2. Golden Ratio
-        var golden = toolkit.createCompositionGrid(900f, 600f, "goldenRatio");
+        var golden = toolkit.CreateCompositionGrid(900f, 600f, "goldenRatio");
         Assert.NotNull(golden);
         Assert.Equal("goldenRatio", golden["type"]);
 
         // 3. Dynamic Symmetry
-        var dynamicSym = toolkit.createCompositionGrid(900f, 600f, "dynamicSymmetry");
+        var dynamicSym = toolkit.CreateCompositionGrid(900f, 600f, "dynamicSymmetry");
         Assert.NotNull(dynamicSym);
         Assert.Equal("dynamicSymmetry", dynamicSym["type"]);
     }
@@ -646,13 +646,13 @@ public class DrawingToolkitTests : TestsRuntime
     {
         var toolkit = new ConstructiveDrawingToolkit();
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         // 1. Draw composition grid
-        toolkit.drawCompositionGrid(ctx, "ruleOfThirds");
+        toolkit.DrawCompositionGrid(ctx, "ruleOfThirds");
 
         // 2. Draw vignette
-        toolkit.drawVignette(ctx, 800f, 600f);
+        toolkit.DrawVignette(ctx, 800f, 600f);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -663,13 +663,13 @@ public class DrawingToolkitTests : TestsRuntime
     public void TestNotanPaletteAndLeadingLines()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-        var pal = toolkit.createNotanPalette("classic3");
+        var pal = toolkit.CreateNotanPalette("classic3");
         Assert.NotNull(pal);
         Assert.True(pal.ContainsKey("dominantLight"));
         Assert.True(pal.ContainsKey("accentDark"));
 
         var canvas = new SkiaCanvas(800, 600);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         var origins = new List<object>
         {
@@ -679,7 +679,7 @@ public class DrawingToolkitTests : TestsRuntime
         };
         var focal = new Dictionary<string, object?> { ["x"] = 400f, ["y"] = 300f };
 
-        toolkit.drawLeadingLines(ctx, origins, focal);
+        toolkit.DrawLeadingLines(ctx, origins, focal);
 
         var bytes = canvas.ToImageBytes("png");
         Assert.NotNull(bytes);
@@ -692,7 +692,7 @@ public class DrawingToolkitTests : TestsRuntime
         var toolkit = new ConstructiveDrawingToolkit();
         var bounds = new Dictionary<string, object?> { ["x"] = 0f, ["y"] = 0f, ["width"] = 1000f, ["height"] = 500f };
 
-        var sub = toolkit.subdivideProportions(bounds, "horizontal");
+        var sub = toolkit.SubdivideProportions(bounds, "horizontal");
         Assert.NotNull(sub);
         Assert.True(sub.ContainsKey("big"));
         Assert.True(sub.ContainsKey("medium"));

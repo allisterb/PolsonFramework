@@ -12,12 +12,12 @@ public class ImageAndBitmapTests : TestsRuntime
     public void TestBitmapCreationAndPixelAccess()
     {
         var skia = new SkiaApi();
-        var bmp = skia.Bitmap.create(100, 100);
+        var bmp = skia.Bitmap.Create(100, 100);
         Assert.Equal(100, bmp.Width);
         Assert.Equal(100, bmp.Height);
 
-        bmp.setPixel(10, 10, "#ff0000ff");
-        var pixel = bmp.getPixel(10, 10);
+        bmp.SetPixel(10, 10, "#ff0000ff");
+        var pixel = bmp.GetPixel(10, 10);
         Assert.Equal("#FF0000FF", pixel);
 
         var webpBytes = bmp.ToImageBytes();
@@ -29,26 +29,26 @@ public class ImageAndBitmapTests : TestsRuntime
     public void TestBitmapTransformations()
     {
         var skia = new SkiaApi();
-        var bmp = skia.Bitmap.create(200, 100);
-        bmp.setPixel(0, 0, "#00ff00ff");
+        var bmp = skia.Bitmap.Create(200, 100);
+        bmp.SetPixel(0, 0, "#00ff00ff");
 
         // Crop subset
-        var subset = bmp.extractSubset(0, 0, 50, 50);
+        var subset = bmp.ExtractSubset(0, 0, 50, 50);
         Assert.Equal(50, subset.Width);
         Assert.Equal(50, subset.Height);
 
         // Resize
-        var resized = bmp.resize(400, 200, "linear");
+        var resized = bmp.Resize(400, 200, "linear");
         Assert.Equal(400, resized.Width);
         Assert.Equal(200, resized.Height);
 
         // Rotate
-        var rotated = bmp.rotate(90);
+        var rotated = bmp.Rotate(90);
         Assert.Equal(100, rotated.Width);
         Assert.Equal(200, rotated.Height);
 
         // Flip
-        var flipped = bmp.flip("horizontal");
+        var flipped = bmp.Flip("horizontal");
         Assert.Equal(200, flipped.Width);
         Assert.Equal(100, flipped.Height);
     }
@@ -59,14 +59,14 @@ public class ImageAndBitmapTests : TestsRuntime
     public void TestNineParameterDrawImage()
     {
         var skia = new SkiaApi();
-        var sourceBmp = skia.Bitmap.create(200, 200);
-        sourceBmp.setPixel(50, 50, "#ff00ffff");
+        var sourceBmp = skia.Bitmap.Create(200, 200);
+        sourceBmp.SetPixel(50, 50, "#ff00ffff");
 
         var canvas = new SkiaCanvas(400, 400);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
         // 9-param drawImage: sx, sy, sw, sh, dx, dy, dw, dh
-        ctx.drawImage(sourceBmp, 25, 25, 50, 50, 100, 100, 200, 200);
+        ctx.DrawImage(sourceBmp, 25, 25, 50, 50, 100, 100, 200, 200);
 
         var imgBytes = canvas.ToImageBytes();
         Assert.NotNull(imgBytes);
@@ -79,12 +79,12 @@ public class ImageAndBitmapTests : TestsRuntime
     public void TestImageDataPixelManipulation()
     {
         var canvas = new SkiaCanvas(100, 100);
-        var ctx = canvas.getContext("2d");
+        var ctx = canvas.GetContext("2d");
 
-        ctx.fillStyle = "#ff0000";
-        ctx.fillRect(0, 0, 100, 100);
+        ctx.FillStyle = "#ff0000";
+        ctx.FillRect(0, 0, 100, 100);
 
-        var imgData = ctx.getImageData(0, 0, 100, 100);
+        var imgData = ctx.GetImageData(0, 0, 100, 100);
         Assert.Equal(100, imgData.Width);
         Assert.Equal(100, imgData.Height);
         Assert.Equal(100 * 100 * 4, imgData.Data.Length);
@@ -95,9 +95,9 @@ public class ImageAndBitmapTests : TestsRuntime
             imgData.Data[i + 1] = 255; // Set green to 255 -> makes yellow
         }
 
-        ctx.putImageData(imgData, 0, 0);
+        ctx.PutImageData(imgData, 0, 0);
 
-        var modifiedData = ctx.getImageData(50, 50, 1, 1);
+        var modifiedData = ctx.GetImageData(50, 50, 1, 1);
         Assert.Equal(255, modifiedData.Data[0]); // Red
         Assert.Equal(255, modifiedData.Data[1]); // Green
     }
@@ -108,11 +108,11 @@ public class ImageAndBitmapTests : TestsRuntime
     public void TestDirectBitmapFiltering()
     {
         var skia = new SkiaApi();
-        var bmp = skia.Bitmap.create(200, 200);
-        bmp.setPixel(100, 100, "#ffffff");
+        var bmp = skia.Bitmap.Create(200, 200);
+        bmp.SetPixel(100, 100, "#ffffff");
 
-        var blurFilter = skia.ImageFilter.blur(5, 5);
-        var filteredBmp = bmp.applyFilter(blurFilter);
+        var blurFilter = skia.ImageFilter.Blur(5, 5);
+        var filteredBmp = bmp.ApplyFilter(blurFilter);
 
         Assert.Equal(200, filteredBmp.Width);
         Assert.Equal(200, filteredBmp.Height);

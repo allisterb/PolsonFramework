@@ -3,6 +3,12 @@ namespace Polson.Drawing.Svg;
 using System;
 using System.Globalization;
 
+/// <summary>Axis-aligned bounding box returned by element measurement.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SnapBBox
 {
     #region Constructors

@@ -7,6 +7,12 @@ using System.Linq;
 using System.Xml;
 using SkiaSharp;
 
+/// <summary>Base SVG element node. Subclasses add their per-shape members.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class SnapElement
 {
     #region Constructors
@@ -177,8 +183,6 @@ public class SnapElement
         return new SnapRect(rect, Paper);
     }
 
-    public virtual SnapRect rect(float x, float y, float width, float height, float rx = 0f, float ry = 0f) =>
-        Rect(x, y, width, height, rx, ry);
 
     public virtual SnapCircle Circle(float cx, float cy, float r)
     {
@@ -191,9 +195,6 @@ public class SnapElement
         Node.Children.Add(circle);
         return new SnapCircle(circle, Paper);
     }
-
-    public virtual SnapCircle circle(float cx, float cy, float r) =>
-        Circle(cx, cy, r);
 
     public virtual SnapEllipse Ellipse(float cx, float cy, float rx, float ry)
     {
@@ -208,9 +209,6 @@ public class SnapElement
         return new SnapEllipse(ellipse, Paper);
     }
 
-    public virtual SnapEllipse ellipse(float cx, float cy, float rx, float ry) =>
-        Ellipse(cx, cy, rx, ry);
-
     public virtual SnapPath Path(string d = "")
     {
         var path = new SvgPath
@@ -221,11 +219,8 @@ public class SnapElement
         return new SnapPath(path, Paper);
     }
 
-    public virtual SnapPath path(string d = "") =>
-        Path(d);
 
     public virtual SnapGroup G(params SnapElement[] elements) => Group(elements);
-    public virtual SnapGroup g(params SnapElement[] elements) => Group(elements);
 
     public virtual SnapGroup Group(params SnapElement[] elements)
     {
@@ -242,8 +237,6 @@ public class SnapElement
         return snapGroup;
     }
 
-    public virtual SnapGroup group(params SnapElement[] elements) => Group(elements);
-
     public virtual SnapImage Image(string src, float x = 0f, float y = 0f, float width = 0f, float height = 0f)
     {
         var image = new SvgImage
@@ -258,8 +251,6 @@ public class SnapElement
         return new SnapImage(image, Paper);
     }
 
-    public virtual SnapImage image(string src, float x = 0f, float y = 0f, float width = 0f, float height = 0f) =>
-        Image(src, x, y, width, height);
 
     public virtual SnapText Text(float x, float y, object? text)
     {
@@ -274,9 +265,6 @@ public class SnapElement
         return new SnapText(svgText, Paper);
     }
 
-    public virtual SnapText text(float x, float y, object? text) =>
-        Text(x, y, text);
-
     public virtual SnapLine Line(float x1, float y1, float x2, float y2)
     {
         var line = new SvgLine
@@ -289,9 +277,6 @@ public class SnapElement
         Node.Children.Add(line);
         return new SnapLine(line, Paper);
     }
-
-    public virtual SnapLine line(float x1, float y1, float x2, float y2) =>
-        Line(x1, y1, x2, y2);
 
     public virtual SnapPolyline Polyline(params float[] points)
     {
@@ -309,8 +294,6 @@ public class SnapElement
         return new SnapPolyline(polyline, Paper);
     }
 
-    public virtual SnapPolyline polyline(params float[] points) => Polyline(points);
-
     public virtual SnapPolygon Polygon(params float[] points)
     {
         var unitCollection = new SvgPointCollection();
@@ -327,8 +310,6 @@ public class SnapElement
         return new SnapPolygon(polygon, Paper);
     }
 
-    public virtual SnapPolygon polygon(params float[] points) => Polygon(points);
-
     public virtual SnapUse Use(object target)
     {
         var id = target is SnapElement el ? el.ID : target?.ToString() ?? string.Empty;
@@ -339,8 +320,6 @@ public class SnapElement
         Node.Children.Add(use);
         return new SnapUse(use, Paper);
     }
-
-    public virtual SnapUse use(object target) => Use(target);
 
     public virtual SnapElement El(string name, IDictionary<string, object?>? attrs = null)
     {
@@ -354,15 +333,11 @@ public class SnapElement
         return snapEl;
     }
 
-    public virtual SnapElement el(string name, IDictionary<string, object?>? attrs = null) =>
-        El(name, attrs);
 
     public virtual void Clear()
     {
         Node.Children.Clear();
     }
-
-    public virtual void clear() => Clear();
     #endregion
 
     public virtual SnapElement Remove()

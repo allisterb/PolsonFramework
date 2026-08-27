@@ -130,7 +130,7 @@ Two things about the contract are worth knowing before you write it:
 - **The mark sets its own colours.** The suites invoke it with `ctx.fillStyle` left at their own background tone, so a mark that draws nothing but `ctx.fill()` comes out invisible. Set the colours you want inside the function.
 - **Draw the mark into a `size × size` box anchored at the origin.** The suites `translate` to position it and pass the size; they do not scale for you.
 
-> ⚠️ `generateMonochromeTest` varies the **background** of its four panels, not the mark. A full-colour mark stays full-colour in all four, so the board tests the mark against different grounds rather than proving it reduces to one ink. For a true single-colour check, draw a deliberately monochrome variant of the mark and run it through the board a second time.
+> `generateMonochromeTest` composites the mark through a knockout filter that keeps its alpha and replaces its hue, so each panel forces it to a single ink — black, white, mid-grey, and near-white on the app icon — **whatever colours the mark sets for itself**. That is what makes it a real one-colour test rather than four backgrounds: the silhouette survives, the palette does not. If the mark stops reading once its colour is gone, the problem is the mark.
 
 ### Stage 6a — The 7-tier scale ladder
 

@@ -7,6 +7,12 @@ using System.Globalization;
 using System.Text;
 using SkiaSharp;
 
+/// <summary>Logo geometry, optical tuning and brand verification toolkit (Studio Manuals 10 and 12).</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// </remarks>
 public class LogoDesignToolkit
 {
     #region Constants
@@ -176,6 +182,30 @@ public class LogoDesignToolkit
     }
 
     private static Dictionary<string, object?> ToDict(Point2D p) => new() { ["x"] = p.X, ["y"] = p.Y };
+
+    /// <summary>
+    /// Draws the mark at (x, y) forced to a single ink.
+    /// <para>
+    /// The mark function chooses its own colours, so varying only the panel backgrounds tests nothing
+    /// about one-colour reproduction — a full-colour mark stays full-colour on every ground. Compositing
+    /// it through a <see cref="SKBlendMode.SrcIn"/> filter keeps its alpha and replaces its hue, which is
+    /// what actually reduces it to a single ink however it was drawn.
+    /// </para>
+    /// </summary>
+    private static void DrawMarkAsSingleInk(CanvasRenderingContext2D ctx, object? drawMarkFn, float x, float y, float size, string ink)
+    {
+        using var knockout = new SKPaint
+        {
+            ColorFilter = SKColorFilter.CreateBlendMode(SkiaColorParser.Parse(ink), SKBlendMode.SrcIn)
+        };
+
+        ctx.Canvas.SkCanvas.SaveLayer(knockout);
+        ctx.Save();
+        ctx.Translate(x, y);
+        InvokeCallback(drawMarkFn, ctx, size);
+        ctx.Restore();
+        ctx.Canvas.SkCanvas.Restore();
+    }
 
     public static void InvokeCallback(object? callback, params object?[] args)
     {
@@ -438,25 +468,25 @@ public class LogoDesignToolkit
         const float phi = 1.61803398875f;
         var b = MathF.Log(phi) / (MathF.PI * 0.5f); // ~0.3063489
 
-        ctx.save();
+        ctx.Save();
 
         if (drawRects)
         {
-            ctx.strokeStyle = rectColor;
-            ctx.lineWidth = 1.0f;
+            ctx.StrokeStyle = rectColor;
+            ctx.LineWidth = 1.0f;
             var curA = startRadius;
             var rx = cx;
             var ry = cy;
             for (var t = 0; t < (int)(turns * 4); t++)
             {
                 var curW = curA * MathF.Pow(phi, t * 0.5f);
-                ctx.strokeRect(rx - curW * 0.5f, ry - curW * 0.5f, curW, curW);
+                ctx.StrokeRect(rx - curW * 0.5f, ry - curW * 0.5f, curW, curW);
             }
         }
 
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = lineWidth;
-        ctx.beginPath();
+        ctx.StrokeStyle = strokeColor;
+        ctx.LineWidth = lineWidth;
+        ctx.BeginPath();
 
         var totalAngle = turns * MathF.PI * 2f;
         const int steps = 240;
@@ -472,17 +502,17 @@ public class LogoDesignToolkit
 
             if (isFirst)
             {
-                ctx.moveTo(px, py);
+                ctx.MoveTo(px, py);
                 isFirst = false;
             }
             else
             {
-                ctx.lineTo(px, py);
+                ctx.LineTo(px, py);
             }
         }
 
-        ctx.stroke();
-        ctx.restore();
+        ctx.Stroke();
+        ctx.Restore();
     }
 
     public Dictionary<string, object?> CreateTangentBlend(object p1, object corner, object p2, float radius)
@@ -583,39 +613,39 @@ public class LogoDesignToolkit
         var dx = cellSize * MathF.Cos(30f * MathF.PI / 180f);
         var dy = cellSize * MathF.Sin(30f * MathF.PI / 180f);
 
-        ctx.save();
-        ctx.strokeStyle = lineColor;
-        ctx.lineWidth = lineWidth;
+        ctx.Save();
+        ctx.StrokeStyle = lineColor;
+        ctx.LineWidth = lineWidth;
 
         // 1. Vertical Lines
         for (var x = 0f; x <= width; x += dx)
         {
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, height);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(x, 0);
+            ctx.LineTo(x, height);
+            ctx.Stroke();
         }
 
         // 2. +30 Deg Diagonals
         var span = width + height * 2f;
         for (var y = -height; y <= span; y += dy * 2f)
         {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(width, y + width * MathF.Tan(30f * MathF.PI / 180f));
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(0, y);
+            ctx.LineTo(width, y + width * MathF.Tan(30f * MathF.PI / 180f));
+            ctx.Stroke();
         }
 
         // 3. -30 Deg Diagonals
         for (var y = -height; y <= span; y += dy * 2f)
         {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(width, y - width * MathF.Tan(30f * MathF.PI / 180f));
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(0, y);
+            ctx.LineTo(width, y - width * MathF.Tan(30f * MathF.PI / 180f));
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
     public Dictionary<string, object?> CreatePolarGrid(float cx, float cy, object? rings = null, int radialSlices = 12)
@@ -656,29 +686,29 @@ public class LogoDesignToolkit
         var rayAngles = (List<float>)(grid["rayAngles"] ?? new List<float>());
         var maxR = radii.Count > 0 ? radii[^1] : 200f;
 
-        ctx.save();
-        ctx.strokeStyle = lineColor;
-        ctx.lineWidth = lineWidth;
+        ctx.Save();
+        ctx.StrokeStyle = lineColor;
+        ctx.LineWidth = lineWidth;
 
         // Concentric Circles
         foreach (var r in radii)
         {
-            ctx.beginPath();
-            ctx.arc(cx, cy, r, 0, MathF.PI * 2f);
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.Arc(cx, cy, r, 0, MathF.PI * 2f);
+            ctx.Stroke();
         }
 
         // Radial Rays
         foreach (var deg in rayAngles)
         {
             var rad = deg * MathF.PI / 180f;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + maxR * MathF.Cos(rad), cy + maxR * MathF.Sin(rad));
-            ctx.stroke();
+            ctx.BeginPath();
+            ctx.MoveTo(cx, cy);
+            ctx.LineTo(cx + maxR * MathF.Cos(rad), cy + maxR * MathF.Sin(rad));
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
     public Dictionary<string, object?> CreateMonogramGrid(string type = "3x3", float size = 200f, float originX = 0f, float originY = 0f)
@@ -777,8 +807,8 @@ public class LogoDesignToolkit
         var n = Math.Max(1.0f, exponent);
         const int steps = 96;
 
-        ctx.save();
-        ctx.beginPath();
+        ctx.Save();
+        ctx.BeginPath();
 
         for (var i = 0; i <= steps; i++)
         {
@@ -792,26 +822,26 @@ public class LogoDesignToolkit
             var px = cx + signCos * a * MathF.Pow(MathF.Abs(cosT), 2f / n);
             var py = cy + signSin * b * MathF.Pow(MathF.Abs(sinT), 2f / n);
 
-            if (i == 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
+            if (i == 0) ctx.MoveTo(px, py);
+            else ctx.LineTo(px, py);
         }
 
-        ctx.closePath();
+        ctx.ClosePath();
 
         if (!string.IsNullOrEmpty(fill))
         {
-            ctx.fillStyle = fill;
-            ctx.fill();
+            ctx.FillStyle = fill;
+            ctx.Fill();
         }
 
         if (!string.IsNullOrEmpty(stroke))
         {
-            ctx.strokeStyle = stroke;
-            ctx.lineWidth = strokeWidth;
-            ctx.stroke();
+            ctx.StrokeStyle = stroke;
+            ctx.LineWidth = strokeWidth;
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
     public void DrawEmblemBadge(CanvasRenderingContext2D ctx, float cx, float cy, float radius, string type = "shield", object? options = null)
@@ -823,8 +853,8 @@ public class LogoDesignToolkit
         var rawPoints = GetProp(options, "points");
         var points = rawPoints != null ? Convert.ToInt32(rawPoints) : 12;
 
-        ctx.save();
-        ctx.beginPath();
+        ctx.Save();
+        ctx.BeginPath();
 
         var normType = type.ToLowerInvariant();
         if (normType == "shield")
@@ -834,11 +864,11 @@ public class LogoDesignToolkit
             var left = cx - radius * 0.85f;
             var right = cx + radius * 0.85f;
 
-            ctx.moveTo(cx, top);
-            ctx.lineTo(right, top);
-            ctx.bezierCurveTo(right, cy + radius * 0.2f, cx + radius * 0.5f, bottom - radius * 0.2f, cx, bottom);
-            ctx.bezierCurveTo(cx - radius * 0.5f, bottom - radius * 0.2f, left, cy + radius * 0.2f, left, top);
-            ctx.closePath();
+            ctx.MoveTo(cx, top);
+            ctx.LineTo(right, top);
+            ctx.BezierCurveTo(right, cy + radius * 0.2f, cx + radius * 0.5f, bottom - radius * 0.2f, cx, bottom);
+            ctx.BezierCurveTo(cx - radius * 0.5f, bottom - radius * 0.2f, left, cy + radius * 0.2f, left, top);
+            ctx.ClosePath();
         }
         else if (normType == "hexagon")
         {
@@ -847,18 +877,18 @@ public class LogoDesignToolkit
                 var rad = (i * 60f - 30f) * MathF.PI / 180f;
                 var px = cx + radius * MathF.Cos(rad);
                 var py = cy + radius * MathF.Sin(rad);
-                if (i == 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
+                if (i == 0) ctx.MoveTo(px, py);
+                else ctx.LineTo(px, py);
             }
-            ctx.closePath();
+            ctx.ClosePath();
         }
         else if (normType == "diamond")
         {
-            ctx.moveTo(cx, cy - radius);
-            ctx.lineTo(cx + radius * 0.85f, cy);
-            ctx.lineTo(cx, cy + radius);
-            ctx.lineTo(cx - radius * 0.85f, cy);
-            ctx.closePath();
+            ctx.MoveTo(cx, cy - radius);
+            ctx.LineTo(cx + radius * 0.85f, cy);
+            ctx.LineTo(cx, cy + radius);
+            ctx.LineTo(cx - radius * 0.85f, cy);
+            ctx.ClosePath();
         }
         else if (normType == "scallop")
         {
@@ -877,30 +907,30 @@ public class LogoDesignToolkit
                 var p2x = cx + innerR * MathF.Cos(a2);
                 var p2y = cy + innerR * MathF.Sin(a2);
 
-                if (i == 0) ctx.moveTo(p1x, p1y);
-                ctx.quadraticCurveTo(cpx, cpy, p2x, p2y);
+                if (i == 0) ctx.MoveTo(p1x, p1y);
+                ctx.QuadraticCurveTo(cpx, cpy, p2x, p2y);
             }
-            ctx.closePath();
+            ctx.ClosePath();
         }
         else // default circle
         {
-            ctx.arc(cx, cy, radius, 0, MathF.PI * 2f);
+            ctx.Arc(cx, cy, radius, 0, MathF.PI * 2f);
         }
 
         if (!string.IsNullOrEmpty(fill))
         {
-            ctx.fillStyle = fill;
-            ctx.fill();
+            ctx.FillStyle = fill;
+            ctx.Fill();
         }
 
         if (!string.IsNullOrEmpty(stroke))
         {
-            ctx.strokeStyle = stroke;
-            ctx.lineWidth = strokeWidth;
-            ctx.stroke();
+            ctx.StrokeStyle = stroke;
+            ctx.LineWidth = strokeWidth;
+            ctx.Stroke();
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
     public void DrawClearSpaceGuide(CanvasRenderingContext2D ctx, object markBounds, float xDimension = 40f, object? options = null)
@@ -917,36 +947,36 @@ public class LogoDesignToolkit
         var outerW = r.Width + M * 2f;
         var outerH = r.Height + M * 2f;
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Margin Shade
-        ctx.fillStyle = fill;
-        ctx.fillRect(outerX, outerY, outerW, outerH);
-        ctx.clearRect(r.X, r.Y, r.Width, r.Height);
+        ctx.FillStyle = fill;
+        ctx.FillRect(outerX, outerY, outerW, outerH);
+        ctx.ClearRect(r.X, r.Y, r.Width, r.Height);
 
         // 2. Boundary
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.2f;
-        ctx.strokeRect(outerX, outerY, outerW, outerH);
+        ctx.StrokeStyle = color;
+        ctx.LineWidth = 1.2f;
+        ctx.StrokeRect(outerX, outerY, outerW, outerH);
 
         // Inner solid bounds
-        ctx.lineWidth = 1.0f;
-        ctx.strokeStyle = "rgba(75, 85, 99, 0.4)";
-        ctx.strokeRect(r.X, r.Y, r.Width, r.Height);
+        ctx.LineWidth = 1.0f;
+        ctx.StrokeStyle = "rgba(75, 85, 99, 0.4)";
+        ctx.StrokeRect(r.X, r.Y, r.Width, r.Height);
 
         // 3. X-dimension corner squares and indicators
         if (showLabels)
         {
-            ctx.fillStyle = color;
-            ctx.font = "bold 12px sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
+            ctx.FillStyle = color;
+            ctx.Font = "bold 12px sans-serif";
+            ctx.TextAlign = "center";
+            ctx.TextBaseline = "middle";
 
             void DrawXBox(float bx, float by)
             {
-                ctx.strokeStyle = color;
-                ctx.strokeRect(bx, by, M, M);
-                ctx.fillText("X", bx + M * 0.5f, by + M * 0.5f);
+                ctx.StrokeStyle = color;
+                ctx.StrokeRect(bx, by, M, M);
+                ctx.FillText("X", bx + M * 0.5f, by + M * 0.5f);
             }
 
             DrawXBox(outerX, outerY);
@@ -955,7 +985,7 @@ public class LogoDesignToolkit
             DrawXBox(outerX + outerW - M, outerY + outerH - M);
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
     #endregion
 
@@ -1031,18 +1061,18 @@ public class LogoDesignToolkit
         var opt = JsInterop.AsDict(options);
         var scales = new[] { 16, 24, 32, 48, 64, 128, 256 };
 
-        ctx.save();
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, ctx.Canvas.Width, ctx.Canvas.Height);
+        ctx.Save();
+        ctx.FillStyle = "#ffffff";
+        ctx.FillRect(0, 0, ctx.Canvas.Width, ctx.Canvas.Height);
 
         // Title
-        ctx.fillStyle = "#111827";
-        ctx.font = "bold 18px sans-serif";
-        ctx.fillText("MULTI-SCALE FAVICON & APP ICON LEGIBILITY TEST", 30, 40);
+        ctx.FillStyle = "#111827";
+        ctx.Font = "bold 18px sans-serif";
+        ctx.FillText("MULTI-SCALE FAVICON & APP ICON LEGIBILITY TEST", 30, 40);
 
-        ctx.fillStyle = "#6b7280";
-        ctx.font = "12px sans-serif";
-        ctx.fillText("Verifying stroke weight, contrast, and negative space legibility from 16px to 256px", 30, 62);
+        ctx.FillStyle = "#6b7280";
+        ctx.Font = "12px sans-serif";
+        ctx.FillText("Verifying stroke weight, contrast, and negative space legibility from 16px to 256px", 30, 62);
 
         var currentX = 30f;
         var currentY = 100f;
@@ -1056,27 +1086,27 @@ public class LogoDesignToolkit
             }
 
             // Box Container
-            ctx.fillStyle = "#f9fafb";
-            ctx.fillRect(currentX, currentY, size, size);
-            ctx.strokeStyle = "#e5e7eb";
-            ctx.lineWidth = 1.0f;
-            ctx.strokeRect(currentX, currentY, size, size);
+            ctx.FillStyle = "#f9fafb";
+            ctx.FillRect(currentX, currentY, size, size);
+            ctx.StrokeStyle = "#e5e7eb";
+            ctx.LineWidth = 1.0f;
+            ctx.StrokeRect(currentX, currentY, size, size);
 
             // Execute draw mark inside translated context
-            ctx.save();
-            ctx.translate(currentX, currentY);
+            ctx.Save();
+            ctx.Translate(currentX, currentY);
             InvokeCallback(drawMarkFn, ctx, (float)size);
-            ctx.restore();
+            ctx.Restore();
 
             // Label
-            ctx.fillStyle = "#4b5563";
-            ctx.font = "11px sans-serif";
-            ctx.fillText($"{size}px", currentX, currentY + size + 16f);
+            ctx.FillStyle = "#4b5563";
+            ctx.Font = "11px sans-serif";
+            ctx.FillText($"{size}px", currentX, currentY + size + 16f);
 
             currentX += size + 40f;
         }
 
-        ctx.restore();
+        ctx.Restore();
     }
 
     public void GenerateMonochromeTest(CanvasRenderingContext2D ctx, object drawMarkFn, float width = 800f, float height = 600f)
@@ -1085,50 +1115,41 @@ public class LogoDesignToolkit
         var halfH = height * 0.5f;
         var markSize = MathF.Min(halfW, halfH) * 0.45f;
 
-        ctx.save();
+        ctx.Save();
 
         // 1. Positive (Black on White)
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, halfW, halfH);
-        ctx.fillStyle = "#6b7280";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText("POSITIVE (1-COLOR BLACK)", 20, 30);
+        ctx.FillStyle = "#ffffff";
+        ctx.FillRect(0, 0, halfW, halfH);
+        ctx.FillStyle = "#6b7280";
+        ctx.Font = "bold 12px sans-serif";
+        ctx.FillText("POSITIVE (1-COLOR BLACK)", 20, 30);
 
-        ctx.save();
-        ctx.translate(halfW * 0.5f - markSize * 0.5f, halfH * 0.5f - markSize * 0.5f);
-        InvokeCallback(drawMarkFn, ctx, markSize);
-        ctx.restore();
+        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW * 0.5f - markSize * 0.5f, halfH * 0.5f - markSize * 0.5f, markSize, "#111827");
 
         // 2. Negative (White on Black)
-        ctx.fillStyle = "#111827";
-        ctx.fillRect(halfW, 0, halfW, halfH);
-        ctx.fillStyle = "#9ca3af";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText("NEGATIVE (KNOCKOUT WHITE)", halfW + 20, 30);
+        ctx.FillStyle = "#111827";
+        ctx.FillRect(halfW, 0, halfW, halfH);
+        ctx.FillStyle = "#9ca3af";
+        ctx.Font = "bold 12px sans-serif";
+        ctx.FillText("NEGATIVE (KNOCKOUT WHITE)", halfW + 20, 30);
 
-        ctx.save();
-        ctx.translate(halfW + halfW * 0.5f - markSize * 0.5f, halfH * 0.5f - markSize * 0.5f);
-        InvokeCallback(drawMarkFn, ctx, markSize);
-        ctx.restore();
+        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW + halfW * 0.5f - markSize * 0.5f, halfH * 0.5f - markSize * 0.5f, markSize, "#ffffff");
 
         // 3. Dark Gray Neutral
-        ctx.fillStyle = "#e5e7eb";
-        ctx.fillRect(0, halfH, halfW, halfH);
-        ctx.fillStyle = "#4b5563";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText("GRAYSCALE NEUTRAL", 20, halfH + 30);
+        ctx.FillStyle = "#e5e7eb";
+        ctx.FillRect(0, halfH, halfW, halfH);
+        ctx.FillStyle = "#4b5563";
+        ctx.Font = "bold 12px sans-serif";
+        ctx.FillText("GRAYSCALE NEUTRAL", 20, halfH + 30);
 
-        ctx.save();
-        ctx.translate(halfW * 0.5f - markSize * 0.5f, halfH + halfH * 0.5f - markSize * 0.5f);
-        InvokeCallback(drawMarkFn, ctx, markSize);
-        ctx.restore();
+        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW * 0.5f - markSize * 0.5f, halfH + halfH * 0.5f - markSize * 0.5f, markSize, "#4b5563");
 
         // 4. App Icon Squircle Mockup
-        ctx.fillStyle = "#0f172a";
-        ctx.fillRect(halfW, halfH, halfW, halfH);
-        ctx.fillStyle = "#94a3b8";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText("APP ICON SQUIRCLE CONTAINER", halfW + 20, halfH + 30);
+        ctx.FillStyle = "#0f172a";
+        ctx.FillRect(halfW, halfH, halfW, halfH);
+        ctx.FillStyle = "#94a3b8";
+        ctx.Font = "bold 12px sans-serif";
+        ctx.FillText("APP ICON SQUIRCLE CONTAINER", halfW + 20, halfH + 30);
 
         var squircleSize = markSize * 1.35f;
         var sqX = halfW + halfW * 0.5f - squircleSize * 0.5f;
@@ -1142,20 +1163,17 @@ public class LogoDesignToolkit
             ["exponent"] = 4.5f
         });
 
-        ctx.save();
-        ctx.translate(halfW + halfW * 0.5f - markSize * 0.5f, halfH + halfH * 0.5f - markSize * 0.5f);
-        InvokeCallback(drawMarkFn, ctx, markSize);
-        ctx.restore();
+        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW + halfW * 0.5f - markSize * 0.5f, halfH + halfH * 0.5f - markSize * 0.5f, markSize, "#f8fafc");
 
         // Separator grid lines
-        ctx.strokeStyle = "#94a3b8";
-        ctx.lineWidth = 1.0f;
-        ctx.beginPath();
-        ctx.moveTo(halfW, 0); ctx.lineTo(halfW, height);
-        ctx.moveTo(0, halfH); ctx.lineTo(width, halfH);
-        ctx.stroke();
+        ctx.StrokeStyle = "#94a3b8";
+        ctx.LineWidth = 1.0f;
+        ctx.BeginPath();
+        ctx.MoveTo(halfW, 0); ctx.LineTo(halfW, height);
+        ctx.MoveTo(0, halfH); ctx.LineTo(width, halfH);
+        ctx.Stroke();
 
-        ctx.restore();
+        ctx.Restore();
     }
 
     public void GenerateBrandPresentationSheet(CanvasRenderingContext2D ctx, object options)
@@ -1171,26 +1189,26 @@ public class LogoDesignToolkit
         var W = ctx.Canvas.Width;
         var H = ctx.Canvas.Height;
 
-        ctx.save();
+        ctx.Save();
 
         // Background
-        ctx.fillStyle = lightCol;
-        ctx.fillRect(0, 0, W, H);
+        ctx.FillStyle = lightCol;
+        ctx.FillRect(0, 0, W, H);
 
         // Header
-        ctx.fillStyle = darkCol;
-        ctx.font = "bold 28px sans-serif";
-        ctx.fillText(brandName.ToUpperInvariant(), 40, 55);
+        ctx.FillStyle = darkCol;
+        ctx.Font = "bold 28px sans-serif";
+        ctx.FillText(brandName.ToUpperInvariant(), 40, 55);
 
-        ctx.fillStyle = "#64748b";
-        ctx.font = "14px sans-serif";
-        ctx.fillText(tagline, 40, 80);
+        ctx.FillStyle = "#64748b";
+        ctx.Font = "14px sans-serif";
+        ctx.FillText(tagline, 40, 80);
 
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.lineWidth = 1.5f;
-        ctx.beginPath();
-        ctx.moveTo(40, 100); ctx.lineTo(W - 40, 100);
-        ctx.stroke();
+        ctx.StrokeStyle = "#e2e8f0";
+        ctx.LineWidth = 1.5f;
+        ctx.BeginPath();
+        ctx.MoveTo(40, 100); ctx.LineTo(W - 40, 100);
+        ctx.Stroke();
 
         // Hero Logo Squircle Box (Left)
         var heroBoxSize = MathF.Min(W * 0.35f, H * 0.45f);
@@ -1204,24 +1222,24 @@ public class LogoDesignToolkit
         });
 
         var heroMarkSize = heroBoxSize * 0.55f;
-        ctx.save();
-        ctx.translate(heroX + heroBoxSize * 0.5f - heroMarkSize * 0.5f, heroY + heroBoxSize * 0.5f - heroMarkSize * 0.5f);
+        ctx.Save();
+        ctx.Translate(heroX + heroBoxSize * 0.5f - heroMarkSize * 0.5f, heroY + heroBoxSize * 0.5f - heroMarkSize * 0.5f);
         InvokeCallback(drawMark, ctx, heroMarkSize);
-        ctx.restore();
+        ctx.Restore();
 
         // Horizontal Combination Lockup (Center-Right)
         var lockupX = heroX + heroBoxSize + 40f;
         var lockupY = heroY + 40f;
         var lockupMarkSize = 64f;
 
-        ctx.save();
-        ctx.translate(lockupX, lockupY);
+        ctx.Save();
+        ctx.Translate(lockupX, lockupY);
         InvokeCallback(drawMark, ctx, lockupMarkSize);
-        ctx.restore();
+        ctx.Restore();
 
-        ctx.fillStyle = darkCol;
-        ctx.font = "bold 32px sans-serif";
-        ctx.fillText(brandName, lockupX + lockupMarkSize + 20f, lockupY + lockupMarkSize * 0.6f);
+        ctx.FillStyle = darkCol;
+        ctx.Font = "bold 32px sans-serif";
+        ctx.FillText(brandName, lockupX + lockupMarkSize + 20f, lockupY + lockupMarkSize * 0.6f);
 
         // Color Palette Swatches (Right)
         var swatchY = lockupY + 110f;
@@ -1236,32 +1254,32 @@ public class LogoDesignToolkit
         var swX = lockupX;
         foreach (var (label, hex) in colors)
         {
-            ctx.fillStyle = hex;
-            ctx.fillRect(swX, swatchY, 60, 40);
-            ctx.strokeStyle = "#cbd5e1";
-            ctx.lineWidth = 1.0f;
-            ctx.strokeRect(swX, swatchY, 60, 40);
+            ctx.FillStyle = hex;
+            ctx.FillRect(swX, swatchY, 60, 40);
+            ctx.StrokeStyle = "#cbd5e1";
+            ctx.LineWidth = 1.0f;
+            ctx.StrokeRect(swX, swatchY, 60, 40);
 
-            ctx.fillStyle = darkCol;
-            ctx.font = "bold 11px sans-serif";
-            ctx.fillText(label, swX, swatchY + 54);
-            ctx.fillStyle = "#64748b";
-            ctx.font = "10px monospace";
-            ctx.fillText(hex, swX, swatchY + 68);
+            ctx.FillStyle = darkCol;
+            ctx.Font = "bold 11px sans-serif";
+            ctx.FillText(label, swX, swatchY + 54);
+            ctx.FillStyle = "#64748b";
+            ctx.Font = "10px monospace";
+            ctx.FillText(hex, swX, swatchY + 68);
 
             swX += 80f;
         }
 
         // Bottom Clear Space Section
         var clearY = H - 160f;
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.beginPath();
-        ctx.moveTo(40, clearY - 20f); ctx.lineTo(W - 40, clearY - 20f);
-        ctx.stroke();
+        ctx.StrokeStyle = "#e2e8f0";
+        ctx.BeginPath();
+        ctx.MoveTo(40, clearY - 20f); ctx.LineTo(W - 40, clearY - 20f);
+        ctx.Stroke();
 
-        ctx.fillStyle = "#64748b";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText("CLEAR SPACE & MINIMUM MARGINS (X = 24px)", 40, clearY);
+        ctx.FillStyle = "#64748b";
+        ctx.Font = "bold 12px sans-serif";
+        ctx.FillText("CLEAR SPACE & MINIMUM MARGINS (X = 24px)", 40, clearY);
 
         var clearMarkSize = 50f;
         var clearMarkX = 40f;
@@ -1275,12 +1293,12 @@ public class LogoDesignToolkit
             ["height"] = clearMarkSize
         }, 24f, new Dictionary<string, object?> { ["showLabels"] = true });
 
-        ctx.save();
-        ctx.translate(clearMarkX, clearMarkY);
+        ctx.Save();
+        ctx.Translate(clearMarkX, clearMarkY);
         InvokeCallback(drawMark, ctx, clearMarkSize);
-        ctx.restore();
+        ctx.Restore();
 
-        ctx.restore();
+        ctx.Restore();
     }
     #endregion
 }

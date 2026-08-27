@@ -1,0 +1,425 @@
+namespace Polson.ExtendedMind;
+
+using System.Collections.Generic;
+
+using SkiaSharp;
+
+/// <summary>
+/// Measurement and repair of generated imagery. Pure functions over bitmaps; no network, no state.
+/// </summary>
+/// <remarks>
+/// Everything here exists because a generated asset cannot be taken at its word. The model does not
+/// honour "seamless", does not honour a pixel size, and inpaints when asked to fill a frame — and
+/// each of those failures is silent and plausible. So every property the requisition API promises is
+/// one this class verifies, and where possible repairs, rather than one the prompt requested.
+/// </remarks>
+public static class PlateAnalysis
+{
+    #region Methods
+    /// <summary>Rec. 709 luminance.</summary>
+    public static double Luminance(SKColor c) => (0.2126 * c.Red) + (0.7152 * c.Green) + (0.0722 * c.Blue);
+
+    /// <summary>
+    /// Measures whether a swatch wraps, by rolling it half a frame and testing the resulting mid-frame
+    /// seam as an outlier against the ordinary neighbour-step distribution.
+    /// </summary>
+    /// <remarks>
+    /// Comparing the seam against "unrelated" pixels does not work: on a uniform texture, unrelated
+    /// columns differ as much as adjacent ones, so the test has no discriminating power and passes
+    /// everything. Comparing against the distribution of real neighbour steps does work — a genuine
+    /// discontinuity exceeds the largest legitimate step in the image, often by a factor of two, even
+    /// when the motif's own linear features make it look intentional to the eye.
+    /// </remarks>
+    public static TilingMetrics MeasureTiling(SKBitmap bitmap)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        var rolled = Roll(bitmap, bitmap.Width / 2, bitmap.Height / 2);
+        int w = rolled.Width, h = rolled.Height, mx = w / 2, my = h / 2;
+
+        var vSeam = ColumnStep(rolled, mx - 1, mx);
+        var hSeam = RowStep(rolled, my - 1, my);
+
+        // The baseline must exclude the seam itself. Sampling straight across would sometimes include
+        // the seam column, making NeighbourMax equal the seam step and passing every image — the
+        // stride only misses it by luck, which is exactly the sort of accident that makes a validator
+        // look like it works.
+        var neighbours = new List<double>();
+        for (var x = 8; x < w - 8; x += 7)
+        {
+            if (Math.Abs(x - mx) <= SeamGuard)
+            {
+                continue;
+            }
+
+            neighbours.Add(ColumnStep(rolled, x, x + 1));
+        }
+
+        for (var y = 8; y < h - 8; y += 7)
+        {
+            if (Math.Abs(y - my) <= SeamGuard)
+            {
+                continue;
+            }
+
+            neighbours.Add(RowStep(rolled, y, y + 1));
+        }
+
+        neighbours.Sort();
+
+        return new TilingMetrics
+        {
+            HorizontalSeamStep = hSeam,
+            VerticalSeamStep = vSeam,
+            NeighbourMedian = neighbours[neighbours.Count / 2],
+            NeighbourMax = neighbours[^1],
+        };
+    }
+
+    /// <summary>
+    /// Makes a swatch wrap by cross-fading its leading edge with the content that follows its
+    /// trailing edge, cropping by the overlap. Output is smaller than input by <paramref name="overlap"/>.
+    /// </summary>
+    public static SKBitmap MakeTileable(SKBitmap bitmap, double overlap = 0.125)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        var m = Math.Max(2, (int)(Math.Min(bitmap.Width, bitmap.Height) * overlap));
+
+        // Two independent passes. Blending both axes in one pass has to sample a source pixel that
+        // is itself mid-blend, which leaves the horizontal seam unrepaired.
+        var horizontal = BlendAxis(bitmap, m, horizontally: true);
+        var output = BlendAxis(horizontal, m, horizontally: false);
+        horizontal.Dispose();
+        return output;
+    }
+
+    /// <summary>
+    /// Measures a backdrop so the foreground can read it rather than guess at it.
+    /// </summary>
+    /// <param name="blocking">
+    /// The blocking sent as <c>conditionOn</c>, if any. Baked-mask detection needs it: a plate can be
+    /// legitimately dark over most of its area — an unconditioned "keep the lower third black" plate
+    /// measured 18% pure black — so neither the black fraction nor the sharpness of the black
+    /// boundary separates a mask from a night sky. What does separate them is agreement with the
+    /// silhouette actually sent: 99% overlap for an inpainted plate against 61% for an unrelated one.
+    /// </param>
+    public static PlateMetrics MeasurePlate(SKBitmap plate, QuietRegion requested, SKBitmap? blocking = null)
+    {
+        ArgumentNullException.ThrowIfNull(plate);
+
+        int w = plate.Width, h = plate.Height;
+        var bands = new double[3];
+
+        for (var band = 0; band < 3; band++)
+        {
+            double sum = 0;
+            var n = 0;
+            for (var y = band * h / 3; y < (band + 1) * h / 3; y += 2)
+            {
+                for (var x = 0; x < w; x += 2)
+                {
+                    sum += Luminance(plate.GetPixel(x, y));
+                    n++;
+                }
+            }
+
+            bands[band] = n == 0 ? 0 : sum / n;
+        }
+
+        double wx = 0, wy = 0, ws = 0;
+        for (var y = 0; y < h; y += 2)
+        {
+            for (var x = 0; x < w; x += 2)
+            {
+                var l = Luminance(plate.GetPixel(x, y));
+                if (l <= BrightThreshold)
+                {
+                    continue;
+                }
+
+                wx += x * l;
+                wy += y * l;
+                ws += l;
+            }
+        }
+
+        var darkest = Array.IndexOf(bands, bands.Min());
+
+        return new PlateMetrics
+        {
+            KeyLightX = ws > 0 ? wx / ws / w : 0.5,
+            KeyLightY = ws > 0 ? wy / ws / h : 0.5,
+            BandLuminance = bands,
+            QuietX = 0,
+            QuietY = darkest / 3.0,
+            QuietWidth = 1,
+            QuietHeight = 1.0 / 3,
+            QuietRegionHonoured = IsQuietHonoured(requested, bands),
+            HasBakedMask = blocking is not null && MaskAgreement(plate, blocking) >= BakedMaskIoU,
+        };
+    }
+
+    /// <summary>
+    /// Intersection-over-union of the plate's near-black region with the blocking's silhouette.
+    /// </summary>
+    public static double MaskAgreement(SKBitmap plate, SKBitmap blocking, int sample = 280)
+    {
+        ArgumentNullException.ThrowIfNull(plate);
+        ArgumentNullException.ThrowIfNull(blocking);
+
+        var h = Math.Max(1, sample * plate.Height / Math.Max(1, plate.Width));
+        long intersection = 0, union = 0;
+
+        for (var y = 0; y < h; y++)
+        {
+            for (var x = 0; x < sample; x++)
+            {
+                var inPlate = Luminance(plate.GetPixel(x * plate.Width / sample, y * plate.Height / h)) < 6;
+                var inBlocking = Luminance(blocking.GetPixel(x * blocking.Width / sample, y * blocking.Height / h)) < 30;
+
+                if (inPlate && inBlocking)
+                {
+                    intersection++;
+                }
+
+                if (inPlate || inBlocking)
+                {
+                    union++;
+                }
+            }
+        }
+
+        return union == 0 ? 0 : (double)intersection / union;
+    }
+
+    /// <summary>
+    /// Grows the surrounding plate inward over a baked mask, so small silhouette edits do not expose
+    /// black fringes. The filled area sits under the foreground; it only has to survive being clipped.
+    /// </summary>
+    public static SKBitmap ExtendIntoMask(SKBitmap plate, int margin = 24)
+    {
+        ArgumentNullException.ThrowIfNull(plate);
+
+        var output = plate.Copy();
+        for (var pass = 0; pass < margin; pass++)
+        {
+            var changed = false;
+            for (var y = 0; y < output.Height; y++)
+            {
+                for (var x = 0; x < output.Width; x++)
+                {
+                    if (Luminance(output.GetPixel(x, y)) >= 4)
+                    {
+                        continue;
+                    }
+
+                    foreach (var (dx, dy) in Neighbours)
+                    {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= output.Width || ny >= output.Height)
+                        {
+                            continue;
+                        }
+
+                        var c = output.GetPixel(nx, ny);
+                        if (Luminance(c) < 4)
+                        {
+                            continue;
+                        }
+
+                        output.SetPixel(x, y, c);
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!changed)
+            {
+                break;
+            }
+        }
+
+        return output;
+    }
+
+    /// <summary>Resamples to a square edge length.</summary>
+    public static SKBitmap Resize(SKBitmap bitmap, int size) => Resize(bitmap, size, size);
+
+    public static SKBitmap Resize(SKBitmap bitmap, int width, int height)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+        return bitmap.Resize(new SKImageInfo(width, height), Sampling) ?? bitmap.Copy();
+    }
+
+    /// <summary>
+    /// Fits to a target by cover-cropping, never by stretching.
+    /// </summary>
+    /// <remarks>
+    /// Aspect is approximate upstream: a 16:9 request came back 1344x768, a ratio of 1.75 rather than
+    /// 1.778. Stretching that to a canvas would skew every feature in the plate.
+    /// </remarks>
+    public static SKBitmap FitTo(SKBitmap bitmap, int width, int height)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        var scale = Math.Max((double)width / bitmap.Width, (double)height / bitmap.Height);
+        int sw = (int)Math.Ceiling(bitmap.Width * scale), sh = (int)Math.Ceiling(bitmap.Height * scale);
+
+        using var scaled = Resize(bitmap, sw, sh);
+        var output = new SKBitmap(width, height);
+        using var canvas = new SKCanvas(output);
+        canvas.DrawBitmap(scaled, (width - sw) / 2f, (height - sh) / 2f, Sampling, null);
+        return output;
+    }
+
+    /// <summary>Converts to a single-channel-looking grey bitmap for use as a matte.</summary>
+    public static SKBitmap ToMatte(SKBitmap bitmap, bool invert = false)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        var output = new SKBitmap(bitmap.Width, bitmap.Height);
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var v = (byte)Math.Clamp(Luminance(bitmap.GetPixel(x, y)), 0, 255);
+                if (invert)
+                {
+                    v = (byte)(255 - v);
+                }
+
+                output.SetPixel(x, y, new SKColor(v, v, v));
+            }
+        }
+
+        return output;
+    }
+
+    /// <summary>Encodes to the delivery format. WebP q85 is ~10x smaller than the PNG the service returns.</summary>
+    public static byte[] Encode(SKBitmap bitmap, string format = "webp", int quality = 85)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        var encoded = format.ToLowerInvariant() switch
+        {
+            "png" => SKEncodedImageFormat.Png,
+            "jpeg" or "jpg" => SKEncodedImageFormat.Jpeg,
+            _ => SKEncodedImageFormat.Webp,
+        };
+
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(encoded, Math.Clamp(quality, 1, 100));
+        return data.ToArray();
+    }
+
+    public static string MimeFor(string format) => format.ToLowerInvariant() switch
+    {
+        "png" => "image/png",
+        "jpeg" or "jpg" => "image/jpeg",
+        _ => "image/webp",
+    };
+
+    static bool IsQuietHonoured(QuietRegion requested, double[] bands) => requested switch
+    {
+        QuietRegion.None => true,
+        QuietRegion.LowerThird => bands[2] < QuietCeiling && bands[2] < bands[0],
+        QuietRegion.UpperThird => bands[0] < QuietCeiling && bands[0] < bands[2],
+        _ => true,
+    };
+
+    /// <summary>
+    /// Crops one axis by <paramref name="m"/> and cross-fades the leading strip with the content
+    /// that follows the new trailing edge, so the axis wraps continuously.
+    /// </summary>
+    static SKBitmap BlendAxis(SKBitmap bitmap, int m, bool horizontally)
+    {
+        int ow = horizontally ? bitmap.Width - m : bitmap.Width;
+        int oh = horizontally ? bitmap.Height : bitmap.Height - m;
+        var output = new SKBitmap(ow, oh);
+
+        for (var y = 0; y < oh; y++)
+        {
+            for (var x = 0; x < ow; x++)
+            {
+                var c = bitmap.GetPixel(x, y);
+                var along = horizontally ? x : y;
+
+                if (along < m)
+                {
+                    var beyond = horizontally
+                        ? bitmap.GetPixel(x + ow, y)
+                        : bitmap.GetPixel(x, y + oh);
+                    c = Lerp(beyond, c, (double)along / m);
+                }
+
+                output.SetPixel(x, y, c);
+            }
+        }
+
+        return output;
+    }
+
+    static SKBitmap Roll(SKBitmap bitmap, int dx, int dy)
+    {
+        int w = bitmap.Width, h = bitmap.Height;
+        var output = new SKBitmap(w, h);
+        for (var y = 0; y < h; y++)
+        {
+            for (var x = 0; x < w; x++)
+            {
+                output.SetPixel(x, y, bitmap.GetPixel((x + dx) % w, (y + dy) % h));
+            }
+        }
+
+        return output;
+    }
+
+    static double ColumnStep(SKBitmap b, int xa, int xb)
+    {
+        double sum = 0;
+        for (var y = 0; y < b.Height; y++)
+        {
+            sum += Delta(b.GetPixel(xa, y), b.GetPixel(xb, y));
+        }
+
+        return sum / b.Height;
+    }
+
+    static double RowStep(SKBitmap b, int ya, int yb)
+    {
+        double sum = 0;
+        for (var x = 0; x < b.Width; x++)
+        {
+            sum += Delta(b.GetPixel(x, ya), b.GetPixel(x, yb));
+        }
+
+        return sum / b.Width;
+    }
+
+    static double Delta(SKColor p, SKColor q) =>
+        (Math.Abs(p.Red - q.Red) + Math.Abs(p.Green - q.Green) + Math.Abs(p.Blue - q.Blue)) / 3.0;
+
+    static SKColor Lerp(SKColor a, SKColor b, double t) => new(
+        (byte)(a.Red + ((b.Red - a.Red) * t)),
+        (byte)(a.Green + ((b.Green - a.Green) * t)),
+        (byte)(a.Blue + ((b.Blue - a.Blue) * t)),
+        (byte)(a.Alpha + ((b.Alpha - a.Alpha) * t)));
+    #endregion
+
+    #region Fields
+    /// <summary>Overlap at or above which a plate's dark region is judged to be an inpaint mask.</summary>
+    public const double BakedMaskIoU = 0.85;
+
+    const double BrightThreshold = 120;
+    const double QuietCeiling = 8;
+
+    /// <summary>Columns/rows this close to the seam are excluded from the neighbour baseline.</summary>
+    const int SeamGuard = 3;
+
+    static readonly SKSamplingOptions Sampling = new(SKFilterMode.Linear, SKMipmapMode.Linear);
+
+    static readonly (int Dx, int Dy)[] Neighbours = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+    #endregion
+}

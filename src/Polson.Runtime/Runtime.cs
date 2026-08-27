@@ -24,7 +24,7 @@ public abstract class Runtime
     {
         AppDomain.CurrentDomain.UnhandledException += AppDomain_UnhandledException;
         EntryAssembly = Assembly.GetEntryAssembly();
-        IsUnitTestRun = EntryAssembly?.FullName?.StartsWith("testhost") ?? false;           
+        IsUnitTestRun = EntryAssembly?.FullName?.StartsWith("testhost") ?? false;                   
     }
 
     public Runtime(CancellationToken ct)

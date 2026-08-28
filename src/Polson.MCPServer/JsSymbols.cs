@@ -63,6 +63,7 @@ public static class JsSurface
     [
         new("console", typeof(JsConsole), "Globals", false),
         new("mina", typeof(Mina), "Globals", false),
+        new("Stage", typeof(StageApi), "Globals", false),
 
         new("Snap", typeof(Snap), "Snap", false),
         new("Snap.path", typeof(SnapPathApi), "Snap", false),

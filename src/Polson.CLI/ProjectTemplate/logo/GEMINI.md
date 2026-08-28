@@ -38,14 +38,19 @@ Pass `outFile: 'artifacts/NN_name.webp'` to `ExecuteScript`. Bytes in the respon
 conversation and vanish; files persist, and are what the director sees. Use `outSvg` alongside it
 whenever the work is vector.
 
-**3. One script per stage, kept.**
-Write each stage's code to `scripts/NN_name.js` as you go. These are the readable trace of how the
-mark was arrived at — they matter as much as the final image, and a later stage should read the
-earlier ones back rather than trusting memory.
+**3. Your scripts are kept for you.**
+Every script you execute is saved to `scripts/`, numbered in order, and referenced from the run
+log — you do not need to write them out yourself. They are the readable trace of how the mark was
+arrived at, and they matter as much as the final image. **Read them back** when a later stage needs
+to know what an earlier one did, rather than trusting memory: the file is what actually ran.
 
-**4. Say what you are about to do, and why, before you do it.**
-One or two sentences in natural language, before each major step. Write them for someone who cannot
-see your context and is reading afterwards — because that is exactly who reads them.
+**4. Declare your stage, and say what you are about to do.**
+`Stage.begin('Concept')` at the top of each stage — it persists across scripts until you change it,
+and it files every script, render and note that follows under that heading. Then
+`Stage.note('...')` for the reasoning: why a direction was abandoned, what a render was meant to
+test. `log(...)` is seen only by whoever called that one script; a note persists into the record and
+is what a reader sees afterwards. Write both for someone who cannot see your context and is reading
+later — because that is exactly who reads them.
 
 ---
 

@@ -26,6 +26,11 @@ public class DrawingExecutionResult
 
     public string? SvgFilePath { get; set; }
 
+    /// <summary>
+    /// Identifies this tool call in the run's record. Cite it when referring to a specific render.
+    /// </summary>
+    public string? ExecutionId { get; set; }
+
     public int ImageSize { get; set; }
 
     public string ImageFormat { get; set; } = "webp";

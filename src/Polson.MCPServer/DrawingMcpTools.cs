@@ -23,11 +23,14 @@ public class DrawingMcpTools
     #endregion
 
     #region Constructors
-    public DrawingMcpTools(JsDrawingEngine? engine = null, SessionRegistry? registry = null, IKnowledgeIndex? knowledge = null)
+    public DrawingMcpTools(JsDrawingEngine? engine = null, SessionRegistry? registry = null, IKnowledgeIndex? knowledge = null, string? projectRoot = null)
     {
         Engine = engine ?? new JsDrawingEngine();
         Registry = registry ?? new SessionRegistry();
         Knowledge = knowledge ?? new LocalKnowledgeIndex();
+        ProjectRoot = string.IsNullOrWhiteSpace(projectRoot) ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectRoot));
+        Events = new RunEventLog(ProjectRoot);
+        Engine.Events = Events;
     }
     #endregion
 
@@ -39,6 +42,22 @@ public class DrawingMcpTools
     public IKnowledgeIndex Knowledge { get; }
 
     /// <summary>
+    /// Directory that written output is confined to, or <c>null</c> for no confinement.
+    /// </summary>
+    /// <remarks>
+    /// Set whenever the server is hosting an agent, which is every path through the CLI. Left null
+    /// when the tools are constructed directly as a library, so tests and ad-hoc use keep writing
+    /// wherever they ask to. The confinement is what makes a generated project's promise true —
+    /// a visitor-driven agent has no filesystem reach outside its own run directory — and without
+    /// it <c>outFile</c> accepts an absolute path or a <c>..</c> traversal and writes anywhere the
+    /// process can.
+    /// </remarks>
+    public string? ProjectRoot { get; }
+
+    /// <summary>The run's append-only record. Inert when there is no project directory.</summary>
+    public RunEventLog Events { get; }
+
+    /// <summary>
     /// Top score below which prose retrieval is reporting its nearest neighbour rather than an answer.
     /// </summary>
     /// <remarks>Calibrated against observed hits: on-target passages score 19-31, off-target ones 2-8.</remarks>
@@ -46,6 +65,56 @@ public class DrawingMcpTools
     #endregion
 
     #region Methods
+    /// <summary>
+    /// Resolves an agent-supplied output path against <see cref="ProjectRoot"/> and refuses anything
+    /// that lands outside it. Creates the containing directory.
+    /// </summary>
+    /// <remarks>
+    /// Refuses loudly rather than silently rewriting the path into bounds: a mark saved somewhere
+    /// other than where the agent asked would go unnoticed and break the run log's account of where
+    /// artifacts are. The message names both the offending path and the root, so the agent can
+    /// correct itself without another round trip.
+    /// <para>
+    /// <c>Path.Combine</c> returns the second argument outright when it is absolute, so an absolute
+    /// path arrives at the containment check rather than bypassing it. This compares resolved paths,
+    /// so it stops <c>..</c> traversal and absolute paths; it does not follow symlinks, so a link
+    /// planted inside the project could still point out of it.
+    /// </para>
+    /// </remarks>
+    internal string ResolveOutputPath(string path, string parameterName)
+    {
+        var full = string.IsNullOrEmpty(ProjectRoot)
+            ? Path.GetFullPath(path)
+            : Path.GetFullPath(Path.Combine(ProjectRoot, path));
+
+        if (!string.IsNullOrEmpty(ProjectRoot))
+        {
+            // Case-insensitive only where the filesystem is: on Linux "/a" and "/A" are different
+            // directories, and ignoring case there would accept an escape as if it were contained.
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+            // The trailing separator stops "C:\proj" from matching a sibling "C:\project-two".
+            var contained = full.Equals(ProjectRoot, comparison)
+                || full.StartsWith(ProjectRoot + Path.DirectorySeparatorChar, comparison);
+
+            if (!contained)
+            {
+                throw new ArgumentException(
+                    $"'{path}' resolves to '{full}', which is outside this project's directory " +
+                    $"('{ProjectRoot}'). Write to a path inside the project, such as 'artifacts/stage1.webp'.",
+                    parameterName);
+            }
+        }
+
+        var dir = Path.GetDirectoryName(full);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        return full;
+    }
+
     [McpServerTool(Name = "Search")]
     [Description("Searches the studio's design knowledge and API reference for passages relevant to a technique, " +
         "and returns them ranked with the SDK calls that implement them. The corpus is the studio manuals — classical " +
@@ -179,8 +248,8 @@ public class DrawingMcpTools
         [Description("Default canvas / SVG viewport height in pixels (default 600).")] int? height = null,
         [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
-        [Description("Optional file path where the rendered image should be saved directly (e.g. 'artifacts/stage1.webp').")] string? outFile = null,
-        [Description("Optional file path where the rendered SVG XML should be saved directly (e.g. 'artifacts/stage1.svg').")] string? outSvg = null,
+        [Description("Optional file path where the rendered image should be saved, relative to the project directory (e.g. 'artifacts/stage1.webp'). Paths outside the project are refused.")] string? outFile = null,
+        [Description("Optional file path where the rendered SVG XML should be saved, relative to the project directory (e.g. 'artifacts/stage1.svg'). Paths outside the project are refused.")] string? outSvg = null,
         [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null,
         RequestContext<CallToolRequestParams>? context = null,
         IProgress<ProgressNotificationValue>? progress = null,
@@ -197,36 +266,68 @@ public class DrawingMcpTools
         }
 
         session.EnterCall();
+
+        var executionId = Guid.NewGuid().ToString("N")[..8];
+
+        // Three nested scopes, outermost first, so ordinary log lines carry the same attribution the
+        // event log does. The stage is re-read from the session on every call: a property pushed
+        // inside an async handler never reaches the next request, so this is what makes a stage span
+        // more than one execution. Camel keeps CaseId the same way.
+        using var _project = Runtime.PushAuditProperty("Project", ProjectRoot);
+        using var _stage = Runtime.PushAuditProperty("Stage", session.Stage);
+        using var _exec = Runtime.PushAuditProperty("ExecutionId", executionId);
+
+        // Saved before execution, so a script that hangs or crashes the engine is still on disk to
+        // read afterwards — which is exactly the run you most want the source of.
+        var scriptPath = Events.SaveScript(script);
+        Events.Append("script.start", session.Stage, executionId, new Dictionary<string, object?> { ["script"] = scriptPath, ["session"] = sessionId });
+
         try
         {
             var fmt = format ?? "webp";
             var q = quality ?? 85;
-            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q), cancellationToken);
+            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q, executionId), cancellationToken);
             var result = await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(outFile) && result.ImageBytes != null && result.ImageBytes.Length > 0)
             {
-                var fullOutPath = Path.GetFullPath(outFile);
-                var dir = Path.GetDirectoryName(fullOutPath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
+                var fullOutPath = ResolveOutputPath(outFile, nameof(outFile));
                 File.WriteAllBytes(fullOutPath, result.ImageBytes);
                 result.ImageFilePath = fullOutPath;
+
+                // session.Stage is read fresh rather than captured at entry: a script may declare a
+                // new stage partway through, and the render belongs to the stage it was made in.
+                Events.Append("render", session.Stage, executionId, new Dictionary<string, object?>
+                {
+                    ["script"] = scriptPath,
+                    ["artifact"] = Events.Relativize(fullOutPath),
+                    ["format"] = result.ImageFormat,
+                    ["bytes"] = result.ImageBytes.Length
+                });
             }
 
             if (!string.IsNullOrWhiteSpace(outSvg) && !string.IsNullOrWhiteSpace(result.SvgXml))
             {
-                var fullSvgPath = Path.GetFullPath(outSvg);
-                var dir = Path.GetDirectoryName(fullSvgPath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
+                var fullSvgPath = ResolveOutputPath(outSvg, nameof(outSvg));
                 File.WriteAllText(fullSvgPath, result.SvgXml);
                 result.SvgFilePath = fullSvgPath;
+
+                Events.Append("render", session.Stage, executionId, new Dictionary<string, object?>
+                {
+                    ["script"] = scriptPath,
+                    ["artifact"] = Events.Relativize(fullSvgPath),
+                    ["format"] = "svg"
+                });
             }
+
+            Events.Append(result.Success ? "script.ok" : "script.error", session.Stage, executionId, new Dictionary<string, object?>
+            {
+                ["script"] = scriptPath,
+                ["ms"] = result.ExecutionTimeMs,
+                ["error"] = result.Success ? null : result.Error
+            });
+
+            result.ExecutionId = executionId;
 
             result.ImageSize = result.ImageBytes?.Length ?? 0;
             var shouldIncludeBytes = includeBytes ?? string.IsNullOrWhiteSpace(outFile);
@@ -236,6 +337,17 @@ public class DrawingMcpTools
             }
 
             return result;
+        }
+        catch (Exception ex)
+        {
+            // A refused output path throws rather than returning a failed result, so without this
+            // the log would carry a script.start that never ends and the run would read as hung.
+            Events.Append("script.error", session.Stage, executionId, new Dictionary<string, object?>
+            {
+                ["script"] = scriptPath,
+                ["error"] = ex.Message
+            });
+            throw;
         }
         finally
         {
@@ -279,7 +391,7 @@ public class DrawingMcpTools
         [Description("Target image height in pixels (optional, defaults to SVG height or 600).")] int? height = null,
         [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
-        [Description("Optional file path where the rendered image should be saved directly.")] string? outFile = null,
+        [Description("Optional file path where the rendered image should be saved, relative to the project directory. Paths outside the project are refused.")] string? outFile = null,
         [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null)
     {
         ArgumentNullException.ThrowIfNull(svgXml);
@@ -300,12 +412,7 @@ public class DrawingMcpTools
 
             if (!string.IsNullOrWhiteSpace(outFile) && imgBytes != null && imgBytes.Length > 0)
             {
-                var fullOutPath = Path.GetFullPath(outFile);
-                var dir = Path.GetDirectoryName(fullOutPath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
+                var fullOutPath = ResolveOutputPath(outFile, nameof(outFile));
                 File.WriteAllBytes(fullOutPath, imgBytes);
                 result.ImageFilePath = fullOutPath;
             }

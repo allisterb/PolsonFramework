@@ -33,12 +33,21 @@ public partial class JsDrawingEngine : Runtime
     /// configured" refusal instead of a ReferenceError it cannot interpret.
     /// </summary>
     public static AssetRequisitionToolkit? Assets { get; set; }
+
+    /// <summary>
+    /// The run's record, so a script can declare its stage and add notes. Null outside a project.
+    /// </summary>
+    /// <remarks>
+    /// Set by <see cref="DrawingMcpTools"/>, which owns both the engine and the log. The engine
+    /// itself writes no files; it hands the log what to record and the log decides whether it can.
+    /// </remarks>
+    public RunEventLog? Events { get; set; }
     #endregion
     
     #region Methods
     /// <summary>Synchronous entry point, for callers with no async context.</summary>
-    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85) =>
-        ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality).GetAwaiter().GetResult();
+    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, string? executionId = null) =>
+        ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality, default, executionId).GetAwaiter().GetResult();
 
     /// <summary>
     /// Executes a script, awaiting any promises it creates.
@@ -50,7 +59,7 @@ public partial class JsDrawingEngine : Runtime
     /// what it wants rendered. Scripts with no `await` are executed unwrapped and keep exactly their
     /// previous semantics, including a bare trailing `paper;`.
     /// </remarks>
-    public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default)
+    public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default, string? executionId = null)
     {
         ArgumentNullException.ThrowIfNull(jsScript);
 
@@ -82,6 +91,8 @@ public partial class JsDrawingEngine : Runtime
 
             // Per-session scratch storage
             engine.SetValue("Session", session?.Storage ?? new Dictionary<string, object?>());
+
+            engine.SetValue("Stage", new StageApi(session, Events, executionId));
 
             // Pure .NET Console object
             var jsConsole = new JsConsole(result.Logs);

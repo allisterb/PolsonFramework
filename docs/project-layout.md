@@ -56,11 +56,40 @@ without a lock, and it means a crashed writer truncates its own file and nobody 
 {"ts":"2026-08-28T14:22:31.442Z","seq":17,"src":"server","type":"render","script":"scripts/0004.js","artifact":"artifacts/stage2.webp","ms":214}
 ```
 
-| `src` | `type` |
-| :--- | :--- |
-| `server` | `script.start` `script.ok` `script.error` `render` `asset.requisition` `asset.refused` `budget` |
-| `agent` | `turn.start` `thinking` `tool.call` `text` `compaction` `turn.end` `usage` |
-| `director` | `brief` `message` `question` `answer` `cancel` |
+| `src` | `type` | Status |
+| :--- | :--- | :--- |
+| `server` | `script.start` `script.ok` `script.error` `render` `stage.begin` `stage.end` `note` | **written** by `RunEventLog` |
+| `server` | `asset.requisition` `asset.refused` `budget` | specified; requisition lives in `Polson.ExtendedMind` and is not yet wired |
+| `agent` | `turn.start` `thinking` `tool.call` `text` `compaction` `turn.end` `usage` | specified; needs the Python orchestrator |
+| `director` | `brief` `message` `question` `answer` `cancel` | specified; needs the webapp |
+
+`scripts/` is populated by the server, not the agent: every executed script is saved there in order
+and named from the event that references it. The server has the text already, so recording it there
+costs nothing and keeps a run reconstructible even when the agent never wrote anything down.
+
+Each `script.start` is closed by exactly one `script.ok` or `script.error`, including when a tool
+call throws rather than returning — a refused output path, for instance. A start without a
+terminator means the process died mid-script, and should be read that way.
+
+## Stage and execution
+
+Two optional fields sit between `type` and the payload, and both exist so a viewer can group without
+joining:
+
+- **`execution`** — identifies one tool call. Every event it produced shares it, so a render ties
+  back to the `script.start` that made it without matching on script paths. Returned to the agent as
+  `executionId`, so it can cite a specific render.
+- **`stage`** — the agent's declared stage, set from a script with `Stage.begin(...)`. It **spans
+  executions**: it lives on the session and is re-read on every call, because a property pushed onto
+  the ambient log context inside an async tool handler never reaches the next request. Filtering the
+  log by `stage` yields every artifact produced during it.
+
+The same three properties (`Project`, `Stage`, `ExecutionId`) are pushed onto the Serilog context per
+call, so ordinary log lines carry the same attribution when debugging.
+
+A stage is a **claim**, not a fact — the agent names its own. That is the point: it records intent,
+which is what makes drift visible when the intent and the artifacts disagree. It also means this log
+is not evidence against the agent; the machine-recorded fields beside it are.
 
 The `agent` vocabulary deliberately mirrors the SDK's own `StepType`, so the orchestrator
 transcribes `receive_steps()` rather than inventing a parallel taxonomy. Log `compaction` even

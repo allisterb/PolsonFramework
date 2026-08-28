@@ -1,0 +1,161 @@
+namespace Polson.Tests.MCPServer;
+
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using Polson.MCPServer;
+using Xunit;
+
+/// <summary>
+/// A generated project promises the agent has no filesystem reach outside its own run directory,
+/// but <c>outFile</c> was resolved with a bare <c>Path.GetFullPath</c> against the process working
+/// directory: an absolute path or a <c>..</c> traversal wrote wherever the process could, and
+/// <c>--project-dir</c> was only ever written to the log.
+/// <para>
+/// Confinement is on whenever a project root is configured, which is every path through the CLI,
+/// and off when the tools are constructed directly as a library so tests and ad-hoc use are
+/// unaffected.
+/// </para>
+/// </summary>
+public class ProjectContainmentTests : TestsRuntime, IDisposable
+{
+    #region Fields
+    private readonly string root = Path.Combine(Path.GetTempPath(), "polson-contain-" + Guid.NewGuid().ToString("N"));
+    #endregion
+
+    #region Methods
+    public ProjectContainmentTests() => Directory.CreateDirectory(root);
+
+    public void Dispose()
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        GC.SuppressFinalize(this);
+    }
+
+    private DrawingMcpTools Contained() => new(null, null, null, root);
+
+    private const string Script = "const c = createCanvas(64, 64); const x = c.getContext('2d'); x.fillStyle = '#10b981'; x.fillRect(0, 0, 64, 64); c;";
+    #endregion
+
+    #region Confined Writes
+    /// <summary>A relative path resolves against the project root, not the process working directory.</summary>
+    [Fact]
+    public async Task TestRelativePathLandsInsideTheProject()
+    {
+        var result = await Contained().ExecuteScript(Script, 64, 64, outFile: "artifacts/stage1.webp");
+
+        Assert.True(result.Success, result.Error);
+        Assert.True(File.Exists(Path.Combine(root, "artifacts", "stage1.webp")));
+    }
+
+    /// <summary>Missing intermediate directories are created, so the agent need not mkdir first.</summary>
+    [Fact]
+    public async Task TestNestedDirectoriesAreCreated()
+    {
+        await Contained().ExecuteScript(Script, 64, 64, outFile: "a/b/c/deep.webp");
+
+        Assert.True(File.Exists(Path.Combine(root, "a", "b", "c", "deep.webp")));
+    }
+
+    /// <summary>outSvg is confined on the same terms as outFile.</summary>
+    [Fact]
+    public async Task TestOutSvgIsAlsoConfined()
+    {
+        var escape = Path.Combine(Path.GetTempPath(), $"polson_escape_{Guid.NewGuid():N}.svg");
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            Contained().ExecuteScript("const p = Snap(64, 64); p.circle(32, 32, 20); p;", 64, 64, outSvg: escape));
+
+        Assert.False(File.Exists(escape));
+    }
+    #endregion
+
+    #region Refused Writes
+    /// <summary>Traversal out of the project is refused, and nothing is written.</summary>
+    [Theory]
+    [InlineData("../escaped.webp")]
+    [InlineData("artifacts/../../escaped.webp")]
+    [InlineData("./../../escaped.webp")]
+    public async Task TestTraversalOutOfProjectIsRefused(string path)
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => Contained().ExecuteScript(Script, 64, 64, outFile: path));
+
+        var escaped = Path.GetFullPath(Path.Combine(root, path));
+        Assert.False(File.Exists(escaped), $"wrote outside the project: {escaped}");
+    }
+
+    /// <summary>An absolute path does not bypass the check — Path.Combine returns it outright.</summary>
+    [Fact]
+    public async Task TestAbsolutePathIsRefused()
+    {
+        var escape = Path.Combine(Path.GetTempPath(), $"polson_escape_{Guid.NewGuid():N}.webp");
+
+        await Assert.ThrowsAsync<ArgumentException>(() => Contained().ExecuteScript(Script, 64, 64, outFile: escape));
+
+        Assert.False(File.Exists(escape));
+    }
+
+    /// <summary>
+    /// A sibling directory sharing the root's name as a prefix is outside it. Without a trailing
+    /// separator in the comparison, "polson-contain-abc" would match "polson-contain-abc-evil".
+    /// </summary>
+    [Fact]
+    public async Task TestSiblingDirectoryWithSharedPrefixIsRefused()
+    {
+        var sibling = root + "-evil";
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            Contained().ExecuteScript(Script, 64, 64, outFile: Path.Combine(sibling, "x.webp")));
+
+        Assert.False(Directory.Exists(sibling), "created a directory outside the project");
+    }
+
+    /// <summary>The refusal names the path and the root, so the agent can correct without asking.</summary>
+    [Fact]
+    public async Task TestRefusalMessageIsActionable()
+    {
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            Contained().ExecuteScript(Script, 64, 64, outFile: "../escaped.webp"));
+
+        Assert.Contains("outside this project's directory", error.Message, StringComparison.Ordinal);
+        Assert.Contains(root, error.Message, StringComparison.Ordinal);
+        Assert.Contains("artifacts/", error.Message, StringComparison.Ordinal);
+    }
+    #endregion
+
+    #region Unconfined Library Use
+    /// <summary>
+    /// With no root configured the tools stay unconstrained, which is how they are constructed
+    /// directly in tests and by anything using this as a library.
+    /// </summary>
+    [Fact]
+    public async Task TestNoProjectRootLeavesWritesUnconstrained()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), $"polson_free_{Guid.NewGuid():N}.webp");
+
+        try
+        {
+            var result = await new DrawingMcpTools().ExecuteScript(Script, 64, 64, outFile: outside);
+
+            Assert.True(result.Success, result.Error);
+            Assert.True(File.Exists(outside));
+        }
+        finally
+        {
+            if (File.Exists(outside)) File.Delete(outside);
+        }
+    }
+
+    [Fact]
+    public void TestProjectRootIsNullWhenNotConfigured() => Assert.Null(new DrawingMcpTools().ProjectRoot);
+
+    /// <summary>A configured root is stored resolved and without a trailing separator.</summary>
+    [Fact]
+    public void TestProjectRootIsNormalised()
+    {
+        var tools = new DrawingMcpTools(null, null, null, root + Path.DirectorySeparatorChar);
+
+        Assert.Equal(Path.TrimEndingDirectorySeparator(root), tools.ProjectRoot);
+    }
+    #endregion
+}

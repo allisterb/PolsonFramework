@@ -34,7 +34,7 @@ public class PolsonMCPServer : Runtime
             .SetMinimumLevel(LogLevel.Trace);
 
         var mcp = builder.Services.AddMcpServer();
-        RegisterToolsAndResources(mcp, registry);
+        RegisterToolsAndResources(mcp, registry, projectDir);
         mcp.WithStdioServerTransport();
 
         var app = builder.Build();
@@ -90,7 +90,7 @@ public class PolsonMCPServer : Runtime
         });
 
         var mcp = builder.Services.AddMcpServer();
-        RegisterToolsAndResources(mcp, registry);
+        RegisterToolsAndResources(mcp, registry, projectDir);
 
 #pragma warning disable MCP9004
         mcp.WithHttpTransport(options =>
@@ -135,9 +135,9 @@ public class PolsonMCPServer : Runtime
         return app;
     }
 
-    private static void RegisterToolsAndResources(IMcpServerBuilder mcp, SessionRegistry registry)
+    private static void RegisterToolsAndResources(IMcpServerBuilder mcp, SessionRegistry registry, string? projectRoot)
     {
-        mcp.WithTools(new DrawingMcpTools(new JsDrawingEngine(), registry, new LocalKnowledgeIndex()));
+        mcp.WithTools(new DrawingMcpTools(new JsDrawingEngine(), registry, new LocalKnowledgeIndex(), projectRoot));
         mcp.WithResources<PolsonResources>();
         mcp.WithResources(PolsonResources.AreaResources(PolsonResources.Docs));
         mcp.WithResources<PolsonManuals>();

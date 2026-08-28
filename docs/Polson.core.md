@@ -17,7 +17,7 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
   > For heavy pixel-level manipulation (such as procedural textures, blurs, or color grading), use native **`Skia.Shader`** or **`Skia.ImageFilter`** pipelines which execute in native SIMD/C++ in < 1ms, rather than running millions of raw per-pixel loop iterations in interpreted JS.
 - **Return Value & Visual Rendering:**
   - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to image bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**, with `"png"` and `"jpeg"` options available) and Base64 URI (`result.ImageDataUri`).
-  - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
+  - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. **Both are relative to the project directory, and a path resolving outside it is refused** — an absolute path or a `..` traversal fails with a message naming the project root rather than writing somewhere unexpected. Missing intermediate directories are created for you. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
   - For vector scenes (`SnapPaper` / `SnapElement`), `result.SvgXml` contains the serialized SVG XML markup. For 2D canvas raster scripts, `result.SvgXml` retains the last vector image produced by the agent prior to switching to 2D canvas mode.
   - If a script creates one or more canvases or Snap papers without explicitly returning them, the last created canvas/paper is rendered automatically.
 - **Logging & Output:** Output via `console.log(...)`, `log(...)`, `error(...)`, or `table(...)`.
@@ -85,6 +85,24 @@ Animation and easing curve generators compatible with Snap.svg:
 - `mina.bounce(n: number)` → `number`
 - `mina.elastic(n: number)` → `number`
 - `mina.time()` → `number` (current timestamp in milliseconds)
+
+### `Stage`
+Declares which stage of work you are in, so every script, render and note that follows is filed under it. The declaration **persists across executions** until you change or end it — set it once at the top of a stage, not in every script.
+
+- `Stage.begin(name: string)` → `string` — Declares the stage and returns the name as recorded. Beginning one while another is open closes the previous first, so two stages never overlap.
+- `Stage.end()` — Ends the current stage. Harmless when none is open.
+- `Stage.current` → `string?` — The stage in effect, or `undefined` if none.
+- `Stage.note(message: string)` — Records a note under the current stage.
+
+`log(...)` reaches only the caller of the one tool call that produced it. `Stage.note(...)` persists into the run's record, and is what a reader sees afterwards — use it for the reasoning that would otherwise be lost, such as why a direction was abandoned or what a render was meant to test.
+
+```javascript
+Stage.begin('Concept');
+Stage.note('synecdoche — the wing, not the bird; rejects the generic globe');
+```
+
+> [!NOTE]
+> A stage is **your account of your own intent**, not something the server verified — that is what makes a run legible rather than merely logged. The machine-recorded fields beside it (script path, duration, artifact path, byte count) remain the checkable half. Name stages for what a reader would want to click on: `Concept`, `Blocking`, `Refine`, `Stress test`.
 
 ### `Session`
 Per-session scratchpad dictionary that persists across multiple script executions on the same MCP session:

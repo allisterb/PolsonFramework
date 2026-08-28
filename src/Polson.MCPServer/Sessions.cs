@@ -33,6 +33,18 @@ public sealed class SessionContext
     public List<string> ScriptHistory { get; } = new();
 
     /// <summary>
+    /// The stage of work the agent says it is in, e.g. "Blocking". Null until it declares one.
+    /// </summary>
+    /// <remarks>
+    /// Held on the session because it has to outlive a single execution — a stage spans many script
+    /// calls, and that is the whole point of tagging with it. It cannot live on the ambient log
+    /// context: a property pushed inside an async tool handler never propagates back to the
+    /// dispatcher, so the next request would not see it. This mirrors how Camel keeps <c>CaseId</c>
+    /// on the session and re-pushes it at the top of every call.
+    /// </remarks>
+    public string? Stage { get; set; }
+
+    /// <summary>
     /// True while one or more tool calls are actively executing on this session.
     /// </summary>
     public bool IsBusy => Volatile.Read(ref _activeCalls) > 0;

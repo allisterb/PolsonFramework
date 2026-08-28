@@ -16,4 +16,23 @@
   <PropertyGroup Label="Versioning">
     <ProjectAssemblyVersion>0.1.0</ProjectAssemblyVersion>
   </PropertyGroup>
+
+  <!-- Supply chain. A lock file records the exact resolved graph, transitive packages included, so a
+       restore either reproduces what was reviewed or fails. Without it a floating transitive
+       dependency can change underneath a build that looks unchanged.
+
+       Commit every packages.lock.json. In CI, restore in locked mode (the RestoreLockedMode
+       property, or the equivalent CLI flag), which refuses to update the lock rather than silently
+       re-resolving. Locally, adding or bumping a package updates the lock as part of restore;
+       review that diff like any other.
+
+       NuGetAudit checks the resolved graph against the vulnerability database at restore time.
+       Auditing 'all' covers transitive packages too, which is where this class of problem usually
+       arrives. It reports; it does not fail the build. -->
+  <PropertyGroup Label="Supply Chain">
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
 </Project>

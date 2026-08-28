@@ -188,20 +188,20 @@ public class SnapPaper : SnapElement
     public SnapPath EmblemBadge(float cx, float cy, float width, float height, string style = "shield") =>
         VectorLogo.EmblemBadge(this, cx, cy, width, height, style);
 
-    public SnapGroup GoldenCircles(float cx, float cy, float baseRadius, int count = 5) =>
-        VectorLogo.GoldenCircles(this, cx, cy, baseRadius, count);
+    public SnapGroup GoldenCircles(float cx, float cy, float baseRadius, int count = 5, object? options = null) =>
+        VectorLogo.GoldenCircles(this, cx, cy, baseRadius, count, options);
 
-    public SnapGroup IsometricGrid(float width, float height, float spacing = 40f) =>
-        VectorLogo.IsometricGrid(this, width, height, spacing);
+    public SnapGroup IsometricGrid(float width, float height, float spacing = 40f, object? options = null) =>
+        VectorLogo.IsometricGrid(this, width, height, spacing, options);
 
-    public SnapGroup PolarGrid(float cx, float cy, float maxRadius, int ringCount = 5, int rayCount = 12) =>
-        VectorLogo.PolarGrid(this, cx, cy, maxRadius, ringCount, rayCount);
+    public SnapGroup PolarGrid(float cx, float cy, float maxRadius, int ringCount = 5, int rayCount = 12, object? options = null) =>
+        VectorLogo.PolarGrid(this, cx, cy, maxRadius, ringCount, rayCount, options);
 
-    public SnapGroup MonogramMatrix(float x, float y, float width, float height, string type = "3x3") =>
-        VectorLogo.MonogramMatrix(this, x, y, width, height, type);
+    public SnapGroup MonogramMatrix(float x, float y, float width, float height, string type = "3x3", object? options = null) =>
+        VectorLogo.MonogramMatrix(this, x, y, width, height, type, options);
 
-    public SnapGroup ClearSpaceGuide(float x, float y, float width, float height, float margin = 24f) =>
-        VectorLogo.ClearSpaceGuide(this, x, y, width, height, margin);
+    public SnapGroup ClearSpaceGuide(float x, float y, float width, float height, float margin = 24f, object? options = null) =>
+        VectorLogo.ClearSpaceGuide(this, x, y, width, height, margin, options);
 
     public SnapPath OgeeCurve(float x1, float y1, float x2, float y2, float amplitude = 25f, float inflectionT = 0.5f) =>
         VectorLogo.OgeeCurve(this, x1, y1, x2, y2, amplitude, inflectionT);

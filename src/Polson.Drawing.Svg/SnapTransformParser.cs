@@ -48,8 +48,21 @@ public static partial class SnapTransformParser
         return collection;
     }
 
-    public static bool IsShorthand(string transformStr) =>
-        ShorthandDetectorRegex().IsMatch(transformStr.Trim());
+    /// <summary>
+    /// Whether a transform string uses Snap's shorthand grammar rather than standard SVG syntax.
+    /// </summary>
+    /// <remarks>
+    /// Standard SVG's transform functions all begin with a letter the shorthand also uses as a
+    /// command — <c>matrix</c>, <c>translate</c>/<c>scale</c>/<c>skew</c>, <c>rotate</c> — so a bare
+    /// first-letter test sends every one of them to the shorthand parser, which finds no command it
+    /// recognises and yields identity. That silently discarded the whole SVG transform syntax, so
+    /// check for a function call first: shorthand never has a name followed by <c>(</c>.
+    /// </remarks>
+    public static bool IsShorthand(string transformStr)
+    {
+        var str = transformStr.Trim();
+        return !SvgFunctionDetectorRegex().IsMatch(str) && ShorthandDetectorRegex().IsMatch(str);
+    }
 
     private static void ApplyShorthandToMatrix(string str, SnapMatrix matrix, SnapBBox? bbox)
     {
@@ -235,6 +248,9 @@ public static partial class SnapTransformParser
 
     [GeneratedRegex(@"^[rstmRSTM]", RegexOptions.Compiled)]
     private static partial Regex ShorthandDetectorRegex();
+
+    [GeneratedRegex(@"^\s*(matrix|translate|scale|rotate|skewX|skewY)\s*\(", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex SvgFunctionDetectorRegex();
 
     [GeneratedRegex(@"([rstmRSTM])\s*([-\d.,eE\s]+)", RegexOptions.Compiled)]
     private static partial Regex ShorthandCommandRegex();

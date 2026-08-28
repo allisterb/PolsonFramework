@@ -25,6 +25,49 @@ public class LogoDesignToolkit
     #endregion
 
     #region Point and Bounding Helpers
+    /// <summary>
+    /// WCAG relative luminance of a colour, for contrast decisions.
+    /// </summary>
+    private static float RelativeLuminance(SKColor c)
+    {
+        static float Channel(byte v)
+        {
+            var s = v / 255f;
+            return s <= 0.03928f ? s / 12.92f : MathF.Pow((s + 0.055f) / 1.055f, 2.4f);
+        }
+
+        return 0.2126f * Channel(c.Red) + 0.7152f * Channel(c.Green) + 0.0722f * Channel(c.Blue);
+    }
+
+    /// <summary>WCAG contrast ratio between two colours, from 1:1 to 21:1.</summary>
+    private static float ContrastRatio(SKColor a, SKColor b)
+    {
+        var la = RelativeLuminance(a);
+        var lb = RelativeLuminance(b);
+        var (hi, lo) = la >= lb ? (la, lb) : (lb, la);
+        return (hi + 0.05f) / (lo + 0.05f);
+    }
+
+    /// <summary>
+    /// Picks the ground that a mark in <paramref name="markColor"/> will actually read against —
+    /// whichever of the brand's dark or light colour contrasts more, falling back to plain black or
+    /// white when neither clears the 3:1 floor for graphical objects.
+    /// </summary>
+    private static string GroundFor(string markColor, string darkCol, string lightCol)
+    {
+        var mark = SkiaColorParser.Parse(markColor);
+        var dark = SkiaColorParser.Parse(darkCol);
+        var light = SkiaColorParser.Parse(lightCol);
+
+        var againstDark = ContrastRatio(mark, dark);
+        var againstLight = ContrastRatio(mark, light);
+        var best = againstDark >= againstLight ? (Ratio: againstDark, Color: darkCol) : (Ratio: againstLight, Color: lightCol);
+
+        if (best.Ratio >= 3f) return best.Color;
+
+        return ContrastRatio(mark, SKColors.White) >= ContrastRatio(mark, SKColors.Black) ? "#ffffff" : "#000000";
+    }
+
     public static object? GetProp(object? obj, string key)
     {
         if (obj == null) return null;
@@ -1040,8 +1083,13 @@ public class LogoDesignToolkit
 
         if (norm.Contains("tri") || norm.Contains("apex"))
         {
-            // Center of mass sits lower/higher depending on orientation
-            return ToDict(new Point2D(rect.X + rect.Width * 0.5f, rect.Y + rect.Height * 0.58f));
+            // A placement target, not a centroid. An apex-up triangle carries its mass low — its
+            // centroid sits around 0.58–0.67 of the height — which is exactly why it reads
+            // bottom-heavy when centred geometrically, so the correction is to sit it *higher*
+            // than centre, not lower. Returning the centroid here inverted the call: used as the
+            // placement it names, it pushed a triangular mark down and made the imbalance worse.
+            // The offset is larger than the general case because the effect is stronger.
+            return ToDict(new Point2D(rect.X + rect.Width * 0.5f, rect.Y + rect.Height * 0.44f));
         }
 
         if (norm.Contains("arrow") || norm.Contains("play"))
@@ -1215,9 +1263,15 @@ public class LogoDesignToolkit
         var heroX = 40f;
         var heroY = 130f;
 
+        // The mark is painted by the caller's callback, almost always in primaryColor, so the ground
+        // has to be chosen against that rather than fixed to darkColor: a dark primary on a dark
+        // ground came out around 1.3:1, well under the 3:1 floor for graphical objects, and the mark
+        // was effectively invisible. Most identity palettes have a dark primary.
+        var heroGround = GroundFor(primary, darkCol, lightCol);
+
         DrawSquircle(ctx, heroX, heroY, heroBoxSize, heroBoxSize, new Dictionary<string, object?>
         {
-            ["fill"] = darkCol,
+            ["fill"] = heroGround,
             ["exponent"] = 4.5f
         });
 

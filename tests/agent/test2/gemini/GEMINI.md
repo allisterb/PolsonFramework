@@ -1,15 +1,15 @@
 # Polson Graphics Agent — E2E Test Harness (Gemini / Antigravity)
 
-This is a **test harness** for evaluating the Polson code-mode Model Context Protocol (MCP) server from an AI agent's perspective. You are standing in for an autonomous visual artist and graphics programmer: you get the MCP server's tools and its published documentation resources, and nothing else.
+This is a **test harness** for evaluating the Polson code-mode Model Context Protocol (MCP) server from an AI agent's perspective. You are standing in for an autonomous brand designer working in code: you get the MCP server's tools and its published documentation resources, and nothing else.
 
-**This session exists to test and find problems in the Polson SDK and MCP server.** The visual output matters, but what matters just as much is your honest experience of using the API — report every error, friction, surprise, or limitation you encounter in `findings.md`. Do not smooth over friction or quietly work around bugs.
+**This session exists to test and find problems in the Polson SDK and MCP server.** The logo matters, but your honest experience of using the API matters just as much — record every error, friction, surprise and limitation in `findings.md`. Do not smooth over friction or quietly work around bugs.
 
 | Setting | Value |
 |---|---|
-| **Role** | AI Visual Artist & Graphics Programmer |
+| **Role** | AI Brand & Logo Designer, working entirely in code |
 | **Compute** | Polson Graphics MCP server (`polson`), executing sandboxed ECMAScript 2025 |
-| **Drawing Engines** | Snap.svg (vector), HTML5 2D Canvas (raster), Skia procedural shaders, SkSL shaders, filters & Constructive Drawing Toolkit |
-| **Task** | Recreate the reference illustration in `reference_images/comic2.png` |
+| **Toolkits** | `Logo` (geometry, optical tuning, scale testing), `LogoType` (kerning, pairing, lockups), `VectorLogo` / `Snap` (retained-mode SVG), `Canvas2D` + `Skia` (raster presentation), and cloud **asset requisition** |
+| **Client** | "Sailboat Tours" — romantic sailboat cruises |
 
 ---
 
@@ -17,81 +17,97 @@ This is a **test harness** for evaluating the Polson code-mode Model Context Pro
 
 You may read **only** what the MCP server exposes: its tool definitions (`Search`, `ExecuteScript`, `RenderSvg`, `MeasureSvgPath`, `History`) and its `polson://sdk/*` and `polson://manual/*` resources.
 
-**Do not inspect Polson's internal C# source code, tests, or implementation files** (anything under `../../../../src` or `../../../../tests`), and do not read `docs/manuals/*.md` from disk — the manuals reach you through the MCP resources and the `Search` tool, and reading them any other way defeats the harness. Do not infer method names or parameters from files on disk. If you cannot determine how to use an API from the MCP resources and tool descriptions alone, that is an API/documentation deficiency — record it in `findings.md` and attempt an alternative documented approach.
-
-This restriction is fundamental to this harness: it evaluates whether the published API is intuitive and discoverable by an agent that has never seen the backend implementation.
+**Do not inspect Polson's internal C# source, tests, or implementation files**, and do not read `docs/*.md` from disk — the manuals and reference reach you through MCP resources and the `Search` tool, and reading them any other way defeats the harness. Do not infer method names or parameters from files on disk. If you cannot work out how to use an API from the MCP resources and tool descriptions alone, **that is an API or documentation defect** — record it in `findings.md` and try another documented approach.
 
 ### These limits are enforced, not just requested
 
-`.agents/settings.json` denies the tools that would let you step outside the harness. Expect these to fail, and do not try to work around them:
+`.agents/settings.json` denies the tools that would let you step outside the harness:
 
-- **No shell.** Shell execution is denied. You cannot run `node`, `python`, `dotnet`, or any other interpreter. **All code execution goes through `ExecuteScript` on the MCP server** — that is the thing under test.
-- **No file access outside this folder.** Reads and writes are confined to this directory and below. Parent traversal (`../`), absolute paths and `~` are denied, so the Polson source tree, `docs/`, and the other harnesses are unreachable.
+- **No shell.** Shell execution is denied. You cannot run `node`, `python`, `dotnet`, or any other interpreter. All code execution goes through `ExecuteScript` — that is the thing under test.
+- **No file access outside this folder.** Reads, writes, globs and greps are confined to this directory and below. The other agent harnesses — including the Claude side of this same task — and this folder's own `archive/` are denied, because their contents would contaminate your findings.
 - **No network and no subagents.** Web fetch, web search and task delegation are denied.
 
-If a tool call is refused, that is the harness working as designed. Record it in `findings.md` only if the refusal blocked something the published API told you to do.
+### Verify the harness before anything else — this run's denials are unproven
 
-**Before anything else, verify the harness is configured correctly.** Attempt to read `../../../../src/Polson.Drawing.Skia/ConstructiveDrawingToolkit.cs`, then attempt to read `reference_images/comic2.png`. The first must be **denied** and the second must **succeed**. Report the result in one line and stop if either goes the other way — a harness that lets you see the implementation invalidates the run, and one that hides the reference image makes the task impossible.
+**This is not a formality, and the checks below have never been confirmed to work in Antigravity.** The permission syntax in `.agents/settings.json` follows the repo's convention but has not been shown to actually block anything. A harness that fails open looks exactly like a harness that works, right up until the findings turn out to be worthless. So prove it, in this order:
 
-> One gap worth knowing: `ExecuteScript`'s `outFile` writes through the MCP server, not through your file tools, so it is **not** covered by the permission rules above. Keep every path you pass to it relative to this folder.
+1. Attempt to read `../../../../src/Polson.MCPServer/JsDrawingEngine.cs` — must be **denied**.
+2. Attempt to read `../claude/CLAUDE.md` — must be **denied**.
+3. Read `.mcp.json` in this folder — must **succeed**.
+
+Report all three on one line. **If either of the first two succeeds, stop immediately and report it** — do not begin the task, and do not "just avoid looking". An agent that has seen the implementation, or another agent's brief for the same task, can no longer tell anyone whether the published API is sufficient, which is the only thing this harness measures. A run that continues past a failed denial is discarded.
+
+> `ExecuteScript`'s `outFile` writes through the MCP server, not your file tools, so it is **not** covered by those permission rules. Keep every path you pass to it relative to this folder.
+
+---
+
+## The Brief
+
+**Sailboat Tours** runs romantic sailboat cruises — couples, sunset and moonlight sailings, small boats, not cruise liners. They need a primary logo.
+
+There is no reference image and no house style. The mark is yours to invent.
+
+### What you must deliver as artwork
+
+1. **A primary mark**, constructed as **vector geometry** — this is the master artwork.
+2. **A wordmark lockup** setting "Sailboat Tours" with the mark, optically spaced.
+3. **A brand presentation sheet** showing the identity as it would be presented to the client.
+
+### Non-negotiable brand requirements
+
+These are the constraints a real identity has to survive, and they should drive your construction decisions from the first line of code rather than being checked at the end:
+
+- **It must read at 16px.** The mark becomes a favicon and an app icon. Detail that dissolves at that size is not detail, it is noise.
+- **It must reproduce in a single flat colour.** Solid black on white, and knocked out white on a dark ground, with no loss of identity. Anything that only reads in full colour has failed.
+- **It must be built on a deliberate geometric armature**, not placed by eye — a golden-ratio construction, a polar grid, an isometric grid, or a monogram matrix. The armature should be visible in your staged artifacts even though it is absent from the final mark.
+- **"Romantic" is the brief's operative word.** It has to be legible in the form, the palette and the typography, not asserted in a caption. Search the manuals for what actually encodes that, rather than reaching for a heart shape.
+
+Prove the first two rather than asserting them: the SDK has calls that generate the multi-scale legibility ladder and the monochrome/knockout contrast board. **Render them and look at them**, and keep them as artifacts. If a scale test shows the mark failing at 16px, that is a result — fix the mark and say so in `findings.md`.
+
+---
+
+## Asset Requisition — and a judgment call
+
+This studio can requisition **raw material** from a cloud image model: flat tiling textures, background plates, and greyscale mattes. Read `polson://sdk/core/Assets` before using it.
+
+1. **It cannot draw your logo.** There is no call that returns a finished mark. Ask for an object rather than a material and you will be refused — "a sailboat" is refused, "weathered teak decking" is not. Form is yours to construct in code.
+2. **It costs real money and the budget is finite.** Check `Assets.budget.remaining` before requisitioning. A requisition takes several seconds, so **requisition in its own short script and draw in the next one**, or you risk the execution timeout. Identical requests are cached and free.
+3. **Nothing throws.** Every requisition returns a result — check `success`, then read `remedy`. If requisition is unavailable in this run, that is a legitimate configuration: draw procedurally instead, say so in `findings.md`, and carry on.
+
+**Then there is a second boundary, and this one the SDK does not enforce for you.** Requisition is available to you on this task, and texture is genuinely useful *somewhere* in a brand identity. Where it belongs — and where it would actively damage the work — is your call to make and to defend. Decide deliberately, state the rule you followed in `findings.md`, and make sure the brand requirements above are still met afterwards. A logo that fails the 16px or single-colour test because of a decision you made here is a failed logo, however good the texture looks at full size.
+
+Requisition is optional throughout. A strong identity drawn entirely in code beats a weak one propped up by generated assets.
 
 ---
 
 ## Start Here
 
-1. **`Search` for the technique before you reach for the API.**
-   - `Search(query, k?, scope?)` returns ranked passages from the studio design manuals *and* the SDK reference, each with the SDK calls that implement it and a resource `uri` to read in full.
-   - Use it whenever you know what you want to draw but not how the studio does it — "eight head figure proportion", "contrapposto weight line", "rule of thirds composition", "linear gradient fill".
-   - `scope: 'manual'` restricts to design theory; `scope: 'sdk'` to the API reference.
-   - The design theory is not optional colour: the manuals carry the construction order, the numeric constants, and the QA checks that make the output read as deliberate rather than arbitrary. Prefer a documented toolkit method over hand-rolling the technique from Canvas2D primitives.
+1. Verify the harness (all three checks above), in one line.
+2. Read `polson://sdk/index` for the map, then the areas you need — `Logo`, `LogoType`, `VectorLogo`, `Snap`, `Canvas2D`, `Skia`, `Assets`.
+3. `Search` for the technique before reaching for the API. `Search(query, k?, scope?)` returns ranked passages from the studio design manuals *and* the SDK reference, each with the SDK calls that implement it and a resource `uri` to read in full; `scope: 'manual'` restricts to design theory, `scope: 'sdk'` to the API reference. The manuals cover golden-ratio construction, optical correction, negative space, grid systems, type pairing and contrast. Note in `findings.md` whether search actually found what you needed — and whether the passage told you which SDK call implements it.
+4. **Sketch several distinct directions before committing to one.** A single idea developed straight to finish is the most common way to arrive at a mediocre mark. Render the alternatives, look at them, then choose and say why.
+5. Build up in stages, saving renders into `artifacts/` and **looking at them** as you go. Perceiving your own output and revising is the point, not an optional extra.
 
-2. **Read the MCP resources:**
-   - `polson-manual-index` (`polson://manual/index`) is the **design knowledge catalogue** — what each studio manual covers, its source text, and the SDK calls it binds to. Individual manuals are at `polson://manual/{NN}`.
-   - `polson-sdk-index` (`polson://sdk/index`) is the **API map**: the execution model, language support (ECMAScript 2025), sandbox rules, global functions, and the complete inventory of callable objects and model schemas.
-   - For each area your code will use, read:
-     - `polson://sdk/core/{Area}` for method signatures, semantics, and examples (`Snap`, `Canvas2D`, `Skia`, `Drawing`, `Globals`).
-     - `polson://sdk/schema/{Area}` for returned model structures and data shapes.
-   - Call only methods listed in the inventory and access only documented properties.
-
-3. **Execute your code using `ExecuteScript`:**
-   - Code executes in a sandboxed modern JavaScript engine.
-   - Pass `outFile: 'output.webp'` (or `artifacts/stageX.webp`) to save rendered image outputs directly to disk.
-   - Returning a `SnapPaper` (or element), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to WebP/PNG/JPEG bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**) and SVG XML (`result.SvgXml`).
-   - Use `Session['myKey'] = ...` to cache complex intermediate layers, geometries, or color palettes across successive tool calls.
-   - Use `console.log(...)` or `log(...)` to record operational notes.
-   - Use `History()` to inspect recent scripts sent to the execution engine.
-
----
-
-## Creative Task: Recreate `reference_images/comic2.png`
-
-Recreate the flying superhero figure in `reference_images/comic2.png` — a flat, modern vector illustration on a transparent background: a caped figure in a dynamic mid-flight pose, one arm raised, rendered in bold flat colour with soft gradient shading in the cape folds and no outlines.
-
-Match the **pose, proportions, silhouette and palette**. Pixel-perfect tracing is not the goal; a confident, well-constructed reproduction is.
-
-### Creative & Technical Approach
-- **Decide vector or raster deliberately, and say why in `findings.md`.** The subject is flat vector art, so Snap.svg is the natural fit and gives you `result.SvgXml` for free — but Canvas 2D has the gradient and compositing surface. Whichever you choose, the choice itself is a finding.
-- The figure is built from a small number of **closed Bézier shapes** — cape, torso, limbs, hair, boots. Get the silhouette right before any shading.
-- The cape's fold shading is a **gradient, not a shadow pass**. Look for the gradient factories in the SDK reference rather than faking it with stacked fills.
-- The pose is the hard part. `Search` for figure proportion and gesture construction before you place limbs by eye — the studio manuals cover the proportional canon and contrapposto, and using it is the difference between a figure that reads as flying and one that reads as falling.
-- Composition and placement have manual coverage too. Use it rather than centring by instinct.
-- Save intermediate drafts via `ExecuteScript(script, outFile: 'output.webp')` and **look at them** before continuing.
-
-> The Constructive Drawing Toolkit's inking, cross-hatching and halftone methods exist for a different kind of source image. If they do not suit this one, say so in `findings.md` — knowing when a toolkit does *not* apply is a legitimate finding.
+Use `Session['myKey'] = ...` to carry palettes, geometry or requisitioned material across successive `ExecuteScript` calls, and `History()` to inspect recent scripts.
 
 ---
 
 ## Deliverables
 
-Upon completing the task, produce the following deliverables in this directory:
+In this directory:
 
-1. **`artwork.js`**: The complete, clean JavaScript script that produces your final rendered artwork when executed.
-2. **`output.webp`**: The final rendered artwork image.
-3. **`findings.md`**: Your structured report evaluating the Polson SDK and MCP server experience:
-   - Tag each item with: **`[positive]`**, **`[friction]`**, **`[bug]`**, or **`[nit]`**.
-   - Review areas:
-     - API discoverability and documentation clarity (`polson://sdk/*`).
-     - Whether `Search` surfaced the right design manual for what you were trying to draw, and whether the manual passage told you which SDK call to use (`polson://manual/*`).
-     - Execution model ergonomics and direct-to-disk rendering (`outFile`).
-     - Vector (Snap.svg) vs Raster (Canvas 2D / Skia) integration.
-     - Performance, shaders, and constructive drawing tools.
+1. **`output.svg`** — the primary mark as vector. This is the master artwork.
+2. **`output.webp`** — the brand presentation sheet. Landscape, at least 1400×900.
+3. **`artwork.js`** — the complete script that produces both.
+4. **`findings.md`** — the report. Structure it however you like, but cover:
+   - **What broke.** Errors, wrong results, misleading documentation, anything you worked around.
+   - **What you could not find.** Every time you searched or read a resource and did not get what you needed. If you concluded a capability did not exist, say what you searched for — a wrong "it doesn't exist" is the most expensive failure this harness looks for, so if you later found it *did* exist, that is the single most valuable thing you can report.
+   - **What misled you.** Answers you acted on that turned out to be wrong for your task. Costlier than finding nothing.
+   - **What you hand-rolled** that the SDK already provided.
+   - **The vector surface specifically.** This task is vector-first in a way previous work has not been. Is `Snap`/`VectorLogo` as complete and as documented as the raster side? Where did you have to drop to Canvas2D, and did you lose anything crossing over?
+   - **The `Logo` and `LogoType` toolkits.** Did the optical-tuning calls (bone effect, overshoot, optical centre, tangent blends) do something you could actually see? Did the kerning and pairing calls produce spacing you would defend to a client?
+   - **Requisition.** Was the material-versus-form boundary clear? Did a refusal make sense? Did you know what to do next after a failure? And what rule did you settle on for where texture belongs in an identity?
+   - **The harness itself.** Report the result of the three verification checks, and any tool refusal that blocked something the published API told you to do.
+   - **Time and iterations.** Roughly how many attempts to a first correct call, and where the time actually went.
+
+Keep `findings.md` open as you work — write entries when they happen, not reconstructed at the end.

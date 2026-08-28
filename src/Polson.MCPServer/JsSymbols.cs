@@ -82,6 +82,7 @@ public static class JsSurface
         new("Skia.PathEffect", typeof(SkiaPathEffectApi), "Skia", false),
         new("Skia.Image", typeof(SkiaImageApi), "Skia", false),
         new("Skia.Bitmap", typeof(SkiaBitmapFactoryApi), "Skia", false),
+        new("Skia.Font", typeof(SkiaFontApi), "Skia", false),
         new("bitmap", typeof(SkiaBitmapWrapper), "Skia", true),
         new("imageData", typeof(ImageData), "Skia", true),
 
@@ -139,6 +140,7 @@ public static class JsSurface
             ["paper.document"] = "raw Svg.NET document; not part of the JS surface",
             ["element.node"] = "raw Svg.NET node; not part of the JS surface",
             ["canvas.skCanvas"] = "raw SkiaSharp canvas; not part of the JS surface",
+            ["canvas.skBitmap"] = "raw SKBitmap behind canvas.bitmap; not part of the JS surface",
             ["path.path"] = "raw SkiaSharp path behind a CanvasPath; not part of the JS surface",
             ["bitmap.bitmap"] = "raw SKBitmap; not part of the JS surface",
             ["gradient.shader"] = "raw SKShader; not part of the JS surface",

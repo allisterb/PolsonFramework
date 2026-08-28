@@ -18,8 +18,8 @@ public class SkiaCanvas : IDisposable
         Height = Math.Max(1, height);
 
         var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
-        Bitmap = new SKBitmap(info);
-        SkCanvas = new SKCanvas(Bitmap);
+        SkBitmap = new SKBitmap(info);
+        SkCanvas = new SKCanvas(SkBitmap);
         SkCanvas.Clear(SKColors.Transparent);
     }
     #endregion
@@ -28,8 +28,20 @@ public class SkiaCanvas : IDisposable
 
     public int Width { get; }
     public int Height { get; }
-    public SKBitmap Bitmap { get; }
+    public SKBitmap SkBitmap { get; }
     public SKCanvas SkCanvas { get; }
+
+    /// <summary>
+    /// The canvas's live backing bitmap, unlike <see cref="ToBitmap"/> which copies.
+    /// </summary>
+    /// <remarks>
+    /// Wraps <see cref="SkBitmap"/> rather than returning it. Handing a script the raw
+    /// <see cref="SKBitmap"/> put a SkiaSharp type on the JS surface, so <c>canvas.bitmap.getPixel()</c>
+    /// reached SkiaSharp's own method and returned an <c>SKColor</c> struct — an object rather than a
+    /// string, printing as <c>#AARRGGBB</c> instead of the documented <c>#RRGGBBAA</c> and never equal
+    /// to anything under <c>===</c>. The wrapper is cached so the identity stays stable across reads.
+    /// </remarks>
+    public SkiaBitmapWrapper Bitmap => _liveBitmap ??= new SkiaBitmapWrapper(SkBitmap);
     #endregion
 
     #region Methods
@@ -49,13 +61,13 @@ public class SkiaCanvas : IDisposable
     }
 
     public SkiaBitmapWrapper ToBitmap() =>
-        new(Bitmap.Copy());
+        new(SkBitmap.Copy());
 
     public ImageData ToImageData() =>
         GetContext("2d").GetImageData(0, 0, Width, Height);
 
     public byte[] ToImageBytes(string format = "webp", int quality = 85) =>
-        SkiaImageEncoder.Encode(Bitmap, format, quality);
+        SkiaImageEncoder.Encode(SkBitmap, format, quality);
 
     public string ToDataUri(string format = "webp", int quality = 85)
     {
@@ -69,12 +81,13 @@ public class SkiaCanvas : IDisposable
     public void Dispose()
     {
         SkCanvas.Dispose();
-        Bitmap.Dispose();
+        SkBitmap.Dispose();
         GC.SuppressFinalize(this);
     }
     #endregion
 
     #region Fields
     private CanvasRenderingContext2D? _context;
+    private SkiaBitmapWrapper? _liveBitmap;
     #endregion
 }

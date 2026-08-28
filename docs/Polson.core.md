@@ -314,9 +314,12 @@ Segment methods mirror the context's own path construction and take the same arg
 - `ctx.sCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number)` — CSI grammar alias for `bezierCurveTo` (reversing S-curve).
 - `ctx.quadraticCurveTo(cpx: number, cpy: number, x: number, y: number)` — Adds a quadratic Bézier curve segment.
 - `ctx.cCurveTo(cpx: number, cpy: number, x: number, y: number)` — CSI grammar alias for `quadraticCurveTo` (single-direction C-curve).
-- `ctx.fill(path?: CanvasPath)` — Fills the current or specified `CanvasPath`.
+- `ctx.fill(path?: CanvasPath, fillRule?: 'nonzero' | 'evenodd')` — Fills the current or specified `CanvasPath`. Either argument may be given alone, so `ctx.fill('evenodd')` and `ctx.fill(path, 'evenodd')` both work.
 - `ctx.stroke(path?: CanvasPath)` — Strokes the current or specified `CanvasPath`.
-- `ctx.clip(path?: CanvasPath)` — Intersects the clipping region with the current or specified path.
+- `ctx.clip(path?: CanvasPath, fillRule?: 'nonzero' | 'evenodd')` — Intersects the clipping region with the current or specified path. Takes the same fill-rule argument as `fill`.
+
+> [!TIP]
+> `'evenodd'` is how you cut a **counter** — the enclosed hole in a mark or a letterform — as real geometry, by adding the inner sub-path to the same path and filling once. The alternative, laying a background-coloured shape on top, looks identical on a white ground and fails everywhere else: over a photograph, in a one-colour knockout, or exported as a single vector path. Anything that has to survive a monochrome test wants the real hole.
 
 ### State & Transformations
 - `ctx.save()` — Pushes current drawing state onto the state stack.
@@ -345,7 +348,7 @@ Segment methods mirror the context's own path construction and take the same arg
 - `ctx.pathEffect` — Path effect (e.g. `Skia.PathEffect.corner(10)` or `Skia.PathEffect.dash([10, 5])`).
 
 ### Typography
-- `ctx.font` — Font specification string: e.g. `"bold 24px Arial"`, `"italic 16px 'Times New Roman'"`.
+- `ctx.font` — Font specification string: e.g. `"bold 24px Arial"`, `"italic 16px Georgia"`. An unavailable family is **silently substituted**, so confirm it with `Skia.Font.has(...)` before relying on it.
 - `ctx.textAlign` — Alignment: `"left"`, `"center"`, `"right"`, `"start"`, `"end"`.
 - `ctx.textBaseline` — Baseline: `"top"`, `"middle"`, `"bottom"`, `"alphabetic"`, `"hanging"`.
 - `ctx.fillText(text: string, x: number, y: number, maxWidth?: number)` — Draws filled text (supports multi-line strings with `\n`).
@@ -462,6 +465,20 @@ ctx.fillRect(0, 0, 800, 600);
 - `Skia.Image.fromBytes(bytes: byte[])` → `SkiaBitmapWrapper` — Decodes raw byte buffer.
 - `Skia.Bitmap.create(width: number, height: number)` → `SkiaBitmapWrapper` — Allocates a blank editable bitmap.
 
+## `Skia.Font`
+
+Which typefaces this machine can actually render. **Check before you commit to a typeface.** Skia substitutes a default face for a family it does not have — silently, with no error and no signal — so `ctx.font = '40px Didot'` renders and measures as something else entirely, and a wordmark can end up set in a face you never chose.
+
+- `Skia.Font.families()` → `string[]` — Every installed family, sorted.
+- `Skia.Font.has(family: string)` → `boolean` — Whether `family` resolves to itself rather than a substitute.
+- `Skia.Font.resolve(family: string)` → `string` — The family that would actually be used. When it differs from what you asked for, the request fell back.
+
+```javascript
+const wanted = ['Didot', 'Bodoni MT', 'Playfair Display', 'Garamond', 'Georgia'];
+const usable = wanted.filter(f => Skia.Font.has(f));
+log(`usable serifs: ${usable.join(', ')}`);   // pick from these, not from what you hoped for
+```
+
 ## `SkiaBitmapWrapper`
 
 - `bitmap.width` → `number` — Width in pixels.
@@ -470,7 +487,7 @@ ctx.fillRect(0, 0, 800, 600);
 - `bitmap.resize(width: number, height: number, quality?: string)` → `SkiaBitmapWrapper` — Resamples bitmap (`"linear"`, `"nearest"`).
 - `bitmap.rotate(angleDeg: number)` → `SkiaBitmapWrapper` — Rotates bitmap by degrees.
 - `bitmap.flip(direction?: string)` → `SkiaBitmapWrapper` — Flips bitmap (`"horizontal"`, `"vertical"`, `"both"`).
-- `bitmap.getPixel(x: number, y: number)` → `string` — Returns hex color `"#RRGGBBAA"`. **This is how you verify a render.** Looking at an image tells you a layer is "too bright"; reading back a pixel tells you whether it is the colour you asked for, the alpha you asked for, or drawn at all — three very different problems that look identical on screen. Use `canvas.bitmap` (live) or `canvas.toBitmap()` (a copy) to get one from a canvas.
+- `bitmap.getPixel(x: number, y: number)` → `string` — Returns hex color `"#RRGGBBAA"`. **This is how you verify a render.** Looking at an image tells you a layer is "too bright"; reading back a pixel tells you whether it is the colour you asked for, the alpha you asked for, or drawn at all — three very different problems that look identical on screen. Use `canvas.bitmap` (live) or `canvas.toBitmap()` (a copy) to get one from a canvas. The returned value is an ordinary string, so `getPixel(x, y) === '#3366CCFF'` is the way to assert a colour — note the alpha is the **last** pair, and hex digits come back uppercase.
 - `bitmap.setPixel(x: number, y: number, color: string)` — Sets pixel color.
 - `bitmap.applyFilter(filter: SKImageFilter)` → `SkiaBitmapWrapper` — Returns new bitmap with image filter applied.
 - `bitmap.applyColorFilter(filter: SKColorFilter)` → `SkiaBitmapWrapper` — Returns new bitmap with color filter applied.
@@ -588,7 +605,7 @@ Also accessible via `Skia.Logo`.
 ## Optical Tuning & Perception Fixes
 - `Logo.correctBoneEffect(p1: Point, p2: Point, strokeWidth: number, pinchCorrectionFactor?: number)` → `Point[]` — Computes 6-point outward parabolic polygon correcting optical dumbbell/bone narrowing illusion in connecting bars.
 - `Logo.computeOvershoot(baseHeight: number, shape?: 'circle' | 'triangle' | 'arch')` → `number` — Computes $1.5\%–3.0\%$ vertical overshoot offset for circular and pointed apexes.
-- `Logo.computeOpticalCenter(pointsOrBounds: Point[] | Rect, shapeType?: 'triangle' | 'arrow' | 'general')` → `Point` — Computes visual center of gravity ($Y \approx 42\%–48\%$).
+- `Logo.computeOpticalCenter(pointsOrBounds: Point[] | Rect, shapeType?: 'triangle' | 'arrow' | 'general')` → `Point` — Where to **place** the mark so it reads as centred, not where its mass currently sits. Returns a point above the geometric centre ($Y \approx 42\%–48\%$), because a shape centred by measurement looks low. `'triangle'` corrects hardest ($44\%$) since a tapering mark is the most bottom-heavy; `'arrow'` corrects on the $X$ axis instead, for a shape pointing right.
 
 ## Scale Stress-Testing & Brand Sheets
 - `Logo.generateFaviconScaleTest(ctx: CanvasRenderingContext2D, drawMarkFn: (ctx: CanvasRenderingContext2D, size: number) => void, options?: object)` — Side-by-side multi-scale legibility ladder ($16\text{px}, 24\text{px}, 32\text{px}, 48\text{px}, 64\text{px}, 128\text{px}, 256\text{px}$).
@@ -605,11 +622,11 @@ Retained-mode SVG vector logo construction methods available directly on `SnapPa
 - `paper.squircle(x: number, y: number, width: number, height: number, exponent?: number)` → `SnapPath` — Appends a Lamé superellipse squircle path element to the paper.
 - `paper.goldenSpiral(startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `SnapPath` — Appends a logarithmic golden spiral path ($r = a \cdot e^{b\theta}$) to the paper.
 - `paper.emblemBadge(cx: number, cy: number, width: number, height: number, style?: 'shield' | 'hexagon' | 'diamond' | 'scallop' | 'circle')` → `SnapPath` — Appends a geometric badge outline to the paper.
-- `paper.goldenCircles(cx: number, cy: number, baseRadius: number, count?: number)` → `SnapGroup` — Appends a group containing $\Phi$-scaled concentric circles.
-- `paper.isometricGrid(width: number, height: number, spacing?: number)` → `SnapGroup` — Appends a group containing 30°/60° isometric construction grid lines.
-- `paper.polarGrid(cx: number, cy: number, maxRadius: number, ringCount?: number, rayCount?: number)` → `SnapGroup` — Appends a group containing polar concentric rings and radial spokes.
-- `paper.monogramMatrix(x: number, y: number, width: number, height: number, type?: '2x2' | '3x3' | '4x4')` → `SnapGroup` — Appends monogram matrix grid guides and node anchor circles.
-- `paper.clearSpaceGuide(x: number, y: number, width: number, height: number, margin?: number)` → `SnapGroup` — Appends clear space boundary guides and dimension blocks ($X$).
+- `paper.goldenCircles(cx: number, cy: number, baseRadius: number, count?: number, options?: { lineColor?: string, lineWidth?: number, opacity?: number })` → `SnapGroup` — Appends a group containing $\Phi$-scaled concentric circles.
+- `paper.isometricGrid(width: number, height: number, spacing?: number, options?: { lineColor?: string, lineWidth?: number, opacity?: number })` → `SnapGroup` — Appends a group containing 30°/60° isometric construction grid lines.
+- `paper.polarGrid(cx: number, cy: number, maxRadius: number, ringCount?: number, rayCount?: number, options?: { lineColor?: string, lineWidth?: number, opacity?: number })` → `SnapGroup` — Appends a group containing polar concentric rings and radial spokes.
+- `paper.monogramMatrix(x: number, y: number, width: number, height: number, type?: '2x2' | '3x3' | '4x4', options?: { lineColor?: string, lineWidth?: number, opacity?: number, nodeColor?: string })` → `SnapGroup` — Appends monogram matrix grid guides and node anchor circles.
+- `paper.clearSpaceGuide(x: number, y: number, width: number, height: number, margin?: number, options?: { lineColor?: string, lineWidth?: number, innerColor?: string, fill?: string, fillOpacity?: number })` → `SnapGroup` — Appends clear space boundary guides and dimension blocks ($X$).
 - `paper.svg(x: number, y: number, width: number, height: number)` → `SnapElement` — Appends a nested `<svg>` viewport with its own coordinate space.
 - `paper.width` / `paper.height` → `number` — Document dimensions; both are settable.
 
@@ -626,7 +643,7 @@ The same constructions as strings rather than elements, for when you want to com
 
 ## `VectorLogo` Paper Methods
 
-The same constructions as `paper.*` above, but called on the global `VectorLogo` object with the target paper as the **first argument**. Use these when the paper is held in a variable rather than being the receiver; `paper.squircle(...)` and `VectorLogo.squircle(paper, ...)` produce identical elements.
+The same constructions as `paper.*` above, but called on the global `VectorLogo` object with the target paper as the **first argument**. Use these when the paper is held in a variable rather than being the receiver; `paper.squircle(...)` and `VectorLogo.squircle(paper, ...)` produce identical elements, including the trailing `options` argument the armature helpers accept.
 
 - `VectorLogo.squircle(paper: SnapPaper, x: number, y: number, width: number, height: number, exponent?: number)` → `SnapPath` — Appends a Lamé superellipse squircle.
 - `VectorLogo.goldenSpiral(paper: SnapPaper, startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `SnapPath` — Appends a logarithmic golden spiral.
@@ -656,7 +673,10 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 
 ## Optical Kerning & Spacing Mechanics
 - `LogoType.computeOpticalKerning(charLeft: string, charRight: string, fontSize?: number, fontCategory?: string)` → `number` — Computes optimal character spacing in pixels based on glyph boundary silhouettes (straight-to-straight, straight-to-round, round-to-round, diagonal tucking).
-- `LogoType.computeWordmarkTracking(fontSize?: number, isAllCaps?: boolean, role?: 'wordmark' | 'tagline')` → `number` — Returns optical letter-spacing (tight tracking for large display marks, wide tracking $+150\text{‰}–+300\text{‰}$ for all-caps taglines).
+- `LogoType.computeWordmarkTracking(fontSize?: number, isAllCaps?: boolean, role?: 'wordmark' | 'tagline')` → `number` — Optical letter-spacing for a whole run, as a **fraction of an em** — multiply by the font size for pixels. Tight for large display marks ($-20\text{‰}$ to $-50\text{‰}$), wide for all-caps taglines ($+150\text{‰}$ to $+300\text{‰}$).
+
+> [!IMPORTANT]
+> The two spacing calls return **different units**. `computeWordmarkTracking` is an em fraction and scales with the size you apply it at; `computeOpticalKerning` is already in **pixels** at the size you passed it. `tracking * fontSize` is comparable to a kerning value; `tracking` alone is not.
 
 ## Typographic Scale & Font Harmony
 - `LogoType.calculateTypographicScale(baseSize?: number, ratio?: 'goldenRatio' | 'perfectFifth' | 'augmentedFourth' | 'perfectFourth' | 'majorThird' | 'minorThird', stepsDown?: number, stepsUp?: number)` → `object` — Generates harmonic font size ladder (`micro`, `caption`, `body`, `h4`, `h3`, `h2`, `h1`, `display`).
@@ -667,7 +687,7 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 ## Brand Lockups & Letterform Geometry
 - `LogoType.createOgeeCurvePath(x1: number, y1: number, x2: number, y2: number, inflectionT?: number, amplitude?: number)` → `string` — Generates classical Doyald Young $S$-curve cubic Bézier path.
 - `LogoType.createOgeeCurveSKPath(x1: number, y1: number, x2: number, y2: number, inflectionT?: number, amplitude?: number)` → `SKPath` — The same Ogee curve as a Skia path, for filling or stroking on a canvas.
-- `LogoType.drawWordmarkLockup(ctx: CanvasRenderingContext2D, drawMarkFn: Function, brandName: string, tagline?: string, options?: { layout?: 'horizontal' | 'vertical', x?: number, y?: number, markSize?: number, fontSize?: number, taglineSize?: number, primaryColor?: string, taglineColor?: string })` — Renders balanced brand lockup with optical alignment.
+- `LogoType.drawWordmarkLockup(ctx: CanvasRenderingContext2D, drawMarkFn: Function, brandName: string, tagline?: string, options?: { layout?: 'horizontal' | 'vertical', x?: number, y?: number, markSize?: number, fontSize?: number, taglineSize?: number, primaryColor?: string, taglineColor?: string, fontFamily?: string, taglineFontFamily?: string })` — Renders balanced brand lockup with optical alignment. `fontFamily` sets the wordmark's typeface (`taglineFontFamily` follows it unless given separately) — check it with `Skia.Font.has(...)` first, or it will be silently substituted. The tagline is automatically tracked using `computeWordmarkTracking`, so small all-caps taglines get the wide spacing they need.
 - `ctx.drawWordmarkLockup(drawMarkFn, brandName, tagline, options)` — Direct canvas context helper.
 - `ctx.drawOgeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` — Direct canvas context helper.
 - `paper.ogeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` → `SnapPath` — Direct Snap.svg paper helper.

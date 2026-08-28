@@ -677,7 +677,7 @@ public class CanvasRenderingContext2D
 
         var Rect = SKRectI.Create(sx, sy, w, h);
         using var subset = new SKBitmap();
-        if (Canvas.Bitmap.ExtractSubset(subset, Rect) && subset.ColorType == SKColorType.Rgba8888)
+        if (Canvas.SkBitmap.ExtractSubset(subset, Rect) && subset.ColorType == SKColorType.Rgba8888)
         {
             var span = subset.GetPixelSpan();
             for (var y = 0; y < h; y++)
@@ -695,9 +695,9 @@ public class CanvasRenderingContext2D
                 {
                     var srcX = sx + x;
                     var srcY = sy + y;
-                    if (srcX >= 0 && srcX < Canvas.Bitmap.Width && srcY >= 0 && srcY < Canvas.Bitmap.Height)
+                    if (srcX >= 0 && srcX < Canvas.SkBitmap.Width && srcY >= 0 && srcY < Canvas.SkBitmap.Height)
                     {
-                        var color = Canvas.Bitmap.GetPixel(srcX, srcY);
+                        var color = Canvas.SkBitmap.GetPixel(srcX, srcY);
                         var idx = (y * w + x) * 4;
                         imgData.Data[idx + 0] = color.Red;
                         imgData.Data[idx + 1] = color.Green;
@@ -724,11 +724,11 @@ public class CanvasRenderingContext2D
             {
                 var dstX = dx + x;
                 var dstY = dy + y;
-                if (dstX >= 0 && dstX < Canvas.Bitmap.Width && dstY >= 0 && dstY < Canvas.Bitmap.Height)
+                if (dstX >= 0 && dstX < Canvas.SkBitmap.Width && dstY >= 0 && dstY < Canvas.SkBitmap.Height)
                 {
                     var idx = (y * w + x) * 4;
                     var color = new SKColor(data[idx + 0], data[idx + 1], data[idx + 2], data[idx + 3]);
-                    Canvas.Bitmap.SetPixel(dstX, dstY, color);
+                    Canvas.SkBitmap.SetPixel(dstX, dstY, color);
                 }
             }
         }
@@ -743,7 +743,7 @@ public class CanvasRenderingContext2D
     private static SKBitmap? ExtractBitmap(object obj) => obj switch
     {
         SkiaBitmapWrapper bw => bw.Bitmap,
-        SkiaCanvas sc => sc.Bitmap,
+        SkiaCanvas sc => sc.SkBitmap,
         SKBitmap b => b,
         _ => null
     };

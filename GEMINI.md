@@ -126,12 +126,16 @@ All agent logic, coordination protocols, and artifact management must adhere to 
     1. Build the MCP server and CLI launcher to run the .NET MCP server
     2. Write an agent-tester harness to allow the MCP server and drawing APIs to be used by an agent.
  
-### Milestone 4: Python Antigravity SDK Orchestration & PubSub Bus
-*   **Tasks:** Build the Python orchestrator, lifecycle hooks, trigger handlers for "peeking", and the local PubSub message bus.
-        
-### Milestone 5: Cloud RAG Engine, Memory Bank & Multi-Agent Git Setup
+### Milestone 4: Cloud RAG Engine, Memory Bank & Multi-Agent Git Setup
 *   **Tasks:** Integrate Vertex AI RAG tools, Agent Platform Memory Bank, and automate private Git fork initialization and PR handling for the Facilitator agent.
 
+### Milestone 5: Python Antigravity SDK Orchestration & PubSub Bus
+*   **Tasks:** Build the Python orchestrator, lifecycle hooks, trigger handlers for "peeking", and the local PubSub message bus.
+        
+### Milestone 6: Web-based demo site 
+
+### Milestone 7: Static HTML drawing gallery site 
+ 
 ## 5. Agent Roles & Behaviors
 Agents are assigned specific archetypal roles to divide creative labor:
 *   **The Facilitator (Orchestrator):** Monitors the PubSub message bus. Evaluates Pull Requests. Modulates the system between "clamped" (focused refinement) and "unclamped" (wild exploration) regimes to prevent semantic thrashing.
@@ -170,6 +174,7 @@ Agents are assigned specific archetypal roles to divide creative labor:
 - Use camel-case for method and property names. Method and property names should begin with a capital letter.
 - Use camel-case for class fields. Field names should begin with lower-case letters unless they are backing fields for properties which should begin with an underscore.
 - Group members with the same visibility together. The reading order should be public -> internal -> protected -> private.
+- `using` statements should be grouped together at the top of the file and divided into three sections: 1) System namespaces, 2) NuGet package namespaces, and 3) project namespaces. Each section should be separated by a blank line.
 
 ## 10. Project documentation style
 - Avoid verbose documentation on members. Try to be as terse as possible while giving all relevant information about usage. Avoid mentioning other TUI libraries unless it is relevant to the usage of the class or member.

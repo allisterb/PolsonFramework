@@ -164,8 +164,13 @@ public static class SdkDocs
             var trimmed = line.Trim();
             if (trimmed.StartsWith("- `") || trimmed.StartsWith("### `"))
             {
-                var match = Regex.Match(trimmed, @"`([A-Za-z0-9_.]+\([^\)]*\))`");
-                if (match.Success)
+                // Every backticked signature on the line, not just the first: some entries document
+                // two related calls together, and taking only the first silently dropped the other.
+                // The parameter list matches one level of nesting so that a callback parameter —
+                // `drawMarkFn: (ctx, size) => void` — does not terminate the match at its own inner
+                // ')'. Without that, every call taking a callback was missing from the inventory,
+                // which reads to an agent as the call not existing.
+                foreach (Match match in Regex.Matches(trimmed, @"`([A-Za-z0-9_.]+\((?:[^()]|\([^()]*\))*\))`"))
                 {
                     var sig = match.Groups[1].Value;
                     if (!names.Contains(sig, StringComparer.Ordinal)) names.Add(sig);

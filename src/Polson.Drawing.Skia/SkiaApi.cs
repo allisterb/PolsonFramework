@@ -22,6 +22,7 @@ public class SkiaApi
     public SkiaPathEffectApi PathEffect { get; } = new();
     public SkiaImageApi Image { get; } = new();
     public SkiaBitmapFactoryApi Bitmap { get; } = new();
+    public SkiaFontApi Font { get; } = new();
     public ConstructiveDrawingToolkit Drawing { get; } = new();
     public LogoDesignToolkit Logo { get; } = new();
     public LogoTypeToolkit LogoType { get; } = new();
@@ -151,7 +152,7 @@ public class SkiaShaderApi
         var bmp = bitmapObj switch
         {
             SkiaBitmapWrapper bw => bw.Bitmap,
-            SkiaCanvas sc => sc.Bitmap,
+            SkiaCanvas sc => sc.SkBitmap,
             SKBitmap b => b,
             _ => throw new ArgumentException("Invalid bitmap object", nameof(bitmapObj))
         };
@@ -296,7 +297,7 @@ public class SkiaShaderApi
     {
         SKShader s => s,
         SkiaBitmapWrapper bw => SKShader.CreateBitmap(bw.Bitmap, SKShaderTileMode.Clamp, SKShaderTileMode.Clamp),
-        SkiaCanvas sc => SKShader.CreateBitmap(sc.Bitmap, SKShaderTileMode.Clamp, SKShaderTileMode.Clamp),
+        SkiaCanvas sc => SKShader.CreateBitmap(sc.SkBitmap, SKShaderTileMode.Clamp, SKShaderTileMode.Clamp),
         _ => null
     };
 
@@ -490,6 +491,47 @@ public class SkiaColorFilterApi
 /// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
 /// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
 /// </remarks>
+/// <summary>The <c>Skia.Font</c> sub-namespace — which typefaces this machine can actually render.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// <para>
+/// Skia substitutes a default face for a family it does not have, silently and with no signal, so
+/// <c>ctx.font = '40px Didot'</c> renders in something else and measures as something else. Without
+/// a way to enumerate or test, the only way to discover this is to measure text against a control
+/// string — which is what an agent had to do, after choosing a typeface by elimination.
+/// </para>
+/// </remarks>
+public class SkiaFontApi
+{
+    #region Methods
+    /// <summary>Every font family installed on this machine, sorted.</summary>
+    public string[] Families()
+    {
+        using var manager = SKFontManager.CreateDefault();
+        return [.. manager.FontFamilies.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>Whether <paramref name="family"/> resolves to itself rather than a substitute.</summary>
+    public bool Has(string family) =>
+        !string.IsNullOrWhiteSpace(family)
+        && string.Equals(Resolve(family), family.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The family name that would actually be used for <paramref name="family"/>. When it differs
+    /// from what was asked for, the request fell back.
+    /// </summary>
+    public string Resolve(string family)
+    {
+        if (string.IsNullOrWhiteSpace(family)) return SKTypeface.Default.FamilyName;
+
+        using var typeface = SKTypeface.FromFamilyName(family.Trim());
+        return typeface?.FamilyName ?? SKTypeface.Default.FamilyName;
+    }
+    #endregion
+}
+
 public class SkiaPathEffectApi
 {
     #region Methods

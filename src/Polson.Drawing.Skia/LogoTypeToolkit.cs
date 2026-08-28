@@ -60,6 +60,17 @@ public class LogoTypeToolkit
         return 0.02f * fontSize;
     }
 
+    /// <summary>
+    /// Tracking for a whole run, as a <b>fraction of an em</b> — multiply by the font size to get
+    /// pixels. Note that <see cref="ComputeOpticalKerning"/> returns pixels directly; the two are
+    /// different units because one sets a rhythm that scales and the other fixes one junction.
+    /// </summary>
+    /// <remarks>
+    /// Manual 11 §6 puts display wordmarks (≥32px) at −20‰ to −50‰. All-caps sits at the loose end
+    /// of that band rather than outside it: caps need more air than lowercase, but they are still
+    /// display tracking. The earlier caps figures (−15‰, and 0‰ between 28 and 48px) fell outside
+    /// the range this toolkit claims to implement.
+    /// </remarks>
     public float ComputeWordmarkTracking(float fontSize = 36f, bool isAllCaps = false, string role = "wordmark")
     {
         var normRole = (role ?? "wordmark").Trim().ToLowerInvariant();
@@ -70,8 +81,8 @@ public class LogoTypeToolkit
         }
 
         // Large display wordmark: tighter tracking for cohesive silhouette
-        if (fontSize >= 48f) return isAllCaps ? -0.015f : -0.035f;
-        if (fontSize >= 28f) return isAllCaps ? 0.0f : -0.02f;
+        if (fontSize >= 48f) return isAllCaps ? -0.020f : -0.040f;
+        if (fontSize >= 28f) return isAllCaps ? -0.020f : -0.030f;
         return isAllCaps ? 0.08f : 0.0f;
     }
     #endregion
@@ -152,6 +163,33 @@ public class LogoTypeToolkit
         var recommendations = new List<string>();
         string description;
 
+        // An unrecognised category used to fall through to "contrasting" at 90 — a higher score than
+        // any considered verdict returns, so a typo read as a strong recommendation and the score
+        // could not be used to rank candidate pairings, which is the only thing a pairing score is
+        // for. Say so instead, and score it below everything.
+        var unknown = new[] { (cat1, primaryCategory), (cat2, secondaryCategory) }
+            .Where(c => !IsKnownCategory(c.Item1))
+            .Select(c => c.Item2)
+            .ToList();
+
+        if (unknown.Count > 0)
+        {
+            return new Dictionary<string, object?>
+            {
+                ["primaryCategory"] = primaryCategory,
+                ["secondaryCategory"] = secondaryCategory,
+                ["relationship"] = "unknown",
+                ["score"] = 0,
+                ["recognised"] = false,
+                ["description"] = $"Unrecognised type {(unknown.Count == 1 ? "category" : "categories")}: "
+                    + $"'{string.Join("', '", unknown)}'. No pairing judgement was made.",
+                ["recommendations"] = new List<string>
+                {
+                    "Use one of: " + string.Join(", ", KnownCategoryTerms) + ".",
+                },
+            };
+        }
+
         if (cat1 == cat2)
         {
             relationship = "concordant";
@@ -183,9 +221,11 @@ public class LogoTypeToolkit
         }
         else
         {
+            // Both categories are real but this combination has no considered verdict. Score it
+            // below the ones that do, so a ranked comparison still puts a judged pairing first.
             relationship = "contrasting";
-            score = 90;
-            description = "Contrasting display pairing.";
+            score = 65;
+            description = "Contrasting display pairing. No specific guidance for this combination.";
             recommendations.Add("Ensure the secondary font remains neutral and legible at small sizes.");
         }
 
@@ -195,6 +235,7 @@ public class LogoTypeToolkit
             ["secondaryCategory"] = secondaryCategory,
             ["relationship"] = relationship,
             ["score"] = score,
+            ["recognised"] = true,
             ["description"] = description,
             ["recommendations"] = recommendations
         };
@@ -284,6 +325,16 @@ public class LogoTypeToolkit
         var brandFontSize = Convert.ToSingle(LogoDesignToolkit.GetProp(options, "fontSize") ?? 38f, CultureInfo.InvariantCulture);
         var taglineFontSize = Convert.ToSingle(LogoDesignToolkit.GetProp(options, "taglineSize") ?? 12f, CultureInfo.InvariantCulture);
 
+        // The letterform is the whole subject of a logotype toolkit, so it has to be reachable.
+        // Both families defaulted to sans-serif with no way to change them, which for a serif brand
+        // is not a neutral default but the wrong answer.
+        var fontFamily = LogoDesignToolkit.GetProp(options, "fontFamily")?.ToString() ?? "sans-serif";
+        var taglineFamily = LogoDesignToolkit.GetProp(options, "taglineFontFamily")?.ToString() ?? fontFamily;
+
+        // Manual 11 §6: small all-caps taglines want +150‰ to +300‰. The toolkit computes that
+        // figure and its own lockup was not applying it, so the tagline read as cramped small print.
+        var taglineTracking = ComputeWordmarkTracking(taglineFontSize, true, "tagline") * taglineFontSize;
+
         ctx.Save();
 
         if (layout == "vertical" || layout == "stacked")
@@ -302,7 +353,7 @@ public class LogoTypeToolkit
 
             // Wordmark below mark
             ctx.FillStyle = primaryColor;
-            ctx.Font = $"700 {brandFontSize}px sans-serif";
+            ctx.Font = $"700 {brandFontSize}px {fontFamily}";
             ctx.TextAlign = "center";
             ctx.TextBaseline = "top";
             var textY = markY + markSize + 18f;
@@ -312,8 +363,8 @@ public class LogoTypeToolkit
             if (!string.IsNullOrWhiteSpace(tagline))
             {
                 ctx.FillStyle = taglineColor;
-                ctx.Font = $"500 {taglineFontSize}px sans-serif";
-                ctx.FillText(tagline.ToUpperInvariant(), markX + markSize * 0.5f, textY + brandFontSize + 8f);
+                ctx.Font = $"500 {taglineFontSize}px {taglineFamily}";
+                FillTrackedText(ctx, tagline.ToUpperInvariant(), markX + markSize * 0.5f, textY + brandFontSize + 8f, taglineTracking);
             }
         }
         else
@@ -335,7 +386,7 @@ public class LogoTypeToolkit
 
             // Brand Wordmark
             ctx.FillStyle = primaryColor;
-            ctx.Font = $"700 {brandFontSize}px sans-serif";
+            ctx.Font = $"700 {brandFontSize}px {fontFamily}";
             ctx.TextAlign = "left";
             ctx.TextBaseline = string.IsNullOrWhiteSpace(tagline) ? "middle" : "alphabetic";
 
@@ -346,13 +397,66 @@ public class LogoTypeToolkit
             if (!string.IsNullOrWhiteSpace(tagline))
             {
                 ctx.FillStyle = taglineColor;
-                ctx.Font = $"500 {taglineFontSize}px sans-serif";
+                ctx.Font = $"500 {taglineFontSize}px {taglineFamily}";
                 ctx.TextBaseline = "top";
-                ctx.FillText(tagline.ToUpperInvariant(), textStartX + 1f, wordmarkY + 6f);
+                FillTrackedText(ctx, tagline.ToUpperInvariant(), textStartX + 1f, wordmarkY + 6f, taglineTracking);
             }
         }
 
         ctx.Restore();
     }
+    #endregion
+
+    /// <summary>
+    /// Draws text with per-glyph tracking, honouring the context's current <c>textAlign</c>.
+    /// </summary>
+    /// <remarks>
+    /// There is no letter-spacing property on the 2D context, so tracking has to be applied by
+    /// advancing glyph by glyph. Alignment is resolved up front from the tracked total width,
+    /// because drawing each glyph individually would otherwise centre every glyph on the same point.
+    /// </remarks>
+    private static void FillTrackedText(CanvasRenderingContext2D ctx, string text, float x, float y, float tracking)
+    {
+        if (string.IsNullOrEmpty(text) || MathF.Abs(tracking) < 0.01f)
+        {
+            ctx.FillText(text ?? string.Empty, x, y);
+            return;
+        }
+
+        var widths = text.Select(c => Convert.ToSingle(ctx.MeasureText(c.ToString())["width"], CultureInfo.InvariantCulture)).ToArray();
+        var total = widths.Sum() + tracking * (text.Length - 1);
+
+        var align = ctx.TextAlign;
+        var cursor = align switch
+        {
+            "center" => x - total * 0.5f,
+            "right" or "end" => x - total,
+            _ => x,
+        };
+
+        ctx.TextAlign = "left";
+        for (var i = 0; i < text.Length; i++)
+        {
+            ctx.FillText(text[i].ToString(), cursor, y);
+            cursor += widths[i] + tracking;
+        }
+
+        ctx.TextAlign = align;
+    }
+
+    #region Fields
+    /// <summary>
+    /// Type-category vocabulary <see cref="EvaluateFontPairing"/> understands. A category is
+    /// recognised when it contains one of these, so "sans-serif", "geometricSans" and "old style"
+    /// all resolve.
+    /// </summary>
+    static readonly string[] KnownCategoryTerms =
+    [
+        "sans", "serif", "slab", "oldstyle", "old style", "transitional", "modern", "didone",
+        "geometric", "humanist", "grotesque", "script", "display", "mono", "blackletter",
+    ];
+
+    static bool IsKnownCategory(string category) =>
+        KnownCategoryTerms.Any(t => category.Contains(t, StringComparison.Ordinal));
     #endregion
 }

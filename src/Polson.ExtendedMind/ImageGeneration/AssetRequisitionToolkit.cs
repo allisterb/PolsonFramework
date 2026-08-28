@@ -1,6 +1,9 @@
 namespace Polson.ExtendedMind.ImageGeneration;
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -35,7 +38,7 @@ using SkiaSharp;
 /// and is invalidated by any silhouette edit.
 /// </para>
 /// </remarks>
-public class AssetRequisitionToolkit : Runtime
+public partial class AssetRequisitionToolkit : Runtime
 {
     #region Constructors
     public AssetRequisitionToolkit(ImageGenerator? generator, IRequisitionCache cache, AssetBudget budget, string requester = "unknown")
@@ -421,19 +424,44 @@ public class AssetRequisitionToolkit : Runtime
         }
 
         var text = descriptor.ToLowerInvariant();
-        var hits = FormNouns.Where(n => ContainsWord(text, n)).ToList();
 
-        // English compounds put the head noun last, so a form word can legitimately appear as an
-        // attributive modifier: in "ship hull planking" the subject is the planking, and the ship is
-        // only saying which planking. Judge by which kind of noun comes last, not by mere presence.
-        var lastForm = hits.Count == 0 ? -1 : hits.Max(n => LastWordIndex(text, n));
-        var lastSubstance = SubstanceCues.Max(c => LastWordIndex(text, c));
+        // Compare by word position rather than character index, and let a noun match the tail of a
+        // closed compound: "sailboat" is a boat and "limestone" is stone, but a whole-word test sees
+        // neither. Without this the guard missed every compound object it exists to catch.
+        var words = WordRegex().Matches(text).Select(m => m.Value).ToArray();
+        var hits = new List<string>();
+        var lastForm = -1;
+        var lastSubstance = -1;
+
+        for (var i = 0; i < words.Length; i++)
+        {
+            // Substance wins the word. The compound rule is a suffix test, so "surface" ends with
+            // "face" and "sandstone" ends with "stone"; a word already known as a material is not
+            // also an object, and checking that first is what stops "brushed copper surface" from
+            // reading as a request for a face.
+            if (SubstanceCues.Any(c => IsNounMatch(words[i], c)))
+            {
+                lastSubstance = i;
+                continue;
+            }
+
+            var form = FormNouns.FirstOrDefault(n => IsNounMatch(words[i], n));
+            if (form is not null)
+            {
+                hits.Add(form);
+                lastForm = i;
+            }
+        }
+
+        hits = hits.Distinct().ToList();
 
         // "a ship made of oak" puts the material last but is still a request for the ship. When a
         // form noun precedes one of these connectives, the head-noun rule does not apply.
+        // Measured in words, to stay comparable with lastForm / lastSubstance above.
         var connective = Connectives
             .Select(k => text.IndexOf(k, StringComparison.Ordinal))
             .Where(i => i >= 0)
+            .Select(i => WordRegex().Matches(text).Count(m => m.Index < i))
             .DefaultIfEmpty(-1)
             .Max();
 
@@ -470,6 +498,32 @@ public class AssetRequisitionToolkit : Runtime
         }
 
         return new RequisitionVerdict { Class = RequisitionClass.Substance, Reason = "Reads as a material." };
+    }
+
+    /// <summary>
+    /// Whether <paramref name="word"/> is <paramref name="noun"/>, its plural, or a closed compound
+    /// ending in it — "sailboat" is a boat, "sandstone" is stone.
+    /// </summary>
+    /// <remarks>
+    /// The compound rule is a suffix test, so it also catches words that merely end in the same
+    /// letters without being one: "craftsmanship" is not a ship. Those are listed in
+    /// <see cref="CompoundExceptions"/> rather than given a cleverer rule, because the set is small,
+    /// well understood, and an explicit list is inspectable when a descriptor is misjudged.
+    /// </remarks>
+    static bool IsNounMatch(string word, string noun)
+    {
+        if (word == noun || word == noun + "s")
+        {
+            return true;
+        }
+
+        if (word.Length <= noun.Length || CompoundExceptions.Contains(word))
+        {
+            return false;
+        }
+
+        return word.EndsWith(noun, StringComparison.Ordinal)
+            || word.EndsWith(noun + "s", StringComparison.Ordinal);
     }
 
     /// <summary>Index of the last whole-word occurrence of <paramref name="word"/>, or -1.</summary>
@@ -534,6 +588,22 @@ public class AssetRequisitionToolkit : Runtime
 
     static readonly string[] ArticlePrefixes = ["a ", "an ", "the ", "one "];
 
+    /// <summary>
+    /// Words ending in the letters of a form noun without being one. Mostly the abstract
+    /// <c>-ship</c> nouns, which are common in design prose ("fine craftsmanship") and would
+    /// otherwise refuse a perfectly good material request.
+    /// </summary>
+    static readonly HashSet<string> CompoundExceptions = new(StringComparer.Ordinal)
+    {
+        "craftsmanship", "workmanship", "penmanship", "seamanship", "sportsmanship", "showmanship",
+        "friendship", "relationship", "partnership", "membership", "ownership", "leadership",
+        "championship", "apprenticeship", "hardship", "worship", "township",
+        "german", "germanic", "roman", "romanesque", "talisman", "ottoman",
+        // -face words that are not faces. "typeface" matters for a logotype brief.
+        "typeface", "interface", "preface", "boldface", "surface",
+        "silicon", "obscene", "imposter",
+    };
+
     static readonly string[] SubstanceCues =
     [
         "texture", "material", "swatch", "surface", "grain", "finish", "pattern", "weave",
@@ -543,7 +613,24 @@ public class AssetRequisitionToolkit : Runtime
         "wood", "oak", "pine", "planking", "planks", "boards", "bark",
         "paper", "parchment", "sand", "snow", "ice", "water", "cloud", "smoke", "sky",
         "paint", "ink", "enamel", "lacquer", "moss", "lichen", "dirt", "gravel",
+        // Timber and marine surfaces. The head-noun rule can only rescue "teak boat decking" if the
+        // head is recognised as a material, so the vocabulary has to reach as wide as the form list.
+        "teak", "mahogany", "walnut", "birch", "cedar", "ash", "elm", "timber", "veneer", "plywood",
+        "decking", "deck", "grain", "knot", "sawdust", "varnish", "shellac", "tar", "pitch", "oakum",
+        "rope", "cordage", "twine", "hemp", "jute", "sisal", "rattan", "wicker", "cork",
+        "linen", "sailcloth", "burlap", "hessian", "muslin", "twill", "tweed", "corduroy", "felt",
+        "suede", "hide", "shagreen", "gauze", "mesh", "knit", "thread", "fibre", "fiber",
+        // Hard surfaces and finishes a brand or product board reaches for.
+        "clay", "terracotta", "porcelain", "ceramic", "glaze", "glass", "crystal",
+        "bronze", "pewter", "chrome", "nickel", "zinc", "aluminium", "aluminum", "gold", "silver",
+        "foam", "rubber", "vinyl", "plastic", "resin", "acrylic", "wax", "gesso",
+        "chalk", "charcoal", "graphite", "pastel", "pigment", "dye", "varnishing",
+        "shale", "basalt", "limestone", "sandstone", "quartz", "obsidian", "flint", "pebble",
+        "grass", "foliage", "leaf", "petal", "husk", "straw", "thatch", "reed",
     ];
+
+    [GeneratedRegex(@"[a-z]+", RegexOptions.Compiled)]
+    private static partial Regex WordRegex();
 
     readonly ImageGenerator? generator;
     readonly IRequisitionCache cache;

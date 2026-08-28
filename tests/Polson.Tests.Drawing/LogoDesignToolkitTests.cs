@@ -229,7 +229,11 @@ public class LogoDesignToolkitTests : TestsRuntime
         var optCenter = toolkit.ComputeOpticalCenter(bounds, "triangle");
 
         Assert.Equal(200f, Convert.ToSingle(optCenter["x"]));
-        Assert.InRange(Convert.ToSingle(optCenter["y"]), 215f, 217f); // 100 + 200 * 0.58
+
+        // A placement target above the geometric centre of 200, not the centroid of a triangle.
+        // This previously asserted 0.58 of the height — below centre — which pushed a tapering mark
+        // down and worsened the bottom-heaviness the call exists to correct.
+        Assert.InRange(Convert.ToSingle(optCenter["y"]), 187f, 189f); // 100 + 200 * 0.44
     }
     #endregion
 

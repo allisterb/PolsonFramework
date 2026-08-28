@@ -371,6 +371,13 @@ public partial class JsDrawingEngine : Runtime
                 result.SvgXml = finalPaper.ToString();
                 result.ImageBytes = finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality);
             }
+            else if (papers.Count > 0)
+            {
+                // A raster script keeps the last vector image it produced, as the reference promises.
+                // Without this a script that builds a mark in SVG and returns a raster presentation
+                // gets an empty SvgXml, and `outSvg` then writes no file and reports no error.
+                result.SvgXml = papers.Last().ToString();
+            }
         }
         catch (Exception ex) when (exitRequested || ex is ExitException || ex.InnerException is ExitException)
         {
@@ -385,6 +392,10 @@ public partial class JsDrawingEngine : Runtime
             if (canvases.Count > 0)
             {
                 result.ImageBytes = canvases.Last().ToImageBytes(format, quality);
+                if (papers.Count > 0)
+                {
+                    result.SvgXml = papers.Last().ToString();
+                }
             }
             else if (papers.Count > 0)
             {

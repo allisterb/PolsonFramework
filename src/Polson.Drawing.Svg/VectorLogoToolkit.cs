@@ -269,10 +269,61 @@ public class VectorLogoToolkit
         return paper.Path(d);
     }
 
-    public SnapGroup GoldenCircles(SnapPaper paper, float cx, float cy, float baseRadius, int count = 5)
+    /// <summary>
+    /// Guide colouring for the vector armature helpers, matching their raster twins' options.
+    /// </summary>
+    /// <remarks>
+    /// These helpers used to bake their own colours into each child's inline <c>style</c>, which an
+    /// inherited presentation attribute on the returned group cannot override — so calling
+    /// <c>attr({stroke: …})</c> on the group was silently ineffective and the guides stayed the
+    /// toolkit's indigo and amber whatever palette the mark used.
+    /// </remarks>
+    static (string Line, float Width, float Opacity) GuideStyle(object? options, string defaultColor, float defaultWidth, float defaultOpacity) =>
+        (OptionString(options, "lineColor", defaultColor),
+         OptionFloat(options, "lineWidth", defaultWidth),
+         OptionFloat(options, "opacity", defaultOpacity));
+
+    static object? Option(object? options, string name)
+    {
+        if (options is null) return null;
+
+        if (options is IDictionary<string, object?> dict)
+        {
+            foreach (var (k, v) in dict)
+            {
+                if (string.Equals(k, name, StringComparison.OrdinalIgnoreCase)) return v;
+            }
+            return null;
+        }
+
+        if (options is System.Collections.IDictionary raw)
+        {
+            foreach (System.Collections.DictionaryEntry e in raw)
+            {
+                if (string.Equals(e.Key?.ToString(), name, StringComparison.OrdinalIgnoreCase)) return e.Value;
+            }
+            return null;
+        }
+
+        return options.GetType()
+            .GetProperty(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase)
+            ?.GetValue(options);
+    }
+
+    static string OptionString(object? options, string name, string fallback) =>
+        Option(options, name)?.ToString() is string s && !string.IsNullOrWhiteSpace(s) ? s : fallback;
+
+    static float OptionFloat(object? options, string name, float fallback) =>
+        Option(options, name) is object v
+        && float.TryParse(v.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var f)
+            ? f
+            : fallback;
+
+    public SnapGroup GoldenCircles(SnapPaper paper, float cx, float cy, float baseRadius, int count = 5, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(paper);
         var group = paper.Group();
+        var style = GuideStyle(options, "#f59e0b", 1.0f, 0.6f);
         var r = baseRadius;
         for (var i = 0; i < count; i++)
         {
@@ -280,10 +331,10 @@ public class VectorLogoToolkit
             circle.Attr(new Dictionary<string, object?>
             {
                 ["fill"] = "none",
-                ["stroke"] = "#f59e0b",
-                ["stroke-width"] = 1.0f,
+                ["stroke"] = style.Line,
+                ["stroke-width"] = style.Width,
                 ["stroke-dasharray"] = "4,4",
-                ["opacity"] = 0.6f
+                ["opacity"] = style.Opacity
             });
             group.Append(circle);
             r /= Phi;
@@ -291,44 +342,46 @@ public class VectorLogoToolkit
         return group;
     }
 
-    public SnapGroup IsometricGrid(SnapPaper paper, float width, float height, float spacing = 40f)
+    public SnapGroup IsometricGrid(SnapPaper paper, float width, float height, float spacing = 40f, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(paper);
         var group = paper.Group();
+        var style = GuideStyle(options, "#38bdf8", 0.5f, 0.35f);
         var tan30 = MathF.Tan(30f * MathF.PI / 180f);
 
         for (var y = -height; y < height * 2f; y += spacing)
         {
             var line1 = paper.Line(0, y, width, y + width * tan30);
-            line1.Attr(new Dictionary<string, object?> { ["stroke"] = "#38bdf8", ["stroke-width"] = 0.5f, ["opacity"] = 0.35f });
+            line1.Attr(new Dictionary<string, object?> { ["stroke"] = style.Line, ["stroke-width"] = style.Width, ["opacity"] = style.Opacity });
             group.Append(line1);
 
             var line2 = paper.Line(0, y, width, y - width * tan30);
-            line2.Attr(new Dictionary<string, object?> { ["stroke"] = "#38bdf8", ["stroke-width"] = 0.5f, ["opacity"] = 0.35f });
+            line2.Attr(new Dictionary<string, object?> { ["stroke"] = style.Line, ["stroke-width"] = style.Width, ["opacity"] = style.Opacity });
             group.Append(line2);
         }
 
         for (var x = 0f; x <= width; x += spacing)
         {
             var lineV = paper.Line(x, 0, x, height);
-            lineV.Attr(new Dictionary<string, object?> { ["stroke"] = "#38bdf8", ["stroke-width"] = 0.5f, ["opacity"] = 0.2f });
+            lineV.Attr(new Dictionary<string, object?> { ["stroke"] = style.Line, ["stroke-width"] = style.Width, ["opacity"] = style.Opacity * 0.57f });
             group.Append(lineV);
         }
 
         return group;
     }
 
-    public SnapGroup PolarGrid(SnapPaper paper, float cx, float cy, float maxRadius, int ringCount = 5, int rayCount = 12)
+    public SnapGroup PolarGrid(SnapPaper paper, float cx, float cy, float maxRadius, int ringCount = 5, int rayCount = 12, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(paper);
         var group = paper.Group();
+        var style = GuideStyle(options, "#6366f1", 0.5f, 0.4f);
 
         var ringStep = maxRadius / ringCount;
         for (var i = 1; i <= ringCount; i++)
         {
             var r = i * ringStep;
             var circle = paper.Circle(cx, cy, r);
-            circle.Attr(new Dictionary<string, object?> { ["fill"] = "none", ["stroke"] = "#6366f1", ["stroke-width"] = 0.5f, ["opacity"] = 0.4f });
+            circle.Attr(new Dictionary<string, object?> { ["fill"] = "none", ["stroke"] = style.Line, ["stroke-width"] = style.Width, ["opacity"] = style.Opacity });
             group.Append(circle);
         }
 
@@ -338,17 +391,19 @@ public class VectorLogoToolkit
             var rx = cx + maxRadius * MathF.Cos(angle);
             var ry = cy + maxRadius * MathF.Sin(angle);
             var line = paper.Line(cx, cy, rx, ry);
-            line.Attr(new Dictionary<string, object?> { ["stroke"] = "#6366f1", ["stroke-width"] = 0.5f, ["opacity"] = 0.3f });
+            line.Attr(new Dictionary<string, object?> { ["stroke"] = style.Line, ["stroke-width"] = style.Width, ["opacity"] = style.Opacity * 0.75f });
             group.Append(line);
         }
 
         return group;
     }
 
-    public SnapGroup MonogramMatrix(SnapPaper paper, float x, float y, float width, float height, string type = "3x3")
+    public SnapGroup MonogramMatrix(SnapPaper paper, float x, float y, float width, float height, string type = "3x3", object? options = null)
     {
         ArgumentNullException.ThrowIfNull(paper);
         var group = paper.Group();
+        var mStyle = GuideStyle(options, "#94a3b8", 0.75f, 0.5f);
+        var nodeColor = OptionString(options, "nodeColor", "#64748b");
         var rows = 3;
         var cols = 3;
         var normType = (type ?? "3x3").Trim().ToLowerInvariant();
@@ -363,7 +418,7 @@ public class VectorLogoToolkit
         {
             var ly = y + r * dy;
             var line = paper.Line(x, ly, x + width, ly);
-            line.Attr(new Dictionary<string, object?> { ["stroke"] = "#94a3b8", ["stroke-width"] = 0.75f, ["stroke-dasharray"] = "2,2", ["opacity"] = 0.5f });
+            line.Attr(new Dictionary<string, object?> { ["stroke"] = mStyle.Line, ["stroke-width"] = mStyle.Width, ["stroke-dasharray"] = "2,2", ["opacity"] = mStyle.Opacity });
             group.Append(line);
         }
 
@@ -371,7 +426,7 @@ public class VectorLogoToolkit
         {
             var lx = x + c * dx;
             var line = paper.Line(lx, y, lx, y + height);
-            line.Attr(new Dictionary<string, object?> { ["stroke"] = "#94a3b8", ["stroke-width"] = 0.75f, ["stroke-dasharray"] = "2,2", ["opacity"] = 0.5f });
+            line.Attr(new Dictionary<string, object?> { ["stroke"] = mStyle.Line, ["stroke-width"] = mStyle.Width, ["stroke-dasharray"] = "2,2", ["opacity"] = mStyle.Opacity });
             group.Append(line);
         }
 
@@ -380,7 +435,7 @@ public class VectorLogoToolkit
             for (var c = 0; c <= cols; c++)
             {
                 var dot = paper.Circle(x + c * dx, y + r * dy, 2.5f);
-                dot.Attr(new Dictionary<string, object?> { ["fill"] = "#64748b" });
+                dot.Attr(new Dictionary<string, object?> { ["fill"] = nodeColor });
                 group.Append(dot);
             }
         }
@@ -388,19 +443,26 @@ public class VectorLogoToolkit
         return group;
     }
 
-    public SnapGroup ClearSpaceGuide(SnapPaper paper, float x, float y, float width, float height, float margin = 24f)
+    public SnapGroup ClearSpaceGuide(SnapPaper paper, float x, float y, float width, float height, float margin = 24f, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(paper);
         var group = paper.Group();
+        var csStyle = GuideStyle(options, "#3b82f6", 1.0f, 1.0f);
+        var innerColor = OptionString(options, "innerColor", "#93c5fd");
+        // Derived from the line colour rather than a fixed rgba, so overriding lineColor recolours
+        // the dimension blocks too. An rgba() fill also serialises to its own hex plus fill-opacity,
+        // which would leave the default blue in the markup whatever the caller asked for.
+        var blockFill = OptionString(options, "fill", csStyle.Line);
+        var blockOpacity = OptionFloat(options, "fillOpacity", 0.08f);
 
         // Inner bounds
         var innerRect = paper.Rect(x, y, width, height);
-        innerRect.Attr(new Dictionary<string, object?> { ["fill"] = "none", ["stroke"] = "#93c5fd", ["stroke-width"] = 1.0f });
+        innerRect.Attr(new Dictionary<string, object?> { ["fill"] = "none", ["stroke"] = innerColor, ["stroke-width"] = 1.0f });
         group.Append(innerRect);
 
         // Outer margin bounds
         var outerRect = paper.Rect(x - margin, y - margin, width + margin * 2f, height + margin * 2f);
-        outerRect.Attr(new Dictionary<string, object?> { ["fill"] = "none", ["stroke"] = "#3b82f6", ["stroke-width"] = 1.0f, ["stroke-dasharray"] = "3,3" });
+        outerRect.Attr(new Dictionary<string, object?> { ["fill"] = "none", ["stroke"] = csStyle.Line, ["stroke-width"] = 1.0f, ["stroke-dasharray"] = "3,3" });
         group.Append(outerRect);
 
         // Corner squares
@@ -415,11 +477,11 @@ public class VectorLogoToolkit
         foreach (var (cx, cy) in corners)
         {
             var sq = paper.Rect(cx, cy, margin, margin);
-            sq.Attr(new Dictionary<string, object?> { ["fill"] = "rgba(59, 130, 246, 0.08)", ["stroke"] = "#3b82f6", ["stroke-width"] = 0.5f });
+            sq.Attr(new Dictionary<string, object?> { ["fill"] = blockFill, ["fill-opacity"] = blockOpacity, ["stroke"] = csStyle.Line, ["stroke-width"] = 0.5f });
             group.Append(sq);
 
             var txt = paper.Text(cx + margin * 0.35f, cy + margin * 0.65f, "X");
-            txt.Attr(new Dictionary<string, object?> { ["fill"] = "#2563eb", ["font-size"] = "11px", ["font-family"] = "sans-serif" });
+            txt.Attr(new Dictionary<string, object?> { ["fill"] = csStyle.Line, ["font-size"] = "11px", ["font-family"] = "sans-serif" });
             group.Append(txt);
         }
 

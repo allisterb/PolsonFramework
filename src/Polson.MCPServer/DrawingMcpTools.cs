@@ -172,11 +172,12 @@ public class DrawingMcpTools
         "DEFINITIVE answer that no such call exists — do not write it, use `nearest` instead; 'related' means these " +
         "are the closest passages and confirm nothing about any call. `notSearched` lists corpora not consulted, so " +
         "an empty result never means the knowledge is absent.")]
-    public async Task<JsonObject> Search(
+    public Task<JsonObject> Search(
         [Description("What you are trying to do or find, in natural language or as an API name (e.g. 'construct a perspective cylinder').")] string query,
         [Description("Number of passages to return (1-25; default 5).")] int? k = null,
         [Description("Corpus to search: 'all' (default), 'manual' for design theory only, 'sdk' for the API reference only.")] string? scope = null,
         CancellationToken cancellationToken = default)
+    => RecordedAsync(nameof(Search), async () =>
     {
         ArgumentNullException.ThrowIfNull(query);
 
@@ -282,7 +283,7 @@ public class DrawingMcpTools
                     + (notSearched.Count > 0 ? $"Scopes not consulted: {string.Join(", ", notSearched.Select(n => n!.ToString()))}." : "")
             }
         };
-    }
+    });
 
     [McpServerTool(Name = "ExecuteScript")]
     [Description("Executes a JavaScript drawing script inside the sandboxed graphics engine, supporting Snap.svg vector graphics, HTML5 2D Canvas, and Skia procedural shaders, filters, and image processing. Automatically renders returned paper/canvas/bitmap/image-data to WebP/PNG/JPEG bytes and SVG markup.")]
@@ -415,6 +416,7 @@ public class DrawingMcpTools
     public List<string> History(
         [Description("The number of recent scripts to return. If null or omitted, returns the last script.")] int? n = null,
         RequestContext<CallToolRequestParams>? context = null)
+    => Recorded(nameof(History), () =>
     {
         var sessionId = GetSessionId(context?.Server);
         var session = Registry.GetOrCreate(sessionId);
@@ -425,7 +427,7 @@ public class DrawingMcpTools
             if (count <= 0) return [];
             return session.ScriptHistory.TakeLast(count).ToList();
         }
-    }
+    });
 
     [McpServerTool(Name = "RenderSvg")]
     [Description("Headlessly renders raw SVG XML markup to a WebP/PNG/JPEG byte array.")]
@@ -437,6 +439,7 @@ public class DrawingMcpTools
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
         [Description("Optional file path where the rendered image should be saved, relative to the project directory. Paths outside the project are refused.")] string? outFile = null,
         [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null)
+    => Recorded(nameof(RenderSvg), () =>
     {
         ArgumentNullException.ThrowIfNull(svgXml);
 
@@ -483,10 +486,19 @@ public class DrawingMcpTools
         {
             result.Success = false;
             result.Error = ex.Message;
+
+            // Unlike the other tools this one turns a failure into a failed result rather than
+            // throwing, so Recorded never sees it. Record it here or a refused output path — which
+            // an agent will hit — would leave the run's record claiming nothing went wrong.
+            Events.Append("tool.error", fields: new Dictionary<string, object?>
+            {
+                ["tool"] = nameof(RenderSvg),
+                ["error"] = ex.Message
+            });
         }
 
         return result;
-    }
+    });
 
     [McpServerTool(Name = "MeasureSvgPath")]
     [Description("Measures an SVG path definition to calculate its total length, bounding box, and optional point coordinates at length.")]

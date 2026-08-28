@@ -34,12 +34,30 @@ sse-starlette
 #   pygments  https://github.com/pygments/pygments
 pygments
 
-# NOT included, deliberately:
+# The agent SDK. Drives the Gemini agent that does the design work and attaches our MCP server.
+#   google-antigravity   https://github.com/google/antigravity-sdk-python
 #
-#   python-multipart  — only needed for multipart/form-data, i.e. file uploads. HTMX posts
-#                       urlencoded forms by default, which Starlette parses without it. Add it only
-#                       if the demo grows an upload, and know that it is parsing untrusted bytes.
+# The distribution name is confirmed, not guessed. `reference/projects/antigravity-sdk-python-0.1.15`
+# declares `name = "google-antigravity"` in its pyproject.toml, and the package looks *itself* up by
+# that exact string at runtime — `importlib.metadata.version("google-antigravity")` in
+# connections/local/local_connection.py. A name a package uses to find itself cannot be the wrong
+# name for it.
 #
-#   The Antigravity / agent SDK — left out until its exact distribution name is confirmed from the
-#   official documentation. Guessing a package name is precisely how a typosquat gets installed, so
-#   this stays blank rather than plausible.
+# It pulls a real tree: absl-py, google-genai>=1.0, mcp>=1.0,<3.0, pydantic>=2.0, uvicorn>=0.46,
+# websockets>=12.0. Read that part of the requirements.txt diff especially — `websockets` arrives
+# here despite being deliberately excluded above by choosing plain `uvicorn` over `uvicorn[standard]`,
+# which is exactly the kind of thing the diff is for.
+google-antigravity
+
+# NOT named here, but present anyway:
+#
+#   python-multipart  — this list does not ask for it, and it arrives regardless: `mcp` depends on
+#                       it, and `mcp` is not optional once the agent SDK is in. So the intent behind
+#                       leaving it out — no multipart parser, because that is a parser for untrusted
+#                       bytes — is not achieved, and pretending otherwise would be worse than saying
+#                       so. What still holds is that *we* do not post multipart: HTMX sends
+#                       urlencoded forms, which Starlette parses without it. Do not add an upload
+#                       without deciding that separately.
+#
+# Reviewing the lock diff is what surfaced this, which is the point of the step. Anything appearing
+# under a `# via` you did not expect deserves the same treatment.

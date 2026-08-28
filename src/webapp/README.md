@@ -64,7 +64,7 @@ This resolves `requirements.in` into `requirements.txt` with every transitive pa
 exact version and cryptographic hash:
 
 ```bash
-python\Scripts\uv.exe pip compile src\web\requirements.in --generate-hashes -o src\web\requirements.txt
+python\Scripts\uv.exe pip compile src\webapp\requirements.in --generate-hashes -o src\webapp\requirements.txt
 ```
 
 Commit `requirements.txt`. Review its diff whenever it changes — that diff is the supply chain.
@@ -72,15 +72,26 @@ Commit `requirements.txt`. Review its diff whenever it changes — that diff is 
 ### 3. Install
 
 ```bash
-python\Scripts\pip.exe install --require-hashes -r src\web\requirements.txt
+src\webapp\install.cmd
+```
+
+On Linux or macOS, `src/webapp/install.sh`. The script checks that the environment and the compiled
+`requirements.txt` both exist and says what to do if either is missing, then runs the install below.
+
+Or run it yourself:
+
+```bash
+python\Scripts\pip.exe install --require-hashes --only-binary=:all: -r src\webapp\requirements.txt
 ```
 
 `--require-hashes` makes pip verify every downloaded artifact against the recorded digest and fail
 if any differs. A replaced or tampered release stops the install instead of running.
 
-`pip.ini` already forces `--only-binary=:all:`, so no source distribution is built. That matters
-because building an sdist executes its `setup.py` on this machine at install time, before any code
-has been reviewed — it is the most direct way a hostile package gets to act.
+`--only-binary=:all:` stops pip building any source distribution, which matters because building an
+sdist executes its `setup.py` on this machine at install time, before any code has been reviewed —
+the most direct way a hostile package gets to act. `pip.ini` already sets it, but the flag is passed
+explicitly here and by the scripts as well: `pip.ini` is copied into the venv by hand in step 0, and
+if that was missed the command line is what still holds.
 
 ## Checking for known vulnerabilities
 
@@ -88,7 +99,7 @@ Run after any dependency change:
 
 ```bash
 python\Scripts\pip.exe install pip-audit
-python\Scripts\pip-audit.exe -r src\web\requirements.txt
+python\Scripts\pip-audit.exe -r src\webapp\requirements.txt
 ```
 
 ## Adding a dependency
@@ -103,7 +114,7 @@ python\Scripts\pip-audit.exe -r src\web\requirements.txt
 ## Upgrading
 
 ```bash
-python\Scripts\uv.exe pip compile src\web\requirements.in --generate-hashes --upgrade -o src\web\requirements.txt
+python\Scripts\uv.exe pip compile src\webapp\requirements.in --generate-hashes --upgrade -o src\webapp\requirements.txt
 ```
 
 Then reinstall and re-audit. Read the diff.

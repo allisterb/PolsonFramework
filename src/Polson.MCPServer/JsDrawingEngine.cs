@@ -8,12 +8,14 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+
 using Jint;
 using Jint.Native;
 using Jint.Runtime;
-using System.Threading;
-using System.Threading.Tasks;
 using Jint.Runtime.Interop;
+
 using Polson.ExtendedMind.ImageGeneration;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
@@ -38,11 +40,7 @@ public partial class JsDrawingEngine : Runtime
     /// </summary>
     public static AssetRequisitionToolkit? Assets { get; set; }
     #endregion
-
-    /// <summary>Whole-word `await`, ignoring occurrences inside identifiers.</summary>
-    [System.Text.RegularExpressions.GeneratedRegex(@"\bawait\s")]
-    private static partial System.Text.RegularExpressions.Regex AwaitPattern();
-
+    
     #region Methods
     /// <summary>Synchronous entry point, for callers with no async context.</summary>
     public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85) =>
@@ -559,6 +557,10 @@ public partial class JsDrawingEngine : Runtime
         }
     }
     #endregion
+
+    /// <summary>Whole-word `await`, ignoring occurrences inside identifiers.</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"\bawait\s")]
+    private static partial System.Text.RegularExpressions.Regex AwaitPattern();
     #endregion
 }
 

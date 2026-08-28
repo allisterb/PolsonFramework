@@ -1,4 +1,4 @@
-namespace Polson.ExtendedMind;
+namespace Polson.ExtendedMind.ImageGeneration;
 
 using System.Collections.Generic;
 using System.IO;
@@ -126,7 +126,7 @@ public class RequisitionCache : Runtime, IRequisitionCache
             return null;
         }
 
-        foreach (var meta in Directory.EnumerateFiles(this.directory, "*.json"))
+        foreach (var meta in Directory.EnumerateFiles(directory, "*.json"))
         {
             try
             {
@@ -205,7 +205,7 @@ public class RequisitionCache : Runtime, IRequisitionCache
     }
 
     (string Image, string Meta) PathsFor(string hash) =>
-        (Path.Combine(this.directory, hash + ".png"), Path.Combine(this.directory, hash + ".json"));
+        (Path.Combine(directory, hash + ".png"), Path.Combine(directory, hash + ".json"));
 
     static HashSet<string> Tokenise(string text) =>
         [.. text.ToLowerInvariant()

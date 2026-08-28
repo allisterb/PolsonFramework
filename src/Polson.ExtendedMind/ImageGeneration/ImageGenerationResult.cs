@@ -1,4 +1,4 @@
-namespace Polson.ExtendedMind;
+namespace Polson.ExtendedMind.ImageGeneration;
 
 using System.Collections.Generic;
 using System.Text.Json.Serialization;

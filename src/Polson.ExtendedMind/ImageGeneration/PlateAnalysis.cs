@@ -1,4 +1,4 @@
-namespace Polson.ExtendedMind;
+namespace Polson.ExtendedMind.ImageGeneration;
 
 using System.Collections.Generic;
 
@@ -17,7 +17,7 @@ public static class PlateAnalysis
 {
     #region Methods
     /// <summary>Rec. 709 luminance.</summary>
-    public static double Luminance(SKColor c) => (0.2126 * c.Red) + (0.7152 * c.Green) + (0.0722 * c.Blue);
+    public static double Luminance(SKColor c) => 0.2126 * c.Red + 0.7152 * c.Green + 0.0722 * c.Blue;
 
     /// <summary>
     /// Measures whether a swatch wraps, by rolling it half a frame and testing the resulting mid-frame
@@ -402,10 +402,10 @@ public static class PlateAnalysis
         (Math.Abs(p.Red - q.Red) + Math.Abs(p.Green - q.Green) + Math.Abs(p.Blue - q.Blue)) / 3.0;
 
     static SKColor Lerp(SKColor a, SKColor b, double t) => new(
-        (byte)(a.Red + ((b.Red - a.Red) * t)),
-        (byte)(a.Green + ((b.Green - a.Green) * t)),
-        (byte)(a.Blue + ((b.Blue - a.Blue) * t)),
-        (byte)(a.Alpha + ((b.Alpha - a.Alpha) * t)));
+        (byte)(a.Red + (b.Red - a.Red) * t),
+        (byte)(a.Green + (b.Green - a.Green) * t),
+        (byte)(a.Blue + (b.Blue - a.Blue) * t),
+        (byte)(a.Alpha + (b.Alpha - a.Alpha) * t));
     #endregion
 
     #region Fields

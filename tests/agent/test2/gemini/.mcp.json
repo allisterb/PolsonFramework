@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "polson": {
+      "command": "dotnet",
+      "args": [
+        "../../../../bin/cli/Polson.CLI.dll",
+        "server"
+      ]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-namespace Polson.ExtendedMind;
+namespace Polson.ExtendedMind.ImageGeneration;
 
 using System.Collections.Generic;
 using System.Net.Http;
@@ -54,7 +54,7 @@ public class ImageGenerator : Runtime, IDisposable
 
         // enterprise:true selects the Agent Platform endpoint. Passing project/location alongside an
         // API key is only legal once that flag is set; without it the SDK rejects the combination.
-        this.client = (projectId, location) switch
+        client = (projectId, location) switch
         {
             (null, null) => new Client(enterprise: true, apiKey: apiKey),
             _            => new Client(enterprise: true, apiKey: apiKey, project: projectId, location: location),
@@ -72,7 +72,7 @@ public class ImageGenerator : Runtime, IDisposable
     /// <summary>Every generation returns this edge length whatever is requested. There is no smaller tier.</summary>
     public const int NativeSize = 1024;
 
-    public string Model => this.model;
+    public string Model => model;
     #endregion
 
     #region Methods
@@ -128,7 +128,7 @@ public class ImageGenerator : Runtime, IDisposable
 
         try
         {
-            var response = await this.client.Models.GenerateContentAsync(
+            var response = await client.Models.GenerateContentAsync(
                 useModel, [new Content { Role = "user", Parts = parts }], config, ct);
 
             var blob = response.Candidates?
@@ -263,8 +263,8 @@ public class ImageGenerator : Runtime, IDisposable
             return false;
         }
 
-        width = (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19];
-        height = (png[20] << 24) | (png[21] << 16) | (png[22] << 8) | png[23];
+        width = png[16] << 24 | png[17] << 16 | png[18] << 8 | png[19];
+        height = png[20] << 24 | png[21] << 16 | png[22] << 8 | png[23];
         return width > 0 && height > 0;
     }
 
@@ -288,7 +288,7 @@ public class ImageGenerator : Runtime, IDisposable
     /// <summary>Releases the underlying SDK client and its HTTP resources.</summary>
     public void Dispose()
     {
-        this.client.Dispose();
+        client.Dispose();
         GC.SuppressFinalize(this);
     }
     #endregion

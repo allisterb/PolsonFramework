@@ -1,0 +1,215 @@
+# Declarative Semantic Memory — corpus map and retrieval shape
+
+Working note for the `Memory.semantic` surface. Covers what is ingestible today, what the
+retrieval contract needs beyond what `KnowledgeCorpus` already provides, and what the agent
+harness should measure about retrieval quality.
+
+Numbers are measured from the live corpus, not estimated.
+
+---
+
+## 1. What is ingestible today
+
+### 1a. Already indexed — 171 chunks, 196 KB
+
+`KnowledgeCorpus.Build()` chunks two bodies at markdown heading boundaries and
+`LocalKnowledgeIndex` serves them. This is the working baseline.
+
+| Scope | Chunks | Chars | min / median / max |
+| :--- | ---: | ---: | :--- |
+| `Manual` — 12 studio manuals | 103 | 120,738 | 214 / 1,103 / 2,954 |
+| `Sdk` — core + schema, 8 areas | 68 | 74,914 | 184 / 962 / 4,131 |
+
+43 of 171 chunks carry no API citation at all — they are pure design theory. That ratio is
+worth watching: it is roughly the share of the corpus that answers "how should this look"
+rather than "what do I call".
+
+**Three chunks exceed the 2,400-char target and cannot be split further** because they have no
+level-3 headings to descend into:
+
+| Chars | Chunk |
+| ---: | :--- |
+| 4,131 | `polson://sdk/core/Snap` — `SnapElement` |
+| 3,406 | `polson://sdk/schema/Drawing` — `LoomisHead` |
+| 2,993 | `polson://sdk/core/Drawing` — Volumetric Lighting & Cast Shadows |
+
+`SnapElement` is the worst case and also one of the most-queried surfaces. Adding `###`
+subheadings inside it (creation, traversal, geometry, z-order) would fix the chunking without
+changing a word of content.
+
+### 1b. A whole area was invisible until this session
+
+`VectorLogo` sliced to `null` and was therefore absent from **both** `polson://sdk/core/VectorLogo`
+and the search corpus. The cause: `SdkDocs.Names()` splits a heading on `/`, `—` and `-`, but the
+heading is `VectorLogo & Snap.svg Logo Methods`, so nothing matched. Fixed by giving the area its
+real heading text in `SdkDocs.PolsonAreas`.
+
+The failure mode is the one that matters here. Search did not return nothing — it returned
+confident, plausible, wrong answers:
+
+| Query | Before (top hit) | After |
+| :--- | :--- | :--- |
+| "squircle path on a paper" | `sdk/core/Snap` → `SnapPaper` | `sdk/core/VectorLogo` |
+| "emblem badge shield vector" | `sdk/core/Logo` (raster) | `sdk/core/VectorLogo` |
+| "clearSpaceGuide" | `sdk/core/Logo` (raster) | `sdk/core/VectorLogo` |
+
+An agent asking for a vector squircle was told about `Logo.drawSquircle(ctx, …)`, the **raster**
+call, and would have written Canvas2D code for a vector job. This is the same failure that once
+convinced a harness agent that vector gradients did not exist. It is not a ranking problem that
+better embeddings fix — a similarity search has no way to say *"that is not here."* See §3.
+
+### 1c. Not yet ingested — Janson, 37,311 words
+
+`reference/books/janson-pencilling/` — 20 files, 220 KB, 171 figures, 122 captions, 77 page
+markers. Verbatim EPUB extraction, verified against source, codepoint-scanned clean.
+
+**Its structure does not match the manuals, and the current chunker would handle it badly.**
+54 headings across 37,311 words, and several chapters carry almost none:
+
+| Chapter | Headings | Words |
+| :--- | ---: | ---: |
+| 02 Shapes | 1 | 1,201 |
+| 04 Anatomy | 10 | 4,538 |
+| 05 Clothing | 2 | 652 |
+| 07 Juxtaposition | 2 | 1,651 |
+
+Chapter 2 would become one ~7,000-char chunk with no subheading to split on — nearly three times
+the target and larger than anything currently in the corpus.
+
+The book has different natural boundaries than the manuals do:
+
+- **Figure + caption** is a self-contained instructional unit and there are 122 of them. Captions
+  carry a large share of the actual teaching ("Notice how the hanging lamp draws the eye into the
+  first panel"). A caption must never be separated from its figure reference.
+- **Page markers** (`<!-- p.63 -->`) give 77 more boundaries and are the citation anchor.
+
+So Janson needs its own chunk strategy: paragraph groups bounded by page markers, with
+figure-and-caption kept atomic. Neither the default RAG splitter nor the current heading splitter
+is right for it.
+
+### 1d. Ingestion order
+
+1. **SDK core + schema** — already indexed; fix `SnapElement` subheadings.
+2. **Studio manuals** — already indexed; no change needed.
+3. **Janson** — new chunker, new `Reference` scope, citations required.
+4. Remaining `reference/books/*.pdf` — **blocked**: no codepoint-scan verdict recorded in
+   `reference/README.md`, and PDF extraction quality is unverified. Do not ingest until scanned.
+
+---
+
+## 2. Retrieval shape
+
+The existing contract is close and should be extended rather than replaced:
+
+```csharp
+KnowledgeChunk(Uri, Scope, Title, Section, Text, Apis)
+KnowledgeHit(Uri, Title, Section, Source, Score, Apis, Text)
+IKnowledgeIndex.SearchAsync(query, k, scope, ct) → IReadOnlyList<KnowledgeHit>
+```
+
+Three additions.
+
+### 2a. `Citation` — provenance on every hit
+
+Third-party material needs attribution, and the Facilitator needs to audit where a claim came
+from when evaluating a pull request.
+
+```csharp
+public sealed record Citation(
+    string Work,        // "The DC Comics Guide to Pencilling Comics"
+    string? Author,     // "Klaus Janson"
+    string? Locator,    // "Chapter 6, p.63"  — from the <!-- p.NN --> markers
+    string? Figure);    // "Figure 6.5"       — when the hit is a figure unit
+```
+
+For SDK and manual chunks this is derivable and cheap; for `Reference` chunks it is mandatory.
+
+### 2b. `KnowledgeAnswer` — an explicit no-match signal
+
+This is the important one. `SearchAsync` returning a bare list can only ever say "here are the
+nearest things", which is what produced §1b. The result must be able to say *nothing here matches*
+and say where to look instead.
+
+```csharp
+public enum KnowledgeConfidence
+{
+    Direct,    // an exact symbol match, or a strong prose hit well clear of the runners-up
+    Related,   // plausible but not clearly on-target — treat as background, not as an answer
+    NoMatch,   // nothing in the searched scopes answers this
+}
+
+public sealed record KnowledgeAnswer(
+    IReadOnlyList<KnowledgeHit> Hits,
+    KnowledgeConfidence Confidence,
+    string? Advice,                            // "No such call. Nearest: paper.squircle, Logo.drawSquircle."
+    IReadOnlyList<KnowledgeScope> Searched,
+    IReadOnlyList<KnowledgeScope> NotSearched); // so an agent knows what it did NOT ask
+```
+
+`NotSearched` matters: an agent that queried `Sdk` and found nothing should be told the manuals
+and reference works were never consulted, rather than concluding the knowledge does not exist.
+
+### 2c. `SymbolIndex` — the mechanism that can say "no"
+
+Similarity search cannot answer *"does `paper.squircle` exist?"* — it will always return the
+nearest neighbour with a plausible score. That question needs an exact index, not an embedding.
+
+```csharp
+public sealed record Symbol(
+    string Name,        // "paper.squircle"
+    string Receiver,    // "SnapPaper"
+    string Area,        // "VectorLogo"
+    string Uri,         // "polson://sdk/core/VectorLogo"
+    string Signature);  // the documented line, verbatim
+
+public interface ISymbolIndex
+{
+    Symbol? Resolve(string name);                  // exact — null is a real answer
+    IReadOnlyList<Symbol> Nearest(string name, int k);
+    IReadOnlyList<Symbol> OnReceiver(string receiver);  // "what can I call on a paper?"
+    IReadOnlyList<Symbol> InArea(string area);
+}
+```
+
+Built by parsing the `- \`X.y(args)\` → Return` bullets already in `Polson.core.md`, so it stays
+in step with the reference by construction. It gives three things similarity search cannot:
+
+- **A definitive negative.** `Resolve` returning null means the call does not exist.
+- **Enumeration.** "What methods exist on `SnapPaper`?" is a listing, not a search.
+- **Drift detection.** A symbol documented but absent from the assembly (or the reverse) is a
+  doc/code drift bug, findable in CI rather than by an agent at runtime.
+
+**Routing rule:** a query that looks like a symbol (`identifier.identifier`, camelCase, or
+backticked) goes to the `SymbolIndex` first. Everything else goes to prose retrieval. A symbol
+miss returns `NoMatch` with nearest names — never a prose hit dressed as an answer.
+
+---
+
+## 3. What the harness should measure
+
+Retrieval quality is currently invisible: the harness measures whether the drawing came out, not
+whether the agent could find what it needed. These are cheap to instrument and directly target the
+"agent retries because it lacks knowledge" problem.
+
+**Logged automatically per session:**
+
+| Metric | Why |
+| :--- | :--- |
+| Queries issued, with scope, top score, and `Confidence` | Baseline. A session full of `Related` answers is a corpus gap. |
+| `NoMatch` rate, and the query text of each | The direct list of what the corpus does not cover. |
+| Searched-then-used: did the agent call an API from the area it retrieved? | Distinguishes retrieval that helped from retrieval that was ignored. |
+| Calls written that do not resolve in `SymbolIndex` | A hallucinated call is a knowledge miss with a precise cause. |
+| Hand-rolled code duplicating an existing toolkit call | The expensive failure: the agent did not know `Drawing.projectCastShadow` existed and wrote 40 lines instead. |
+| Iterations and wall-clock to first correct call | The number the whole memory effort is meant to move. |
+
+**Asked of the agent at session end** — self-report is cheap and unusually informative:
+
+1. What did you look for and fail to find?
+2. Which answers were misleading — you acted on them and they were wrong for your task?
+3. What did you have to work out by trial and error that you would have expected to be documented?
+
+Question 2 is the one that catches §1b-class faults. A confident wrong answer costs far more than
+a null one, and it is invisible to any metric that only counts whether the query returned rows.
+
+**Suggested acceptance targets** once the corpus is complete: `NoMatch` under 10% of queries, zero
+unresolvable calls written, and no hand-rolled duplication of a documented toolkit call.

@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 using global::Polson.ExtendedMind;
 using global::Polson.Tests;
-
+using Polson.ExtendedMind.ImageGeneration;
 using Xunit;
 
 /// <summary>

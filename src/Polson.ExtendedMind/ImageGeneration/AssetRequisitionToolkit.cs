@@ -1,9 +1,10 @@
-namespace Polson.ExtendedMind;
+namespace Polson.ExtendedMind.ImageGeneration;
 
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Polson;
 
 using SkiaSharp;
 
@@ -63,7 +64,7 @@ public class AssetRequisitionToolkit : Runtime
     /// lets it reuse the oak the Framer already established. This is also what an Asset Manager
     /// curates, and it is the one coordination job that type constraints cannot do.
     /// </remarks>
-    public IReadOnlyList<MaterialAsset> Library => this.library;
+    public IReadOnlyList<MaterialAsset> Library => library;
     #endregion
 
     #region Methods
@@ -102,7 +103,7 @@ public class AssetRequisitionToolkit : Runtime
         }
 
         var prompt = MaterialPrompt(descriptor);
-        var model = opts.Model ?? this.generator.Model;
+        var model = opts.Model ?? generator.Model;
 
         var generated = await Acquire(prompt, model, "1:1", null);
         if (!generated.Success)
@@ -158,7 +159,7 @@ public class AssetRequisitionToolkit : Runtime
             Provenance = ProvenanceOf(generated, null),
         };
 
-        this.library.Add(asset);
+        library.Add(asset);
         return asset;
     }
 
@@ -186,7 +187,7 @@ public class AssetRequisitionToolkit : Runtime
     {
         var opts = options ?? new BackdropOptions();
         var prompt = BackdropPrompt(descriptor, opts);
-        var model = opts.Model ?? this.generator.Model;
+        var model = opts.Model ?? generator.Model;
         var conditioning = opts.ConditionOn is null ? null : new[] { opts.ConditionOn };
 
         var generated = await Acquire(prompt, model, AspectFor(opts.Width, opts.Height), conditioning);
@@ -267,7 +268,7 @@ public class AssetRequisitionToolkit : Runtime
         var prompt = $"A flat greyscale mask of {descriptor}. Pure white where the feature is, pure black "
                    + "elsewhere, no colour, no lighting, no shadow, no perspective, fill the whole frame.";
 
-        var generated = await Acquire(prompt, opts.Model ?? this.generator.Model, "1:1", null);
+        var generated = await Acquire(prompt, opts.Model ?? generator.Model, "1:1", null);
         if (!generated.Success)
         {
             return new MatteAsset { Success = false, Failure = generated.Failure, Error = generated.Error };
@@ -302,7 +303,7 @@ public class AssetRequisitionToolkit : Runtime
     {
         var hash = ImageGenerator.HashOf(model, prompt, aspect, conditionOn);
 
-        var cached = await this.cache.Get(hash) ?? await this.cache.FindSimilar(prompt);
+        var cached = await cache.Get(hash) ?? await cache.FindSimilar(prompt);
         if (cached is not null)
         {
             Budget.CacheHits++;
@@ -316,14 +317,14 @@ public class AssetRequisitionToolkit : Runtime
                 $"Budget exhausted ({Budget.Spent}/{Budget.Total} spent).", prompt, model);
         }
 
-        var result = await this.generator.GenerateImage(prompt, model, aspect, conditionOn);
+        var result = await generator.GenerateImage(prompt, model, aspect, conditionOn);
 
         // Only a completed generation is charged; a network fault must not consume the allowance.
         if (result.Charged)
         {
             Budget.Spent++;
             Budget.TokensSpent += result.TotalTokens ?? 0;
-            await this.cache.Put(result);
+            await cache.Put(result);
         }
 
         return result;
@@ -390,7 +391,7 @@ public class AssetRequisitionToolkit : Runtime
         Model = generated.Model,
         Hash = generated.Hash,
         BlockingHash = blockingHash,
-        Requester = this.requester,
+        Requester = requester,
         GeneratedUtc = generated.GeneratedUtc,
         FromCache = generated.FromCache,
         Prompt = generated.Prompt,

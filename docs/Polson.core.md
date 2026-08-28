@@ -179,19 +179,45 @@ paper;
 
 Represents any SVG node in the document hierarchy:
 
+### Attributes & Transforms
+
 - `element.attr(name: string)` → `any` — Retrieves the value of an attribute or style property.
 - `element.attr(name: string, value: any)` → `SnapElement` — Sets an attribute (e.g. `fill`, `stroke`, `stroke-width`, `opacity`, `d`, `transform`). Supports method chaining.
 - `element.attr(attributes: object)` → `SnapElement` — Sets multiple attributes via a dictionary literal: `el.attr({ fill: '#f00', stroke: '#000', 'stroke-width': 2 })`.
 - `element.transform(transformStringOrMatrix: string | SnapMatrix)` → `SnapElement` — Applies SVG transform commands (e.g. `t100,50r45s1.5` or a `SnapMatrix`).
+
+### Node Properties
+
+- `element.id` → `string` — Gets or sets the element's id.
+- `element.type` → `string` — The SVG tag name.
+- `element.parent` → `SnapElement?` — The containing element.
+- `element.children` → `SnapElement[]` — Direct child elements.
+- `element.paper` → `SnapPaper?` — The document this element belongs to.
+
+### Tree Placement & Lifecycle
+
 - `element.appendTo(parent: SnapElement | SnapPaper)` → `SnapElement` — Moves this element to the end of `parent`.
 - `element.prependTo(parent: SnapElement | SnapPaper)` → `SnapElement` — Moves this element to the start of `parent`.
+- `element.add(...elements: SnapElement[])` → `SnapElement` — Appends children.
+- `element.before(other: SnapElement)` / `element.after(other: SnapElement)` → `SnapElement` — Moves this element immediately before or after `other` in document order, which is how you control z-order after construction.
 - `element.remove()` → `SnapElement` — Detaches the element from its parent container.
 - `element.clone()` → `SnapElement` — Deep-clones the element and its children.
+- `element.clear()` → `void` — Removes all child nodes from this container element.
+
+### Geometry & Measurement
+
 - `element.getBBox()` → `SnapBBox` — Calculates the element's bounding box.
 - `element.getTotalLength()` → `number` — Measures path total length (paths only).
 - `element.getPointAtLength(length: number)` → `SnapPoint` — Computes coordinates at `length` (paths only).
+- `element.toSkPath()` → `SKPath` — Converts the element's geometry to a Skia path, for measurement or raster compositing.
+
+### Finding Descendants
+
 - `element.select(selector: string)` → `SnapElement?` — Finds the first descendant matching a tag name, `#id`, or `.class`.
 - `element.selectAll(selector: string)` → `SnapElement[]` — Finds all matching descendants.
+
+### Creating Child Elements
+
 - `element.rect(x: number, y: number, width: number, height: number, rx?: number, ry?: number)` → `SnapRect` — Creates and appends a child `<rect>`.
 - `element.circle(cx: number, cy: number, r: number)` → `SnapCircle` — Creates and appends a child `<circle>`.
 - `element.ellipse(cx: number, cy: number, rx: number, ry: number)` → `SnapEllipse` — Creates and appends a child `<ellipse>`.
@@ -202,17 +228,8 @@ Represents any SVG node in the document hierarchy:
 - `element.text(x: number, y: number, text: any)` → `SnapText` — Creates and appends a child `<text>`.
 - `element.image(src: string, x: number, y: number, width: number, height: number)` → `SnapImage` — Creates and appends a child `<image>`.
 - `element.g(...elements: SnapElement[])` / `element.group(...)` → `SnapGroup` — Creates and appends a nested `<g>`.
-- `element.el(name: string, attrs?: object)` → `SnapElement` — Creates and appends an SVG child element by tag name. Supported: `rect`, `circle`, `ellipse`, `path`, `g`, `image`, `text`, `tspan`, `textPath`, `line`, `polyline`, `polygon`, `mask`, `clipPath`, `pattern`, `use`, `defs`, `linearGradient`, `radialGradient`, `stop`, `symbol`, `marker`, `svg`. **An unrecognised name throws** rather than silently producing a `<g>`. For gradients prefer `paper.gradient(...)`.
-- `element.id` → `string` — Gets or sets the element's id.
-- `element.type` → `string` — The SVG tag name.
-- `element.parent` → `SnapElement?` — The containing element.
-- `element.children` → `SnapElement[]` — Direct child elements.
-- `element.paper` → `SnapPaper?` — The document this element belongs to.
-- `element.add(...elements: SnapElement[])` → `SnapElement` — Appends children.
-- `element.before(other: SnapElement)` / `element.after(other: SnapElement)` → `SnapElement` — Moves this element immediately before or after `other` in document order, which is how you control z-order after construction.
-- `element.toSkPath()` → `SKPath` — Converts the element's geometry to a Skia path, for measurement or raster compositing.
 - `element.use(target: SnapElement | string)` → `SnapUse` — Creates and appends a child `<use>` element.
-- `element.clear()` → `void` — Removes all child nodes from this container element.
+- `element.el(name: string, attrs?: object)` → `SnapElement` — Creates and appends an SVG child element by tag name. Supported: `rect`, `circle`, `ellipse`, `path`, `g`, `image`, `text`, `tspan`, `textPath`, `line`, `polyline`, `polygon`, `mask`, `clipPath`, `pattern`, `use`, `defs`, `linearGradient`, `radialGradient`, `stop`, `symbol`, `marker`, `svg`. **An unrecognised name throws** rather than silently producing a `<g>`. For gradients prefer `paper.gradient(...)`.
 
 ## `SnapMatrix`
 

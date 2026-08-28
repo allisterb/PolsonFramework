@@ -4,7 +4,7 @@ using System;
 
 using global::Polson.ExtendedMind;
 using global::Polson.Tests;
-
+using Polson.ExtendedMind.ImageGeneration;
 using SkiaSharp;
 
 using Xunit;

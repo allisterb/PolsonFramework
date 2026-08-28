@@ -10,9 +10,9 @@ behalf. The commands below are for you to run and review.
 
 | File | What it is |
 | :--- | :--- |
-| `src/web/requirements.in` | The direct dependencies. **Edit this one.** |
-| `src/web/requirements.txt` | Generated. Every package pinned to an exact version and hash, transitive ones included. **Do not hand-edit.** |
-| `src/web/pip.ini` | Canonical pip settings — single index, wheels only, venv required. Copied into the venv during setup. |
+| `src/webapp/requirements.in` | The direct dependencies. **Edit this one.** |
+| `src/webapp/requirements.txt` | Generated. Every package pinned to an exact version and hash, transitive ones included. **Do not hand-edit.** |
+| `src/webapp/pip.ini` | Canonical pip settings — single index, wheels only, venv required. Copied into the venv during setup. |
 
 The virtual environment itself is at `python/` and is not committed; it is rebuildable from
 `requirements.txt`, which is why the manifest lives here rather than inside it.
@@ -36,8 +36,18 @@ Do this first, and again after any venv rebuild — the settings below only appl
 in place:
 
 ```bash
-copy src\web\pip.ini python\pip.ini
+copy src\webapp\pip.ini python\pip.ini
 ```
+
+On Linux or macOS the venv layout and the config filename both differ — executables live in `bin/`
+rather than `Scripts/`, and pip reads `pip.conf` rather than `pip.ini`. The contents are identical:
+
+```bash
+cp src/webapp/pip.ini python/pip.conf
+```
+
+The install scripts (`install.cmd`, `install.sh`) handle the rest of the platform difference and
+will tell you if either the environment or the compiled `requirements.txt` is missing.
 
 ### 1. Install the lock tool
 

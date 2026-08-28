@@ -58,6 +58,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.ExtendedMind", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Tests.ExtendedMind", "tests\Polson.Tests.ExtendedMind\Polson.Tests.ExtendedMind.csproj", "{E279650A-E45C-4D8D-90CD-77FCC92B9B94}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{4A8DBB6B-BCD8-4140-9DED-8BF57F442CD5}"
+	ProjectSection(SolutionItems) = preProject
+		src\web\install.cmd = src\web\install.cmd
+		src\web\install.sh = src\web\install.sh
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

@@ -1,0 +1,28 @@
+# Line endings.
+#
+# Without this, a checkout on Windows converts shell scripts to CRLF, and a CRLF shebang is fatal:
+# the kernel reads the interpreter as "/usr/bin/env bash\r", which does not exist, and the script
+# dies with "bad interpreter: No such file or directory". The file looks perfectly fine in an editor.
+#
+# Batch files need the opposite: cmd.exe mishandles parenthesised blocks in LF-only .cmd files, so
+# those are pinned to CRLF.
+
+* text=auto
+
+*.sh   text eol=lf
+*.bash text eol=lf
+
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+
+# Generated dependency lock files: exact bytes matter for review, and a merge tool guessing at them
+# helps nobody. Treat conflicts as something a person resolves by recompiling.
+requirements.txt    -merge
+packages.lock.json  -merge
+
+# Rendered artifacts and reference material are binary; never line-ending-convert or diff them.
+*.webp binary
+*.png  binary
+*.jpg  binary
+*.pdf  binary

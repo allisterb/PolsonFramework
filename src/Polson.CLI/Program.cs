@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommandLine;
 using Microsoft.Extensions.Configuration;
+using Polson.ExtendedMind.ImageGeneration;
 using Polson.MCPServer;
 using Spectre.Console;
 
@@ -20,6 +21,17 @@ internal class Program : Runtime
             config = LoadConfigFile(configPath);
         }
     }
+    #endregion
+
+    #region Constants
+    /// <summary>
+    /// Generations allowed per server run when <c>Assets:Budget</c> is not configured.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately small. An image costs roughly 1,300 tokens whatever is asked for, so a default
+    /// that quietly allows hundreds would turn a stuck retry loop into real money.
+    /// </remarks>
+    const int DefaultAssetBudget = 12;
     #endregion
 
     #region Methods
@@ -69,6 +81,38 @@ internal class Program : Runtime
         }
     }
 
+    /// <summary>
+    /// Builds the asset requisition surface from configuration, or leaves it disabled.
+    /// </summary>
+    /// <remarks>
+    /// Absence of a key is a normal configuration, not an error: the toolkit is still registered so a
+    /// script gets a readable "not configured" refusal from <c>Assets.material(...)</c> rather than a
+    /// ReferenceError it cannot interpret. The budget is a hard ceiling on generations per server
+    /// run, so a runaway agent cannot spend without bound.
+    /// </remarks>
+    static void ConfigureAssetRequisition(string projectDir)
+    {
+        var apiKey = config?["ApiKeys:GoogleAgentPlatform"];
+        var model = config?["Assets:Model"] ?? ImageGenerator.DefaultModel;
+        var budget = int.TryParse(config?["Assets:Budget"], out var b) ? b : DefaultAssetBudget;
+        var cacheDir = config?["Assets:CacheDir"] ?? Path.Combine(projectDir, ".polson", "assets");
+
+        var generator = string.IsNullOrWhiteSpace(apiKey) ? null : new ImageGenerator(apiKey, model);
+
+        JsDrawingEngine.Assets = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(cacheDir), new AssetBudget(budget), "agent");
+
+        if (generator is null)
+        {
+            Warn("Asset requisition disabled: no ApiKeys:GoogleAgentPlatform in appsettings.json.");
+        }
+        else
+        {
+            Info("Asset requisition enabled (model: {0}, budget: {1} generations, cache: {2}).",
+                model, budget, cacheDir);
+        }
+    }
+
     static async Task HandleServerArgs(ServerOptions opts)
     {
         if (opts.Timeout.HasValue && opts.Timeout.Value > 0)
@@ -83,6 +127,8 @@ internal class Program : Runtime
         var projectDir = !string.IsNullOrWhiteSpace(opts.ProjectDir)
             ? Path.GetFullPath(opts.ProjectDir)
             : Directory.GetCurrentDirectory();
+
+        ConfigureAssetRequisition(projectDir);
 
         if (opts.Http)
         {

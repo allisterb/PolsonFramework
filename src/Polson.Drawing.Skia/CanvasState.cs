@@ -109,7 +109,7 @@ public class CanvasState
         {
             IsAntialias = true,
             Style = SKPaintStyle.Fill,
-            Color = SkiaColorParser.ApplyAlpha(FillColor, GlobalAlpha),
+            Color = BasePaintColor(FillColor, FillGradient != null || FillPattern != null || CustomFillShader != null),
             BlendMode = BlendMode,
             ImageFilter = ImageFilter,
             ColorFilter = ColorFilter,
@@ -122,7 +122,7 @@ public class CanvasState
         }
         else if (FillGradient != null)
         {
-            paint.Shader = FillGradient.CreateShader(GlobalAlpha);
+            paint.Shader = FillGradient.CreateShader();
         }
         else if (FillPattern != null)
         {
@@ -143,7 +143,7 @@ public class CanvasState
             StrokeCap = LineCap,
             StrokeJoin = LineJoin,
             StrokeMiter = MiterLimit,
-            Color = SkiaColorParser.ApplyAlpha(StrokeColor, GlobalAlpha),
+            Color = BasePaintColor(StrokeColor, StrokeGradient != null || StrokePattern != null || CustomStrokeShader != null),
             BlendMode = BlendMode,
             ImageFilter = ImageFilter,
             ColorFilter = ColorFilter,
@@ -162,7 +162,7 @@ public class CanvasState
         }
         else if (StrokeGradient != null)
         {
-            paint.Shader = StrokeGradient.CreateShader(GlobalAlpha);
+            paint.Shader = StrokeGradient.CreateShader();
         }
         else if (StrokePattern != null)
         {
@@ -172,6 +172,35 @@ public class CanvasState
         ApplyShadow(paint);
         return paint;
     }
+
+    /// <summary>
+    /// Paint for image and SVG compositing. Per the canvas model these honour globalAlpha,
+    /// globalCompositeOperation, the filters and the shadow, but not fillStyle — the source
+    /// pixels supply the colour, so no shader or fill colour is attached.
+    /// </summary>
+    public SKPaint CreateImagePaint()
+    {
+        var paint = new SKPaint
+        {
+            IsAntialias = true,
+            Color = SkiaColorParser.ApplyAlpha(SKColors.Black, GlobalAlpha),
+            BlendMode = BlendMode,
+            ImageFilter = ImageFilter,
+            ColorFilter = ColorFilter
+        };
+
+        ApplyShadow(paint);
+        return paint;
+    }
+
+    /// <summary>
+    /// Base colour for a paint. Skia ignores a paint colour's RGB once a shader is attached and
+    /// modulates the shader by its alpha alone, so with a gradient, pattern or shader in play the
+    /// fill/stroke colour must not contribute — otherwise the alpha of the last <c>rgba(...)</c>
+    /// assigned to <c>fillStyle</c> silently tints every later gradient. Only globalAlpha applies.
+    /// </summary>
+    private SKColor BasePaintColor(SKColor color, bool hasShader) =>
+        SkiaColorParser.ApplyAlpha(hasShader ? SKColors.Black : color, GlobalAlpha);
 
     private void ApplyShadow(SKPaint paint)
     {

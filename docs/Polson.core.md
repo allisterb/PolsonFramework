@@ -10,6 +10,7 @@ The **JSON schema for every parameter and return model type** named below lives 
 
 Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianros/jint) runtime supporting **ECMAScript 2025** (arrow functions, `let`/`const`, destructuring, template literals, optional chaining `?.`, nullish coalescing `??`, `for...of`, spread `...`, `Array`/`Map`/`Set`/`JSON`, etc.). Tailor generated code to modern JavaScript idioms.
 
+- **Async & `await`:** `async`/`await`, Promises and **top-level `await`** are supported. Almost the entire SDK is synchronous — the exceptions are the three `Assets.*` requisition calls, which reach a cloud service and **must be awaited**. An unawaited Promise silently reports every property as `undefined`; see the warning under `polson://sdk/core/Assets`.
 - **Sandbox Security:** `eval` and `new Function` are strictly disabled (`Host.StringCompilationAllowed = false`). Arbitrary external types and reflection are prohibited. Scripts can only interact with the explicit Polson drawing APIs.
 - **Execution Limits:** Scripts are enforced with statement limits (2,000,000 statements, configurable via `JsDrawingEngine.MaxStatements`), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
   > [!TIP]
@@ -273,6 +274,25 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `canvas.toDataUri(format?: string, quality?: number)` → `string` — Returns base64 `data:image/...;base64,...` data URI.
 - `canvas.bitmap` → `SkiaBitmapWrapper` — The canvas's live backing bitmap (unlike `toBitmap()`, which copies).
 
+## `CanvasPath`
+
+A reusable path object, independent of any context — build it once and pass it to `ctx.fill(path)`, `ctx.stroke(path)` or `ctx.clip(path)` as often as you like. Also available under the DOM name `Path2D`; the two are the same constructor.
+
+- `new CanvasPath()` → `CanvasPath` — An empty path.
+- `new CanvasPath(svgPathData: string)` → `CanvasPath` — A path parsed from an SVG `d` string, e.g. `new CanvasPath('M20,20 L180,20 Z')`. This is the bridge from vector geometry — `Snap.path.*` helpers and `element.attr('d')` both hand you a `d` string.
+- `new CanvasPath(other: CanvasPath)` → `CanvasPath` — A copy, independent of its source.
+
+Segment methods mirror the context's own path construction and take the same arguments:
+
+- `path.moveTo(x, y)` · `path.lineTo(x, y)` · `path.closePath()` · `path.beginPath()`
+- `path.rect(x, y, width, height)` · `path.roundRect(x, y, width, height, radii?)`
+- `path.arc(x, y, radius, startAngle, endAngle, anticlockwise?)` · `path.arcTo(x1, y1, x2, y2, radius)`
+- `path.ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle, anticlockwise?)`
+- `path.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y)` / `path.sCurveTo(...)` — CSI grammar alias
+- `path.quadraticCurveTo(cpx, cpy, x, y)` / `path.cCurveTo(...)` — CSI grammar alias
+- `path.addPath(other: CanvasPath)` — Appends another path's segments to this one.
+- `path.dispose()` — Releases the native path.
+
 ## `CanvasRenderingContext2D`
 
 ### Shapes & Rectangles
@@ -346,6 +366,8 @@ Immediate-mode 2D raster canvas API compatible with HTML5 Canvas 2D.
 - `ctx.drawImage(image: SkiaBitmapWrapper | SkiaCanvas | SnapPaper, dx: number, dy: number, dw: number, dh: number)` — Draws image scaled to `(dw, dh)`.
 - `ctx.drawImage(image: SkiaBitmapWrapper | SkiaCanvas, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number)` — 9-parameter source cropping: extracts `(sx, sy, sw, sh)` from source image and draws scaled onto destination `(dx, dy, dw, dh)`.
 - `ctx.drawSvg(paperOrXml: SnapPaper | string, x?: number, y?: number, width?: number, height?: number)` — Composites vector SVG directly onto raster canvas layers.
+
+Both honour `globalAlpha`, `globalCompositeOperation`, `filter`, `colorFilter`, the shadow properties and the current transform. They do **not** use `fillStyle` or `strokeStyle` — the source pixels supply the colour. To tint or grade an image, set `ctx.colorFilter` before drawing, or use `bitmap.applyColorFilter(filter)` to bake the change into a new bitmap.
 
 ### Pixel Buffer Access
 - `ctx.getImageData(sx: number, sy: number, sw: number, sh: number)` → `ImageData` — Extracts pixel buffer for direct byte manipulation.
@@ -448,7 +470,7 @@ ctx.fillRect(0, 0, 800, 600);
 - `bitmap.resize(width: number, height: number, quality?: string)` → `SkiaBitmapWrapper` — Resamples bitmap (`"linear"`, `"nearest"`).
 - `bitmap.rotate(angleDeg: number)` → `SkiaBitmapWrapper` — Rotates bitmap by degrees.
 - `bitmap.flip(direction?: string)` → `SkiaBitmapWrapper` — Flips bitmap (`"horizontal"`, `"vertical"`, `"both"`).
-- `bitmap.getPixel(x: number, y: number)` → `string` — Returns hex color `"#RRGGBBAA"`.
+- `bitmap.getPixel(x: number, y: number)` → `string` — Returns hex color `"#RRGGBBAA"`. **This is how you verify a render.** Looking at an image tells you a layer is "too bright"; reading back a pixel tells you whether it is the colour you asked for, the alpha you asked for, or drawn at all — three very different problems that look identical on screen. Use `canvas.bitmap` (live) or `canvas.toBitmap()` (a copy) to get one from a canvas.
 - `bitmap.setPixel(x: number, y: number, color: string)` — Sets pixel color.
 - `bitmap.applyFilter(filter: SKImageFilter)` → `SkiaBitmapWrapper` — Returns new bitmap with image filter applied.
 - `bitmap.applyColorFilter(filter: SKColorFilter)` → `SkiaBitmapWrapper` — Returns new bitmap with color filter applied.
@@ -651,3 +673,95 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 - `paper.ogeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` → `SnapPath` — Direct Snap.svg paper helper.
 
 
+
+---
+
+# Assets (Cloud Asset Requisition)
+
+Requisitions **raw material** from a cloud image model: flat tiling textures, background plates, and single-channel mattes. Everything returned needs code to become art — there is no call that produces a finished picture, by design. The model supplies what is hard to synthesise (the look of weathered oak); the drawing toolkits supply form, lighting and composition.
+
+> [!IMPORTANT]
+> Generation is metered and takes several seconds per call. **Requisition in its own short script, then draw in the next one** — a script that requisitions three assets can exceed the {{SCRIPT_TIMEOUT_SECONDS}}-second execution limit. Results are cached by content, so re-running an identical requisition is free and instant.
+
+## Requisition Methods
+
+> [!WARNING]
+> **All three requisition calls are asynchronous — you must `await` them.** They return a `Promise`, so without `await` you get a `Promise` object on which `success`, `failureName`, `remedy` and every other documented property is `undefined`. That reads as a failure (`!undefined` is `true`) while the requisition still completes and **still spends budget** in the background. If a requisition appears to fail with `undefined: undefined`, you forgot the `await`. Top-level `await` is supported.
+
+- `Assets.material(descriptor: string, options?: object)` → `Promise<MaterialAsset>` — A flat, seamlessly tiling swatch. Safest and most reusable: independent of geometry, so it survives any amount of redrawing. `options`: `{ size?: number (32–1024, default 512), tileable?: boolean (default true), format?: 'webp'|'png'|'jpeg', quality?: number, model?: string }`.
+- `Assets.backdrop(descriptor: string, options?: object)` → `Promise<BackdropPlate>` — A background plate composited beneath the scene. `options`: `{ width?: number, height?: number, keepQuiet?: 'lowerThird'|'upperThird'|'leftHalf'|'rightHalf'|'center'|'none', noHorizon?: boolean, noForeground?: boolean, conditionOn?: byte[], format?: string, quality?: number, model?: string }`.
+- `Assets.matte(descriptor: string, options?: object)` → `Promise<MatteAsset>` — A greyscale mask, height field, or displacement source for use as a shader input. `options`: `{ size?: number, invert?: boolean, model?: string }`.
+
+## `Assets` Properties
+
+- `Assets.budget` → `AssetBudget` — Remaining allowance. **Check this before requisitioning.**
+- `Assets.classify(descriptor: string)` → `RequisitionVerdict` — `{ className, class, reason, triggers, allowed }`. `className` is the readable verdict — `'Substance'`, `'Form'` or `'Ambiguous'`; `class` is the same value as a number, so prefer `className`. The form-versus-substance pre-check, free and offline. `material()` applies it automatically; call it yourself to test a descriptor before spending.
+- `Assets.library` → `MaterialAsset[]` — Every material requisitioned this session, by any agent. Reuse from here rather than requisitioning a near-duplicate. It is array-*like*, not a JS `Array`: `.length` and `library[i]` work, but `forEach` passes `undefined` as the index and the `Array.prototype` methods are absent. Use a `for` loop, or `Array.from(Assets.library)` to get a real array.
+
+## Every Result Reports Its Own Failure
+
+Requisition is a metered network call and can fail. Nothing throws — check `success`, then act on `remedy`:
+
+- `result.success` → `boolean`
+- `result.failureName` → `string` — the failure as a readable name: `'None'`, `'NotConfigured'`, `'BudgetExhausted'`, `'RefusedFormRequest'`, `'SafetyBlocked'`, `'Recitation'`, `'RateLimited'`, `'Quota'`, `'ConstraintNotMet'`, `'Network'`, `'Timeout'`, `'Auth'`, `'ModelNotFound'`, `'NoImageReturned'`, `'ServiceError'`, `'InvalidRequest'`, `'Cancelled'`. (`result.failure` is the same value as a number — prefer `failureName`.)
+- `result.remedy` → `string` — What to do next, in words. Read this before retrying anything.
+- `result.retryable` → `boolean` — Whether repeating the identical request could succeed. `false` means reword or give up.
+- `result.error` → `string?` — The underlying message.
+
+> [!TIP]
+> `refusedFormRequest` means the descriptor named an **object** rather than a **material** — "a wooden ship" is refused, "weathered ship hull planking" is not. Draw the form with the drawing toolkit and requisition its surface.
+
+## `MaterialAsset`
+
+- `material.bytes` → `byte[]`, `material.size` → `number`, `material.mimeType` → `string`
+- `material.toDataUri()` → `string` — Feed straight to `Skia.Image.fromDataUrl(...)` to get a bitmap.
+- `material.tiling` → `TilingMetrics` — `{ horizontalSeamStep, verticalSeamStep, neighbourMedian, neighbourMax, wraps, repaired }`. `wraps` is guaranteed true on success; `repaired` says whether this layer had to fix it.
+- `material.provenance` → `Provenance` — `{ model, hash, blockingHash, requester, generatedUtc, fromCache, prompt }`.
+- `material.id` → `string`
+
+## `BackdropPlate`
+
+- `plate.bytes` → `byte[]`, `plate.width` / `plate.height` → `number`, `plate.mimeType` → `string`, `plate.toDataUri()` → `string`, `plate.id` → `string`, `plate.provenance` → `Provenance`
+- `plate.metrics` → `PlateMetrics` — measured from the returned image, not assumed:
+  - `metrics.keyLightX` / `metrics.keyLightY` → `number` — brightest mass in normalised [0,1] coordinates. **Feed this to `Drawing.drawRimLight` and `Drawing.projectCastShadow` so the foreground matches the plate's light.**
+  - `metrics.bandLuminance` → `number[]` — mean luminance of the top, middle and lower thirds.
+  - `metrics.quietRegionHonoured` → `boolean`, `metrics.hasBakedMask` → `boolean`
+- `plate.boundTo` → `string?` — Set when the plate was conditioned on a blocking. A non-null value means the plate is welded to that silhouette and must be re-requisitioned if the foreground changes.
+- `plate.isReusable` → `boolean`
+
+## `MatteAsset`
+
+- `matte.bytes` → `byte[]`, `matte.size` → `number`, `matte.id` → `string`, `matte.provenance` → `Provenance`
+
+## `AssetBudget`
+
+- `budget.total` / `budget.spent` / `budget.remaining` → `number`
+- `budget.cacheHits` → `number` — Requisitions served from cache, which cost nothing.
+- `budget.tokensSpent` → `number` — Actual tokens billed, as reported by the service.
+- `budget.canAfford(count?: number)` → `boolean`
+
+## Applying a Material
+
+```javascript
+// Script 1 — requisition only. Short, so it cannot hit the execution timeout.
+const oak = await Assets.material('weathered ship hull planking, tarred caulking between planks');
+if (!oak.success) { error(oak.remedy); exit(oak.failureName); }
+Session.oakUri = oak.toDataUri();
+log(`oak ${oak.size}px, wraps=${oak.tiling.wraps}, ${Assets.budget.remaining} left`);
+```
+
+```javascript
+// Script 2 — draw. The material is already in the session scratchpad.
+const canvas = createCanvas(1200, 760);
+const ctx = canvas.getContext('2d');
+const plank = Skia.Image.fromDataUrl(Session.oakUri);
+
+const hull = new CanvasPath();          // the form is yours to construct
+hull.moveTo(230, 400); /* … */
+ctx.save();
+ctx.clip(hull);
+ctx.fillStyle = Skia.Shader.bitmap(plank, 'repeat', 'repeat');
+ctx.fillRect(0, 0, 1200, 760);
+ctx.restore();
+canvas;
+```

@@ -38,9 +38,8 @@ using SkiaSharp;
 public class AssetRequisitionToolkit : Runtime
 {
     #region Constructors
-    public AssetRequisitionToolkit(ImageGenerator generator, IRequisitionCache cache, AssetBudget budget, string requester = "unknown")
+    public AssetRequisitionToolkit(ImageGenerator? generator, IRequisitionCache cache, AssetBudget budget, string requester = "unknown")
     {
-        ArgumentNullException.ThrowIfNull(generator);
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(budget);
 
@@ -103,7 +102,7 @@ public class AssetRequisitionToolkit : Runtime
         }
 
         var prompt = MaterialPrompt(descriptor);
-        var model = opts.Model ?? generator.Model;
+        var model = opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel;
 
         var generated = await Acquire(prompt, model, "1:1", null);
         if (!generated.Success)
@@ -187,7 +186,7 @@ public class AssetRequisitionToolkit : Runtime
     {
         var opts = options ?? new BackdropOptions();
         var prompt = BackdropPrompt(descriptor, opts);
-        var model = opts.Model ?? generator.Model;
+        var model = opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel;
         var conditioning = opts.ConditionOn is null ? null : new[] { opts.ConditionOn };
 
         var generated = await Acquire(prompt, model, AspectFor(opts.Width, opts.Height), conditioning);
@@ -268,7 +267,7 @@ public class AssetRequisitionToolkit : Runtime
         var prompt = $"A flat greyscale mask of {descriptor}. Pure white where the feature is, pure black "
                    + "elsewhere, no colour, no lighting, no shadow, no perspective, fill the whole frame.";
 
-        var generated = await Acquire(prompt, opts.Model ?? generator.Model, "1:1", null);
+        var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel, "1:1", null);
         if (!generated.Success)
         {
             return new MatteAsset { Success = false, Failure = generated.Failure, Error = generated.Error };
@@ -301,6 +300,13 @@ public class AssetRequisitionToolkit : Runtime
     /// <summary>Cache lookup, budget check, then generation. The only path that can spend money.</summary>
     async Task<ImageGenerationResult> Acquire(string prompt, string model, string? aspect, IReadOnlyList<byte[]>? conditionOn)
     {
+        if (this.generator is null)
+        {
+            return ImageGenerationResult.Failed(
+                ImageGenerationFailure.NotConfigured,
+                "No image-generation credentials are configured for this studio.", prompt, model);
+        }
+
         var hash = ImageGenerator.HashOf(model, prompt, aspect, conditionOn);
 
         var cached = await cache.Get(hash) ?? await cache.FindSimilar(prompt);
@@ -539,7 +545,7 @@ public class AssetRequisitionToolkit : Runtime
         "paint", "ink", "enamel", "lacquer", "moss", "lichen", "dirt", "gravel",
     ];
 
-    readonly ImageGenerator generator;
+    readonly ImageGenerator? generator;
     readonly IRequisitionCache cache;
     readonly string requester;
     readonly List<MaterialAsset> library = [];

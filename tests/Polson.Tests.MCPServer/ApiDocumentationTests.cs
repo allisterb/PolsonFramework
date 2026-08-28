@@ -66,7 +66,9 @@ public class ApiDocumentationTests : TestsRuntime
         var types = Surfaces[receiver];
         var undocumented = types.SelectMany(PublicJsMembers)
             .Where(member => !IsDeliberatelyUndocumented(receiver, member))
-            .Where(member => !Core.Contains($"{receiver}.{member}", StringComparison.Ordinal))
+            // Case-insensitive: Jint resolves the leading-capital spelling too, so `Snap.Create`
+            // in the reference and `snap.create` from reflection are the same call.
+            .Where(member => !Core.Contains($"{receiver}.{member}", StringComparison.OrdinalIgnoreCase))
             .Distinct()
             .OrderBy(m => m, StringComparer.Ordinal)
             .ToArray();
@@ -90,72 +92,14 @@ public class ApiDocumentationTests : TestsRuntime
     /// <see cref="CanvasGradient"/> in the raster docs and a <see cref="SnapGradient"/> in the vector
     /// ones — so a documented call counts as present if any mapped type has it.
     /// </summary>
-    private static readonly Dictionary<string, Type[]> Surfaces = new(StringComparer.Ordinal)
-    {
-        ["paper"] = [typeof(SnapPaper)],
-        ["element"] = [typeof(SnapElement)],
-        ["Snap.path"] = [typeof(SnapPathApi)],
-        ["VectorLogo"] = [typeof(VectorLogoToolkit)],
-        ["Drawing"] = [typeof(ConstructiveDrawingToolkit)],
-        ["Logo"] = [typeof(LogoDesignToolkit)],
-        ["LogoType"] = [typeof(LogoTypeToolkit)],
-        ["ctx"] = [typeof(CanvasRenderingContext2D)],
-        ["canvas"] = [typeof(SkiaCanvas)],
-        ["bitmap"] = [typeof(SkiaBitmapWrapper)],
-        ["imageData"] = [typeof(ImageData)],
-        ["gradient"] = [typeof(CanvasGradient), typeof(SnapGradient), typeof(SnapLinearGradient), typeof(SnapRadialGradient)],
-        ["matrix"] = [typeof(SnapMatrix)],
-        ["mina"] = [typeof(Mina)]
-    };
+    private static readonly Dictionary<string, Type[]> Surfaces =
+        JsSurface.Receivers.ToDictionary(r => r.Name, r => r.Types, StringComparer.Ordinal);
 
     /// <summary>
     /// Members a script can reach but that the reference deliberately omits, with the reason. Anything
     /// not listed here and not documented fails the test.
     /// </summary>
-    private static readonly Dictionary<string, string> Undocumented = new(StringComparer.Ordinal)
-    {
-        // Internal plumbing that happens to be public.
-        ["paper.ensureDefs"] = "internal defs bootstrap; paper.defs is the documented accessor",
-        ["paper.snapPaper"] = "constructor artifact, not a callable",
-        ["element.wrap"] = "internal element wrapper factory",
-
-        // Aliases of a documented member; documenting both spellings invites drift.
-        ["paper.toDataURL"] = "alias of paper.toDataUri",
-        ["bitmap.toDataURL"] = "alias of bitmap.toDataUri",
-        ["imageData.toDataURL"] = "alias of imageData.toDataUri",
-        ["canvas.toDataURL"] = "alias of canvas.toDataUri",
-        ["paper.logo"] = "alias of paper.vectorLogo",
-        ["paper.vectorLogo"] = "per-paper accessor for the global VectorLogo toolkit",
-
-        // Typed .NET escape hatches with no JS-facing contract.
-        ["paper.document"] = "raw Svg.NET document; not part of the JS surface",
-        ["element.node"] = "raw Svg.NET node; not part of the JS surface",
-        ["canvas.skCanvas"] = "raw SkiaSharp canvas; not part of the JS surface",
-        ["bitmap.bitmap"] = "raw SKBitmap; not part of the JS surface",
-        ["gradient.shader"] = "raw SKShader; not part of the JS surface",
-        ["gradient.createShader"] = "internal: builds the SKShader when the gradient is used as a fill",
-        ["gradient.gradientNode"] = "raw Svg.NET paint server; not part of the JS surface",
-        ["gradient.linearNode"] = "raw Svg.NET paint server; not part of the JS surface",
-        ["gradient.radialNode"] = "raw Svg.NET paint server; not part of the JS surface",
-        ["gradient.startPoint"] = "Canvas2D gradient construction detail, fixed at creation",
-        ["gradient.endPoint"] = "Canvas2D gradient construction detail, fixed at creation",
-        ["gradient.startRadius"] = "Canvas2D gradient construction detail, fixed at creation",
-        ["gradient.endRadius"] = "Canvas2D gradient construction detail, fixed at creation",
-        ["gradient.startAngle"] = "Canvas2D conic gradient construction detail, fixed at creation",
-        ["gradient.type"] = "inherited SnapElement tag name; documented on element",
-        ["ctx.canvas"] = "back-reference to the owning canvas",
-        ["matrix.toSkMatrix"] = "raw SKMatrix; not part of the JS surface",
-        ["matrix.toSvgMatrix"] = "raw Svg.NET matrix; not part of the JS surface",
-        ["Logo.getProp"] = "interop helper for reading JS option objects",
-        ["Logo.invokeCallback"] = "interop helper for calling a JS mark function",
-
-        // Lifetime management, not drawing.
-        ["bitmap.dispose"] = "documented in the Skia area prose rather than as a call",
-        ["canvas.dispose"] = "lifetime management, not a drawing call",
-        ["paper.saveImage"] = "server-side file write; ExecuteScript outFile is the documented route",
-        ["canvas.saveImage"] = "server-side file write; ExecuteScript outFile is the documented route",
-        ["bitmap.saveImage"] = "server-side file write; ExecuteScript outFile is the documented route"
-    };
+    private static IReadOnlyDictionary<string, string> Undocumented => JsSurface.Excluded;
 
     private static bool IsDeliberatelyUndocumented(string receiver, string member) =>
         Undocumented.ContainsKey($"{receiver}.{member}");
@@ -170,6 +114,10 @@ public class ApiDocumentationTests : TestsRuntime
             if (method.IsSpecialName) continue;                 // property accessors and operators
             if (method.DeclaringType == typeof(object)) continue;
             if (method.Name is "ToString" or "Equals" or "GetHashCode" or "GetType") continue;
+
+            // Shared with the manifest so both agree on what the surface is. Catches compiler
+            // artifacts such as a record's <Clone>$, which no script can call.
+            if (JsSurface.NotSurface.Contains(method.Name)) continue;
             yield return Camel(method.Name);
         }
 

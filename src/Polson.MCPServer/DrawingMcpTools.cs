@@ -35,6 +35,12 @@ public class DrawingMcpTools
     public SessionRegistry Registry { get; }
 
     public IKnowledgeIndex Knowledge { get; }
+
+    /// <summary>
+    /// Top score below which prose retrieval is reporting its nearest neighbour rather than an answer.
+    /// </summary>
+    /// <remarks>Calibrated against observed hits: on-target passages score 19-31, off-target ones 2-8.</remarks>
+    public const double ScoreFloor = 10.0;
     #endregion
 
     #region Methods
@@ -44,7 +50,13 @@ public class DrawingMcpTools
         "drawing, perspective, lighting, anatomy, composition, logo geometry, typography, distilled from the studio " +
         "reference library — plus the Polson JS SDK core and schema documents. CALL THIS FIRST when you know what you " +
         "want to draw but not how the studio does it (e.g. 'two point perspective box', 'cast shadow falloff', " +
-        "'golden ratio logo grid', 'optical kerning'). Each result carries a resource URI to read in full.")]
+        "'golden ratio logo grid', 'optical kerning'). Each result carries a resource URI to read in full.\n\n" +
+        "Pass a CALL NAME instead ('paper.squircle', 'ctx.drawRimLight', or a bare 'clearSpaceGuide') and this " +
+        "resolves it exactly against the generated symbol index rather than searching prose. Read `confidence`: " +
+        "'direct' means the call exists and the returned signature is authoritative; 'no-match' on a call name is a " +
+        "DEFINITIVE answer that no such call exists — do not write it, use `nearest` instead; 'related' means these " +
+        "are the closest passages and confirm nothing about any call. `notSearched` lists corpora not consulted, so " +
+        "an empty result never means the knowledge is absent.")]
     public async Task<JsonObject> Search(
         [Description("What you are trying to do or find, in natural language or as an API name (e.g. 'construct a perspective cylinder').")] string query,
         [Description("Number of passages to return (1-25; default 5).")] int? k = null,
@@ -59,6 +71,34 @@ public class DrawingMcpTools
             "sdk" or "api" or "reference" => KnowledgeScope.Sdk,
             _ => KnowledgeScope.All
         };
+
+        // A dotted, space-free query is a claim that a call exists, and that claim gets an exact
+        // answer. Routing it through prose retrieval instead is how an agent gets told about the
+        // raster Logo toolkit when it asked for a vector squircle, and believes it.
+        var named = JsSymbolManifest.ResolveQuery(query);
+        if (JsSymbolManifest.LooksLikeSymbol(query) && named.Count == 0)
+        {
+            var suggestions = new JsonArray();
+            foreach (var s in JsSymbolManifest.Nearest(query, 5))
+            {
+                suggestions.Add(new JsonObject { ["name"] = s.Name, ["signature"] = s.Signature, ["uri"] = s.Uri });
+            }
+
+            return new JsonObject
+            {
+                ["query"] = query,
+                ["confidence"] = "no-match",
+                ["scope"] = "symbols",
+                ["backend"] = "symbol-index",
+                ["count"] = 0,
+                ["results"] = new JsonArray(),
+                ["nearest"] = suggestions,
+                ["hint"] = $"`{JsSymbolManifest.Normalise(query)}` is not a call in this SDK. This is a definitive "
+                    + "answer from the generated symbol index, not a failed text search — do not write it. Use one of "
+                    + "`nearest`, list a receiver's full surface at `polson://sdk/symbols/{Receiver}`, or search again "
+                    + "in prose for the technique rather than the name."
+            };
+        }
 
         var hits = await Knowledge.SearchAsync(query, k ?? 5, searchScope, cancellationToken);
 
@@ -77,16 +117,55 @@ public class DrawingMcpTools
             });
         }
 
+        var symbols = new JsonArray();
+        foreach (var s in named)
+        {
+            symbols.Add(new JsonObject
+            {
+                ["name"] = s.Name,
+                ["signature"] = s.Signature,
+                ["kind"] = s.Kind,
+                ["area"] = s.Area,
+                ["uri"] = s.Uri,
+                ["inherited"] = s.Inherited
+            });
+        }
+
+        // Prose retrieval always returns its nearest neighbour, so a low top score means "nothing
+        // here answers this" rather than "here is a weak answer". Say which it is.
+        var confidence = named.Count > 0
+            ? "direct"
+            : hits.Count > 0 && hits[0].Score >= ScoreFloor ? "related" : "no-match";
+
+        var notSearched = new JsonArray();
+        foreach (var s in Enum.GetValues<KnowledgeScope>())
+        {
+            if (s != KnowledgeScope.All && searchScope != KnowledgeScope.All && s != searchScope)
+            {
+                notSearched.Add(JsonValue.Create(s.ToString().ToLowerInvariant()));
+            }
+        }
+
         return new JsonObject
         {
             ["query"] = query,
+            ["confidence"] = confidence,
             ["scope"] = searchScope.ToString().ToLowerInvariant(),
+            ["notSearched"] = notSearched,
             ["backend"] = Knowledge.Name,
+            ["symbols"] = symbols,
             ["count"] = results.Count,
             ["results"] = results,
-            ["hint"] = results.Count == 0
-                ? "No passages matched. Try fewer or more general words, or read `polson://manual/index` for the manual catalogue."
-                : "Read the `uri` of a result for the full section. Confirm exact call signatures in `polson://sdk/core/{Area}` before writing the script."
+            ["hint"] = confidence switch
+            {
+                "direct" => "`symbols` resolved exactly against the generated index — those signatures are authoritative. "
+                    + "The passages below are context for how the call is used.",
+                "related" => "Read the `uri` of a result for the full section. These are the nearest passages, not a "
+                    + "confirmation that any particular call exists — check `polson://sdk/symbols` before writing one.",
+                _ => "Nothing matched with confidence. Nothing here confirms a capability exists or is absent: to settle "
+                    + "that, read `polson://sdk/symbols` or `polson://sdk/symbols/{Receiver}`. "
+                    + (notSearched.Count > 0 ? $"Scopes not consulted: {string.Join(", ", notSearched.Select(n => n!.ToString()))}." : "")
+            }
         };
     }
 

@@ -11,11 +11,14 @@ using System.Text;
 using Jint;
 using Jint.Native;
 using Jint.Runtime;
+using System.Threading;
+using System.Threading.Tasks;
 using Jint.Runtime.Interop;
+using Polson.ExtendedMind.ImageGeneration;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
-public class JsDrawingEngine : Runtime
+public partial class JsDrawingEngine : Runtime
 {
     #region Constructors
     public JsDrawingEngine()
@@ -27,10 +30,35 @@ public class JsDrawingEngine : Runtime
     public static int ScriptTimeoutSeconds { get; set; } = 30;
 
     public static int MaxStatements { get; set; } = 2_000_000;
+
+    /// <summary>
+    /// Asset requisition surface, configured once at startup. Null means the global is not registered
+    /// at all; prefer a disabled toolkit, so a script asking for material gets a clear "not
+    /// configured" refusal instead of a ReferenceError it cannot interpret.
+    /// </summary>
+    public static AssetRequisitionToolkit? Assets { get; set; }
     #endregion
 
+    /// <summary>Whole-word `await`, ignoring occurrences inside identifiers.</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"\bawait\s")]
+    private static partial System.Text.RegularExpressions.Regex AwaitPattern();
+
     #region Methods
-    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85)
+    /// <summary>Synchronous entry point, for callers with no async context.</summary>
+    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85) =>
+        ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Executes a script, awaiting any promises it creates.
+    /// </summary>
+    /// <remarks>
+    /// A script containing `await` is wrapped in an async IIFE, because Jint does not allow top-level
+    /// await in a plain script. That wrapping changes one thing: inside a function body a bare
+    /// trailing expression is no longer the completion value, so an awaiting script must `return`
+    /// what it wants rendered. Scripts with no `await` are executed unwrapped and keep exactly their
+    /// previous semantics, including a bare trailing `paper;`.
+    /// </remarks>
+    public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(jsScript);
 
@@ -49,6 +77,12 @@ public class JsDrawingEngine : Runtime
             var engine = new Engine(options =>
             {
                 options.Host.StringCompilationAllowed = false;
+
+                // Asset requisition is network I/O returning Task<T>. TaskInterop turns those into
+                // JS promises so a script can await them, instead of the engine blocking a thread on
+                // a multi-second HTTP call. PromiseTimeout bounds how long one may stay pending.
+                options.ExperimentalFeatures = ExperimentalFeature.TaskInterop;
+                options.Constraints.PromiseTimeout = TimeSpan.FromSeconds(ScriptTimeoutSeconds * 4);
                 options.TimeoutInterval(TimeSpan.FromSeconds(ScriptTimeoutSeconds));
                 options.LimitRecursion(100);
                 options.MaxStatements(MaxStatements);
@@ -85,6 +119,11 @@ public class JsDrawingEngine : Runtime
             // Pure .NET Logotype & Typography Toolkit
             var logoTypeToolkit = new LogoTypeToolkit();
             engine.SetValue("LogoType", logoTypeToolkit);
+
+            // Cloud asset requisition. Registered even when disabled so scripts can branch on the
+            // returned failure rather than on the global being absent.
+            var assets = Assets ?? new AssetRequisitionToolkit(null, new RequisitionCache(), new AssetBudget(0), "agent");
+            engine.SetValue("Assets", assets);
 
             // Global logging & exit helpers
             engine.SetValue("log", new Action<string>(msg =>
@@ -124,20 +163,20 @@ public class JsDrawingEngine : Runtime
                 return canvas;
             };
 
-            var canvasConstructor = new ClrFunction(engine, "Canvas", (_, args) =>
-            {
-                var c = canvasFactory(args);
-                return JsValue.FromObject(engine, c);
-            });
-
             var createCanvasFunc = new ClrFunction(engine, "createCanvas", (_, args) =>
             {
                 var c = canvasFactory(args);
                 return JsValue.FromObject(engine, c);
             });
 
-            engine.SetValue("Canvas", canvasConstructor);
             engine.SetValue("createCanvas", createCanvasFunc);
+
+            // `Canvas` is documented as a constructor alias, but a ClrFunction has no [[Construct]],
+            // so `new Canvas(w, h)` threw "Canvas is not a constructor". Declaring it in JS fixes
+            // that without a TypeReference, which would bypass canvas tracking and so break the
+            // documented auto-render of the last canvas a script creates: a JS constructor that
+            // returns an object yields that object, so this works with or without `new`.
+            engine.Execute("function Canvas(width, height) { return createCanvas(width, height); }");
 
             // Pure .NET Snap function & namespace
             var snapFunc = new ClrFunction(engine, "Snap", (_, args) =>
@@ -260,7 +299,29 @@ public class JsDrawingEngine : Runtime
             });
             engine.SetValue("ImageData", imageDataConstructor);
 
-            var evalResult = engine.Evaluate(jsScript);
+            // Standalone path objects for ctx.fill/stroke/clip(path). Mirrors the DOM Path2D
+            // constructors: empty, copy, or from an SVG "d" string. Both names are registered
+            // because the SDK reference types these parameters as CanvasPath while scripts
+            // ported from browser canvas code reach for Path2D.
+            // A TypeReference, not a ClrFunction: only the former carries [[Construct]], so `new`
+            // works and Jint resolves the three CanvasPath constructors by argument type.
+            var canvasPathConstructor = TypeReference.CreateTypeReference<CanvasPath>(engine);
+
+            engine.SetValue("CanvasPath", canvasPathConstructor);
+            engine.SetValue("Path2D", canvasPathConstructor);
+
+            // Newlines around the script guard against a trailing line comment swallowing the closer.
+            // Only scripts that actually await are wrapped. Inside a function body a bare trailing
+            // expression is not a return value, so wrapping unconditionally would silently turn
+            // `paper;` at the end of a script into undefined — the documented way to hand back a
+            // drawing. Sync scripts therefore keep byte-identical semantics; an awaiting script must
+            // use an explicit `return`, which is what the reference tells it to do.
+            var needsAwait = AwaitPattern().IsMatch(jsScript);
+            var source = needsAwait
+                ? $"(async () => {{\n{jsScript}\n}})();"
+                : jsScript;
+
+            var evalResult = await engine.EvaluateAsync(source, null, ct);
             sw.Stop();
 
             result.ExecutionTimeMs = sw.ElapsedMilliseconds;
@@ -339,6 +400,16 @@ public class JsDrawingEngine : Runtime
                 result.SvgXml = finalPaper.ToString();
                 result.ImageBytes = finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality);
             }
+        }
+        catch (PromiseRejectedException prex)
+        {
+            // An awaited call that threw surfaces here rather than as JavaScriptException, and would
+            // otherwise fall through to the generic handler and lose the script-level error text.
+            sw.Stop();
+            result.ExecutionTimeMs = sw.ElapsedMilliseconds;
+            result.Success = false;
+            result.Error = $"JavaScript error: {prex.Message}";
+            Runtime.Error("JavaScript promise rejected: {0}", result.Error);
         }
         catch (JavaScriptException jsex)
         {

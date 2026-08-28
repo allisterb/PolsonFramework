@@ -63,6 +63,11 @@ public class CanvasGradient
         return this;
     }
 
+    /// <param name="globalAlpha">
+    /// Extra alpha baked into the stops. The canvas pipeline leaves this at 1 and carries
+    /// globalAlpha on the paint instead, so that it applies uniformly to gradients, patterns and
+    /// shaders; passing it here as well would apply it twice.
+    /// </param>
     public SKShader CreateShader(float globalAlpha = 1f)
     {
         if (_colorStops.Count == 0)

@@ -614,25 +614,26 @@ public class CanvasRenderingContext2D
         }
 
         var sampling = new SKSamplingOptions(SKFilterMode.Linear);
+        using var paint = _currentState.CreateImagePaint();
 
         // 9-parameter overload: sx, sy, sw, sh, dx, dy, dw, dh
         if (arg5.HasValue && arg6.HasValue && arg7.HasValue && arg8.HasValue)
         {
             var srcRect = SKRect.Create(arg1, arg2, arg3!.Value, arg4!.Value);
             var destRect = SKRect.Create(arg5.Value, arg6.Value, arg7.Value, arg8.Value);
-            Canvas.SkCanvas.DrawBitmap(bmp, srcRect, destRect, sampling, null);
+            Canvas.SkCanvas.DrawBitmap(bmp, srcRect, destRect, sampling, paint);
         }
         // 5-parameter overload: dx, dy, dw, dh
         else if (arg3.HasValue && arg4.HasValue)
         {
             var destRect = SKRect.Create(arg1, arg2, arg3.Value, arg4.Value);
-            Canvas.SkCanvas.DrawBitmap(bmp, destRect, sampling, null);
+            Canvas.SkCanvas.DrawBitmap(bmp, destRect, sampling, paint);
         }
         // 3-parameter overload: dx, dy
         else
         {
             var destRect = SKRect.Create(arg1, arg2, bmp.Width, bmp.Height);
-            Canvas.SkCanvas.DrawBitmap(bmp, destRect, sampling, null);
+            Canvas.SkCanvas.DrawBitmap(bmp, destRect, sampling, paint);
         }
     }
 
@@ -643,7 +644,8 @@ public class CanvasRenderingContext2D
             using var bmp = SvgRenderPipeline.RenderToBitmap(
                 paper.Document, (int?)(width ?? paper.Width), (int?)(height ?? paper.Height));
             var destRect = SKRect.Create(x, y, width ?? paper.Width, height ?? paper.Height);
-            Canvas.SkCanvas.DrawBitmap(bmp, destRect, new SKSamplingOptions(SKFilterMode.Linear), null);
+            using var paint = _currentState.CreateImagePaint();
+            Canvas.SkCanvas.DrawBitmap(bmp, destRect, new SKSamplingOptions(SKFilterMode.Linear), paint);
         }
         else if (svgObj is string svgXml)
         {
@@ -659,8 +661,9 @@ public class CanvasRenderingContext2D
 
                 Canvas.SkCanvas.Save();
                 Canvas.SkCanvas.Translate(x, y);
-                var matrix = SKMatrix.CreateScale(scaleX, scaleY);
-                Canvas.SkCanvas.DrawPicture(skSvg.Picture, in matrix);
+                Canvas.SkCanvas.Scale(scaleX, scaleY);
+                using var paint = _currentState.CreateImagePaint();
+                Canvas.SkCanvas.DrawPicture(skSvg.Picture, paint);
                 Canvas.SkCanvas.Restore();
             }
         }

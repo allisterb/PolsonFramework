@@ -40,7 +40,8 @@ public static class SdkDocs
         new("Drawing", ["Drawing"], "Drawing"),
         new("Logo", ["Logo"], "Logo"),
         new("VectorLogo", ["VectorLogo", "vectorLogo"], "VectorLogo & Snap.svg Logo Methods"),
-        new("LogoType", ["LogoType", "logoType", "Typography"], "LogoType")
+        new("LogoType", ["LogoType", "logoType", "Typography"], "LogoType"),
+        new("Assets", ["Assets", "ExtendedMind"], "Assets (Cloud Asset Requisition)")
     ];
     #endregion
 

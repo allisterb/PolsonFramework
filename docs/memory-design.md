@@ -58,7 +58,20 @@ call, and would have written Canvas2D code for a vector job. This is the same fa
 convinced a harness agent that vector gradients did not exist. It is not a ranking problem that
 better embeddings fix — a similarity search has no way to say *"that is not here."* See §3.
 
-### 1c. Not yet ingested — Janson, 37,311 words
+### 1c. Janson — extracted, but NOT for the public corpus
+
+**Decision (2026-08-27): the Janson extraction is private-testing material only.** *The DC Comics
+Guide to Pencilling Comics* is in copyright, and a retrieval corpus that serves its text to agents
+in a publicly available studio would be redistribution. It stays in `reference/` for local
+evaluation and is excluded from the ingestion order below.
+
+*Imaginative Drawing* (John Guy) is intended to be freely shared and is the corpus to build on
+instead — subject to §1e.
+
+The extraction detail is retained here because the chunking problem it exposes applies to any
+scanned book, including the one we can use.
+
+### 1d. The Janson chunking problem, which generalises
 
 `reference/books/janson-pencilling/` — 20 files, 220 KB, 171 figures, 122 captions, 77 page
 markers. Verbatim EPUB extraction, verified against source, codepoint-scanned clean.
@@ -87,15 +100,30 @@ So Janson needs its own chunk strategy: paragraph groups bounded by page markers
 figure-and-caption kept atomic. Neither the default RAG splitter nor the current heading splitter
 is right for it.
 
-### 1d. Ingestion order
+### 1e. *Imaginative Drawing* is not currently ingestible at all
 
-1. **SDK core + schema** — already indexed; fix `SnapElement` subheadings.
-2. **Studio manuals** — already indexed; no change needed.
-3. **Janson** — new chunker, new `Reference` scope, citations required.
-4. Remaining `reference/books/*.pdf` — **blocked**: no codepoint-scan verdict recorded in
-   `reference/README.md`, and PDF extraction quality is unverified. Do not ingest until scanned.
+The source PDFs are **scanned images with zero extractable text** — `mutool draw -F txt` yields 0
+words from all five chapter files. What exists is a **53-page PNG sample** of a ~640-page book:
 
----
+| Chapter | Pages sampled | Range |
+| :--- | ---: | :--- |
+| 1 Observation | 25 | 34–75 |
+| 2 Perspective | 9 | 154–246 |
+| 3 Light | 6 | 274–323 |
+| 4 Anatomy | 7 | 350–551 |
+| 5 Composition | 6 | 580–627 |
+
+Chapter 4 covers roughly 200 pages of anatomy with seven images. Before any of this can be a
+retrieval corpus it needs OCR or a full page render, and then a fidelity pass — see §4.
+
+### 1f. Ingestion order
+
+1. **SDK core + schema** — already indexed; `SnapElement` subheadings done.
+2. **Studio manuals** — indexed, but see §4: their sourcing is not trustworthy yet.
+3. *Imaginative Drawing* — **blocked** on OCR/extraction; currently image-only.
+4. Janson — **excluded** from the public corpus on copyright grounds (§1c).
+5. Remaining `reference/books/*.pdf` — **blocked**: no codepoint-scan verdict in
+   `reference/README.md`, extraction quality unverified.
 
 ## 2. Retrieval shape
 
@@ -213,3 +241,50 @@ a null one, and it is invisible to any metric that only counts whether the query
 
 **Suggested acceptance targets** once the corpus is complete: `NoMatch` under 10% of queries, zero
 unresolvable calls written, and no hand-rolled duplication of a documented toolkit call.
+
+---
+
+## 4. The manuals are not sourced the way they claim
+
+Manuals 05–09 each open with `> **Source Reference**: *Imaginative Drawing*, Chapter N` and then
+attribute specific claims to specific pages — `> **Core Insight from the Book (Page 350 & 550)**`.
+Four of those citations were checked against the page images. Three do not support the claim.
+
+| Manual | Cites | Claim attributed | What the page actually is |
+| :--- | :--- | :--- | :--- |
+| 08 Anatomy | p350 & p550 | the 8-head proportional canon | p350 = "4.3 Anatomical Information: The Skeleton"; p550 = "4.5 Simplification". Neither mentions head units. |
+| 08 Anatomy | p550–551 | blocking from volumetric primitives | p551 is four stylisation examples (naturalistic → cartoon). No volumetric blocking. |
+| 07 Lighting | p323 | three-point key/fill/rim | **Correct** — p323 is "3.6 Common Lighting Setups". But the intensities and angles are invented. |
+| 09 Composition | p580 & p600 | geometric armatures, rule of thirds, golden ratio | p580 = "5.2 Emphasis" — visual weight, focal point, attentional hierarchy. No armatures. |
+
+Manual 09 also cites **page 595, which was never extracted** — a citation to a page nobody read.
+
+The p323 case is the subtlest and the most instructive. The concept is faithfully carried over, but
+the manual adds `~70%` / `~30%` / `~90%` intensities and `-45°` / `+60°` angles, and
+`Drawing.createThreePointLighting` ships those as defaults (`0.75f`, `0.30f`, `0.90f`, `-45f`,
+`60f`). The page itself says these setups are *"jumping-off points rather than formulas to be
+followed exactly."* Invented precision was attributed to a source that explicitly disclaims it.
+
+**The content is not necessarily wrong.** The 8-head canon, the rule of thirds and Φ are real,
+standard art instruction, and sensible API defaults are sensible regardless of provenance. The
+problem is that the manuals present themselves as a distillation of *this book* and are not one.
+A citation nobody can check is worse than no citation, because it manufactures confidence — the
+same failure class as an API reference that documents a call which does not exist.
+
+The reverse is also true: the manuals **miss what the source does teach**. Page 580's visual-weight
+and attentional-hierarchy material is genuinely useful and absent from Manual 09; page 551's
+stylised-proportion material is absent from Manual 08, which was separately flagged as a gap.
+
+### What to do
+
+- **Do not ship the manuals as sourced references.** Either strip the page citations — leaving them
+  as what they are, generic studio guidance, which is still useful — or re-derive them from pages
+  actually read.
+- **Add the cheap mechanical guard now**: assert every `Page N` citation names a page present under
+  `reference/books/chapter*_pages/`. It cannot check semantic fidelity, but it stops citations to
+  pages nobody has seen, and it would have caught page 595.
+- **Then re-derive properly**: OCR or render the full chapters, and check each manual section
+  against the pages it cites. A 53-page sample of a 640-page book cannot support chapter-level
+  claims.
+
+---

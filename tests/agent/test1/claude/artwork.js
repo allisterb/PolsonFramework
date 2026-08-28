@@ -1,199 +1,421 @@
-// ═══════════════════════════════════════════════════════════════════════════
-//  Flying superhero — recreation of reference_images/comic2.png
-//  Polson Graphics MCP · Snap.svg vector build · 1024 x 1024 · transparent bg
-//
-//  Construction notes
-//  ------------------
-//  All coordinates are in the reference image's own 1024x1024 pixel space, so
-//  every landmark below is a *measured* value (sampled from the reference with
-//  Skia.Image.load + getPixel), not an eyeballed one. Key measurements:
-//
-//    head      crown y=62, chin y=276, face 526-670 x 132-276  -> 1 head ~ 200px
-//    eyes      (561,195) and (635,193), r=11;  nose (597,220)
-//    shoulders y=300, x 476-688      belt y 486-540      hips y 530-570
-//    raised arm   shoulder (650,315) -> elbow (785,205) -> fist (676,45)
-//    left arm     shoulder (486,306) -> elbow (446,448) -> fist (338,316)
-//    cape         tip (196,517), right edge x=770 @ y=450, hem y~840
-//
-//  The figure measures ~5 head units along its action line, not the 8-head
-//  heroic canon of Studio Manual 08 — the reference is an emoji-proportioned
-//  figure with a deliberately oversized head. The canon was therefore used as a
-//  measuring system (everything below is expressed against the measured head
-//  unit) rather than as a generator.
-//
-//  Layer order is back-to-front: cape -> legs -> torso -> arms -> belt/emblem/
-//  collar -> head. Overlapping capsules that share a userSpaceOnUse gradient
-//  join seamlessly, which is how the bent limbs are built.
-// ═══════════════════════════════════════════════════════════════════════════
+/* =====================================================================
+   "Night Passage" — a wooden sailing ship on the open ocean, moonlit.
+   Polson JS SDK, Canvas2D + Skia. 1440x860.
 
-const W = 1024, H = 1024;
+   Run with ExecuteScript { outFile: 'output.webp', quality: 92 }.
+   Requires three requisitioned materials in the session scratchpad:
+     Session.moonUri   cratered lunar regolith -> the moon's disc
+     Session.clothUri  woven canvas            -> sailcloth weave
+     Session.oakUri    weathered oak planking  -> hull planking
+   They supply SURFACE only. Every form here is constructed in code.
 
-// ── Gradient definitions ────────────────────────────────────────────────────
-// The Snap adapter has no gradient factory, and element.attr({fill:'url(#id)'})
-// rewrites the reference into a bogus colour. Seeding the document through
-// Snap.parse() and setting the raw `style` string is the only route that
-// survives serialisation. See findings.md.
-const DEFS = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>
-<linearGradient id="gCape" gradientUnits="userSpaceOnUse" x1="300" y1="300" x2="360" y2="836">
- <stop offset="0" stop-color="#E24032"/><stop offset="0.55" stop-color="#E8412F"/><stop offset="1" stop-color="#EE4335"/></linearGradient>
-<linearGradient id="gCapeR" gradientUnits="userSpaceOnUse" x1="726" y1="330" x2="648" y2="786">
- <stop offset="0" stop-color="#7E2414"/><stop offset="0.3" stop-color="#8E2919"/><stop offset="0.55" stop-color="#AC3123"/><stop offset="0.78" stop-color="#CE3D2E"/><stop offset="1" stop-color="#E8412F"/></linearGradient>
-<linearGradient id="gFold" gradientUnits="userSpaceOnUse" x1="440" y1="310" x2="360" y2="750">
- <stop offset="0" stop-color="#B23628"/><stop offset="0.4" stop-color="#9A2E1D"/><stop offset="0.8" stop-color="#B8352A"/><stop offset="1" stop-color="#E24032"/></linearGradient>
-<linearGradient id="gTorso" gradientUnits="userSpaceOnUse" x1="480" y1="300" x2="700" y2="545">
- <stop offset="0" stop-color="#4BABF6"/><stop offset="1" stop-color="#2E94EB"/></linearGradient>
-<linearGradient id="gShade" gradientUnits="userSpaceOnUse" x1="505" y1="335" x2="565" y2="435">
- <stop offset="0" stop-color="#2B91EA"/><stop offset="1" stop-color="#3FA3F3"/></linearGradient>
-<linearGradient id="gLeg" gradientUnits="userSpaceOnUse" x1="420" y1="545" x2="645" y2="800">
- <stop offset="0" stop-color="#45A8F5"/><stop offset="1" stop-color="#2A90E9"/></linearGradient>
-<linearGradient id="gBoot" gradientUnits="userSpaceOnUse" x1="545" y1="780" x2="385" y2="1005">
- <stop offset="0" stop-color="#E8412F"/><stop offset="1" stop-color="#D53D2D"/></linearGradient>
-<linearGradient id="gGloveL" gradientUnits="userSpaceOnUse" x1="452" y1="456" x2="312" y2="296">
- <stop offset="0" stop-color="#B4342A"/><stop offset="1" stop-color="#E64536"/></linearGradient>
-<linearGradient id="gGloveR" gradientUnits="userSpaceOnUse" x1="800" y1="206" x2="666" y2="30">
- <stop offset="0" stop-color="#B0342A"/><stop offset="1" stop-color="#E64536"/></linearGradient>
-<linearGradient id="gArmR" gradientUnits="userSpaceOnUse" x1="650" y1="340" x2="800" y2="185">
- <stop offset="0" stop-color="#3199EE"/><stop offset="1" stop-color="#5DB6F8"/></linearGradient>
-</defs></svg>`;
+   Deterministic: one seeded LCG drives every scatter, so re-running
+   reproduces the identical picture.
 
-const paper = Snap.parse(DEFS);
+   Layer order is the design:
+     sky, stars, cirrus, halo, moon, haze
+     sea, moonglade, chop, swell, horizon seam
+     reflection, ship, bow wave + wake, vignette
 
-const g    = id => ({ style: `fill:url(#${id})` });   // paint-server reference
-const flat = c  => ({ style: `fill:${c}` });          // flat colour
-const P    = (d, a) => paper.path(d).attr(a);
+   Two workarounds for SDK defects are marked below; see findings.md
+   F5 (fillStyle alpha carry-over) and F4 (drawImage ignores colorFilter).
+   ===================================================================== */
 
-// Closed Catmull-Rom spline through measured silhouette anchors -> cubic path.
-// `t` slackens the tangents; lower values tighten corners (used for the small
-// faceted shapes such as the belt buckle and the chest emblem).
-const smooth = (pts, t = 1) => {
-    const n = pts.length, Q = i => pts[(i % n + n) % n];
-    let d = `M${Q(0)[0]},${Q(0)[1]}`;
-    for (let i = 0; i < n; i++) {
-        const [p0, p1, p2, p3] = [Q(i - 1), Q(i), Q(i + 1), Q(i + 2)];
-        d += ` C${p1[0] + (p2[0] - p0[0]) / 6 * t},${p1[1] + (p2[1] - p0[1]) / 6 * t}`
-           + ` ${p2[0] - (p3[0] - p1[0]) / 6 * t},${p2[1] - (p3[1] - p1[1]) / 6 * t} ${p2[0]},${p2[1]}`;
-    }
-    return d + ' Z';
-};
+const W = 1440, H = 860, HORIZON = 470;
+const MOON = { x: 912, y: 268, r: 84 };
+const SHIP = { x: 730, y: 604, s: 0.78, heel: 0.024 };
+const canvas = createCanvas(W, H);
+const ctx = canvas.getContext('2d');
+let _seed = 20260827;
+const rnd = () => (_seed = (_seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 
-// Round-capped tapered capsule between two joints, written as explicit cubics.
-// (Offsetting a Catmull-Rom spine instead produces wild overshoot at the caps,
-// because the cap anchors sit far closer together than the spine anchors.)
-// Bent limbs are two capsules sharing a joint; a shared userSpaceOnUse gradient
-// makes the overlap invisible.
-const capsule = (a, b, wa, wb) => {
-    const dx = b[0] - a[0], dy = b[1] - a[1], m = Math.hypot(dx, dy) || 1;
-    const ux = dx / m, uy = dy / m, nx = -uy, ny = ux, K = 4 / 3;   // 4/3·r ≈ semicircle
-    const A1 = [a[0] + nx * wa, a[1] + ny * wa], A2 = [a[0] - nx * wa, a[1] - ny * wa];
-    const B1 = [b[0] + nx * wb, b[1] + ny * wb], B2 = [b[0] - nx * wb, b[1] - ny * wb];
-    const kb = K * wb, ka = K * wa;
-    return `M${A1[0]},${A1[1]} L${B1[0]},${B1[1]}`
-         + ` C${B1[0] + ux * kb},${B1[1] + uy * kb} ${B2[0] + ux * kb},${B2[1] + uy * kb} ${B2[0]},${B2[1]}`
-         + ` L${A2[0]},${A2[1]}`
-         + ` C${A2[0] - ux * ka},${A2[1] - uy * ka} ${A1[0] - ux * ka},${A1[1] - uy * ka} ${A1[0]},${A1[1]} Z`;
-};
+// F5 workaround: an rgba() fillStyle latches its alpha onto the NEXT
+// gradient/shader assigned. An opaque colour clears it, so route every
+// gradient and shader through these.
+const setPaint  = p => { ctx.fillStyle   = '#000000'; ctx.fillStyle   = p; };
+const setStroke = p => { ctx.strokeStyle = '#000000'; ctx.strokeStyle = p; };
 
-// ── CAPE ────────────────────────────────────────────────────────────────────
-// One bright base for the whole garment, then the two shadow masses painted
-// over it. The reference's cape is predominantly lit (#E8412F); building it
-// dark-first and lightening reads as a slab, which is what the earlier drafts
-// got wrong.
+// Skia's Perlin noise is per-channel, so the cloud shader is iridescent
+// unless collapsed to luminance first.
+const DESAT = Skia.ColorFilter.colorMatrix([
+    0.33,0.34,0.33,0,0, 0.33,0.34,0.33,0,0, 0.33,0.34,0.33,0,0, 0,0,0,1,0 ]);
 
-// Full cape silhouette: collar -> left sail (tip at 196,517) -> hem -> right
-// wing (max reach x=770 at y=450) -> back to the collar.
-P(smooth([[452,264],[398,290],[364,338],[356,398],[342,436],[298,462],[240,492],[196,517],
-          [214,548],[252,566],[286,594],[306,634],[313,684],[306,736],[311,784],[340,818],
-          [406,842],[512,836],[584,818],[638,784],[682,728],[716,660],[746,588],[764,518],
-          [770,450],[764,384],[746,326],[706,282],[648,266],[560,286]]), g('gCape'));
+// Perspective row spacing: rows crowd at the horizon, open toward the viewer.
+const rowY = t => HORIZON + (H - HORIZON) * Math.pow(t, 2.05);
 
-// Right wing turned away from the light: near-maroon at the shoulder, resolving
-// to full lit red by the hem (sampled #7E2414 at y=420 -> #E34032 at y=800).
-P(smooth([[560,286],[648,266],[706,282],[746,326],[764,384],[770,450],[764,518],[746,588],
-          [716,660],[688,716],[640,762],[592,782],[558,742],[532,652],[520,542],[522,432],[536,340]]),
-  g('gCapeR'));
+/* ------------------------------- SKY ------------------------------- */
+const sky = ctx.createLinearGradient(0, 0, 0, HORIZON);
+sky.addColorStop(0.00,'#03050d'); sky.addColorStop(0.42,'#080f1e');
+sky.addColorStop(0.78,'#121c31'); sky.addColorStop(1.00,'#1e2b43');
+setPaint(sky); ctx.fillRect(0, 0, W, HORIZON);
+ctx.save();
+ctx.globalCompositeOperation='screen'; ctx.globalAlpha=0.13; ctx.colorFilter=DESAT;
+setPaint(Skia.Shader.perlinNoiseFractal(0.0035,0.0022,4,7));
+ctx.fillRect(0,0,W,HORIZON); ctx.restore();
 
-// The long fold running down the inside of the left sail — the single feature
-// that makes the cape read as cloth rather than a flat shape.
-P(smooth([[440,300],[410,344],[386,398],[390,456],[396,508],[374,560],[348,614],[332,660],
-          [344,700],[368,734],[398,752],[440,742],[456,672],[462,596],[466,524],[470,444],[464,366],[456,312]]),
-  g('gFold'));
+// Stars: extinguished toward the horizon haze, washed out by moon glare.
+for (let i=0;i<1100;i++){
+  const x=rnd()*W, y=rnd()*(HORIZON-6), dM=Math.hypot(x-MOON.x,y-MOON.y);
+  let a=Math.pow(rnd(),2.6)*0.95+0.05;
+  a*=Math.min(1,Math.pow((HORIZON-y)/(HORIZON*0.72),1.1));
+  a*=Math.min(1,Math.max(0.04,(dM-MOON.r)/320));
+  if(a<=0.015) continue;
+  const r=0.35+Math.pow(rnd(),3)*1.5, warm=rnd();
+  ctx.fillStyle = warm>0.90?`rgba(255,224,196,${a})`:warm>0.78?`rgba(200,220,255,${a})`:`rgba(236,243,255,${a})`;
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  if(r>1.5&&a>0.7){ ctx.strokeStyle=`rgba(226,236,255,${a*0.4})`; ctx.lineWidth=0.7;
+    ctx.beginPath(); ctx.moveTo(x-r*5,y); ctx.lineTo(x+r*5,y);
+    ctx.moveTo(x,y-r*5); ctx.lineTo(x,y+r*5); ctx.stroke(); }
+}
 
-// Deepest occlusion where the cape tucks behind the body.
-P(smooth([[450,462],[468,496],[468,590],[456,672],[438,708],[426,668],[430,586],[436,502]], 0.7),
-  flat('#7B2417'));
+// Cirrus, not cumulus: long blurred streaks echo the horizontal of the sea
+// and brighten as they approach the moon.
+function cirrusBand(cy,x0,x1,count,thick,alpha,blur,tilt){
+  ctx.save(); ctx.globalCompositeOperation='screen';
+  ctx.filter=Skia.ImageFilter.blur(blur,blur*0.42);
+  for(let i=0;i<count;i++){
+    const t=i/count, cx=x0+t*(x1-x0)+(rnd()-0.5)*90, y=cy+(rnd()-0.5)*thick*3.4;
+    const rx=(60+rnd()*210)*(0.7+rnd()*0.9), ry=thick*(0.35+rnd()*0.85);
+    const near=Math.exp(-Math.pow(Math.hypot(cx-MOON.x,y-MOON.y)/430,1.7)), lum=92+near*130;
+    ctx.globalAlpha=alpha*(0.35+rnd()*0.8);
+    ctx.fillStyle=`rgb(${Math.round(lum*0.86)},${Math.round(lum*0.95)},${Math.round(Math.min(255,lum*1.14))})`;
+    ctx.beginPath(); ctx.ellipse(cx,y,rx,ry,tilt+(rnd()-0.5)*0.05,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+cirrusBand(150,-120,700,26,13,0.20,15,-0.020);
+cirrusBand(112,780,1560,22,11,0.17,16,0.016);
+cirrusBand(238,620,1500,16,8,0.13,13,0.010);
+cirrusBand(372,-100,1540,34,7,0.22,9,-0.006);
+cirrusBand(412,200,1520,26,5,0.20,7,0.004);
+cirrusBand(330,700,1300,12,6,0.26,8,0.008);
 
-// ── LEGS & BOOTS ────────────────────────────────────────────────────────────
-// Trailing leg: thigh swings back and down, shin carries through to the ankle.
-P(capsule([582,548], [622,646], 44, 40), g('gLeg'));
-P(capsule([622,642], [566,782], 40, 30), g('gLeg'));
+/* ------------------------------- MOON ------------------------------ */
+for(const g of [[440,0.20],[255,0.22],[145,0.30],[102,0.34]]){
+  const halo=ctx.createRadialGradient(MOON.x,MOON.y,MOON.r*0.5,MOON.x,MOON.y,g[0]);
+  halo.addColorStop(0.0,`rgba(214,230,255,${g[1]})`);
+  halo.addColorStop(0.4,`rgba(170,198,244,${g[1]*0.34})`);
+  halo.addColorStop(1.0,'rgba(130,164,220,0)');
+  setPaint(halo); ctx.beginPath(); ctx.arc(MOON.x,MOON.y,g[0],0,Math.PI*2); ctx.fill();
+}
+// F4 workaround: ctx.colorFilter is ignored by drawImage, so the regolith
+// swatch is brightened on the bitmap itself before it is drawn.
+const lunar = Skia.Image.fromDataUrl(Session.moonUri).applyColorFilter(
+  Skia.ColorFilter.colorMatrix([1.85,0,0,0,0.22, 0,1.88,0,0,0.23, 0,0,1.92,0,0.27, 0,0,0,1,0]));
+ctx.save();
+ctx.beginPath(); ctx.arc(MOON.x,MOON.y,MOON.r,0,Math.PI*2); ctx.clip();
+ctx.fillStyle='#eef4ff'; ctx.fillRect(MOON.x-MOON.r,MOON.y-MOON.r,MOON.r*2,MOON.r*2);
+ctx.save(); ctx.globalAlpha=0.58;
+ctx.drawImage(lunar,MOON.x-MOON.r,MOON.y-MOON.r,MOON.r*2,MOON.r*2); ctx.restore();
+// a full moon is lit head-on, so it darkens only at the very limb
+const limb=ctx.createRadialGradient(MOON.x,MOON.y,MOON.r*0.76,MOON.x,MOON.y,MOON.r);
+limb.addColorStop(0,'rgba(0,0,0,0)'); limb.addColorStop(1,'rgba(52,74,116,0.38)');
+setPaint(limb); ctx.fillRect(MOON.x-MOON.r,MOON.y-MOON.r,MOON.r*2,MOON.r*2);
+ctx.restore();
 
-// Far foot, tucked into the cape's shadow, so it is painted a step darker.
-P(capsule([492,744], [414,784], 26, 23), flat('#CE3C2D'));
+// Haze is painted over the whole sky rect, never a band, so no edge shows.
+const haze=ctx.createLinearGradient(0,0,0,HORIZON);
+haze.addColorStop(0.00,'rgba(150,180,224,0)'); haze.addColorStop(0.55,'rgba(150,180,224,0)');
+haze.addColorStop(0.86,'rgba(150,180,224,0.055)'); haze.addColorStop(1.00,'rgba(158,188,230,0.19)');
+setPaint(haze); ctx.fillRect(0,0,W,HORIZON);
+ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,HORIZON); ctx.clip();
+const hazeM=ctx.createRadialGradient(MOON.x,HORIZON,10,MOON.x,HORIZON,430);
+hazeM.addColorStop(0.00,'rgba(198,220,255,0.26)'); hazeM.addColorStop(0.45,'rgba(198,220,255,0.08)');
+hazeM.addColorStop(1.00,'rgba(198,220,255,0)');
+setPaint(hazeM); ctx.beginPath(); ctx.arc(MOON.x,HORIZON,430,0,Math.PI*2); ctx.fill();
+ctx.restore();
 
-// Lead leg: thigh drives forward-left, knee foreshortened toward the viewer so
-// the calf disappears behind the cape — hence the rounded stump, not a shin.
-P(capsule([496,534], [440,624], 44, 40), g('gLeg'));
-P(capsule([440,620], [464,676], 40, 34), g('gLeg'));
+/* ------------------------------- SEA ------------------------------- */
+const sea=ctx.createLinearGradient(0,HORIZON,0,H);
+sea.addColorStop(0.000,'#2c3c54'); sea.addColorStop(0.035,'#141d2d');
+sea.addColorStop(0.280,'#080f1c'); sea.addColorStop(1.000,'#03060d');
+setPaint(sea); ctx.fillRect(0,HORIZON,W,H-HORIZON);
 
-// Inner-thigh separation.
-P(smooth([[543,552],[557,560],[550,632],[542,646],[535,594]], 0.6), flat('#1E85DD'));
+// The moonglade. Brightness is the product of distance from the glade axis
+// and depth down the frame; that product is what makes it read as a path on
+// water rather than a painted cone. Built from separable specks.
+const ROWS=118;
+for(let i=1;i<=ROWS;i++){
+  const t=i/ROWS, y=rowY(t), rowH=Math.max(1.0,rowY((i+1)/ROWS)-y);
+  const gh=20+t*235, count=Math.round(12+t*52);
+  for(let j=0;j<count;j++){
+    const x=(MOON.x-gh*2.4)+rnd()*gh*4.8;
+    if(x<-30||x>W+30) continue;
+    const g=Math.exp(-Math.pow(Math.abs(x-MOON.x)/gh,2.0));
+    if(g<0.05) continue;
+    const a=Math.min(0.70,g*(0.24+0.46*Math.pow(t,0.7))*(0.30+rnd()));
+    if(a<0.02) continue;
+    ctx.fillStyle=`rgba(${198+Math.round(g*48)},${216+Math.round(g*34)},${238+Math.round(g*17)},${a})`;
+    ctx.beginPath();
+    ctx.ellipse(x,y+rnd()*rowH,(1.2+rnd()*6.5)*(0.30+t*1.5),Math.max(0.5,rowH*(0.10+rnd()*0.22)),0,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+// Off-glade chop: short broken dashes at random angles. Long horizontals
+// here read as corduroy, which is the failure mode this avoids.
+for(let i=0;i<2600;i++){
+  const t=Math.pow(rnd(),0.5), y=rowY(t)+(rnd()-0.5)*6, x=rnd()*W;
+  const a=(0.025+rnd()*0.075)*(0.35+t)*(Math.abs(x-MOON.x)>260?1:0.5);
+  ctx.fillStyle=`rgba(146,172,210,${a})`;
+  ctx.beginPath();
+  ctx.ellipse(x,y,(0.8+rnd()*3.2)*(0.35+t*1.1),0.45+t*0.85,(rnd()-0.5)*0.16,0,Math.PI*2); ctx.fill();
+}
+// Swell crests: few, short, staggered, never spanning the frame.
+ctx.lineCap='round';
+for(let i=0;i<70;i++){
+  const t=0.24+Math.pow(rnd(),0.75)*0.80, y=rowY(Math.min(t,1));
+  if(y>H+40) continue;
+  const amp=1+t*11, len=(90+rnd()*320)*(0.4+t);
+  const x0=-100+rnd()*(W+120), x1=x0+len, cx=(x0+x1)/2;
+  const g=Math.exp(-Math.pow(Math.abs(cx-MOON.x)/(110+t*520),1.8));
+  ctx.strokeStyle=`rgba(184,206,240,${(0.03+g*0.17)*(0.35+t)})`;
+  ctx.lineWidth=0.6+t*2.0;
+  ctx.beginPath(); ctx.moveTo(x0,y);
+  ctx.bezierCurveTo(x0+len*0.3,y-amp,x0+len*0.7,y+amp,x1,y); ctx.stroke();
+}
+const seam=ctx.createLinearGradient(0,HORIZON-1,0,HORIZON+16);
+seam.addColorStop(0,'rgba(14,20,32,0.55)'); seam.addColorStop(1,'rgba(14,20,32,0)');
+setPaint(seam); ctx.fillRect(0,HORIZON-1,W,18);
 
-// Knee-high boot sweeping down-left to the toe at (392,1000).
-P(capsule([544,784], [462,900], 32, 28), g('gBoot'));
-P(capsule([462,896], [406,986], 28, 28), g('gBoot'));
+/* -------------------------- SHIP GEOMETRY --------------------------
+   Local frame: x along the keel (bow negative), y up-negative, waterline 0.
+   Placement is the four numbers in SHIP.                              */
+const MASTS=[
+ {x:-190,deck:-76,top:-410,cap:7.5,sails:[[-180,-86,112],[-286,-188,102],[-376,-294,78]]},
+ {x:-10, deck:-52,top:-478,cap:8.5,sails:[[-200,-90,130],[-320,-208,120],[-420,-328,92]]},
+ {x:150, deck:-64,top:-392,cap:6.5,sails:[[-320,-244,68]]}];
+const WATERLINE_D='M272,-26 C250,-8 170,2 60,4 C-70,6 -196,0 -258,-16';
+function hullPath(c){c.beginPath();c.moveTo(-296,-104);
+ c.bezierCurveTo(-262,-110,-228,-88,-196,-76);   // forward sheer
+ c.bezierCurveTo(-110,-58,-30,-52,56,-56);       // midship, lowest
+ c.bezierCurveTo(132,-62,196,-80,240,-100);      // rising to the poop
+ c.lineTo(266,-112); c.lineTo(272,-26);          // taffrail, transom
+ c.bezierCurveTo(250,-8,170,2,60,4);             // wetted edge
+ c.bezierCurveTo(-70,6,-196,0,-258,-16);
+ c.bezierCurveTo(-282,-26,-296,-62,-296,-104); c.closePath();}
+function sheerPath(c){c.beginPath();c.moveTo(-296,-104);
+ c.bezierCurveTo(-262,-110,-228,-88,-196,-76);
+ c.bezierCurveTo(-110,-58,-30,-52,56,-56);
+ c.bezierCurveTo(132,-62,196,-80,240,-100); c.lineTo(266,-112);}
+function waterlinePath(c){c.beginPath();c.moveTo(272,-26);
+ c.bezierCurveTo(250,-8,170,2,60,4); c.bezierCurveTo(-70,6,-196,0,-258,-16);}
+// Square sail: straight yard on top, leeches bowed slightly to leeward, foot
+// in a shallow catenary. Square sails are wider than they are tall.
+function sailPath(c,mx,yTop,yBot,hw){const h=yBot-yTop,b=hw*0.055;
+ c.beginPath(); c.moveTo(mx-hw,yTop); c.lineTo(mx+hw,yTop);
+ c.bezierCurveTo(mx+hw+b,yTop+h*0.50,mx+hw+b,yBot-h*0.18,mx+hw*1.02,yBot);
+ c.bezierCurveTo(mx+hw*0.45,yBot+h*0.100,mx-hw*0.45,yBot+h*0.115,mx-hw*1.02,yBot);
+ c.bezierCurveTo(mx-hw-b*0.9,yBot-h*0.18,mx-hw-b*1.2,yTop+h*0.50,mx-hw,yTop); c.closePath();}
+function spankerPath(c){c.beginPath();c.moveTo(152,-244);
+ c.bezierCurveTo(190,-252,222,-255,244,-251);    // gaff
+ c.bezierCurveTo(264,-198,274,-128,272,-70);     // leech
+ c.bezierCurveTo(232,-64,190,-66,152,-78); c.closePath();}   // boom
+const cloth=Skia.Image.fromDataUrl(Session.clothUri);
+const plank=Skia.Image.fromDataUrl(Session.oakUri).applyColorFilter(
+  Skia.ColorFilter.colorMatrix([0.34,0,0,0,0, 0,0.37,0,0,0, 0,0,0.46,0,0.01, 0,0,0,1,0]));
 
-// ── TORSO ───────────────────────────────────────────────────────────────────
-P(smooth([[572,278],[624,282],[666,302],[688,352],[692,412],[680,466],[672,518],[666,556],
-          [560,568],[494,554],[492,508],[482,468],[474,414],[476,352],[492,312],[528,286]]),
-  g('gTorso'));
-P(smooth([[504,320],[530,346],[524,430],[514,510],[500,552],[490,502],[480,460],[474,414],
-          [476,352]], 0.85), g('gShade'));               // core shadow down the near side
-P(smooth([[500,382],[514,412],[512,460],[502,486],[490,462],[490,412]], 0.7), flat('#66271D'));
-                                                        // contact shadow: arm against ribs
+/* ----- reflection, under the hull, before the ship ----- */
+ctx.save();
+ctx.translate(SHIP.x,SHIP.y+3); ctx.rotate(-SHIP.heel); ctx.scale(SHIP.s,-SHIP.s*0.46);
+ctx.filter=Skia.ImageFilter.blur(3,7); ctx.globalAlpha=0.62; ctx.fillStyle='#03060c';
+hullPath(ctx); ctx.fill(); ctx.restore();
+ctx.save(); ctx.filter=Skia.ImageFilter.blur(14,22); ctx.globalAlpha=0.44; ctx.fillStyle='#03060c';
+ctx.beginPath(); ctx.ellipse(SHIP.x-20,SHIP.y+64,215,68,0,0,Math.PI*2); ctx.fill(); ctx.restore();
+ctx.save(); ctx.beginPath(); ctx.rect(360,SHIP.y-2,700,150); ctx.clip();
+for(let i=0;i<1000;i++){
+  const y=SHIP.y+Math.pow(rnd(),1.25)*145, x=370+rnd()*680;
+  const g=Math.exp(-Math.pow(Math.abs(x-MOON.x)/300,2));
+  ctx.fillStyle=`rgba(178,200,236,${(0.04+rnd()*0.16)*(0.35+g)})`;
+  ctx.beginPath(); ctx.ellipse(x,y,1+rnd()*7,0.5+rnd()*1.3,0,0,Math.PI*2); ctx.fill();
+}
+ctx.restore();
 
-// ── ARMS ────────────────────────────────────────────────────────────────────
-// Raised arm: upper arm out to a high elbow, forearm folding back over the head.
-P(capsule([652,312], [790,200], 46, 36), g('gArmR'));
-P(capsule([788,198], [686,54],  36, 40), g('gGloveR'));
+/* ----------------------------- THE SHIP ---------------------------- */
+ctx.save();
+ctx.translate(SHIP.x,SHIP.y); ctx.rotate(SHIP.heel); ctx.scale(SHIP.s,SHIP.s);
 
-// Near arm: elbow low and out, forearm angling back up across the chest.
-P(capsule([486,306], [444,446], 36, 27), g('gTorso'));
-P(capsule([446,448], [354,332], 27, 32), g('gGloveL'));
-paper.circle(338, 316, 40).attr(g('gGloveL'));          // gloved fist
+// standing rigging, behind everything
+ctx.strokeStyle='rgba(9,13,21,0.9)'; ctx.lineCap='round'; ctx.lineWidth=2.0;
+for(const s of [[[-190,-410],[-452,-186]],[[-190,-292],[-412,-172]],[[-190,-238],[-346,-144]],
+ [[-10,-478],[-190,-400]],[[-10,-320],[-190,-278]],[[-10,-200],[-190,-172]],
+ [[150,-392],[-10,-312]],[[150,-250],[-10,-160]]])
+{ctx.beginPath();ctx.moveTo(s[0][0],s[0][1]);ctx.lineTo(s[1][0],s[1][1]);ctx.stroke();}
+ctx.lineWidth=1.6;
+for(const b of [[[-190,-410],[-56,-54]],[[-10,-478],[144,-64]],[[150,-392],[264,-112]],[[150,-392],[268,-70]]])
+{ctx.beginPath();ctx.moveTo(b[0][0],b[0][1]);ctx.lineTo(b[1][0],b[1][1]);ctx.stroke();}
 
-// ── BELT, EMBLEM, COLLAR ────────────────────────────────────────────────────
-P(smooth([[492,486],[566,504],[666,506],[666,538],[566,540],[492,516]], 0.4), flat('#F24236'));
-P(smooth([[583,494],[607,518],[583,542],[559,518]], 0.35), flat('#FDD835'));   // buckle
-P(smooth([[552,338],[620,328],[686,330],[662,378],[622,408],[584,376]], 0.5), flat('#FDD835'));
-P(smooth([[580,352],[621,346],[660,350],[636,378],[614,394],[594,372]], 0.5), flat('#E23936'));
-P(smooth([[446,264],[490,246],[548,264],[578,296],[600,304],[622,296],[654,262],[702,250],
-          [714,284],[678,316],[618,334],[558,330],[498,314],[448,296]]), flat('#ED4132'));
+// shrouds: lower section only, behind the sails, faint
+ctx.strokeStyle='rgba(12,17,26,0.55)';
+for(const m of MASTS){
+  const topY=m.deck-150, spread=34;
+  for(let side=-1;side<=1;side+=2){
+    ctx.lineWidth=1.2;
+    for(let k=0;k<4;k++){ctx.beginPath();ctx.moveTo(m.x+side*4,topY);
+      ctx.lineTo(m.x+side*(11+k*(spread/3)),m.deck+2);ctx.stroke();}
+    ctx.lineWidth=0.6;
+    for(let r=1;r<=7;r++){const t=r/8, yy=topY+(m.deck+2-topY)*t;
+      ctx.beginPath();ctx.moveTo(m.x+side*(4+7*t),yy);
+      ctx.lineTo(m.x+side*(4+(7+spread)*t),yy);ctx.stroke();}
+  }
+}
+// masts, tops and yards sit behind the canvas they carry
+ctx.strokeStyle='#0d121b';
+for(const m of MASTS){
+  ctx.lineWidth=m.cap;
+  ctx.beginPath();ctx.moveTo(m.x,m.deck+6);ctx.lineTo(m.x,m.top);ctx.stroke();
+  ctx.lineWidth=m.cap*0.75;
+  ctx.beginPath();ctx.moveTo(m.x-19,m.top+74);ctx.lineTo(m.x+19,m.top+74);ctx.stroke();
+  for(const s of m.sails){ctx.lineWidth=4.6;ctx.beginPath();
+    ctx.moveTo(m.x-s[2]-15,s[0]+3);
+    ctx.quadraticCurveTo(m.x,s[0]-3,m.x+s[2]+15,s[0]+3);ctx.stroke();}
+}
+ctx.lineWidth=4.4;
+ctx.beginPath();ctx.moveTo(150,-246);ctx.lineTo(248,-253);ctx.stroke();   // gaff
+ctx.beginPath();ctx.moveTo(150,-76);ctx.lineTo(278,-66);ctx.stroke();     // boom
+ctx.lineWidth=8.5;
+ctx.beginPath();ctx.moveTo(-280,-98);ctx.lineTo(-462,-186);ctx.stroke();  // bowsprit
 
-// ── HEAD ────────────────────────────────────────────────────────────────────
-P(smooth([[572,258],[624,258],[630,282],[600,308],[572,282]], 0.5), flat('#F0B429'));  // neck
+/* ----- sails ----- */
+function sailDetail(pathFn,mx,yTop,yBot,hw){
+  const h=yBot-yTop;
+  ctx.save(); pathFn(ctx); ctx.clip();
+  const belly=ctx.createRadialGradient(mx+hw*0.42,yTop+h*0.46,2,mx+hw*0.42,yTop+h*0.46,hw*1.35);
+  belly.addColorStop(0,'rgba(196,216,246,0.15)'); belly.addColorStop(1,'rgba(196,216,246,0)');
+  setPaint(belly); ctx.fillRect(mx-hw*1.4,yTop-8,hw*2.8,h+16);
+  ctx.strokeStyle='rgba(18,24,34,0.11)'; ctx.lineWidth=0.7;      // cloth seams
+  const n=Math.max(3,Math.round(hw/26));
+  for(let i=1;i<n;i++){const x=mx-hw+2*hw*(i/n);
+    ctx.beginPath();ctx.moveTo(x,yTop);
+    ctx.quadraticCurveTo(x+(x-mx)*0.05,yTop+h*0.5,x,yBot+h*0.06);ctx.stroke();}
+  ctx.strokeStyle='rgba(212,228,252,0.055)'; ctx.lineWidth=2.2;  // reef band
+  const y1=yTop+h*0.40;
+  ctx.beginPath();ctx.moveTo(mx-hw,y1);ctx.quadraticCurveTo(mx,y1+h*0.05,mx+hw,y1);ctx.stroke();
+  ctx.restore();
+}
+function paintSail(pathFn,gx0,gy0,gx1,gy1,bbox,tone,rim,detail){
+  pathFn(ctx);
+  const g=ctx.createLinearGradient(gx0,gy0,gx1,gy1);
+  g.addColorStop(0.00,tone[0]);g.addColorStop(0.34,tone[1]);g.addColorStop(1.00,tone[2]);
+  setPaint(g); ctx.fill();
+  ctx.save(); pathFn(ctx); ctx.clip();
+  ctx.globalCompositeOperation='overlay'; ctx.globalAlpha=0.26;
+  setPaint(Skia.Shader.bitmap(cloth,'repeat','repeat'));
+  ctx.fillRect(bbox[0],bbox[1],bbox[2],bbox[3]);
+  ctx.restore();
+  if(detail) detail();
+  // bolt rope: a gradient stroke, brightest on the moon side, fading away
+  const rg=ctx.createLinearGradient(rim[0],rim[1],rim[2],rim[3]);
+  rg.addColorStop(0.00,'rgba(226,240,255,0.85)');
+  rg.addColorStop(0.35,'rgba(198,218,250,0.34)');
+  rg.addColorStop(1.00,'rgba(150,175,215,0.12)');
+  setStroke(rg); ctx.lineWidth=1.15;
+  pathFn(ctx); ctx.stroke();
+}
+const TONE=['#65758d','#3d4859','#1c232f'];
+for(const m of MASTS) for(const s of m.sails){
+  const p=c=>sailPath(c,m.x,s[0],s[1],s[2]);
+  paintSail(p,m.x+s[2],s[0],m.x-s[2]*0.75,s[1],
+    [m.x-s[2]-20,s[0]-10,s[2]*2+40,s[1]-s[0]+40],TONE,
+    [m.x+s[2]*1.05,s[0]-6,m.x-s[2]*1.05,s[1]],
+    ()=>sailDetail(p,m.x,s[0],s[1],s[2]));
+}
+// the spanker is nearly edge-on to the moon, so it is the darkest sail
+paintSail(spankerPath,272,-251,152,-78,[140,-262,150,200],
+  ['#3c4759','#252d3b','#131922'],[276,-255,150,-80],
+  ()=>sailDetail(spankerPath,212,-250,-70,62));
 
-// Hair mass behind the face (measured extent x 498-697, y 62-268).
-P(smooth([[598,60],[616,62],[634,72],[652,84],[668,96],[682,112],[692,136],[697,168],
-          [694,200],[684,228],[680,250],[664,264],[642,268],[618,266],[598,266],[574,266],
-          [550,264],[528,258],[514,244],[512,226],[502,208],[498,182],[500,154],[508,126],
-          [522,98],[546,76],[572,64]]), flat('#543930'));
+function jib(head,tack,clew,bow){
+  const p=c=>{c.beginPath();c.moveTo(head[0],head[1]);
+    c.quadraticCurveTo((head[0]+tack[0])/2-bow*0.4,(head[1]+tack[1])/2+bow,tack[0],tack[1]);
+    c.lineTo(clew[0],clew[1]);
+    c.quadraticCurveTo((clew[0]+head[0])/2+bow,(clew[1]+head[1])/2,head[0],head[1]);
+    c.closePath();};
+  p(ctx);
+  const g=ctx.createLinearGradient(clew[0],clew[1],tack[0],tack[1]);
+  g.addColorStop(0,'#59687e'); g.addColorStop(1,'#232c3a');
+  setPaint(g); ctx.fill();
+  ctx.save(); p(ctx); ctx.clip();
+  ctx.globalCompositeOperation='overlay'; ctx.globalAlpha=0.22;
+  setPaint(Skia.Shader.bitmap(cloth,'repeat','repeat'));
+  ctx.fillRect(-480,-330,320,260); ctx.restore();
+  const rg=ctx.createLinearGradient(clew[0],clew[1],tack[0],tack[1]);
+  rg.addColorStop(0,'rgba(216,232,255,0.6)'); rg.addColorStop(1,'rgba(150,175,215,0.14)');
+  setStroke(rg); ctx.lineWidth=1.0; ctx.stroke();
+}
+jib([-196,-300],[-444,-180],[-250,-126],22);
+jib([-192,-232],[-342,-142],[-216,-92],16);
 
-// Face: egg, not a circle — widest at the eye line, tapering to the chin.
-P(smooth([[598,132],[634,140],[660,160],[670,192],[670,222],[656,252],[630,270],[598,276],
-          [566,270],[542,252],[528,222],[526,192],[536,160],[562,140]]), flat('#FFCA28'));
+/* ----- hull ----- */
+hullPath(ctx);
+const hullG=ctx.createLinearGradient(0,-116,0,4);
+hullG.addColorStop(0.00,'#37455e'); hullG.addColorStop(0.42,'#1b2333'); hullG.addColorStop(1.00,'#05080f');
+setPaint(hullG); ctx.fill();
+ctx.save(); hullPath(ctx); ctx.clip();
+ctx.globalCompositeOperation='overlay'; ctx.globalAlpha=0.50;
+setPaint(Skia.Shader.bitmap(plank,'repeat','repeat'));
+ctx.fillRect(-300,-120,580,132);
+ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+ctx.strokeStyle='rgba(4,7,12,0.85)'; ctx.lineWidth=5;            // the wale
+ctx.beginPath(); ctx.moveTo(-292,-70);
+ctx.bezierCurveTo(-200,-44,-40,-24,90,-28);
+ctx.bezierCurveTo(180,-32,240,-50,274,-68); ctx.stroke();
+ctx.strokeStyle='rgba(150,175,214,0.20)'; ctx.lineWidth=1.1;     // its lit top edge
+ctx.beginPath(); ctx.moveTo(-292,-74);
+ctx.bezierCurveTo(-200,-48,-40,-28,90,-32);
+ctx.bezierCurveTo(180,-36,240,-54,274,-72); ctx.stroke();
+ctx.fillStyle='rgba(3,5,9,0.95)';                                 // gun ports give scale
+for(let i=0;i<9;i++){const t=i/8, x=-250+t*480, y=-74+Math.sin(t*Math.PI)*26-8;
+  ctx.beginPath(); ctx.rect(x-8,y-8,16,15); ctx.fill();
+  ctx.fillStyle='rgba(154,178,216,0.22)';
+  ctx.fillRect(x-8,y-8,16,1.6);
+  ctx.fillStyle='rgba(3,5,9,0.95)';}
+ctx.restore();
+sheerPath(ctx);                                                   // rim light, moon side
+ctx.strokeStyle='rgba(212,230,255,0.72)'; ctx.lineWidth=1.7; ctx.stroke();
+ctx.beginPath(); ctx.moveTo(266,-112); ctx.lineTo(272,-26);
+ctx.strokeStyle='rgba(212,230,255,0.5)'; ctx.lineWidth=2.2; ctx.stroke();
 
-// Fringe over the face; inner edge is the measured hairline, peaking at (615,127).
-P(smooth([[508,222],[498,182],[500,154],[508,126],[522,98],[546,76],[572,64],[598,60],
-          [622,66],[646,78],[666,94],[682,112],[692,136],[697,168],[694,200],[688,220],
-          [670,206],[668,180],[660,152],[640,134],[615,127],[590,133],[565,150],[540,166],
-          [531,190],[527,212]], 0.9), flat('#543930'));
+// the stern lantern: the one warm note in an otherwise cold picture
+const lamp=ctx.createRadialGradient(258,-120,1,258,-120,50);
+lamp.addColorStop(0.0,'rgba(255,210,138,0.95)');
+lamp.addColorStop(0.2,'rgba(255,178,86,0.42)');
+lamp.addColorStop(1.0,'rgba(255,158,58,0)');
+setPaint(lamp); ctx.beginPath(); ctx.arc(258,-120,50,0,Math.PI*2); ctx.fill();
+ctx.fillStyle='rgba(255,232,186,0.97)';
+ctx.beginPath(); ctx.ellipse(258,-120,3.0,4.2,0,0,Math.PI*2); ctx.fill();
 
-// Features.
-P(smooth([[534,178],[556,161],[586,166],[588,177],[558,174],[538,187]], 0.6), flat('#795548'));
-P(smooth([[662,177],[640,159],[610,164],[608,175],[638,172],[658,185]], 0.6), flat('#795548'));
-paper.circle(561, 195, 11).attr(flat('#404040'));
-paper.circle(635, 193, 11).attr(flat('#404040'));
-paper.ellipse(597, 220, 10, 6).attr(flat('#F0A81D'));
-P(smooth([[564,240],[598,246],[634,238],[624,261],[598,269],[572,261]], 0.6), flat('#795548'));
+// Seat the hull in the water. Snap.path measures the wetted edge so foam can
+// be scattered along it rather than stroked as a clean curve.
+waterlinePath(ctx);
+ctx.strokeStyle='rgba(6,10,17,0.72)'; ctx.lineWidth=13; ctx.lineCap='round'; ctx.stroke();
+const wlLen=Snap.path.getTotalLength(WATERLINE_D);
+for(let i=0;i<300;i++){
+  const u=rnd();
+  const p=Snap.path.getPointAtLength(WATERLINE_D, u*wlLen);
+  const ends=Math.pow(Math.abs(u-0.5)*2,1.4);   // foam gathers at bow and stern
+  const a=(0.05+rnd()*0.26)*(0.30+ends*1.25);
+  ctx.fillStyle=`rgba(224,238,255,${a})`;
+  ctx.beginPath();
+  ctx.ellipse(p.x+(rnd()-0.5)*9,p.y+1.5+(rnd()-0.4)*7,1.2+rnd()*6,0.6+rnd()*1.9,0,0,Math.PI*2);
+  ctx.fill();
+}
+ctx.restore();
 
-paper;
+/* ------------------------ BOW WAVE AND WAKE ------------------------ */
+const WL=SHIP.y+4;
+ctx.save(); ctx.globalCompositeOperation='screen';
+for(let i=0;i<380;i++){
+  const x=SHIP.x-214+rnd()*76+(rnd()-0.5)*20, y=WL-14+Math.pow(rnd(),0.7)*26;
+  ctx.fillStyle=`rgba(206,224,250,${0.04+rnd()*0.22})`;
+  ctx.beginPath(); ctx.ellipse(x,y,1+rnd()*6,0.6+rnd()*1.8,0,0,Math.PI*2); ctx.fill();
+}
+for(let i=0;i<950;i++){
+  const t=rnd(), x=SHIP.x+205+t*350, y=WL-10+(rnd()-0.5)*(18+t*88);
+  ctx.fillStyle=`rgba(190,212,244,${(0.045+rnd()*0.24)*(1-t*0.7)})`;
+  ctx.beginPath(); ctx.ellipse(x,y,1+rnd()*8,0.5+rnd()*1.5,0,0,Math.PI*2); ctx.fill();
+}
+ctx.restore();
+
+/* ------------------------------ GRADE ------------------------------ */
+Drawing.drawVignette(ctx, W, H, { vignetteColor:'#02040a', intensity:0.62, radius:0.78 });
+canvas;

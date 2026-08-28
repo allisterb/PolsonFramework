@@ -137,6 +137,7 @@ public class ImageGenerationResult
         ImageGenerationFailure.Cancelled => "The execution was cancelled.",
         ImageGenerationFailure.BudgetExhausted => "No generation budget remains this session. Draw the material procedurally — check ExtendedMind.budget.remaining before requisitioning.",
         ImageGenerationFailure.RefusedFormRequest => "This asked for an object rather than a material. Draw the form with the drawing toolkit and requisition its surface instead.",
+        ImageGenerationFailure.NotConfigured => "This studio has image generation disabled — no credentials are configured. Draw the material procedurally; requisitioning will not work at all this session.",
         ImageGenerationFailure.ConstraintNotMet => "The image arrived but broke its contract — most often the quiet region came back full of detail. Retry, or relax the constraint and compose around what you get.",
         _ => "Unrecognised failure. Continue without the asset.",
     };
@@ -207,6 +208,12 @@ public enum ImageGenerationFailure
 
     /// <summary>Refused by the form-versus-substance check, before any network call.</summary>
     RefusedFormRequest = 13,
+
+    /// <summary>
+    /// This studio has no image-generation credentials configured, so requisition is unavailable for
+    /// the whole session. Distinct from an exhausted budget: no amount of waiting or rewording helps.
+    /// </summary>
+    NotConfigured = 16,
 
     /// <summary>
     /// An image arrived but broke the contract it was requisitioned under — most often a backdrop

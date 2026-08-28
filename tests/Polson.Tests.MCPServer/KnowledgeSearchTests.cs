@@ -2,6 +2,7 @@ namespace Polson.Tests.MCPServer;
 
 using System;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Polson.MCPServer;
 using Xunit;
@@ -150,6 +151,112 @@ public class KnowledgeSearchTests : TestsRuntime
         var first = response["results"]!.AsArray()[0]!;
         Assert.StartsWith("polson://", first["uri"]!.GetValue<string>());
         Assert.NotEmpty(first["text"]!.GetValue<string>());
+    }
+    #endregion
+
+    #region Symbol-First Routing Tests
+    [Fact]
+    public async Task TestSymbolQueryResolvesExactlyAndCarriesProseContext()
+    {
+        var response = await new DrawingMcpTools().Search("paper.squircle", 2);
+
+        Assert.Equal("direct", response["confidence"]!.GetValue<string>());
+
+        var symbol = response["symbols"]!.AsArray()[0]!;
+        Assert.Equal("paper.squircle", symbol["name"]!.GetValue<string>());
+        Assert.Equal("VectorLogo", symbol["area"]!.GetValue<string>());
+
+        // The passages still come back — the symbol is the answer, the prose is how it is used.
+        Assert.True(response["count"]!.GetValue<int>() > 0);
+    }
+
+    [Fact]
+    public async Task TestUnknownSymbolGetsADefinitiveNegativeRatherThanNearestProse()
+    {
+        // The failure this exists to stop: an agent asks for a call, similarity search hands back
+        // its nearest neighbour, and the agent takes that as confirmation the call exists.
+        var response = await new DrawingMcpTools().Search("paper.squirkle", 5);
+
+        Assert.Equal("no-match", response["confidence"]!.GetValue<string>());
+        Assert.Equal(0, response["count"]!.GetValue<int>());
+        Assert.Empty(response["results"]!.AsArray());
+
+        var nearest = response["nearest"]!.AsArray().Select(n => n!["name"]!.GetValue<string>()).ToArray();
+        Assert.Contains("paper.squircle", nearest);
+        Assert.Contains("not a call in this SDK", response["hint"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task TestBareMemberNameResolvesOnEveryReceiverThatCarriesIt()
+    {
+        var response = await new DrawingMcpTools().Search("clearSpaceGuide", 2);
+
+        Assert.Equal("direct", response["confidence"]!.GetValue<string>());
+
+        var names = response["symbols"]!.AsArray().Select(s => s!["name"]!.GetValue<string>()).ToArray();
+        Assert.Contains("paper.clearSpaceGuide", names);
+        Assert.Contains("VectorLogo.clearSpaceGuide", names);
+    }
+
+    [Fact]
+    public async Task TestNaturalLanguageStillGoesToProse()
+    {
+        // A question is not a claim about the API, so it must not be answered by the symbol index.
+        var response = await new DrawingMcpTools().Search("how do I make a cast shadow fall off", 3);
+
+        Assert.Equal("related", response["confidence"]!.GetValue<string>());
+        Assert.Empty(response["symbols"]!.AsArray());
+        Assert.True(response["count"]!.GetValue<int>() > 0);
+    }
+
+    [Fact]
+    public async Task TestOffTopicQueryAdmitsItFoundNothing()
+    {
+        var response = await new DrawingMcpTools().Search("quantum entanglement recipe", 3);
+
+        Assert.Equal("no-match", response["confidence"]!.GetValue<string>());
+        Assert.Contains("polson://sdk/symbols", response["hint"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task TestScopedSearchReportsWhatItDidNotConsult()
+    {
+        var response = await new DrawingMcpTools().Search("cast shadow", 3, "sdk");
+
+        var notSearched = response["notSearched"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
+
+        // An agent that searched one corpus and found nothing must not conclude the knowledge is absent.
+        Assert.Contains("manual", notSearched);
+    }
+    #endregion
+
+    #region Symbol Resource Tests
+    [Fact]
+    public void TestSymbolManifestResourceIsServed()
+    {
+        using var document = JsonDocument.Parse(PolsonResources.SdkSymbols());
+
+        Assert.Equal("polson://sdk/symbols", document.RootElement.GetProperty("schema").GetString());
+        Assert.True(document.RootElement.GetProperty("count").GetInt32() > 300);
+    }
+
+    [Fact]
+    public void TestReceiverResourceListsTheWholeSurface()
+    {
+        var listing = PolsonResources.SdkSymbolsForReceiver("matrix");
+
+        Assert.Contains("rotate", listing);
+        Assert.Contains("invert", listing);
+        Assert.Contains("polson://sdk/core/Snap", listing);
+    }
+
+    [Fact]
+    public void TestUnknownReceiverResourceNamesTheKnownOnes()
+    {
+        var listing = PolsonResources.SdkSymbolsForReceiver("notAReceiver");
+
+        Assert.Contains("No receiver named", listing);
+        Assert.Contains("paper", listing);
     }
     #endregion
 }

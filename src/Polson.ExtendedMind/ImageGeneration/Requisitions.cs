@@ -211,6 +211,15 @@ public abstract record RequisitionResult
 
     public string? Error { get; init; }
 
+    /// <summary>
+    /// The failure as a name rather than a number.
+    /// </summary>
+    /// <remarks>
+    /// Jint surfaces a CLR enum to a script as its underlying integer, so <c>failure</c> alone reads
+    /// as <c>16</c> in JavaScript. This is the spelling the reference documents and an agent can act on.
+    /// </remarks>
+    public string FailureName => Failure.ToString();
+
     /// <summary>What to do next, phrased for the agent reading it.</summary>
     public string Remedy => ImageGenerationResult.RemedyFor(Failure);
 
@@ -358,6 +367,12 @@ public enum RequisitionClass
 public sealed record RequisitionVerdict
 {
     public required RequisitionClass Class { get; init; }
+
+    /// <summary>
+    /// The classification as a readable name — <c>'Substance'</c>, <c>'Form'</c> or
+    /// <c>'Ambiguous'</c>. Scripts see <see cref="Class"/> as a bare integer, so prefer this.
+    /// </summary>
+    public string ClassName => Class.ToString();
 
     public required string Reason { get; init; }
 

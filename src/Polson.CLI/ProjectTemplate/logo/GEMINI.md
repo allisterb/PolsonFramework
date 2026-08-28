@@ -72,8 +72,16 @@ two points"* is the concept. Manual 12 §2.5 has the device table — work it as
 waiting for an idea, and carry **two or three** concepts into Stage 3, never one. A single concept
 has nothing to be compared against, so its weaknesses stay invisible until they are expensive.
 
-Stop here and show the director the concept lines. This is the cheapest moment in the whole project
-to be told you are on the wrong track.
+Then build the **mood board** (Manual 12 §2.5b): two or three style directions, each in its own
+compartment, each showing a palette, a type specimen in a family you confirmed with
+`Skia.Font.has(...)`, and one shape stating its stance on sharp-versus-round. Render it to
+`artifacts/`. Build it from canvas primitives — there is no `generateMoodBoard` call, and this is
+the moment where reaching for generated imagery is most tempting and least defensible.
+
+Stop here and show the director both the concept lines and the board. This is the cheapest moment
+in the whole project to be told you are on the wrong track. Ask them to rule a direction *out*
+rather than pick a favourite; an early favourite is not reliably the one that produces the best
+mark.
 
 ### Stage 3 — one candidate per concept
 

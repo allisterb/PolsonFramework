@@ -17,6 +17,17 @@ public class LogoDesignToolkit
 {
     #region Constants
     public const float Phi = 1.61803398875f;
+
+    /// <summary>
+    /// Shrink applied to a knockout mark at maximum contrast, as a fraction of its size.
+    /// </summary>
+    /// <remarks>
+    /// 1.5% is a working default, not a measured constant — the irradiation illusion has no single
+    /// published figure, and its size depends on contrast, viewing distance and scale. Bokhua's own
+    /// instruction is to tune until the pair looks equal, which is why every entry point exposes
+    /// this as a parameter.
+    /// </remarks>
+    public const float DefaultIrradiationStrength = 0.015f;
     #endregion
 
     #region Nested Helper Types
@@ -235,7 +246,17 @@ public class LogoDesignToolkit
     /// what actually reduces it to a single ink however it was drawn.
     /// </para>
     /// </summary>
-    private static void DrawMarkAsSingleInk(CanvasRenderingContext2D ctx, object? drawMarkFn, float x, float y, float size, string ink)
+    /// <summary>
+    /// Draws the mark forced to a single ink, optionally shrunk about its own centre.
+    /// </summary>
+    /// <remarks>
+    /// The scale is applied to the context rather than to the size handed to the callback, so
+    /// strokes thin with the mark instead of staying at their nominal width — a knockout whose
+    /// outline stayed heavy while its silhouette shrank would trade one size mismatch for another.
+    /// The callback still receives the nominal <paramref name="size"/>, so a mark that keys other
+    /// decisions off it behaves identically in every panel.
+    /// </remarks>
+    private static void DrawMarkAsSingleInk(CanvasRenderingContext2D ctx, object? drawMarkFn, float x, float y, float size, string ink, float scale = 1f)
     {
         using var knockout = new SKPaint
         {
@@ -244,7 +265,11 @@ public class LogoDesignToolkit
 
         ctx.Canvas.SkCanvas.SaveLayer(knockout);
         ctx.Save();
-        ctx.Translate(x, y);
+
+        var inset = size * (1f - scale) * 0.5f;
+        ctx.Translate(x + inset, y + inset);
+        if (scale != 1f) ctx.Scale(scale, scale);
+
         InvokeCallback(drawMarkFn, ctx, size);
         ctx.Restore();
         ctx.Canvas.SkCanvas.Restore();
@@ -1101,6 +1126,62 @@ public class LogoDesignToolkit
         // General optical weight center slightly above geometric center
         return ToDict(new Point2D(rect.X + rect.Width * 0.5f, rect.Y + rect.Height * 0.48f));
     }
+
+    /// <summary>
+    /// How much to shrink a mark when it is drawn light-on-dark, so it reads the same size as its
+    /// dark-on-light counterpart.
+    /// </summary>
+    /// <remarks>
+    /// A light shape on a dark ground appears larger than the same shape in dark on light — the
+    /// irradiation illusion, which Galileo noticed in the naked-eye planets. So a knockout logo
+    /// set at identical dimensions to its positive looks bigger, and a positive/negative pair that
+    /// measures equal does not look equal.
+    /// <para>
+    /// Returns a uniform scale rather than eroding the silhouette. Bokhua gives both techniques —
+    /// scaling down as the quick one, and outlining/expanding/subtracting a stroke as the sounder
+    /// one — but erosion works in device pixels, so the same board rendered at twice the resolution
+    /// would erode half as much in relative terms. A verification board has to be reproducible, and
+    /// a uniform scale is resolution-independent.
+    /// </para>
+    /// <para>
+    /// <c>strength</c> is the shrink applied at maximum contrast; it is scaled by how much lighter
+    /// the ink actually is, so a near-equal pair is barely touched. The default is deliberately
+    /// conservative: the illusion is real but small, and over-correcting produces a knockout that
+    /// visibly *under*-reads, which is the more obvious error of the two.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ComputeIrradiationCompensation(string inkColor, string backgroundColor, float strength = DefaultIrradiationStrength)
+    {
+        var ink = RelativeLuminance(inkColor);
+        var background = RelativeLuminance(backgroundColor);
+        var delta = ink - background;
+
+        // Only light-on-dark blooms. Dark on light is the reference case and is left alone.
+        var scale = delta > 0f ? 1f - strength * delta : 1f;
+
+        return new Dictionary<string, object?>
+        {
+            ["lighterOnDarker"] = delta > 0f,
+            ["scale"] = scale,
+            ["deltaLuminance"] = delta,
+            ["inkLuminance"] = ink,
+            ["backgroundLuminance"] = background
+        };
+    }
+
+    /// <summary>WCAG relative luminance of a CSS colour, 0 (black) to 1 (white).</summary>
+    private static float RelativeLuminance(string color)
+    {
+        var c = SkiaColorParser.Parse(color);
+
+        static float Channel(byte v)
+        {
+            var s = v / 255f;
+            return s <= 0.03928f ? s / 12.92f : MathF.Pow((s + 0.055f) / 1.055f, 2.4f);
+        }
+
+        return 0.2126f * Channel(c.Red) + 0.7152f * Channel(c.Green) + 0.0722f * Channel(c.Blue);
+    }
     #endregion
 
     #region Scale Stress Testing and Brand Sheets
@@ -1157,15 +1238,30 @@ public class LogoDesignToolkit
         ctx.Restore();
     }
 
-    public void GenerateMonochromeTest(CanvasRenderingContext2D ctx, object drawMarkFn, float width = 800f, float height = 600f)
+    /// <summary>
+    /// Four-way contrast board: positive, knockout, grayscale neutral, app icon.
+    /// </summary>
+    /// <remarks>
+    /// The two light-on-dark panels are shrunk by <see cref="ComputeIrradiationCompensation"/>, so
+    /// the board compares what the eye sees rather than what the numbers say. Without it the
+    /// knockout is drawn at the positive's dimensions and reads visibly larger, and the board
+    /// silently passes a pair a designer would reject. Pass <c>irradiationStrength: 0</c> to defeat
+    /// the correction and see the uncompensated comparison.
+    /// </remarks>
+    public void GenerateMonochromeTest(CanvasRenderingContext2D ctx, object drawMarkFn, float width = 800f, float height = 600f, float irradiationStrength = DefaultIrradiationStrength)
     {
         var halfW = width * 0.5f;
         var halfH = height * 0.5f;
         var markSize = MathF.Min(halfW, halfH) * 0.45f;
 
+        float ScaleFor(string ink, string background) =>
+            Convert.ToSingle(ComputeIrradiationCompensation(ink, background, irradiationStrength)["scale"]);
+
+        static string Pct(float scale) => scale >= 1f ? "" : $"  -{(1f - scale) * 100f:0.0}%";
+
         ctx.Save();
 
-        // 1. Positive (Black on White)
+        // 1. Positive (Black on White) - the reference case, never compensated.
         ctx.FillStyle = "#ffffff";
         ctx.FillRect(0, 0, halfW, halfH);
         ctx.FillStyle = "#6b7280";
@@ -1175,13 +1271,14 @@ public class LogoDesignToolkit
         DrawMarkAsSingleInk(ctx, drawMarkFn, halfW * 0.5f - markSize * 0.5f, halfH * 0.5f - markSize * 0.5f, markSize, "#111827");
 
         // 2. Negative (White on Black)
+        var negScale = ScaleFor("#ffffff", "#111827");
         ctx.FillStyle = "#111827";
         ctx.FillRect(halfW, 0, halfW, halfH);
         ctx.FillStyle = "#9ca3af";
         ctx.Font = "bold 12px sans-serif";
-        ctx.FillText("NEGATIVE (KNOCKOUT WHITE)", halfW + 20, 30);
+        ctx.FillText("NEGATIVE (KNOCKOUT WHITE)" + Pct(negScale), halfW + 20, 30);
 
-        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW + halfW * 0.5f - markSize * 0.5f, halfH * 0.5f - markSize * 0.5f, markSize, "#ffffff");
+        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW + halfW * 0.5f - markSize * 0.5f, halfH * 0.5f - markSize * 0.5f, markSize, "#ffffff", negScale);
 
         // 3. Dark Gray Neutral
         ctx.FillStyle = "#e5e7eb";
@@ -1195,9 +1292,10 @@ public class LogoDesignToolkit
         // 4. App Icon Squircle Mockup
         ctx.FillStyle = "#0f172a";
         ctx.FillRect(halfW, halfH, halfW, halfH);
+        var iconScale = ScaleFor("#f8fafc", "#1e293b");
         ctx.FillStyle = "#94a3b8";
         ctx.Font = "bold 12px sans-serif";
-        ctx.FillText("APP ICON SQUIRCLE CONTAINER", halfW + 20, halfH + 30);
+        ctx.FillText("APP ICON SQUIRCLE CONTAINER" + Pct(iconScale), halfW + 20, halfH + 30);
 
         var squircleSize = markSize * 1.35f;
         var sqX = halfW + halfW * 0.5f - squircleSize * 0.5f;
@@ -1211,7 +1309,7 @@ public class LogoDesignToolkit
             ["exponent"] = 4.5f
         });
 
-        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW + halfW * 0.5f - markSize * 0.5f, halfH + halfH * 0.5f - markSize * 0.5f, markSize, "#f8fafc");
+        DrawMarkAsSingleInk(ctx, drawMarkFn, halfW + halfW * 0.5f - markSize * 0.5f, halfH + halfH * 0.5f - markSize * 0.5f, markSize, "#f8fafc", iconScale);
 
         // Separator grid lines
         ctx.StrokeStyle = "#94a3b8";

@@ -134,7 +134,7 @@ $$\left|\frac{2(x - c_x)}{w}\right|^n + \left|\frac{2(y - c_y)}{h}\right|^n = 1 
 
 ## 6. Verification Suites & Brand Guidelines
 
-> **Implemented by**: `Logo.generateFaviconScaleTest(ctx, drawMarkFn, options)`, `Logo.generateMonochromeTest(ctx, drawMarkFn, width, height)`, and `Logo.drawClearSpaceGuide(ctx, markBounds, xDimension, options)`. The two suites take a **mark-drawing function** `(ctx, size) => void`, so write the mark once and let them re-render it at every scale and treatment.
+> **Implemented by**: `Logo.generateFaviconScaleTest(ctx, drawMarkFn, options)`, `Logo.generateMonochromeTest(ctx, drawMarkFn, width, height, irradiationStrength)`, and `Logo.drawClearSpaceGuide(ctx, markBounds, xDimension, options)`. The two suites take a **mark-drawing function** `(ctx, size) => void`, so write the mark once and let them re-render it at every scale and treatment.
 >
 > ⚠️ `drawClearSpaceGuide` shades the margin and then **clears the mark rectangle to transparent**, so it erases anything already drawn there. Call it *before* you draw the mark, not after.
 
@@ -153,9 +153,21 @@ A mark must remain distinct across 7 critical digital display sizes:
 Every professional logo must work in strict 1-color applications without relying on color or gradients:
 1. Positive 1-color black on white.
 2. Negative knockout white on dark slate.
-3. High-contrast outline / wireframe.
+3. Grayscale neutral — mid-grey ink on light grey.
 4. App icon squircle badge with gradient.
 - **Usage in Code**: `Logo.generateMonochromeTest(ctx, drawMarkFn)`.
+
+**Irradiation.** A light shape on a dark ground appears *larger* than the same shape dark-on-light — Galileo noticed it in the naked-eye planets before neuroscience explained it. So a knockout logo set at its positive's exact dimensions looks bigger than the positive, and a pair that measures equal does not read equal. The board corrects for it: the two light-on-dark panels are shrunk by `Logo.computeIrradiationCompensation(ink, background)` and their labels report the amount.
+
+The default correction is $1.5\%$ at maximum contrast, scaled by the actual luminance difference. It is a working figure, not a measured constant — the effect depends on contrast, scale and viewing distance, so tune it until the pair looks equal, which is the only test that matters. Apply the same scale in your own artwork whenever you hand a client a reversed lockup:
+
+```js
+const { scale } = Logo.computeIrradiationCompensation('#ffffff', '#111827');
+drawMark(ctx, markSize * scale);   // the reversed version, sized to look equal
+```
+
+> [!NOTE]
+> The correction is a uniform scale rather than an erosion of the silhouette. Both work — outlining, expanding and subtracting a stroke is the sounder technique by hand — but erosion operates in device pixels, so the same board rendered at twice the resolution would erode half as much in relative terms. A verification board has to be reproducible.
 
 ### C. Clear Space Rule ($X$-Dimension)
 A protective exclusion zone around the logo where no other text or graphics may enter:

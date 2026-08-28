@@ -1,6 +1,6 @@
 # Studio Manual 12: Creative Stages in Logo Design
 
-> **Credits & Theoretical Foundation**: Synthesized from Tubik Studio's *Logo Design: Creative Stages* (by Marina Yalanska) and studio practice from leading identity design agencies. Tubik's seven stages are the spine of this manual. **Stage 2.5 is inserted from a different source**: the practice of generating concepts by working a list of rhetorical devices is taken from *Graphic Design and Print Production Fundamentals* §2.5 (Alex Hass, Graphic Communications Open Textbook Collective / BCcampus Open Education), used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The device definitions and worked examples below are our own — that book's own definitions are its paraphrase of Harris (2013), which carries separate terms.
+> **Credits & Theoretical Foundation**: Synthesized from Tubik Studio's *Logo Design: Creative Stages* (by Marina Yalanska) and studio practice from leading identity design agencies. Tubik's seven stages are the spine of this manual. **Stage 2.5 is inserted from a different source**: the practice of generating concepts by working a list of rhetorical devices is taken from *Graphic Design and Print Production Fundamentals* §2.5 (Alex Hass, Graphic Communications Open Textbook Collective / BCcampus Open Education), used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The device definitions and worked examples below are our own — that book's own definitions are its paraphrase of Harris (2013), which carries separate terms. **Stage 2.5b** follows George Bokhua's *Principles of Logo Design* ch. 4 ("Mood Boarding"), synthesized rather than reproduced: that title is all rights reserved, so the technique is described and cited, and the board built here from code is our adaptation of it rather than his method as written.
 > **Purpose**: Defines the sequential, collaborative, and human-in-the-loop (HITL) stages required to take a brand identity from an initial client brief to an iconic, mathematically refined, and multi-scale validated visual mark.
 
 ---
@@ -23,11 +23,12 @@
                                   │
                                   ▼
    ┌─────────────────────────────────────────────────────────────┐
-   │            STAGE 2.5: Concept Articulation                  │
-   │   One sentence: the concept, its device, what it rejects    │
+   │              STAGE 2.5: Concept & Mood                      │
+   │  2.5a one sentence: concept, device, what it rejects        │
+   │  2.5b mood board: palette, type, shape language, compared   │
    └──────────────────────────────┬──────────────────────────────┘
                                   │
-                                  ▼ [HITL Checkpoint: Concept]
+                                  ▼ [HITL Checkpoint: Concept & Mood]
    ┌─────────────────────────────────────────────────────────────┐
    │         STAGE 3: Creative Search & Geometric Ideation       │
    │  Gridding, Golden Ratio circles, superellipses, silhouettes │
@@ -62,7 +63,7 @@
 
 ## 2. Stage-by-Stage Breakdown
 
-> **Implemented by**: each stage below names its own calls. Stages 1, 2, 2.5 and 4 are research and judgement with no API surface — do not look for a call that makes those decisions for you.
+> **Implemented by**: each stage below names its own calls. Stages 1, 2, 2.5a and 4 are research and judgement with no API surface — do not look for a call that makes those decisions for you. Stage 2.5b renders a board, but from canvas primitives rather than a dedicated call; there is no `generateMoodBoard`, and the absence is deliberate, since what belongs on the board is a judgement per project.
 
 ### Stage 1: Setting the Task (The Client Brief)
 - **Objective**: Establish clear, unambiguous constraints before touching code.
@@ -80,7 +81,11 @@
   - Reject visual clichés (e.g., generic leaves for eco, generic globes for logistics).
   - Define the unique **metaphorical anchor** for the brand.
 
-### Stage 2.5: Concept Articulation
+### Stage 2.5: Concept & Mood
+
+Two decisions that must both be made *before* geometry: what the mark means, and how it should feel. Neither costs anything to change here and both cost a great deal to change after Stage 5.
+
+#### 2.5a — The concept, in words
 
 - **Objective**: State in words what the mark *means*, before any geometry exists.
 
@@ -96,7 +101,7 @@ DEVICE:  <the rhetorical device it turns on>
 REJECTS: <the category cliché from Stage 2 that this avoids>
 ```
 
-#### Devices, and what each one does to a brief
+##### Devices, and what each one does to a brief
 
 Rhetoric is the study of persuasion, and design borrows its figures wholesale. Each device below is a different *move* from message to image, so working the list is a way of generating genuinely distinct candidates rather than variations on the first thing you thought of. The right-hand column applies each to one brief — *a courier guaranteeing overnight delivery* — so the moves can be compared against each other rather than admired separately.
 
@@ -116,7 +121,7 @@ Rhetoric is the study of persuasion, and design borrows its figures wholesale. E
 
 Hyperbole is the most overused of these and the quickest to look cheap; understatement is the hardest to execute and the most likely to survive Stage 6, because it has the least to lose when the mark is shrunk to 16px.
 
-#### Quota, not inspiration
+##### Quota, not inspiration
 
 Work the list. Do not wait for the idea to arrive.
 
@@ -127,6 +132,108 @@ Work the list. Do not wait for the idea to arrive.
 Carry two or three concepts into Stage 3, not one. A single concept cannot be compared to anything, so its weaknesses stay invisible until far too late to fix cheaply.
 
 - **HITL Interaction**: This is the cheapest checkpoint in the entire process — a concept can be rejected and replaced for the price of a sentence, whereas the same rejection after Stage 5 discards geometry, palette and typography together. Present the concept lines and let the director kill one *here*.
+
+#### 2.5b — The mood board, rendered
+
+- **Objective**: Fix the *stylistic* direction before geometry, the way 2.5a fixes the semantic one.
+
+A mood board exists to make competing stylistic directions comparable side by side. Bokhua's instruction is to **compartmentalise** it — classic in one region, high-tech in another, colourful kept apart from monochromatic, so there are clear boundaries between directions rather than one undifferentiated wash of things you liked. That separation is the entire function. A board where the directions blur together has told you nothing, because nothing in it can be rejected.
+
+> [!IMPORTANT]
+> A traditional mood board is collected reference imagery — photographs of architecture, nature, painting. **You cannot collect those, and you must not generate them.** This is the point in the process where reaching for image generation is most tempting and least defensible: it would spend budget to produce pictures nobody ships, in a workflow whose entire premise is that form comes from code.
+>
+> Build the board out of the same material as the mark. A direction is legible from its palette, its typography and its shape language, and all three are things you can draw. That is also a stricter board than a collected one — every element on it is something you could actually use.
+
+Each compartment carries:
+
+- **A palette** — four swatches, dominant to lightest. Enough to see temperature and contrast, not so many that the direction becomes vague.
+- **A type specimen**, set in a family you have confirmed exists with `Skia.Font.has(...)`. A substituted family makes the whole compartment a lie, since the specimen would show a face you cannot use.
+- **A shape language** — one form stating the direction's stance on Bokhua's oppositions: sharp against round, solid against line, symmetric against asymmetric.
+
+```javascript
+// Stage 2.5b - three style directions, compartmentalised so they can be compared.
+const W = 1080, H = 400;
+const canvas = createCanvas(W, H);
+const ctx = canvas.getContext('2d');
+
+ctx.fillStyle = '#f4f5f7';
+ctx.fillRect(0, 0, W, H);
+
+// An unavailable family is silently substituted, so ask before committing to one.
+const pick = (wanted) => wanted.find(f => Skia.Font.has(f)) || 'Arial';
+
+const directions = [
+    { name: 'CLASSIC',    palette: ['#1b2a41', '#324a5f', '#8d9db6', '#e6e8e6'], family: pick(['Georgia', 'Garamond']), shape: 'round' },
+    { name: 'TECHNICAL',  palette: ['#0b3954', '#087e8b', '#bfd7ea', '#ff5a5f'], family: pick(['Consolas', 'Verdana']), shape: 'sharp' },
+    { name: 'MONOCHROME', palette: ['#111111', '#4d4d4d', '#9a9a9a', '#ededed'], family: pick(['Arial', 'Verdana']),    shape: 'line'  }
+];
+
+const colW = W / 3;
+
+directions.forEach((d, i) => {
+    const x = i * colW;
+
+    // The compartment boundary is the point: directions must not blur into one another.
+    if (i > 0) {
+        ctx.strokeStyle = '#c9ccd1';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, 24);
+        ctx.lineTo(x, H - 24);
+        ctx.stroke();
+    }
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#222222';
+    ctx.font = 'bold 15px ' + d.family;
+    ctx.fillText(d.name, x + 32, 52);
+
+    d.palette.forEach((c, j) => {
+        ctx.fillStyle = c;
+        ctx.fillRect(x + 32 + j * 56, 72, 48, 48);
+    });
+
+    ctx.fillStyle = d.palette[0];
+    ctx.font = '46px ' + d.family;
+    ctx.fillText('Aa', x + 32, 196);
+    ctx.fillStyle = '#555555';
+    ctx.font = '11px ' + d.family;
+    ctx.fillText(d.family, x + 124, 196);
+
+    const cx = x + 96, cy = 288, r = 40;
+    ctx.strokeStyle = d.palette[1];
+    ctx.fillStyle = d.palette[1];
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    if (d.shape === 'round') {
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+    } else if (d.shape === 'sharp') {
+        ctx.moveTo(cx, cy - r);
+        ctx.lineTo(cx + r, cy + r);
+        ctx.lineTo(cx - r, cy + r);
+        ctx.closePath();
+        ctx.fill();
+    } else {
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = '#666666';
+    ctx.font = '11px ' + d.family;
+    ctx.fillText(d.shape, x + 32, 356);
+});
+
+log('directions: ' + directions.map(d => d.name + ' -> ' + d.family).join(', '));
+
+canvas;
+```
+
+- **HITL Interaction**: Show the board, but ask the director to *react* to it rather than vote on it. Bokhua's own caution is worth carrying: an early favourite is not reliably the direction that produces the best final mark, and a client locked to a compartment on first sight has spent a choice they did not yet understand. What you want out of this checkpoint is a direction struck out, not a direction promised.
+
+> [!NOTE]
+> Bokhua places mood boarding **before** sketching, whereas Stage 4 below sets style direction **after** geometric ideation. That difference is real and unresolved here. Treat 2.5b as the *stylistic frame* — temperature, weight, shape language — and Stage 4 as the *structural* choice of archetype, which genuinely does read better once there are candidate forms to look at.
 
 ### Stage 3: Creative Search & Geometric Ideation
 - **Objective**: Give each concept from Stage 2.5 a geometric form, using the mathematical toolkits. This stage supplies *form*; the concept it serves was fixed in words already.
@@ -159,7 +266,7 @@ Carry two or three concepts into Stage 3, not one. A single concept cannot be co
 - **Objective**: Verify that the mark functions in all real-world digital and physical conditions.
 - **Protocols**:
   1. **7-Tier Favicon Scale Test**: `Logo.generateFaviconScaleTest(ctx, drawMarkFn)` across $16\text{px}, 24\text{px}, 32\text{px}, 48\text{px}, 64\text{px}, 128\text{px}, 256\text{px}$.
-  2. **4-Way Monochrome Test**: `Logo.generateMonochromeTest(ctx, drawMarkFn)` across positive black, negative knockout white, outline wireframe, and app icon badge.
+  2. **4-Way Monochrome Test**: `Logo.generateMonochromeTest(ctx, drawMarkFn)` across positive black, negative knockout white, grayscale neutral, and app icon squircle. The two light-on-dark panels are shrunk to cancel the irradiation illusion — see §3.
   3. **Optical Balance Check**: Ensure bone effect narrowing is corrected and apexes have $1.5\%–3.5\%$ overshoot.
 
 ### Stage 7: Brand Presentation Board & Style Guide
@@ -185,6 +292,8 @@ Two things about the contract are worth knowing before you write it:
 - **Draw the mark into a `size × size` box anchored at the origin.** The suites `translate` to position it and pass the size; they do not scale for you.
 
 > `generateMonochromeTest` composites the mark through a knockout filter that keeps its alpha and replaces its hue, so each panel forces it to a single ink — black, white, mid-grey, and near-white on the app icon — **whatever colours the mark sets for itself**. That is what makes it a real one-colour test rather than four backgrounds: the silhouette survives, the palette does not. If the mark stops reading once its colour is gone, the problem is the mark.
+>
+> The two light-on-dark panels are also drawn **fractionally smaller**, and say so in their labels. A light shape on a dark ground appears larger than the same shape dark-on-light — the irradiation illusion — so a knockout at identical dimensions reads bigger, and a positive/negative pair that measures equal does not look equal. The board compensates so you are comparing what the eye sees. Pass `irradiationStrength: 0` for the uncompensated comparison, or a larger value if your mark still looks swollen in reverse; `Logo.computeIrradiationCompensation(ink, background)` returns the same scale for use in your own artwork.
 
 ### Stage 6a — The 7-tier scale ladder
 

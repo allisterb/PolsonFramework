@@ -1,6 +1,6 @@
 # Studio Manual 12: Creative Stages in Logo Design
 
-> **Credits & Theoretical Foundation**: Synthesized from Tubik Studio's *Logo Design: Creative Stages* (by Marina Yalanska) and studio practice from leading identity design agencies. Tubik's seven stages are the spine of this manual. **Stage 2.5 is inserted from a different source**: the practice of generating concepts by working a list of rhetorical devices is taken from *Graphic Design and Print Production Fundamentals* §2.5 (Alex Hass, Graphic Communications Open Textbook Collective / BCcampus Open Education), used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The device definitions and worked examples below are our own — that book's own definitions are its paraphrase of Harris (2013), which carries separate terms. **Stage 2.5b** follows George Bokhua's *Principles of Logo Design* ch. 4 ("Mood Boarding"), synthesized rather than reproduced: that title is all rights reserved, so the technique is described and cited, and the board built here from code is our adaptation of it rather than his method as written.
+> **Credits & Theoretical Foundation**: Synthesized from Tubik Studio's *Logo Design: Creative Stages* (by Marina Yalanska) and studio practice from leading identity design agencies. Tubik's seven stages are the spine of this manual. **Stage 2.5 is inserted from a different source**: the practice of generating concepts by working a list of rhetorical devices is taken from *Graphic Design and Print Production Fundamentals* §2.5 (Alex Hass, Graphic Communications Open Textbook Collective / BCcampus Open Education), used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The device definitions and worked examples below are our own — that book's own definitions are its paraphrase of Harris (2013), which carries separate terms. **Stage 2.5b** follows George Bokhua's *Principles of Logo Design* ch. 4 ("Mood Boarding"), and **§4** distils his ch. 3 material on reviewing work — the mirror check, comparing versions side by side, the familiarity rule, and unintended readings. **Stage 4's** archetype table follows his ch. 2 taxonomy. All of it is synthesized rather than reproduced: that title is all rights reserved, so the principles are distilled in our own words and the chapter cited. Nothing here is quoted verbatim, including the rule stated in §4.C.
 > **Purpose**: Defines the sequential, collaborative, and human-in-the-loop (HITL) stages required to take a brand identity from an initial client brief to an iconic, mathematically refined, and multi-scale validated visual mark.
 
 ---
@@ -244,12 +244,25 @@ canvas;
 - **HITL Interaction**: Present each candidate next to the concept line it came from. A form that can no longer be traced to its concept has drifted, and drift is easier to see when the sentence is sitting beside the render.
 
 ### Stage 4: Style Direction & Archetype Selection
-- **Objective**: Lock the mark archetype based on client feedback:
-  1. **Wordmark / Logotype**: Distinctive typographic treatment of brand name.
-  2. **Lettermark / Monogram**: Initial letters interlocked via geometric matrices.
-  3. **Pictorial / Iconic Mark**: Stylized representation of a recognizable object.
-  4. **Abstract Geometric Mark**: Pure geometric form symbolizing dynamic concepts.
-  5. **Emblem / Crest**: Enclosed badge with integrated symbol and typography.
+
+- **Objective**: Lock the mark archetype. This is a *structural* choice and it reads better here than earlier, once there are candidate forms to look at — 2.5b fixed the stylistic frame, not this.
+
+Each archetype has conditions under which it works. The conditions matter more than the list: choosing a monogram for a brand whose initials are `I` and `L` fails for reasons that have nothing to do with how well it is drawn.
+
+| Archetype | What it is | Choose it when — and what defeats it |
+| :--- | :--- | :--- |
+| **Pictorial** | A recognisable object as the identifier | The most widespread and the most versatile carrier of a complex idea. Pair it with **neutral** type — the mark is already visually dense, and ornate type competes. The bar is recognition *without* the name beside it |
+| **Letterform** | A single initial, shaped to carry meaning | Carries less information than a pictorial mark, so it stays neutral and ages well — which is why finance and tech favour it. Its restraint is the point; do not load it |
+| **Abstract** | A form standing for a phenomenon, not an object | For qualities with no natural picture. Some phenomena have strong visual analogues — *connection*, *speed*, *flow*; others — *reliability*, *trust* — have none, and there the meaning is **assigned** rather than depicted, which the brand must then invest in |
+| **Wordmark** | The name alone, as form | Needs type with genuine character. Set in a neutral sans it is forgettable, so it wants a ligature, a substitution, or one deliberate incident. Extreme minimalism is a real strategy here, especially B2B |
+| **Monogram** | Two or more initials interlocked | **Depends entirely on which letters you were given.** `S`, `W`, `A`, `R` have structure to interlock; `I` and `L` do not, and no amount of skill will rescue a pairing that has nothing to join |
+| **Negative space** | Two silhouettes sharing one form, one positive, one negative | The hardest, and the most striking when it lands. Needs **two** silhouettes that are each unmistakable alone *and* conceptually related. Two unrelated shapes that happen to nest is a puzzle, not a mark |
+| **Emblem / crest** | Symbol and type enclosed together | Reads as institutional and traditional. The enclosure binds type to mark, so it resists being taken apart for small sizes — the thing app icons and favicons most need |
+| **Pictogram** | A universal picture of a thing or idea | For sets that must read across languages. Build from primitives — line, circle, square, triangle — and accept fluidity: small variations do not destroy a pictogram's meaning the way they would a logo's |
+| **Logo system** | A parent mark with subsidiary variants | For brands with sub-brands. The hardest coordination problem here: consistency and repetition of key elements are what hold the family together, and the variation usually lives in colour or naming rather than form |
+
+> [!TIP]
+> A **pattern** is not an archetype but is often needed alongside one. It should complement the mark without duplicating it — reuse a component of the mark where one is available, or develop a separate visual language where it is not. Grids drive patterns more than colour does: square grids are versatile but everywhere, so triangles or hexagons buy distinctiveness cheaply, and pure tessellation goes monotonous fast.
 
 ### Stage 5: Color Palette & Typographic Harmony
 - **Objective**: Formulate the color system and typographic lockup.
@@ -374,3 +387,76 @@ log('Stage 7 complete — one mark definition, three deliverables.');
 
 canvas;
 ```
+
+---
+
+## 4. Reviewing Your Own Work
+
+Work on one mark for long enough and you stop being able to see it. The eye accommodates: the shape becomes the shape you expect, and defects that are obvious to anyone else become invisible to you. Bokhua's remedy is rest — put it down, come back tomorrow, look with a fresh eye.
+
+**You cannot do that.** There is no overnight here, and a session that has been iterating on one form for forty turns has the accommodation problem in its most acute form, with none of the cure. What follows are the mechanical substitutes: ways of making the mark unfamiliar again without waiting.
+
+### A. The mirror check
+
+Flip the mark horizontally and look at the pair. Portrait painters kept an actual mirror beside the easel for this — a reversed image defeats the eye's accommodation instantly, and proportion errors that had become invisible reappear. It costs one render.
+
+```javascript
+// A fresh-eyes check: the mark beside its own mirror image.
+const drawMark = (c, size) => {
+    const u = size / 100;
+    c.fillStyle = '#1f3a5f';
+    c.beginPath();
+    c.moveTo(18 * u, 78 * u);
+    c.quadraticCurveTo(30 * u, 22 * u, 62 * u, 20 * u);
+    c.quadraticCurveTo(88 * u, 19 * u, 84 * u, 46 * u);
+    c.quadraticCurveTo(80 * u, 66 * u, 52 * u, 62 * u);
+    c.lineTo(44 * u, 80 * u);
+    c.closePath();
+    c.fill();
+};
+
+const S = 300;
+const canvas = createCanvas(S * 2 + 60, S + 70);
+const ctx = canvas.getContext('2d');
+
+ctx.fillStyle = '#f4f5f7';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+// Draw once onto its own plate, then reuse those pixels for both panels.
+const plate = createCanvas(S, S);
+drawMark(plate.getContext('2d'), S);
+
+ctx.drawImage(plate, 20, 50);
+ctx.drawImage(plate.toBitmap().flip('horizontal'), S + 40, 50);
+
+ctx.fillStyle = '#5b6472';
+ctx.font = 'bold 13px Arial';
+ctx.fillText('AS DRAWN', 20, 34);
+ctx.fillText('MIRRORED', S + 40, 34);
+
+canvas;
+```
+
+Run it whenever a form has stopped changing and you cannot say why it feels finished. If the mirrored version looks *better*, that is information: something in the original is fighting the direction the eye wants to travel.
+
+### B. Compare versions, do not iterate in place
+
+Every time a change lands, keep the previous version. Put the two side by side and choose between them, rather than editing forward and trusting that each step was an improvement.
+
+The failure this prevents is specific and common: a run of individually plausible changes that arrives somewhere worse than it started, with no record of where it went wrong. Some changes are *deceptive* — they look right at the moment they are made, because the novelty of the change reads as improvement, and they do not survive comparison an hour later. Side-by-side comparison is what exposes them, and keeping the versions is what lets you return to the branch you should have taken.
+
+This is why every stage writes to `scripts/NN_name.js` and `artifacts/NN_name.webp` rather than overwriting one file. The staged artifacts are not bookkeeping — they are the comparison set.
+
+### C. The familiarity rule
+
+Bokhua's rule, stated in our own words: **a solution that feels familiar and is not yours is someone else's — discard it, or change it enough that it becomes yours.**
+
+He means a half-remembered mark resurfacing as apparent invention, which happens to every designer. **It applies far more forcefully here.** A model that has seen most of the published logos in the world will find memorised solutions extremely fluent to produce, and fluency feels exactly like rightness from the inside. The signal you would read as "this is obviously correct" is the same signal you would get from reproducing something you have seen ten thousand times.
+
+So treat ease of arrival as a warning rather than a confirmation. A mark that appeared immediately and felt inevitable deserves more scrutiny than one you had to construct, not less. Where a form comes from a genuine common ancestor — modernism's stock of circles, arrows, chevrons and half-circles is shared property — push past the reference until the result is yours, rather than stopping at the point where it first works.
+
+### D. Unintended readings
+
+Marks acquire meanings their designer never put there, and the same accommodation that hides proportion errors hides these completely. There are well-known cases of marks going to print with readings nobody involved had noticed, and the usual culprits are negative space and unfortunate silhouettes.
+
+Check deliberately, because you will not notice by accident: look at the negative space as though it were the figure, view the mark at 16px where detail collapses into mass, and describe what you see in words rather than trusting recognition. Naming it out loud is what breaks the accommodation — a shape you have called "the counter" for forty turns is one you have stopped actually looking at.

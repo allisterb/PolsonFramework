@@ -13,12 +13,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Polson.Tests.CLI" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Polson.MCPServer\Polson.MCPServer.csproj" />
     <ProjectReference Include="..\Polson.Runtime\Polson.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="ProjectTemplate\" />
+    <!-- Workflow templates ship inside the binary, so create-project works from bin/cli with no
+         loose files to lose. Resource names become Polson.CLI.ProjectTemplate.<workflow>.<file>. -->
+    <EmbeddedResource Include="ProjectTemplate\**\*.md" />
   </ItemGroup>
 
   <Target Name="CopyOutputToBin" AfterTargets="Build">

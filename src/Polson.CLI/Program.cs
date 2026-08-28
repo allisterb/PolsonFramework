@@ -39,10 +39,14 @@ internal class Program : Runtime
     {
         var isHttp = args.Contains("--http", StringComparer.OrdinalIgnoreCase);
         var isEval = args.Length > 0 && string.Equals(args[0], "eval", StringComparison.OrdinalIgnoreCase);
+        var isCreate = args.Length > 0 && string.Equals(args[0], "create-project", StringComparison.OrdinalIgnoreCase);
         var isHelp = args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h", StringComparer.OrdinalIgnoreCase);
         var isDebug = args.Contains("--debug", StringComparer.OrdinalIgnoreCase);
 
-        if (isHttp || isEval || isHelp)
+        // Every verb but the default stdio server is free to write to standard output; stdio reserves it for JSON-RPC framing.
+        var isConsoleVerb = isHttp || isEval || isCreate;
+
+        if (isConsoleVerb || isHelp)
         {
             PrintLogo();
             Runtime.WithFileAndConsoleLogging("Polson", "CLI", isDebug);
@@ -59,18 +63,19 @@ internal class Program : Runtime
             with.HelpWriter = Console.Error;
         });
 
-        var result = parser.ParseArguments<ServerOptions, EvalOptions>(args);
+        var result = parser.ParseArguments<ServerOptions, EvalOptions, CreateProjectOptions>(args);
         try
         {
             await result.MapResult(
                 async (ServerOptions opts) => await HandleServerArgs(opts),
                 async (EvalOptions opts) => await HandleEvalArgs(opts),
+                (CreateProjectOptions opts) => HandleCreateProjectArgs(opts),
                 errs => Task.CompletedTask
             );
         }
         catch (Exception ex)
         {
-            if (isHttp || isEval)
+            if (isConsoleVerb)
             {
                 AnsiConsole.WriteException(ex);
             }
@@ -142,6 +147,16 @@ internal class Program : Runtime
                 JsDrawingEngine.ScriptTimeoutSeconds, projectDir);
             await PolsonMCPServer.RunStdioAsync(config, projectDir);
         }
+    }
+
+    static Task HandleCreateProjectArgs(CreateProjectOptions opts)
+    {
+        if (!ProjectGenerator.Create(opts))
+        {
+            Environment.ExitCode = 1;
+        }
+
+        return Task.CompletedTask;
     }
 
     static Task HandleEvalArgs(EvalOptions opts)

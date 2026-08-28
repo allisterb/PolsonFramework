@@ -32,6 +32,30 @@ public class ServerOptions : Options
     #endregion
 }
 
+[Verb("create-project", HelpText = "Generate a self-contained design project directory for an agent to work in.")]
+public class CreateProjectOptions : Options
+{
+    #region Properties
+    [Value(0, MetaName = "directory", Required = true, HelpText = "Directory to create the project in.")]
+    public string Directory { get; set; } = string.Empty;
+
+    [Value(1, MetaName = "id", Required = false, HelpText = "Project id (letters, digits, dot, underscore, dash). Defaults to the directory name.")]
+    public string Id { get; set; } = string.Empty;
+
+    [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate (default: 'logo').")]
+    public string Workflow { get; set; } = "logo";
+
+    [Option("profile", Required = false, Default = "standalone", HelpText = "'standalone' for the orchestrator and demo site, 'managed' for a desktop agent host.")]
+    public string Profile { get; set; } = "standalone";
+
+    [Option("brief", Required = false, HelpText = "Client brief: a file path, or the text itself. Treated as untrusted data and normalised before it is written.")]
+    public string Brief { get; set; } = string.Empty;
+
+    [Option("force", Required = false, HelpText = "Generate into a directory that already has contents.")]
+    public bool Force { get; set; }
+    #endregion
+}
+
 [Verb("eval", HelpText = "Execute a JavaScript drawing file and save rendered image and SVG output.")]
 public class EvalOptions : Options
 {

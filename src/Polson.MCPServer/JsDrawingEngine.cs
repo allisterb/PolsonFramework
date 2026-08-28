@@ -21,13 +21,7 @@ using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
 public partial class JsDrawingEngine : Runtime
-{
-    #region Constructors
-    public JsDrawingEngine()
-    {
-    }
-    #endregion
-
+{    
     #region Properties
     public static int ScriptTimeoutSeconds { get; set; } = 30;
 
@@ -90,7 +84,7 @@ public partial class JsDrawingEngine : Runtime
             engine.SetValue("Session", session?.Storage ?? new Dictionary<string, object?>());
 
             // Pure .NET Console object
-            var jsConsole = new JSConsole(result.Logs);
+            var jsConsole = new JsConsole(result.Logs);
             engine.SetValue("console", jsConsole);
 
             // Pure .NET Mina animation/easing object

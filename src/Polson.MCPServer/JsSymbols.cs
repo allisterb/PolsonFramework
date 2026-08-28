@@ -61,7 +61,7 @@ public static class JsSurface
     #region Properties
     public static IReadOnlyList<JsReceiver> Receivers { get; } =
     [
-        new("console", typeof(JSConsole), "Globals", false),
+        new("console", typeof(JsConsole), "Globals", false),
         new("mina", typeof(Mina), "Globals", false),
 
         new("Snap", typeof(Snap), "Snap", false),

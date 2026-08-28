@@ -5,10 +5,10 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-public class JSConsole
+public class JsConsole
 {
     #region Constructors
-    public JSConsole(List<string>? logs = null)
+    public JsConsole(List<string>? logs = null)
     {
         _logs = logs ?? [];
     }

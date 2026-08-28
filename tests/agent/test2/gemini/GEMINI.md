@@ -19,25 +19,39 @@ You may read **only** what the MCP server exposes: its tool definitions (`Search
 
 **Do not inspect Polson's internal C# source, tests, or implementation files**, and do not read `docs/*.md` from disk — the manuals and reference reach you through MCP resources and the `Search` tool, and reading them any other way defeats the harness. Do not infer method names or parameters from files on disk. If you cannot work out how to use an API from the MCP resources and tool descriptions alone, **that is an API or documentation defect** — record it in `findings.md` and try another documented approach.
 
-### These limits are enforced, not just requested
+### This limit is not enforced by a permissions file. It is on you.
 
-`.agents/settings.json` denies the tools that would let you step outside the harness:
+Be clear about what is actually true here, because the previous version of this brief was not.
 
-- **No shell.** Shell execution is denied. You cannot run `node`, `python`, `dotnet`, or any other interpreter. All code execution goes through `ExecuteScript` — that is the thing under test.
-- **No file access outside this folder.** Reads, writes, globs and greps are confined to this directory and below. The other agent harnesses — including the Claude side of this same task — and this folder's own `archive/` are denied, because their contents would contaminate your findings.
-- **No network and no subagents.** Web fetch, web search and task delegation are denied.
+Antigravity's permissions name **tools and commands** — `mcp:polson:*`, `bash:node*` — not paths.
+There is no rule in this harness that denies reading Polson's source. If you ask to read it, your
+host will put a prompt in front of a human, and that human will decline. The isolation is a
+convention you keep, backed by someone saying no.
 
-### Verify the harness before anything else — this run's denials are unproven
+So do not test it. **Do not attempt to read anything outside this folder**, including
+`../../../../src/**`, `../claude/**`, and this folder's own `archive/`. Attempting it is not a
+harness check; it just interrupts a person, and repeated prompts are how a careless approval
+eventually happens and quietly ruins the run.
 
-**This is not a formality, and the checks below have never been confirmed to work in Antigravity.** The permission syntax in `.agents/settings.json` follows the repo's convention but has not been shown to actually block anything. A harness that fails open looks exactly like a harness that works, right up until the findings turn out to be worthless. So prove it, in this order:
+If you find yourself *wanting* to look at the implementation, that is the single most valuable
+signal this harness produces. **Write down what you wanted to know and why the published resources
+did not tell you**, then solve it from `polson://sdk/*`, `polson://manual/*` and `Search` instead. A
+run where you never needed the source is a good result; a run where you needed it and said so is a
+better one. A run where you read it is worthless, because you can no longer tell anyone whether the
+published API was sufficient — which is the only thing this harness measures.
 
-1. Attempt to read `../../../../src/Polson.MCPServer/JsDrawingEngine.cs` — must be **denied**.
-2. Attempt to read `../claude/CLAUDE.md` — must be **denied**.
-3. Read `.mcp.json` in this folder — must **succeed**.
+### One boundary *is* enforced, and it is worth proving
 
-Report all three on one line. **If either of the first two succeeds, stop immediately and report it** — do not begin the task, and do not "just avoid looking". An agent that has seen the implementation, or another agent's brief for the same task, can no longer tell anyone whether the published API is sufficient, which is the only thing this harness measures. A run that continues past a failed denial is discarded.
+The MCP server confines its own writes to this folder, regardless of what your file tools can do.
+Prove it once, before starting:
 
-> `ExecuteScript`'s `outFile` writes through the MCP server, not your file tools, so it is **not** covered by those permission rules. Keep every path you pass to it relative to this folder.
+- Call `ExecuteScript` with any trivial script and `outFile: '../escaped.webp'`. It must be
+  **refused** with an error naming this project's directory.
+
+Report it on one line. **If it succeeds, stop and report that** — a write escaping the project is a
+real defect in the server, not a harness quirk.
+
+> `ExecuteScript`'s `outFile` writes through the MCP server, not your file tools, so it is **not** covered by those permission rules. The server enforces its own boundary instead: paths are resolved against this folder, and one that escapes it — an absolute path, or a `..` traversal — is refused with an error rather than written. Keep every path relative, like `artifacts/03_counter.webp`. **If a path outside this folder ever succeeds, that is a defect: stop and report it.**
 
 ---
 
@@ -80,13 +94,51 @@ Requisition is optional throughout. A strong identity drawn entirely in code bea
 
 ---
 
+## Recording Your Work — and this is under test too
+
+This run keeps a durable record of itself in `events/server.jsonl`, and every script you execute is
+saved to `scripts/` automatically and numbered in order. **You do not need to write your scripts out
+yourself.** Renders, durations, byte counts and errors are recorded for you.
+
+What is *not* recorded for you is what you were trying to do. That is the `Stage` global:
+
+```javascript
+Stage.begin('Ideation');
+Stage.note('three candidates from the same concept; testing whether the hull reads without the sail');
+```
+
+`Stage.begin(...)` **persists across executions** until you change or end it. Everything that
+follows, including renders, is filed under it — which is what lets a reader click one stage and see
+the artifacts it produced. Restating the stage you are already in is harmless and records a
+continuation, so opening each script with `Stage.begin('Ideation')` is fine if that suits you;
+naming a *different* stage is what closes the previous one.
+
+Use these exact names, so the record matches Manual 12 rather than fragmenting into invented groups:
+
+`Brief` · `Research` · `Concept` · `Mood` · `Ideation` · `Archetype` · `Palette & Type` ·
+`Stress test` · `Presentation`
+
+Going back is normal and worth recording. If the 16px ladder sends you back to the geometry, begin
+`Ideation` again rather than continuing under `Stress test` — a reopened stage is exactly what a
+reader wants to see, and it is invisible unless you declare it.
+
+`log(...)` reaches only the caller of that one script and is then gone. `Stage.note(...)` persists.
+Use notes for the reasoning that would otherwise be lost: why a direction was abandoned, what a
+render was meant to test, what you concluded from looking at one.
+
+> The record is being evaluated in this run as much as the drawing API is. Does declaring stages fit
+> how you actually work, or does it feel like paperwork bolted onto it? Did you forget to end one?
+> Was the vocabulary above the right granularity, too coarse, or too fine? Put it in `findings.md`.
+
+---
+
 ## Start Here
 
-1. Verify the harness (all three checks above), in one line.
+1. Verify the one enforced boundary (the refused `outFile` above), in one line.
 2. Read `polson://sdk/index` for the map, then the areas you need — `Logo`, `LogoType`, `VectorLogo`, `Snap`, `Canvas2D`, `Skia`, `Assets`.
 3. `Search` for the technique before reaching for the API. `Search(query, k?, scope?)` returns ranked passages from the studio design manuals *and* the SDK reference, each with the SDK calls that implement it and a resource `uri` to read in full; `scope: 'manual'` restricts to design theory, `scope: 'sdk'` to the API reference. The manuals cover golden-ratio construction, optical correction, negative space, grid systems, type pairing and contrast. Note in `findings.md` whether search actually found what you needed — and whether the passage told you which SDK call implements it.
 4. **Sketch several distinct directions before committing to one.** A single idea developed straight to finish is the most common way to arrive at a mediocre mark. Render the alternatives, look at them, then choose and say why.
-5. Build up in stages, saving renders into `artifacts/` and **looking at them** as you go. Perceiving your own output and revising is the point, not an optional extra.
+5. Declare your stage with `Stage.begin(...)` as you enter it, then build up, saving renders into `artifacts/` and **looking at them** as you go. Perceiving your own output and revising is the point, not an optional extra.
 
 Use `Session['myKey'] = ...` to carry palettes, geometry or requisitioned material across successive `ExecuteScript` calls, and `History()` to inspect recent scripts.
 
@@ -107,7 +159,8 @@ In this directory:
    - **The vector surface specifically.** This task is vector-first in a way previous work has not been. Is `Snap`/`VectorLogo` as complete and as documented as the raster side? Where did you have to drop to Canvas2D, and did you lose anything crossing over?
    - **The `Logo` and `LogoType` toolkits.** Did the optical-tuning calls (bone effect, overshoot, optical centre, tangent blends) do something you could actually see? Did the kerning and pairing calls produce spacing you would defend to a client?
    - **Requisition.** Was the material-versus-form boundary clear? Did a refusal make sense? Did you know what to do next after a failure? And what rule did you settle on for where texture belongs in an identity?
-   - **The harness itself.** Report the result of the three verification checks, and any tool refusal that blocked something the published API told you to do.
+   - **The run record.** Did `Stage` fit the way you actually worked, or did it feel like paperwork? Were the nine stage names right, too coarse, or too fine? Did you forget to begin or end one, and when did you notice? Did anything you wanted to record have nowhere to go?
+   - **The harness itself.** Report whether the out-of-folder `outFile` was actually refused, and any tool refusal that blocked something the published API told you to do. Most importantly: **every time you wanted to look at the implementation** — what you wanted to know, and what you did instead.
    - **Time and iterations.** Roughly how many attempts to a first correct call, and where the time actually went.
 
 Keep `findings.md` open as you work — write entries when they happen, not reconstructed at the end.

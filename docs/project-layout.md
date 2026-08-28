@@ -58,7 +58,7 @@ without a lock, and it means a crashed writer truncates its own file and nobody 
 
 | `src` | `type` | Status |
 | :--- | :--- | :--- |
-| `server` | `script.start` `script.ok` `script.error` `render` `stage.begin` `stage.end` `note` | **written** by `RunEventLog` |
+| `server` | `run.start` `run.end` `script.start` `script.ok` `script.error` `render` `stage.begin` `stage.continue` `stage.end` `note` `tool.error` | **written** by `RunEventLog` |
 | `server` | `asset.requisition` `asset.refused` `budget` | specified; requisition lives in `Polson.ExtendedMind` and is not yet wired |
 | `agent` | `turn.start` `thinking` `tool.call` `text` `compaction` `turn.end` `usage` | specified; needs the Python orchestrator |
 | `director` | `brief` `message` `question` `answer` `cancel` | specified; needs the webapp |
@@ -70,6 +70,14 @@ costs nothing and keeps a run reconstructible even when the agent never wrote an
 Each `script.start` is closed by exactly one `script.ok` or `script.error`, including when a tool
 call throws rather than returning — a refused output path, for instance. A start without a
 terminator means the process died mid-script, and should be read that way.
+
+`run.start` and `run.end` bracket the server's lifetime. **A log with no `run.end` is a run that did
+not finish** — the process was killed, or is still going. Without it a reader cannot tell a completed
+run from an abandoned one, since the file simply stops in both cases.
+
+`tool.error` records a failure in any tool other than `ExecuteScript`, which has its own
+`script.error`. A tool that fails and is worked around otherwise leaves the record claiming nothing
+went wrong.
 
 ## Stage and execution
 
@@ -83,6 +91,11 @@ joining:
   executions**: it lives on the session and is re-read on every call, because a property pushed onto
   the ambient log context inside an async tool handler never reaches the next request. Filtering the
   log by `stage` yields every artifact produced during it.
+
+  A stage runs from its `stage.begin` to the matching `stage.end`. `stage.continue` in between is the
+  agent restating the stage it is already in — an announcement at the top of a script — and does not
+  break the group. Restating was previously a full end/begin cycle, which chopped one stage into
+  several and hid the real transitions among them.
 
 The same three properties (`Project`, `Stage`, `ExecutionId`) are pushed onto the Serilog context per
 call, so ordinary log lines carry the same attribution when debugging.

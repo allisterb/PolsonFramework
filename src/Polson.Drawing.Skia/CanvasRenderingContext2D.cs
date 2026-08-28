@@ -207,6 +207,13 @@ public class CanvasRenderingContext2D
         set => _currentState.ColorFilter = value;
     }
 
+    /// <summary>Phase offset into the dash pattern, in pixels. HTML5 <c>ctx.lineDashOffset</c>.</summary>
+    public float LineDashOffset
+    {
+        get => _currentState.LineDashOffset;
+        set => _currentState.LineDashOffset = value;
+    }
+
     public SKPathEffect? PathEffect
     {
         get => _currentState.PathEffect;
@@ -287,6 +294,44 @@ public class CanvasRenderingContext2D
     #endregion
 
     #region Paths
+    /// <summary>
+    /// Sets the dash pattern for subsequent strokes. HTML5 <c>ctx.setLineDash([4, 4])</c>.
+    /// </summary>
+    /// <remarks>
+    /// The state and the paint already understood <c>LineDash</c>; only this entry point was
+    /// missing, so a script writing the standard call got "Property 'setLineDash' of object is not
+    /// a function" and had to reach for <c>Skia.PathEffect.dash</c> instead. An empty array clears
+    /// the pattern, as in the DOM.
+    /// <para>
+    /// Takes <c>object</c> because a JS array arrives from Jint as a boxed enumerable rather than a
+    /// <c>float[]</c>; the members are coerced individually, matching <c>Skia.PathEffect.dash</c>.
+    /// An explicitly set <see cref="PathEffect"/> is composed with the dash rather than replaced.
+    /// </para>
+    /// </remarks>
+    public void SetLineDash(object? segments)
+    {
+        if (segments is not System.Collections.IEnumerable enumerable || segments is string)
+        {
+            _currentState.LineDash = null;
+            return;
+        }
+
+        var values = new List<float>();
+        foreach (var item in enumerable)
+        {
+            if (item is null) continue;
+            values.Add(Convert.ToSingle(item, CultureInfo.InvariantCulture));
+        }
+
+        // An odd count repeats to make it even, which is what the DOM specifies: [5] means 5 on, 5 off.
+        if (values.Count % 2 == 1) values.AddRange(values);
+
+        _currentState.LineDash = values.Count > 0 ? [.. values] : null;
+    }
+
+    /// <summary>The current dash pattern, empty when none is set. HTML5 <c>ctx.getLineDash()</c>.</summary>
+    public float[] GetLineDash() => _currentState.LineDash is { } dash ? (float[])dash.Clone() : [];
+
     public void BeginPath()
     {
         _currentPath.BeginPath();

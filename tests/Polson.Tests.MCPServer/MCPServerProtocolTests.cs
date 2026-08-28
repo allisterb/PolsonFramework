@@ -312,6 +312,26 @@ public class MCPServerProtocolTests : TestsRuntime, IAsyncLifetime
         var canvasSchemaText = string.Concat(canvasSchema.Contents.OfType<TextResourceContents>().Select(c => c.Text));
         Assert.Contains("TextMetrics", canvasSchemaText);
     }
+
+    /// <summary>
+    /// The Gemini logo run reported <c>An error occurred invoking 'MeasureSvgPath'</c> on a valid
+    /// path and fell back to <c>Snap.path.getBBox</c>. It is not reproducible here — over the real
+    /// transport the same path measures correctly — so this pins the tool end to end rather than
+    /// leaving the report unanswered.
+    /// </summary>
+    [Fact]
+    public async Task MeasureSvgPathReturnsMetricsOverTheWire()
+    {
+        await using var client = await NewClientAsync();
+        var r = await client.CallToolAsync("MeasureSvgPath", new Dictionary<string, object?>
+        {
+            ["pathData"] = "M170 360 C145 250 190 150 260 110 C220 190 215 280 235 360 Z"
+        });
+
+        Assert.True(r.IsError != true, $"CallToolAsync failed: {Text(r)}");
+        Assert.Contains("totalLength", Text(r), StringComparison.Ordinal);
+        Assert.Contains("bbox", Text(r), StringComparison.Ordinal);
+    }
     #endregion
 }
 

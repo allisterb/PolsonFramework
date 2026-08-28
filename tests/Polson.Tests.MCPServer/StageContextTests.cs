@@ -98,6 +98,79 @@ public class StageContextTests : TestsRuntime, IDisposable
         Assert.Equal("superseded", ends[0].GetProperty("reason").GetString());
     }
 
+    /// <summary>
+    /// Re-declaring the current stage continues it rather than cycling end/begin. The first agent
+    /// run declared the same stage at the top of three consecutive scripts, which chopped one stage
+    /// into three and buried the real transitions.
+    /// </summary>
+    [Fact]
+    public async Task TestRedeclaringTheCurrentStageContinuesIt()
+    {
+        var tools = Tools();
+        await tools.ExecuteScript("Stage.begin('Stress test'); exit('ok');");
+        await tools.ExecuteScript("Stage.begin('Stress test'); exit('ok');");
+        await tools.ExecuteScript("Stage.begin('Stress test'); exit('ok');");
+
+        var types = Events().Select(Type).ToArray();
+
+        Assert.Single(types, t => t == "stage.begin");
+        Assert.Equal(2, types.Count(t => t == "stage.continue"));
+        Assert.DoesNotContain(Events(), e => Type(e) == "stage.end");
+    }
+
+    /// <summary>A continuation is still tagged, so the stage keeps grouping the work.</summary>
+    [Fact]
+    public async Task TestContinuedStageStillTagsRenders()
+    {
+        var tools = Tools();
+        await tools.ExecuteScript("Stage.begin('Ideation'); exit('ok');");
+        await tools.ExecuteScript("Stage.begin('Ideation'); exit('ok');");
+        await tools.ExecuteScript(Draw, 64, 64, outFile: "artifacts/a.webp");
+
+        Assert.Equal("Ideation", Stage(Events().Single(e => Type(e) == "render")));
+    }
+
+    /// <summary>Case alone must not fork the record; the first spelling is kept and returned.</summary>
+    [Fact]
+    public async Task TestCaseDifferenceContinuesRatherThanForking()
+    {
+        var tools = Tools();
+        await tools.ExecuteScript("Stage.begin('Stress test'); exit('ok');");
+        var result = await tools.ExecuteScript("log('got=' + Stage.begin('STRESS TEST')); exit('ok');");
+
+        Assert.Contains(result.Logs, l => l.Contains("got=Stress test", StringComparison.Ordinal));
+        Assert.Single(Events(), e => Type(e) == "stage.begin");
+    }
+
+    /// <summary>A genuinely different stage still supersedes, so real transitions are unaffected.</summary>
+    [Fact]
+    public async Task TestDifferentStageStillSupersedes()
+    {
+        var tools = Tools();
+        await tools.ExecuteScript("Stage.begin('Ideation'); exit('ok');");
+        await tools.ExecuteScript("Stage.begin('Ideation'); exit('ok');");
+        await tools.ExecuteScript("Stage.begin('Archetype'); exit('ok');");
+
+        var ends = Events().Where(e => Type(e) == "stage.end").ToArray();
+
+        Assert.Single(ends);
+        Assert.Equal("Ideation", Stage(ends[0]));
+    }
+
+    /// <summary>Reopening after an explicit end is a real begin, not a continuation.</summary>
+    [Fact]
+    public async Task TestReopeningAfterEndIsANewBegin()
+    {
+        var tools = Tools();
+        await tools.ExecuteScript("Stage.begin('Ideation'); Stage.end(); exit('ok');");
+        await tools.ExecuteScript("Stage.begin('Ideation'); exit('ok');");
+
+        var types = Events().Select(Type).ToArray();
+
+        Assert.Equal(2, types.Count(t => t == "stage.begin"));
+        Assert.DoesNotContain(Events(), e => Type(e) == "stage.continue");
+    }
+
     /// <summary>A stage set mid-script tags that script's own completion, not just later ones.</summary>
     [Fact]
     public async Task TestStageSetMidScriptTagsThatScript()

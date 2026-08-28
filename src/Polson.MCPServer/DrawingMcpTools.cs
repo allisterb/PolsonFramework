@@ -81,6 +81,50 @@ public class DrawingMcpTools
     /// planted inside the project could still point out of it.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Runs a tool body, recording a <c>tool.error</c> if it throws, then rethrowing.
+    /// </summary>
+    /// <remarks>
+    /// Only <c>ExecuteScript</c> was recorded, so a failure in any other tool left the run's record
+    /// silent about it. The first agent run hit an unexplained <c>MeasureSvgPath</c> failure and
+    /// worked around it; nothing in <c>events/server.jsonl</c> showed it had happened, which is
+    /// exactly the case a record exists for. The result is unchanged — this only observes.
+    /// </remarks>
+    private T Recorded<T>(string tool, Func<T> body)
+    {
+        try
+        {
+            return body();
+        }
+        catch (Exception ex)
+        {
+            Events.Append("tool.error", fields: new Dictionary<string, object?>
+            {
+                ["tool"] = tool,
+                ["error"] = ex.Message
+            });
+            throw;
+        }
+    }
+
+    /// <inheritdoc cref="Recorded{T}(string, Func{T})"/>
+    private async Task<T> RecordedAsync<T>(string tool, Func<Task<T>> body)
+    {
+        try
+        {
+            return await body();
+        }
+        catch (Exception ex)
+        {
+            Events.Append("tool.error", fields: new Dictionary<string, object?>
+            {
+                ["tool"] = tool,
+                ["error"] = ex.Message
+            });
+            throw;
+        }
+    }
+
     internal string ResolveOutputPath(string path, string parameterName)
     {
         var full = string.IsNullOrEmpty(ProjectRoot)
@@ -415,6 +459,17 @@ public class DrawingMcpTools
                 var fullOutPath = ResolveOutputPath(outFile, nameof(outFile));
                 File.WriteAllBytes(fullOutPath, imgBytes);
                 result.ImageFilePath = fullOutPath;
+
+                // RenderSvg produces artifacts exactly as ExecuteScript does, so it belongs in the
+                // record on the same terms — otherwise a file appears in artifacts/ that the run
+                // log cannot account for.
+                Events.Append("render", fields: new Dictionary<string, object?>
+                {
+                    ["tool"] = nameof(RenderSvg),
+                    ["artifact"] = Events.Relativize(fullOutPath),
+                    ["format"] = result.ImageFormat,
+                    ["bytes"] = imgBytes.Length
+                });
             }
 
             result.ImageSize = result.ImageBytes?.Length ?? 0;
@@ -438,6 +493,7 @@ public class DrawingMcpTools
     public JsonObject MeasureSvgPath(
         [Description("The SVG path data string (e.g. 'M10 10 L50 50 Z').")] string pathData,
         [Description("Optional distance along the path to sample coordinates and tangent angle.")] float? length = null)
+    => Recorded(nameof(MeasureSvgPath), () =>
     {
         ArgumentNullException.ThrowIfNull(pathData);
 
@@ -470,7 +526,7 @@ public class DrawingMcpTools
         }
 
         return response;
-    }
+    });
 
     internal static async Task<T> RunWithHeartbeatAsync<T>(
         Task<T> task,

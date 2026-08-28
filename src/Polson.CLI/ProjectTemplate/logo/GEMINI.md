@@ -60,6 +60,30 @@ The full method is Studio Manual 12 — read it: `polson://manual/12`. Its stage
 this project, and the manual names the specific toolkit call for each one. Do not restate it here;
 go and read it.
 
+**Use these exact names when you declare a stage.** They are what a reader will click on, so the
+manual's stages and the record's tags have to be the same words — invented variations fragment the
+record into groups nobody asked for.
+
+| Manual 12 | `Stage.begin(...)` |
+| :--- | :--- |
+| 1 · Setting the Task | `Brief` |
+| 2 · Research & Visual Positioning | `Research` |
+| 2.5a · Concept Articulation | `Concept` |
+| 2.5b · Mood Board | `Mood` |
+| 3 · Creative Search & Geometric Ideation | `Ideation` |
+| 4 · Style Direction & Archetype | `Archetype` |
+| 5 · Colour Palette & Typographic Harmony | `Palette & Type` |
+| 6 · Multi-Scale Stress Testing | `Stress test` |
+| 7 · Brand Presentation Board | `Presentation` |
+
+Restating the stage you are already in is harmless — it records a continuation and leaves the stage
+running — so opening every script with `Stage.begin(...)` is fine. Naming a *different* stage is
+what closes the previous one.
+
+Going back is normal and worth recording: if a stress test sends you back to the geometry, begin
+`Ideation` again rather than carrying on under `Stress test`. A stage that reopens is exactly the
+kind of thing a reader wants to see, and it is invisible if you do not declare it.
+
 Two stages carry requirements this project enforces:
 
 ### Stage 2.5 — state the concept before you draw

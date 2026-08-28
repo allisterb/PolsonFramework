@@ -109,7 +109,7 @@ public class PlateAnalysisTests : TestsRuntime
 
         var bands = PlateAnalysis.MeasurePlate(plate, QuietRegion.None).BandLuminance;
 
-        Assert.Equal(3, bands.Count);
+        Assert.Equal(3, bands.Length);
         Assert.True(bands[0] < bands[1] && bands[1] < bands[2]);
     }
 

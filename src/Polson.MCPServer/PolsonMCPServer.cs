@@ -1,6 +1,7 @@
 namespace Polson.MCPServer;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -34,12 +35,14 @@ public class PolsonMCPServer : Runtime
             .SetMinimumLevel(LogLevel.Trace);
 
         var mcp = builder.Services.AddMcpServer();
-        RegisterToolsAndResources(mcp, registry, projectDir);
+        var tools = RegisterToolsAndResources(mcp, registry, projectDir);
         mcp.WithStdioServerTransport();
 
         var app = builder.Build();
 
-        app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() =>
+        var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+        BracketRun(lifetime, tools.Events, "stdio", projectDir);
+        lifetime.ApplicationStopping.Register(() =>
         {
             registry.Dispose();
         });
@@ -90,7 +93,7 @@ public class PolsonMCPServer : Runtime
         });
 
         var mcp = builder.Services.AddMcpServer();
-        RegisterToolsAndResources(mcp, registry, projectDir);
+        var tools = RegisterToolsAndResources(mcp, registry, projectDir);
 
 #pragma warning disable MCP9004
         mcp.WithHttpTransport(options =>
@@ -105,6 +108,7 @@ public class PolsonMCPServer : Runtime
         app.UseCors(CorsPolicyName);
         app.MapMcp();
 
+        BracketRun(app.Lifetime, tools.Events, "http", projectDir);
         app.Lifetime.ApplicationStopping.Register(() =>
         {
             registry.Dispose();
@@ -135,13 +139,37 @@ public class PolsonMCPServer : Runtime
         return app;
     }
 
-    private static void RegisterToolsAndResources(IMcpServerBuilder mcp, SessionRegistry registry, string? projectRoot)
+    /// <summary>
+    /// Brackets the run in its own record: <c>run.start</c> now, <c>run.end</c> on shutdown.
+    /// </summary>
+    /// <remarks>
+    /// Without the closing event a reader cannot tell a finished run from one whose process died
+    /// mid-script — the log simply stops either way, which the first agent run demonstrated by
+    /// leaving its last stage open with nothing after it.
+    /// </remarks>
+    private static void BracketRun(IHostApplicationLifetime lifetime, RunEventLog events, string transport, string? projectRoot)
     {
-        mcp.WithTools(new DrawingMcpTools(new JsDrawingEngine(), registry, new LocalKnowledgeIndex(), projectRoot));
+        if (!events.Enabled) return;
+
+        events.Append("run.start", fields: new Dictionary<string, object?>
+        {
+            ["transport"] = transport,
+            ["project"] = projectRoot
+        });
+
+        lifetime.ApplicationStopping.Register(() => events.Append("run.end"));
+    }
+
+    private static DrawingMcpTools RegisterToolsAndResources(IMcpServerBuilder mcp, SessionRegistry registry, string? projectRoot)
+    {
+        var tools = new DrawingMcpTools(new JsDrawingEngine(), registry, new LocalKnowledgeIndex(), projectRoot);
+        mcp.WithTools(tools);
         mcp.WithResources<PolsonResources>();
         mcp.WithResources(PolsonResources.AreaResources(PolsonResources.Docs));
         mcp.WithResources<PolsonManuals>();
         mcp.WithResources(PolsonManuals.ManualResources());
+
+        return tools;
     }
     #endregion
 }

@@ -58,18 +58,38 @@ public sealed class StageApi
     /// Declares the stage of work. Persists across executions until changed or ended.
     /// </summary>
     /// <remarks>
-    /// Beginning a stage while one is open closes the previous one first, so the record never shows
-    /// two stages running at once and a viewer can treat the events between begin and end as a
-    /// contiguous group.
+    /// Beginning a <em>different</em> stage while one is open closes the previous one first, so the
+    /// record never shows two stages running at once and a viewer can treat the events between begin
+    /// and end as a contiguous group.
+    /// <para>
+    /// Re-declaring the stage you are already in is an announcement, not a transition: it records a
+    /// <c>stage.continue</c> and leaves the stage running. The first agent run declared
+    /// <c>Stress test</c> at the top of three consecutive scripts — reasonably, since that is where
+    /// it said what it was about to do — and produced an end/begin pair each time, chopping one
+    /// stage into three and burying the real transitions among them.
+    /// </para>
+    /// <para>
+    /// The comparison ignores case so <c>Stress Test</c> continues <c>Stress test</c> rather than
+    /// forking the record over a capital letter; the originally recorded spelling is kept and
+    /// returned.
+    /// </para>
     /// </remarks>
     public string Begin(string name)
     {
         var clean = Clean(name, MaxNameLength);
         if (clean.Length == 0) throw new ArgumentException("A stage needs a name.", nameof(name));
 
-        if (session?.Stage is { Length: > 0 } previous)
+        var current = session?.Stage;
+
+        if (current is { Length: > 0 } && string.Equals(current, clean, StringComparison.OrdinalIgnoreCase))
         {
-            events?.Append("stage.end", previous, executionId, new Dictionary<string, object?> { ["reason"] = "superseded" });
+            events?.Append("stage.continue", current, executionId);
+            return current;
+        }
+
+        if (current is { Length: > 0 })
+        {
+            events?.Append("stage.end", current, executionId, new Dictionary<string, object?> { ["reason"] = "superseded" });
         }
 
         if (session is not null) session.Stage = clean;

@@ -259,7 +259,9 @@ public sealed record PlateMetrics
     public required double KeyLightY { get; init; }
 
     /// <summary>Mean luminance of the top, middle and lower thirds.</summary>
-    public required IReadOnlyList<double> BandLuminance { get; init; }
+    /// <remarks>An array for the same reason as <see cref="RequisitionVerdict.Triggers"/>: a JS-reachable
+    /// collection property must not alternate its runtime type between calls.</remarks>
+    public required double[] BandLuminance { get; init; }
 
     /// <summary>Darkest large region, in normalised coordinates: where foreground can safely sit.</summary>
     public required double QuietX { get; init; }
@@ -377,7 +379,15 @@ public sealed record RequisitionVerdict
     public required string Reason { get; init; }
 
     /// <summary>Terms that triggered the classification, for the message shown to the agent.</summary>
-    public IReadOnlyList<string> Triggers { get; init; } = [];
+    /// <remarks>
+    /// Declared as an array, not <c>IReadOnlyList</c>, and that is load-bearing. Jint caches the
+    /// member accessor for a property and the cache assumes the runtime type is stable, so a
+    /// property that returned <c>string[]</c> on one call and <c>List&lt;string&gt;</c> on the next
+    /// threw <c>Unable to cast … List`1[System.String] … to type 'System.Array'</c> — on the *third*
+    /// call, after the type alternated. Classifying a material and then an object in one session was
+    /// enough to hit it. An array-typed property cannot alternate.
+    /// </remarks>
+    public string[] Triggers { get; init; } = [];
 
     public bool Allowed => Class != RequisitionClass.Form;
 }

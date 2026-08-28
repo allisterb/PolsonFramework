@@ -89,7 +89,7 @@ Animation and easing curve generators compatible with Snap.svg:
 ### `Stage`
 Declares which stage of work you are in, so every script, render and note that follows is filed under it. The declaration **persists across executions** until you change or end it — set it once at the top of a stage, not in every script.
 
-- `Stage.begin(name: string)` → `string` — Declares the stage and returns the name as recorded. Beginning one while another is open closes the previous first, so two stages never overlap.
+- `Stage.begin(name: string)` → `string` — Declares the stage and returns the name as recorded. Beginning a **different** stage closes the previous one first, so two never overlap. Re-declaring the stage you are already in is an announcement, not a transition: it records a continuation and leaves the stage running, so you can safely restate it at the top of each script. Case is ignored when comparing, and the originally recorded spelling is kept.
 - `Stage.end()` — Ends the current stage. Harmless when none is open.
 - `Stage.current` → `string?` — The stage in effect, or `undefined` if none.
 - `Stage.note(message: string)` — Records a note under the current stage.
@@ -356,6 +356,9 @@ Segment methods mirror the context's own path construction and take the same arg
 - `ctx.lineCap` — Cap style: `"butt"`, `"round"`, `"square"`.
 - `ctx.lineJoin` — Join style: `"miter"`, `"round"`, `"bevel"`.
 - `ctx.miterLimit` — Miter limit ratio (default 10).
+- `ctx.setLineDash(segments: number[])` — Dash pattern for subsequent strokes, e.g. `[4, 4]`. An empty array clears it; an odd-length array repeats to become even, so `[6]` means 6 on, 6 off. Composes with `ctx.pathEffect` rather than replacing it.
+- `ctx.getLineDash()` → `number[]` — The current pattern, empty when none is set.
+- `ctx.lineDashOffset` — Phase offset into the pattern, in pixels.
 - `ctx.globalAlpha` — Alpha multiplier `[0.0, 1.0]`.
 - `ctx.globalCompositeOperation` — Blend mode: `"source-over"`, `"multiply"`, `"screen"`, `"overlay"`, `"darken"`, `"lighten"`, `"color-dodge"`, `"color-burn"`, `"hard-light"`, `"soft-light"`, `"difference"`, `"exclusion"`, `"hue"`, `"saturation"`, `"color"`, `"luminosity"`, `"xor"`, `"destination-over"`, etc.
 - `ctx.shadowColor` — Drop shadow color string.

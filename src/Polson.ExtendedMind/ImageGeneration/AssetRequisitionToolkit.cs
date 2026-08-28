@@ -479,7 +479,7 @@ public partial class AssetRequisitionToolkit : Runtime
             return new RequisitionVerdict
             {
                 Class = RequisitionClass.Form,
-                Triggers = hits,
+                Triggers = [.. hits],
                 Reason = $"'{string.Join("', '", hits)}' names a thing with an outline. Draw the form with the "
                        + "drawing toolkit and requisition its surface instead — e.g. the planking, not the ship.",
             };

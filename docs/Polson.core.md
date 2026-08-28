@@ -111,7 +111,7 @@ Snap.svg-compatible retained-mode vector graphics API.
 - `Snap.rad(deg: number)` → `number` — Converts degrees to radians.
 - `Snap.deg(rad: number)` → `number` — Converts radians to degrees.
 - `Snap.angle(x1: number, y1: number, x2: number, y2: number)` → `number` — Calculates the angle in degrees between two points.
-- `Snap.snapTo(values: number[], val: number, tolerance?: number)` → `number` — Snaps `val` to the closest number in `values` within `tolerance` (default 10).
+- `Snap.snapTo(values: number[], val: number, tolerance?: number)` → `number` — Snaps `val` to the closest number in `values` within `tolerance` (default 10), or returns `val` unchanged if nothing is close enough. To test whether it matched, check the result **is one of your candidates** — the return is single-precision, so an unsnapped `33.46` comes back as `33.459999084472656` and `result !== val` reports a match that never happened.
 
 ## `SnapPathApi` (`Snap.path`)
 

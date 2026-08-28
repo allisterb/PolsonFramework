@@ -15,6 +15,16 @@ A professional logo mark is not a freehand sketch; it is a **rigorous geometric 
 3. **Optical Illusion Corrections**: Compensations for human perceptual phenomena (irradiation, bone effect narrowing, circular overshoot, visual mass centroids).
 4. **Multi-Scale Vector Robustness**: Flawless legibility from a $16\text{px}$ favicon to a billboard.
 
+### Shape Stance: What the Silhouette Says First
+
+Before a mark means anything specific, its form has already taken a position. Two oppositions do most of that work, and both are decisions to make deliberately rather than inherit from whatever the construction happened to produce.
+
+**Sharp against round.** Sharp, angular forms read as authoritative, serious, sometimes threatening; rounded forms read as inviting and approachable. The response is physical in origin — edged objects can cut, so we handle them warily, and a *drawing* of a blade still carries a trace of that caution. Round is the safer default in the silhouette, because most brands are trying to seem approachable; deviate when the brief genuinely wants edge, not because the geometry fell out that way. `Skia.PathEffect.corner(radius)` rounds a polygon's corners wholesale, and `Logo.createTangentBlend(...)` gives you a controlled fillet where a specific join needs softening.
+
+**Solid against line.** A solid mark is stable and strong: the silhouette survives distance, small sizes and crude reproduction. A line mark is lighter and more elegant, and suits contexts where the mark should not dominate — UI iconography, interior signage — but thins into invisibility at distance and small scale unless the stroke is genuinely heavy. Some marks work both ways. When that happens, nominate one **primary** and one **secondary** rather than shipping two equals, or the identity has no centre of gravity.
+
+Both choices are load-bearing for Stage 6: a line mark and a sharp mark are the two that most often fail the $16\text{px}$ tier, and finding that out after the palette is locked is expensive.
+
 ---
 
 ## 2. Golden Ratio Systems & Logarithmic Spirals
@@ -90,7 +100,7 @@ When two straight lines meet at an angle $\theta$, joining them with a sharp cor
 
 ## 4. Optical Balance & Visual Corrections
 
-> **Implemented by**: `Logo.correctBoneEffect(p1, p2, strokeWidth, pinchCorrectionFactor)` → `Point[]`, `Logo.computeOvershoot(baseHeight, shape)` → `number`, and `Logo.computeOpticalCenter(pointsOrBounds, shapeType)` → `Point`. These compute corrections; applying them is still your call.
+> **Implemented by**: `Logo.correctBoneEffect(p1, p2, strokeWidth, pinchCorrectionFactor)` → `Point[]`, `Logo.computeOvershoot(baseHeight, shape)` → `number`, `Logo.computeOpticalCenter(pointsOrBounds, shapeType)` → `Point`, and `Logo.computeIrradiationCompensation(ink, background, strength)` → `{ scale, ... }`. These compute corrections; applying them is still your call. **E** and **F** below have no call at all — they are checks you perform, not values you fetch.
 
 ### A. The Bone Effect (Middle Stem Narrowing)
 When two parallel lines or a thick bar connects two larger shapes, human perception makes the middle of the straight bar look **narrower and pinched** (like a dog bone).
@@ -107,6 +117,30 @@ A circle or pointed apex of height $H$ sitting next to a flat-topped rectangle o
 The geometric center (bounding box center $Y = 50\%$) of triangular, teardrop, or tapering marks feels **bottom-heavy**.
 - **The Correction**: Shift the mark upward so its visual center of mass rests at **$Y \approx 44\%–48\%$** of the container height.
 - **Usage in Code**: `Logo.computeOpticalCenter(pointsOrBounds)`.
+
+### D. Irradiation (Light-on-Dark Bloom)
+A light shape on a dark ground appears **larger** than the identical shape dark-on-light, so a knockout set at its positive's exact dimensions looks bigger than the positive.
+- **The Correction**: Shrink the reversed version by roughly $1.5\%$ at full contrast, less as contrast falls.
+- **Usage in Code**: `Logo.computeIrradiationCompensation(ink, background)` → `{ scale, ... }`. Applied automatically by the monochrome board — see §6.B, which also covers why the correction is a scale rather than an erosion.
+
+### E. The Balancing Pass
+The corrections above are local. This one is about the mark as a whole, and it is a checklist rather than a formula — every mark is different, so what follows are the five properties worth checking on all of them.
+
+1. **Stability** — the mark should not feel tilted unless it means to be. Where the concept allows, weight the base: a wider foot reads as grounded, a narrow one as precarious.
+2. **Proportion** — aim for a square envelope rather than a long rectangle. Extreme aspect ratios are awkward to place, and a squarish mark locks up with type far more easily. Check with `getBBox()` rather than by eye.
+3. **Spacing** — elements should be more or less evenly distributed. Clustering in one region while another sits empty reads as an accident, not a decision.
+4. **Weight consistency** — strokes and masses should be of comparable heft. A very thick element beside a very thin one destabilises the whole mark, and if the mark is built from strokes, the width should be constant unless the variation is deliberately expressive.
+5. **Scalability** — it must survive being enlarged and, harder, reduced. This is what §6 tests, but it is worth predicting here rather than discovering at the end.
+
+Points 2 and 4 are the two you can check numerically, which makes them the two most worth checking: a bounding box that is $2.6:1$ and a stroke set that ranges from $2\text{px}$ to $9\text{px}$ are facts, not opinions.
+
+### F. Symmetry, and the Asymmetry Reserve
+Perfect symmetry is where algorithmic construction naturally lands — mirroring is the cheapest operation available, and a `for` loop around a centre produces it for free. It is also, reliably, the least interesting result. A perfectly mirrored mark gives the eye nothing to travel toward; it is read once and finished.
+
+Hold back a small **reserve of asymmetry** and spend it deliberately: a single element that differs in colour, a detail present on one side only, a mirrored half offset slightly rather than exactly. The silhouette can stay symmetrical while its interior does not — that combination reads as ordered *and* alive, where full symmetry reads only as ordered.
+
+> [!WARNING]
+> This cuts directly against how these marks get built here. If the construction is a loop over $n$ equal angular divisions, the result is symmetric by default and will stay that way unless something breaks it on purpose. Deciding *not* to introduce asymmetry is a legitimate choice; arriving at perfect symmetry without noticing is not.
 
 ---
 
@@ -176,6 +210,37 @@ A protective exclusion zone around the logo where no other text or graphics may 
 - **Usage in Code**:
   - JavaScript Canvas: `Logo.drawClearSpaceGuide(ctx, markBounds, xDimension)`
   - Snap.svg: `paper.clearSpaceGuide(x, y, width, height, margin)`
+
+### D. Gridding: The Finishing Pass
+Gridding is the last thing you do, and the timing is the point: it runs **after** the form is settled and approved, not during construction. Its adjustments are deliberately too small for a viewer to notice individually — what a viewer notices is their absence, as a vague sense that the mark was assembled rather than drawn.
+
+Three passes, in order:
+
+**1. Angles.** Round every angle to a familiar value. An element sitting at $43°$ should be $45°$; one at $33.46°$ should be $35°$. Lines meant to be horizontal or vertical must be exactly $0°$ or $90°$, not $89.4°$. The difference is invisible as a measurement and legible as a quality: a familiar angle reads as chosen, an arbitrary one as drifted.
+
+Two rules, in that order: pull near-misses onto a **strong** angle, then round whatever is left to the nearest $5°$.
+
+```js
+const STRONG = [0, 15, 30, 45, 60, 75, 90];
+
+const tidy = (deg) => {
+    const strong = Snap.snapTo(STRONG, deg, 3);              // within 3 deg of a strong angle?
+    return STRONG.includes(strong) ? strong                  // 43 -> 45, 89.4 -> 90
+                                   : Math.round(deg / 5) * 5; // 33.46 -> 35, 22.3 -> 20
+};
+```
+
+The tolerance on the first rule is what keeps this a correction rather than a redesign: three degrees catches an angle that *drifted* off $45°$, while an angle deliberately placed at $20°$ is nowhere near a strong one and passes through to the rounding, which leaves it at $20°$.
+
+> [!WARNING]
+> Test whether `snapTo` matched by checking its **result is one of your candidates**, not by comparing it to the input. It returns a single-precision float, so an unsnapped `33.46` comes back as `33.459999084472656` — different from the input by identity, identical by intent. `snapped !== deg` therefore reports a match that never happened, and the second rule never runs.
+
+**2. Primitives.** Anything that is meant to be a circle must actually be a circle, and a square actually square. Construction accumulates small errors — a radius applied on one axis, a bounding box off by a pixel — and this is where they get cleaned up. Compare `rx` against `ry`, and width against height, rather than trusting how it looks.
+
+**3. Alignment.** Check that elements which should share an edge, a centre or a spacing actually do, to the number rather than to the eye.
+
+> [!IMPORTANT]
+> **Do not grid everything.** Organic curves built from several blended shapes do not decompose into circles and squares, and forcing a construction grid onto them produces a diagram that looks rigorous and tells you nothing. If a form does not sit naturally on the grid, leave it off the grid — that is a judgement about the form, not a failure of the method. A construction plate crowded with guides that explain nothing is a worse deliverable than one with three that do.
 
 ---
 

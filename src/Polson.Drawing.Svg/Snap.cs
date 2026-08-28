@@ -91,16 +91,32 @@ public static class Snap
         return template;
     }
 
+    /// <summary>Snaps <paramref name="value"/> to the closest entry in <paramref name="values"/> within <paramref name="tolerance"/>.</summary>
+    /// <remarks>
+    /// Returns the *closest* candidate, not the first one that happens to fall inside the tolerance.
+    /// Scanning in array order made the result depend on how the caller ordered its list — snapping
+    /// 43 against every multiple of five returned 40, because 40 was reached first even though 45 is
+    /// nearer — so the same set in a different order gave a different answer. Ties resolve to the
+    /// earlier entry, so the result stays deterministic.
+    /// </remarks>
     public static float SnapTo(float[] values, float value, float tolerance = 10f)
     {
-        if (values != null && values.Length > 0)
+        if (values is null || values.Length == 0) return value;
+
+        var best = value;
+        var bestDistance = float.PositiveInfinity;
+
+        foreach (var v in values)
         {
-            foreach (var v in values)
+            var distance = MathF.Abs(v - value);
+            if (distance < bestDistance)
             {
-                if (MathF.Abs(v - value) <= tolerance) return v;
+                best = v;
+                bestDistance = distance;
             }
         }
-        return value;
+
+        return bestDistance <= tolerance ? best : value;
     }
 
     public static float Rad(float deg) => deg * MathF.PI / 180f;

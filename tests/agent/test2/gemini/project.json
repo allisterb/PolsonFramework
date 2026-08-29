@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "gemini",
+  "workflow": "harness",
+  "sdk": "agy",
+  "profile": "standalone",
+  "createdUtc": "2026-08-29T13:55:27.5263438Z",
+  "conversationId": null
+}

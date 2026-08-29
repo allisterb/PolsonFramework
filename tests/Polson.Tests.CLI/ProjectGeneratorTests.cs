@@ -171,14 +171,59 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// as a broken instruction rather than an instruction it can follow.
     /// </summary>
     [Theory]
-    [InlineData("GEMINI.md")]
-    [InlineData("brief.md")]
-    public void TestNoPlaceholderSurvivesRendering(string file)
+    [InlineData("logo", "agy", "GEMINI.md")]
+    [InlineData("logo", "claude", "CLAUDE.md")]
+    [InlineData("harness", "agy", "GEMINI.md")]
+    [InlineData("harness", "claude", "CLAUDE.md")]
+    public void TestNoPlaceholderSurvivesRendering(string workflow, string sdk, string instructions)
     {
-        Assert.True(ProjectGenerator.Create(Options("tokens")));
+        var name = $"tokens-{workflow}-{sdk}";
+        Assert.True(ProjectGenerator.Create(Options(name, o => { o.Workflow = workflow; o.Sdk = sdk; })));
 
-        var body = File.ReadAllText(Path.Combine(root, "tokens", file));
-        Assert.DoesNotContain("{{", body, StringComparison.Ordinal);
+        foreach (var file in new[] { instructions, "brief.md" })
+        {
+            var body = File.ReadAllText(Path.Combine(root, name, file));
+            Assert.DoesNotContain("{{", body, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// The harness's isolation rule is backed differently on each host, and the instructions must say
+    /// which — a harness that claims an enforcement it does not have measures nothing, because nobody
+    /// can tell afterwards whether the source really went unread.
+    /// </summary>
+    /// <remarks>
+    /// Claude Code's permission rules take paths; Antigravity's name tools and commands only, so no
+    /// rule there can stop a read. See the harness permission traps in the session handoff.
+    /// </remarks>
+    [Fact]
+    public void TestHarnessIsolationTellsTheTruthForEachHost()
+    {
+        Assert.True(ProjectGenerator.Create(Options("iso-agy", o => o.Workflow = "harness")));
+        Assert.True(ProjectGenerator.Create(Options("iso-claude", o => { o.Workflow = "harness"; o.Sdk = "claude"; })));
+
+        var agy = File.ReadAllText(Path.Combine(root, "iso-agy", "GEMINI.md"));
+        var claude = File.ReadAllText(Path.Combine(root, "iso-claude", "CLAUDE.md"));
+
+        Assert.Contains("not enforced by a permissions file", agy, StringComparison.Ordinal);
+        Assert.DoesNotContain("settings.local.json", agy, StringComparison.Ordinal);
+
+        Assert.Contains("settings.local.json", claude, StringComparison.Ordinal);
+        Assert.Contains("does **not** deny reads outside this folder", claude, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// What makes the harness a harness: the agent is asked to report on the API, not just to draw.
+    /// The logo workflow deliberately asks for neither.
+    /// </summary>
+    [Fact]
+    public void TestOnlyTheHarnessWorkflowAsksForFindings()
+    {
+        Assert.True(ProjectGenerator.Create(Options("f-harness", o => o.Workflow = "harness")));
+        Assert.True(ProjectGenerator.Create(Options("f-logo")));
+
+        Assert.Contains("findings.md", File.ReadAllText(Path.Combine(root, "f-harness", "GEMINI.md")));
+        Assert.DoesNotContain("findings.md", File.ReadAllText(Path.Combine(root, "f-logo", "GEMINI.md")));
     }
 
     /// <summary>

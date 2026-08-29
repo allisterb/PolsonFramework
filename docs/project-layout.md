@@ -54,6 +54,13 @@ differs between an Antigravity project and a Claude Code one — the contents ar
 | wiring | `mcp_config.json` **and** `.agents/mcp_config.json` | `.mcp.json` |
 | permissions | `.agents/settings.json` | `.claude/settings.local.json` |
 
+The **workflow** picks the template pair those instructions render from: `logo` for a client design
+project, `harness` for an SDK-evaluation run that also asks the agent for a `findings.md`. One
+paragraph of the harness instructions is supplied by the generator rather than the template, because
+the isolation rule is backed differently on each host — Claude Code's permission rules take paths,
+Antigravity's name tools and commands only — and a harness that claims an enforcement it does not
+have measures nothing.
+
 Antigravity gets the wiring in both places because the working harness carries both and which one
 the desktop host actually reads is unverified. They are two serialisations of one object, so they
 cannot drift; drop one once the host confirms which it reads. A wrong guess here would leave the

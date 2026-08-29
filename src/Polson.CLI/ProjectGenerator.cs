@@ -37,7 +37,7 @@ internal static class ProjectGenerator
     /// <summary>Additionally denied when the agent is reachable from a public URL.</summary>
     static readonly string[] StandaloneDenied = ["run_command"];
 
-    static readonly string[] KnownWorkflows = ["logo"];
+    static readonly string[] KnownWorkflows = ["logo", "harness"];
 
     static readonly Regex ValidId = new(@"^[A-Za-z0-9._-]{1,64}$", RegexOptions.Compiled);
     #endregion
@@ -140,6 +140,7 @@ internal static class ProjectGenerator
             ["CREATED_UTC"] = createdUtc,
             ["BRIEF"] = brief,
             ["INSTRUCTIONS_FILE"] = host.Instructions,
+            ["ISOLATION"] = Isolation(sdk),
         };
 
         WriteText(dir, host.Instructions, Render(workflow, "instructions.md", tokens));
@@ -327,6 +328,51 @@ internal static class ProjectGenerator
                 deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" },
             },
         };
+
+    /// <summary>
+    /// How the harness's isolation rule is actually backed on this host — which is not the same
+    /// sentence for both, and must not be written as though it were.
+    /// </summary>
+    /// <remarks>
+    /// Claude Code's permission rules take paths, so a deny there really does refuse a read.
+    /// Antigravity's name tools and commands only, so no rule can stop the agent reading Polson's
+    /// source; what stops it is a person declining a prompt. Telling an Antigravity agent its reads
+    /// are enforced would be false, and a harness that lies about its own boundaries measures
+    /// nothing — the whole value of this run is being able to say afterwards whether the published
+    /// API was sufficient, which only holds if the source really went unread.
+    /// <para>
+    /// Note what is <em>not</em> claimed for Claude Code either: the generated permission file denies
+    /// the shell and the network, but not reads outside the project, because what would need denying
+    /// depends on where the project was generated and the generator cannot know it. Real path
+    /// isolation is a deployment step, and saying so beats implying a rule that is not there.
+    /// </para>
+    /// </remarks>
+    static string Isolation(string sdk) => sdk == "agy"
+        ? """
+          ### This limit is not enforced by a permissions file. It is on you.
+
+          Antigravity's permissions name **tools and commands** — `mcp:polson:*`, `bash:node*` — never
+          paths. No rule in this harness denies reading Polson's source. If you ask to read it, your
+          host will put a prompt in front of a person, and that person will decline. The isolation is
+          a convention you keep, backed by someone saying no.
+
+          So do not test it. **Do not attempt to read anything outside this folder.** Attempting it is
+          not a harness check; it interrupts a person, and repeated prompts are how a careless
+          approval eventually happens and quietly ruins the run.
+          """
+        : """
+          ### Some of this is enforced, and some of it is on you.
+
+          `.claude/settings.local.json` denies the shell (`Bash`) and the network (`WebFetch`,
+          `WebSearch`), so all code execution goes through `ExecuteScript` — the thing under test.
+
+          It does **not** deny reads outside this folder: what would need denying depends on where
+          this project was generated, so the generator does not guess at it. Reading Polson's source
+          is therefore a convention you keep, not a wall you will hit. **Do not attempt it.**
+
+          If this harness is being run somewhere that matters, add the `Read(...)` denies for the
+          source tree by hand before starting, and note in `findings.md` that you did.
+          """;
 
     /// <summary>The MCP server's tool names, read from the server itself so the allowlist cannot go stale.</summary>
     /// <remarks>

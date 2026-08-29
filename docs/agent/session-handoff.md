@@ -73,7 +73,7 @@ on the *third* call. Declare such properties as arrays so alternation is unrepre
 
 ## What the first real agent run told us
 
-A Gemini logo run (`tests/agent/test2/gemini`) produced 92 events, 19 scripts, and a genuine brand
+A Gemini logo run (now `tests/agent/archive/test2/gemini`) produced 92 events, 19 scripts, and a genuine brand
 sheet. Its findings drove most of the fixes above. Two things it surfaced are still open:
 
 1. **Stage vocabulary held up.** The agent used all nine names in order and reopened stages —
@@ -207,6 +207,25 @@ renamed from `GEMINI.md`, because it now renders as either `GEMINI.md` or `CLAUD
 The Claude permission file's allowlist is **derived by reflecting over `DrawingMcpTools`**, so it
 cannot fall behind a tool being added — a stale allowlist would tell an agent it lacks a capability
 it actually has.
+
+### Two workflows now, and the second proved the mechanism
+
+`--workflow harness` joins `logo`. It renders the SDK-evaluation brief the old `tests/agent/test2`
+carried by hand: the no-peeking rule, the `outFile` containment check, and the `findings.md` report
+that is the whole point of a harness run. `tests/agent/test2/{gemini,claude}` are now generated from
+it — the originals are archived at `tests/agent/archive/test2/`, where the first real run's
+`events/server.jsonl` (92 events) and 19 scripts remain.
+
+Adding it surfaced something a single-workflow generator could hide: **the two hosts need different
+prose, not just different filenames.** The harness's isolation rule is enforced differently — Claude
+Code's permission rules take paths, Antigravity's name tools and commands only — so an instruction
+file that claims enforcement on Antigravity would be false, and a harness that lies about its own
+boundaries measures nothing. That paragraph comes from an `{{ISOLATION}}` token the generator fills
+per SDK, and a test asserts each host gets the true version.
+
+Note what the generated Claude permissions do **not** do: they deny the shell and the network, but
+not reads outside the project, because what would need denying depends on where the project was
+generated. The instructions say so rather than implying a wall that is not there.
 
 ### Deliberately not emitted: a `generate_image` deny for Antigravity
 

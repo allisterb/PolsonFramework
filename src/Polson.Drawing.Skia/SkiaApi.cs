@@ -32,6 +32,7 @@ public class SkiaApi
     public SkiaColorFilterApi ColorFilter { get; } = new();
     public SkiaPathEffectApi PathEffect { get; } = new();
     public SkiaMaskFilterApi MaskFilter { get; } = new();
+    public SkiaBrushApi Brush { get; } = new();
     public SkiaImageApi Image { get; }
     public SkiaBitmapFactoryApi Bitmap { get; } = new();
     public SkiaFontApi Font { get; } = new();

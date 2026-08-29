@@ -233,6 +233,75 @@ public class CanvasRenderingContext2D
         get => _currentState.MaskFilter;
         set => _currentState.MaskFilter = value;
     }
+
+    /// <summary>
+    /// Whether to dither, which removes banding from shallow gradients at the cost of fine noise.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, as in Skia. Worth turning on for a wide, shallow ramp — a sky, a soft tonal
+    /// transition — where 8-bit steps show as visible bands; the noise that replaces them is finer
+    /// than the banding. Saved and restored with the rest of the drawing state.
+    /// </remarks>
+    public bool Dither
+    {
+        get => _currentState.Dither;
+        set => _currentState.Dither = value;
+    }
+    #endregion
+
+    #region Brushes
+    /// <summary>
+    /// Applies a drawing medium: its colour or grain, its width and cap, its path texture and its edge.
+    /// </summary>
+    /// <remarks>
+    /// Sets five properties that belong together and are tedious to set apart. Anything the preset
+    /// leaves null is <em>cleared</em> rather than left standing, so switching media does not inherit
+    /// the last one's texture — the commonest way a "why is my ink line speckled" hour begins.
+    /// <para>
+    /// Wrap it in <c>save()</c>/<c>restore()</c> to scope a medium to one passage, exactly as with any
+    /// other drawing state.
+    /// </para>
+    /// </remarks>
+    /// <summary>
+    /// Returns the outline of what <c>stroke()</c> would draw, as a fillable path.
+    /// </summary>
+    /// <remarks>
+    /// The stroke stops being a line with a width and becomes a shape you can work on. That is the
+    /// difference between a constant-width ribbon and a drawn mark: outline the stroke, then modify
+    /// the outline — narrow it toward one end for pressure, boolean it against another shape, or fill
+    /// it with a gradient that runs across the stroke rather than along the path.
+    /// <para>
+    /// It reflects the current <c>lineWidth</c>, <c>lineCap</c>, <c>lineJoin</c>, <c>miterLimit</c>
+    /// and <c>pathEffect</c> — so outlining a stamped or hatched stroke gives you those marks as
+    /// geometry, and they then survive into <c>outSvg</c> as vector rather than only as pixels.
+    /// </para>
+    /// </remarks>
+    /// <param name="path">The path to outline. Defaults to the current path.</param>
+    /// <returns>The stroke's outline, or an empty path if the stroke would be a hairline.</returns>
+    public CanvasPath StrokeToPath(CanvasPath? path = null)
+    {
+        var source = path?.Path ?? _currentPath.Path;
+
+        using var paint = _currentState.CreateStrokePaint();
+        var outline = paint.GetFillPath(source);
+
+        // Null means Skia would draw this as a hairline, which has no area to outline. An empty path
+        // is the honest answer — it fills to nothing, exactly as a hairline outline would.
+        return outline is null ? new CanvasPath() : new CanvasPath(outline.ToSvgPathData());
+    }
+
+    public void UseBrush(BrushPreset brush)
+    {
+        ArgumentNullException.ThrowIfNull(brush);
+
+        if (brush.Grain is not null) StrokeStyle = brush.Grain;
+        else StrokeStyle = brush.Color;
+
+        LineWidth = brush.LineWidth;
+        LineCap = brush.LineCap;
+        PathEffect = brush.Texture;
+        MaskFilter = brush.Edge;
+    }
     #endregion
 
     #region Methods

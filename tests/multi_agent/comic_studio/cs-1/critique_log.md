@@ -2,129 +2,108 @@
 
 The collaboration trace. What each agent saw when it looked, what drift it found, what it changed.
 
+Brief: a **pencil drawing** of `reference_images/panel1.jpg`. Penciler and Critic stages only.
+
+The previous run of this directory is archived at `archive/run-2026-08-29a/`; nothing in it was
+read before this run's Penciler began measuring, so the findings here are this run's own.
+
 ---
 
 ## Stage 1 — Penciler
 
 ### What I saw when I looked at the reference
 
-`reference_images/panel1.jpg`, 620 x 336. A still from a cel-animated film: two rabbits, head
-and shoulders, against a washed pale ground. A near-black tree trunk down the left third; dry
-stems crossing the middle; grass tufts along the bottom and a tall clump bottom-left.
+620 x 336, a still from a cel-animated film. Two rabbits, head and shoulders, against a pale
+wash. A near-black tree trunk down the left third; dry stems crossing the middle; grass along the
+bottom and a dense tuft bottom-left.
 
-The left rabbit is **lower and further back**, in near-profile facing right, one eye visible. The
-right rabbit is **higher, nearer and turned more toward the viewer**, both eyes visible. They do
-not look at each other — both pupils sit left of their own socket centres. Both animals are
-staring off to the viewer-left. That is the content of the panel, and it is a thing a later stage
-can easily destroy by centring a pupil.
+The left rabbit is **lower, further back, and in near profile facing right**. The right rabbit is
+**higher, nearer, and turned toward the viewer** — and it has **two eyes visible**, the far one
+clipped by its own head contour at x 362. Both animals stare off to the viewer-left; neither looks
+at the other. The right rabbit's mouth is **open, with teeth showing**. Both of its ears are
+**cropped by the top edge** — they do not terminate in frame, and an agent working from memory will
+invent tips for them.
 
 ### What I measured, and how
 
-I did not eyeball any of it. `Skia.Image.load('reference_images/panel1.jpg')` plus
-`bitmap.getPixel(x, y)` gave me a luminance/saturation probe, and I ran threshold scans over it:
+Nothing here was eyeballed except where it says so. `Skia.Image.load` + `ctx.getImageData` gave me
+the pixel buffer, and I worked it four ways:
 
-- A coarse luminance census (10px grid) to find the masses at all.
-- Dark-run scans per row (`L < 135` / `L < 150`) to get both rabbits' silhouettes, the trunk edges,
-  and the four ear cross-sections.
-- A flood fill under `L < 45` to get each pupil's exact bounding box.
-- A brightest-pixel search inside each pupil to locate the catchlights.
-- A warm-fur mask (`r - b > 24`, `g < r`) to separate fur from the green grass and the neutral trunk.
-- An ochre mask to isolate the left rabbit's big pale far ear from the trunk behind it.
-- A `Skia.ColorFilter.highContrast` render of the whole frame, which turned the panel into a Notan
-  and made the stems, the grass and the light muzzle masses readable as shapes.
+- A 10px-cell **luminance Notan** to find the masses at all.
+- A **material classification map** — near-black / warm fur / pale ochre / green / wash — calibrated
+  against ten named probe pixels whose RGB I printed, so the thresholds are checkable rather than
+  asserted.
+- **Run-length scans** per row and per column for every silhouette, ear cross-section and contour.
+- **6x zoom crops with a 10px grid** for the four feature clusters, after threshold scans saturated
+  on the eyes (the ink outlines are as near-black as the pupils, so a bbox of "dark" returns the
+  whole window).
 
-Three things fell out of that which I would not have got by looking:
+Then `Skia.ColorFilter.highContrast(true,'none',0.9)` over the whole panel, which turns it into a
+Notan for free and was the single most useful measurement act of the stage — the dry stems, the
+grass clumps and the leaf chain all became legible as shapes at once.
 
-1. **The right rabbit's cranium is very nearly a circle.** Its silhouette spans x 716..992 at
-   y = 237 — centre (854, 237), r = 138 — and the same circle predicts the width at y = 160 and
-   y = 300 to within about 20px. That is a measured primary volume, not a guess.
-2. **The left rabbit's head is 236 wide against the right one's 276, a ratio of 0.855.** That is
-   the only quantified depth cue in the panel and it is what puts the left animal behind.
-3. **Both of the right rabbit's ear tips are cropped by the top edge.** They do not terminate in
-   frame. An agent working from memory will invent tips.
+Three things fell out that I would not have got by looking:
 
-### Which armature the panel is actually built on
+1. **The right rabbit's cranium is very close to a circle**, centre (430,132) r 70: measured
+   half-widths run 45, 52, 58, 62, 66, 67, 63, 61 down rows 64→192, and the centre holds at
+   428 ± 2 until y = 176, where it starts drifting left as the muzzle and neck take over.
+2. **The fine near-horizontal lines crossing the middle of the panel are whiskers, not stems.** The
+   right rabbit's whiskers reach from its muzzle at (382,186) left as far as x 244. I nearly drew
+   them as background twigs.
+3. **The warm-fur mask fragments the right rabbit** — its darkest fur has r−b ≈ 52, the same warmth
+   as the trunk. Fur/trunk separation works on the *left* rabbit and fails on the right, which is
+   why the silhouettes came from a figure/ground mask instead.
 
-I tested all four with `Drawing.createCompositionGrid` and measured, for each, the distance from
-each of the four focal landmarks (two eyes, two noses) to the nearest power point:
+### Which armature the panel is built on
 
-| armature | mean distance |
-| :--- | ---: |
-| `ruleOfThirds` | **104 px** |
-| `dynamicSymmetry` | 174 px |
-| `goldenRatio` | 181 px |
-| `triangle` | 231 px |
+Measured, not assumed: mean distance from five focal landmarks (three pupils, two muzzles) to the
+nearest power point of each armature, at canvas scale.
 
-`ruleOfThirds` wins, and it is what I drew, but 104px on a 1240-wide canvas is a loose fit and I am
-not going to pretend otherwise. The panel is really composed on three axes I measured directly:
-the rising eye-to-eye diagonal at -17.5°, the left rabbit's far-ear axis at +56.1°, and the right
-rabbit's chest edge at +128.2°. The latter two converge at (433, 727) — just below the bottom edge
-— which makes the composition a V funnel with both heads sitting on its rising arm, bookended by
-the vertical trunk on the left and the vertical ear pair on the right.
+| armature | power points | mean distance |
+| :--- | ---: | ---: |
+| `ruleOfThirds` | 4 | **80.8 px** |
+| `goldenRatio` | 2 | 168.7 px |
+| `dynamicSymmetry` | 3 | 174.6 px |
+| `triangle` | 2 | 209.6 px |
 
-### The Loomis decision
+`ruleOfThirds` wins, and three of the five landmarks sit within 60px of a power point. I will not
+overstate it: the armatures return **different numbers of power points**, so "distance to the
+nearest" quietly favours the one with four of them. The result is still the right call — the two
+eye clusters land near `topRight` and `bottomLeft` — but it is a biased metric and worth saying so.
 
-I ran `Drawing.createLoomisHead(854, 237, 276, 25, 0)` against my measured right-hand skull before
-deciding. Its **vertical** ratios fit a rabbit surprisingly well — it puts the crown at y = 99
-against a measured 105, and the eye line at y = 242.5 against a measured 235. Its **lateral** ones
-do not: it places the two eyes 68px apart where the measured rabbit pair is 147px, a 2.16x error,
-because a rabbit carries its eyes on the sides of the skull rather than on the front. It also
-posits a chin, a nose base and a jaw angle that a rabbit has not got.
+The panel is really built on three axes I measured directly: the eye-to-eye diagonal at **−19.3°**,
+the left rabbit's far-ear long axis at **+65.8°**, and the right rabbit's chest edge at **+128.5°**.
 
-So the cranial construction is hand-rolled: one circle per skull plus a separate muzzle lobe. This
-is recorded as a finding, not a complaint — the toolkit's head is a human head and says so.
+### Pass 1 → 2: what I saw when I looked at my own render
 
-### What I saw when I looked at my own render, pass by pass
+Rendered, then overlaid on the reference in `multiply` — the parchment ground drops out and only the
+lines survive, which separates "in the wrong place" from "drawn badly". They need different fixes,
+and this sheet was almost entirely the second kind. **Positions were good; the drawing was not.**
 
-**Pass 1 → 2.** Every secondary mass floated. The left rabbit's near ear had no base seated on the
-crown, the far ear's lower end stopped in mid-air, the head silhouette was open between the neck
-and the crown, and neither rabbit had a muzzle contour at all — just a dot labelled `noseTip`.
-The blue stems ran straight across both faces because nothing held them behind the figures.
-Overlaying the sheet on the reference with `globalCompositeOperation = 'multiply'` — which lets the
-parchment ground pass through and keeps only the lines — showed the *positions* were largely right;
-what was wrong was connectivity. Fixed: closed every silhouette onto the mass it hangs off, added
-both muzzle lobes, and held the background back.
+Ten defects, located:
 
-**Pass 2 → 3.** The stems were being destroyed by my own smoothing helper: a quadratic-through-
-midpoints curve turns a 6-point polyline into a soft S, and a dry stem is straight. Switched them
-to plain segments. The left rabbit had grown a long "cheek line" from (266,450) to (378,504) that
-exists nowhere in the reference and read as a bag under the eye — deleted. The right rabbit's
-muzzle had been stretched out to (940,404), which is the jaw, not the muzzle — pulled back to
-(904,378). The right rabbit's head-left contour had a concave dent at (718,245) that came from a
-single noisy scan row — smoothed to (724,248).
+1. **The far ear is too narrow and floats free.** Ellipse rx 38 gives a right edge at x 90 where the
+   reference has 107 at the same height; and it is drawn as a closed ellipse with no connection to
+   the head it hangs off.
+2. **The left near ear's base does not close onto anything.** Base line runs (121,176)→(157,179);
+   the back contour starts at (84,200). The gap between them is open.
+3. **The left rabbit has no continuous silhouette** — crown, jaw and back are three separate chains,
+   and the far-ear ellipse crosses all of them.
+4. **Both of the right rabbit's ears are closed off with a straight horizontal line** at y 59 and
+   y 53. They read as cut tubes; in the reference they flow into the skull.
+5. **The teeth are quadrilaterals** and read as boxes at both mouths.
+6. **The grass is three symmetrical starbursts** radiating from single points. Nothing in the
+   reference is symmetrical or radiates from a point.
+7. **The leaves are a bead chain** — six identical ellipses at even spacing along one line. The
+   reference has irregular pointed leaves at varying angles and sizes.
+8. **The whiskers are too long, too many and too even**, and read as construction rays across the
+   background rather than as whiskers.
+9. **The trunk reads as two thin lines**, not a mass — and it is the heaviest shape in the panel.
+10. **`Drawing.drawCompositionGrid` injects pink power-point dots**, putting colour on a sheet whose
+    whole constraint is blue and graphite only. Recorded as a finding; fixed by drawing the thirds
+    myself.
 
-**Pass 3 → 4.** The trunk's solid edges were vanishing. I had been holding the background back with
-`ctx.clip(path, 'evenodd')` over a rect plus both figure outlines; the technique is correct
-(I verified it in isolation) but my figure polygons self-intersect around the ear/skull junctions,
-and even-odd on a self-intersecting contour flips regions back to "inside" unpredictably. Replaced
-with a deterministic knock-back: draw the background in full, then fill the two figure regions with
-the parchment ground under `'nonzero'`. Same result, no dependence on winding.
-
-**Pass 4 → final.** Added ear inner ridges for the Inker, moved the labels off the eye line, and
-re-checked the overlay: cranial circles, both eye pupils, both catchlights, both nose tips, all
-four ear edges and both head contours now sit on the reference.
-
-### Where the handover lives
-
-- **`scripts/0028.js`** — the final, self-contained construction script. Its `ANCHORS` object is
-  the whole handover; every value is either marked MEASURED or FITTED.
-- **`artifacts/stage1_penciler.webp`** — the sheet.
-- **`Stage.note`** in `events/` — the same anchors in prose, for anyone who cannot run the script.
-- `scratch/` holds the measurement renders: the 2x reference grid, the two head zooms, the ear
-  zooms, the `highContrast` Notan, and the two multiply overlays used to check drift.
-
-`Session.ANCHORS` is also set, but do not rely on it — it does not survive a new MCP session.
-
-### What I could not resolve
-
-- **The back of the left rabbit's skull is never visible.** It is hidden behind its own far ear,
-  its own near ear and the tree trunk simultaneously. `L.craniumC (355,445) r118` is fitted from
-  the crown and the eye, not measured, and it is the one primary volume in the sheet that could be
-  wrong by 15-20px.
-- **The left rabbit's near ear against the trunk.** For y < 80 the ear is silhouetted against
-  near-black trunk, so no luminance threshold separates them. The ear tip at (285,76) comes from a
-  saturation mask (brown ear against neutral trunk) and is the weakest anchor on the sheet.
-- **The lower trunk.** Below y ≈ 470 it dissolves into grass and the left rabbit's shoulder. I
-  stopped the construction there rather than invent it.
-- **Whiskers, leaves and grass blades are blocked, not measured.** Directions and clump positions
-  come from the Notan render; individual strokes are mine.
+The three `verifyPlumbAlignment` DRIFT results are **not** defects and I am not treating them as
+such: the trunk genuinely leans 16px over 186, and the right rabbit's cranium genuinely sits 32px
+right of its muzzle because the head is turned. Those are the measurements, and reporting them as
+failures is the tolerance being wrong, not the drawing.

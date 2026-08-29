@@ -159,6 +159,12 @@ To achieve professional comic texture and lighting that elevates drawings far be
 In authentic comic printing, cel-shadows blend into skin and cloth via half-tone dots:
 `Drawing.createHalftoneDotShader({ dotSpacing, shadowColor, resolution })` → `SKShader` returns this shader ready to use — reach for it before hand-writing SkSL:
 
+> **Shader or geometry?** The shader colours pixels, which is what you want for a shadow plane on a
+> face: it costs nothing, follows the fill, and resolution is a parameter. Where the dots must
+> survive scaling or export — a screen tone on artwork that will be enlarged, or a pattern that has
+> to leave the file as vector — place them as real shapes instead with
+> `Skia.PathEffect.tile(dot, spacing, angleDeg)`. Same look, different substance.
+
 ```js
 const halftone = Drawing.createHalftoneDotShader({ dotSpacing: 6.5, shadowColor: '#1c2733' });
 ctx.save();

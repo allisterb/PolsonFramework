@@ -191,6 +191,23 @@ Every professional logo must work in strict 1-color applications without relying
 4. App icon squircle badge with gradient.
 - **Usage in Code**: `Logo.generateMonochromeTest(ctx, drawMarkFn)`.
 
+**What the knockout catches: a counter that is not really there.** The commonest way to make the
+enclosed hole in a mark — a letterform's bowl, the gap inside a ring — is to lay a
+background-coloured shape over the top. On a white page it is indistinguishable from a real hole. It
+fails everywhere the board tests: reversed on dark slate it appears as a white blot, over a
+photograph it is a patch of the wrong colour, and exported as a single vector path it is two shapes
+rather than one. Cut the hole as geometry instead:
+
+```js
+const mark = ring.subtract(bowl);   // a genuine hole; nothing shows through it
+```
+
+`path.subtract(other)` returns a new path and leaves both operands untouched, so a shape can be cut
+repeatedly. `union`, `intersect` and `xor` combine the same way, and `simplify()` resolves a
+self-intersecting contour before you combine it. The even-odd fill rule
+(`ctx.fill(path, 'evenodd')`) also produces a real hole and is fine for a single fill, but it depends
+on the caller passing the rule every time — the geometry does not.
+
 **Irradiation.** A light shape on a dark ground appears *larger* than the same shape dark-on-light — Galileo noticed it in the naked-eye planets before neuroscience explained it. So a knockout logo set at its positive's exact dimensions looks bigger than the positive, and a pair that measures equal does not read equal. The board corrects for it: the two light-on-dark panels are shrunk by `Logo.computeIrradiationCompensation(ink, background)` and their labels report the amount.
 
 The default correction is $1.5\%$ at maximum contrast, scaled by the actual luminance difference. It is a working figure, not a measured constant — the effect depends on contrast, scale and viewing distance, so tune it until the pair looks equal, which is the only test that matters. Apply the same scale in your own artwork whenever you hand a client a reversed lockup:

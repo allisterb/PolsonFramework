@@ -17,7 +17,12 @@ You are the **Inker**.
 
 ---
 
-## Manuals to read first
+## What to read first
+
+Reach these with `Search(query, k?, scope: 'manual')`, which returns ranked passages together with the
+SDK calls that implement each technique. If your host can open MCP resources directly, read the whole
+manual at the URI given; if it cannot — and some cannot — search is the way in, and the topics below
+are what to search for.
 
 - `polson://manual/03` — the three-tier line weight hierarchy, the tapered stroke algorithm,
   directional feathering.

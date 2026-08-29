@@ -63,6 +63,7 @@ public class CanvasState
         ColorFilter = other.ColorFilter;
         PathEffect = other.PathEffect;
         MaskFilter = other.MaskFilter;
+        Dither = other.Dither;
     }
     #endregion
 
@@ -104,6 +105,16 @@ public class CanvasState
 
     /// <summary>Applied to the shape's coverage mask before painting. See <c>Skia.MaskFilter</c>.</summary>
     public SKMaskFilter? MaskFilter { get; set; }
+
+    /// <summary>
+    /// Whether to dither, trading a little noise for the absence of banding.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, as Skia has it. It earns its place on a wide, shallow gradient — a sky, a soft
+    /// tonal ramp — where 8-bit steps otherwise show as visible bands, and the noise that removes them
+    /// is finer than the banding it replaces.
+    /// </remarks>
+    public bool Dither { get; set; }
     #endregion
 
     #region Methods
@@ -112,6 +123,7 @@ public class CanvasState
         var paint = new SKPaint
         {
             IsAntialias = true,
+            IsDither = Dither,
             Style = SKPaintStyle.Fill,
             Color = BasePaintColor(FillColor, FillGradient != null || FillPattern != null || CustomFillShader != null),
             BlendMode = BlendMode,
@@ -143,6 +155,7 @@ public class CanvasState
         var paint = new SKPaint
         {
             IsAntialias = true,
+            IsDither = Dither,
             Style = SKPaintStyle.Stroke,
             StrokeWidth = LineWidth,
             StrokeCap = LineCap,
@@ -189,6 +202,7 @@ public class CanvasState
         var paint = new SKPaint
         {
             IsAntialias = true,
+            IsDither = Dither,
             Color = SkiaColorParser.ApplyAlpha(SKColors.Black, GlobalAlpha),
             BlendMode = BlendMode,
             ImageFilter = ImageFilter,

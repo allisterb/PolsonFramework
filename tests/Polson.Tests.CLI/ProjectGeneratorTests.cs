@@ -302,7 +302,10 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.DoesNotContain("settings.local.json", agy, StringComparison.Ordinal);
 
         Assert.Contains("settings.local.json", claude, StringComparison.Ordinal);
-        Assert.Contains("does **not** deny reads outside this folder", claude, StringComparison.Ordinal);
+        // Claude Code's rules take paths, so its harness says the denies are real — and tells the
+        // agent to prove one rather than trust it, since the paths were fixed at generation time.
+        Assert.Contains("denies `Read`, `Grep` and `Glob`", claude, StringComparison.Ordinal);
+        Assert.Contains("prove it", claude, StringComparison.Ordinal);
     }
 
     /// <summary>The harness's task section is chosen by <c>--type</c>, and the two are not the same brief.</summary>
@@ -654,6 +657,78 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.Equal(
             ["polson.ExecuteScript", "polson.History", "polson.MeasureSvgPath", "polson.RenderSvg", "polson.Search"],
             approved);
+    }
+
+    /// <summary>
+    /// An evaluation harness denies reads of Polson's own implementation, by absolute path.
+    /// </summary>
+    /// <remarks>
+    /// The harness measures whether the published API is sufficient, and a run where the agent read
+    /// the source cannot answer that. This was previously left for the agent to write by hand: one
+    /// did, correctly, and reported the friction — you have to know that <c>Read(../**)</c> is the
+    /// intuitive spelling and silently denies nothing.
+    /// </remarks>
+    [Fact]
+    public void TestAnEvaluationHarnessDeniesReadingTheImplementation()
+    {
+        Assert.True(ProjectGenerator.Create(Options("iso", o => { o.Workflow = "comic_studio"; o.Sdk = "claude"; })));
+
+        var deny = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "iso", ".claude", "settings.local.json")))
+            .RootElement.GetProperty("permissions").GetProperty("deny")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+
+        // Each protected directory is denied for all three of the tools that could reach it.
+        foreach (var verb in new[] { "Read", "Grep", "Glob" })
+        {
+            Assert.Contains(deny, d => d.StartsWith($"{verb}(", StringComparison.Ordinal) && d.Contains("/src/", StringComparison.Ordinal));
+        }
+
+        // Absolute, and never the forms that fail: "../**" denies nothing, "//**" denies everything.
+        foreach (var rule in deny.Where(d => d.Contains('(')))
+        {
+            Assert.DoesNotContain("../", rule, StringComparison.Ordinal);
+            Assert.DoesNotContain("(//", rule, StringComparison.Ordinal);
+        }
+
+        // tests/ as a whole is never denied — a harness is often generated inside it, and a deny
+        // cannot carve an exception out of itself.
+        Assert.DoesNotContain(deny, d => d.EndsWith("/tests/**)", StringComparison.Ordinal));
+    }
+
+    /// <summary>A client design project is not a harness and gets none of those rules.</summary>
+    [Fact]
+    public void TestADesignProjectDeniesNoReads()
+    {
+        Assert.True(ProjectGenerator.Create(Options("open", o => o.Sdk = "claude")));
+
+        var deny = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "open", ".claude", "settings.local.json")))
+            .RootElement.GetProperty("permissions").GetProperty("deny")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+
+        Assert.DoesNotContain(deny, d => d.StartsWith("Read(", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The project's own MCP server is pre-enabled, so no one is asked to approve it mid-run.
+    /// </summary>
+    /// <remarks>
+    /// Without <c>enabledMcpjsonServers</c>, Claude Code prompts for approval of a project-scoped
+    /// server from <c>.mcp.json</c> before any of its tools can be called — for the one server the
+    /// project exists to use.
+    /// </remarks>
+    [Theory]
+    [InlineData("logo")]
+    [InlineData("comic_studio")]
+    public void TestTheProjectsOwnMcpServerIsPreEnabled(string workflow)
+    {
+        var name = "enabled-" + workflow;
+        Assert.True(ProjectGenerator.Create(Options(name, o => { o.Workflow = workflow; o.Sdk = "claude"; })));
+
+        var servers = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, name, ".claude", "settings.local.json")))
+            .RootElement.GetProperty("enabledMcpjsonServers")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+
+        Assert.Equal(["polson"], servers);
     }
 
     /// <summary>Claude Code allows the server's tools by their <c>mcp__server__Tool</c> names.</summary>

@@ -245,7 +245,7 @@ internal static class ProjectGenerator
         }
 
         WriteJson(dir, host.McpConfig, McpConfig(dir));
-        WriteJson(dir, host.Permissions, Permissions(sdk, opts.Standalone));
+        WriteJson(dir, host.Permissions, Permissions(sdk, opts.Standalone, workflow));
 
         // Only Antigravity has a registry to write to. A Claude Code director runs the same roles as
         // sequential personas, reading the same files, which is what the instructions describe for
@@ -559,7 +559,7 @@ internal static class ProjectGenerator
     /// image-generation tool, so there is nothing to deny there either way.
     /// </para>
     /// </remarks>
-    static object Permissions(string sdk, bool standalone)
+    static object Permissions(string sdk, bool standalone, string workflow)
     {
         var denied = standalone ? [.. AlwaysDenied, .. StandaloneDenied] : AlwaysDenied;
 
@@ -591,9 +591,89 @@ internal static class ProjectGenerator
                 {
                     defaultMode = "default",
                     allow = ToolNames().Select(t => $"mcp__polson__{t}").Concat(["Read", "Write", "Edit", "Glob", "Grep"]).ToArray(),
-                    deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" },
+                    deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" }
+                        .Concat(IsIsolated(workflow) ? SourceDenies() : []).ToArray(),
                 },
+
+                // Without this, Claude Code asks a human to approve the project's own MCP server
+                // before any tool is callable. The server is the point of the project; approving it
+                // is not a decision worth interrupting a run for.
+                enabledMcpjsonServers = new[] { "polson" },
             };
+    }
+
+    /// <summary>
+    /// Whether a workflow claims to hide the implementation from the agent.
+    /// </summary>
+    /// <remarks>
+    /// Read off the template rather than from a list of workflow names: a workflow carries the
+    /// isolation paragraph exactly when it is an evaluation harness, so the token is the signal. A
+    /// client design project has no reason to deny reading anything and does not get these rules.
+    /// </remarks>
+    static bool IsIsolated(string workflow) =>
+        Render(workflow, "instructions.md", []).Contains("{{ISOLATION}}", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Deny rules hiding Polson's own implementation from an agent evaluating its published API.
+    /// </summary>
+    /// <remarks>
+    /// The harness measures whether the published API and manuals are sufficient. A run where the
+    /// agent read the source cannot answer that, so the rule matters — and it was previously left to
+    /// the agent to write these by hand, which one duly did, correctly, and reported as friction that
+    /// depended on knowing the working spelling.
+    /// <para>
+    /// Absolute paths, listed per directory. <c>Read(../**)</c> is the intuitive form and denies
+    /// nothing, because patterns are rooted at the project; <c>Read(//**)</c> denies everything
+    /// including the project itself. And <c>tests/</c> cannot be denied wholesale, because a harness
+    /// is often generated inside it and a deny cannot carve an exception out of itself — so the
+    /// test projects are named individually.
+    /// </para>
+    /// <para>
+    /// Only directories that exist are emitted. A rule naming a path that is not there protects
+    /// nothing while reading exactly like one that does.
+    /// </para>
+    /// </remarks>
+    static string[] SourceDenies()
+    {
+        // Walk up to the checkout rather than counting directories from the assembly: the CLI runs
+        // from bin/cli when shipped and from a test host's output directory otherwise, and a fixed
+        // number of "..' segments is right in exactly one of those. Getting it wrong emits nothing
+        // and looks like it worked.
+        var root = FindCheckout(AppContext.BaseDirectory);
+
+        // No checkout means no implementation on this machine to hide, so there is nothing to deny.
+        // Emitting rules for paths that are not there would read like protection and be none.
+        if (root is null) return [];
+
+        var targets = new List<string>();
+
+        foreach (var relative in new[] { "src", "ext", "docs" })
+        {
+            var full = Path.Combine(root, relative);
+            if (Directory.Exists(full)) targets.Add(full);
+        }
+
+        var tests = Path.Combine(root, "tests");
+        if (Directory.Exists(tests))
+        {
+            targets.AddRange(Directory.EnumerateDirectories(tests, "Polson.Tests.*"));
+        }
+
+        return [.. targets
+            .Select(Forward)
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .SelectMany(t => new[] { $"Read({t}/**)", $"Grep({t}/**)", $"Glob({t}/**)" })];
+    }
+
+    /// <summary>The Polson checkout containing <paramref name="start"/>, or null if there is none.</summary>
+    static string? FindCheckout(string start)
+    {
+        for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Polson.sln"))) return dir.FullName;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -628,17 +708,18 @@ internal static class ProjectGenerator
           approval eventually happens and quietly ruins the run.
           """
         : """
-          ### Some of this is enforced, and some of it is on you.
+          ### This is enforced, and you should confirm it rather than trust it.
 
           `.claude/settings.local.json` denies the shell (`Bash`) and the network (`WebFetch`,
-          `WebSearch`), so all code execution goes through `ExecuteScript` — the thing under test.
+          `WebSearch`), so all code execution goes through `ExecuteScript` — the thing under test. It
+          also denies `Read`, `Grep` and `Glob` over Polson's own source, tests and docs, by absolute
+          path, so the implementation is genuinely out of reach rather than merely off-limits.
 
-          It does **not** deny reads outside this folder: what would need denying depends on where
-          this project was generated, so the generator does not guess at it. Reading Polson's source
-          is therefore a convention you keep, not a wall you will hit. **Do not attempt it.**
-
-          If this harness is being run somewhere that matters, add the `Read(...)` denies for the
-          source tree by hand before starting, and note in `findings.md` that you did.
+          Those paths were written when this project was generated. If the project or the Polson
+          checkout has moved since, they name somewhere that no longer exists and protect nothing —
+          which is why the first thing to do is **prove it**: attempt one read of a Polson source file
+          and confirm it is refused. Report the result in `findings.md` either way. A rule you assumed
+          was holding is worth less than one you watched refuse.
           """;
 
     /// <summary>The MCP server's tool names, read from the server itself so the allowlist cannot go stale.</summary>

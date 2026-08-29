@@ -385,6 +385,25 @@ and the results chain: `a.union(b).subtract(c)`.
 - `ctx.colorFilter` — Color filter (e.g. `Skia.ColorFilter.colorMatrix(...)`).
 - `ctx.pathEffect` — Path effect: what the stroke or fill is *made of* (e.g. `Skia.PathEffect.stamp(bristle, 4)` for a brush, `Skia.PathEffect.hatch(1, 6, 45)` for hatching, `Skia.PathEffect.corner(10)`, `Skia.PathEffect.dash([10, 5])`).
 - `ctx.maskFilter` — Mask filter applied to the shape's coverage (e.g. `Skia.MaskFilter.blur(6)` for a soft edge, `Skia.MaskFilter.blur(8, 'outer')` for a halo).
+- `ctx.dither` — `true` to dither, trading fine noise for the absence of banding. Off by default. Worth it on a wide, shallow gradient — a sky, a soft tonal ramp — where 8-bit steps otherwise show as visible bands.
+
+### Stroke Geometry
+
+- `ctx.strokeToPath(path?: CanvasPath)` → `CanvasPath` — The outline of what `stroke()` would draw, as a fillable path. Defaults to the current path; returns an empty path where the stroke would be a hairline.
+
+> [!TIP]
+> This is how a stroke stops being a line with a width and becomes a shape you can work on — the
+> difference between a constant-width ribbon and a drawn mark. Outline the stroke, then modify the
+> outline: narrow it toward one end for pressure, `subtract` another shape out of it, or fill it with
+> a gradient running *across* the stroke rather than along the path. It bakes in the current
+> `lineWidth`, `lineCap`, `lineJoin`, `miterLimit` and `pathEffect`, so a stamped or hatched stroke
+> becomes geometry and survives into `outSvg` as vector rather than only as pixels.
+>
+> ```javascript
+> ctx.lineWidth = 14;
+> const mark = ctx.strokeToPath(spine);       // the stroke, as a shape
+> ctx.fill(mark.subtract(bite));              // now it can be cut
+> ```
 
 ### Typography
 - `ctx.font` — Font specification string: e.g. `"bold 24px Arial"`, `"italic 16px Georgia"`. An unavailable family is **silently substituted**, so confirm it with `Skia.Font.has(...)` before relying on it.
@@ -525,6 +544,45 @@ so a soft mask leaves the fill flat, which is what an airbrushed edge is. Saved 
 rest of the drawing state.
 
 - `Skia.MaskFilter.blur(sigma: number, style?: 'normal' | 'solid' | 'outer' | 'inner')` → `SKMaskFilter` — Blurs the coverage mask. `'normal'` softens the whole shape (airbrush); `'solid'` keeps the shape crisp and adds the blur outside it (a glow around a hard form); `'outer'` keeps only the blur and knocks the shape out (a halo); `'inner'` keeps only the blur inside (an inward vignette).
+
+## `Skia.Brush`
+
+Drawing media, assembled from the primitives above. Nothing here is new capability — each preset is a
+shader, a path effect and a mask filter you could put together yourself. They exist because that
+assembly is not discoverable, and the naive attempts fail in both directions: multiplying a stroke's
+alpha by noise luminance fades it to nothing, and tinting noise through a colour filter flattens it
+back to a solid line.
+
+- `Skia.Brush.pencil(color?, width?, grain?, seed?)` → `BrushPreset` — Graphite: granular deposit, a wandering line, no hard edge. `grain` is 0 for an even deposit, 1 by default, higher for a drier pencil.
+- `Skia.Brush.ink(color?, width?, steadiness?)` → `BrushPreset` — Solid and crisp, with just enough irregularity not to read as a plotted line. `steadiness` 1 is mechanically exact. The three-tier weight hierarchy is roughly `width` 4, 2 and 1.
+- `Skia.Brush.chalk(color?, width?, grain?, seed?)` → `BrushPreset` — Coarse, wide, soft-edged.
+- `Skia.Brush.marker(color?, width?)` → `BrushPreset` — Flat, opaque, wide, faintly bled edge.
+- `Skia.Brush.stipple(color?, size?, spacing?, seed?)` → `BrushPreset` — Separate deposits along the path. `spacing` defaults to three times `size`, because a spacing below the mark's own width overlaps the marks back into a solid band.
+
+### `BrushPreset`
+
+A preset says what it is made of, so you can take one and change a single part rather than starting over:
+
+- `brush.name` → `string`, `brush.color` → `string`, `brush.lineWidth` → `number`, `brush.lineCap` → `string`
+- `brush.grain` → `SKShader?` — what the mark is made of, when the medium deposits unevenly. Null for a solid medium.
+- `brush.texture` → `SKPathEffect?` — what happens to the path: jitter, stamping. Null for a clean path.
+- `brush.edge` → `SKMaskFilter?` — what happens at the mark's edge. Null for a hard edge.
+
+### `ctx.useBrush(brush: BrushPreset)`
+
+Applies a medium: its colour or grain, its width and cap, its path texture and its edge. Anything the
+preset leaves null is **cleared** rather than left standing, so switching media never inherits the
+previous one's texture. Wrap it in `save()`/`restore()` to scope a medium to one passage.
+
+```javascript
+ctx.save();
+ctx.useBrush(Skia.Brush.pencil());     // construction lines
+ctx.stroke(guides);
+ctx.restore();
+
+ctx.useBrush(Skia.Brush.ink('#0a0a0c', 4));   // heavy silhouette
+ctx.stroke(outline);
+```
 
 ## `Skia.Image` & `Skia.Bitmap`
 

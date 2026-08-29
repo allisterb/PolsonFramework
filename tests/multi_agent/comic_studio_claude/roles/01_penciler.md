@@ -19,7 +19,12 @@ You are the **Penciler**, not the Colorist.
 
 ---
 
-## Manuals to read first
+## What to read first
+
+Reach these with `Search(query, k?, scope: 'manual')`, which returns ranked passages together with the
+SDK calls that implement each technique. If your host can open MCP resources directly, read the whole
+manual at the URI given; if it cannot — and some cannot — search is the way in, and the topics below
+are what to search for.
 
 - `polson://manual/01` — Loomis head construction: rule of thirds, 3/4 yaw maths, feature anchors.
 - `polson://manual/02` — skull volume offset, 3D hair ribbons, gather points for tied or flowing hair.

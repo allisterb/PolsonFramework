@@ -66,7 +66,17 @@ Every dynamic hair lock or curl is drawn as a **twisting 3D ribbon** with 4 cont
 
 ## 4. Constructing a Windswept Ponytail & Curls
 
-> **Implemented by**: repeated `Drawing.drawHairRibbon(...)` calls for the mass, plus `Drawing.drawTaperedStroke(ctx, start, cp1, cp2, end, maxThickness, style)` for the loose forehead curls that are too thin to read as ribbons.
+> **Implemented by**: repeated `Drawing.drawHairRibbon(...)` calls for the mass, plus
+> `Drawing.drawTaperedStroke(ctx, start, cp1, cp2, end, maxThickness, style)` for the loose forehead
+> curls that are too thin to read as ribbons.
+>
+> For fine texture *within* a mass — the many short strands that make a lock read as hair rather than
+> as a shape — repeat a mark along the stroke instead of drawing each one:
+> `ctx.pathEffect = Skia.PathEffect.stamp(strand, advance)`, where `'rotate'` (the default) turns each
+> mark to follow the curve. The advance must exceed the mark's own width or the stamps overlap back
+> into a solid band. This is the same call that gives foliage, grass and fur their density; a mass
+> built from four wedges where the reference has twenty strands is the commonest way generated hair
+> reads as cartoon.
 
 ### Anatomical Structure of a High Ponytail:
 1. **Gather Point / Bandana Knot**:

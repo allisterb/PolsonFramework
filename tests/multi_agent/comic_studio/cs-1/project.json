@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "cs-1",
   "workflow": "comic_studio",
-  "sdk": "claude",
+  "sdk": "agy",
   "profile": "managed",
-  "createdUtc": "2026-08-29T19:33:27.2264502Z"
+  "createdUtc": "2026-08-29T22:43:34.3958040Z"
 }

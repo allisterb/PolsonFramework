@@ -54,12 +54,29 @@ differs between an Antigravity project and a Claude Code one — the contents ar
 | wiring | `mcp_config.json` **and** `.agents/mcp_config.json` | `.mcp.json` |
 | permissions | `.agents/settings.json` | `.claude/settings.local.json` |
 
-The **workflow** picks the template pair those instructions render from: `logo` for a client design
-project, `harness` for an SDK-evaluation run that also asks the agent for a `findings.md`. One
-paragraph of the harness instructions is supplied by the generator rather than the template, because
-the isolation rule is backed differently on each host — Claude Code's permission rules take paths,
-Antigravity's name tools and commands only — and a harness that claims an enforcement it does not
-have measures nothing.
+The **workflow** picks the templates those instructions render from: `logo` for a client design
+project, `harness` for an SDK-evaluation run that also asks the agent for a `findings.md`. The
+optional **type** selects a section within that workflow, and *what a type means is the workflow's
+business* — for `harness` it is the task (`image`, the default, or `logo`); for `logo` it is the
+stylistic frame of Manual 12 §2.5b (`geometric`, `modern`, `antique`).
+
+A type never sets the **archetype**. That is Stage 4's structural choice, and the manual is explicit
+that it reads better once there are candidate forms to look at, so a command line must not settle it
+before anything has been drawn.
+
+Both vocabularies are **discovered from the embedded templates** — a workflow is any directory with
+an `instructions.md`, and its types are its `type.<name>.md` files — so adding either is adding a
+file rather than editing the generator. The only workflow-specific knowledge left in code is which
+workflows have a default type.
+
+One paragraph of the harness instructions is supplied by the generator rather than the template,
+because the isolation rule is backed differently on each host — Claude Code's permission rules take
+paths, Antigravity's name tools and commands only — and a harness that claims an enforcement it does
+not have measures nothing.
+
+`--brief` and `--prompt` are the same channel: `--prompt` is the one-line form, both are sanitised
+and quoted into `brief.md` between the markers, and giving both is refused rather than silently
+dropping one. Nothing supplied on the command line reaches the instructions as instruction.
 
 Antigravity gets the wiring in both places because the working harness carries both and which one
 the desktop host actually reads is unverified. They are two serialisations of one object, so they

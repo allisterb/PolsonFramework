@@ -208,6 +208,32 @@ The Claude permission file's allowlist is **derived by reflecting over `DrawingM
 cannot fall behind a tool being added — a stale allowlist would tell an agent it lacks a capability
 it actually has.
 
+### `--type` and `--prompt`
+
+```bash
+polson create-project projects night agy --workflow harness --prompt "A wooden sailboat at sea at night…"
+polson create-project projects mark  agy --type antique --prompt "A logo for romantic sail cruises"
+```
+
+`--type` selects a section within the workflow, and **what a type means is the workflow's business**:
+for `harness` it is the task (`image` by default, or `logo`); for `logo` it is the stylistic frame —
+`geometric`, `modern`, `antique`.
+
+**Both vocabularies are discovered from the embedded templates**, so the "workflow-specific logic in
+the CLI" this seemed to require is about fifteen lines: a workflow is any directory with an
+`instructions.md`, its types are its `type.<name>.md` files, and the only thing left in code is a
+one-entry map of which workflows have a default type. Adding a type is adding a file.
+
+Two constraints worth keeping:
+
+- **A type never sets the archetype.** Manual 12 puts that structural choice at Stage 4, explicitly
+  after there are candidate forms to look at; `--type` sets §2.5b's stylistic frame instead, and
+  every style template says so in its opening paragraph. A test asserts it.
+- **`--prompt` is `--brief`'s short form, not a second channel.** It goes through the same sanitiser
+  into `brief.md` between the same markers, and giving both is refused rather than silently dropping
+  one. If it landed in the instructions instead it would be a path for supplied text to arrive as
+  *instruction* — harmless from a terminal, exactly wrong once the web app fills it in.
+
 ### Two workflows now, and the second proved the mechanism
 
 `--workflow harness` joins `logo`. It renders the SDK-evaluation brief the old `tests/agent/test2`

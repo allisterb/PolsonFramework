@@ -45,8 +45,14 @@ public class CreateProjectOptions : Options
     [Value(2, MetaName = "sdk", Required = true, HelpText = "Agent SDK to target: 'agy' (Google Antigravity) or 'claude' (Claude Code). It decides what the config files are called.")]
     public string Sdk { get; set; } = string.Empty;
 
-    [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate (default: 'logo').")]
+    [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate: 'logo' or 'harness' (default: 'logo').")]
     public string Workflow { get; set; } = "logo";
+
+    [Option("type", Required = false, HelpText = "For --workflow harness, the kind of task: 'image' (default) or 'logo'.")]
+    public string Type { get; set; } = string.Empty;
+
+    [Option("prompt", Required = false, HelpText = "The subject, in a line — a short form of --brief. Treated as untrusted data and quoted into brief.md exactly as --brief is.")]
+    public string Prompt { get; set; } = string.Empty;
 
     [Option("standalone", Required = false, HelpText = "Also generate what the Polson orchestrator needs to host the agent itself. Without it the project is managed by a desktop or IDE host.")]
     public bool Standalone { get; set; }

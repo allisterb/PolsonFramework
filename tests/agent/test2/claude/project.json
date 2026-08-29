@@ -2,7 +2,8 @@
   "schema": 1,
   "id": "claude",
   "workflow": "harness",
+  "type": "logo",
   "sdk": "claude",
   "profile": "managed",
-  "createdUtc": "2026-08-29T13:55:27.9174935Z"
+  "createdUtc": "2026-08-29T14:28:15.1607207Z"
 }

@@ -37,7 +37,16 @@ internal static class ProjectGenerator
     /// <summary>Additionally denied when the agent is reachable from a public URL.</summary>
     static readonly string[] StandaloneDenied = ["run_command"];
 
-    static readonly string[] KnownWorkflows = ["logo", "harness"];
+    /// <summary>
+    /// The type each workflow falls back to when none is given. Absent means the type is optional and
+    /// the workflow renders without one.
+    /// </summary>
+    /// <remarks>
+    /// The only workflow-specific knowledge kept in code. Everything else about a workflow — that it
+    /// exists at all, and which types it offers — is discovered from its embedded templates, so
+    /// adding either is adding a file rather than editing this class.
+    /// </remarks>
+    static readonly Dictionary<string, string> DefaultTypes = new() { ["harness"] = "image" };
 
     static readonly Regex ValidId = new(@"^[A-Za-z0-9._-]{1,64}$", RegexOptions.Compiled);
     #endregion
@@ -89,6 +98,32 @@ internal static class ProjectGenerator
             return Fail($"Unknown SDK '{opts.Sdk}'. Use 'agy' (Google Antigravity) or 'claude' (Claude Code).");
         }
 
+        // What a type means is the workflow's business; whether one was offered is not. Refused
+        // rather than ignored, because a flag that silently does nothing reads as a choice honoured.
+        var offered = TypesFor(workflow);
+        var type = opts.Type.Trim().ToLowerInvariant();
+
+        if (type.Length > 0 && offered.Length == 0)
+        {
+            return Fail($"The '{workflow}' workflow has no types, so --type does not apply to it.");
+        }
+        if (type.Length > 0 && !offered.Contains(type))
+        {
+            return Fail($"Unknown type '{opts.Type}' for the '{workflow}' workflow. Known: {string.Join(", ", offered)}.");
+        }
+        if (type.Length == 0 && DefaultTypes.TryGetValue(workflow, out var fallback))
+        {
+            type = fallback;
+        }
+
+        // One channel for what to make, so there is one place the trust boundary sits. --prompt is
+        // the short form; both are quoted into brief.md as data. Taking both would mean silently
+        // dropping one.
+        if (opts.Brief.Length > 0 && opts.Prompt.Length > 0)
+        {
+            return Fail("Give --brief or --prompt, not both. --prompt is the one-line form of the same thing.");
+        }
+
         // Reported rather than thrown: this is a plausible thing to type, not a bug, and every other
         // rejection here prints a sentence instead of a stack trace.
         if (sdk == "claude" && opts.Standalone)
@@ -117,7 +152,7 @@ internal static class ProjectGenerator
 
         var host = HostFiles.For(sdk);
         var profile = opts.Standalone ? "standalone" : "managed";
-        var brief = SanitizeBrief(ReadBrief(opts.Brief));
+        var brief = SanitizeBrief(ReadBrief(opts.Brief.Length > 0 ? opts.Brief : opts.Prompt));
         var createdUtc = DateTime.UtcNow.ToString("O");
 
         var dirs = new List<string> { "artifacts", "scripts", "events" };
@@ -141,12 +176,13 @@ internal static class ProjectGenerator
             ["BRIEF"] = brief,
             ["INSTRUCTIONS_FILE"] = host.Instructions,
             ["ISOLATION"] = Isolation(sdk),
+            ["TYPE"] = type.Length > 0 ? Render(workflow, $"type.{type}.md", []) : "",
         };
 
         WriteText(dir, host.Instructions, Render(workflow, "instructions.md", tokens));
         WriteText(dir, "brief.md", Render(workflow, "brief.md", tokens));
         WriteText(dir, ".gitignore", GitIgnore(opts.Standalone));
-        WriteJson(dir, "project.json", ProjectManifest(id, workflow, sdk, profile, createdUtc, opts.Standalone));
+        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, opts.Standalone));
 
         var wiring = McpConfig();
         foreach (var name in host.McpConfig) WriteJson(dir, name, wiring);
@@ -157,7 +193,7 @@ internal static class ProjectGenerator
             WriteJson(dir, "agent.config.json", AgentConfig());
         }
 
-        Report(dir, id, workflow, sdk, opts.Standalone, host);
+        Report(dir, id, workflow, type, sdk, opts.Standalone, host);
         return true;
     }
 
@@ -208,6 +244,67 @@ internal static class ProjectGenerator
         : File.Exists(briefArg) ? File.ReadAllText(briefArg)
         : briefArg;
 
+    /// <summary>Every workflow that has an instructions template embedded.</summary>
+    /// <remarks>
+    /// Discovered rather than listed, so a workflow is registered by adding
+    /// <c>ProjectTemplate/&lt;name&gt;/instructions.md</c> and nothing else. A hardcoded list would
+    /// have to be edited in lockstep with the templates, and the failure when it was not is a
+    /// workflow that exists on disk and is refused by name.
+    /// </remarks>
+    static string[] KnownWorkflows => TemplateNames("instructions.md");
+
+    /// <summary>
+    /// The types a workflow offers. What a type <em>means</em> is the workflow's business.
+    /// </summary>
+    /// <remarks>
+    /// For <c>harness</c> it selects the task — a picture or a brand identity. For <c>logo</c> it
+    /// selects the stylistic frame, which Manual 12 §2.5b calls temperature, weight and shape
+    /// language. It deliberately does <em>not</em> select the archetype: that is Stage 4's structural
+    /// choice, and the manual is explicit that it reads better once there are candidate forms to look
+    /// at, so fixing it from a command line would settle it before anything has been drawn.
+    /// <para>
+    /// An empty result means the workflow has no type axis, and <c>--type</c> is refused for it.
+    /// </para>
+    /// </remarks>
+    static string[] TypesFor(string workflow) => TemplateNames($"{workflow}.type", trailing: true);
+
+    /// <summary>
+    /// Reads workflow or type names out of the embedded resource manifest.
+    /// </summary>
+    /// <remarks>
+    /// Resources are named <c>…ProjectTemplate.&lt;workflow&gt;.&lt;file&gt;</c>. With
+    /// <paramref name="trailing"/> the segment <em>after</em> the marker is wanted (a type name);
+    /// without it, the segment before (a workflow name).
+    /// </remarks>
+    static string[] TemplateNames(string marker, bool trailing = false)
+    {
+        var names = new List<string>();
+
+        foreach (var resource in typeof(ProjectGenerator).Assembly.GetManifestResourceNames())
+        {
+            var start = resource.IndexOf(ResourcePrefix, StringComparison.Ordinal);
+            if (start < 0) continue;
+
+            var relative = resource[(start + ResourcePrefix.Length)..];   // "<workflow>.<file>"
+
+            if (trailing)
+            {
+                var prefix = marker + ".";
+                if (relative.StartsWith(prefix, StringComparison.Ordinal) && relative.EndsWith(".md", StringComparison.Ordinal))
+                {
+                    names.Add(relative[prefix.Length..^3]);
+                }
+            }
+            else if (relative.EndsWith("." + marker, StringComparison.Ordinal))
+            {
+                names.Add(relative[..^(marker.Length + 1)]);
+            }
+        }
+
+        names.Sort(StringComparer.Ordinal);
+        return [.. names];
+    }
+
     /// <summary>Loads an embedded template and substitutes <c>{{TOKEN}}</c> placeholders.</summary>
     static string Render(string workflow, string name, Dictionary<string, string> tokens)
     {
@@ -232,10 +329,22 @@ internal static class ProjectGenerator
     /// by probing filenames. <c>conversationId</c> is standalone-only state: resume belongs to us,
     /// and a desktop host neither writes nor reads it.
     /// </remarks>
-    static object ProjectManifest(string id, string workflow, string sdk, string profile, string createdUtc, bool standalone) =>
-        standalone
-            ? new { schema = 1, id, workflow, sdk, profile, createdUtc, conversationId = (string?)null }
-            : (object)new { schema = 1, id, workflow, sdk, profile, createdUtc };
+    static object ProjectManifest(string id, string workflow, string type, string sdk, string profile, string createdUtc, bool standalone)
+    {
+        // An ordered dictionary rather than an anonymous type: the optional fields would otherwise
+        // need one shape per combination of them, and the order here is the order on disk.
+        var manifest = new Dictionary<string, object?> { ["schema"] = 1, ["id"] = id, ["workflow"] = workflow };
+
+        if (type.Length > 0) manifest["type"] = type;
+
+        manifest["sdk"] = sdk;
+        manifest["profile"] = profile;
+        manifest["createdUtc"] = createdUtc;
+
+        if (standalone) manifest["conversationId"] = null;
+
+        return manifest;
+    }
 
     /// <summary>
     /// Wires the agent to this CLI's own MCP server, rooted at the project directory.
@@ -413,10 +522,11 @@ internal static class ProjectGenerator
     static void WriteJson(string dir, string name, object value) =>
         WriteText(dir, name, JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
 
-    static void Report(string dir, string id, string workflow, string sdk, bool standalone, HostFiles host)
+    static void Report(string dir, string id, string workflow, string type, string sdk, bool standalone, HostFiles host)
     {
         AnsiConsole.MarkupLine($"[bold green]Project created:[/] {Markup.Escape(dir)}");
-        AnsiConsole.MarkupLine($"  id [bold]{Markup.Escape(id)}[/] · workflow [bold]{workflow}[/] · sdk [bold]{sdk}[/] · "
+        AnsiConsole.MarkupLine($"  id [bold]{Markup.Escape(id)}[/] · workflow [bold]{workflow}[/]"
+                             + $"{(type.Length > 0 ? $" [bold]{type}[/]" : "")} · sdk [bold]{sdk}[/] · "
                              + $"[bold]{(standalone ? "standalone" : "managed")}[/]");
         AnsiConsole.WriteLine();
 

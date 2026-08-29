@@ -2,8 +2,9 @@
   "schema": 1,
   "id": "gemini",
   "workflow": "harness",
+  "type": "logo",
   "sdk": "agy",
   "profile": "standalone",
-  "createdUtc": "2026-08-29T13:55:27.5263438Z",
+  "createdUtc": "2026-08-29T14:28:14.7613177Z",
   "conversationId": null
 }

@@ -17,9 +17,16 @@ All five were confirmed on 2026-08-28: the agent explored the project, called Ex
 left a stage-tagged render behind. Keep it working — it is the cheapest check that the Python side
 still reaches the .NET side at all.
 
+`--task stages` adds the sixth, which the first five could not reach because they only ever made one
+tool call: that the host keeps **one MCP session for the whole run**, so a stage declared in one
+script still tags the next. A host that reconnected per call would look entirely healthy and
+silently lose every stage. The server side of this is pinned by `StdioTransportTests`; only a live
+run can speak for the host.
+
 Run it against a directory made by `polson create-project`:
 
     python src/webapp/hello_agent.py path/to/project
+    python src/webapp/hello_agent.py path/to/project --task stages --timeout 300
 
 The credential comes from `bin/cli/appsettings.json` (`ApiKeys:GoogleAgentPlatform`), the same one
 the .NET side uses; `GEMINI_API_KEY` overrides it. That key is an **Agent Platform** credential, so
@@ -33,41 +40,42 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-CLI_DLL = REPO_ROOT / "bin" / "cli" / "Polson.CLI.dll"
-CLI_SETTINGS = REPO_ROOT / "bin" / "cli" / "appsettings.json"
+# The credential and the paths to the .NET side live in the orchestrator, so the Agent Platform trap
+# below is described in exactly one place. This probe is the cheapest thing that exercises it.
+from orchestrator.credentials import CLI_DLL, CLI_SETTINGS, CredentialError, read_api_key  # noqa: E402
+
+
+PROMPTS = {
+    # One call. The cheapest proof that Python reaches .NET at all.
+    "hello": (
+        "Declare the stage 'Ideation' with Stage.begin, add a one-line Stage.note saying what you "
+        "are testing, then run one ExecuteScript that draws a single filled circle on a 200x200 "
+        "canvas and saves it with outFile 'artifacts/hello.webp'. Then stop."
+    ),
+
+    # Three calls, because everything interesting about a stage only happens from the second call
+    # onwards. Deliberately prescriptive: this is measuring the host's session handling, so the
+    # agent's job is to make the calls, not to design anything.
+    "stages": (
+        "Make exactly three separate ExecuteScript calls, one per step. Do not combine them into "
+        "one call, and do not use any other tool.\n"
+        "1. Script: Stage.begin('Blocking'); Stage.note('checking that a stage spans calls'); then "
+        "draw a filled circle on a 200x200 canvas. outFile 'artifacts/one.webp'.\n"
+        "2. Script: log(Stage.current); then draw a filled square on a 200x200 canvas. "
+        "outFile 'artifacts/two.webp'. Do NOT declare a stage in this one.\n"
+        "3. Script: Stage.begin('Blocking'); then draw a filled triangle on a 200x200 canvas. "
+        "outFile 'artifacts/three.webp'.\n"
+        "Then stop. Report what step 2 logged."
+    ),
+}
 
 
 def fail(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
     raise SystemExit(1)
-
-
-def read_api_key() -> str:
-    """The same credential the .NET side uses, so there is one place to keep it.
-
-    `ApiKeys:GoogleAgentPlatform` in the CLI's appsettings.json is an **Agent Platform** key, not a
-    public Gemini API key. Pointing it at generativelanguage.googleapis.com returns
-    `403 ... are blocked`, which is what happens by default because the SDK assumes the public
-    endpoint. GEMINI_API_KEY overrides, for a public key.
-    """
-    if env_key := os.environ.get("GEMINI_API_KEY"):
-        return env_key
-
-    if not CLI_SETTINGS.exists():
-        fail(f"no API key: set GEMINI_API_KEY, or put one in {CLI_SETTINGS}")
-
-    settings = json.loads(CLI_SETTINGS.read_text(encoding="utf-8-sig"))
-    key = settings.get("ApiKeys", {}).get("GoogleAgentPlatform")
-
-    if not key:
-        fail(f"{CLI_SETTINGS} has no ApiKeys:GoogleAgentPlatform, and GEMINI_API_KEY is unset")
-
-    return key
 
 
 def check_preconditions(project: Path) -> None:
@@ -83,7 +91,10 @@ def check_preconditions(project: Path) -> None:
         fail(f"the MCP server is not built: {CLI_DLL}\n"
              f"       build it with:  dotnet build")
 
-    read_api_key()  # fails with guidance if there is no credential anywhere
+    try:
+        read_api_key()  # fails with guidance if there is no credential anywhere
+    except CredentialError as exc:
+        fail(str(exc))
 
 
 async def trace(agent) -> None:
@@ -132,6 +143,47 @@ async def trace(agent) -> None:
     flush()
 
 
+def continuity(events: list[dict]) -> None:
+    """Judge whether the SDK's MCP client held ONE server session across the whole run.
+
+    This is the thing unit tests cannot reach. Stage and Session both live on the MCP session, so
+    they only span executions if the host keeps one server process and one connection for the run.
+    A host that reconnects per tool call would still look perfectly healthy — every script would
+    succeed, and every stage would silently reset to the first one declared.
+
+    Three signals, in increasing order of how much they prove:
+
+      1. every `script.start` carries the same `session`
+      2. a stage declared in one call still tags a later one
+      3. restating the current stage records `stage.continue`, not another `stage.begin`
+    """
+    starts = [e for e in events if e["type"] == "script.start"]
+    if len(starts) < 2:
+        print(f"\n  continuity: not testable — the run made {len(starts)} ExecuteScript call(s), needs 2+")
+        return
+
+    sessions = {e.get("session") for e in starts}
+    tagged = [e for e in starts if e.get("stage")]
+    stage_types = [e["type"] for e in events if e["type"].startswith("stage.")]
+    renders = [e for e in events if e["type"] == "render" and e.get("stage")]
+
+    one_session = len(sessions) == 1
+    spans = any(e.get("stage") for e in starts[1:])
+
+    print(f"\n  continuity across {len(starts)} ExecuteScript calls")
+    print(f"    {'OK ' if one_session else 'NO '} one session      : {', '.join(sorted(str(s) for s in sessions))}")
+    print(f"    {'OK ' if spans else 'NO '} stage spans calls : {len(tagged)}/{len(starts)} tagged, {len(renders)} tagged render(s)")
+    # Informational, not a failure: the agent has to actually restate a stage for this to appear.
+    print(f"    {'OK ' if 'stage.continue' in stage_types else '-- '} restate continues : {' '.join(stage_types) or '(none)'}")
+
+    if not one_session:
+        print("\n    The host opened a new MCP session per call. Stage and Session cannot persist;")
+        print("    the orchestrator must hold one connection for the whole run.")
+    elif not spans:
+        print("\n    One session, but no stage survived into a later call. Either the agent never")
+        print("    declared one, or persistence is broken — check the scripts in scripts/.")
+
+
 def report(project: Path) -> None:
     """Read back the record the run left, which is the actual thing under test."""
     log = project / "events" / "server.jsonl"
@@ -152,12 +204,17 @@ def report(project: Path) -> None:
 
     for event in events:
         if event["type"] == "render":
-            print(f"\n  rendered: {event['artifact']} ({event.get('bytes', '?')} bytes)")
+            stage = f" [{event['stage']}]" if event.get("stage") else ""
+            print(f"\n  rendered: {event['artifact']} ({event.get('bytes', '?')} bytes){stage}")
+
+    continuity(events)
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project", type=Path, help="a directory made by 'polson create-project'")
+    parser.add_argument("--task", choices=sorted(PROMPTS), default="hello",
+                        help="'hello' for one call; 'stages' for three, which tests session continuity")
     parser.add_argument("--public", action="store_true",
                         help="use the public Gemini endpoint instead of the Agent Platform one")
     parser.add_argument("--project-id", help="GCP project, for Agent Platform if your key needs one")
@@ -224,11 +281,7 @@ async def main() -> None:
         location=args.location,
     )
 
-    prompt = (
-        "Declare the stage 'Ideation' with Stage.begin, add a one-line Stage.note saying what you "
-        "are testing, then run one ExecuteScript that draws a single filled circle on a 200x200 "
-        "canvas and saves it with outFile 'artifacts/hello.webp'. Then stop."
-    )
+    prompt = PROMPTS[args.task]
 
     print(f"  project  : {project}")
     print(f"  server   : {CLI_DLL.name} --project-dir")

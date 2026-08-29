@@ -2,6 +2,7 @@ namespace Polson.Tests.CLI;
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using Polson.CLI;
 using Xunit;
@@ -61,6 +62,37 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     {
         Assert.True(ProjectGenerator.Create(Options("dirs")));
         Assert.True(Directory.Exists(Path.Combine(root, "dirs", dir)), $"missing: {dir}");
+    }
+
+    /// <summary>
+    /// The MCP wiring has to name a command that can actually start the server, whichever way the
+    /// generator itself was launched.
+    /// </summary>
+    /// <remarks>
+    /// Launched as <c>dotnet Polson.CLI.dll</c>, the process path is the shared host and the
+    /// assembly is an argument; taking the process path alone wrote <c>dotnet server</c>, which
+    /// starts nothing. The invariant is checkable in any host: if the command is the shared host,
+    /// an assembly must lead the arguments.
+    /// </remarks>
+    [Fact]
+    public void TestMcpWiringNamesARunnableCommand()
+    {
+        Assert.True(ProjectGenerator.Create(Options("mcp")));
+
+        var wiring = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "mcp", ".mcp.json")))
+            .RootElement.GetProperty("mcpServers").GetProperty("polson");
+
+        var command = wiring.GetProperty("command").GetString()!;
+        var args = wiring.GetProperty("args").EnumerateArray().Select(a => a.GetString()!).ToArray();
+
+        Assert.NotEmpty(command);
+        Assert.Contains("server", args);
+        Assert.Equal(["--project-dir", "."], args[^2..]);
+
+        if (Path.GetFileNameWithoutExtension(command).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.EndsWith(".dll", args[0], StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <summary>

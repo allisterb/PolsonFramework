@@ -1,12 +1,49 @@
-# Polson demo web app — Python environment
+# Polson — the Python side
 
-Dependency manifest and setup for the demo website (Milestone 6). Python 3.13.
+The orchestrator (Milestone 5) and, later, the demo website (Milestone 6). Python 3.13.
 
 Nothing here installs itself. Per the project guardrails in `CLAUDE.md`, package installation is
 always a deliberate act by a person — no script, build step, or agent runs `pip install` on your
 behalf. The commands below are for you to run and review.
 
-## Layout
+## Running a project
+
+```bash
+dotnet bin/cli/Polson.CLI.dll create-project projects/acme --brief "..."
+python src/webapp/run_studio.py projects/acme
+```
+
+That runs one turn: the agent reads the project's `GEMINI.md`, draws through the Polson MCP server,
+and the orchestrator writes down what happened. Everything it produces stays in the project
+directory — renders in `artifacts/`, every script in `scripts/`, and three event files in `events/`.
+`docs/project-layout.md` is the contract for all of it.
+
+Useful flags: `--prompt` to say something other than "read your instructions and begin",
+`--unattended` to answer nothing (questions are recorded and skipped rather than waited on),
+`--fresh` to ignore the saved conversation, `--timeout`. Run it from a terminal and you *are* the
+director: the agent's questions are printed and your reply goes back to it, recorded in
+`events/director.jsonl`. Milestone 6 replaces that terminal with a browser and nothing else.
+
+A run is resumable — the conversation id is written into `project.json`, and the next run continues
+where it left off unless you pass `--fresh`.
+
+## What is here
+
+| Path | What it is |
+| :--- | :--- |
+| `orchestrator/` | The agent lifecycle, the tool policy, the director, and the record. Milestone 5. |
+| `run_studio.py` | Entry point. The same program as `python -m orchestrator`, runnable from the repository root. |
+| `hello_agent.py` | A probe, not architecture — the cheapest check that the Python side still reaches the .NET side. `--task stages` also checks that one MCP session spans a whole run. |
+| `tests/` | Standard-library `unittest`. Nothing here installs a package, so there is no pytest. |
+
+```bash
+python -m unittest discover -s src/webapp -t src/webapp
+```
+
+Nothing in the tests reaches the network or starts an agent. The parts that need a live model are
+checked by actually running one, because a mock of the SDK only ever confirms the mock.
+
+## Dependency layout
 
 | File | What it is |
 | :--- | :--- |

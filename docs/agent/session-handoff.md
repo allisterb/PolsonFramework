@@ -87,20 +87,115 @@ sheet. Its findings drove most of the fixes above. Two things it surfaced are st
 
 ---
 
+## Settled since — cross-execution stage persistence (2026-08-28, later)
+
+**Retired. It works, through the real host, with nothing to fix.** A three-call live run
+(`hello_agent.py --task stages`) declared `Blocking` in script 1, read it back in script 2 without
+redeclaring, restated it in script 3, and produced three renders all filed under it. Every
+`script.start` carried the same session, and the restatement recorded `stage.continue` rather than
+another `stage.begin`.
+
+The server half is now pinned by `StdioTransportTests` (5 tests) — the first tests to exercise the
+shipped `bin/cli` build over stdio, which is the transport an agent host actually uses and the one
+transport nothing covered. The HTTP protocol tests could not stand in for it: an HTTP connection
+carries a session id and stdio has none, so every stdio call lands on `"default"`, and that is
+exactly what stage persistence depends on.
+
+`hello_agent.py` now judges continuity from the record on every run, not just this task, so a host
+that started reconnecting per tool call would be caught rather than silently losing every stage.
+
+**One real defect surfaced on the way, and it is a host problem, not ours.** `run.end` is written
+from `ApplicationStopping`, reached when the server's stdin ends. The .NET reference MCP client never
+closes stdin: it waits its five-second shutdown timeout and then kills, so the closing bracket is
+lost and the record is indistinguishable from a crashed run. The Antigravity SDK does close it
+properly, so real runs are fine — but the guarantee belongs to the host, not to us.
+`docs/project-layout.md` now says so, and the orchestrator inherits two obligations from it: close
+stdin and wait for exit rather than killing, and write its own closing event in `agent.jsonl`
+regardless, since it is the only party that always observes the exit.
+
+## Milestone 5 — the orchestrator exists (2026-08-28, later)
+
+`src/webapp/orchestrator/` is real code, not a spike, and a live run took a brief to a rendered
+candidate with the whole thing written down. Run it with:
+
+```bash
+python src/webapp/run_studio.py <project>
+```
+
+| Module | What it owns |
+| :--- | :--- |
+| `events.py` | The append-only JSONL writer. Byte-identical line shape to `RunEventLog`, so one grep spans all three files |
+| `project.py` | Reads a generated project — manifest, policy, MCP wiring — or explains why it cannot run |
+| `transcript.py` | `receive_steps()` → `events/agent.jsonl` |
+| `director.py` | The `OnInteractionHook`, terminal-backed, writing `events/director.jsonl` |
+| `run.py` | The agent lifecycle, the policy, the run bracket, the conversation id for resume |
+| `__main__.py` | The CLI |
+
+26 tests, standard-library `unittest` (nothing may install a package):
+`python -m unittest discover -s src/webapp -t src/webapp`.
+
+**The policy lives in the project, not in Python.** `build_config` reads the denied tools, the
+behaviour and the session directories out of `agent.config.json` and the wiring out of `.mcp.json`.
+A policy with an opinion of its own in Python would be a second source of truth for the one thing
+that must not drift.
+
+### Three things a live run taught, all now fixed
+
+1. **The SDK deep-copies its config at startup**, so anything reachable from a hook must be
+   copy-safe. A `threading.Lock` inside the event log killed the first run with
+   `cannot pickle '_thread.lock'` — reported at agent startup, nowhere near the log. `EventLog`
+   now returns itself from `__deepcopy__`, which is also the correct semantics: a copy of a log
+   would be a second writer with its own sequence counter on one file.
+2. **Steps interleave, and only `status` says a step is finished.** A thinking step and the tool
+   call after it alternate, each re-yielded several times. Flushing on "a different step arrived"
+   recorded **17 `tool.call` events for the 6 scripts that actually ran**. Transcribe on
+   `DONE`/`ERROR`; write anything still unfinished at turn end, marked `partial`. Verified the
+   second time by comparing the transcript against `server.jsonl`: 3 `ExecuteScript` events, 3
+   `script.start`, 3 scripts on disk, 16 distinct call ids out of 16.
+3. **A failed step is not the end of a turn.** The run hit a `429 Resource exhausted`; the SDK
+   retried and carried on. Recording that as a `turn.end` would have misreported a completed run as
+   a broken one.
+
+Also fixed on the way: `create-project` launched as `dotnet Polson.CLI.dll` wrote a `.mcp.json`
+saying `dotnet server --project-dir .` — the assembly argument was dropped, so the wiring could not
+start anything. `Environment.ProcessPath` is the apphost only when launched as `Polson.CLI.exe`.
+
+### Still not built
+
+- The web app. `run_turn` is what it will wrap; the director is already a swappable hook.
+- `asset.requisition` / `budget` events — `Polson.ExtendedMind` is not wired to a run yet.
+- Spend and concurrency caps (§6.4). Nothing bounds a run today.
+- `usage` events are implemented but never fired in these runs — the model reported no
+  `usage_metadata`. Worth confirming against a longer run before relying on it for cost.
+- An SVG `render` event carries no `bytes`, unlike the image one. Harmless, but a reader tallying
+  output size undercounts.
+
 ## Suggested next step
 
-Build the orchestrator properly, not the web app. The web app is a UI over something that does not
-exist yet; the orchestrator is the thing every remaining milestone sits on, and the spike shows the
-shape it should take.
+**The web app (Milestone 6), and it is now a wrapper rather than a foundation.** `run_turn` is the
+thing to call; the browser replaces `ConsoleDirector` and nothing else, because the director is
+already a hook and the record is already files. Serve `artifacts/` by URL and stream `events/` —
+both were designed for exactly that, which is why nothing embeds image bytes.
 
-Carry the two traps above into it as fixed constants — `vertex=True` and `allow_all()` — rather than
-as things to be rediscovered. The immediate unknown worth retiring is **cross-execution stage
-persistence through the SDK**: it passes in unit tests but has never been seen end to end, because
-the spike only ever made one `ExecuteScript` call per run.
+Two things belong with it rather than after it, because a public URL is what makes them matter:
+
+- **Spend and concurrency caps** (§6.4). Nothing bounds a run today. `types.BudgetConfig` on
+  `LocalAgentConfig` takes `max_model_calls` / `max_tool_calls` and is the cheapest half.
+- **The trust boundary end to end** (§6.3). `brief.md` is already quoted and the generator already
+  refuses to let a brief reach a path or a policy — but no visitor has ever typed into it.
+
+Before either, one cheap thing worth doing: run a **full** logo project through the orchestrator
+rather than the two-stage runs used so far. Everything after Stage 3 — the stress tests, the
+presentation board — has been exercised by an agent in an IDE but never by this code path.
 
 ---
 
 ## Uncommitted at handoff
 
-`src/webapp/` only — `hello_agent.py`, `requirements.txt`, and edits to `README.md` and
-`requirements.in`. Everything else is committed.
+Everything from the 2026-08-28 session was committed as `f5c0b4c`. Uncommitted now is the
+stage-persistence work and Milestone 5:
+
+- new: `src/webapp/orchestrator/` (6 modules), `src/webapp/run_studio.py`, `src/webapp/tests/`,
+  `tests/Polson.Tests.MCPServer/StdioTransportTests.cs`
+- edited: `src/webapp/hello_agent.py`, `src/webapp/README.md`, `src/Polson.CLI/ProjectGenerator.cs`,
+  `tests/Polson.Tests.CLI/ProjectGeneratorTests.cs`, `docs/project-layout.md`, and this file

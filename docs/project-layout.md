@@ -60,8 +60,9 @@ without a lock, and it means a crashed writer truncates its own file and nobody 
 | :--- | :--- | :--- |
 | `server` | `run.start` `run.end` `script.start` `script.ok` `script.error` `render` `stage.begin` `stage.continue` `stage.end` `note` `tool.error` | **written** by `RunEventLog` |
 | `server` | `asset.requisition` `asset.refused` `budget` | specified; requisition lives in `Polson.ExtendedMind` and is not yet wired |
-| `agent` | `turn.start` `thinking` `tool.call` `text` `compaction` `turn.end` `usage` | specified; needs the Python orchestrator |
-| `director` | `brief` `message` `question` `answer` `cancel` | specified; needs the webapp |
+| `agent` | `run.start` `run.end` `turn.start` `thinking` `tool.call` `text` `compaction` `turn.end` `usage` | **written** by the orchestrator's `Transcript` |
+| `director` | `message` `question` `answer` | **written** by the orchestrator's `Director` |
+| `director` | `brief` `cancel` | specified; needs the webapp |
 
 `scripts/` is populated by the server, not the agent: every executed script is saved there in order
 and named from the event that references it. The server has the text already, so recording it there
@@ -71,9 +72,25 @@ Each `script.start` is closed by exactly one `script.ok` or `script.error`, incl
 call throws rather than returning — a refused output path, for instance. A start without a
 terminator means the process died mid-script, and should be read that way.
 
-`run.start` and `run.end` bracket the server's lifetime. **A log with no `run.end` is a run that did
-not finish** — the process was killed, or is still going. Without it a reader cannot tell a completed
-run from an abandoned one, since the file simply stops in both cases.
+`run.start` and `run.end` bracket the server's lifetime. `run.end` is written from
+`ApplicationStopping`, which is reached when the server's standard input ends — the only shutdown
+signal the stdio transport has.
+
+**`run.end` is therefore best-effort, and its absence is not evidence that a run died.** A host that
+force-kills the server instead of closing its stdin leaves no closing bracket at all. The Antigravity
+SDK closes it properly — a live run on 2026-08-28 left a complete bracket — but the reference MCP
+client for .NET does not: disposing it waits its five-second shutdown timeout, never closes stdin,
+and then kills. Both halves are pinned by `StdioTransportTests`, which is why the closing event is
+asserted against a directly-driven process rather than through that client.
+
+Two things follow, and they are the orchestrator's to honour:
+
+- **Shut the server down by closing its stdin and waiting for exit**, not by killing it. That is
+  what makes `server.jsonl` complete, and it costs one flush.
+- **Record the run's completion in `agent.jsonl` regardless.** The orchestrator owns the child
+  process, so it always observes the exit even when the server got no chance to say so itself. A
+  reader should treat the orchestrator's closing event as authoritative and `run.end` as
+  corroboration.
 
 `tool.error` records a failure in any tool other than `ExecuteScript`, which has its own
 `script.error`. A tool that fails and is worked around otherwise leaves the record claiming nothing
@@ -108,6 +125,19 @@ The `agent` vocabulary deliberately mirrors the SDK's own `StepType`, so the orc
 transcribes `receive_steps()` rather than inventing a parallel taxonomy. Log `compaction` even
 though it is invisible in the UI — it is the only thing that explains an agent apparently
 forgetting its own earlier decisions.
+
+**Transcribe a step when it settles, never when it arrives.** `receive_steps()` re-yields a step as
+it accumulates, and steps *interleave* — a thinking step and the tool call after it alternate, each
+re-yielded several times, before either finishes. Treating "a different step arrived" as "the
+previous one is done" duplicates everything: a first run recorded 17 `tool.call` events for the 6
+scripts `server.jsonl` shows actually ran. `status` is the signal — `ACTIVE` while accumulating,
+`DONE` when final — and anything still unfinished when the turn ends is written then and marked
+`partial`. A step that failed carries its own `status` and `error`; it is not a `turn.end`, because
+the SDK retries a 429 and carries on.
+
+The two writers produce byte-identical line shapes — compact separators, no ASCII escaping, `\n`
+endings on every platform — so one `grep '"type":"render"'` spans all three files. The record is
+meant to be read by people as well as parsed.
 
 Artifacts are referenced by **path, never by bytes**. Base64 in an event log destroys the log's
 readability and re-sends the image on every replay.

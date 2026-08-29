@@ -175,18 +175,33 @@ internal static class ProjectGenerator
     /// <remarks>
     /// The server needs no awareness of whether a human is attached: <c>ask_question</c> is a
     /// built-in of the agent runtime, handled by the host, not by us.
+    /// <para>
+    /// <see cref="Environment.ProcessPath"/> is the apphost when this was launched as
+    /// <c>Polson.CLI.exe</c>, but the shared <c>dotnet</c> host when it was launched as
+    /// <c>dotnet Polson.CLI.dll</c> — in which case the assembly is an <em>argument</em> rather than
+    /// the command, and taking the process path alone wires the project to <c>dotnet server</c>,
+    /// which cannot start. The generated file has to work whichever way the generator was invoked.
+    /// </para>
     /// </remarks>
     static object McpConfig()
     {
-        var cli = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Polson.CLI.exe");
+        var process = Environment.ProcessPath;
+        var sharedHost = process is null ||
+            Path.GetFileNameWithoutExtension(process).Equals("dotnet", StringComparison.OrdinalIgnoreCase);
+
+        var command = sharedHost ? process ?? "dotnet" : process;
+        string[] args = sharedHost
+            ? [Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll"), "server", "--project-dir", "."]
+            : ["server", "--project-dir", "."];
+
         return new
         {
             mcpServers = new
             {
                 polson = new
                 {
-                    command = cli,
-                    args = new[] { "server", "--project-dir", "." },
+                    command,
+                    args,
                 },
             },
         };

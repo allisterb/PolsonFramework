@@ -30,6 +30,12 @@ public class CanvasPath : IDisposable
     {
         Path = SKPath.ParseSvgPathData(svgPathData) ?? new SKPath();
     }
+
+    /// <summary>Wraps a path a boolean operation produced. Private: not part of the scripted surface.</summary>
+    private CanvasPath(SKPath path)
+    {
+        Path = path;
+    }
     #endregion
 
     #region Properties
@@ -173,6 +179,81 @@ public class CanvasPath : IDisposable
     {
         ArgumentNullException.ThrowIfNull(other);
         Path.AddPath(other.Path);
+    }
+
+    /// <summary>Everything covered by either path.</summary>
+    public CanvasPath Union(CanvasPath other) => Combine(other, SKPathOp.Union, nameof(Union));
+
+    /// <summary>What is left of this path once <paramref name="other"/> is cut out of it.</summary>
+    /// <remarks>
+    /// The counter-cutting operation: a real hole in real geometry, rather than an even-odd subpath
+    /// that depends on winding, or a background-coloured shape laid on top that only works on a
+    /// plain ground. The result survives a monochrome knockout and exports as one vector path.
+    /// </remarks>
+    public CanvasPath Subtract(CanvasPath other) => Combine(other, SKPathOp.Difference, nameof(Subtract));
+
+    /// <summary>Only what both paths cover.</summary>
+    public CanvasPath Intersect(CanvasPath other) => Combine(other, SKPathOp.Intersect, nameof(Intersect));
+
+    /// <summary>What either path covers, but not both — the overlap is knocked out.</summary>
+    public CanvasPath Xor(CanvasPath other) => Combine(other, SKPathOp.Xor, nameof(Xor));
+
+    /// <summary>
+    /// Resolves a path's self-intersections into simple non-overlapping contours.
+    /// </summary>
+    /// <remarks>
+    /// Worth doing before a boolean op on a hand-built contour: a stroke that crosses itself has
+    /// regions covered twice, and what that means depends on the fill rule rather than on the shape
+    /// anyone intended.
+    /// </remarks>
+    public CanvasPath Simplify()
+    {
+        var result = new SKPath();
+
+        if (!Path.Simplify(result))
+        {
+            result.Dispose();
+            throw new InvalidOperationException("Could not simplify this path. It may have degenerate or unclosed contours.");
+        }
+
+        return new CanvasPath(result);
+    }
+
+    /// <summary>
+    /// Runs one boolean operation, leaving both operands untouched.
+    /// </summary>
+    /// <remarks>
+    /// Returns a new path rather than mutating the receiver, deliberately. The last silent bug in this
+    /// class was a stored fill rule outliving the call that set it; an operation that quietly rewrote
+    /// the path it was called on would be the same mistake in a louder place.
+    /// </remarks>
+    private CanvasPath Combine(CanvasPath other, SKPathOp op, string operation)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        var combined = new SKPath();
+
+        if (!Path.Op(other.Path, op, combined))
+        {
+            combined.Dispose();
+            throw new InvalidOperationException(
+                $"{operation} failed on these paths. Try simplify() on each operand first — self-intersecting contours are the usual cause.");
+        }
+
+        // Skia expresses some results — xor especially — as contours that only read correctly under
+        // even-odd. Returning that would hand back a shape whose meaning depends on a fill rule the
+        // caller has to guess, which is the trap this class just had removed from it. Simplifying
+        // normalises the result so it draws the same under either rule.
+        var normalised = new SKPath();
+
+        if (!combined.Simplify(normalised))
+        {
+            normalised.Dispose();
+            return new CanvasPath(combined);   // unnormalised beats nothing; the shape is still right
+        }
+
+        combined.Dispose();
+        return new CanvasPath(normalised);
     }
 
     public void Dispose()

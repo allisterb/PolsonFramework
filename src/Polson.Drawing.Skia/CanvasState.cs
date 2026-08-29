@@ -62,6 +62,7 @@ public class CanvasState
         ImageFilter = other.ImageFilter;
         ColorFilter = other.ColorFilter;
         PathEffect = other.PathEffect;
+        MaskFilter = other.MaskFilter;
     }
     #endregion
 
@@ -100,6 +101,9 @@ public class CanvasState
     public SKImageFilter? ImageFilter { get; set; }
     public SKColorFilter? ColorFilter { get; set; }
     public SKPathEffect? PathEffect { get; set; }
+
+    /// <summary>Applied to the shape's coverage mask before painting. See <c>Skia.MaskFilter</c>.</summary>
+    public SKMaskFilter? MaskFilter { get; set; }
     #endregion
 
     #region Methods
@@ -113,7 +117,8 @@ public class CanvasState
             BlendMode = BlendMode,
             ImageFilter = ImageFilter,
             ColorFilter = ColorFilter,
-            PathEffect = PathEffect
+            PathEffect = PathEffect,
+            MaskFilter = MaskFilter
         };
 
         if (CustomFillShader != null)
@@ -147,7 +152,8 @@ public class CanvasState
             BlendMode = BlendMode,
             ImageFilter = ImageFilter,
             ColorFilter = ColorFilter,
-            PathEffect = PathEffect
+            PathEffect = PathEffect,
+            MaskFilter = MaskFilter
         };
 
         if (LineDash != null && LineDash.Length > 0)

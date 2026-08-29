@@ -50,6 +50,22 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Loomis Head Construction
+    /// <summary>
+    /// Computes Loomis head landmarks. <b>Human proportions — not valid for an animal skull.</b>
+    /// </summary>
+    /// <remarks>
+    /// The signature takes bare numbers and will return a confident, complete landmark set for any
+    /// subject, which is the trap: a comic-studio agent drawing rabbits got usable vertical thirds
+    /// (crown 99 against a measured 105, eye line 242.5 against 235) and an inter-eye distance
+    /// <em>2.16× too narrow</em>, because a rabbit carries its eyes on the sides of the skull. The
+    /// vertical divisions transfer between species; the lateral placement does not, and neither do
+    /// <c>chin</c>, <c>noseBase</c> or <c>jaw.angle</c>, which have no animal equivalent.
+    /// <para>
+    /// There is no animal-head constructor in the toolkit. For a non-human subject, build the cranial
+    /// mass directly — a sphere plus a muzzle lobe — and measure the reference rather than deriving
+    /// from this.
+    /// </para>
+    /// </remarks>
     public Dictionary<string, object?> CreateLoomisHead(float originX, float originY, float headHeight, float yawDeg = 35f, float pitchDeg = 0f)
     {
         var H = headHeight;
@@ -1102,10 +1118,23 @@ public class ConstructiveDrawingToolkit
             var a = ExtractPoint(pts[0]);
             var b = ExtractPoint(pts[1]);
 
+            // Anchored at the midpoint, and folded to 90°, so the answer does not depend on which
+            // end of the line was listed first. A line is undirected: it converges on a vanishing
+            // point whether you name it top-to-bottom or bottom-to-top.
+            //
+            // Without the fold, listing a line away from the vanishing point reported ~179.9° — a
+            // confident total-drift verdict on a line that converges perfectly. Worse, the failing
+            // order is the natural one to write: a vertical listed from the top of the frame
+            // downward, with the vanishing point above it. Found by a comic-studio agent, which
+            // caught it only because 179.9 is too round a number to be a real measurement.
+            var mid = new SKPoint((a.X + b.X) / 2f, (a.Y + b.Y) / 2f);
+
             var drawnAngle = MathF.Atan2(b.Y - a.Y, b.X - a.X) * 180f / MathF.PI;
-            var targetAngle = MathF.Atan2(vp.Y - a.Y, vp.X - a.X) * 180f / MathF.PI;
+            var targetAngle = MathF.Atan2(vp.Y - mid.Y, vp.X - mid.X) * 180f / MathF.PI;
+
             var diff = MathF.Abs(drawnAngle - targetAngle);
-            if (diff > 180f) diff = 360f - diff;
+            if (diff > 180f) diff = 360f - diff;   // an angle difference is at most 180°
+            if (diff > 90f) diff = 180f - diff;    // and a line's direction is modulo 180°
 
             if (diff > maxError) maxError = diff;
             if (diff > maxToleranceDeg) passed = false;

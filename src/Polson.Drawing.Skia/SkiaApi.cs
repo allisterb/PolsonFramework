@@ -31,6 +31,7 @@ public class SkiaApi
     public SkiaImageFilterApi ImageFilter { get; } = new();
     public SkiaColorFilterApi ColorFilter { get; } = new();
     public SkiaPathEffectApi PathEffect { get; } = new();
+    public SkiaMaskFilterApi MaskFilter { get; } = new();
     public SkiaImageApi Image { get; }
     public SkiaBitmapFactoryApi Bitmap { get; } = new();
     public SkiaFontApi Font { get; } = new();
@@ -598,6 +599,172 @@ public class SkiaPathEffectApi
 
     public SKPathEffect Discrete(float segLength, float deviation, uint seed = 0) =>
         SKPathEffect.CreateDiscrete(segLength, deviation, seed);
+
+    /// <summary>
+    /// Stamps a shape repeatedly along the path being stroked — the brush primitive.
+    /// </summary>
+    /// <remarks>
+    /// This is what a brush *is*: a mark repeated along a stroke rather than a constant-width ribbon.
+    /// With <c>style: 'rotate'</c> each stamp turns to follow the path's tangent, which is what makes
+    /// bristles, foliage, grass, stitching and chain read as drawn rather than as a row of pasted
+    /// copies. Compose it with <see cref="Discrete"/> through <see cref="Sum"/> for natural media,
+    /// where the irregularity is the point.
+    /// <para>
+    /// <paramref name="advance"/> is the distance between stamps in pixels. Below the stamp's own
+    /// width they overlap into a continuous textured band; above it they read as discrete marks.
+    /// </para>
+    /// </remarks>
+    /// <param name="shape">The mark to stamp: a <c>CanvasPath</c>, an <c>SKPath</c>, or an SVG path string.</param>
+    /// <param name="advance">Distance between successive stamps, in pixels.</param>
+    /// <param name="phase">Offset into the first interval.</param>
+    /// <param name="style">'rotate' (follow the tangent), 'translate' (keep upright), or 'morph' (bend to the path).</param>
+    public SKPathEffect Stamp(object shape, float advance, float phase = 0f, string style = "rotate")
+    {
+        var path = ToPath(shape, nameof(shape));
+
+        if (advance <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(advance), advance, "advance must be greater than zero, or the stamp has nowhere to go.");
+
+        var mode = style?.ToLowerInvariant() switch
+        {
+            "translate" => SKPath1DPathEffectStyle.Translate,
+            "morph" => SKPath1DPathEffectStyle.Morph,
+            "rotate" or null or "" => SKPath1DPathEffectStyle.Rotate,
+            _ => throw new ArgumentException($"Unknown stamp style '{style}'. Use 'rotate', 'translate' or 'morph'.", nameof(style)),
+        };
+
+        return SKPathEffect.Create1DPath(path, advance, phase, mode);
+    }
+
+    /// <summary>
+    /// Fills the stroked or filled region with parallel hatch lines, as geometry.
+    /// </summary>
+    /// <remarks>
+    /// Real lines rather than a shader, so they survive scaling and export as vector. Cross-hatching
+    /// is two of these summed at different angles — see <see cref="Sum"/>.
+    /// </remarks>
+    /// <param name="width">Thickness of each hatch line.</param>
+    /// <param name="spacing">Distance between lines.</param>
+    /// <param name="angleDeg">Direction of the hatching, in degrees.</param>
+    public SKPathEffect Hatch(float width, float spacing, float angleDeg = 45f)
+    {
+        if (spacing <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(spacing), spacing, "spacing must be greater than zero.");
+
+        var matrix = SKMatrix.CreateScale(spacing, spacing);
+        matrix = matrix.PostConcat(SKMatrix.CreateRotationDegrees(angleDeg));
+
+        return SKPathEffect.Create2DLine(width, matrix);
+    }
+
+    /// <summary>
+    /// Tiles a shape across the region on a square lattice — stipple, screen tone, repeated motif.
+    /// </summary>
+    /// <remarks>
+    /// The geometric counterpart to <c>Drawing.createHalftoneDotShader</c>: a shader colours pixels,
+    /// this places actual shapes, so the result scales and exports as vector.
+    /// </remarks>
+    /// <param name="shape">The motif: a <c>CanvasPath</c>, an <c>SKPath</c>, or an SVG path string.</param>
+    /// <param name="spacing">Lattice pitch in pixels.</param>
+    /// <param name="angleDeg">Rotation of the lattice, in degrees.</param>
+    public SKPathEffect Tile(object shape, float spacing, float angleDeg = 0f)
+    {
+        var path = ToPath(shape, nameof(shape));
+
+        if (spacing <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(spacing), spacing, "spacing must be greater than zero.");
+
+        var matrix = SKMatrix.CreateScale(spacing, spacing);
+        matrix = matrix.PostConcat(SKMatrix.CreateRotationDegrees(angleDeg));
+
+        return SKPathEffect.Create2DPath(matrix, path);
+    }
+
+    /// <summary>Applies both effects to the original path and draws both results.</summary>
+    /// <remarks>
+    /// Additive, unlike <see cref="Compose"/>: each effect sees the same input. Two <see cref="Hatch"/>
+    /// effects summed at different angles give cross-hatching; a stamp summed with a plain stroke
+    /// gives a textured edge that still has a continuous line under it.
+    /// </remarks>
+    public SKPathEffect Sum(SKPathEffect first, SKPathEffect second)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+
+        return SKPathEffect.CreateSum(first, second);
+    }
+
+    /// <summary>Applies <paramref name="inner"/> first, then <paramref name="outer"/> to its result.</summary>
+    /// <remarks>
+    /// Sequential, unlike <see cref="Sum"/>. This is how natural media are built: jitter the path with
+    /// <see cref="Discrete"/>, then stamp along the jittered result, and the marks inherit the
+    /// irregularity instead of marching evenly down a clean curve.
+    /// </remarks>
+    public SKPathEffect Compose(SKPathEffect outer, SKPathEffect inner)
+    {
+        ArgumentNullException.ThrowIfNull(outer);
+        ArgumentNullException.ThrowIfNull(inner);
+
+        return SKPathEffect.CreateCompose(outer, inner);
+    }
+
+    /// <summary>Accepts the several ways a script can name a shape.</summary>
+    private static SKPath ToPath(object shape, string parameterName) => shape switch
+    {
+        SKPath path => path,
+        CanvasPath canvasPath => canvasPath.Path,
+        string svg => SKPath.ParseSvgPathData(svg)
+            ?? throw new ArgumentException($"Could not parse '{svg}' as SVG path data.", parameterName),
+        null => throw new ArgumentNullException(parameterName),
+        _ => throw new ArgumentException(
+            $"Expected a CanvasPath, an SKPath or an SVG path string, but got {shape.GetType().Name}.", parameterName),
+    };
+    #endregion
+}
+
+/// <summary>The <c>Skia.MaskFilter</c> sub-namespace: effects applied to a shape's coverage mask.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// <para>
+/// A mask filter acts on the shape's alpha before it is painted, which is why it can soften an edge
+/// while leaving the fill flat — unlike <c>Skia.ImageFilter.blur</c>, which blurs the drawn result.
+/// </para>
+/// </remarks>
+public class SkiaMaskFilterApi
+{
+    #region Methods
+    /// <summary>
+    /// Blurs the shape's coverage mask: soft edges, glow, and airbrush.
+    /// </summary>
+    /// <remarks>
+    /// The style decides what survives:
+    /// <list type="bullet">
+    /// <item><c>'normal'</c> — the whole shape softens. An airbrushed mark.</item>
+    /// <item><c>'solid'</c> — the shape stays solid and the blur is added outside it. A glow around a crisp form.</item>
+    /// <item><c>'outer'</c> — only the blur outside remains, the shape itself is knocked out. A halo, or a cast glow.</item>
+    /// <item><c>'inner'</c> — only the blur inside remains. An inward vignette on a form.</item>
+    /// </list>
+    /// </remarks>
+    /// <param name="sigma">Blur radius. Roughly half the visible softness in pixels.</param>
+    /// <param name="style">'normal', 'solid', 'outer' or 'inner'.</param>
+    public SKMaskFilter Blur(float sigma, string style = "normal")
+    {
+        if (sigma <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(sigma), sigma, "sigma must be greater than zero.");
+
+        var blurStyle = style?.ToLowerInvariant() switch
+        {
+            "solid" => SKBlurStyle.Solid,
+            "outer" => SKBlurStyle.Outer,
+            "inner" => SKBlurStyle.Inner,
+            "normal" or null or "" => SKBlurStyle.Normal,
+            _ => throw new ArgumentException($"Unknown blur style '{style}'. Use 'normal', 'solid', 'outer' or 'inner'.", nameof(style)),
+        };
+
+        return SKMaskFilter.CreateBlur(blurStyle, sigma);
+    }
     #endregion
 }
 

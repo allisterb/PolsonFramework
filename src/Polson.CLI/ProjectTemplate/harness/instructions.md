@@ -118,8 +118,10 @@ use it for the reasoning that would otherwise be lost.
 ## Start here
 
 1. Verify the enforced boundary (the refused `outFile` above), in one line.
-2. Read `polson://sdk/index` for the map, then the areas you need — `Logo`, `LogoType`,
-   `VectorLogo`, `Snap`, `Canvas2D`, `Skia`, `Assets`.
+2. Get the map: `polson://sdk/index`, then the areas you need — `Logo`, `LogoType`, `VectorLogo`,
+   `Snap`, `Canvas2D`, `Skia`, `Assets`. Open those URIs directly if your host reads MCP resources;
+   if it exposes only the tools, `Search` is the whole way in. **Which of those two you were is worth
+   a line in `findings.md`** — it changes how much of this API is reachable at all.
 3. `Search` for the technique before reaching for the API. It returns ranked passages from the design
    manuals *and* the SDK reference, each with the calls that implement it and a resource `uri`;
    `scope: 'manual'` restricts to design theory, `scope: 'sdk'` to the API. Note in `findings.md`

@@ -219,6 +219,20 @@ public class CanvasRenderingContext2D
         get => _currentState.PathEffect;
         set => _currentState.PathEffect = value;
     }
+
+    /// <summary>
+    /// Mask filter applied to the shape's coverage before painting — see <c>Skia.MaskFilter.blur</c>.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="Filter"/>: a mask filter softens the *shape*, an image filter blurs
+    /// the *result*. Softening a mask leaves the fill flat, which is what an airbrushed edge is.
+    /// Saved and restored with the rest of the drawing state.
+    /// </remarks>
+    public SKMaskFilter? MaskFilter
+    {
+        get => _currentState.MaskFilter;
+        set => _currentState.MaskFilter = value;
+    }
     #endregion
 
     #region Methods
@@ -396,9 +410,17 @@ public class CanvasRenderingContext2D
     public void Fill(object? pathOrFillRule = null, object? fillRule = null)
     {
         var path = pathOrFillRule is CanvasPath cp ? cp.Path : _currentPath.Path;
-        ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
-        using var paint = _currentState.CreateFillPaint();
-        Canvas.SkCanvas.DrawPath(path, paint);
+        var previous = ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
+
+        try
+        {
+            using var paint = _currentState.CreateFillPaint();
+            Canvas.SkCanvas.DrawPath(path, paint);
+        }
+        finally
+        {
+            path.FillType = previous;
+        }
     }
 
     public void Stroke(CanvasPath? path = null)
@@ -411,22 +433,43 @@ public class CanvasRenderingContext2D
     public void Clip(object? pathOrFillRule = null, object? fillRule = null)
     {
         var path = pathOrFillRule is CanvasPath cp ? cp.Path : _currentPath.Path;
-        ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
-        Canvas.SkCanvas.ClipPath(path, SKClipOperation.Intersect, true);
+        var previous = ApplyFillRule(path, (pathOrFillRule as string) ?? fillRule as string);
+
+        try
+        {
+            Canvas.SkCanvas.ClipPath(path, SKClipOperation.Intersect, true);
+        }
+        finally
+        {
+            path.FillType = previous;
+        }
     }
 
     /// <summary>
-    /// Applies the Canvas Fill rule to a path. Without this, <c>Fill('evenodd')</c> silently falls back to
-    /// non-zero winding, which is what makes a counter cut into a mark — the negative space every logo
-    /// relies on — come out solid.
+    /// Sets the fill rule for one operation and returns what it was, so the caller can put it back.
     /// </summary>
-    private static void ApplyFillRule(SKPath path, string? rule)
+    /// <remarks>
+    /// The rule is an argument to <c>fill</c> and <c>clip</c>, not a property of the path — so this
+    /// must not outlive the call. It used to: one <c>clip(path, 'evenodd')</c> wrote even-odd onto the
+    /// caller's <c>CanvasPath</c>, where it silently changed the meaning of every later call that
+    /// omitted the rule. The SDK reference promises a <c>CanvasPath</c> is reusable, and it was not:
+    /// the same call on the same path gave different results depending on its history, with no error
+    /// and only on shapes with counters. Found by a comic-studio agent in stage 1.
+    /// <para>
+    /// Omitting the rule means non-zero, as in HTML5 — not "whatever was set last". Without the
+    /// explicit <see cref="SKPathFillType.Winding"/> here, an early return would leave the previous
+    /// value in place and reintroduce exactly that bug.
+    /// </para>
+    /// </remarks>
+    private static SKPathFillType ApplyFillRule(SKPath path, string? rule)
     {
-        if (string.IsNullOrEmpty(rule)) return;
+        var previous = path.FillType;
 
-        path.FillType = rule.Equals("evenodd", StringComparison.OrdinalIgnoreCase)
+        path.FillType = rule is not null && rule.Equals("evenodd", StringComparison.OrdinalIgnoreCase)
             ? SKPathFillType.EvenOdd
             : SKPathFillType.Winding;
+
+        return previous;
     }
     #endregion
 

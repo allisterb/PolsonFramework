@@ -58,7 +58,10 @@ later — because that is exactly who reads them.
 
 ## The stages
 
-The full method is Studio Manual 12 — read it: `polson://manual/12`. Its stages are the spine of
+The full method is Studio Manual 12 (`polson://manual/12`). Open it directly if your host reads MCP
+resources; otherwise reach it with `Search(query, scope: 'manual')`, which returns the same content as
+ranked passages — not every host exposes a resource reader, and a run has been lost to assuming one
+did. Either way, go and read it. Its stages are the spine of
 this project, and the manual names the specific toolkit call for each one. Do not restate it here;
 go and read it.
 

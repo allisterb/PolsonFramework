@@ -309,6 +309,21 @@ Segment methods mirror the context's own path construction and take the same arg
 - `path.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y)` / `path.sCurveTo(...)` — CSI grammar alias
 - `path.quadraticCurveTo(cpx, cpy, x, y)` / `path.cCurveTo(...)` — CSI grammar alias
 - `path.addPath(other: CanvasPath)` — Appends another path's segments to this one.
+
+### Boolean Operations
+
+Each returns a **new** path and leaves both operands untouched, so a shape can be combined repeatedly
+and the results chain: `a.union(b).subtract(c)`.
+
+- `path.union(other: CanvasPath)` → `CanvasPath` — Everything covered by either path.
+- `path.subtract(other: CanvasPath)` → `CanvasPath` — What is left once `other` is cut out. **This is how you cut a counter as real geometry** — a genuine hole in one path, rather than an even-odd sub-path that depends on winding, or a background-coloured shape laid on top that only works on a plain ground.
+- `path.intersect(other: CanvasPath)` → `CanvasPath` — Only what both cover.
+- `path.xor(other: CanvasPath)` → `CanvasPath` — What either covers, but not both.
+- `path.simplify()` → `CanvasPath` — Resolves self-intersections into simple contours. Worth doing to a hand-built contour before combining it; a stroke that crosses itself has regions covered twice, and what that means depends on the fill rule rather than on the shape you intended.
+
+> [!NOTE]
+> The result is normalised, so it draws the same under either fill rule and you never have to know
+> which one a boolean operation happened to produce.
 - `path.dispose()` — Releases the native path.
 
 ## `CanvasRenderingContext2D`
@@ -337,7 +352,9 @@ Segment methods mirror the context's own path construction and take the same arg
 - `ctx.clip(path?: CanvasPath, fillRule?: 'nonzero' | 'evenodd')` — Intersects the clipping region with the current or specified path. Takes the same fill-rule argument as `fill`.
 
 > [!TIP]
-> `'evenodd'` is how you cut a **counter** — the enclosed hole in a mark or a letterform — as real geometry, by adding the inner sub-path to the same path and filling once. The alternative, laying a background-coloured shape on top, looks identical on a white ground and fails everywhere else: over a photograph, in a one-colour knockout, or exported as a single vector path. Anything that has to survive a monochrome test wants the real hole.
+> `'evenodd'` is one way to cut a **counter** — the enclosed hole in a mark or a letterform — as real geometry, by adding the inner sub-path to the same path and filling once. `path.subtract(inner)` is the other, and it is the sturdier one: it produces a path that *is* the shape with the hole, rather than a path that only reads as one under a particular fill rule. Either beats laying a background-coloured shape on top, which looks identical on a white ground and fails everywhere else: over a photograph, in a one-colour knockout, or exported as a single vector path. Anything that has to survive a monochrome test wants the real hole.
+>
+> The rule is an argument to `fill` and `clip`, never a property of the path. Omitting it always means `'nonzero'`, whatever the path was used for before.
 
 ### State & Transformations
 - `ctx.save()` — Pushes current drawing state onto the state stack.
@@ -366,7 +383,8 @@ Segment methods mirror the context's own path construction and take the same arg
 - `ctx.shadowOffsetX` / `ctx.shadowOffsetY` — Horizontal and vertical shadow offset.
 - `ctx.filter` — Image filter (e.g. `Skia.ImageFilter.blur(5, 5)`).
 - `ctx.colorFilter` — Color filter (e.g. `Skia.ColorFilter.colorMatrix(...)`).
-- `ctx.pathEffect` — Path effect (e.g. `Skia.PathEffect.corner(10)` or `Skia.PathEffect.dash([10, 5])`).
+- `ctx.pathEffect` — Path effect: what the stroke or fill is *made of* (e.g. `Skia.PathEffect.stamp(bristle, 4)` for a brush, `Skia.PathEffect.hatch(1, 6, 45)` for hatching, `Skia.PathEffect.corner(10)`, `Skia.PathEffect.dash([10, 5])`).
+- `ctx.maskFilter` — Mask filter applied to the shape's coverage (e.g. `Skia.MaskFilter.blur(6)` for a soft edge, `Skia.MaskFilter.blur(8, 'outer')` for a halo).
 
 ### Typography
 - `ctx.font` — Font specification string: e.g. `"bold 24px Arial"`, `"italic 16px Georgia"`. An unavailable family is **silently substituted**, so confirm it with `Skia.Font.has(...)` before relying on it.
@@ -475,9 +493,38 @@ ctx.fillRect(0, 0, 800, 600);
 
 ## `Skia.PathEffect`
 
+Assign to `ctx.pathEffect` to change what a stroke or fill is *made of*. These run natively, so a
+textured stroke costs about what a plain one does.
+
 - `Skia.PathEffect.dash(intervals: number[], phase?: number)` → `SKPathEffect` — Custom dash patterns (e.g. `[10, 5, 2, 5]`).
 - `Skia.PathEffect.corner(radius: number)` → `SKPathEffect` — Rounds sharp polygon corners with specified radius.
 - `Skia.PathEffect.discrete(segLength: number, deviation: number, seed?: number)` → `SKPathEffect` — Jittered / sketched line effect.
+- `Skia.PathEffect.stamp(shape: CanvasPath | string, advance: number, phase?: number, style?: 'rotate' | 'translate' | 'morph')` → `SKPathEffect` — **The brush primitive.** Repeats `shape` along the path being stroked, every `advance` pixels. `'rotate'` (the default) turns each mark to follow the tangent, which is what makes bristles, foliage, grass and stitching read as drawn rather than pasted; `'translate'` keeps every mark upright; `'morph'` bends the mark to the curve. An `advance` below the mark's own width overlaps them into a continuous textured band; above it they read as separate marks. `shape` may be a `CanvasPath` or an SVG path string.
+- `Skia.PathEffect.hatch(width: number, spacing: number, angleDeg?: number)` → `SKPathEffect` — Fills with parallel hatch lines **as geometry**, so they scale and export as vector. Cross-hatching is two of these summed at opposing angles.
+- `Skia.PathEffect.tile(shape: CanvasPath | string, spacing: number, angleDeg?: number)` → `SKPathEffect` — Tiles `shape` on a square lattice: stipple, screen tone, a repeated motif. The geometric counterpart to `Drawing.createHalftoneDotShader` — a shader colours pixels, this places real shapes.
+- `Skia.PathEffect.sum(first: SKPathEffect, second: SKPathEffect)` → `SKPathEffect` — Applies both to the original path and draws both results. Additive.
+- `Skia.PathEffect.compose(outer: SKPathEffect, inner: SKPathEffect)` → `SKPathEffect` — Applies `inner` first, then `outer` to its result. Sequential.
+
+> [!TIP]
+> `sum` and `compose` are the difference between a mechanical stroke and a drawn one. `sum` places
+> two treatments side by side — two hatches at opposing angles give cross-hatching. `compose` feeds
+> one into the other, so jittering *underneath* a stamp makes the marks inherit the irregularity
+> instead of marching evenly down a clean curve:
+>
+> ```javascript
+> ctx.pathEffect = Skia.PathEffect.compose(
+>     Skia.PathEffect.stamp(bristle, 4),      // then stamp along it
+>     Skia.PathEffect.discrete(6, 2, 7));     // rough the path up first
+> ```
+
+## `Skia.MaskFilter`
+
+Applied to a shape's coverage before it is painted, via `ctx.maskFilter`. Distinct from
+`Skia.ImageFilter.blur`: a mask filter softens the **shape**, an image filter blurs the **result** —
+so a soft mask leaves the fill flat, which is what an airbrushed edge is. Saved and restored with the
+rest of the drawing state.
+
+- `Skia.MaskFilter.blur(sigma: number, style?: 'normal' | 'solid' | 'outer' | 'inner')` → `SKMaskFilter` — Blurs the coverage mask. `'normal'` softens the whole shape (airbrush); `'solid'` keeps the shape crisp and adds the blur outside it (a glow around a hard form); `'outer'` keeps only the blur and knocks the shape out (a halo); `'inner'` keeps only the blur inside (an inward vignette).
 
 ## `Skia.Image` & `Skia.Bitmap`
 

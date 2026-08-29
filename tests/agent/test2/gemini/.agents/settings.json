@@ -1,13 +1,23 @@
 {
-  "permissions": {
-    "allow": [
-      "mcp:polson:*"
-    ],
-    "deny": [
-      "bash:node*",
-      "bash:python*",
-      "bash:npm*",
-      "bash:dotnet*"
+  "mcp": {
+    "autoApprove": [
+      "polson.ExecuteScript",
+      "polson.History",
+      "polson.MeasureSvgPath",
+      "polson.RenderSvg",
+      "polson.Search"
     ]
+  },
+  "tools": {
+    "disabled": [
+      "generate_image",
+      "run_command"
+    ]
+  },
+  "permissions": {
+    "generate_image": "deny",
+    "default_api:generate_image": "deny",
+    "run_command": "deny",
+    "default_api:run_command": "deny"
   }
 }

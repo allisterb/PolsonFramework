@@ -1,12 +1,12 @@
 {
   "mcpServers": {
     "polson": {
-      "command": "C:\\Program Files\\dotnet\\dotnet.exe",
+      "command": "dotnet",
       "args": [
-        "C:\\Projects\\Polson\\bin\\cli\\Polson.CLI.dll",
+        "C:/Projects/Polson/bin/cli/Polson.CLI.dll",
         "server",
         "--project-dir",
-        "."
+        "C:/Projects/Polson/tests/agent/test2/gemini"
       ]
     }
   }

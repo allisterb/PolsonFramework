@@ -1,6 +1,6 @@
 # Polson Graphics Agent — SDK Evaluation Harness: claude
 
-Workflow `harness` · profile `managed` · created 2026-08-29T14:28:15.1607207Z
+Workflow `harness` · profile `managed` · created 2026-08-29T18:54:35.3233891Z
 
 This is a **test harness** for evaluating the Polson code-mode MCP server from an agent's
 perspective. You are standing in for an autonomous brand designer working in code: you get the MCP

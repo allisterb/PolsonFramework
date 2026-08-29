@@ -1,0 +1,20 @@
+{
+  "mcp": {
+    "autoApprove": [
+      "polson.ExecuteScript",
+      "polson.History",
+      "polson.MeasureSvgPath",
+      "polson.RenderSvg",
+      "polson.Search"
+    ]
+  },
+  "tools": {
+    "disabled": [
+      "generate_image"
+    ]
+  },
+  "permissions": {
+    "generate_image": "deny",
+    "default_api:generate_image": "deny"
+  }
+}

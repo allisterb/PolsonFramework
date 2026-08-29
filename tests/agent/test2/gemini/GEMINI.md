@@ -1,6 +1,6 @@
 # Polson Graphics Agent — SDK Evaluation Harness: gemini
 
-Workflow `harness` · profile `standalone` · created 2026-08-29T14:28:14.7613177Z
+Workflow `harness` · profile `standalone` · created 2026-08-29T18:54:34.7528234Z
 
 This is a **test harness** for evaluating the Polson code-mode MCP server from an agent's
 perspective. You are standing in for an autonomous brand designer working in code: you get the MCP

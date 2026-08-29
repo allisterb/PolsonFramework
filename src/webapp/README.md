@@ -9,7 +9,7 @@ behalf. The commands below are for you to run and review.
 ## Running a project
 
 ```bash
-dotnet bin/cli/Polson.CLI.dll create-project projects acme agy --standalone --brief "..."
+dotnet bin/cli/Polson.CLI.dll create-project projects acme agy --standalone --prompt "..."
 python src/webapp/run_studio.py projects/acme
 ```
 

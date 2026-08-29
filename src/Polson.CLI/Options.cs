@@ -57,7 +57,7 @@ public class CreateProjectOptions : Options
     [Option("standalone", Required = false, HelpText = "Also generate what the Polson orchestrator needs to host the agent itself. Without it the project is managed by a desktop or IDE host.")]
     public bool Standalone { get; set; }
 
-    [Option("brief", Required = false, HelpText = "Client brief: a file path, or the text itself. Treated as untrusted data and normalised before it is written.")]
+    [Option("brief", Required = false, HelpText = "Path to a file holding the client brief. Use --prompt to pass the text itself. Treated as untrusted data and normalised before it is written.")]
     public string Brief { get; set; } = string.Empty;
 
     [Option("force", Required = false, HelpText = "Generate into a directory that already has contents.")]

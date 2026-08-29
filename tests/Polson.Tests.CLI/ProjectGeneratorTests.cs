@@ -68,7 +68,6 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// </summary>
     [Theory]
     [InlineData("agy", "GEMINI.md")]
-    [InlineData("agy", "mcp_config.json")]
     [InlineData("agy", ".agents/mcp_config.json")]
     [InlineData("agy", ".agents/settings.json")]
     [InlineData("claude", "CLAUDE.md")]
@@ -80,6 +79,75 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.True(ProjectGenerator.Create(Options(name, o => o.Sdk = sdk)));
 
         Assert.Contains(file, FileSet(name));
+    }
+
+    /// <summary>
+    /// The wiring is written once, to Antigravity's canonical <c>.agents/</c> directory.
+    /// </summary>
+    /// <remarks>
+    /// It was written to the project root as well while which location the host read was unknown. The
+    /// host reads <c>.agents/</c> as canonical and the root only as a fallback for generic MCP
+    /// tooling, so one file is now the honest state — two would be two things to keep in step for a
+    /// reader with no way to tell which one matters.
+    /// </remarks>
+    [Fact]
+    public void TestTheWiringIsWrittenOnceToTheCanonicalLocation()
+    {
+        Assert.True(ProjectGenerator.Create(Options("onewiring")));
+
+        Assert.Equal(
+            [".agents/mcp_config.json"],
+            FileSet("onewiring").Where(f => f.EndsWith("mcp_config.json", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// A multi-agent workflow ships its role specs, and Antigravity gets a registry derived from
+    /// them — so the registry cannot name an agent whose prompt is missing, or miss one that exists.
+    /// </summary>
+    [Fact]
+    public void TestAMultiAgentWorkflowShipsItsRolesAndRegistersThem()
+    {
+        Assert.True(ProjectGenerator.Create(Options("studio", o => o.Workflow = "comic_studio")));
+
+        var files = FileSet("studio");
+        var roles = files.Where(f => f.StartsWith("roles/", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(4, roles.Length);
+
+        var registry = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "studio", ".agents", "agents.json")))
+            .RootElement.GetProperty("subagents");
+
+        Assert.Equal(["colorist", "critic", "inker", "penciler"],
+            registry.EnumerateArray().Select(a => a.GetProperty("name").GetString()!).OrderBy(n => n, StringComparer.Ordinal));
+
+        // Every prompt the registry points at is a file that was actually written.
+        foreach (var agent in registry.EnumerateArray())
+        {
+            var prompt = agent.GetProperty("promptFile").GetString()!;
+            Assert.StartsWith("../", prompt, StringComparison.Ordinal);   // relative to .agents/
+            Assert.Contains(prompt[3..], files);
+        }
+    }
+
+    /// <summary>Claude Code has no registry to write to, so the roles are all it gets — and needs.</summary>
+    [Fact]
+    public void TestAMultiAgentWorkflowNeedsNoRegistryForClaude()
+    {
+        Assert.True(ProjectGenerator.Create(Options("studio-claude", o => { o.Workflow = "comic_studio"; o.Sdk = "claude"; })));
+
+        var files = FileSet("studio-claude");
+        Assert.Equal(4, files.Count(f => f.StartsWith("roles/", StringComparison.Ordinal)));
+        Assert.DoesNotContain("agents.json", string.Join(' ', files));
+    }
+
+    /// <summary>Generated JSON is readable: an ampersand in a role name stays an ampersand.</summary>
+    [Fact]
+    public void TestGeneratedJsonIsNotAsciiEscaped()
+    {
+        Assert.True(ProjectGenerator.Create(Options("escapes", o => o.Workflow = "comic_studio")));
+
+        var registry = File.ReadAllText(Path.Combine(root, "escapes", ".agents", "agents.json"));
+        Assert.DoesNotContain("\\u0026", registry, StringComparison.Ordinal);
+        Assert.Contains("&", registry, StringComparison.Ordinal);
     }
 
     /// <summary>The project is created inside the directory given, named by its id.</summary>
@@ -140,30 +208,55 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// generator itself was launched.
     /// </summary>
     /// <remarks>
-    /// Launched as <c>dotnet Polson.CLI.dll</c>, the process path is the shared host and the
-    /// assembly is an argument; taking the process path alone wrote <c>dotnet server</c>, which
-    /// starts nothing. The invariant is checkable in any host: if the command is the shared host,
-    /// an assembly must lead the arguments.
+    /// <c>dotnet</c> with the assembly as an argument, never the apphost: <c>Polson.CLI.exe</c> does
+    /// not exist on Linux, and this is also the one wiring observed to work end to end in Antigravity
+    /// Desktop. A host that cannot launch the command shows an agent with no tools and no error.
     /// </remarks>
-    [Fact]
-    public void TestMcpWiringNamesARunnableCommand()
+    [Theory]
+    [InlineData("agy", ".agents/mcp_config.json")]
+    [InlineData("claude", ".mcp.json")]
+    public void TestMcpWiringNamesARunnableCommand(string sdk, string file)
     {
-        Assert.True(ProjectGenerator.Create(Options("mcp", o => o.Sdk = "claude")));
+        var name = $"mcp-{sdk}-{file.Replace('/', '_').Replace('.', '_')}";
+        Assert.True(ProjectGenerator.Create(Options(name, o => o.Sdk = sdk)));
 
-        var wiring = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "mcp", ".mcp.json")))
+        var path = Path.Combine(root, name, file.Replace('/', Path.DirectorySeparatorChar));
+        var wiring = JsonDocument.Parse(File.ReadAllText(path))
             .RootElement.GetProperty("mcpServers").GetProperty("polson");
 
         var command = wiring.GetProperty("command").GetString()!;
         var args = wiring.GetProperty("args").EnumerateArray().Select(a => a.GetString()!).ToArray();
 
-        Assert.NotEmpty(command);
-        Assert.Contains("server", args);
-        Assert.Equal(["--project-dir", "."], args[^2..]);
+        Assert.Equal("dotnet", command);
+        Assert.EndsWith("Polson.CLI.dll", args[0], StringComparison.Ordinal);
+        Assert.True(File.Exists(args[0]), $"the wiring names an assembly that is not there: {args[0]}");
+        Assert.Equal("server", args[1]);
+        Assert.Equal("--project-dir", args[2]);
+    }
 
-        if (Path.GetFileNameWithoutExtension(command).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
-        {
-            Assert.EndsWith(".dll", args[0], StringComparison.OrdinalIgnoreCase);
-        }
+    /// <summary>
+    /// Paths are absolute and forward-slashed, so the wiring does not depend on the host's working
+    /// directory and reads the same on either platform.
+    /// </summary>
+    /// <remarks>
+    /// A relative <c>--project-dir</c> that resolves wrongly does not fail: the server starts, the
+    /// agent draws, and nothing is recorded. That is the failure mode with no symptom, and it is
+    /// worth more than keeping a generated project movable.
+    /// </remarks>
+    [Fact]
+    public void TestWiringPathsAreAbsoluteAndForwardSlashed()
+    {
+        Assert.True(ProjectGenerator.Create(Options("abs")));
+
+        var body = File.ReadAllText(Path.Combine(root, "abs", ".agents", "mcp_config.json"));
+        var args = JsonDocument.Parse(body).RootElement
+            .GetProperty("mcpServers").GetProperty("polson")
+            .GetProperty("args").EnumerateArray().Select(a => a.GetString()!).ToArray();
+
+        Assert.True(Path.IsPathFullyQualified(args[0]), $"assembly path is not absolute: {args[0]}");
+        Assert.True(Path.IsPathFullyQualified(args[^1]), $"project dir is not absolute: {args[^1]}");
+        Assert.Equal(Path.GetFullPath(Path.Combine(root, "abs")).Replace('\\', '/'), args[^1]);
+        Assert.DoesNotContain('\\', body);
     }
 
     /// <summary>
@@ -346,9 +439,14 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>Taking both would mean silently dropping one, which is a choice the caller cannot see.</summary>
+    /// <remarks>The file is real, so this can only fail for the reason under test.</remarks>
     [Fact]
-    public void TestBriefAndPromptTogetherAreRefused() =>
-        Assert.False(ProjectGenerator.Create(Options("both", o => { o.Brief = "a brief"; o.Prompt = "a prompt"; })));
+    public void TestBriefAndPromptTogetherAreRefused()
+    {
+        var briefFile = WriteBriefFile("both-brief.txt", "A brief from a file.");
+
+        Assert.False(ProjectGenerator.Create(Options("both", o => { o.Brief = briefFile; o.Prompt = "a prompt"; })));
+    }
 
     /// <summary>
     /// What makes the harness a harness: the agent is asked to report on the API, not just to draw.
@@ -399,34 +497,76 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     #endregion
 
     #region Brief Quoting Tests
-    /// <summary>The brief must land inside the markers, which is what makes it quoted data.</summary>
-    [Fact]
-    public void TestBriefIsWrittenBetweenTheMarkers()
+    /// <summary>Whichever way it arrives, the brief lands inside the markers — that is what makes it data.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TestTheBriefIsWrittenBetweenTheMarkers(bool fromFile)
     {
-        Assert.True(ProjectGenerator.Create(Options("brief", o => o.Brief = "A mark for Acme Freight.")));
+        const string text = "A mark for Acme Freight.";
 
-        var body = File.ReadAllText(Path.Combine(root, "brief", "brief.md"));
+        Assert.True(ProjectGenerator.Create(Options("brief-" + fromFile, o =>
+        {
+            if (fromFile) o.Brief = WriteBriefFile("supplied.txt", text);
+            else o.Prompt = text;
+        })));
+
+        var body = File.ReadAllText(Path.Combine(root, "brief-" + fromFile, "brief.md"));
         var begin = body.IndexOf("BRIEF-BEGIN", StringComparison.Ordinal);
         var end = body.IndexOf("BRIEF-END", StringComparison.Ordinal);
-        var brief = body.IndexOf("A mark for Acme Freight.", StringComparison.Ordinal);
+        var brief = body.IndexOf(text, StringComparison.Ordinal);
 
         Assert.True(begin >= 0 && end > begin, "markers missing or out of order");
         Assert.InRange(brief, begin, end);
     }
 
-    /// <summary>A brief given as a file path is read; anything else is taken as the text itself.</summary>
+    /// <summary>The file's contents reach the project, and its path does not.</summary>
     [Fact]
-    public void TestBriefIsReadFromFileWhenPathExists()
+    public void TestTheBriefFileContentsAreUsedNotItsPath()
     {
-        Directory.CreateDirectory(root);
-        var briefFile = Path.Combine(root, "supplied-brief.txt");
-        File.WriteAllText(briefFile, "Brief supplied from a file.");
+        var briefFile = WriteBriefFile("from-file.txt", "Brief supplied from a file.");
 
         Assert.True(ProjectGenerator.Create(Options("frombrieffile", o => o.Brief = briefFile)));
 
         var body = File.ReadAllText(Path.Combine(root, "frombrieffile", "brief.md"));
         Assert.Contains("Brief supplied from a file.", body, StringComparison.Ordinal);
         Assert.DoesNotContain(briefFile, body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A brief path that does not exist is refused, not treated as the brief text.
+    /// </summary>
+    /// <remarks>
+    /// When <c>--brief</c> accepted either a path or the text, a mistyped path silently *became* the
+    /// brief — the agent read its client brief as <c>C:\typo\brief.txt</c>, and nothing surfaced
+    /// until someone opened the generated file. A path argument that takes text on failure cannot
+    /// report a typo, because a typo is indistinguishable from a short brief.
+    /// </remarks>
+    [Fact]
+    public void TestAMissingBriefFileIsRefused()
+    {
+        var missing = Path.Combine(root, "no-such-brief.txt");
+
+        Assert.False(ProjectGenerator.Create(Options("nobrief", o => o.Brief = missing)));
+        Assert.False(Directory.Exists(Path.Combine(root, "nobrief")));
+    }
+
+    /// <summary>A directory is not a brief file, and is refused rather than read.</summary>
+    [Fact]
+    public void TestADirectoryIsNotABriefFile()
+    {
+        var directory = Path.Combine(root, "brief-dir");
+        Directory.CreateDirectory(directory);
+
+        Assert.False(ProjectGenerator.Create(Options("dirbrief", o => o.Brief = directory)));
+    }
+
+    string WriteBriefFile(string name, string text)
+    {
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, name);
+        File.WriteAllText(path, text);
+        return path;
     }
     #endregion
 
@@ -476,18 +616,94 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
-    /// Antigravity permissions name tools, never paths: a <c>read:C:/...</c> entry does nothing at
-    /// all, and an entry the host does not recognise is silently inert — indistinguishable from one
-    /// being enforced. Only the two namespaces a working example proves are emitted.
+    /// Antigravity settings name tools, never paths: a <c>read:C:/...</c> entry does nothing at all,
+    /// and an entry the host does not recognise is silently inert — indistinguishable from one being
+    /// enforced. Nothing path-shaped is emitted, so nothing reads as isolation that is not.
     /// </summary>
     [Fact]
-    public void TestAntigravityPermissionsNameToolsRatherThanPaths()
+    public void TestAntigravitySettingsNameToolsRatherThanPaths()
     {
         Assert.True(ProjectGenerator.Create(Options("agyperms")));
 
         var settings = File.ReadAllText(Path.Combine(root, "agyperms", ".agents", "settings.json"));
-        Assert.Contains("mcp:polson:*", settings, StringComparison.Ordinal);
-        Assert.DoesNotContain("read:", settings, StringComparison.Ordinal);
+        foreach (var pathish in new[] { "read:", "write:", "glob:", "grep:", "edit:" })
+        {
+            Assert.DoesNotContain(pathish, settings, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Antigravity auto-approves through <c>mcp.autoApprove</c>, with names dotted as
+    /// <c>&lt;server&gt;.&lt;Tool&gt;</c> — a different key and a different separator from the
+    /// <c>permissions</c> block beside it.
+    /// </summary>
+    /// <remarks>
+    /// Taken from a settings file the desktop wrote itself, which is the only authoritative sample.
+    /// A generated project carrying only the <c>permissions</c> form stopped for approval on every
+    /// call, which is what the wrong schema looks like: not an error, just a rule that never applies.
+    /// </remarks>
+    [Fact]
+    public void TestAntigravityAutoApprovesEveryServerTool()
+    {
+        Assert.True(ProjectGenerator.Create(Options("autoapprove")));
+
+        var approved = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "autoapprove", ".agents", "settings.json")))
+            .RootElement.GetProperty("mcp").GetProperty("autoApprove")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+
+        Assert.Equal(
+            ["polson.ExecuteScript", "polson.History", "polson.MeasureSvgPath", "polson.RenderSvg", "polson.Search"],
+            approved);
+    }
+
+    /// <summary>Claude Code allows the server's tools by their <c>mcp__server__Tool</c> names.</summary>
+    [Fact]
+    public void TestClaudeAllowsEveryServerToolByName()
+    {
+        Assert.True(ProjectGenerator.Create(Options("byname", o => o.Sdk = "claude")));
+
+        var settings = File.ReadAllText(Path.Combine(root, "byname", ".claude", "settings.local.json"));
+        foreach (var tool in new[] { "Search", "ExecuteScript", "History", "RenderSvg", "MeasureSvgPath" })
+        {
+            Assert.Contains($"mcp__polson__{tool}", settings, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Image generation is refused two ways on Antigravity, because two forms were given as valid and
+    /// which one a given build honours is not something we can check from here.
+    /// </summary>
+    /// <remarks>
+    /// <c>tools.disabled</c> removes the tool outright, so it never reaches the model's context;
+    /// <c>permissions</c> refuses it if called. Note that <c>permissions</c> here maps a tool to a
+    /// verdict — it is not the <c>{allow, deny}</c> arrays this file used to carry, which no
+    /// host-written sample contains and which prompted for every call when we tried it.
+    /// </remarks>
+    [Fact]
+    public void TestAntigravityRefusesImageGenerationTwoWays()
+    {
+        Assert.True(ProjectGenerator.Create(Options("imgdeny")));
+
+        var root_ = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "imgdeny", ".agents", "settings.json"))).RootElement;
+
+        var disabled = root_.GetProperty("tools").GetProperty("disabled")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Contains("generate_image", disabled);
+
+        var permissions = root_.GetProperty("permissions");
+        Assert.Equal("deny", permissions.GetProperty("generate_image").GetString());
+        Assert.Equal("deny", permissions.GetProperty("default_api:generate_image").GetString());
+    }
+
+    /// <summary>The shell is refused only where a public URL could reach it, matching agent.config.json.</summary>
+    [Fact]
+    public void TestTheShellIsRefusedOnStandaloneOnly()
+    {
+        Assert.True(ProjectGenerator.Create(Options("shell-managed")));
+        Assert.True(ProjectGenerator.Create(Options("shell-standalone", o => o.Standalone = true)));
+
+        Assert.DoesNotContain("run_command", File.ReadAllText(Path.Combine(root, "shell-managed", ".agents", "settings.json")));
+        Assert.Contains("run_command", File.ReadAllText(Path.Combine(root, "shell-standalone", ".agents", "settings.json")));
     }
 
     string DeniedTools(string name)
@@ -522,7 +738,7 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// rather than falling back to a default the caller did not ask for.
     /// </summary>
     [Theory]
-    [InlineData("comic")]
+    [InlineData("storyboard")]
     [InlineData("../logo")]
     [InlineData("")]
     public void TestUnknownWorkflowIsRefused(string workflow) =>

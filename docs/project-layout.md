@@ -51,11 +51,19 @@ differs between an Antigravity project and a Claude Code one — the contents ar
 | | `agy` (Google Antigravity) | `claude` (Claude Code) |
 | :--- | :--- | :--- |
 | instructions | `GEMINI.md` | `CLAUDE.md` |
-| wiring | `mcp_config.json` **and** `.agents/mcp_config.json` | `.mcp.json` |
+| wiring | `.agents/mcp_config.json` | `.mcp.json` |
 | permissions | `.agents/settings.json` | `.claude/settings.local.json` |
 
 The **workflow** picks the templates those instructions render from: `logo` for a client design
-project, `harness` for an SDK-evaluation run that also asks the agent for a `findings.md`. The
+project, `harness` for an SDK-evaluation run that also asks the agent for a `findings.md`,
+`comic_studio` for a four-role studio reproducing a reference image.
+
+A workflow whose name ends in **`_studio`** is multi-agent. That is a convention for the reader; what
+the generator actually keys on is whether the workflow ships a `roles/` directory, which is
+checkable rather than inferred from a name. A multi-agent workflow additionally emits its role specs,
+and — for Antigravity, which has somewhere to put them — a `.agents/agents.json` registry derived
+from those files, so the registry cannot name an agent whose prompt is missing. Claude Code has no
+registry, and needs none: the same roles run as sequential personas from the same files. The
 optional **type** selects a section within that workflow, and *what a type means is the workflow's
 business* — for `harness` it is the task (`image`, the default, or `logo`); for `logo` it is the
 stylistic frame of Manual 12 §2.5b (`geometric`, `modern`, `antique`).
@@ -74,14 +82,24 @@ because the isolation rule is backed differently on each host — Claude Code's 
 paths, Antigravity's name tools and commands only — and a harness that claims an enforcement it does
 not have measures nothing.
 
-`--brief` and `--prompt` are the same channel: `--prompt` is the one-line form, both are sanitised
-and quoted into `brief.md` between the markers, and giving both is refused rather than silently
-dropping one. Nothing supplied on the command line reaches the instructions as instruction.
+`--brief` and `--prompt` are two ways into the same channel: `--brief` reads a **file**, `--prompt`
+takes the **text**. Both are sanitised and quoted into `brief.md` between the markers, and giving
+both is refused rather than silently dropping one. Nothing supplied on the command line reaches the
+instructions as instruction.
 
-Antigravity gets the wiring in both places because the working harness carries both and which one
-the desktop host actually reads is unverified. They are two serialisations of one object, so they
-cannot drift; drop one once the host confirms which it reads. A wrong guess here would leave the
-agent with no MCP server **and no error** — the worst failure mode in this system.
+`--brief` is a path and only a path. It previously accepted either, falling back to treating the
+argument as the brief text — so a mistyped path quietly *became* the brief, and the agent read its
+client brief as `C:\typo\brief.txt` with nothing to show anything had gone wrong. A path argument
+that takes text on failure cannot report a typo, because a typo is indistinguishable from a short
+brief.
+
+`.agents/` is Antigravity's canonical workspace configuration directory — the wiring sits alongside
+`settings.json`, `rules/` and `skills/` there. The host also reads a copy at the project root, but
+only as a fallback for generic MCP tooling, so the generator writes one file. The orchestrator still
+looks in both places, because projects generated earlier put it at the root.
+
+Getting this wrong leaves the agent with no MCP server **and no error** — which is how it presented:
+an agent reporting it had no `polson:*` tools, with nothing in any log to say why.
 
 `session/` is SDK-shaped internally (`appdata/brain/<conversation_id>/…`). Keep it in its own
 subtree so its layout can change without touching ours, and `.gitignore` it — it is regenerable

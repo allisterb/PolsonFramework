@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "cs-1",
+  "workflow": "comic_studio",
+  "sdk": "claude",
+  "profile": "managed",
+  "createdUtc": "2026-08-29T19:33:27.2264502Z"
+}

@@ -58,18 +58,47 @@ internal static class ProjectGenerator
     /// names differ, and that is the entire difference between an Antigravity project and a Claude
     /// Code one, which is why the SDK is the first thing <see cref="Create"/> branches on.
     /// <para>
-    /// Antigravity gets the wiring twice, at the project root and inside <c>.agents/</c>, because the
-    /// working harness carries both and which one the desktop host actually reads is unverified. Two
-    /// serialisations of one object cannot drift; a wrong guess here would leave the agent with no
-    /// MCP server and, per the run record, no error either — the worst failure mode we have found.
-    /// Drop one once the desktop host confirms which it reads.
+    /// Antigravity's wiring goes in <c>.agents/</c>, which is its canonical workspace configuration
+    /// directory — alongside <c>.agents/settings.json</c>, <c>rules/</c> and <c>skills/</c>. It also
+    /// reads a copy at the project root, but only as a fallback for generic MCP tooling, and one file
+    /// is the honest state now that the question is settled. This was written to both locations while
+    /// which one the host read was unknown.
     /// </para>
     /// </remarks>
-    readonly record struct HostFiles(string Instructions, string[] McpConfig, string Permissions)
+    readonly record struct HostFiles(string Instructions, string McpConfig, string Permissions)
     {
         public static HostFiles For(string sdk) => sdk == "agy"
-            ? new("GEMINI.md", [".agents/mcp_config.json", "mcp_config.json"], ".agents/settings.json")
-            : new("CLAUDE.md", [".mcp.json"], ".claude/settings.local.json");
+            ? new("GEMINI.md", ".agents/mcp_config.json", ".agents/settings.json")
+            : new("CLAUDE.md", ".mcp.json", ".claude/settings.local.json");
+    }
+
+    /// <summary>
+    /// One specialised agent in a multi-agent workflow, read from the role file itself.
+    /// </summary>
+    /// <remarks>
+    /// Both fields come from the file rather than a list kept beside it: the name from
+    /// <c>roles/NN_name.md</c>, the description from its first heading. A workflow gains an agent by
+    /// gaining a file, and the registry cannot disagree with the prompt it points at.
+    /// </remarks>
+    readonly record struct Role(string Name, string Description, string PromptFile)
+    {
+        public static Role? From(string path, string body)
+        {
+            if (!path.StartsWith("roles/", StringComparison.Ordinal)) return null;
+
+            // "roles/01_penciler.md" -> "penciler"; the number orders the pipeline and is not the name.
+            var stem = Path.GetFileNameWithoutExtension(path);
+            var name = stem.Split('_', 2) is [var lead, var rest] && lead.All(char.IsDigit) ? rest : stem;
+
+            var heading = body.Split('\n').FirstOrDefault(l => l.StartsWith("# ", StringComparison.Ordinal)) ?? name;
+            var description = heading[2..].Trim();
+            if (description.StartsWith("Role:", StringComparison.OrdinalIgnoreCase))
+            {
+                description = description["Role:".Length..].Trim();
+            }
+
+            return new Role(name, description, path);
+        }
     }
     #endregion
 
@@ -116,12 +145,21 @@ internal static class ProjectGenerator
             type = fallback;
         }
 
-        // One channel for what to make, so there is one place the trust boundary sits. --prompt is
-        // the short form; both are quoted into brief.md as data. Taking both would mean silently
-        // dropping one.
+        // One channel for what to make, so there is one place the trust boundary sits: --brief reads
+        // a file, --prompt takes the text directly, and both are quoted into brief.md as data.
+        // Taking both would mean silently dropping one.
         if (opts.Brief.Length > 0 && opts.Prompt.Length > 0)
         {
-            return Fail("Give --brief or --prompt, not both. --prompt is the one-line form of the same thing.");
+            return Fail("Give --brief or --prompt, not both. --brief reads a file; --prompt takes the text itself.");
+        }
+
+        // A path, never the text. When this accepted either, a mistyped path quietly *became* the
+        // brief, and the agent read its client brief as `C:\typo\brief.txt` — a failure with no
+        // symptom until someone looked at the generated file.
+        if (opts.Brief.Length > 0 && !File.Exists(opts.Brief))
+        {
+            return Fail($"No such brief file: {opts.Brief}\n"
+                      + "       --brief takes a path. To pass the text itself, use --prompt.");
         }
 
         // Reported rather than thrown: this is a plausible thing to type, not a bug, and every other
@@ -152,7 +190,17 @@ internal static class ProjectGenerator
 
         var host = HostFiles.For(sdk);
         var profile = opts.Standalone ? "standalone" : "managed";
-        var brief = SanitizeBrief(ReadBrief(opts.Brief.Length > 0 ? opts.Brief : opts.Prompt));
+        string briefText;
+        try
+        {
+            briefText = ReadBrief(opts);
+        }
+        catch (Exception ex)   // present but unreadable: a directory, a lock, a permission
+        {
+            return Fail($"Could not read the brief file {opts.Brief}: {ex.Message}");
+        }
+
+        var brief = SanitizeBrief(briefText);
         var createdUtc = DateTime.UtcNow.ToString("O");
 
         var dirs = new List<string> { "artifacts", "scripts", "events" };
@@ -184,9 +232,28 @@ internal static class ProjectGenerator
         WriteText(dir, ".gitignore", GitIgnore(opts.Standalone));
         WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, opts.Standalone));
 
-        var wiring = McpConfig();
-        foreach (var name in host.McpConfig) WriteJson(dir, name, wiring);
-        WriteJson(dir, host.Permissions, Permissions(sdk));
+        // Roles, checklists, anything else the workflow ships. Rendered like the rest, so they can
+        // carry the same tokens.
+        var roles = new List<Role>();
+        foreach (var extra in ExtraTemplates(workflow))
+        {
+            var path = ResourcePath(extra);
+            var body = Render(workflow, extra, tokens);
+            WriteText(dir, path, body);
+
+            if (Role.From(path, body) is { } role) roles.Add(role);
+        }
+
+        WriteJson(dir, host.McpConfig, McpConfig(dir));
+        WriteJson(dir, host.Permissions, Permissions(sdk, opts.Standalone));
+
+        // Only Antigravity has a registry to write to. A Claude Code director runs the same roles as
+        // sequential personas, reading the same files, which is what the instructions describe for
+        // both — so nothing is lost where there is nowhere to register them.
+        if (sdk == "agy" && roles.Count > 0)
+        {
+            WriteJson(dir, ".agents/agents.json", MultiAgentConfig(id, host.Instructions, roles));
+        }
 
         if (opts.Standalone)
         {
@@ -238,11 +305,13 @@ internal static class ProjectGenerator
         return text.Length == 0 ? "(no brief supplied — ask the director for one)" : text;
     }
 
-    /// <summary>Treats the argument as a file path if one exists, otherwise as the brief text itself.</summary>
-    static string ReadBrief(string briefArg) =>
-        string.IsNullOrWhiteSpace(briefArg) ? string.Empty
-        : File.Exists(briefArg) ? File.ReadAllText(briefArg)
-        : briefArg;
+    /// <summary>Reads the brief: the contents of <c>--brief</c>'s file, or <c>--prompt</c> verbatim.</summary>
+    /// <remarks>
+    /// Existence is checked in <see cref="Create"/> so a missing file is reported as a refusal rather
+    /// than an exception; anything still failing here is unreadable rather than absent, and says so.
+    /// </remarks>
+    static string ReadBrief(CreateProjectOptions opts) =>
+        opts.Brief.Length == 0 ? opts.Prompt : File.ReadAllText(opts.Brief);
 
     /// <summary>Every workflow that has an instructions template embedded.</summary>
     /// <remarks>
@@ -305,6 +374,45 @@ internal static class ProjectGenerator
         return [.. names];
     }
 
+    /// <summary>
+    /// Everything else a workflow ships — role specs, checklists — beyond its instructions, brief and
+    /// type sections. Returned as flattened resource suffixes, e.g. <c>roles.01_penciler.md</c>.
+    /// </summary>
+    /// <remarks>
+    /// Discovered, like workflows and types, so a multi-agent workflow gains a role by gaining a file.
+    /// </remarks>
+    static string[] ExtraTemplates(string workflow)
+    {
+        var prefix = $"{ResourcePrefix}{workflow}.";
+        var names = new List<string>();
+
+        foreach (var resource in typeof(ProjectGenerator).Assembly.GetManifestResourceNames())
+        {
+            var start = resource.IndexOf(prefix, StringComparison.Ordinal);
+            if (start < 0) continue;
+
+            var relative = resource[(start + prefix.Length)..];
+            if (relative is "instructions.md" or "brief.md") continue;
+            if (relative.StartsWith("type.", StringComparison.Ordinal)) continue;
+            if (!relative.EndsWith(".md", StringComparison.Ordinal)) continue;
+
+            names.Add(relative);
+        }
+
+        names.Sort(StringComparer.Ordinal);
+        return [.. names];
+    }
+
+    /// <summary>
+    /// Turns a flattened resource suffix back into the path it should be written to.
+    /// </summary>
+    /// <remarks>
+    /// Embedding flattens directories into dots, so <c>roles.01_penciler.md</c> is
+    /// <c>roles/01_penciler.md</c> on disk. Every segment but the extension becomes a directory.
+    /// </remarks>
+    static string ResourcePath(string relative) =>
+        string.Join('/', relative[..^".md".Length].Split('.')) + ".md";
+
     /// <summary>Loads an embedded template and substitutes <c>{{TOKEN}}</c> placeholders.</summary>
     static string Render(string workflow, string name, Dictionary<string, string> tokens)
     {
@@ -353,36 +461,68 @@ internal static class ProjectGenerator
     /// The server needs no awareness of whether a human is attached: <c>ask_question</c> is a
     /// built-in of the agent runtime, handled by the host, not by us.
     /// <para>
-    /// <see cref="Environment.ProcessPath"/> is the apphost when this was launched as
-    /// <c>Polson.CLI.exe</c>, but the shared <c>dotnet</c> host when it was launched as
-    /// <c>dotnet Polson.CLI.dll</c> — in which case the assembly is an <em>argument</em> rather than
-    /// the command, and taking the process path alone wires the project to <c>dotnet server</c>,
-    /// which cannot start. The generated file has to work whichever way the generator was invoked.
+    /// Always <c>dotnet</c> with the assembly as an argument, never the apphost — <c>Polson.CLI.exe</c>
+    /// does not exist on Linux, so naming it makes the generated file platform-specific for no gain.
+    /// It also matches the one wiring observed to work end to end in Antigravity Desktop, which is
+    /// worth more than a shape we reasoned our way to: a host that cannot launch the command shows an
+    /// agent with no tools and no error to explain it.
+    /// </para>
+    /// <para>
+    /// Absolute paths, forward-slashed. A relative <c>--project-dir</c> resolves against whatever
+    /// working directory the host happens to use, and when it resolves wrongly the server still
+    /// starts and still draws — it just records nothing, which is the failure mode with no symptom.
+    /// Movability is the lesser property; regenerate with <c>--force</c> after moving a project.
     /// </para>
     /// </remarks>
-    static object McpConfig()
+    static object McpConfig(string projectDir) => new
     {
-        var process = Environment.ProcessPath;
-        var sharedHost = process is null ||
-            Path.GetFileNameWithoutExtension(process).Equals("dotnet", StringComparison.OrdinalIgnoreCase);
-
-        var command = sharedHost ? process ?? "dotnet" : process;
-        string[] args = sharedHost
-            ? [Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll"), "server", "--project-dir", "."]
-            : ["server", "--project-dir", "."];
-
-        return new
+        mcpServers = new
         {
-            mcpServers = new
+            polson = new
             {
-                polson = new
+                command = "dotnet",
+                args = new[]
                 {
-                    command,
-                    args,
+                    Forward(Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll")),
+                    "server",
+                    "--project-dir",
+                    Forward(projectDir),
                 },
             },
-        };
-    }
+        },
+    };
+
+    /// <summary>Forward slashes, which every platform accepts and JSON does not have to escape.</summary>
+    static string Forward(string path) => path.Replace('\\', '/');
+
+    /// <summary>
+    /// Registers a workflow's roles as Antigravity subagents.
+    /// </summary>
+    /// <remarks>
+    /// Derived entirely from the role files, so the registry cannot name an agent whose prompt is
+    /// missing, or miss one that exists. Paths are relative to <c>.agents/</c>, which is where this
+    /// file lives.
+    /// <para>
+    /// Unverified, like most of this host's schema: the shape follows the hand-written registry in
+    /// <c>tests/multi_agent/comic_studio</c>, and no sample the desktop wrote itself was available to
+    /// check it against. The workflow does not depend on it — its instructions describe running the
+    /// roles as sequential personas, which needs no host support at all, and the registry is an
+    /// optimisation the host may or may not take.
+    /// </para>
+    /// </remarks>
+    static object MultiAgentConfig(string id, string instructions, IReadOnlyList<Role> roles) => new
+    {
+        version = "1.0",
+        name = id,
+        orchestrator = new { role = "Studio Director", promptFile = $"../{instructions}" },
+        subagents = roles.Select(r => new
+        {
+            name = r.Name,
+            role = r.Description,
+            promptFile = $"../{r.PromptFile}",
+            tools = ToolNames().Select(t => $"polson.{t}").Append("view_file").ToArray(),
+        }).ToArray(),
+    };
 
     /// <summary>
     /// Tool policy and SDK directories for the orchestrator.
@@ -419,24 +559,42 @@ internal static class ProjectGenerator
     /// image-generation tool, so there is nothing to deny there either way.
     /// </para>
     /// </remarks>
-    static object Permissions(string sdk) => sdk == "agy"
-        ? new
-        {
-            permissions = new
+    static object Permissions(string sdk, bool standalone)
+    {
+        var denied = standalone ? [.. AlwaysDenied, .. StandaloneDenied] : AlwaysDenied;
+
+        return sdk == "agy"
+            ? new
             {
-                allow = new[] { "mcp:polson:*" },
-                deny = new[] { "bash:node*", "bash:python*", "bash:npm*", "bash:dotnet*" },
-            },
-        }
-        : (object)new
-        {
-            permissions = new
+                // The shape Antigravity Desktop actually reads: `mcp.autoApprove`, with names dotted
+                // as `<server>.<Tool>`. Taken from a settings file the desktop wrote itself
+                // (`tests/multi_agent/comic_studio/.agents/settings.json`). Without it every call
+                // stops for approval — as two rounds of the `permissions` form below demonstrated.
+                mcp = new { autoApprove = ToolNames().Select(t => $"polson.{t}").ToArray() },
+
+                // Removes the tool rather than refusing it, so it never reaches the model's context
+                // and no tokens are spent being told no. The stronger of the two forms.
+                tools = new { disabled = denied },
+
+                // And the refusal, in case a host honours one form and not the other. Note the shape:
+                // `permissions` here maps a tool to a verdict — it is **not** the `{allow: [], deny: []}`
+                // arrays this file used to carry, which no host-written sample contains and which
+                // prompted for every call when we tried it. Both the bare name and the
+                // `default_api:`-prefixed spelling are named, because both were given as valid.
+                permissions = denied
+                    .SelectMany(t => new[] { t, $"default_api:{t}" })
+                    .ToDictionary(t => t, _ => "deny"),
+            }
+            : (object)new
             {
-                defaultMode = "default",
-                allow = ToolNames().Select(t => $"mcp__polson__{t}").Concat(["Read", "Write", "Edit", "Glob", "Grep"]).ToArray(),
-                deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" },
-            },
-        };
+                permissions = new
+                {
+                    defaultMode = "default",
+                    allow = ToolNames().Select(t => $"mcp__polson__{t}").Concat(["Read", "Write", "Edit", "Glob", "Grep"]).ToArray(),
+                    deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" },
+                },
+            };
+    }
 
     /// <summary>
     /// How the harness's isolation rule is actually backed on this host — which is not the same
@@ -519,8 +677,23 @@ internal static class ProjectGenerator
         File.WriteAllText(path, body.ReplaceLineEndings("\n"), new UTF8Encoding(false));
     }
 
+    /// <summary>
+    /// Relaxed escaping, because these files are read by people as well as parsed.
+    /// </summary>
+    /// <remarks>
+    /// The strict default turns every <c>&amp;</c>, <c>&lt;</c> and <c>+</c> into a <c>\uXXXX</c>
+    /// escape, so a role described as "Composition &amp; Pose" lands as
+    /// <c>"Composition & Pose"</c>. Both parse to the same string; only one is readable in a
+    /// diff. The same choice, for the same reason, as <c>RunEventLog</c>.
+    /// </remarks>
+    static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     static void WriteJson(string dir, string name, object value) =>
-        WriteText(dir, name, JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
+        WriteText(dir, name, JsonSerializer.Serialize(value, JsonOptions));
 
     static void Report(string dir, string id, string workflow, string type, string sdk, bool standalone, HostFiles host)
     {
@@ -532,9 +705,10 @@ internal static class ProjectGenerator
 
         if (!standalone)
         {
-            AnsiConsole.MarkupLine("[yellow]  Note:[/] the host owns tool policy in a managed project, so the");
-            AnsiConsole.MarkupLine($"        image-generation prohibition is carried in [bold]{Markup.Escape(host.Instructions)}[/] as a rule");
-            AnsiConsole.MarkupLine("        the agent must follow, not as a config entry we can enforce.");
+            AnsiConsole.MarkupLine("[yellow]  Note:[/] the host owns tool policy in a managed project. Image generation is");
+            AnsiConsole.MarkupLine($"        refused two ways in [bold]{Markup.Escape(host.Permissions)}[/], and carried in");
+            AnsiConsole.MarkupLine($"        [bold]{Markup.Escape(host.Instructions)}[/] as a rule as well — which form this host honours");
+            AnsiConsole.MarkupLine("        is not something we can check from here.");
             AnsiConsole.WriteLine();
         }
 

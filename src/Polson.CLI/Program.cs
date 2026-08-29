@@ -1,6 +1,7 @@
 namespace Polson.CLI;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -37,6 +38,12 @@ internal class Program : Runtime
     #region Methods
     static async Task Main(string[] args)
     {
+        // A bare invocation is a request for help, not a request to start the server. `server` is the
+        // default verb because that is how an MCP host launches us, but a person typing the bare
+        // command got a process waiting silently on stdin — indistinguishable from a hang, and
+        // printing nothing, because stdio mode keeps standard output clear for JSON-RPC framing.
+        if (args.Length == 0) args = ["--help"];
+
         var isHttp = args.Contains("--http", StringComparer.OrdinalIgnoreCase);
         var isEval = args.Length > 0 && string.Equals(args[0], "eval", StringComparison.OrdinalIgnoreCase);
         var isCreate = args.Length > 0 && string.Equals(args[0], "create-project", StringComparison.OrdinalIgnoreCase);
@@ -70,7 +77,7 @@ internal class Program : Runtime
                 async (ServerOptions opts) => await HandleServerArgs(opts),
                 async (EvalOptions opts) => await HandleEvalArgs(opts),
                 (CreateProjectOptions opts) => HandleCreateProjectArgs(opts),
-                errs => Task.CompletedTask
+                errs => ReportParseFailure(errs)
             );
         }
         catch (Exception ex)
@@ -147,6 +154,23 @@ internal class Program : Runtime
                 JsDrawingEngine.ScriptTimeoutSeconds, projectDir);
             await PolsonMCPServer.RunStdioAsync(config, projectDir);
         }
+    }
+
+    /// <summary>
+    /// Fails the process when the command line could not be parsed.
+    /// </summary>
+    /// <remarks>
+    /// The parser has already written what went wrong; what was missing is the exit code. Without
+    /// one, a mistyped flag and a successful run are indistinguishable to a script, and
+    /// <c>create-project … || exit 1</c> never fires. Asking for help or the version is not a
+    /// failure, so those keep exit 0.
+    /// </remarks>
+    static Task ReportParseFailure(IEnumerable<Error> errors)
+    {
+        var asked = errors.All(e => e is HelpRequestedError or HelpVerbRequestedError or VersionRequestedError);
+        if (!asked) Environment.ExitCode = 1;
+
+        return Task.CompletedTask;
     }
 
     static Task HandleCreateProjectArgs(CreateProjectOptions opts)

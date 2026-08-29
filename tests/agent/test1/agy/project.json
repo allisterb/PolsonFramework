@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "agy",
+  "workflow": "harness",
+  "type": "image",
+  "sdk": "agy",
+  "profile": "managed",
+  "createdUtc": "2026-08-29T18:54:10.7166411Z"
+}

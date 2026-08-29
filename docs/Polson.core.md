@@ -481,7 +481,7 @@ ctx.fillRect(0, 0, 800, 600);
 
 ## `Skia.Image` & `Skia.Bitmap`
 
-- `Skia.Image.load(filePath: string)` → `SkiaBitmapWrapper` — Loads and decodes a raster image from disk (PNG, JPEG, WebP, BMP).
+- `Skia.Image.load(filePath: string)` → `SkiaBitmapWrapper` — Loads and decodes a raster image from disk (PNG, JPEG, WebP, BMP). **The path is relative to the project directory, exactly as `outFile` is**, so `Skia.Image.load('artifacts/stage1.webp')` reads back what `outFile: 'artifacts/stage1.webp'` wrote. A path resolving outside the project is refused with the same message a write gets.
 - `Skia.Image.fromDataUrl(dataUrl: string)` → `SkiaBitmapWrapper` — Decodes base64 data URL.
 - `Skia.Image.fromBytes(bytes: byte[])` → `SkiaBitmapWrapper` — Decodes raw byte buffer.
 - `Skia.Bitmap.create(width: number, height: number)` → `SkiaBitmapWrapper` — Allocates a blank editable bitmap.

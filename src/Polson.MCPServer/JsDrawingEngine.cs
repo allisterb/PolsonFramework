@@ -35,6 +35,16 @@ public partial class JsDrawingEngine : Runtime
     public static AssetRequisitionToolkit? Assets { get; set; }
 
     /// <summary>
+    /// The project directory a script's file paths resolve against. Null for an ad-hoc server.
+    /// </summary>
+    /// <remarks>
+    /// An instance property rather than a static, unlike the two above: the tests run several
+    /// projects in one process, and a static root would let one project's containment apply to
+    /// another's execution. Set by <see cref="DrawingMcpTools"/>, which owns the root.
+    /// </remarks>
+    public string? ProjectRoot { get; set; }
+
+    /// <summary>
     /// The run's record, so a script can declare its stage and add notes. Null outside a project.
     /// </summary>
     /// <remarks>
@@ -103,7 +113,7 @@ public partial class JsDrawingEngine : Runtime
             engine.SetValue("mina", mina);
 
             // Pure .NET Skia API namespace
-            var skiaApi = new SkiaApi();
+            var skiaApi = new SkiaApi(ProjectRoot);
             engine.SetValue("Skia", skiaApi);
             engine.SetValue("SK", skiaApi);
 

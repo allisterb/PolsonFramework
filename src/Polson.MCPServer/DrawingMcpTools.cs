@@ -31,6 +31,9 @@ public class DrawingMcpTools
         ProjectRoot = string.IsNullOrWhiteSpace(projectRoot) ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectRoot));
         Events = new RunEventLog(ProjectRoot);
         Engine.Events = Events;
+
+        // So a script's file paths mean the same thing the tool's outFile does.
+        Engine.ProjectRoot = ProjectRoot;
     }
     #endregion
 
@@ -127,28 +130,7 @@ public class DrawingMcpTools
 
     internal string ResolveOutputPath(string path, string parameterName)
     {
-        var full = string.IsNullOrEmpty(ProjectRoot)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(ProjectRoot, path));
-
-        if (!string.IsNullOrEmpty(ProjectRoot))
-        {
-            // Case-insensitive only where the filesystem is: on Linux "/a" and "/A" are different
-            // directories, and ignoring case there would accept an escape as if it were contained.
-            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-
-            // The trailing separator stops "C:\proj" from matching a sibling "C:\project-two".
-            var contained = full.Equals(ProjectRoot, comparison)
-                || full.StartsWith(ProjectRoot + Path.DirectorySeparatorChar, comparison);
-
-            if (!contained)
-            {
-                throw new ArgumentException(
-                    $"'{path}' resolves to '{full}', which is outside this project's directory " +
-                    $"('{ProjectRoot}'). Write to a path inside the project, such as 'artifacts/stage1.webp'.",
-                    parameterName);
-            }
-        }
+        var full = ProjectPath.Resolve(ProjectRoot, path, parameterName, "Write to");
 
         var dir = Path.GetDirectoryName(full);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))

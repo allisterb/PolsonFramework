@@ -146,6 +146,56 @@ public class ProjectContainmentTests : TestsRuntime, IDisposable
         }
     }
 
+    /// <summary>
+    /// A path written with <c>outFile</c> can be read back with <c>Skia.Image.load</c>.
+    /// </summary>
+    /// <remarks>
+    /// It could not: <c>outFile</c> resolved against the project, <c>Skia.Image.load</c> against the
+    /// server's working directory, so the same string meant two places and the second reported the
+    /// file missing. A harness agent hit this, worked around it with <c>canvas.toBitmap()</c>, and
+    /// mentioned it only in passing — the kind of defect that survives precisely because the
+    /// workaround is easy.
+    /// </remarks>
+    [Fact]
+    public async Task TestAPathWrittenWithOutFileCanBeReadBack()
+    {
+        var tools = Contained();
+
+        var written = await tools.ExecuteScript(Script, outFile: "artifacts/round-trip.webp");
+        Assert.True(written.Success, written.Error);
+
+        var read = await tools.ExecuteScript(
+            "const b = Skia.Image.load('artifacts/round-trip.webp'); log('loaded ' + b.width + 'x' + b.height);");
+
+        Assert.True(read.Success, read.Error);
+        Assert.Contains("loaded 64x64", string.Join('\n', read.Logs));
+    }
+
+    /// <summary>Reading is contained too, and refused with the same message shape as a write.</summary>
+    /// <remarks>
+    /// Reading is the milder direction, but a harness whose premise is that the agent cannot reach
+    /// outside its directory does not get an exception for the direction that alarms less.
+    /// </remarks>
+    [Fact]
+    public async Task TestReadingOutsideTheProjectIsRefused()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "polson-outside-" + Guid.NewGuid().ToString("N") + ".webp");
+        await File.WriteAllBytesAsync(outside, [0x00]);
+
+        try
+        {
+            var tools = Contained();
+            var result = await tools.ExecuteScript($"Skia.Image.load({System.Text.Json.JsonSerializer.Serialize(outside)});");
+
+            Assert.False(result.Success);
+            Assert.Contains("outside this project's directory", result.Error ?? "", StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (File.Exists(outside)) File.Delete(outside);
+        }
+    }
+
     [Fact]
     public void TestProjectRootIsNullWhenNotConfigured() => Assert.Null(new DrawingMcpTools().ProjectRoot);
 

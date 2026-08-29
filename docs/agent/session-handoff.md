@@ -175,7 +175,7 @@ start anything. `Environment.ProcessPath` is the apphost only when launched as `
 The signature changed, and so did the thing it branches on:
 
 ```bash
-polson create-project <directory> <id> <sdk> [--standalone] [--workflow logo] [--brief …]
+polson create-project <directory> <id> <sdk> [--standalone] [--workflow W] [--type T] [--brief PATH | --prompt TEXT]
 polson create-project projects acme agy --standalone
 ```
 
@@ -208,6 +208,127 @@ The Claude permission file's allowlist is **derived by reflecting over `DrawingM
 cannot fall behind a tool being added — a stale allowlist would tell an agent it lacks a capability
 it actually has.
 
+### Antigravity auto-approval is `mcp.autoApprove`, not `permissions.allow`
+
+```json
+{ "mcp": { "autoApprove": ["polson.ExecuteScript", "polson.Search", … ] } }
+```
+
+Different key, and **dotted** names rather than colon-separated. Two rounds of `permissions.allow`
+were tried against a live desktop first — the wildcard `mcp:polson:*`, then every tool enumerated as
+`mcp:polson:ExecuteScript` — and both prompted for approval on every call. That is what the wrong
+schema looks like: no error, just a rule that never applies.
+
+The authoritative sample is `tests/multi_agent/comic_studio/.agents/settings.json`, which
+**Antigravity Desktop wrote itself**.
+
+### And denying a builtin, which was the other open question
+
+Answered by asking the desktop directly, and both forms are emitted because which one a given build
+honours cannot be checked from here:
+
+```json
+{ "tools":       { "disabled": ["generate_image"] },
+  "permissions": { "generate_image": "deny", "default_api:generate_image": "deny" } }
+```
+
+`tools.disabled` is the stronger one — it removes the tool rather than refusing it, so it never
+reaches the model's context and no tokens are spent being told no, the same distinction the SDK draws
+between `CapabilitiesConfig.disabled_tools` and a policy deny.
+
+Note the shape of `permissions`: a **map from tool to verdict**. It is not the `{allow: [], deny: []}`
+arrays this file used to carry — that form appears in no host-written sample, and a project carrying
+it prompted for every call. Those arrays are gone, along with their `bash:*` denies, which were
+almost certainly inert. The shell is now refused as `run_command` on standalone only, matching
+`agent.config.json`.
+
+Names on every list come from reflecting over `DrawingMcpTools`, so none can fall behind a tool being
+added.
+
+The harness instructions still carry the image-generation prohibition as a *rule*, deliberately: the
+config is unverified, and a conservative instruction costs nothing if the deny works while an
+overconfident one costs the run if it does not.
+
+The lesson worth carrying: the answer was in the repository both times this went wrong, in a file the
+host generated. Searching for a syntax we had already assumed (`grep -rl 'mcp:polson'`) would have
+missed this one entirely — search for the **server name** across every settings file instead, and
+trust a host-written file over one of ours.
+
+### The MCP wiring: `dotnet`, and absolute paths
+
+Generated wiring is now always `command: "dotnet"` with the absolute assembly as `args[0]`, an
+absolute `--project-dir`, and forward slashes throughout. Two reasons, one of them measured:
+
+- **`Polson.CLI.exe` does not exist on Linux**, so naming the apphost made the file platform-specific.
+The wiring is written once, to `.agents/mcp_config.json` — Antigravity's canonical workspace
+configuration directory, alongside `settings.json`, `rules/` and `skills/`. The host reads a project-
+root copy too, but only as a fallback for generic MCP tooling, and the schema is identical either
+way. Both were written while this was unknown; one file is the honest state now.
+
+- **`--project-dir "."` resolved to the repository root under Antigravity Desktop.** It launches the
+  server with its own working directory, not the project's, and the evidence was a stray
+  `C:\Projects\Polson\events\server.jsonl` carrying `"project":"C:\\Projects\\Polson"`. Nothing
+  failed: the server started and would have drawn. The record went to the wrong place, and — worse —
+  `outFile` containment is anchored to that root, so a project rooted at the repository would let a
+  render be written anywhere inside it.
+
+The layout document's "keep a project movable" argument loses to that. Regenerate with `--force`
+after moving a project.
+
+**A theory this disproved, worth not re-forming:** an agent reported having no `polson:*` tools, and
+the apphost `command` looked like the cause. It was not — the process table showed
+`Polson.CLI.exe server --project-dir .` running with `language_server.exe` as its parent, so
+Antigravity had read the config and launched it. Whatever caused the missing tools, it was not the
+wiring failing to start.
+
+### A third workflow: `comic_studio`, and multi-agent support
+
+```bash
+polson create-project projects panel1 agy --workflow comic_studio --prompt "…"
+```
+
+Four roles — Penciler, Colorist, Inker, Critic — shipped as `roles/*.md`, with Antigravity getting a
+`.agents/agents.json` derived from those files: the name from `roles/NN_name.md`, the description
+from its first heading, the tools from reflecting over the server. The registry cannot name an agent
+whose prompt is missing, and a test asserts every `promptFile` it points at was actually written.
+Claude Code gets no registry and needs none — the same roles run as sequential personas.
+
+**`_studio` is the naming convention for multi-agent workflows**, but the generator keys on the
+presence of `roles/`, not on the name. A convention tells a reader; a directory tells the code.
+
+The generator now writes any extra `.md` a workflow ships, at the path its resource name implies
+(`roles.01_penciler.md` → `roles/01_penciler.md`), so a workflow gains a role by gaining a file.
+
+Two things deliberately not carried over from `tests/multi_agent/comic_studio`, which the templates
+came from:
+
+- **The duplicated `manuals/`** — nine files copied from `docs/manuals/`, which the roles cited by
+  path. All eleven references now point at `polson://manual/NN`, which is where an agent under the
+  no-peeking rule can actually reach them, and which cannot drift from the originals.
+- **`.agents/subagents/`** — byte-identical copies of `roles/`. `agents.json` points at `../roles/`
+  instead.
+
+The role prompts were also rewritten to describe the *role* rather than the one panel they were
+written for: no coordinates, no character anatomy, no fixed canvas size. They keep the stage
+constraints that make the pipeline work — the Penciler may not fill colour, the Colorist may not ink,
+the Critic must find five concrete defects and run two refinement passes — because those are what
+stop the stages collapsing into one.
+
+### The CLI's own argument handling
+
+Two fixes worth not re-introducing, both in `Program.Main`:
+
+- **A bare `Polson.CLI.exe` printed nothing and never returned.** `server` is the default verb — which
+  is right, because that is how an MCP host launches it — so no arguments meant "start the stdio
+  server", which waits on standard input forever and, since stdio mode keeps stdout clear for
+  JSON-RPC framing, logs nothing while doing it. Empty arguments are now treated as `--help`.
+- **An unparseable command line exited 0.** The parser wrote what was wrong but nothing set an exit
+  code, so a mistyped flag was indistinguishable from success and `create-project … || exit 1` never
+  fired. `ReportParseFailure` sets 1, except for help and version requests, which are not failures.
+
+`CommandLineTests` drives the shipped `bin/cli` build as a real process for both, with a timeout so a
+regression fails the suite instead of hanging it.
+
 ### `--type` and `--prompt`
 
 ```bash
@@ -229,10 +350,13 @@ Two constraints worth keeping:
 - **A type never sets the archetype.** Manual 12 puts that structural choice at Stage 4, explicitly
   after there are candidate forms to look at; `--type` sets §2.5b's stylistic frame instead, and
   every style template says so in its opening paragraph. A test asserts it.
-- **`--prompt` is `--brief`'s short form, not a second channel.** It goes through the same sanitiser
-  into `brief.md` between the same markers, and giving both is refused rather than silently dropping
-  one. If it landed in the instructions instead it would be a path for supplied text to arrive as
-  *instruction* — harmless from a terminal, exactly wrong once the web app fills it in.
+- **`--brief` is a path; `--prompt` is the text.** One channel, two ways in, and giving both is
+  refused. `--brief` used to accept either and fall back to treating its argument as the brief
+  itself, so a mistyped path silently *became* the client brief — an argument that takes text on
+  failure cannot report a typo, because a typo looks exactly like a short brief.
+- **Neither is a second channel.** Both go through the same sanitiser into `brief.md` between the
+  same markers. If either landed in the instructions instead, it would be a path for supplied text to
+  arrive as *instruction* — harmless from a terminal, exactly wrong once the web app fills it in.
 
 ### Two workflows now, and the second proved the mechanism
 

@@ -15,12 +15,23 @@ using SkiaSharp;
 /// </remarks>
 public class SkiaApi
 {
+    #region Constructors
+    /// <summary>
+    /// Builds the namespace, optionally rooted at a project so file paths resolve against it.
+    /// </summary>
+    /// <remarks>
+    /// The root is passed in per execution rather than held statically: the server hosts one project,
+    /// but the tests host several in one process, and a static would let one leak into another.
+    /// </remarks>
+    public SkiaApi(string? projectRoot = null) => Image = new SkiaImageApi(projectRoot);
+    #endregion
+
     #region Properties
     public SkiaShaderApi Shader { get; } = new();
     public SkiaImageFilterApi ImageFilter { get; } = new();
     public SkiaColorFilterApi ColorFilter { get; } = new();
     public SkiaPathEffectApi PathEffect { get; } = new();
-    public SkiaImageApi Image { get; } = new();
+    public SkiaImageApi Image { get; }
     public SkiaBitmapFactoryApi Bitmap { get; } = new();
     public SkiaFontApi Font { get; } = new();
     public ConstructiveDrawingToolkit Drawing { get; } = new();
@@ -37,14 +48,47 @@ public class SkiaApi
 /// </remarks>
 public class SkiaImageApi
 {
+    #region Fields
+    /// <summary>
+    /// The project directory a relative path resolves against, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a public property: every public member of this class is part of the JS
+    /// surface and has to be documented as such, and an absolute host path is not something a script
+    /// has any use for.
+    /// </remarks>
+    private readonly string? projectRoot;
+    #endregion
+
+    #region Constructors
+    public SkiaImageApi(string? projectRoot = null) => this.projectRoot = projectRoot;
+    #endregion
+
     #region Methods
+    /// <summary>
+    /// Loads an image from a path relative to the project directory.
+    /// </summary>
+    /// <remarks>
+    /// The same resolution as <c>outFile</c>, deliberately: <c>Skia.Image.load('artifacts/x.webp')</c>
+    /// used to resolve against the server's working directory instead, so a path an agent had just
+    /// written to came back as "not found". A path means the same thing whichever call takes it.
+    /// </remarks>
     public SkiaBitmapWrapper Load(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-        if (!File.Exists(filePath))
-            throw new FileNotFoundException($"Image file not found: {filePath}", filePath);
 
-        using var stream = File.OpenRead(filePath);
+        var full = ProjectPath.Resolve(projectRoot, filePath, nameof(filePath), "Read");
+
+        if (!File.Exists(full))
+        {
+            throw new FileNotFoundException(
+                string.IsNullOrEmpty(projectRoot) || full.Equals(filePath, StringComparison.Ordinal)
+                    ? $"Image file not found: {filePath}"
+                    : $"Image file not found: '{filePath}' resolves to '{full}'. Paths are relative to the project directory.",
+                full);
+        }
+
+        using var stream = File.OpenRead(full);
         var bmp = SKBitmap.Decode(stream);
         if (bmp == null)
             throw new InvalidOperationException($"Failed to decode image from {filePath}");

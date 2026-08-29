@@ -30,17 +30,20 @@ class McpWiring:
     args: tuple[str, ...]
 
     def resolved(self, root: Path) -> tuple[str, list[str]]:
-        """The command with `--project-dir .` made absolute.
+        """The command, with any relative `--project-dir` made absolute.
 
-        The generated file says `.` because a project directory has to stay movable; the server is
-        not launched from inside it, so the orchestrator substitutes the real path.
+        The generator writes an absolute path now, so this is normally a no-op. It stays for
+        hand-made and older projects that say `.`: under a desktop host that `.` resolved to the
+        repository root, which put the run record — and `outFile`'s containment root — somewhere
+        other than the project, without failing.
         """
         args = [str(root) if a == "." else a for a in self.args]
         return self.command, args
 
 
-#: Wiring filenames each host uses, in the order to look for them. `polson create-project` writes
-#: the Antigravity pair from one object, so either is equally current.
+#: Wiring filenames each host uses, in the order to look for them. `.agents/mcp_config.json` is
+#: Antigravity's canonical workspace location and the only one the generator writes; the project root
+#: stays as a fallback because the host reads it too and older projects put it there.
 WIRING_FILES = {
     "agy": (".agents/mcp_config.json", "mcp_config.json"),
     "claude": (".mcp.json",),

@@ -441,3 +441,4 @@ reference/*
 !/README.md
 /.*/
 **/.polson/*
+**/archive/*

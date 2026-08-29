@@ -170,6 +170,58 @@ start anything. `Environment.ProcessPath` is the apphost only when launched as `
 - An SVG `render` event carries no `bytes`, unlike the image one. Harmless, but a reader tallying
   output size undercounts.
 
+## create-project, re-specced (2026-08-29)
+
+The signature changed, and so did the thing it branches on:
+
+```bash
+polson create-project <directory> <id> <sdk> [--standalone] [--workflow logo] [--brief …]
+polson create-project projects acme agy --standalone
+```
+
+`<directory>` is now the **parent** — one directory holds many projects, and the id names the one
+being made. `<sdk>` is `agy` or `claude`, and it is required: it decides what the host's three files
+are *called*, which is the only real difference between an Antigravity project and a Claude Code one.
+`--profile` is gone; `--standalone` replaces it, and managed is now the default.
+
+**Standalone is a strict superset of managed** — it adds `agent.config.json` and `session/` and takes
+nothing away. That was the point of the change. The previous version emitted *identical* files for
+both profiles and differed only in an `enforced` field inside `agent.config.json` that nothing read,
+which contradicted this document and made the profile invisible to anyone looking at the directory.
+Now the file set is the signal, and a test asserts the superset property directly.
+
+Two consequences worth knowing:
+
+- **A managed project cannot be run by the orchestrator.** `project.load` refuses it, because a
+  managed project deliberately has no `agent.config.json` and running it would mean an empty deny
+  list — silently permitting `generate_image`, which is the one control the studio's premise rests
+  on. The message says to regenerate with `--standalone`.
+- **`claude --standalone` is refused at generation**, reported like every other bad combination
+  rather than thrown, since it is a plausible thing to type.
+
+`project.json` now records `sdk`, and the orchestrator reads it to decide which wiring file to open
+rather than probing filenames. The instruction template is `ProjectTemplate/logo/instructions.md` —
+renamed from `GEMINI.md`, because it now renders as either `GEMINI.md` or `CLAUDE.md`, and
+`brief.md` refers to it through a `{{INSTRUCTIONS_FILE}}` token.
+
+The Claude permission file's allowlist is **derived by reflecting over `DrawingMcpTools`**, so it
+cannot fall behind a tool being added — a stale allowlist would tell an agent it lacks a capability
+it actually has.
+
+### Deliberately not emitted: a `generate_image` deny for Antigravity
+
+`.agents/settings.json` gets `allow: ["mcp:polson:*"]` and the `bash:*` denies, which a working
+harness proves. It does **not** get a deny for `generate_image`, because whether the desktop host can
+deny a builtin — and under what key — is unverified, and an entry the host does not recognise is
+silently inert, which is indistinguishable from one being enforced. That is exactly how the
+`read:C:/...` path entries failed last time. In a managed project the prohibition is carried in the
+instructions as a rule; the CLI says so on generation. **Allister is verifying the real key against a
+running Antigravity Desktop** — adding it is one line once confirmed.
+
+Antigravity also gets the wiring written twice, at the root and in `.agents/`, because the working
+harness carries both and which one the host reads is likewise unverified. Same source object, so
+they cannot drift. Drop one when confirmed.
+
 ## Suggested next step
 
 **The web app (Milestone 6), and it is now a wrapper rather than a foundation.** `run_turn` is the
@@ -197,5 +249,7 @@ stage-persistence work and Milestone 5:
 
 - new: `src/webapp/orchestrator/` (6 modules), `src/webapp/run_studio.py`, `src/webapp/tests/`,
   `tests/Polson.Tests.MCPServer/StdioTransportTests.cs`
+- renamed: `src/Polson.CLI/ProjectTemplate/logo/GEMINI.md` → `instructions.md`
 - edited: `src/webapp/hello_agent.py`, `src/webapp/README.md`, `src/Polson.CLI/ProjectGenerator.cs`,
+  `src/Polson.CLI/Options.cs`, `src/Polson.CLI/ProjectTemplate/logo/brief.md`,
   `tests/Polson.Tests.CLI/ProjectGeneratorTests.cs`, `docs/project-layout.md`, and this file

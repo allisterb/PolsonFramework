@@ -256,12 +256,12 @@ class ProjectTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="polson-project-"))
         self.dir = self.root / "acme"
         self.dir.mkdir()
-        self.write("project.json", {"schema": 1, "id": "acme", "workflow": "logo",
+        self.write("project.json", {"schema": 1, "id": "acme", "workflow": "logo", "sdk": "agy",
                                     "profile": "standalone", "conversationId": None})
         self.write("agent.config.json", {"schema": 1, "agentBehavior": "interactive",
                                          "deniedTools": ["generate_image", "run_command"],
                                          "saveDir": "session/save", "appDataDir": "session/appdata"})
-        self.write(".mcp.json", {"mcpServers": {"polson": {
+        self.write(".agents/mcp_config.json", {"mcpServers": {"polson": {
             "command": "dotnet", "args": ["Polson.CLI.dll", "server", "--project-dir", "."]}}})
         (self.dir / "GEMINI.md").write_text("# instructions", encoding="utf-8")
 
@@ -269,15 +269,36 @@ class ProjectTests(unittest.TestCase):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def write(self, name: str, data: dict) -> None:
-        (self.dir / name).write_text(json.dumps(data), encoding="utf-8")
+        path = self.dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
 
     def test_reads_the_manifest_and_the_policy(self):
         p = project_mod.load(self.dir)
 
         self.assertEqual("acme", p.id)
+        self.assertEqual("agy", p.sdk)
         self.assertTrue(p.is_standalone)
         self.assertEqual(("generate_image", "run_command"), p.denied_tools)
         self.assertEqual(self.dir / "session" / "save", p.save_dir)
+
+    def test_the_wiring_file_follows_the_sdk(self):
+        """Antigravity's wiring is mcp_config.json; .mcp.json is Claude Code's spelling."""
+        p = project_mod.load(self.dir)
+        self.assertEqual("polson", p.mcp.name)
+
+        (self.dir / ".agents" / "mcp_config.json").unlink()
+        self.write("mcp_config.json", {"mcpServers": {"polson": {"command": "dotnet", "args": []}}})
+        self.assertEqual("polson", project_mod.load(self.dir).mcp.name)   # the root copy also serves
+
+    def test_a_project_for_another_host_is_refused(self):
+        """Its instructions, wiring and permissions all belong to a host that is not running."""
+        self.write("project.json", {"schema": 1, "id": "acme", "workflow": "logo", "sdk": "claude",
+                                    "profile": "managed"})
+
+        with self.assertRaises(project_mod.ProjectError) as caught:
+            project_mod.load(self.dir)
+        self.assertIn("Antigravity", str(caught.exception))
 
     def test_the_project_dir_placeholder_is_made_absolute(self):
         """The generated file says '.' so the directory stays movable; the server is not launched inside it."""
@@ -296,18 +317,21 @@ class ProjectTests(unittest.TestCase):
 
     def test_wiring_with_no_server_is_refused(self):
         """Starting an agent with nothing to draw with wastes a whole run to reach the same message."""
-        self.write(".mcp.json", {"mcpServers": {}})
+        self.write(".agents/mcp_config.json", {"mcpServers": {}})
 
         with self.assertRaises(project_mod.ProjectError):
             project_mod.load(self.dir)
 
-    def test_a_managed_project_without_a_policy_file_still_loads(self):
+    def test_a_managed_project_is_refused_rather_than_run_with_no_policy(self):
+        """No agent.config.json means no denied tools — including generate_image, the one control
+        the studio's premise rests on. Running wide open is worse than not running."""
         (self.dir / "agent.config.json").unlink()
-        self.write("project.json", {"schema": 1, "id": "acme", "workflow": "logo", "profile": "managed"})
+        self.write("project.json", {"schema": 1, "id": "acme", "workflow": "logo", "sdk": "agy",
+                                    "profile": "managed"})
 
-        p = project_mod.load(self.dir)
-        self.assertFalse(p.is_standalone)
-        self.assertEqual((), p.denied_tools)
+        with self.assertRaises(project_mod.ProjectError) as caught:
+            project_mod.load(self.dir)
+        self.assertIn("--standalone", str(caught.exception))
 
     def test_the_conversation_id_is_written_back_for_resume(self):
         p = project_mod.load(self.dir)
@@ -327,10 +351,11 @@ class ConfigTests(unittest.TestCase):
         self.dir.mkdir()
         (self.dir / "GEMINI.md").write_text("# instructions", encoding="utf-8")
         (self.dir / "project.json").write_text(
-            json.dumps({"id": "acme", "workflow": "logo", "profile": "standalone"}), encoding="utf-8")
+            json.dumps({"id": "acme", "workflow": "logo", "sdk": "agy", "profile": "standalone"}),
+            encoding="utf-8")
         (self.dir / "agent.config.json").write_text(
             json.dumps({"deniedTools": ["generate_image", "run_command"]}), encoding="utf-8")
-        (self.dir / ".mcp.json").write_text(
+        (self.dir / "mcp_config.json").write_text(
             json.dumps({"mcpServers": {"polson": {"command": "dotnet", "args": ["x.dll", "server"]}}}),
             encoding="utf-8")
 

@@ -39,6 +39,14 @@ class McpWiring:
         return self.command, args
 
 
+#: Wiring filenames each host uses, in the order to look for them. `polson create-project` writes
+#: the Antigravity pair from one object, so either is equally current.
+WIRING_FILES = {
+    "agy": (".agents/mcp_config.json", "mcp_config.json"),
+    "claude": (".mcp.json",),
+}
+
+
 @dataclass(frozen=True)
 class Project:
     """One design project, read from its own directory."""
@@ -46,6 +54,7 @@ class Project:
     root: Path
     id: str
     workflow: str
+    sdk: str
     profile: str
     conversation_id: str | None
     agent_behavior: str
@@ -114,33 +123,53 @@ def load(directory: Path) -> Project:
 
     manifest = _read_json(root / "project.json", "the project manifest")
 
-    if not (root / "GEMINI.md").exists():
+    # The orchestrator hosts the agent with the Antigravity SDK, so a project generated for another
+    # host is not merely inconvenient here — its instructions file, its wiring and its permissions all
+    # belong to a host that is not running.
+    sdk = (manifest.get("sdk") or "agy").lower()
+    if sdk not in WIRING_FILES:
+        raise ProjectError(f"{root} names an unknown sdk '{sdk}' in project.json.")
+    if sdk != "agy":
+        raise ProjectError(f"{root} was generated for '{sdk}', and the orchestrator builds Antigravity "
+                           f"SDK configurations only.\n"
+                           f"       Open it with that host, or generate an 'agy' project to run here.")
+
+    # A managed project deliberately carries no agent.config.json — its host owns tool policy. Running
+    # one here would silently mean *no* denied tools, including generate_image, which is the one
+    # control the whole studio's premise rests on. Refusing beats running wide open.
+    policy_file = root / "agent.config.json"
+    if not policy_file.exists():
+        raise ProjectError(f"{root} has no agent.config.json, so it is a managed project — its host "
+                           f"owns tool policy, and running it here would apply no policy at all.\n"
+                           f"       Regenerate it with --standalone to run it from the orchestrator.")
+    policy = _read_json(policy_file, "the agent config")
+
+    instructions = root / "GEMINI.md"
+    if not instructions.exists():
         raise ProjectError(f"{root} has no GEMINI.md — the agent would start with no instructions. "
                            f"Is it a generated project?")
 
-    wiring = _read_json(root / ".mcp.json", "the MCP wiring")
+    wiring_file = next((root / n for n in WIRING_FILES[sdk] if (root / n).exists()), None)
+    if wiring_file is None:
+        raise ProjectError(f"{root} has none of {', '.join(WIRING_FILES[sdk])}, so the agent would "
+                           f"have nothing to draw with.")
+
+    wiring = _read_json(wiring_file, "the MCP wiring")
     servers = wiring.get("mcpServers") or {}
     if not servers:
-        raise ProjectError(f"{root / '.mcp.json'} declares no MCP servers, so the agent would have "
+        raise ProjectError(f"{wiring_file} declares no MCP servers, so the agent would have "
                            f"nothing to draw with.")
 
     name, server = next(iter(servers.items()))
     command = server.get("command")
     if not command:
-        raise ProjectError(f"the '{name}' MCP server in {root / '.mcp.json'} has no command.")
-
-    # Both profiles get an agent.config.json; they differ in its `enforced` flag, because in the
-    # managed profile a desktop host owns tool policy and the file is a record of intent. Here it is
-    # always applied — running a managed project through the orchestrator makes us the enforcer, and
-    # honouring the weaker managed deny list beats honouring nothing. Tolerating the file's absence
-    # is for hand-made and older directories, which then get no denies at all.
-    policy_file = root / "agent.config.json"
-    policy = _read_json(policy_file, "the agent config") if policy_file.exists() else {}
+        raise ProjectError(f"the '{name}' MCP server in {wiring_file} has no command.")
 
     return Project(
         root=root,
         id=manifest.get("id") or root.name,
         workflow=manifest.get("workflow") or "logo",
+        sdk=sdk,
         profile=manifest.get("profile") or "standalone",
         conversation_id=manifest.get("conversationId"),
         agent_behavior=policy.get("agentBehavior") or "interactive",

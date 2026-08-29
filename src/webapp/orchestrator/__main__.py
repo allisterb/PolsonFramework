@@ -88,12 +88,8 @@ async def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    if not project.is_standalone:
-        print(f"  note: profile is '{project.profile}', which expects a desktop host to supply the")
-        print(f"  human. Running it here works, but the policy in agent.config.json may be absent.")
-
     print(f"  project  : {project.root}")
-    print(f"  workflow : {project.workflow} · profile {project.profile}")
+    print(f"  workflow : {project.workflow} · sdk {project.sdk} · {project.profile}")
     print(f"  denied   : {', '.join(project.denied_tools) or '(nothing)'}")
     print(f"  endpoint : {'public Gemini API' if args.public else 'Agent Platform (vertex)'}")
     print(f"  resuming : {project.conversation_id or '(new conversation)'}\n")

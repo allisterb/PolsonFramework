@@ -29,22 +29,32 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>Builds an option set pointing at a fresh subdirectory of this test's temp root.</summary>
+    /// <summary>
+    /// Builds an option set that creates <paramref name="name"/> inside this test's temp root.
+    /// </summary>
+    /// <remarks>
+    /// The directory argument is the <em>parent</em>: one directory holds many projects, and the id
+    /// names the one being made.
+    /// </remarks>
     CreateProjectOptions Options(string name, Action<CreateProjectOptions>? configure = null)
     {
-        var opts = new CreateProjectOptions { Directory = Path.Combine(root, name), Id = name };
+        var opts = new CreateProjectOptions { Directory = root, Id = name, Sdk = "agy" };
         configure?.Invoke(opts);
         return opts;
     }
+
+    /// <summary>Every file in a generated project, relative and forward-slashed.</summary>
+    string[] FileSet(string name) =>
+        Directory.EnumerateFiles(Path.Combine(root, name), "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(Path.Combine(root, name), f).Replace('\\', '/'))
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToArray();
     #endregion
 
     #region Layout Tests
     [Theory]
     [InlineData("project.json")]
     [InlineData("brief.md")]
-    [InlineData("GEMINI.md")]
-    [InlineData(".mcp.json")]
-    [InlineData("agent.config.json")]
     [InlineData(".gitignore")]
     public void TestExpectedFileIsWritten(string file)
     {
@@ -52,16 +62,77 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.True(File.Exists(Path.Combine(root, "layout", file)), $"missing: {file}");
     }
 
+    /// <summary>
+    /// The SDK decides what the host's three files are called, and that naming is the entire
+    /// difference between an Antigravity project and a Claude Code one.
+    /// </summary>
+    [Theory]
+    [InlineData("agy", "GEMINI.md")]
+    [InlineData("agy", "mcp_config.json")]
+    [InlineData("agy", ".agents/mcp_config.json")]
+    [InlineData("agy", ".agents/settings.json")]
+    [InlineData("claude", "CLAUDE.md")]
+    [InlineData("claude", ".mcp.json")]
+    [InlineData("claude", ".claude/settings.local.json")]
+    public void TestHostFilesAreNamedForTheSdk(string sdk, string file)
+    {
+        var name = $"host-{sdk}-{file.Replace('/', '_').Replace('.', '_')}";
+        Assert.True(ProjectGenerator.Create(Options(name, o => o.Sdk = sdk)));
+
+        Assert.Contains(file, FileSet(name));
+    }
+
+    /// <summary>The project is created inside the directory given, named by its id.</summary>
+    [Fact]
+    public void TestTheProjectIsCreatedInsideTheGivenDirectory()
+    {
+        Assert.True(ProjectGenerator.Create(Options("nested")));
+
+        Assert.True(File.Exists(Path.Combine(root, "nested", "project.json")));
+        Assert.False(File.Exists(Path.Combine(root, "project.json")));
+    }
+
     [Theory]
     [InlineData("artifacts")]
     [InlineData("scripts")]
     [InlineData("events")]
-    [InlineData("session/save")]
-    [InlineData("session/appdata")]
     public void TestExpectedDirectoryIsCreated(string dir)
     {
         Assert.True(ProjectGenerator.Create(Options("dirs")));
         Assert.True(Directory.Exists(Path.Combine(root, "dirs", dir)), $"missing: {dir}");
+    }
+
+    /// <summary>
+    /// Standalone adds to the managed set and takes nothing away, so the file set itself says which
+    /// kind of project this is — which a reader can check, unlike a flag inside a JSON file.
+    /// </summary>
+    [Fact]
+    public void TestStandaloneIsASupersetOfManaged()
+    {
+        Assert.True(ProjectGenerator.Create(Options("sup-managed")));
+        Assert.True(ProjectGenerator.Create(Options("sup-standalone", o => o.Standalone = true)));
+
+        var managed = FileSet("sup-managed");
+        var standalone = FileSet("sup-standalone");
+
+        Assert.Empty(managed.Except(standalone));
+        Assert.Equal(["agent.config.json"], standalone.Except(managed));
+    }
+
+    /// <summary>
+    /// The session directories are <c>LocalAgentConfig.save_dir</c> and <c>app_data_dir</c> — a
+    /// Python SDK concept, meaningless when a desktop host owns the session.
+    /// </summary>
+    [Theory]
+    [InlineData("session/save")]
+    [InlineData("session/appdata")]
+    public void TestSessionDirectoriesAreStandaloneOnly(string dir)
+    {
+        Assert.True(ProjectGenerator.Create(Options("sess-managed")));
+        Assert.True(ProjectGenerator.Create(Options("sess-standalone", o => o.Standalone = true)));
+
+        Assert.False(Directory.Exists(Path.Combine(root, "sess-managed", dir)));
+        Assert.True(Directory.Exists(Path.Combine(root, "sess-standalone", dir)));
     }
 
     /// <summary>
@@ -77,7 +148,7 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     [Fact]
     public void TestMcpWiringNamesARunnableCommand()
     {
-        Assert.True(ProjectGenerator.Create(Options("mcp")));
+        Assert.True(ProjectGenerator.Create(Options("mcp", o => o.Sdk = "claude")));
 
         var wiring = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "mcp", ".mcp.json")))
             .RootElement.GetProperty("mcpServers").GetProperty("polson");
@@ -110,17 +181,37 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.DoesNotContain("{{", body, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void TestManifestRecordsWorkflowAndProfile()
+    /// <summary>
+    /// The manifest is how the orchestrator knows which wiring file to open, so the sdk it records
+    /// has to be the one it was generated for.
+    /// </summary>
+    [Theory]
+    [InlineData("agy", false, "managed")]
+    [InlineData("agy", true, "standalone")]
+    [InlineData("claude", false, "managed")]
+    public void TestManifestRecordsSdkAndProfile(string sdk, bool standalone, string profile)
     {
-        Assert.True(ProjectGenerator.Create(Options("manifest")));
+        var name = $"manifest-{sdk}-{profile}";
+        Assert.True(ProjectGenerator.Create(Options(name, o => { o.Sdk = sdk; o.Standalone = standalone; })));
 
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "manifest", "project.json")));
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, name, "project.json")));
         var r = doc.RootElement;
 
-        Assert.Equal("manifest", r.GetProperty("id").GetString());
+        Assert.Equal(name, r.GetProperty("id").GetString());
         Assert.Equal("logo", r.GetProperty("workflow").GetString());
-        Assert.Equal("standalone", r.GetProperty("profile").GetString());
+        Assert.Equal(sdk, r.GetProperty("sdk").GetString());
+        Assert.Equal(profile, r.GetProperty("profile").GetString());
+    }
+
+    /// <summary>Resume belongs to the orchestrator, so a managed project carries no slot for it.</summary>
+    [Fact]
+    public void TestConversationIdIsStandaloneOnly()
+    {
+        Assert.True(ProjectGenerator.Create(Options("conv-managed")));
+        Assert.True(ProjectGenerator.Create(Options("conv-standalone", o => o.Standalone = true)));
+
+        Assert.DoesNotContain("conversationId", File.ReadAllText(Path.Combine(root, "conv-managed", "project.json")));
+        Assert.Contains("conversationId", File.ReadAllText(Path.Combine(root, "conv-standalone", "project.json")));
     }
     #endregion
 
@@ -158,43 +249,62 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
 
     #region Tool Policy Tests
     /// <summary>
-    /// Image generation is denied on every profile. It bypasses asset requisition entirely, so an
-    /// agent holding it can produce a finished picture and the premise of the studio stops holding.
+    /// The orchestrator's deny list. Image generation is the important one: it bypasses asset
+    /// requisition entirely, so an agent holding it can produce a finished picture and the premise
+    /// of the studio stops holding. The shell is denied because a public URL must not reach one.
     /// </summary>
     [Theory]
-    [InlineData("standalone")]
-    [InlineData("managed")]
-    public void TestImageGenerationIsDeniedOnEveryProfile(string profile)
+    [InlineData("generate_image")]
+    [InlineData("run_command")]
+    public void TestStandaloneDeniesTheDangerousTools(string tool)
     {
-        Assert.True(ProjectGenerator.Create(Options("deny-" + profile, o => o.Profile = profile)));
+        Assert.True(ProjectGenerator.Create(Options("deny", o => o.Standalone = true)));
 
-        Assert.Contains("generate_image", DeniedTools("deny-" + profile));
-    }
-
-    /// <summary>A public URL must not reach a shell, so the standalone profile denies more.</summary>
-    [Fact]
-    public void TestShellIsDeniedOnlyOnStandalone()
-    {
-        Assert.True(ProjectGenerator.Create(Options("shell-standalone", o => o.Profile = "standalone")));
-        Assert.True(ProjectGenerator.Create(Options("shell-managed", o => o.Profile = "managed")));
-
-        Assert.Contains("run_command", DeniedTools("shell-standalone"));
-        Assert.DoesNotContain("run_command", DeniedTools("shell-managed"));
+        Assert.Contains(tool, DeniedTools("deny"));
     }
 
     /// <summary>
-    /// The managed profile cannot enforce policy, because the desktop host owns it. The emitted
-    /// config must say so rather than letting a reader assume otherwise.
+    /// A managed project carries no policy file, because its host owns tool policy and ours would be
+    /// a file that reads as enforcement while enforcing nothing. The prohibition is carried in the
+    /// instructions instead, as a rule the agent must follow.
     /// </summary>
-    [Theory]
-    [InlineData("standalone", true)]
-    [InlineData("managed", false)]
-    public void TestEnforcementIsDeclaredHonestly(string profile, bool expected)
+    [Fact]
+    public void TestManagedCarriesNoPolicyFile()
     {
-        Assert.True(ProjectGenerator.Create(Options("enforce-" + profile, o => o.Profile = profile)));
+        Assert.True(ProjectGenerator.Create(Options("nopolicy")));
 
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "enforce-" + profile, "agent.config.json")));
-        Assert.Equal(expected, doc.RootElement.GetProperty("enforced").GetBoolean());
+        Assert.False(File.Exists(Path.Combine(root, "nopolicy", "agent.config.json")));
+    }
+
+    /// <summary>
+    /// The host permission file allows the Polson tools by name, read from the server itself so the
+    /// list cannot fall behind a tool being added.
+    /// </summary>
+    [Fact]
+    public void TestHostPermissionsAllowEveryServerTool()
+    {
+        Assert.True(ProjectGenerator.Create(Options("perms", o => o.Sdk = "claude")));
+
+        var allow = File.ReadAllText(Path.Combine(root, "perms", ".claude", "settings.local.json"));
+        foreach (var tool in new[] { "Search", "ExecuteScript", "History", "RenderSvg", "MeasureSvgPath" })
+        {
+            Assert.Contains($"mcp__polson__{tool}", allow, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Antigravity permissions name tools, never paths: a <c>read:C:/...</c> entry does nothing at
+    /// all, and an entry the host does not recognise is silently inert — indistinguishable from one
+    /// being enforced. Only the two namespaces a working example proves are emitted.
+    /// </summary>
+    [Fact]
+    public void TestAntigravityPermissionsNameToolsRatherThanPaths()
+    {
+        Assert.True(ProjectGenerator.Create(Options("agyperms")));
+
+        var settings = File.ReadAllText(Path.Combine(root, "agyperms", ".agents", "settings.json"));
+        Assert.Contains("mcp:polson:*", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("read:", settings, StringComparison.Ordinal);
     }
 
     string DeniedTools(string name)
@@ -219,36 +329,10 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     [InlineData(".")]
     [InlineData("..")]
     [InlineData("...")]
-    public void TestInvalidIdIsRefused(string id) =>
-        Assert.False(ProjectGenerator.Create(new CreateProjectOptions
-        {
-            Directory = Path.Combine(root, "refused"),
-            Id = id,
-        }));
-
-    /// <summary>
-    /// An empty id is not an invalid id: it means "none was given", and the directory name is used.
-    /// Kept separate from the refusal cases above so the distinction stays deliberate.
-    /// </summary>
-    [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void TestEmptyIdDefaultsRatherThanFailing(string id) =>
-        Assert.True(ProjectGenerator.Create(new CreateProjectOptions
-        {
-            Directory = Path.Combine(root, "blank" + id.Length),
-            Id = id,
-        }));
-
-    /// <summary>An id is only defaulted from the directory name when none was given, and is validated the same way.</summary>
-    [Fact]
-    public void TestIdDefaultsToDirectoryName()
-    {
-        Assert.True(ProjectGenerator.Create(new CreateProjectOptions { Directory = Path.Combine(root, "derived") }));
-
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "derived", "project.json")));
-        Assert.Equal("derived", doc.RootElement.GetProperty("id").GetString());
-    }
+    public void TestInvalidIdIsRefused(string id) =>
+        Assert.False(ProjectGenerator.Create(Options(id, o => o.Id = id)));
 
     /// <summary>
     /// The workflow name selects which template becomes the agent prompt, so an unknown one fails
@@ -261,11 +345,36 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     public void TestUnknownWorkflowIsRefused(string workflow) =>
         Assert.False(ProjectGenerator.Create(Options("badflow", o => o.Workflow = workflow)));
 
+    /// <summary>
+    /// The SDK decides every host filename, so an unrecognised one cannot be defaulted — guessing
+    /// would produce a project whose host silently finds no configuration at all.
+    /// </summary>
     [Theory]
-    [InlineData("hosted")]
+    [InlineData("gemini")]
+    [InlineData("antigravity")]
     [InlineData("")]
-    public void TestUnknownProfileIsRefused(string profile) =>
-        Assert.False(ProjectGenerator.Create(Options("badprofile", o => o.Profile = profile)));
+    public void TestUnknownSdkIsRefused(string sdk) =>
+        Assert.False(ProjectGenerator.Create(Options("badsdk", o => o.Sdk = sdk)));
+
+    /// <summary>
+    /// The orchestrator builds Antigravity SDK configurations only, so this combination is reported
+    /// rather than generated half-working — and reported the way every other rejection here is,
+    /// with a sentence rather than a stack trace.
+    /// </summary>
+    [Fact]
+    public void TestClaudeStandaloneIsRefused()
+    {
+        Assert.False(ProjectGenerator.Create(Options("cl-stand", o => { o.Sdk = "claude"; o.Standalone = true; })));
+
+        Assert.False(Directory.Exists(Path.Combine(root, "cl-stand")));
+    }
+
+    /// <summary>The SDK name is matched case-insensitively; capitalisation is a typo, not a choice.</summary>
+    [Theory]
+    [InlineData("AGY")]
+    [InlineData("Claude")]
+    public void TestSdkNameIsCaseInsensitive(string sdk) =>
+        Assert.True(ProjectGenerator.Create(Options("sdkcase-" + sdk, o => o.Sdk = sdk)));
 
     /// <summary>Generating over existing work needs an explicit instruction to do so.</summary>
     [Fact]

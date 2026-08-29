@@ -21,11 +21,11 @@ Designing the files as a transport as well would buy nothing and cost a concurre
 
 ```
 <project>/
-  project.json              manifest: id, workflow, profile, schema version, created (UTC)
+  project.json              manifest: id, workflow, sdk, profile, schema version, created (UTC)
   brief.md                  the director's brief — see "Trust boundary" below
-  GEMINI.md                 agent instructions, generated from the workflow template
-  .mcp.json                 MCP server wiring; --director web|none baked in at generation
-  agent.config.json         standalone only: hooks, policies, capabilities for the orchestrator
+  <instructions>            agent instructions, rendered from the workflow template
+  <wiring>                  MCP server wiring
+  <permissions>             the host's own permission file
 
   artifacts/                renders written by the MCP server's outFile; served to the browser by URL
   scripts/                  every JS execution, one file per call — the readable trace
@@ -35,12 +35,29 @@ Designing the files as a transport as well would buy nothing and cost a concurre
     agent.jsonl               Python orchestrator    (standalone only)
     director.jsonl            director actions       (standalone only)
 
+  run.log                   human-readable rolling log
+
+  ── standalone only ────────────────────────────────────────────────────────
+  agent.config.json         tool policy and session directories for the orchestrator
+
   session/                  SDK-owned; never hand-edited, safe to delete to force a cold start
     save/                     LocalAgentConfig.save_dir     — conversation state, enables resume
     appdata/                  LocalAgentConfig.app_data_dir — agent scratch and media
-
-  run.log                   human-readable rolling log
 ```
+
+The three angle-bracketed names are what the **SDK** decides, and they are the only thing that
+differs between an Antigravity project and a Claude Code one — the contents are the same either way:
+
+| | `agy` (Google Antigravity) | `claude` (Claude Code) |
+| :--- | :--- | :--- |
+| instructions | `GEMINI.md` | `CLAUDE.md` |
+| wiring | `mcp_config.json` **and** `.agents/mcp_config.json` | `.mcp.json` |
+| permissions | `.agents/settings.json` | `.claude/settings.local.json` |
+
+Antigravity gets the wiring in both places because the working harness carries both and which one
+the desktop host actually reads is unverified. They are two serialisations of one object, so they
+cannot drift; drop one once the host confirms which it reads. A wrong guess here would leave the
+agent with no MCP server **and no error** — the worst failure mode in this system.
 
 `session/` is SDK-shaped internally (`appdata/brain/<conversation_id>/…`). Keep it in its own
 subtree so its layout can change without touching ours, and `.gitignore` it — it is regenerable
@@ -147,12 +164,12 @@ one-writer rule. Single-agent runs stay flat.
 
 ## Trust boundary
 
-`brief.md` holds visitor-supplied text. `GEMINI.md` is generated from a workflow template and is
-trusted. **They are separate files, and `GEMINI.md` references the brief rather than inlining
-it** — so the boundary between "instructions we wrote" and "text a stranger typed" is a file
-boundary, which is checkable, rather than a paragraph break, which is not.
+`brief.md` holds visitor-supplied text. The instructions file is generated from a workflow template
+and is trusted. **They are separate files, and the instructions reference the brief rather than
+inlining it** — so the boundary between "instructions we wrote" and "text a stranger typed" is a
+file boundary, which is checkable, rather than a paragraph break, which is not.
 
-Nothing derived from visitor input may influence `.mcp.json`, `agent.config.json`, hook commands,
+Nothing derived from visitor input may influence the wiring, `agent.config.json`, hook commands,
 policy entries, or any path. Those come from the template alone. The project id is validated to
 `[A-Za-z0-9._-]` before it becomes a directory name.
 
@@ -168,16 +185,29 @@ Generated into `agent.config.json` (standalone) and the managed profile's settin
 
 ## Profiles
 
-Both emit the same core — `project.json`, `brief.md`, `GEMINI.md`, `.mcp.json`, `artifacts/`,
-`scripts/`, `events/`. They differ only in who supplies the human:
+**Standalone is a strict superset of managed.** It adds `agent.config.json` and `session/` and takes
+nothing away, so the file set itself says which kind of project this is — which a reader can check.
+An earlier version got this wrong: both profiles emitted identical files and differed only in a
+field inside one of them, which nothing enforced and no one could see.
 
-- **managed** — Antigravity Desktop hosts the agent and renders `ask_question` in its own UI.
-  No Python, no hooks, no `agent.config.json`. Only `events/server.jsonl` is written.
-- **standalone** — the orchestrator registers a web-backed `OnInteractionHook`, applies the deny
-  policies, and sets `AgentBehavior.INTERACTIVE`. All three event files are written.
+- **managed** (default) — a desktop or IDE host runs the agent and renders `ask_question` in its own
+  UI. No Python, no hooks, and **no `agent.config.json`**: that host owns tool policy, and a policy
+  file of ours sitting beside it would read as enforcement while enforcing nothing. Only
+  `events/server.jsonl` is written.
+- **standalone** (`--standalone`) — the Polson orchestrator hosts the agent: it reads
+  `agent.config.json`, applies the deny policies, registers an `OnInteractionHook` for the director,
+  and owns `session/` and the `conversationId` that makes a run resumable. All three event files are
+  written.
 
-`AgentBehavior` is not this axis. It distinguishes *is a human attached* — both profiles above are
-`INTERACTIVE`; harness and test runs are `AUTONOMOUS`.
+The consequence is that a **managed project cannot be run by the orchestrator**, and `project.load`
+refuses it rather than running with an empty deny list — which would silently permit
+`generate_image`, the one control the studio's premise rests on. Regenerate with `--standalone`.
+
+`claude --standalone` is refused at generation: the orchestrator builds Antigravity SDK
+configurations only.
+
+`AgentBehavior` is not this axis. It distinguishes *is a human attached* — a standalone run with a
+terminal or browser attached is `INTERACTIVE`; harness and unattended runs are `AUTONOMOUS`.
 
 ## Resume
 

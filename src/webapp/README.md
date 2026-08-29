@@ -9,9 +9,13 @@ behalf. The commands below are for you to run and review.
 ## Running a project
 
 ```bash
-dotnet bin/cli/Polson.CLI.dll create-project projects/acme --brief "..."
+dotnet bin/cli/Polson.CLI.dll create-project projects acme agy --standalone --brief "..."
 python src/webapp/run_studio.py projects/acme
 ```
+
+`agy` targets the Google Antigravity SDK, which is the one the orchestrator builds configurations
+for. `--standalone` is what adds `agent.config.json` and `session/`; without it you get a project
+for a desktop host to run, and the orchestrator refuses it rather than running with no tool policy.
 
 That runs one turn: the agent reads the project's `GEMINI.md`, draws through the Polson MCP server,
 and the orchestrator writes down what happened. Everything it produces stays in the project

@@ -36,17 +36,20 @@ public class ServerOptions : Options
 public class CreateProjectOptions : Options
 {
     #region Properties
-    [Value(0, MetaName = "directory", Required = true, HelpText = "Directory to create the project in.")]
+    [Value(0, MetaName = "directory", Required = true, HelpText = "Parent directory the project directory is created in.")]
     public string Directory { get; set; } = string.Empty;
 
-    [Value(1, MetaName = "id", Required = false, HelpText = "Project id (letters, digits, dot, underscore, dash). Defaults to the directory name.")]
+    [Value(1, MetaName = "id", Required = true, HelpText = "Project id, and the name of the directory created (letters, digits, dot, underscore, dash).")]
     public string Id { get; set; } = string.Empty;
+
+    [Value(2, MetaName = "sdk", Required = true, HelpText = "Agent SDK to target: 'agy' (Google Antigravity) or 'claude' (Claude Code). It decides what the config files are called.")]
+    public string Sdk { get; set; } = string.Empty;
 
     [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate (default: 'logo').")]
     public string Workflow { get; set; } = "logo";
 
-    [Option("profile", Required = false, Default = "standalone", HelpText = "'standalone' for the orchestrator and demo site, 'managed' for a desktop agent host.")]
-    public string Profile { get; set; } = "standalone";
+    [Option("standalone", Required = false, HelpText = "Also generate what the Polson orchestrator needs to host the agent itself. Without it the project is managed by a desktop or IDE host.")]
+    public bool Standalone { get; set; }
 
     [Option("brief", Required = false, HelpText = "Client brief: a file path, or the text itself. Treated as untrusted data and normalised before it is written.")]
     public string Brief { get; set; } = string.Empty;

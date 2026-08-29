@@ -4,9 +4,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+
+using ModelContextProtocol.Server;
+using Polson.MCPServer;
 using Spectre.Console;
 
 /// <summary>
@@ -38,8 +42,39 @@ internal static class ProjectGenerator
     static readonly Regex ValidId = new(@"^[A-Za-z0-9._-]{1,64}$", RegexOptions.Compiled);
     #endregion
 
+    #region Types
+    /// <summary>What a given agent host calls the three files it reads.</summary>
+    /// <remarks>
+    /// The contents are the same either way — the same MCP wiring, the same instructions. Only the
+    /// names differ, and that is the entire difference between an Antigravity project and a Claude
+    /// Code one, which is why the SDK is the first thing <see cref="Create"/> branches on.
+    /// <para>
+    /// Antigravity gets the wiring twice, at the project root and inside <c>.agents/</c>, because the
+    /// working harness carries both and which one the desktop host actually reads is unverified. Two
+    /// serialisations of one object cannot drift; a wrong guess here would leave the agent with no
+    /// MCP server and, per the run record, no error either — the worst failure mode we have found.
+    /// Drop one once the desktop host confirms which it reads.
+    /// </para>
+    /// </remarks>
+    readonly record struct HostFiles(string Instructions, string[] McpConfig, string Permissions)
+    {
+        public static HostFiles For(string sdk) => sdk == "agy"
+            ? new("GEMINI.md", [".agents/mcp_config.json", "mcp_config.json"], ".agents/settings.json")
+            : new("CLAUDE.md", [".mcp.json"], ".claude/settings.local.json");
+    }
+    #endregion
+
     #region Methods
     /// <summary>Creates the project directory. Returns false and reports the reason if the request is not valid.</summary>
+    /// <remarks>
+    /// Two branch points, in this order. The <b>SDK</b> decides what the host's files are
+    /// <em>called</em> — that is the only thing that actually differs between an Antigravity project
+    /// and a Claude Code one, since both read the same MCP wiring under different names.
+    /// <b>Standalone</b> then <em>adds</em> what our own orchestrator needs on top. It is strictly a
+    /// superset, so the file set itself says which kind of project this is, which is checkable —
+    /// a flag inside a JSON file is not, and an earlier version got that wrong: both profiles
+    /// emitted identical files and differed only in a field nothing enforced.
+    /// </remarks>
     public static bool Create(CreateProjectOptions opts)
     {
         var workflow = opts.Workflow.ToLowerInvariant();
@@ -48,14 +83,21 @@ internal static class ProjectGenerator
             return Fail($"Unknown workflow '{opts.Workflow}'. Known: {string.Join(", ", KnownWorkflows)}.");
         }
 
-        var profile = opts.Profile.ToLowerInvariant();
-        if (profile is not ("standalone" or "managed"))
+        var sdk = opts.Sdk.ToLowerInvariant();
+        if (sdk is not ("agy" or "claude"))
         {
-            return Fail($"Unknown profile '{opts.Profile}'. Use 'standalone' or 'managed'.");
+            return Fail($"Unknown SDK '{opts.Sdk}'. Use 'agy' (Google Antigravity) or 'claude' (Claude Code).");
         }
 
-        var dir = Path.GetFullPath(opts.Directory);
-        var id = string.IsNullOrWhiteSpace(opts.Id) ? Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar)) : opts.Id;
+        // Reported rather than thrown: this is a plausible thing to type, not a bug, and every other
+        // rejection here prints a sentence instead of a stack trace.
+        if (sdk == "claude" && opts.Standalone)
+        {
+            return Fail("'claude --standalone' is not supported yet — the orchestrator builds Antigravity SDK\n"
+                      + "       configurations only. Generate it managed, or use 'agy' for a standalone project.");
+        }
+
+        var id = opts.Id.Trim();
 
         // The character class permits dots, so it alone would accept "." and ".." — which are not
         // names but traversal, and would resolve to the parent directory rather than a project.
@@ -64,15 +106,29 @@ internal static class ProjectGenerator
             return Fail($"Invalid project id '{id}'. Use letters, digits, dot, underscore or dash (max 64), and not only dots.");
         }
 
+        // The id names the directory, so one parent holds many projects. Validated first, above:
+        // it becomes a path segment here.
+        var dir = Path.Combine(Path.GetFullPath(opts.Directory), id);
+
         if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any() && !opts.Force)
         {
             return Fail($"Directory is not empty: {dir}\n       Use --force to generate into it anyway.");
         }
 
+        var host = HostFiles.For(sdk);
+        var profile = opts.Standalone ? "standalone" : "managed";
         var brief = SanitizeBrief(ReadBrief(opts.Brief));
         var createdUtc = DateTime.UtcNow.ToString("O");
 
-        foreach (var sub in new[] { "artifacts", "scripts", "events", "session/save", "session/appdata" })
+        var dirs = new List<string> { "artifacts", "scripts", "events" };
+        if (opts.Standalone)
+        {
+            // LocalAgentConfig.save_dir and app_data_dir — a Python SDK concept, meaningless when a
+            // desktop host owns the session.
+            dirs.AddRange(["session/save", "session/appdata"]);
+        }
+
+        foreach (var sub in dirs)
         {
             Directory.CreateDirectory(Path.Combine(dir, sub.Replace('/', Path.DirectorySeparatorChar)));
         }
@@ -83,16 +139,24 @@ internal static class ProjectGenerator
             ["PROFILE"] = profile,
             ["CREATED_UTC"] = createdUtc,
             ["BRIEF"] = brief,
+            ["INSTRUCTIONS_FILE"] = host.Instructions,
         };
 
-        WriteText(dir, "GEMINI.md", Render(workflow, "GEMINI.md", tokens));
+        WriteText(dir, host.Instructions, Render(workflow, "instructions.md", tokens));
         WriteText(dir, "brief.md", Render(workflow, "brief.md", tokens));
-        WriteText(dir, ".gitignore", GitIgnore());
-        WriteJson(dir, "project.json", ProjectManifest(id, workflow, profile, createdUtc));
-        WriteJson(dir, ".mcp.json", McpConfig());
-        WriteJson(dir, "agent.config.json", AgentConfig(profile));
+        WriteText(dir, ".gitignore", GitIgnore(opts.Standalone));
+        WriteJson(dir, "project.json", ProjectManifest(id, workflow, sdk, profile, createdUtc, opts.Standalone));
 
-        Report(dir, id, workflow, profile);
+        var wiring = McpConfig();
+        foreach (var name in host.McpConfig) WriteJson(dir, name, wiring);
+        WriteJson(dir, host.Permissions, Permissions(sdk));
+
+        if (opts.Standalone)
+        {
+            WriteJson(dir, "agent.config.json", AgentConfig());
+        }
+
+        Report(dir, id, workflow, sdk, opts.Standalone, host);
         return true;
     }
 
@@ -159,15 +223,18 @@ internal static class ProjectGenerator
         return tokens.Aggregate(body, (acc, t) => acc.Replace($"{{{{{t.Key}}}}}", t.Value, StringComparison.Ordinal));
     }
 
-    static object ProjectManifest(string id, string workflow, string profile, string createdUtc) => new
-    {
-        schema = 1,
-        id,
-        workflow,
-        profile,
-        createdUtc,
-        conversationId = (string?)null,
-    };
+    /// <summary>
+    /// The manifest, which is how a reader — and the orchestrator — knows what kind of project this is.
+    /// </summary>
+    /// <remarks>
+    /// <c>sdk</c> is what tells the orchestrator which wiring file to open, so it never has to guess
+    /// by probing filenames. <c>conversationId</c> is standalone-only state: resume belongs to us,
+    /// and a desktop host neither writes nor reads it.
+    /// </remarks>
+    static object ProjectManifest(string id, string workflow, string sdk, string profile, string createdUtc, bool standalone) =>
+        standalone
+            ? new { schema = 1, id, workflow, sdk, profile, createdUtc, conversationId = (string?)null }
+            : (object)new { schema = 1, id, workflow, sdk, profile, createdUtc };
 
     /// <summary>
     /// Wires the agent to this CLI's own MCP server, rooted at the project directory.
@@ -218,47 +285,107 @@ internal static class ProjectGenerator
     /// true. In the managed profile this file is a record of intent only: the desktop host owns tool
     /// policy, so the prohibition is carried in GEMINI.md as a rule the agent must follow.
     /// </remarks>
-    static object AgentConfig(string profile) => new
+    static object AgentConfig() => new
     {
         schema = 1,
         agentBehavior = "interactive",
-        enforced = profile == "standalone",
-        deniedTools = profile == "standalone" ? AlwaysDenied.Concat(StandaloneDenied).ToArray() : AlwaysDenied,
+        deniedTools = AlwaysDenied.Concat(StandaloneDenied).ToArray(),
         saveDir = "session/save",
         appDataDir = "session/appdata",
     };
 
-    static string GitIgnore() =>
-        """
-        # SDK-owned session state: regenerable, sometimes large, never the deliverable.
-        session/
+    /// <summary>
+    /// The permission file the host reads. Its schema belongs to the host, not to us.
+    /// </summary>
+    /// <remarks>
+    /// Antigravity permissions name <em>tools</em>, never paths — <c>mcp:polson:*</c> and
+    /// <c>bash:node*</c> work, <c>read:C:/...</c> does nothing at all and fails open. This emits only
+    /// the two namespaces a working example proves, because an entry whose key the host does not
+    /// recognise is silently inert, which is indistinguishable from a rule that is being enforced.
+    /// <para>
+    /// Notably absent for that reason: a deny for <c>generate_image</c>. Whether the desktop host can
+    /// deny a builtin, and under what key, is unverified — so in a managed project the prohibition
+    /// stays a rule in the instructions file rather than a guess in a config file. Claude Code has no
+    /// image-generation tool, so there is nothing to deny there either way.
+    /// </para>
+    /// </remarks>
+    static object Permissions(string sdk) => sdk == "agy"
+        ? new
+        {
+            permissions = new
+            {
+                allow = new[] { "mcp:polson:*" },
+                deny = new[] { "bash:node*", "bash:python*", "bash:npm*", "bash:dotnet*" },
+            },
+        }
+        : (object)new
+        {
+            permissions = new
+            {
+                defaultMode = "default",
+                allow = ToolNames().Select(t => $"mcp__polson__{t}").Concat(["Read", "Write", "Edit", "Glob", "Grep"]).ToArray(),
+                deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" },
+            },
+        };
 
-        # Renders are reproducible from scripts/ and are noisy in review. Commit deliberately
-        # if a particular stage is worth keeping in history.
-        artifacts/
-        """;
+    /// <summary>The MCP server's tool names, read from the server itself so the allowlist cannot go stale.</summary>
+    /// <remarks>
+    /// A hand-written list would silently stop covering a tool the day one is added, and the symptom
+    /// would be an agent told it lacks a capability it actually has.
+    /// </remarks>
+    static string[] ToolNames() =>
+        typeof(DrawingMcpTools).GetMethods()
+            .Select(m => m.GetCustomAttribute<McpServerToolAttribute>()?.Name)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
 
-    static void WriteText(string dir, string name, string body) =>
-        File.WriteAllText(Path.Combine(dir, name), body.ReplaceLineEndings("\n"), new UTF8Encoding(false));
+    static string GitIgnore(bool standalone) =>
+        (standalone
+            ? """
+              # SDK-owned session state: regenerable, sometimes large, never the deliverable.
+              session/
+
+
+              """
+            : "")
+        + """
+          # Renders are reproducible from scripts/ and are noisy in review. Commit deliberately
+          # if a particular stage is worth keeping in history.
+          artifacts/
+          """;
+
+    /// <summary>Writes a file, creating the directory a nested name implies.</summary>
+    static void WriteText(string dir, string name, string body)
+    {
+        var path = Path.Combine(dir, name.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, body.ReplaceLineEndings("\n"), new UTF8Encoding(false));
+    }
 
     static void WriteJson(string dir, string name, object value) =>
         WriteText(dir, name, JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
 
-    static void Report(string dir, string id, string workflow, string profile)
+    static void Report(string dir, string id, string workflow, string sdk, bool standalone, HostFiles host)
     {
         AnsiConsole.MarkupLine($"[bold green]Project created:[/] {Markup.Escape(dir)}");
-        AnsiConsole.MarkupLine($"  id [bold]{Markup.Escape(id)}[/] · workflow [bold]{workflow}[/] · profile [bold]{profile}[/]");
+        AnsiConsole.MarkupLine($"  id [bold]{Markup.Escape(id)}[/] · workflow [bold]{workflow}[/] · sdk [bold]{sdk}[/] · "
+                             + $"[bold]{(standalone ? "standalone" : "managed")}[/]");
         AnsiConsole.WriteLine();
 
-        if (profile == "managed")
+        if (!standalone)
         {
-            AnsiConsole.MarkupLine("[yellow]  Note:[/] in the managed profile the desktop host owns tool policy, so");
-            AnsiConsole.MarkupLine("        [yellow]agent.config.json is advisory[/]. The image-generation prohibition is");
-            AnsiConsole.MarkupLine("        carried in GEMINI.md as a rule rather than enforced here.");
+            AnsiConsole.MarkupLine("[yellow]  Note:[/] the host owns tool policy in a managed project, so the");
+            AnsiConsole.MarkupLine($"        image-generation prohibition is carried in [bold]{Markup.Escape(host.Instructions)}[/] as a rule");
+            AnsiConsole.MarkupLine("        the agent must follow, not as a config entry we can enforce.");
             AnsiConsole.WriteLine();
         }
 
-        AnsiConsole.MarkupLine("  Next: fill in [bold]brief.md[/], then open the directory with your agent host.");
+        AnsiConsole.MarkupLine($"  Next: fill in [bold]brief.md[/], then");
+        AnsiConsole.MarkupLine(standalone
+            ? $"        [bold]python src/webapp/run_studio.py {Markup.Escape(dir)}[/]"
+            : "        open the directory with your agent host.");
     }
 
     static bool Fail(string message)

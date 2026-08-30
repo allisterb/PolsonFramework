@@ -39,6 +39,14 @@
       DestinationFiles="@(BuildOutputFiles->'$(RepoRoot)bin\cli\%(RecursiveDir)%(Filename)%(Extension)')"
       SkipUnchangedFiles="true"
       OverwriteReadOnlyFiles="true" />
+
+    <!-- High, not normal: `dotnet build` defaults to minimal verbosity, which prints only high, so
+         at normal this line existed and was never once seen — which reads as a build that did not
+         run, and cost an afternoon of wondering whether the shipped CLI had the latest changes.
+         It names the configuration because that is the part that silently differs: a Debug build
+         leaves a Release bin\cli untouched and looks identical from the console. -->
+    <Message Importance="high"
+             Text="Polson CLI ($(Configuration)) -> $(RepoRoot)bin\cli\" />
   </Target>
 
 

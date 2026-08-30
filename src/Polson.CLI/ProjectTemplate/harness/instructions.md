@@ -12,6 +12,10 @@ surprise and limitation in `findings.md`. Do not smooth over friction or quietly
 
 ---
 
+{{ENGINE_ONLY}}
+
+---
+
 ## Ground rule: no peeking at the implementation
 
 You may read **only** what the MCP server exposes: its tool definitions and its `polson://sdk/*` and

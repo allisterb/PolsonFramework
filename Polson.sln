@@ -60,6 +60,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Tests.ExtendedMind",
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{4A8DBB6B-BCD8-4140-9DED-8BF57F442CD5}"
 	ProjectSection(SolutionItems) = preProject
+		build.cmd = build.cmd
+		build.sh = build.sh
 		src\webapp\install.cmd = src\webapp\install.cmd
 		src\webapp\install.sh = src\webapp\install.sh
 		polson.cmd = polson.cmd

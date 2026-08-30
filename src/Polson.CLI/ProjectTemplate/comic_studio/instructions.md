@@ -12,6 +12,10 @@ happens through files rather than through conversation.
 
 ---
 
+{{ENGINE_ONLY}}
+
+---
+
 ## Ground rule: no peeking at the implementation
 
 You may read **only** what the MCP server exposes: its tool definitions and its `polson://sdk/*` and

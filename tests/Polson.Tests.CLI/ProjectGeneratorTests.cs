@@ -668,6 +668,46 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// Every workflow's instructions carry the engine-only rule, from one shared source.
+    /// </summary>
+    /// <remarks>
+    /// A run once produced a finished-looking poster with the MCP server used only as a logging
+    /// device: the SVG was hand-written, the scales were worked out in prose, and the scripts were
+    /// files the server never executed. The rule is rendered from
+    /// <c>ProjectTemplate/_shared/engine_only.md</c> into all four workflows so they cannot drift
+    /// apart on the one instruction that decides whether a run is real.
+    /// </remarks>
+    [Theory]
+    [InlineData("logo")]
+    [InlineData("harness")]
+    [InlineData("comic_studio")]
+    [InlineData("infographic")]
+    public void TestEveryWorkflowCarriesTheEngineOnlyRule(string workflow)
+    {
+        Assert.True(ProjectGenerator.Create(Options($"engine-{workflow}", o => o.Workflow = workflow)));
+
+        var instructions = File.ReadAllText(Path.Combine(root, $"engine-{workflow}", "GEMINI.md"));
+
+        Assert.Contains("Two things go through the MCP server", instructions, StringComparison.Ordinal);
+        Assert.Contains("Do not write SVG, HTML or any image file yourself", instructions, StringComparison.Ordinal);
+        Assert.Contains("Do not hand-write files into `scripts/`", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
+    }
+
+    /// <summary>The shared template directory is not itself offered as a workflow.</summary>
+    /// <remarks>
+    /// Discovery keys on a directory containing <c>instructions.md</c>, and <c>_shared</c> carries
+    /// none — so this holds by construction rather than by exclusion list. Asserted because the day
+    /// someone adds an <c>instructions.md</c> there for convenience, <c>--workflow _shared</c>
+    /// quietly becomes real.
+    /// </remarks>
+    [Fact]
+    public void TestTheSharedTemplateDirectoryIsNotAWorkflow()
+    {
+        Assert.False(ProjectGenerator.Create(Options("shared-as-workflow", o => o.Workflow = "_shared")));
+    }
+
+    /// <summary>
     /// A subagent's MCP calls are allowed too, which the tool-name approvals do not cover.
     /// </summary>
     /// <remarks>

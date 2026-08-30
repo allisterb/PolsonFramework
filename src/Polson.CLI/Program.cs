@@ -62,6 +62,13 @@ internal class Program : Runtime
             PrintLogo();
             Runtime.WithFileAndConsoleLogging("Polson", "CLI", isDebug);
         }
+       
+            if (isHook)
+            {
+            Console.Write("ff");    
+            Runtime.WithFileLogging("Polson", "CLI-hook", isDebug, "C:\\Projects\\Polson\\bin");
+            }
+        
         else
         {
             // Stdio transport: standard output is strictly reserved for JSON-RPC framing; logs go to file/stderr
@@ -82,7 +89,7 @@ internal class Program : Runtime
                 async (EvalOptions opts) => await HandleEvalArgs(opts),
                 (CreateProjectOptions opts) => HandleCreateProjectArgs(opts),
                 (ReportOptions opts) => Task.FromResult(RunReport.Run(opts)),
-                (PreserveChatlogOptions _) => Task.FromResult(ChatlogPreserver.Run()),
+                (PreserveChatlogOptions opts) => Task.FromResult(ChatlogPreserver.Run(opts)),
                 errs => ReportParseFailure(errs)
             );
         }

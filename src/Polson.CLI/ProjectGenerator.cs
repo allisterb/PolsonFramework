@@ -183,10 +183,17 @@ internal static class ProjectGenerator
         // it becomes a path segment here.
         var dir = Path.Combine(Path.GetFullPath(opts.Directory), id);
 
-        if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any() && !opts.Force)
+        if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any() && !opts.Force && !opts.Reset)
         {
-            return Fail($"Directory is not empty: {dir}\n       Use --force to generate into it anyway.");
+            return Fail($"Directory is not empty: {dir}\n"
+                + "       Use --reset to clear the previous run and keep your brief,\n"
+                + "       or --force to overwrite every generated file including brief.md.");
         }
+
+        // --reset clears the run before anything is written, so the regenerated project is what a
+        // fresh one would be. Reported rather than silent: deleting a previous run's work is the
+        // one thing here that cannot be undone.
+        var preserved = opts.Reset ? ClearRun(dir, HostFiles.For(sdk)) : [];
 
         var host = HostFiles.For(sdk);
         var profile = opts.Standalone ? "standalone" : "managed";
@@ -225,10 +232,26 @@ internal static class ProjectGenerator
             ["INSTRUCTIONS_FILE"] = host.Instructions,
             ["ISOLATION"] = Isolation(sdk),
             ["TYPE"] = type.Length > 0 ? Render(workflow, $"type.{type}.md", []) : "",
+
+            // Shared across every workflow, and rendered from one file so the four instruction
+            // templates cannot drift apart on the rule that matters most. `_shared` is not a
+            // workflow: it carries no instructions.md, which is the only thing discovery looks for.
+            ["ENGINE_ONLY"] = Render("_shared", "engine_only.md", []),
         };
 
+        // The instructions are always rewritten: they are the project's system prompt, generated
+        // from the template, and a reset that kept them would freeze a project on whatever the
+        // template said the day it was made.
         WriteText(dir, host.Instructions, Render(workflow, "instructions.md", tokens));
-        WriteText(dir, "brief.md", Render(workflow, "brief.md", tokens));
+
+        // The brief is the one file a person authors, so a reset leaves it exactly as it is —
+        // re-rendering it would discard the client's brief and, for a data-driven workflow, the
+        // whole hand-typed data table with it.
+        if (!preserved.Contains("brief.md"))
+        {
+            WriteText(dir, "brief.md", Render(workflow, "brief.md", tokens));
+        }
+
         WriteText(dir, ".gitignore", GitIgnore(opts.Standalone));
         WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, opts.Standalone));
 
@@ -245,11 +268,11 @@ internal static class ProjectGenerator
         }
 
         WriteJson(dir, host.McpConfig, McpConfig(dir));
-        WriteJson(dir, host.Permissions, Permissions(sdk, opts.Standalone, workflow));
+        WriteJson(dir, host.Permissions, Permissions(sdk, opts.Standalone, workflow, dir));
 
         // Antigravity keeps hooks in their own file; Claude Code carries them inside the settings
         // file written just above, so only one of these two lines does anything per host.
-        if (sdk == "agy") WriteJson(dir, ".agents/hooks.json", AgyHooks());
+        if (sdk == "agy") WriteJson(dir, ".agents/hooks.json", AgyHooks(sdk, dir));
 
         // Only Antigravity has a registry to write to. A Claude Code director runs the same roles as
         // sequential personas, reading the same files, which is what the instructions describe for
@@ -264,7 +287,7 @@ internal static class ProjectGenerator
             WriteJson(dir, "agent.config.json", AgentConfig());
         }
 
-        Report(dir, id, workflow, type, sdk, opts.Standalone, host);
+        Report(dir, id, workflow, type, sdk, opts.Standalone, host, preserved);
         return true;
     }
 
@@ -572,29 +595,91 @@ internal static class ProjectGenerator
     /// and nothing it delegates to. That is why a run with a correct <c>mcp.autoApprove</c> still
     /// prompted for every call the designer subagent made.
     /// </remarks>
+    /// <summary>
+    /// Clears a previous run, and reports which hand-written files were kept.
+    /// </summary>
+    /// <remarks>
+    /// What goes: <c>events/</c>, <c>scripts/</c> and <c>artifacts/</c> — everything the engine
+    /// produced. <c>scripts/</c> is included even though it looks like source, because it is engine
+    /// output too: the server numbers and writes those files. Clearing the log while leaving them
+    /// would also make <c>polson report</c> flag every one as unaccounted for, which is a warning
+    /// the reset itself would have manufactured.
+    /// <para>
+    /// What stays: <c>brief.md</c>, because that is the one file a person authors — the client's
+    /// brief and, for a data-driven workflow, the whole hand-typed data table. So does
+    /// <c>.polson/</c>: the requisition cache is content-addressed and re-filling it costs real
+    /// money, so a reset of the <i>work</i> should not be a reset of the <i>spend</i>.
+    /// </para>
+    /// <para>
+    /// The instructions file is <b>regenerated</b>, not kept. It is this project's system prompt
+    /// rather than the director's document, and keeping it meant a reset silently shipped whatever
+    /// the template said on the day the project was created — so a rule added to the template later
+    /// reached new projects and never reached the one being reset, which is the opposite of what a
+    /// reset is for. An edit worth keeping belongs in
+    /// <c>ProjectTemplate/&lt;workflow&gt;/instructions.md</c>, where every project gets it.
+    /// </para>
+    /// </remarks>
+    static string[] ClearRun(string dir, HostFiles host)
+    {
+        foreach (var name in new[] { "events", "scripts", "artifacts" })
+        {
+            var path = Path.Combine(dir, name);
+            if (!Directory.Exists(path)) continue;
+
+            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // A file the host still holds open — say so rather than failing the reset, since
+                    // a locked stale artifact is a nuisance and an aborted reset is a blocker.
+                    AnsiConsole.MarkupLine($"[yellow]  kept (in use):[/] {Markup.Escape(file)}");
+                }
+            }
+        }
+
+        return [.. new[] { "brief.md" }.Where(f => File.Exists(Path.Combine(dir, f)))];
+    }
+
     /// <summary>The command a hook runs: this CLI, in the runtime the project already needs.</summary>
     /// <remarks>
     /// <c>dotnet "&lt;dll&gt;"</c> rather than an apphost, for the same reason the MCP wiring uses it —
     /// the <c>.exe</c> is Windows-only and these files are read on Linux too.
     /// </remarks>
-    static string HookCommand() =>
-        $"dotnet \"{Forward(Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll"))}\" preserve-chatlog";
+    /// <remarks>
+    /// The SDK is baked in because the payload alone is not always enough: Antigravity's
+    /// <c>Stop</c> names a conversation and no transcript, so the verb has to know whose store to
+    /// look in. It is a hint for the fallback only — a payload that names its transcript still wins.
+    /// </remarks>
+    static string HookCommand(string sdk, string projectDir) =>
+        $"dotnet \"{Forward(Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll"))}\" preserve-chatlog"
+        + $" --host {sdk} --project-dir \"{Forward(projectDir)}\"";
 
     /// <summary>
     /// Antigravity's hook registry: the chat transcript, preserved into the project.
     /// </summary>
     /// <remarks>
-    /// Both events are wired because neither is sufficient alone. <c>PreInvocation</c> carries
-    /// <c>transcriptPath</c> and <c>workspacePaths</c> but fires <i>before</i> a turn, so on its own
-    /// it always trails by one exchange. <c>Stop</c> fires after the final turn but its payload
-    /// carries no transcript path at all — which is why the verb remembers the path it was given.
+    /// <c>enabled</c> is set explicitly. A group written without it did nothing — no copy, no error,
+    /// nothing in the project to say the hook had ever been consulted — which is the same failure
+    /// mode as every other config we have guessed at here: an entry the host does not act on looks
+    /// exactly like one it does.
+    /// <para>
+    /// <c>PostInvocation</c> fires after each model response and <c>Stop</c> once the turn's loop
+    /// ends, so the log stays current through a long session and is complete when it finishes.
+    /// <c>PreInvocation</c> was wired here first and is the wrong event for this: it runs
+    /// <i>before</i> the model, so it can only ever preserve the exchange before the current one.
+    /// </para>
     /// </remarks>
-    static object AgyHooks() => new Dictionary<string, object>
+    static object AgyHooks(string sdk, string dir) => new Dictionary<string, object>
     {
         ["polson-chatlog"] = new Dictionary<string, object>
         {
-            ["PreInvocation"] = new[] { new { type = "command", command = HookCommand(), timeout = 30 } },
-            ["Stop"] = new[] { new { type = "command", command = HookCommand(), timeout = 30 } },
+            ["enabled"] = true,
+            ["PostInvocation"] = new[] { new { type = "command", command = HookCommand(sdk, dir), timeout = 30 } },
+            ["Stop"] = new[] { new { type = "command", command = HookCommand(sdk, dir), timeout = 30 } },
         },
     };
 
@@ -607,10 +692,10 @@ internal static class ProjectGenerator
     /// closed, and the final one catches the last exchange. The verb overwrites one file per
     /// session, so firing repeatedly costs a copy rather than an accumulation.
     /// </remarks>
-    static object ClaudeHooks() => new Dictionary<string, object>
+    static object ClaudeHooks(string sdk, string dir) => new Dictionary<string, object>
     {
-        ["Stop"] = new[] { new { hooks = new[] { new { type = "command", command = HookCommand() } } } },
-        ["SessionEnd"] = new[] { new { hooks = new[] { new { type = "command", command = HookCommand() } } } },
+        ["Stop"] = new[] { new { hooks = new[] { new { type = "command", command = HookCommand(sdk, dir) } } } },
+        ["SessionEnd"] = new[] { new { hooks = new[] { new { type = "command", command = HookCommand(sdk, dir) } } } },
     };
 
     static IEnumerable<KeyValuePair<string, string>> SubagentAllows() =>
@@ -618,7 +703,7 @@ internal static class ProjectGenerator
             .Concat(ToolNames().Select(t => $"polson:{t}"))
             .Select(key => new KeyValuePair<string, string>(key, "allow"));
 
-    static object Permissions(string sdk, bool standalone, string workflow)
+    static object Permissions(string sdk, bool standalone, string workflow, string dir)
     {
         var denied = standalone ? [.. AlwaysDenied, .. StandaloneDenied] : AlwaysDenied;
 
@@ -675,7 +760,7 @@ internal static class ProjectGenerator
                 // is not a decision worth interrupting a run for.
                 enabledMcpjsonServers = new[] { "polson" },
 
-                hooks = ClaudeHooks(),
+                hooks = ClaudeHooks(sdk, dir),
             };
     }
 
@@ -853,12 +938,22 @@ internal static class ProjectGenerator
     static void WriteJson(string dir, string name, object value) =>
         WriteText(dir, name, JsonSerializer.Serialize(value, JsonOptions));
 
-    static void Report(string dir, string id, string workflow, string type, string sdk, bool standalone, HostFiles host)
+    static void Report(string dir, string id, string workflow, string type, string sdk, bool standalone, HostFiles host, string[] preserved)
     {
-        AnsiConsole.MarkupLine($"[bold green]Project created:[/] {Markup.Escape(dir)}");
+        AnsiConsole.MarkupLine($"[bold green]Project {(preserved.Length > 0 ? "reset" : "created")}:[/] {Markup.Escape(dir)}");
         AnsiConsole.MarkupLine($"  id [bold]{Markup.Escape(id)}[/] · workflow [bold]{workflow}[/]"
                              + $"{(type.Length > 0 ? $" [bold]{type}[/]" : "")} · sdk [bold]{sdk}[/] · "
                              + $"[bold]{(standalone ? "standalone" : "managed")}[/]");
+
+        // Naming what survived matters more than naming what was regenerated: the kept files are the
+        // ones holding work a person did by hand, and a reset that silently overwrote them would be
+        // discovered only when the brief turned out to be the template again.
+        if (preserved.Length > 0)
+        {
+            AnsiConsole.MarkupLine($"  cleared [bold]events/[/], [bold]scripts/[/], [bold]artifacts/[/] · kept "
+                                 + string.Join(", ", preserved.Select(f => $"[bold]{Markup.Escape(f)}[/]"))
+                                 + $" · rewrote [bold]{Markup.Escape(host.Instructions)}[/]");
+        }
         AnsiConsole.WriteLine();
 
         if (!standalone)

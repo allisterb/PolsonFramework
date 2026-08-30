@@ -35,6 +35,13 @@ public class ServerOptions : Options
 [Verb("preserve-chatlog", Hidden = true, HelpText = "Hook: read the host's hook payload from stdin and copy its chat transcript into the project's events/ directory. Wired in by create-project.")]
 public class PreserveChatlogOptions : Options
 {
+    #region Properties
+    [Option("host", Required = false, HelpText = "Which host's transcript store to search when the payload does not name a transcript: 'agy' or 'claude'. Baked in by create-project.")]
+    public string Host { get; set; } = string.Empty;
+
+    [Option("project-dir", Required = false, HelpText = "The project to preserve into. Baked in by create-project, because a hook runs in whatever directory its host chose and not necessarily the project's.")]
+    public string ProjectDir { get; set; } = string.Empty;
+    #endregion
 }
 
 [Verb("report", HelpText = "Summarise what actually happened in a project run, from its event log.")]
@@ -77,8 +84,11 @@ public class CreateProjectOptions : Options
     [Option("brief", Required = false, HelpText = "Path to a file holding the client brief. Use --prompt to pass the text itself. Treated as untrusted data and normalised before it is written.")]
     public string Brief { get; set; } = string.Empty;
 
-    [Option("force", Required = false, HelpText = "Generate into a directory that already has contents.")]
+    [Option("force", Required = false, HelpText = "Generate into a directory that already has contents. Overwrites every generated file, including brief.md.")]
     public bool Force { get; set; }
+
+    [Option("reset", Required = false, HelpText = "Clear a previous run — events/, scripts/ and artifacts/ — and regenerate every generated file including the instructions, keeping only brief.md as you wrote it.")]
+    public bool Reset { get; set; }
     #endregion
 }
 

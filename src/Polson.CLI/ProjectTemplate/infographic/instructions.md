@@ -30,6 +30,10 @@ and report, not one you should guess around.
 
 ---
 
+{{ENGINE_ONLY}}
+
+---
+
 ## Non-negotiables
 
 **1. Every figure on the canvas comes from the data table in `brief.md`.**

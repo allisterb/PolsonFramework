@@ -48,7 +48,7 @@ public class ChatlogPreserverTests : TestsRuntime, IDisposable
     private string Events => Path.Combine(root, "events");
 
     /// <summary>Feeds a payload in and captures both channels, as a host would see them.</summary>
-    private (string StdOut, string StdErr) Hook(string payload)
+    private (string StdOut, string StdErr) Hook(string payload, string host = "", string? projectDir = null)
     {
         var outWriter = new StringWriter();
         var errWriter = new StringWriter();
@@ -61,7 +61,11 @@ public class ChatlogPreserverTests : TestsRuntime, IDisposable
         Console.SetIn(new StringReader(payload));
         try
         {
-            Assert.Equal(0, ChatlogPreserver.Run());
+            Assert.Equal(0, ChatlogPreserver.Run(new PreserveChatlogOptions
+            {
+                Host = host,
+                ProjectDir = projectDir ?? string.Empty,
+            }));
         }
         finally
         {
@@ -97,9 +101,18 @@ public class ChatlogPreserverTests : TestsRuntime, IDisposable
         Assert.Equal("{}", stdout);
     }
 
-    /// <summary>Diagnostics go to stderr, where a host ignores them.</summary>
+    /// <summary>
+    /// Diagnostics never reach standard output, whatever the logging happens to be wired to.
+    /// </summary>
+    /// <remarks>
+    /// This test found the hazard rather than confirming it: with logging unconfigured, the logger
+    /// writes to the console, and its lines came out on <c>stdout</c> — which would have made the
+    /// hook malformed on every turn and looked like the whole integration failing. Standard output
+    /// is now taken away from everything except the reply, so the contract holds regardless of how
+    /// logging is set up.
+    /// </remarks>
     [Fact]
-    public void TestDiagnosticsGoToStandardError()
+    public void TestDiagnosticsNeverReachStandardOutput()
     {
         Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
 
@@ -241,6 +254,162 @@ public class ChatlogPreserverTests : TestsRuntime, IDisposable
         Hook($$"""{"session_id":"a/b:c*d","transcript_path":"{{Json(transcript)}}"}""");
 
         Assert.Single(Directory.GetFiles(Events, "chat-*.jsonl"));
+    }
+    #endregion
+
+    #region Finding the project
+    /// <summary>
+    /// The project comes from <c>--project-dir</c>, not from wherever the host launched the hook.
+    /// </summary>
+    /// <remarks>
+    /// The bug that made the whole feature look broken. Antigravity sets no project environment
+    /// variable, and its <c>PostInvocation</c> and <c>Stop</c> payloads carry no
+    /// <c>workspacePaths</c>, so resolution fell through to the current directory: the hook ran,
+    /// exited 0, copied the transcript somewhere nobody was looking, and left the project's
+    /// <c>events/</c> empty with no error anywhere.
+    /// </remarks>
+    [Fact]
+    public void TestTheProjectDirectoryBeatsTheWorkingDirectory()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", null);
+
+        var elsewhere = Path.Combine(root, "elsewhere");
+        Directory.CreateDirectory(elsewhere);
+        var previous = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(elsewhere);
+        try
+        {
+            // No workspacePaths, no environment variable — exactly Antigravity's Stop payload.
+            Hook($$"""{"conversationId":"conv","transcriptPath":"{{Json(transcript)}}"}""", "agy", root);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previous);
+        }
+
+        Assert.True(File.Exists(Path.Combine(Events, "chat-conv.jsonl")));
+        Assert.False(Directory.Exists(Path.Combine(elsewhere, "events")));
+    }
+
+    /// <summary>A project directory that does not exist is ignored rather than created blindly.</summary>
+    /// <remarks>
+    /// A stale path in a hook — a project since moved or deleted — should fall through to the other
+    /// strategies, not conjure a directory tree at a location nobody expects.
+    /// </remarks>
+    [Fact]
+    public void TestAStaleProjectDirectoryFallsThrough()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+        var gone = Path.Combine(root, "was-here-once");
+
+        Hook($$"""{"session_id":"s","transcript_path":"{{Json(transcript)}}"}""", "", gone);
+
+        Assert.True(File.Exists(Path.Combine(Events, "chat-s.jsonl")));
+        Assert.False(Directory.Exists(gone));
+    }
+    #endregion
+
+    #region The uncompacted transcript
+    /// <summary>
+    /// The uncompacted transcript is preserved alongside the active one.
+    /// </summary>
+    /// <remarks>
+    /// Not a nicety. Antigravity's active <c>transcript.jsonl</c> is <i>compacted</i> — measured on a
+    /// real session at 111 KB against the full file's 222 KB, so half the conversation was already
+    /// gone from it. What compaction drops is the earliest exchanges, which is where a direction
+    /// gets chosen and therefore the part a reader most needs afterwards.
+    /// </remarks>
+    [Fact]
+    public void TestTheUncompactedTranscriptIsPreservedToo()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        var logs = Path.Combine(root, "logs");
+        Directory.CreateDirectory(logs);
+        var active = Path.Combine(logs, "transcript.jsonl");
+        File.WriteAllText(active, """{"step":9,"note":"only the recent part"}""");
+        File.WriteAllText(Path.Combine(logs, "transcript_full.jsonl"),
+            """{"step":0,"note":"the whole thing"}""");
+
+        Hook($$"""{"conversationId":"conv","transcriptPath":"{{Json(active)}}"}""", "agy");
+
+        var full = Path.Combine(Events, "chat-conv-full.jsonl");
+        Assert.True(File.Exists(Path.Combine(Events, "chat-conv.jsonl")));
+        Assert.True(File.Exists(full));
+        Assert.Contains("the whole thing", File.ReadAllText(full), StringComparison.Ordinal);
+    }
+
+    /// <summary>A host that keeps no full transcript is not an error.</summary>
+    [Fact]
+    public void TestNoUncompactedTranscriptIsFine()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        Hook($$"""{"session_id":"solo","transcript_path":"{{Json(transcript)}}"}""");
+
+        Assert.True(File.Exists(Path.Combine(Events, "chat-solo.jsonl")));
+        Assert.Empty(Directory.GetFiles(Events, "*-full.jsonl"));
+    }
+    #endregion
+
+    #region Locating a transcript the payload did not name
+    /// <summary>
+    /// Every firing leaves a trace, whether or not it found anything.
+    /// </summary>
+    /// <remarks>
+    /// The instrument that was missing. A hook that never fired and one that fired and found
+    /// nothing look identical from the project, because stderr goes wherever the host sends it —
+    /// usually nowhere. This line is the only evidence either way, and it records the payload's
+    /// <i>keys</i> so a host's real schema can be read off a run instead of inferred from its docs.
+    /// </remarks>
+    [Fact]
+    public void TestEveryFiringLeavesATrace()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        Hook("""{"conversationId":"nope","terminationReason":"model_stop"}""", "agy");
+
+        var trace = File.ReadAllLines(Path.Combine(Events, "hooks.jsonl"));
+        var line = (JsonObject)JsonNode.Parse(trace[^1])!;
+
+        Assert.Equal("agy", line["host"]!.GetValue<string>());
+        Assert.False(line["found"]!.GetValue<bool>());
+        Assert.Contains("conversationId",
+            (line["payloadKeys"] as JsonArray)!.Select(k => k?.ToString()));
+
+        // Addressed by id only. An earlier version fell back to the newest transcript under the
+        // host's store, and this very test caught it copying an unrelated conversation from the
+        // developer's own machine for a session id that does not exist.
+        Assert.Equal("remembered", line["resolvedBy"]!.GetValue<string>());
+    }
+
+    /// <summary>A payload that names its transcript still wins over any host fallback.</summary>
+    /// <remarks>
+    /// The host hint exists for the case where nothing was named. Letting it override a path the
+    /// host actually gave would replace a fact with a guess.
+    /// </remarks>
+    [Fact]
+    public void TestThePayloadBeatsTheHostFallback()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        Hook($$"""{"session_id":"named","transcript_path":"{{Json(transcript)}}"}""", "agy");
+
+        var line = (JsonObject)JsonNode.Parse(File.ReadAllLines(Path.Combine(Events, "hooks.jsonl"))[^1])!;
+        Assert.Equal("payload", line["resolvedBy"]!.GetValue<string>());
+    }
+
+    /// <summary>An unknown host resolves nothing rather than searching somewhere arbitrary.</summary>
+    [Fact]
+    public void TestAnUnknownHostDoesNotGuess()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        Hook("""{"conversationId":"whatever"}""", "something-else");
+
+        var line = (JsonObject)JsonNode.Parse(File.ReadAllLines(Path.Combine(Events, "hooks.jsonl"))[^1])!;
+        Assert.Equal("remembered", line["resolvedBy"]!.GetValue<string>());
+        Assert.False(line["found"]!.GetValue<bool>());
     }
     #endregion
 

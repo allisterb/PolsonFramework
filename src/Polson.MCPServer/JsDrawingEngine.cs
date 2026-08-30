@@ -138,6 +138,10 @@ public partial class JsDrawingEngine : Runtime
             var layoutToolkit = new LayoutToolkit();
             engine.SetValue("Layout", layoutToolkit);
 
+            // Stylesheets read as design languages: tokens and text styling, never layout.
+            var cssToolkit = new Polson.HtmlParser.CssToolkit();
+            engine.SetValue("Css", cssToolkit);
+
             // Cloud asset requisition. Registered even when disabled so scripts can branch on the
             // returned failure rather than on the global being absent.
             var assets = Assets ?? new AssetRequisitionToolkit(null, new RequisitionCache(), new AssetBudget(0), "agent");

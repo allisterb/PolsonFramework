@@ -101,6 +101,9 @@ public static class JsSurface
         new("VectorLogo", typeof(VectorLogoToolkit), "VectorLogo", false),
         new("LogoType", typeof(LogoTypeToolkit), "LogoType", false),
         new("Layout", typeof(LayoutToolkit), "Layout", false),
+
+        new("Css", typeof(Polson.HtmlParser.CssToolkit), "Css", false),
+        new("sheet", typeof(Polson.HtmlParser.StyleSheetView), "Css", true),
     ];
 
     /// <summary>

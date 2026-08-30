@@ -42,6 +42,7 @@ public static class SdkDocs
         new("VectorLogo", ["VectorLogo", "vectorLogo"], "VectorLogo & Snap.svg Logo Methods"),
         new("LogoType", ["LogoType", "logoType", "Typography"], "LogoType"),
         new("Layout", ["Layout", "layout"], "Layout (Page Composition)"),
+        new("Css", ["Css", "css", "Stylesheet"], "Css (Design Languages)"),
         new("Assets", ["Assets", "ExtendedMind"], "Assets (Cloud Asset Requisition)")
     ];
     #endregion

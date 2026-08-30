@@ -49,6 +49,19 @@
         "resolved": "1.6.2",
         "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w=="
       },
+      "AngleSharp": {
+        "type": "Transitive",
+        "resolved": "1.7.2",
+        "contentHash": "r1rb5Qo/0KPzmP0nbSiXPDVfh4Ctu0B+y1RyyUq73g4sgAmEW7q10RDyTq2ZsILwtO9O2LAvMrUles7eD4zz1g=="
+      },
+      "AngleSharp.Css": {
+        "type": "Transitive",
+        "resolved": "1.0.2",
+        "contentHash": "XeBxh0h/73+MWFsGfeMwiK7xbzAK3YeHFdUIrMH1P90amIrDFD/vUDIrPlF3CixqaMH5MRIUvT6Ux+2zvhJ3SA==",
+        "dependencies": {
+          "AngleSharp": "[1.5.0, 2.0.0)"
+        }
+      },
       "ExCSS": {
         "type": "Transitive",
         "resolved": "4.3.1",
@@ -805,6 +818,13 @@
           "SkiaSharp": "[4.148.0, )"
         }
       },
+      "polson.htmlparser": {
+        "type": "Project",
+        "dependencies": {
+          "AngleSharp": "[1.7.2, )",
+          "AngleSharp.Css": "[1.0.2, )"
+        }
+      },
       "polson.mcpserver": {
         "type": "Project",
         "dependencies": {
@@ -815,6 +835,7 @@
           "Polson.Drawing.Skia": "[1.0.0, )",
           "Polson.Drawing.Svg": "[1.0.0, )",
           "Polson.ExtendedMind": "[1.0.0, )",
+          "Polson.HtmlParser": "[1.0.0, )",
           "Polson.Runtime": "[1.0.0, )"
         }
       },

@@ -917,6 +917,74 @@ canvas;
 
 ---
 
+# Css (Design Languages)
+
+Reads a stylesheet as a **design language** — its tokens and its text styling — in a form the drawing context takes directly. It answers *what does `.h1` look like*: family, size, weight, colour, tracking.
+
+It does **not** answer *where does it go*. There is no box model here; geometry stays with `Layout` and `ctx.measureWrappedText(...)`, which measure real glyphs.
+
+- `Css.parse(html: string)` → `StyleSheetView` — Reads an HTML document, using the CSS in its `<style>` blocks.
+- `Css.fromCss(css: string)` → `StyleSheetView` — Reads a bare stylesheet.
+- `sheet.tokens()` → `object` — The CSS custom properties, already resolved, so a token defined as `var(--ink)` comes back as the colour. This is the palette, the type scale and the canvas size — the part of a design language most worth taking.
+- `sheet.selectors()` → `string[]` — Every selector the sheet defines a rule for, in source order.
+- `sheet.rule(selector: string)` → `Style?` — The declared style for that selector, or **`null`** when the sheet has no such rule; `if (!style)` is the check to write. The selector must match **as written** — this is a lookup, not a query.
+- `sheet.rules()` → `Style[]` — Every rule, as declared styles.
+
+A `Style` carries `{ font, fontFamily, fontSize, fontWeight, fontStyle, color, backgroundColor, letterSpacing, lineHeight, textAlign, textTransform, opacity, selector, properties }`. `font` is assembled as a CSS shorthand ready for `ctx.font`; `letterSpacing` keeps the unit it was written in, because `ctx.letterSpacing` resolves `em` against the size actually in force; `lineHeight` is resolved to **pixels**, including the unitless ratio form (`line-height: 1.5` at 20px → `30`). `properties` holds every declared property, for anything the named fields do not cover. The numeric fields are 32-bit floats, so they widen in JS — a line height of `15.6` reads back as `15.600000381469727`. Format before drawing or logging.
+
+> [!IMPORTANT]
+> This reads **declared rules, not a computed cascade** — so there is no inheritance and no specificity, and only rules with an identical selector are merged (later wins). A rule that sets no `color` reports an empty one rather than the colour it would inherit.
+>
+> That narrowing is deliberate and measured. AngleSharp's computed style *throws* on `font: … 46px/1.1 …`, on `%`, `vw` and `calc()`; it silently drops any shorthand containing `var()`; and it resolves `em` tracking against 16px rather than the element's own size. At the declared-rule level none of that happens. Custom properties are substituted in the source text first, so every `var()` is gone before the CSS is parsed.
+>
+> For the flat, class-per-element stylesheets a design language is written in, that is the whole of it. For a page leaning on inheritance, this is the wrong tool.
+
+> [!NOTE]
+> No resource loader is configured, so a `<link rel="stylesheet">`, an `@import` or an `<img src>` is **inert** — parsing untrusted markup never causes a network request from inside the sandbox. Only the CSS present in the string is read.
+
+```javascript
+// Take a design language's tokens and type, then draw with them.
+const sheet = Css.fromCss(`
+  :root { --ink: #1c2733; --accent: #f0b429; --font-body: 'Inter Tight', Helvetica, sans-serif; }
+  .kicker { font: 600 13px/1 var(--font-body); letter-spacing: .18em;
+            text-transform: uppercase; color: var(--accent); }
+  .lede   { font: 400 17px/1.5 var(--font-body); color: var(--ink); }
+`);
+
+const tokens = sheet.tokens();
+log('ink = ' + tokens['--ink'] + ', accent = ' + tokens['--accent']);
+
+const canvas = createCanvas(720, 260);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#faf8f4';
+ctx.fillRect(0, 0, 720, 260);
+ctx.textBaseline = 'top';
+
+const page = Layout.inset(Layout.rect(0, 0, 720, 260), 36);
+const kicker = sheet.rule('.kicker');
+const lede = sheet.rule('.lede');
+
+// The style carries a ready-made ctx.font, so applying it is assignment, not translation.
+ctx.font = kicker.font;
+ctx.fillStyle = kicker.color;
+ctx.letterSpacing = kicker.letterSpacing;
+const kickerBox = ctx.fillWrappedText('DESIGN LANGUAGE', page.x, page.y, page.width);
+
+ctx.letterSpacing = '0px';
+ctx.font = lede.font;
+ctx.fillStyle = lede.color;
+const body = 'The stylesheet supplies the type and the palette; the toolkit supplies the geometry, ' +
+             'because only it can measure what the glyphs actually do.';
+const measured = ctx.measureWrappedText(body, page.width, lede.lineHeight);
+const [lower] = Layout.stack(Layout.rect(page.x, kickerBox.y2 + 18, page.width, measured.height),
+    [measured.height]);
+ctx.fillWrappedText(body, lower.x, lower.y, lower.width, lede.lineHeight);
+
+canvas;
+```
+
+---
+
 # Assets (Cloud Asset Requisition)
 
 Requisitions **raw material** from a cloud image model: flat tiling textures, background plates, and single-channel mattes. Everything returned needs code to become art — there is no call that produces a finished picture, by design. The model supplies what is hard to synthesise (the look of weathered oak); the drawing toolkits supply form, lighting and composition.

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "polson": {
+      "command": "dotnet",
+      "args": [
+        "C:/Projects/Polson/bin/cli/Polson.CLI.dll",
+        "server",
+        "--project-dir",
+        "C:/Projects/Polson/tests/multi_agent/comic_studio/cs-2"
+      ]
+    }
+  }
+}

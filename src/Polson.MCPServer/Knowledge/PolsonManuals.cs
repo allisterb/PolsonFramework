@@ -251,7 +251,7 @@ public class PolsonManuals
         value.Length <= max ? value : value[..max].TrimEnd() + "…";
 
     private static readonly Regex ApiCitation = new(
-        @"\b(Drawing|Logo|LogoType|VectorLogo|Snap|Skia|paper|ctx)\.([a-zA-Z][A-Za-z0-9]*)\s*\(",
+        @"\b(Drawing|Logo|LogoType|VectorLogo|Snap|Skia|Layout|Scale|Css|Assets|paper|ctx|sheet)\.([a-zA-Z][A-Za-z0-9]*)\s*\(",
         RegexOptions.Compiled);
 
     private static string? index;

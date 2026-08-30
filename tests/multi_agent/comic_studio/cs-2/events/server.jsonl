@@ -175,3 +175,4 @@
 {"ts":"2026-08-30T08:08:07.980Z","seq":175,"src":"server","type":"stage.continue","stage":"Critic","execution":"fb39d9e5"}
 {"ts":"2026-08-30T08:08:07.981Z","seq":176,"src":"server","type":"note","stage":"Critic","execution":"fb39d9e5","message":"Final verification of output.webp against the reference. Also confirming the ground is transparent, which the reference is and a white fill would silently break."}
 {"ts":"2026-08-30T08:08:08.368Z","seq":177,"src":"server","type":"script.ok","stage":"Critic","execution":"fb39d9e5","script":"scripts/0041.js","ms":388}
+{"ts":"2026-08-30T13:18:28.311Z","seq":178,"src":"server","type":"run.end"}

@@ -43,6 +43,7 @@ public static class SdkDocs
         new("LogoType", ["LogoType", "logoType", "Typography"], "LogoType"),
         new("Layout", ["Layout", "layout"], "Layout (Page Composition)"),
         new("Css", ["Css", "css", "Stylesheet"], "Css (Design Languages)"),
+        new("Scale", ["Scale", "scale", "Chart"], "Scale (Data to Pixels)"),
         new("Assets", ["Assets", "ExtendedMind"], "Assets (Cloud Asset Requisition)")
     ];
     #endregion

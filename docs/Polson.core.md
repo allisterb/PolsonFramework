@@ -650,6 +650,29 @@ log(`usable serifs: ${usable.join(', ')}`);   // pick from these, not from what 
 - `bitmap.clone()` → `SkiaBitmapWrapper` — Deep clones bitmap.
 - `bitmap.dispose()` — Releases native bitmap memory.
 
+### Measuring an Image
+
+Verification primitives. **"Look again at what you rendered" means comparing it to something**, and doing that in script means looping over every pixel — slow, and the surest way to hit the statement cap. These run natively, so a full-frame measurement costs one call whatever the resolution.
+
+- `bitmap.diff(other: SkiaBitmapWrapper, options?: { tolerance?: number, ignoreAlpha?: boolean })` → `object` — Compares two bitmaps. Returns `{ width, height, totalPixels, differingPixels, similarity, meanDelta, maxDelta, identical, bounds }`. `bounds` is the rectangle containing every differing pixel, or `null` when they match — **that is the part a score cannot tell you**. `tolerance` (default `8`) is per channel, because two renders of the same scene differ by a point or two along every antialiased edge.
+- `bitmap.diffMap(other: SkiaBitmapWrapper, options?: { tolerance?: number, ignoreAlpha?: boolean, color?: string })` → `SkiaBitmapWrapper` — Where they differ, as an image: differing pixels marked, matching ones dimmed so the differences read at a glance.
+- `bitmap.rowProfile(color: string, options?: { tolerance?: number, axis?: 'row' | 'column', minCount?: number })` → `object[]` — Where a colour class starts and ends on each row: `{ index, start, end, extent, count }`, rows matching nothing omitted. Pass `axis: 'column'` to profile the other way.
+- `bitmap.palette(count?: number, options?: { buckets?: number })` → `object[]` — The dominant colours as `{ color, share, pixels }`. Colours are bucketed before counting, so antialiasing collapses into the flat colour it surrounds instead of producing thousands of near-duplicates. Fully transparent pixels are ignored.
+
+> [!TIP]
+> `rowProfile` is what makes a structural comparison affordable. It reduces an image to a few hundred rows of measurement, so comparing two images becomes a loop over **rows** rather than over pixels — roughly 1,400 iterations for two 700-row images, against nearly a million for the pixel-level equivalent.
+>
+> ```javascript
+> const want = reference.rowProfile('#1f6f8b');
+> const got = render.rowProfile('#1f6f8b');
+> for (let i = 0; i < Math.min(want.length, got.length); i++) {
+>     const dx = Math.abs(want[i].start - got[i].start);
+>     if (dx > 8) log(`row ${want[i].index}: left edge off by ${dx}px`);
+> }
+> ```
+>
+> Differently sized bitmaps make `diff` and `diffMap` **throw** rather than comparing what overlaps — a size mismatch is a mistake about which images are being compared, and a similarity score over a partial overlap would look like an answer. Resize one first.
+
 ## `ImageData`
 
 - `imageData.width` → `number` — Width in pixels.
@@ -910,6 +933,97 @@ for (const cell of Layout.grid(right, 2, 3, 10)) {
     const pad = Layout.inset(cell, 6);
     ctx.fillStyle = '#e7e2d8';
     ctx.fillRect(pad.x, pad.y, pad.width, pad.height);
+}
+
+canvas;
+```
+
+---
+
+# Scale (Data to Pixels)
+
+Maps data values onto pixels — the numeric spine of a chart. `Layout` answers where a *panel* goes; this answers where a *value* goes.
+
+It draws nothing. Marks are ordinary `CanvasPath` and `ctx.fill` work, axis labels are ordinary text. Keeping the arithmetic separate from the drawing is what lets one scale serve a bar chart on a canvas, a sparkline in SVG, and an assertion in a test.
+
+- `Scale.linear(domainStart: number, domainEnd: number, rangeStart: number, rangeEnd: number)` → `LinearScale` — A linear mapping. The **range may run backwards** (`rangeStart > rangeEnd`), which is the normal case for a vertical axis where larger values sit at smaller `y`.
+- `Scale.band(count: number, rangeStart: number, rangeEnd: number, padding?: number)` → `BandScale` — Evenly spaced categorical bands. `padding` is the share of each step given to the gap (`0`–`1`); bars usually want `0.2`–`0.4`.
+- `Scale.ticks(min: number, max: number, count?: number)` → `number[]` — Round tick values: steps of 1, 2 or 5 times a power of ten, so ticks land on `0 / 50 / 100` rather than on `0 / 47.5 / 95`. `count` is a target, not a promise — honouring it exactly is what forces ugly steps.
+- `Scale.nice(min: number, max: number, count?: number)` → `{ min, max, span }` — Widens an interval outward to round numbers, so the first and last tick sit at the ends of the plot.
+- `Scale.extent(values: number[])` → `{ min, max, span }` — The interval containing every value. **Feed every series through this once when drawing small multiples** — panels drawn to their own extents look comparable and are not.
+- `Scale.radiusFor(value: number, maxValue: number, maxRadius: number)` → `number` — The radius that makes a circle's **area** proportional to its value.
+
+## `LinearScale`
+
+- `scale.map(value)` → `number` — The pixel position. **Not clamped**: a point off the plot is a fact about the data, and pinning it to the axis would hide the outlier worth seeing.
+- `scale.clamp(value)` → `number` — The same, held inside the range.
+- `scale.invert(position)` → `number` — The value at a pixel position.
+- `scale.extent(from, to)` → `number` — Pixel distance between two values, always positive. This is what a bar's length is.
+- `scale.ticks(count?)` → `number[]` — Round ticks across this scale's domain.
+- `scale.domainStart` · `scale.domainEnd` · `scale.rangeStart` · `scale.rangeEnd` → `number`
+- `scale.isZeroBased` → `boolean` — Whether the domain starts at zero, which bars and columns require.
+
+## `BandScale`
+
+- `band.map(index)` → `number` — The start of a band, its share of the gap already taken.
+- `band.center(index)` → `number` — The band's centre, where its label belongs.
+- `band.bandwidth` → `number` — The drawn width of one band. Let this do the division; it is where a hand-rolled bar chart drifts off its axis.
+- `band.step` · `band.count` · `band.padding` · `band.rangeStart` · `band.rangeEnd` → `number`
+
+> [!IMPORTANT]
+> Three quantitative rules are worth knowing before drawing anything, because each fails **silently** — the numbers going in are correct and the picture still lies.
+>
+> - **Bars and columns need a zero baseline.** A bar's length *is* its value, so a non-zero baseline makes the ink claim something the data does not. `scale.isZeroBased` exists to be asserted on.
+> - **Area is what the eye reads, not radius.** Sizing a circle by value directly shows a fourfold difference as sixteenfold. `Scale.radiusFor(...)` takes the square root for you.
+> - **Small multiples must share one scale.** Per-panel extents make unlike things look alike — a lie told by the layout rather than by any single chart. `Scale.extent(...)` over all series, once.
+
+```javascript
+// A column chart: nice bounds, a zero baseline, bands for the categories.
+const canvas = createCanvas(720, 380);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#faf8f4';
+ctx.fillRect(0, 0, 720, 380);
+
+const data = [
+    { label: 'Mar', value: 38 }, { label: 'Apr', value: 61 },
+    { label: 'May', value: 47 }, { label: 'Jun', value: 92 },
+    { label: 'Jul', value: 74 }
+];
+
+const plot = Layout.inset(Layout.rect(0, 0, 720, 380), 40, 40, 56, 64);
+const bounds = Scale.nice(0, Scale.extent(data.map(d => d.value)).max);
+
+// Range runs bottom-to-top, so larger values sit higher up the canvas.
+const y = Scale.linear(bounds.min, bounds.max, plot.y2, plot.y);
+const x = Scale.band(data.length, plot.x, plot.x2, 0.3);
+log('zero-based: ' + y.isZeroBased + ', ticks: ' + y.ticks(4).join(', '));
+
+// Gridlines and axis labels come off the ticks, not off guesswork.
+ctx.textAlign = 'right';
+ctx.textBaseline = 'middle';
+ctx.font = '400 12px sans-serif';
+for (const tick of y.ticks(4)) {
+    const ty = y.map(tick);
+    ctx.strokeStyle = '#e3ded3';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(plot.x, ty);
+    ctx.lineTo(plot.x2, ty);
+    ctx.stroke();
+    ctx.fillStyle = '#8a94a0';
+    ctx.fillText(tick.toFixed(0), plot.x - 10, ty);
+}
+
+ctx.textAlign = 'center';
+for (let i = 0; i < data.length; i++) {
+    // The bar's length is the distance from the baseline to the value.
+    const height = y.extent(bounds.min, data[i].value);
+    ctx.fillStyle = '#1f6f8b';
+    ctx.fillRect(x.map(i), y.map(data[i].value), x.bandwidth, height);
+
+    ctx.fillStyle = '#1c2733';
+    ctx.textBaseline = 'top';
+    ctx.fillText(data[i].label, x.center(i), plot.y2 + 10);
 }
 
 canvas;

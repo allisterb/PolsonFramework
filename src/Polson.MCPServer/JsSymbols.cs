@@ -104,6 +104,10 @@ public static class JsSurface
 
         new("Css", typeof(Polson.HtmlParser.CssToolkit), "Css", false),
         new("sheet", typeof(Polson.HtmlParser.StyleSheetView), "Css", true),
+
+        new("Scale", typeof(ScaleToolkit), "Scale", false),
+        new("scale", typeof(LinearScale), "Scale", true),
+        new("band", typeof(BandScale), "Scale", true),
     ];
 
     /// <summary>

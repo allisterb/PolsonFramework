@@ -15,8 +15,8 @@ public class KnowledgeSearchTests : TestsRuntime
     {
         var manuals = PolsonManuals.All;
 
-        Assert.Equal(12, manuals.Count);
-        Assert.Equal(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"], manuals.Select(m => m.Id));
+        Assert.Equal(13, manuals.Count);
+        Assert.Equal(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13"], manuals.Select(m => m.Id));
         Assert.All(manuals, m =>
         {
             Assert.NotEmpty(m.Title);

@@ -137,25 +137,75 @@ public sealed class LocalKnowledgeIndex : IKnowledgeIndex
             chunk.Apis,
             Excerpt(chunk.Text, terms));
 
-    /// <summary>Returns the section whole when it is small, otherwise the densest window of paragraphs.</summary>
+    /// <summary>Returns the section whole when it is small, otherwise the densest window of blocks.</summary>
     private static string Excerpt(string text, string[] terms)
     {
         if (text.Length <= MaxExcerptChars) return text;
 
-        var paragraphs = text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
-        var scores = paragraphs
+        var blocks = Blocks(text);
+        var scores = blocks
             .Select(p => Tokenize(p).Count(t => terms.Contains(t, StringComparer.Ordinal)))
             .ToArray();
 
         var best = Array.IndexOf(scores, scores.Max());
-        var excerpt = new StringBuilder(paragraphs[0].StartsWith('#') ? paragraphs[0] + "\n\n" : "");
+        var excerpt = new StringBuilder(blocks[0].StartsWith('#') ? blocks[0] + "\n\n" : "");
 
-        for (var i = best; i < paragraphs.Length && excerpt.Length < MaxExcerptChars; i++)
+        for (var i = best; i < blocks.Count && excerpt.Length < MaxExcerptChars; i++)
         {
-            excerpt.Append(paragraphs[i]).Append("\n\n");
+            // Whole blocks only, so a fenced example is never cut mid-fence. Overshooting the
+            // budget by one block is the lesser evil: half an example is worse than none, and an
+            // unbalanced fence swallows every line of prose after it.
+            if (excerpt.Length > 0 && excerpt.Length + blocks[i].Length > MaxExcerptChars * 3) break;
+            excerpt.Append(blocks[i]).Append("\n\n");
         }
 
-        return excerpt.ToString().TrimEnd() + (best > 0 || excerpt.Length < text.Length ? "\n\n… (section truncated — read the full resource for the rest)" : "");
+        var truncated = best > 0 || excerpt.Length < text.Length;
+        return excerpt.ToString().TrimEnd() +
+            (truncated ? "\n\n… (section truncated — read the full resource for the rest)" : "");
+    }
+
+    /// <summary>
+    /// Splits markdown on blank lines, treating a fenced code block as one indivisible unit.
+    /// </summary>
+    /// <remarks>
+    /// A blank line inside a fence is part of the example, not a paragraph break. Splitting on it
+    /// let an excerpt end three lines into a code block — losing the entry-point signature of the
+    /// SkSL example, which is the one thing a reader needed from it — and could emit an opening
+    /// fence with no closing one, which swallows the prose that follows.
+    /// </remarks>
+    private static List<string> Blocks(string text)
+    {
+        var blocks = new List<string>();
+        var current = new StringBuilder();
+        var inFence = false;
+
+        foreach (var line in text.Split('\n'))
+        {
+            var isFence = line.TrimStart().StartsWith("```", StringComparison.Ordinal);
+            if (isFence) inFence = !inFence;
+
+            if (!inFence && !isFence && line.Trim().Length == 0)
+            {
+                if (current.Length > 0)
+                {
+                    blocks.Add(current.ToString().TrimEnd());
+                    current.Clear();
+                }
+                continue;
+            }
+
+            current.Append(line).Append('\n');
+
+            // A closing fence completes its block, so what follows starts a fresh one.
+            if (isFence && !inFence)
+            {
+                blocks.Add(current.ToString().TrimEnd());
+                current.Clear();
+            }
+        }
+
+        if (current.Length > 0) blocks.Add(current.ToString().TrimEnd());
+        return blocks.Count == 0 ? [text] : blocks;
     }
 
     private static string Stem(string term)

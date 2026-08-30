@@ -142,6 +142,10 @@ public partial class JsDrawingEngine : Runtime
             var cssToolkit = new Polson.HtmlParser.CssToolkit();
             engine.SetValue("Css", cssToolkit);
 
+            // Value-to-pixel mapping: the numeric spine of a chart. Draws nothing itself.
+            var scaleToolkit = new ScaleToolkit();
+            engine.SetValue("Scale", scaleToolkit);
+
             // Cloud asset requisition. Registered even when disabled so scripts can branch on the
             // returned failure rather than on the global being absent.
             var assets = Assets ?? new AssetRequisitionToolkit(null, new RequisitionCache(), new AssetBudget(0), "agent");
@@ -457,12 +461,40 @@ public partial class JsDrawingEngine : Runtime
             sw.Stop();
             result.ExecutionTimeMs = sw.ElapsedMilliseconds;
             result.Success = false;
-            result.Error = ex.Message;
+            result.Error = Explain(ex);
             Runtime.Error(ex, "Script execution error: {0}", ex.Message);
         }
 
         result.ImageSize = result.ImageBytes?.Length ?? 0;
         return result;
+    }
+
+    /// <summary>
+    /// Turns a runtime failure into something a script author can act on.
+    /// </summary>
+    /// <remarks>
+    /// The statement cap is the case worth special-handling: Jint's own message names neither the
+    /// limit nor a remedy, the whole script dies rather than the loop truncating, and an agent
+    /// hitting it has no way to tell how far over budget it was. A run reported exactly this —
+    /// three scripts lost to it — and noted that the fix is usually a different loop *shape* rather
+    /// than less work, since reading each pixel once and classifying it beats one pass per class.
+    /// </remarks>
+    private static string Explain(Exception ex)
+    {
+        var message = ex.Message ?? string.Empty;
+        if (!message.Contains("maximum number of statements", StringComparison.OrdinalIgnoreCase))
+        {
+            return message;
+        }
+
+        return $"{message} The limit is {MaxStatements:N0} statements and the whole script is " +
+            "abandoned when it is reached, so nothing it drew was kept. A per-pixel loop costs " +
+            "roughly 15-40 statements per iteration, which puts the practical budget near 100,000 " +
+            "sampled pixels. Sample at a stride (every 4th or 6th pixel), read each pixel once and " +
+            "classify it in that single pass rather than looping the image once per colour, or move " +
+            "the work off the interpreter entirely: bitmap.diff(...), bitmap.rowProfile(...) and " +
+            "bitmap.palette(...) measure natively, and Skia.Shader / Skia.ImageFilter transform " +
+            "natively.";
     }
 
     #region ASCII Table Rendering

@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "inf-1",
+  "workflow": "infographic",
+  "type": "brutalist",
+  "sdk": "claude",
+  "profile": "managed",
+  "createdUtc": "2026-08-30T13:24:15.9184371Z"
+}

@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from google.antigravity import Agent, LocalAgentConfig, types
 from google.antigravity.hooks import policy
@@ -150,14 +150,22 @@ async def run_turn(
     model: str | None = None,
     resume: bool = True,
     echo: bool = True,
+    sink: Callable[[dict[str, Any]], None] | None = None,
+    director: director_mod.Director | None = None,
 ) -> RunResult:
-    """Runs one turn against a project, writing `agent.jsonl` and `director.jsonl` as it goes."""
-    agent_log = EventLog(project.agent_events, "agent")
-    director_log = EventLog(project.director_events, "director")
+    """Runs one turn against a project, writing `agent.jsonl` and `director.jsonl` as it goes.
+
+    `sink` and `director` are the two seams the web app needs and nothing else uses. A `sink` sees
+    every event this run writes, as it is written and after it is on disk — it never replaces the
+    files. A `director` supplied here overrides the one that would be chosen for the terminal, which
+    is how a browser takes over the human's half of the loop.
+    """
+    agent_log = EventLog(project.agent_events, "agent", sink)
+    director_log = EventLog(project.director_events, "director", sink)
 
     transcript = Transcript(agent_log)
-    director = director_mod.for_run(director_log, interactive=interactive)
-    attended = isinstance(director, director_mod.ConsoleDirector)
+    director = director or director_mod.for_run(director_log, interactive=interactive)
+    attended = director.attended
 
     config = build_config(
         project,

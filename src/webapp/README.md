@@ -31,11 +31,36 @@ director: the agent's questions are printed and your reply goes back to it, reco
 A run is resumable — the conversation id is written into `project.json`, and the next run continues
 where it left off unless you pass `--fresh`.
 
+## Watching a run
+
+The record is three files, and they do not all belong to this process. `agent.jsonl` and
+`director.jsonl` are written here; `server.jsonl` belongs to the .NET MCP server, and it is where
+renders are announced — so nothing on this side learns that an artifact exists except by reading it.
+`RunStream` puts both on one broker:
+
+```python
+async with RunStream(project) as stream:
+    watcher = stream.attach()                       # backlog first, then the live tail
+    await run_turn(project, prompt, sink=stream.sink,
+                   director=stream.director(EventLog(project.director_events, "director")))
+```
+
+Two properties are worth knowing before building on it. **Attaching late is the same as reading
+back** — a watcher gets the replay window and then the tail from one iterator, which is what makes a
+browser refresh survivable without a second mechanism. And **the stream is immediate while the files
+are true**: events reach a watcher roughly as they happen, but the canonical ordering is
+`(ts, src, seq)`, which `events.merge` applies to the files. Anything the broker has to drop — a run
+outliving the replay window, a client that stops reading — is announced in the stream as
+`stream.truncated` or `stream.lag` rather than passed over in silence.
+
 ## What is here
 
 | Path | What it is |
 | :--- | :--- |
 | `orchestrator/` | The agent lifecycle, the tool policy, the director, and the record. Milestone 5. |
+| `orchestrator/broker.py` | In-process fan-out of one run's events, with replay. Milestone 6. |
+| `orchestrator/tail.py` | Follows `server.jsonl`, which the .NET MCP server owns and we can only read. |
+| `orchestrator/watch.py` | `RunStream` — both halves of the record on one broker, for a watcher to attach to. |
 | `run_studio.py` | Entry point. The same program as `python -m orchestrator`, runnable from the repository root. |
 | `hello_agent.py` | A probe, not architecture — the cheapest check that the Python side still reaches the .NET side. `--task stages` also checks that one MCP session spans a whole run. |
 | `tests/` | Standard-library `unittest`. Nothing here installs a package, so there is no pytest. |

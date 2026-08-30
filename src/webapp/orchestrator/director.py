@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 from google.antigravity import types
 from google.antigravity.hooks import hooks
@@ -28,8 +29,22 @@ from google.antigravity.hooks import hooks
 from .events import EventLog
 
 
+@dataclass(frozen=True)
+class Reply:
+    """One answer travelling from a watcher back to the director."""
+
+    text: str = ""
+    selected: list[str] = field(default_factory=list)
+    skipped: bool = False
+
+
 class Director(hooks.OnInteractionHook):
     """Answers the agent's questions and records the exchange."""
+
+    #: Whether a human can actually be reached. It selects the agent's behaviour — INTERACTIVE means
+    #: the agent may stop and ask — so it is a property of the director rather than of its class,
+    #: which is what lets a third one be added without `run_turn` learning its name.
+    attended = False
 
     def __init__(self, log: EventLog) -> None:
         self.log = log
@@ -79,6 +94,8 @@ class AbsentDirector(Director):
 
 class ConsoleDirector(Director):
     """A person at the terminal. Numbered options, or free text, or blank to skip."""
+
+    attended = True
 
     async def answer(self, entry: Any, options: list[str]) -> types.QuestionResponse:
         question = getattr(entry, "question", "")
@@ -132,6 +149,128 @@ class ConsoleDirector(Director):
             picked.append(getattr(entries[index], "id", "") or options[index])
 
         return picked
+
+
+class WebDirector(Director):
+    """A person in a browser. The question goes out on the broker; the answer comes back by id.
+
+    This is the third director the module docstring anticipated, and it replaces `ConsoleDirector`
+    without touching anything else — the hook, the event vocabulary and `director.jsonl` are already
+    the contract.
+
+    The question needs an id, because unlike a terminal there may be several watchers and the reply
+    arrives on a different request from the one that asked. That id is a **transport** detail and is
+    deliberately kept out of the durable record: `director.jsonl` keeps the question and the answer
+    in the words a person would read, and the id lives only in the broker's stream. A watcher that
+    refreshes still finds it, because the broker replays.
+
+    Every path ends the question. A visitor who closes the tab, or thinks for longer than the run can
+    wait, becomes a skip with an explanation the agent can act on — the same shape `AbsentDirector`
+    uses — rather than a run wedged on a reply that is never coming.
+    """
+
+    attended = True
+
+    # region Constructors
+    def __init__(self, log: EventLog, publish: Callable[[dict[str, Any]], None], *,
+                 timeout: float = 600.0) -> None:
+        super().__init__(log)
+        self.publish = publish
+        self.timeout = timeout
+        self._pending: dict[str, asyncio.Future] = {}
+        self._next = 0
+    # endregion
+
+    # region Properties
+    @property
+    def pending(self) -> list[str]:
+        """Ids currently waiting on an answer. Normally one; never assumed to be."""
+        return [qid for qid, future in self._pending.items() if not future.done()]
+    # endregion
+
+    # region Methods
+    async def answer(self, entry: Any, options: list[str]) -> types.QuestionResponse:
+        self._next += 1
+        question_id = f"q{self._next}"
+
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        self._pending[question_id] = future
+
+        self.publish({
+            "src": "director",
+            "type": "question.open",
+            "id": question_id,
+            "text": getattr(entry, "question", ""),
+            "options": options,
+            "multi": bool(getattr(entry, "is_multi_select", False)),
+            "timeout": self.timeout,
+        })
+
+        try:
+            reply = await asyncio.wait_for(future, timeout=self.timeout)
+        except (asyncio.TimeoutError, TimeoutError):
+            self._close(question_id, "timeout")
+            return types.QuestionResponse(
+                skipped=True,
+                freeform_response=(
+                    f"No answer arrived within {self.timeout:.0f}s, so this question went "
+                    f"unanswered. Choose the direction you judge best, say in a Stage.note which one "
+                    f"you chose and why, and carry on."
+                ),
+            )
+        except asyncio.CancelledError:
+            self._close(question_id, "cancelled")
+            raise
+        finally:
+            self._pending.pop(question_id, None)
+
+        self._close(question_id, "answered")
+
+        if reply.skipped:
+            return types.QuestionResponse(skipped=True)
+
+        # Ids the agent offered, matched by identity rather than by position, so a client that sends
+        # back an option it invented is treated as free text instead of silently choosing the wrong
+        # one.
+        if reply.selected:
+            entries = list(getattr(entry, "options", None) or [])
+            valid = {getattr(o, "id", "") or "" for o in entries} | set(options)
+            chosen = [c for c in reply.selected if c in valid]
+            if chosen:
+                return types.QuestionResponse(selected_option_ids=chosen)
+
+        if reply.text:
+            return types.QuestionResponse(freeform_response=reply.text)
+
+        return types.QuestionResponse(skipped=True)
+
+    def reply(self, question_id: str, *, text: str = "", selected: list[str] | None = None,
+              skipped: bool = False) -> bool:
+        """Answers an open question. False if there is no such question, or it is already settled.
+
+        The caller turns that into its own refusal — the web layer has the vocabulary for saying
+        "gone" that this does not.
+        """
+        future = self._pending.get(question_id)
+        if future is None or future.done():
+            return False
+
+        future.set_result(Reply(text=text.strip(), selected=list(selected or []), skipped=skipped))
+        return True
+
+    def abandon(self) -> int:
+        """Skips every open question. What a run being torn down does before it stops."""
+        settled = 0
+        for question_id in list(self._pending):
+            if self.reply(question_id, skipped=True):
+                settled += 1
+        return settled
+    # endregion
+
+    # region Methods (private)
+    def _close(self, question_id: str, reason: str) -> None:
+        self.publish({"src": "director", "type": "question.closed", "id": question_id, "reason": reason})
+    # endregion
 
 
 def for_run(log: EventLog, *, interactive: bool) -> Director:

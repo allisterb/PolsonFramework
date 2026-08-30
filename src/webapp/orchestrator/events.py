@@ -21,7 +21,7 @@ import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 
 def timestamp() -> str:
@@ -59,9 +59,16 @@ def merge(*paths: Path) -> list[dict[str, Any]]:
 class EventLog:
     """Writes one append-only JSONL file. One instance per file, one writer per file."""
 
-    def __init__(self, path: Path, src: str) -> None:
+    def __init__(self, path: Path, src: str, sink: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.path = Path(path)
         self.src = src
+
+        # Where the same event goes for anyone watching now, if anyone is. The file is the record and
+        # the sink is not: it is bounded, in memory, and forgets. Nothing here waits on it, and a sink
+        # that raises loses its own event rather than the written one — the line is already on disk by
+        # the time it is called.
+        self.sink = sink
+
         self._seq: int | None = None
         self._disabled = False
         self._lock = threading.Lock()
@@ -112,6 +119,15 @@ class EventLog:
         except Exception as exc:  # noqa: BLE001 — see the module docstring
             self._disabled = True
             print(f"warning: event log {self.path} disabled after a write failure: {exc}", file=sys.stderr)
+            return
+
+        # Outside the lock, and after the write: a watcher never delays a writer, and never sees an
+        # event that did not reach the disk.
+        if self.sink is not None:
+            try:
+                self.sink(event)
+            except Exception as exc:  # noqa: BLE001 — a watcher must not break the record
+                print(f"warning: event sink for {self.path} failed: {exc}", file=sys.stderr)
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         return iter(read_events(self.path))

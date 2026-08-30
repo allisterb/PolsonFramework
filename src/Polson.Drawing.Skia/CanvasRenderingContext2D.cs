@@ -577,36 +577,116 @@ public class CanvasRenderingContext2D
         DrawTextLines(text, x, y, font, paint, maxWidth);
     }
 
-    public void FillWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
+    /// <summary>Wraps and fills a paragraph, returning the box it occupied.</summary>
+    public Dictionary<string, object> FillWrappedText(string text, float x, float y, float maxWidth,
+        float? lineHeight = null)
     {
-        if (string.IsNullOrEmpty(text)) return;
+        if (string.IsNullOrEmpty(text)) return EmptyBlock(x, y, lineHeight);
 
         using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateFillPaint();
-        DrawWrapped(text, x, y, maxWidth, lineHeight, font, paint);
+        return DrawWrapped(text, x, y, maxWidth, lineHeight, font, paint);
     }
 
-    public void StrokeWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
+    /// <summary>Wraps and strokes a paragraph, returning the box it occupied.</summary>
+    public Dictionary<string, object> StrokeWrappedText(string text, float x, float y, float maxWidth,
+        float? lineHeight = null)
     {
-        if (string.IsNullOrEmpty(text)) return;
+        if (string.IsNullOrEmpty(text)) return EmptyBlock(x, y, lineHeight);
 
         using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateStrokePaint();
-        DrawWrapped(text, x, y, maxWidth, lineHeight, font, paint);
+        return DrawWrapped(text, x, y, maxWidth, lineHeight, font, paint);
     }
 
-    private void DrawWrapped(string text, float x, float y, float maxWidth, float? lineHeight,
-        SKFont font, SKPaint paint)
+    /// <summary>
+    /// Wraps a paragraph and reports the box it <i>would</i> occupy, without drawing it.
+    /// </summary>
+    /// <remarks>
+    /// The primitive that makes a stacked layout possible: until a block's height is knowable in
+    /// advance, nothing can be placed beneath it except by guessing. It shares
+    /// <see cref="WrapText"/> and <see cref="MeasureRun"/> with the drawing path on purpose — a
+    /// layout measured by one code path and drawn by another disagrees with itself, which is the
+    /// standing failure of every width-estimating layout engine.
+    /// </remarks>
+    public Dictionary<string, object> MeasureWrappedText(string text, float maxWidth, float? lineHeight = null)
+    {
+        if (string.IsNullOrEmpty(text)) return EmptyBlock(0f, 0f, lineHeight);
+
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        font.GetFontMetrics(out var m);
+
+        var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
+        var spacing = ResolveLetterSpacing();
+        var lines = WrapText(text, maxWidth, font, spacing);
+
+        return Block(lines, WidestLine(lines, font, spacing), lh, m, 0f, 0f, measuredOnly: true);
+    }
+
+    private Dictionary<string, object> DrawWrapped(string text, float x, float y, float maxWidth,
+        float? lineHeight, SKFont font, SKPaint paint)
     {
         font.GetFontMetrics(out var m);
         var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
         var spacing = ResolveLetterSpacing();
 
-        var wrappedLines = WrapText(text, maxWidth, font, spacing);
-        for (var i = 0; i < wrappedLines.Count; i++)
+        var lines = WrapText(text, maxWidth, font, spacing);
+        for (var i = 0; i < lines.Count; i++)
         {
-            DrawTextRun(wrappedLines[i], x, y + i * lh, font, paint, spacing);
+            DrawTextRun(lines[i], x, y + i * lh, font, paint, spacing);
         }
+
+        var widest = WidestLine(lines, font, spacing);
+
+        // The block's left edge follows textAlign, and its top follows textBaseline — so the
+        // returned box is where the ink actually landed, not where the anchor was.
+        var left = _currentState.TextAlign switch
+        {
+            "center" => x - widest / 2f,
+            "right" or "end" => x - widest,
+            _ => x
+        };
+        var top = ResolveBaselineY(y, m) + m.Ascent;
+
+        return Block(lines, widest, lh, m, left, top, measuredOnly: false);
+    }
+
+    private static float WidestLine(List<string> lines, SKFont font, float spacing)
+    {
+        var widest = 0f;
+        foreach (var line in lines) widest = Math.Max(widest, MeasureRun(line, font, spacing));
+        return widest;
+    }
+
+    private static Dictionary<string, object> Block(List<string> lines, float width, float lineHeight,
+        SKFontMetrics metrics, float x, float y, bool measuredOnly)
+    {
+        var height = lines.Count * lineHeight;
+        return new Dictionary<string, object>
+        {
+            ["x"] = x,
+            ["y"] = y,
+            ["width"] = width,
+            ["height"] = height,
+            ["x2"] = x + width,
+            ["y2"] = y + height,
+            ["cx"] = x + width / 2f,
+            ["cy"] = y + height / 2f,
+            ["lines"] = lines.ToArray(),
+            ["lineCount"] = lines.Count,
+            ["lineHeight"] = lineHeight,
+            ["ascent"] = -metrics.Ascent,
+            ["descent"] = metrics.Descent,
+            // A measurement has no anchor, so its x/y are zero and only the size is meaningful.
+            ["positioned"] = !measuredOnly
+        };
+    }
+
+    private Dictionary<string, object> EmptyBlock(float x, float y, float? lineHeight)
+    {
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        font.GetFontMetrics(out var m);
+        return Block([], 0f, lineHeight ?? (m.Descent - m.Ascent) * 1.25f, m, x, y, measuredOnly: false);
     }
 
     private static List<string> WrapText(string text, float maxWidth, SKFont font, float spacing)
@@ -683,6 +763,16 @@ public class CanvasRenderingContext2D
         return unit is "em" or "rem" ? n * _currentState.FontSize : n;
     }
 
+    /// <summary>Where the baseline sits for a run drawn at <paramref name="y"/> under the current
+    /// <c>textBaseline</c>.</summary>
+    private float ResolveBaselineY(float y, SKFontMetrics metrics) => _currentState.TextBaseline switch
+    {
+        "top" or "hanging" => y - metrics.Ascent,
+        "middle" => y - (metrics.Ascent + metrics.Descent) / 2f,
+        "bottom" or "ideographic" => y - metrics.Descent,
+        _ => y // alphabetic
+    };
+
     /// <summary>Grapheme clusters, so tracking never splits an emoji or a combining accent.</summary>
     private static List<string> Graphemes(string text)
     {
@@ -727,13 +817,7 @@ public class CanvasRenderingContext2D
             _ => x
         };
 
-        var baselineY = _currentState.TextBaseline switch
-        {
-            "top" or "hanging" => y - metrics.Ascent,
-            "middle" => y - (metrics.Ascent + metrics.Descent) / 2f,
-            "bottom" or "ideographic" => y - metrics.Descent,
-            _ => y // alphabetic
-        };
+        var baselineY = ResolveBaselineY(y, metrics);
 
         if (spacing == 0f)
         {

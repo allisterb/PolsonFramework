@@ -422,9 +422,22 @@ and the results chain: `a.union(b).subtract(c)`.
 > `maxWidth` **condenses** the type horizontally rather than shrinking it, so the cap height survives what the width does not — which is what keeps a row of fitted labels reading as one row. Tracking is condensed with it. A multi-line string is condensed once, by its widest line, so the block stays internally consistent. A `maxWidth` of zero or less draws nothing, so a bad value shows up rather than silently lifting the limit.
 >
 > Use it to *fit* a label into a known box. To *flow* a paragraph, use `fillWrappedText`, whose `maxWidth` breaks lines instead of narrowing glyphs.
-- `ctx.fillWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` — Automatically word-wraps and draws filled paragraph text within `maxWidth`.
-- `ctx.strokeWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` — Automatically word-wraps and strokes paragraph text within `maxWidth`.
+- `ctx.fillWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` → `TextBlock` — Word-wraps and draws filled paragraph text within `maxWidth`, returning the box it occupied.
+- `ctx.strokeWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` → `TextBlock` — The same, stroked.
+- `ctx.measureWrappedText(text: string, maxWidth: number, lineHeight?: number)` → `TextBlock` — Wraps and reports the box the paragraph *would* occupy, **without drawing it**.
 - `ctx.measureText(text: string)` → `TextMetrics` — Returns `{ width, actualBoundingBoxAscent, actualBoundingBoxDescent, fontBoundingBoxAscent, fontBoundingBoxDescent }`.
+
+A `TextBlock` is a rectangle plus what was needed to produce it: `{ x, y, width, height, x2, y2, cx, cy, lines, lineCount, lineHeight, ascent, descent, positioned }`. `lines` is the wrapped text as an array, `width` is the widest line, and `height` is `lineCount × lineHeight`.
+
+> [!IMPORTANT]
+> `measureWrappedText` is what makes a stacked layout possible: **until a block's height is knowable in advance, nothing can be placed beneath it except by guessing.** It shares its wrapping and measurement with the drawing path, so the box it reports is the box that will be drawn.
+>
+> A measurement has no anchor, so its `x`/`y` are `0` and `positioned` is `false` — only the size is meaningful. The block returned by `fillWrappedText` *is* anchored (`positioned: true`), and its `x`/`y` account for `textAlign` and `textBaseline`, so it is where the ink landed rather than where you aimed. With `textBaseline = 'top'` the two coincide, which is the predictable way to stack.
+>
+> ```javascript
+> const intro = ctx.measureWrappedText(body, 380);
+> const [head, para, note] = Layout.stack(panel, [48, intro.height, 24], 12);
+> ```
 
 ### Gradients & Patterns
 - `ctx.createLinearGradient(x0: number, y0: number, x1: number, y1: number)` → `CanvasGradient` — Creates a linear gradient.
@@ -835,6 +848,72 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 - `paper.ogeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` → `SnapPath` — Direct Snap.svg paper helper.
 
 
+
+---
+
+# Layout (Page Composition)
+
+Rectangle arithmetic for composing a page: dividing a canvas into panels, padding them, and stacking measured blocks inside them.
+
+Every method takes rectangles and returns rectangles. A rectangle is any `{ x, y, width, height }` object, which is what `element.getBBox()`, `Drawing.subdivideProportions(...)` and `ctx.measureWrappedText(...)` already return — so they compose without conversion. Returned rectangles also carry `x2`, `y2`, `cx` and `cy`.
+
+> [!NOTE]
+> This is deliberately **not** a layout engine: no document, no flow, no cascade, and nothing measures itself. Content-driven sizes come from `ctx.measureWrappedText(...)`; `Layout` only does the geometry. Keeping the two apart is what lets the same code place panels on a canvas, panels on an SVG paper, or panels of a comic page.
+
+- `Layout.rect(x: number, y: number, width: number, height: number)` → `Rect` — Builds a rectangle.
+- `Layout.inset(rect: Rect, top: number, right?: number, bottom?: number, left?: number)` → `Rect` — Shrinks inward, CSS-shorthand style: one value for all sides, two for vertical then horizontal, three for top / horizontal / bottom, four clockwise from the top. Clamps at zero rather than inverting.
+- `Layout.outset(rect: Rect, top: number, right?: number, bottom?: number, left?: number)` → `Rect` — Expands outward; the inverse of `inset`.
+- `Layout.rows(rect: Rect, divisions: number | number[], gap?: number)` → `Rect[]` — Divides into horizontal bands. A number gives equal bands; an array gives proportional weights, so `[70, 20, 10]` is Manual 09's big/medium/small law. Weights need not sum to anything in particular.
+- `Layout.columns(rect: Rect, divisions: number | number[], gap?: number)` → `Rect[]` — The same, vertically.
+- `Layout.grid(rect: Rect, columns: number, rows: number, gap?: number, rowGap?: number)` → `Rect[]` — Row-major, so cell `(row, column)` is at index `row * columns + column`.
+- `Layout.stack(rect: Rect, heights: number[], gap?: number)` → `Rect[]` — Stacks boxes of **known heights** down the rectangle. The counterpart to `measureWrappedText`: measure each block, stack the heights, draw into what comes back.
+- `Layout.center(rect: Rect, width: number, height: number)` → `Rect` — Centres a box of that size inside the rectangle.
+- `Layout.place(rect: Rect, width: number, height: number, align?: string)` → `Rect` — Places a box at one of the nine anchors: `'topLeft'`, `'top'`, `'topRight'`, `'left'`, `'center'`, `'right'`, `'bottomLeft'`, `'bottom'`, `'bottomRight'`. Case and separators are ignored.
+- `Layout.bounds(rects: Rect[])` → `Rect` — The smallest rectangle containing them all; what a clear-space guide or lockup box is measured from once the pieces are placed. Empty input returns a zero rectangle rather than throwing.
+
+> [!TIP]
+> Gaps are taken out of the total **before** dividing, so bands always sum back to the container. Dividing first and inserting gaps afterwards overflows by exactly the gap total, and is the commonest way a hand-rolled grid drifts off its page.
+>
+> `stack` places items even when they run past the bottom — compare the last rectangle's `y2` with the container's to detect it. Overflow is a fact worth seeing rather than something to clip silently.
+
+```javascript
+// A panel divided, padded, and filled with measured text.
+const canvas = createCanvas(900, 420);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#faf8f4';
+ctx.fillRect(0, 0, 900, 420);
+
+const page = Layout.inset(Layout.rect(0, 0, 900, 420), 32);
+const [left, right] = Layout.columns(page, [62, 38], 28);
+
+ctx.textBaseline = 'top';
+ctx.fillStyle = '#1c2733';
+ctx.font = '700 30px sans-serif';
+const heading = ctx.measureWrappedText('Measuring before placing', left.width);
+
+ctx.font = '400 15px sans-serif';
+const body = ctx.measureWrappedText(
+    'Every block reports the box it will occupy, so the next one knows where to begin. ' +
+    'Nothing here guesses at a height.', left.width, 23);
+
+// Heights come from the content; the stack turns them into positions.
+const [headBox, bodyBox] = Layout.stack(left, [heading.height, body.height], 18);
+ctx.font = '700 30px sans-serif';
+ctx.fillWrappedText('Measuring before placing', headBox.x, headBox.y, headBox.width);
+ctx.font = '400 15px sans-serif';
+ctx.fillWrappedText(
+    'Every block reports the box it will occupy, so the next one knows where to begin. ' +
+    'Nothing here guesses at a height.', bodyBox.x, bodyBox.y, bodyBox.width, 23);
+
+// The right column: a grid of cells, each inset for its own padding.
+for (const cell of Layout.grid(right, 2, 3, 10)) {
+    const pad = Layout.inset(cell, 6);
+    ctx.fillStyle = '#e7e2d8';
+    ctx.fillRect(pad.x, pad.y, pad.width, pad.height);
+}
+
+canvas;
+```
 
 ---
 

@@ -100,6 +100,7 @@ public static class JsSurface
         new("Logo", typeof(LogoDesignToolkit), "Logo", false),
         new("VectorLogo", typeof(VectorLogoToolkit), "VectorLogo", false),
         new("LogoType", typeof(LogoTypeToolkit), "LogoType", false),
+        new("Layout", typeof(LayoutToolkit), "Layout", false),
     ];
 
     /// <summary>

@@ -133,6 +133,11 @@ public partial class JsDrawingEngine : Runtime
             var logoTypeToolkit = new LogoTypeToolkit();
             engine.SetValue("LogoType", logoTypeToolkit);
 
+            // Rectangle arithmetic for page composition. Pairs with ctx.measureWrappedText(...),
+            // which is where content-driven sizes come from.
+            var layoutToolkit = new LayoutToolkit();
+            engine.SetValue("Layout", layoutToolkit);
+
             // Cloud asset requisition. Registered even when disabled so scripts can branch on the
             // returned failure rather than on the global being absent.
             var assets = Assets ?? new AssetRequisitionToolkit(null, new RequisitionCache(), new AssetBudget(0), "agent");

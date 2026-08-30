@@ -81,8 +81,11 @@ public class CreateProjectOptions : Options
 public class EvalOptions : Options
 {
     #region Properties
-    [Value(0, MetaName = "script-file", Required = true, HelpText = "Path to the JavaScript script file or raw code to execute.")]
+    [Value(0, MetaName = "script-file", Required = false, HelpText = "Path to the JavaScript script file or raw code to execute. Omit it when using --svg-in.")]
     public string ScriptFile { get; set; } = string.Empty;
+
+    [Option("svg-in", Required = false, HelpText = "Render an existing .svg file instead of running a script. Useful for inspecting an artifact a run left behind.")]
+    public string SvgIn { get; set; } = string.Empty;
 
     [Option("width", Required = false, Default = 800, HelpText = "Viewport width in pixels (default: 800).")]
     public int Width { get; set; } = 800;

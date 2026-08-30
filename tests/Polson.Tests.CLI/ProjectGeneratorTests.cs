@@ -641,9 +641,16 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// <c>permissions</c> block beside it.
     /// </summary>
     /// <remarks>
-    /// Taken from a settings file the desktop wrote itself, which is the only authoritative sample.
-    /// A generated project carrying only the <c>permissions</c> form stopped for approval on every
-    /// call, which is what the wrong schema looks like: not an error, just a rule that never applies.
+    /// The dotted names come from a settings file the desktop wrote itself, which is the only
+    /// authoritative sample. A generated project carrying only the <c>permissions</c> form stopped
+    /// for approval on every call, which is what the wrong schema looks like: not an error, just a
+    /// rule that never applies.
+    /// <para>
+    /// The colon-separated <c>polson:*</c> beside them is Antigravity's own recommendation for
+    /// covering a server wholesale. Both spellings are asserted because both are carried on purpose:
+    /// only one is likely to be real, an unrecognised entry is inert, and dropping either would be
+    /// choosing between them without evidence.
+    /// </para>
     /// </remarks>
     [Fact]
     public void TestAntigravityAutoApprovesEveryServerTool()
@@ -654,9 +661,37 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
             .RootElement.GetProperty("mcp").GetProperty("autoApprove")
             .EnumerateArray().Select(e => e.GetString()!).ToArray();
 
+        Assert.Contains("polson:*", approved);
         Assert.Equal(
             ["polson.ExecuteScript", "polson.History", "polson.MeasureSvgPath", "polson.RenderSvg", "polson.Search"],
-            approved);
+            approved.Where(a => a.StartsWith("polson.", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// A subagent's MCP calls are allowed too, which the tool-name approvals do not cover.
+    /// </summary>
+    /// <remarks>
+    /// A run with a correct <c>mcp.autoApprove</c> still prompted for every call its designer
+    /// subagent made, because a subagent dispatches through the host's lazy tool interface rather
+    /// than through the server's own tool names. Whether these keys are the right ones is not
+    /// verifiable from here — see the class remarks on inert entries — so this pins what we emit,
+    /// not what the host honours.
+    /// </remarks>
+    [Fact]
+    public void TestAntigravityAllowsSubagentToolDispatch()
+    {
+        Assert.True(ProjectGenerator.Create(Options("subagent")));
+
+        var permissions = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "subagent", ".agents", "settings.json")))
+            .RootElement.GetProperty("permissions");
+
+        Assert.Equal("allow", permissions.GetProperty("call_mcp_tool").GetString());
+        Assert.Equal("allow", permissions.GetProperty("default_api:call_mcp_tool").GetString());
+        Assert.Equal("allow", permissions.GetProperty("polson:*").GetString());
+        Assert.Equal("allow", permissions.GetProperty("polson:ExecuteScript").GetString());
+
+        // The denials still stand beside the allows rather than being displaced by them.
+        Assert.Equal("deny", permissions.GetProperty("generate_image").GetString());
     }
 
     /// <summary>

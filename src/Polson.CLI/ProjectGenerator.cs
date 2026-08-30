@@ -559,6 +559,20 @@ internal static class ProjectGenerator
     /// image-generation tool, so there is nothing to deny there either way.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The allow entries a subagent's MCP calls go through, in both spellings given as valid.
+    /// </summary>
+    /// <remarks>
+    /// A subagent does not call <c>polson.ExecuteScript</c> directly; it dispatches through the
+    /// host's lazy tool interface, so approving the server's own tool names covers the main agent
+    /// and nothing it delegates to. That is why a run with a correct <c>mcp.autoApprove</c> still
+    /// prompted for every call the designer subagent made.
+    /// </remarks>
+    static IEnumerable<KeyValuePair<string, string>> SubagentAllows() =>
+        new[] { "call_mcp_tool", "default_api:call_mcp_tool", "polson:*" }
+            .Concat(ToolNames().Select(t => $"polson:{t}"))
+            .Select(key => new KeyValuePair<string, string>(key, "allow"));
+
     static object Permissions(string sdk, bool standalone, string workflow)
     {
         var denied = standalone ? [.. AlwaysDenied, .. StandaloneDenied] : AlwaysDenied;
@@ -570,20 +584,36 @@ internal static class ProjectGenerator
                 // as `<server>.<Tool>`. Taken from a settings file the desktop wrote itself
                 // (`tests/multi_agent/comic_studio/.agents/settings.json`). Without it every call
                 // stops for approval — as two rounds of the `permissions` form below demonstrated.
-                mcp = new { autoApprove = ToolNames().Select(t => $"polson.{t}").ToArray() },
+                //
+                // The `polson:*` wildcard beside it is colon-separated rather than dotted, which is
+                // Antigravity's own recommendation for covering a whole server. Only one of the two
+                // spellings is likely to be the real one; carrying both is deliberate, since an
+                // unrecognised entry is inert rather than harmful. It does mean a run that stops
+                // prompting does not tell us *which* form fixed it — see the note below.
+                mcp = new
+                {
+                    autoApprove = new[] { "polson:*" }
+                        .Concat(ToolNames().Select(t => $"polson.{t}"))
+                        .ToArray(),
+                },
 
                 // Removes the tool rather than refusing it, so it never reaches the model's context
                 // and no tokens are spent being told no. The stronger of the two forms.
                 tools = new { disabled = denied },
 
-                // And the refusal, in case a host honours one form and not the other. Note the shape:
-                // `permissions` here maps a tool to a verdict — it is **not** the `{allow: [], deny: []}`
+                // `permissions` maps a tool to a verdict — it is **not** the `{allow: [], deny: []}`
                 // arrays this file used to carry, which no host-written sample contains and which
-                // prompted for every call when we tried it. Both the bare name and the
-                // `default_api:`-prefixed spelling are named, because both were given as valid.
-                permissions = denied
-                    .SelectMany(t => new[] { t, $"default_api:{t}" })
-                    .ToDictionary(t => t, _ => "deny"),
+                // prompted for every call when we tried it.
+                //
+                // The allows exist for *subagents*: a run where the main agent was auto-approved
+                // still prompted for every call made by a subagent it spawned, because a subagent
+                // dispatches through `call_mcp_tool` rather than through the server's own tool
+                // names. Both the bare and `default_api:`-prefixed spellings are named, as with the
+                // denials, because both have been given as valid and neither is verifiable here.
+                permissions = SubagentAllows()
+                    .Concat(denied.SelectMany(t => new[] { t, $"default_api:{t}" })
+                        .Select(t => new KeyValuePair<string, string>(t, "deny")))
+                    .ToDictionary(e => e.Key, e => e.Value),
             }
             : (object)new
             {

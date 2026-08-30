@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using CommandLine;
 using Microsoft.Extensions.Configuration;
 using Polson.ExtendedMind.ImageGeneration;
+using Polson.Drawing.Skia;
+using Polson.Drawing.Svg;
 using Polson.MCPServer;
 using Spectre.Console;
 
@@ -186,12 +188,43 @@ internal class Program : Runtime
 
     static Task HandleEvalArgs(EvalOptions opts)
     {
-        var script = File.Exists(opts.ScriptFile)
-            ? File.ReadAllText(opts.ScriptFile)
-            : opts.ScriptFile;
-
         var engine = new JsDrawingEngine();
-        var result = engine.Execute(script, opts.Width, opts.Height, null, opts.Format, opts.Quality);
+        DrawingExecutionResult result;
+
+        if (!string.IsNullOrWhiteSpace(opts.SvgIn))
+        {
+            // Rendering a file the run already produced, rather than executing anything. Without
+            // this the only way to look at an artifact was to embed its markup into a script, which
+            // is both awkward and a good way to corrupt the very thing being inspected.
+            if (!File.Exists(opts.SvgIn))
+            {
+                AnsiConsole.MarkupLine($"[bold red]error:[/] {Markup.Escape($"No such SVG file: {opts.SvgIn}")}");
+                return Task.CompletedTask;
+            }
+
+            var svgXml = File.ReadAllText(opts.SvgIn);
+            result = new DrawingExecutionResult
+            {
+                Success = true,
+                SvgXml = svgXml,
+                ImageFormat = SkiaImageEncoder.NormalizeFormatName(opts.Format),
+                ImageBytes = SvgRenderPipeline.RenderToImage(svgXml, opts.Width, opts.Height,
+                    opts.Format, opts.Quality),
+            };
+        }
+        else if (string.IsNullOrWhiteSpace(opts.ScriptFile))
+        {
+            AnsiConsole.MarkupLine("[bold red]error:[/] give a script file, or --svg-in to render an SVG.");
+            return Task.CompletedTask;
+        }
+        else
+        {
+            var script = File.Exists(opts.ScriptFile)
+                ? File.ReadAllText(opts.ScriptFile)
+                : opts.ScriptFile;
+
+            result = engine.Execute(script, opts.Width, opts.Height, null, opts.Format, opts.Quality);
+        }
 
         AnsiConsole.MarkupLine($"[bold]Script Execution:[/] {(result.Success ? "[green]Success[/]" : "[red]Failed[/]")} ({result.ExecutionTimeMs}ms)");
 
@@ -216,7 +249,12 @@ internal class Program : Runtime
             AnsiConsole.MarkupLine($"[bold green]Rendered {result.ImageFormat.ToUpperInvariant()} saved:[/] {outPath} ({result.ImageBytes.Length:N0} bytes)");
         }
 
-        if (!string.IsNullOrWhiteSpace(result.SvgXml) && !string.IsNullOrWhiteSpace(opts.OutSvg))
+        // Rendering an SVG file already has the markup on disk, so echoing it back out under the
+        // default name would drop an `output.svg` wherever the command was run for no gain. An
+        // explicit --svg still writes, since that is a copy the caller asked for.
+        var echoingInput = !string.IsNullOrWhiteSpace(opts.SvgIn) && IsDefaultOutSvg(opts.OutSvg);
+
+        if (!echoingInput && !string.IsNullOrWhiteSpace(result.SvgXml) && !string.IsNullOrWhiteSpace(opts.OutSvg))
         {
             var svgPath = Path.GetFullPath(opts.OutSvg);
             File.WriteAllText(svgPath, result.SvgXml);
@@ -225,6 +263,10 @@ internal class Program : Runtime
 
         return Task.CompletedTask;
     }
+
+    /// <summary>Whether <c>--svg</c> is still at its default rather than having been asked for.</summary>
+    static bool IsDefaultOutSvg(string? outSvg) =>
+        string.Equals(outSvg, "output.svg", StringComparison.OrdinalIgnoreCase);
 
     static void PrintLogo()
     {

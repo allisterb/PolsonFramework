@@ -32,6 +32,11 @@ public class ServerOptions : Options
     #endregion
 }
 
+[Verb("preserve-chatlog", Hidden = true, HelpText = "Hook: read the host's hook payload from stdin and copy its chat transcript into the project's events/ directory. Wired in by create-project.")]
+public class PreserveChatlogOptions : Options
+{
+}
+
 [Verb("report", HelpText = "Summarise what actually happened in a project run, from its event log.")]
 public class ReportOptions : Options
 {

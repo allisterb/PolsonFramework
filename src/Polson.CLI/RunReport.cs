@@ -106,6 +106,13 @@ internal static class RunReport
             .Where(f => !scriptsRun.Any(s => Path.GetFileName(s).Equals(f, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
 
+        // The host's own transcript, if a hook preserved it. Not part of the reconciliation — it is
+        // written by the hook rather than by the engine — but its presence is what tells a reader
+        // whether the conversation behind the run is still recoverable.
+        var chatLogs = Files(dir, "events")
+            .Where(f => f.StartsWith("chat-", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
         var stages = events.Where(e => Type(e) == "stage.begin")
             .Select(e => e["stage"]?.GetValue<string>() ?? "")
             .Where(s => s.Length > 0)
@@ -123,6 +130,7 @@ internal static class RunReport
             ["stages"] = new JsonArray([.. stages.Select(s => (JsonNode)s!)]),
             ["scriptFilesOnDisk"] = scriptFiles.Length,
             ["artifactFilesOnDisk"] = artifactFiles.Length,
+            ["chatLogs"] = chatLogs.Length,
             ["scriptFilesNeverExecuted"] = new JsonArray([.. scriptsNeverRun.Select(s => (JsonNode)s!)]),
             ["artifactsNoRenderProduced"] = new JsonArray([.. unexplainedArtifacts.Select(s => (JsonNode)s!)]),
             ["warnings"] = new JsonArray([.. Warnings(hasLog, scriptsRun.Length, Count("render"),
@@ -204,6 +212,9 @@ internal static class RunReport
             ("stages declared", string.Join(" -> ", (report["stages"] as JsonArray ?? []).Select(s => s?.ToString() ?? ""))),
             ("files in scripts/", Num("scriptFilesOnDisk").ToString(CultureInfo.InvariantCulture)),
             ("files in artifacts/", Num("artifactFilesOnDisk").ToString(CultureInfo.InvariantCulture)),
+            ("chat logs preserved", Num("chatLogs") == 0
+                ? "none — the session's conversation was not kept"
+                : Num("chatLogs").ToString(CultureInfo.InvariantCulture)),
         };
 
         foreach (var (label, value) in rows)

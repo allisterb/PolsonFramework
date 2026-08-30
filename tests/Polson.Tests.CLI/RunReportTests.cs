@@ -21,6 +21,7 @@ using Xunit;
 /// not reconcile, and leaves the reading to the director.
 /// </para>
 /// </remarks>
+[Collection(ConsoleCollection.Name)]
 public class RunReportTests : TestsRuntime, IDisposable
 {
     #region Constructors

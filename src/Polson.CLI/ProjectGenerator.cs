@@ -247,6 +247,10 @@ internal static class ProjectGenerator
         WriteJson(dir, host.McpConfig, McpConfig(dir));
         WriteJson(dir, host.Permissions, Permissions(sdk, opts.Standalone, workflow));
 
+        // Antigravity keeps hooks in their own file; Claude Code carries them inside the settings
+        // file written just above, so only one of these two lines does anything per host.
+        if (sdk == "agy") WriteJson(dir, ".agents/hooks.json", AgyHooks());
+
         // Only Antigravity has a registry to write to. A Claude Code director runs the same roles as
         // sequential personas, reading the same files, which is what the instructions describe for
         // both — so nothing is lost where there is nowhere to register them.
@@ -568,6 +572,47 @@ internal static class ProjectGenerator
     /// and nothing it delegates to. That is why a run with a correct <c>mcp.autoApprove</c> still
     /// prompted for every call the designer subagent made.
     /// </remarks>
+    /// <summary>The command a hook runs: this CLI, in the runtime the project already needs.</summary>
+    /// <remarks>
+    /// <c>dotnet "&lt;dll&gt;"</c> rather than an apphost, for the same reason the MCP wiring uses it —
+    /// the <c>.exe</c> is Windows-only and these files are read on Linux too.
+    /// </remarks>
+    static string HookCommand() =>
+        $"dotnet \"{Forward(Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll"))}\" preserve-chatlog";
+
+    /// <summary>
+    /// Antigravity's hook registry: the chat transcript, preserved into the project.
+    /// </summary>
+    /// <remarks>
+    /// Both events are wired because neither is sufficient alone. <c>PreInvocation</c> carries
+    /// <c>transcriptPath</c> and <c>workspacePaths</c> but fires <i>before</i> a turn, so on its own
+    /// it always trails by one exchange. <c>Stop</c> fires after the final turn but its payload
+    /// carries no transcript path at all — which is why the verb remembers the path it was given.
+    /// </remarks>
+    static object AgyHooks() => new Dictionary<string, object>
+    {
+        ["polson-chatlog"] = new Dictionary<string, object>
+        {
+            ["PreInvocation"] = new[] { new { type = "command", command = HookCommand(), timeout = 30 } },
+            ["Stop"] = new[] { new { type = "command", command = HookCommand(), timeout = 30 } },
+        },
+    };
+
+    /// <summary>
+    /// Claude Code's hook block, which lives inside the settings file rather than its own.
+    /// </summary>
+    /// <remarks>
+    /// <c>Stop</c> fires after every agent turn and <c>SessionEnd</c> once on clean exit. Both run
+    /// the same verb: the per-turn copy keeps the log current if a session is killed rather than
+    /// closed, and the final one catches the last exchange. The verb overwrites one file per
+    /// session, so firing repeatedly costs a copy rather than an accumulation.
+    /// </remarks>
+    static object ClaudeHooks() => new Dictionary<string, object>
+    {
+        ["Stop"] = new[] { new { hooks = new[] { new { type = "command", command = HookCommand() } } } },
+        ["SessionEnd"] = new[] { new { hooks = new[] { new { type = "command", command = HookCommand() } } } },
+    };
+
     static IEnumerable<KeyValuePair<string, string>> SubagentAllows() =>
         new[] { "call_mcp_tool", "default_api:call_mcp_tool", "polson:*" }
             .Concat(ToolNames().Select(t => $"polson:{t}"))
@@ -629,6 +674,8 @@ internal static class ProjectGenerator
                 // before any tool is callable. The server is the point of the project; approving it
                 // is not a decision worth interrupting a run for.
                 enabledMcpjsonServers = new[] { "polson" },
+
+                hooks = ClaudeHooks(),
             };
     }
 

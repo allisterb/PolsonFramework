@@ -49,13 +49,15 @@ internal class Program : Runtime
         var isHttp = args.Contains("--http", StringComparer.OrdinalIgnoreCase);
         var isEval = args.Length > 0 && string.Equals(args[0], "eval", StringComparison.OrdinalIgnoreCase);
         var isCreate = args.Length > 0 && string.Equals(args[0], "create-project", StringComparison.OrdinalIgnoreCase);
+        // A hook's stdout is a JSON reply channel, so it gets no logo and file-only logging.
+        var isHook = args.Length > 0 && string.Equals(args[0], "preserve-chatlog", StringComparison.OrdinalIgnoreCase);
         var isHelp = args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h", StringComparer.OrdinalIgnoreCase);
         var isDebug = args.Contains("--debug", StringComparer.OrdinalIgnoreCase);
 
         // Every verb but the default stdio server is free to write to standard output; stdio reserves it for JSON-RPC framing.
-        var isConsoleVerb = isHttp || isEval || isCreate;
+        var isConsoleVerb = (isHttp || isEval || isCreate) && !isHook;
 
-        if (isConsoleVerb || isHelp)
+        if ((isConsoleVerb || isHelp) && !isHook)
         {
             PrintLogo();
             Runtime.WithFileAndConsoleLogging("Polson", "CLI", isDebug);
@@ -72,7 +74,7 @@ internal class Program : Runtime
             with.HelpWriter = Console.Error;
         });
 
-        var result = parser.ParseArguments<ServerOptions, EvalOptions, CreateProjectOptions, ReportOptions>(args);
+        var result = parser.ParseArguments<ServerOptions, EvalOptions, CreateProjectOptions, ReportOptions, PreserveChatlogOptions>(args);
         try
         {
             await result.MapResult(
@@ -80,6 +82,7 @@ internal class Program : Runtime
                 async (EvalOptions opts) => await HandleEvalArgs(opts),
                 (CreateProjectOptions opts) => HandleCreateProjectArgs(opts),
                 (ReportOptions opts) => Task.FromResult(RunReport.Run(opts)),
+                (PreserveChatlogOptions _) => Task.FromResult(ChatlogPreserver.Run()),
                 errs => ReportParseFailure(errs)
             );
         }

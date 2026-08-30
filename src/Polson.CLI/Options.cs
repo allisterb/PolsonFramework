@@ -32,6 +32,18 @@ public class ServerOptions : Options
     #endregion
 }
 
+[Verb("report", HelpText = "Summarise what actually happened in a project run, from its event log.")]
+public class ReportOptions : Options
+{
+    #region Properties
+    [Value(0, MetaName = "project-dir", Required = true, HelpText = "The project directory to report on.")]
+    public string ProjectDir { get; set; } = string.Empty;
+
+    [Option("json", Required = false, HelpText = "Emit the report as JSON rather than as a table.")]
+    public bool Json { get; set; }
+    #endregion
+}
+
 [Verb("create-project", HelpText = "Generate a self-contained design project directory for an agent to work in.")]
 public class CreateProjectOptions : Options
 {

@@ -518,6 +518,10 @@ public class SnapElement
             w = img.Width.Value;
             h = img.Height.Value;
         }
+        else if (element is SvgText text && !string.IsNullOrEmpty(text.Text))
+        {
+            return SnapTextMeasurement.Measure(text, matrix);
+        }
         else if (element.Children.Count > 0)
         {
             float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;

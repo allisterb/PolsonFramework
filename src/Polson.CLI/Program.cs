@@ -70,13 +70,14 @@ internal class Program : Runtime
             with.HelpWriter = Console.Error;
         });
 
-        var result = parser.ParseArguments<ServerOptions, EvalOptions, CreateProjectOptions>(args);
+        var result = parser.ParseArguments<ServerOptions, EvalOptions, CreateProjectOptions, ReportOptions>(args);
         try
         {
             await result.MapResult(
                 async (ServerOptions opts) => await HandleServerArgs(opts),
                 async (EvalOptions opts) => await HandleEvalArgs(opts),
                 (CreateProjectOptions opts) => HandleCreateProjectArgs(opts),
+                (ReportOptions opts) => Task.FromResult(RunReport.Run(opts)),
                 errs => ReportParseFailure(errs)
             );
         }

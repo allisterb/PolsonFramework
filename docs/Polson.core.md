@@ -225,7 +225,19 @@ Represents any SVG node in the document hierarchy:
 
 ### Geometry & Measurement
 
-- `element.getBBox()` → `SnapBBox` — Calculates the element's bounding box.
+- `element.getBBox()` → `SnapBBox` — Calculates the element's bounding box. **For a `<text>` element this is a real font measurement**, honouring `font-family` (including a fallback list), `font-size`, `font-weight`, `font-style` and `text-anchor` — so it agrees with `ctx.measureText(...)` for the same string. Remember SVG's `y` is the **baseline**, so the returned box starts above it.
+
+> [!TIP]
+> This is how a vector layout measures before it places. `Layout`, `Scale` and `Css` are globals and work the same on either side of the SDK, so a measured heading composes exactly as it does on canvas:
+>
+> ```javascript
+> const heading = paper.text(40, 60, 'A heading of some length');
+> heading.attr({ 'font-family': 'Georgia', 'font-size': 34 });
+> const box = heading.getBBox();
+> paper.line(40, box.y2 + 12, 40 + box.width, box.y2 + 12);   // a rule under the measured width
+> ```
+>
+> `ctx.measureWrappedText(...)` remains canvas-only: SVG has no wrapping, so a paragraph broken into `<tspan>` lines is the caller's decision rather than the toolkit's.
 - `element.getTotalLength()` → `number` — Measures path total length (paths only).
 - `element.getPointAtLength(length: number)` → `SnapPoint` — Computes coordinates at `length` (paths only).
 - `element.toSkPath()` → `SKPath` — Converts the element's geometry to a Skia path, for measurement or raster compositing.

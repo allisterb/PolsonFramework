@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- HTML/CSS parsing only: DOM, CSSOM, selectors and the cascade. No layout and no rendering —
+         those stay in Polson.Drawing.Skia, which measures real glyphs. On net10.0 both packages
+         resolve with no transitive dependencies at all; the System.Memory and
+         System.Text.Encoding.CodePages references in their nuspecs belong to the netstandard2.0
+         and .NET Framework target groups only. -->
+    <PackageReference Include="AngleSharp" Version="1.7.2" />
+    <PackageReference Include="AngleSharp.Css" Version="1.0.2" />
+  </ItemGroup>
+
+</Project>

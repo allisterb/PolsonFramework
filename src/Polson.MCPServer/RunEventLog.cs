@@ -196,6 +196,16 @@ public sealed class RunEventLog : Runtime
                     case int i: writer.WriteNumberValue(i); break;
                     case long l: writer.WriteNumberValue(l); break;
                     case double d: writer.WriteNumberValue(d); break;
+
+                    // A probe tally is the one field with structure. Written as a nested object so
+                    // `"probes":{"measure":12}` stays greppable and parseable; the default case would
+                    // stringify the dictionary's type name.
+                    case IReadOnlyDictionary<string, int> tally:
+                        writer.WriteStartObject();
+                        foreach (var (k, n) in tally) writer.WriteNumber(k, n);
+                        writer.WriteEndObject();
+                        break;
+
                     default: writer.WriteStringValue(value.ToString()); break;
                 }
             }

@@ -3,6 +3,7 @@ namespace Polson.Tests.CLI;
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Polson.CLI;
 using Xunit;
 
@@ -249,4 +250,66 @@ public class ProjectResetTests : TestsRuntime, IDisposable
     #region Fields
     private readonly string root;
     #endregion
+    #region Profile Tests
+    /// <summary>
+    /// A reset clears the run. It does not decide what the project is.
+    /// </summary>
+    /// <remarks>
+    /// Resetting a standalone project without repeating <c>--standalone</c> used to downgrade it to
+    /// managed: <c>project.json</c> was rewritten, <c>agent.config.json</c> stopped being generated,
+    /// and <c>session/</c> came out of <c>.gitignore</c> — which exposed SDK session state that was
+    /// already on disk. The damage was silent and it happened to a real project.
+    /// </remarks>
+    [Fact]
+    public void TestResettingAStandaloneProjectKeepsItStandalone()
+    {
+        Assert.True(ProjectGenerator.Create(Options("keepme", o => { o.Sdk = "agy"; o.Standalone = true; })));
+        Assert.True(ProjectGenerator.Create(Options("keepme", o => { o.Sdk = "agy"; o.Reset = true; })));
+
+        Assert.Equal("standalone", Profile("keepme"));
+        Assert.True(File.Exists(Path.Combine(root, "keepme", "agent.config.json")));
+        Assert.Contains("session/", File.ReadAllText(Path.Combine(root, "keepme", ".gitignore")),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>A managed project stays managed, which is the case that always worked.</summary>
+    [Fact]
+    public void TestResettingAManagedProjectKeepsItManaged()
+    {
+        Assert.True(ProjectGenerator.Create(Options("stayput")));
+        Assert.True(ProjectGenerator.Create(Options("stayput", o => o.Reset = true)));
+
+        Assert.Equal("managed", Profile("stayput"));
+        Assert.False(File.Exists(Path.Combine(root, "stayput", "agent.config.json")));
+    }
+
+    /// <summary>
+    /// The flag still promotes: asking for standalone is a request, not an accident.
+    /// </summary>
+    [Fact]
+    public void TestTheFlagStillPromotesAManagedProject()
+    {
+        Assert.True(ProjectGenerator.Create(Options("promote", o => o.Sdk = "agy")));
+        Assert.True(ProjectGenerator.Create(Options("promote", o => { o.Sdk = "agy"; o.Reset = true; o.Standalone = true; })));
+
+        Assert.Equal("standalone", Profile("promote"));
+        Assert.True(File.Exists(Path.Combine(root, "promote", "agent.config.json")));
+    }
+
+    /// <summary>The profile is read from the project's own manifest, so an absent one is not standalone.</summary>
+    [Fact]
+    public void TestAProjectThatCannotSayWhatItIsGetsTheSaferDefault()
+    {
+        Assert.True(ProjectGenerator.Create(Options("amnesia", o => { o.Sdk = "agy"; o.Standalone = true; })));
+        File.Delete(Path.Combine(root, "amnesia", "project.json"));
+
+        Assert.True(ProjectGenerator.Create(Options("amnesia", o => { o.Sdk = "agy"; o.Reset = true; })));
+        Assert.Equal("managed", Profile("amnesia"));
+    }
+
+    string Profile(string name) =>
+        JsonDocument.Parse(File.ReadAllText(Path.Combine(root, name, "project.json")))
+            .RootElement.GetProperty("profile").GetString()!;
+    #endregion
+
 }

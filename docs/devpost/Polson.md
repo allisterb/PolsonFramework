@@ -1,9 +1,10 @@
 ## Inspiration
-Programmers today are accustomed to collaborating with LLM-based agents on developing software, and the astonishing levels of productivity and creativity that this can enable. These collaborations can range from simple 1v1 conversations with a single agent in a terminal, to large autonomous agentic systems built on complex specifications and protocols. But no equivalent creative collaboration is currently possible for work in the field of visual arts or graphic design.
+Programmers today are accustomed to collaborating with LLM-based agents on developing software, and the astonishing levels of productivity and creativity that these collaborations enable. Agent collaborations today range from simple 1v1 conversations with a single agent in a terminal, to large autonomous agentic systems built on complex specifications and protocols. But no equivalent creative collaboration is currently possible for work in the field of visual arts or graphic design.
 
 LLMs that generate images suffer from a core problem in modern artificial intelligence: the innate inability of neural models to handle prolonged, iterative human interaction over non-language data. Language in all its human (and artificial) varieties is discrete, segmentable, addressable. Visual information is continuous, non-segmented, and entangled. When you ask a standard diffusion model to change a design, it does not actually revise the existing image; it generates a completely new statistical sample that often destroys the established visual context. When an LLM operates purely as a text-to-image generator, every prompt revision forces the model to resample from its high-dimensional probability space. Because the internal state is hidden inside model weights, it cannot isolate changes—tweaking a prompt to "darken the sky" alters the entire tensor grid, destroying the character's face, the perspective, and the line art.
 
-By contrast an LLM can change code by inspecting and precisely mutating 
+By contrast asking a model to `rename variable x to xx` or `set the foreground color on x.hat to red`has a precise interpretation in code AST operations and numerous environment constraints to ensure the operation the model does meets a minimum level of coherency and correctness. Furthermore all code operations leave *traces* which anyone can use to reconstruct the purpose of the operation, from code comments (/* renamed to xx for clarity*/) to git commit messages.
+
 Collaboration with models like Google Omni or mid-journey is strictly one-way interaction: the human prompts the model and the model generates a video or image based on the prompt and on prior prompts. There are no *traces
 
 By contrast, when an agent collaborates with humans and other agents over code , several innate and structural mechanisms present in the neural model and the agent environment naturally prevent this destructive "drift":
@@ -14,13 +15,20 @@ By contrast, when an agent collaborates with humans and other agents over code ,
 
 Most programmers tend to believe that the incredible coding capablities of LLMs  are innate to the model, that creativity occurs solely as an abstracted manipulation of symbols occuring solely in our brain and equivalently in the model weights
 
+Research in the area of visual collaboration between agents has gone down the pat:
+| Research Problem | Empirical Finding in Literature |
+| --- | --- | 
+| **Generational Degradation** | Re-prompting diffusion models causes "semantic decay" over 4+ turns (*CREA, 2025*). | 
+| **Spatial Addressability** | Bounding boxes are coarse approximations and fail on complex silhouettes (*MCCD, 2025*). | 
+| **Stigmergic Coordination** | Passing image histories forces agents to guess intent from raw pixels (*Anywhere, 2025*). | 
+| **Verification & Feedback** | Vision-language critics struggle to suggest precise pixel coordinates to diffusion models (*MM-Zero, 2026*). | 
 
 Researchers in the field of *computational creativity* like Dr. Nicholas Davis have asserted that creativity is a function of *both* innate ability and the tools a human or agent has to interact with its environment. Specifically, an agent's computational creativty can be attributed to its ability to precisely manipulate, to disassemble, synthesize. To collaborate with humans
 
 To enable true computatioal creativti for agents
 
 ## What it does
-Polson is a a framework for agentic co-creative visual art and graphic design collaboration, built on the principles of Enactive Cognition. Polson replaces the fundamental limitations of diffusion based-based image generation models with a code-based procedural drawing engine that agents using multimodal LLMs write code for to create visual artifacts that they can perceive both visually and as code, and can make precise mutations of the artifact state in response to user or other agent feedback, without drifting and losing coherency. The agent has access to a wide range of tools to interact with the code, to access knowledge, to offload demanding high-entropy tasks like material generations to cloud-based systems like using Nano Banana to generate 
+Polson is a a framework for agentic co-creative visual art and graphic design collaboration, built on the principles of Enactive AI. Polson replaces the fundamental limitations of diffusion based-based image generation models with a code-based procedural drawing engine that agents using multimodal LLMs write code for to create visual artifacts that they can perceive both visually and as code, and can make precise mutations of the artifact state in response to user or other agent feedback, without drifting and losing coherency. The agent has access to a wide range of tools to interact with the code, to access knowledge, to offload demanding high-entropy tasks like material generations to cloud-based systems like using Nano Banana to generate 
 
 In the field of computational creativity, co-creative agents collaborate with humans continuously in real time with improvisations that enrich the whole creative process. Co-creativity allows participants to improvise and fuse and construct ideas based on decisions of their peers so the whole creative product emerges through interaction and negotiation between multiple peers and is greater than the sum of individual parts.
 
@@ -33,28 +41,27 @@ An agentic co-creative environment for visual arts and graphics design using a c
 ### Agentic visual collaboration using Polson graphics code vs. using diffusion-based models
 #### 1. Data Substrate: Explicit, discrete, atomic symbols vs. continuous & entangled latents
 
-* The Graphics Code Domain: Graphics code consist of discrete text tokens parsed into an AST. Data is stored in isolated, named variables within explicit lexical scopes (`let mastWidth = 14;`). Visual attributes such as object boundaries, ambient lighting, surface textures, camera perspective, etc. are explict, discrete variables. Modifying a variable has zero computational effect on neighboring variables unless an explicit mathematical relationship has been coded. This guarantees complete graphic attribute and feature isolation: changing e.g `PALETTE.primary` or `MOON.x` mutates only the targeted AST nodes, leaving surrounding code blocks, geometry functions, and rendering logic structurally untouched.
-* The Bitmap/Latent Domain: Neural vision models process images as continuous, high-dimensional tensor matrices. In these continuous representations, visual attributes are entangled across shared feature maps and weight distributions. Because a single latent channel contributes simultaneously to multiple visual properties, adjusting a feature vector to modify one element (e.g., darkening a coat) shifts the feature distribution across neighboring regions, causing collateral visual drift in lighting, anatomy, or background geometry.
+* The graphics code domain: Graphics code consist of discrete text tokens parsed into an AST with data stored in isolated, named variables within explicit lexical scopes (`let mastWidth = 14;`). Visual attributes of an image such as object boundaries, ambient lighting, surface textures, camera perspective, etc. are explict, discrete variables. Modifying a variable has zero computational effect on neighboring variables unless an explicit mathematical relationship has been coded. This guarantees complete graphic attribute and feature isolation: changing e.g `PALETTE.primary` or `MOON.x` mutates only the targeted AST nodes, leaving surrounding code blocks, geometry functions, and rendering logic structurally untouched.
+* The bitmap/latent domain: Neural vision models process images as continuous, high-dimensional tensor matrices. In these continuous representations, visual attributes are entangled across shared feature maps and weight distributions. Because a single latent channel contributes simultaneously to multiple visual properties, adjusting a feature vector to modify one element (e.g., darkening a coat) shifts the feature distribution across neighboring regions, causing collateral visual drift in lighting, anatomy, or background geometry.
 
 
 
-#### 2. Tool Harnessing: Deterministic Symbolic Parsing vs. Probabilistic Neural Estimation
+#### 2. Tool Harness: Deterministic symbolic parsing vs. probabilistic neural estimation
 
-* The Graphics Code Harness: Agent harnesses interacting with a graphics code script or codebase utilize standard software development tools: AST parsers, regular expressions, language servers (LSP), and string search utilities (`grep`). When an agent searches for a symbol (e.g., `drawCaptainTricorne`), the tool returns exact line numbers and positions with $100\%$ precision and zero false positives.
-* **The Visual Neural Harness (Probabilistic & Approximate):** Agents interacting directly with bitmaps must rely on computer vision models to identify and isolate visual regions. These tools do not perform exact symbolic lookups; they compute probabilistic inference passes over pixel grids. The output is not a named code reference, but an estimated bounding box or a noisy binary segmentation mask with a confidence score.  The resulting mask provides pixel coordinates rather than programmatic handles, leaving the agent without direct parameters to adjust line weights, vector curves, or fill rules cleanly.
+* The graphics code harness: Agent harnesses interacting with a graphics code script or codebase utilize standard software development tools: AST parsers, regular expressions, language servers (LSP), and string search utilities (`grep`). When an agent searches for a symbol (e.g., `drawCaptainTricorne`), the tool returns exact line numbers and positions and zero false positives.
+* The visual neural harness : Agents interacting directly with bitmaps must rely on computer vision models to identify and isolate visual regions. These tools do not perform exact symbolic lookups; they compute probabilistic inference passes over pixel grids. The output is not a named code reference, but an estimated bounding box or a noisy binary segmentation mask with a confidence score.  The resulting mask provides pixel coordinates rather than programmatic handles, leaving the agent without direct parameters to adjust line weights, vector curves, or fill rules cleanly.
 
 
 #### 3. Stigmergic Medium: Persistent Environmental Traces vs. Ephemeral Opaque Modifications
 
-* **Code as a Stigmergic Canvas (Legible & Persistent):** Stigmergy requires that actions modify a shared environment in a way that leaves legible, persistent cues for subsequent agents. In a code-mode studio, the script file (`artwork.js`), project directory structure, and version control logs (`git`) act as the shared environment. When an agent creates an anchor matrix (`const ANCHORS = { ... }`), writes a self-documenting function (`drawSlateBandanaFold`), or appends a bug report to `findings.md`, it leaves a permanent, human- and machine-readable trace. A secondary agent entering the workspace reads the code text directly to comprehend the structural and parametric intent of previous passes without requiring private context-window message logs.
-* **Bitmaps as Ephemeral Media (Opaque & Un-annotated):** In image-to-image or inpainting workflows, an action replaces an old pixel matrix with a new one. The historical record of *how* or *why* a shape was rendered is immediately erased. The resulting bitmap is an opaque, un-annotated grid of numbers that hides its own creation logic. A secondary agent inspecting the image cannot examine previous structural choices, vector paths, or math constraints; it must attempt to re-infer the previous agent's intent from scratch based solely on flat visual output.
+* Code as a stigmergic canvas: Stigmergy requires that actions modify a shared environment in a way that leaves legible, persistent cues for subsequent agents. In a Polson, the script file (`artwork.js`), project directory structure, markdown files, and version control logs (`git`) act as the shared environment. When an agent creates an anchor matrix (`const ANCHORS = { ... }`), writes a self-documenting function (`drawSlateBandanaFold`), or appends a report to `findings.md`, it leaves a permanent, human- and machine-readable trace. A secondary agent entering the workspace reads the code text directly to comprehend the structural and parametric intent of previous passes.
+* Bitmaps as a ephemeral canvas: In image-to-image or inpainting workflows, an action replaces an old pixel matrix with a new one. The historical record of *how* or *why* a shape was rendered is immediately erased. The resulting bitmap is an opaque, un-annotated grid of numbers that hides its own creation logic. A secondary agent inspecting the image cannot examine previous structural choices, vector paths, or math constraints; it must attempt to re-infer the previous agent's intent from scratch based solely on flat visual output.
 
----
 
-### 4. Governance Regime: Formal Compilers & Assertions vs. Ungoverned Neural Probability
+#### 4. Governance Regime: Formal language constraints vs. ungoverned neural probability
 
-* **The Code Regime (External Constraint Enforcement):** Executable code operates within a strict governance regime enforced by parsers, language runtimes (V8, Jint), graphics engines (Skia, Canvas2D), and formal assertions. If an agent emits invalid syntax, the runtime throws an immediate exception, halting execution before bad state can compound. Furthermore, developers can enforce domain-specific assertions—such as programmatic containment checks (verifying every vertex stays within a disc boundary) or unit tests validating vector counter rules (`evenodd`). This external regime bounds agent behavior and prevents structural collapse.
-* **The Ungoverned Neural Regime (Unbounded Latent Sampling):** Direct pixel diffusion models lack an external compiler or structural validation harness. Output generation is an un-governed sampling process through high-dimensional probability distributions. Without hard mathematical constraints or runtime syntax checks to restrict the output, multi-turn editing sessions inevitably succumb to semantic and structural drift—character features gradually morph, line weights alter randomly, horizon lines shift, and geometric logic breaks down over successive prompts.
+* The code regime: Executable graphics code operates within a strict governance regime enforced by parsers, type systems, language runtime and graphics engines. If an agent emits invalid syntax or out-of-bounds drawing code, the runtime throws an immediate exception. This external regime bounds agent behavior and prevents structural collapse.
+* The ungoverned neural regime: Direct pixel diffusion models lack an external compiler or structural validation harness. Output generation is an un-governed sampling process through high-dimensional probability distributions. Without hard mathematical constraints or runtime syntax checks to restrict the output, multi-turn editing sessions inevitably succumb to semantic and structural drift—character features gradually morph, line weights alter randomly, horizon lines shift, and geometric logic breaks down over successive prompts.
 
 ---
 
@@ -123,7 +130,7 @@ There are different workflows
 
 ### Engine
 
-The Polson [drawing engine](https://github.com/allisterb/Polson/blob/master/src/Polson.MCPServer/JsDrawingEngine.cs) is a JavaScript procedural drawing engine that has a 2D vector API compatible with [Snap.svg](https://github.com/adobe-webplatform/Snap.svg), and a 2D raster canvas API that offers both a HTML5 Canvas2D compatible surface as well as the conventional [Skia](https://skia.org/) 2D API, including Skia [SkSL](https://skia.org/docs/user/sksl/) shaders. The engine does not rely on an embedded browser for executing JavaScript or rendering which allows it to be extremely fast for drawing. Snap.svg and Canvas2D APIs were chosen simply for how much JavaScript code currently exists for drawing using these 2 API shapes. Both vector and raster APIs in Polson draw directly to Skia canvases where they can be rendered as bitmaps.
+The Polson [drawing engine](https://github.com/allisterb/Polson/blob/master/src/Polson.MCPServer/JsDrawingEngine.cs) is a JavaScript procedural drawing engine that has a 2D vector API compatible with [Snap.svg](https://github.com/adobe-webplatform/Snap.svg), and a 2D raster canvas API that offers both a HTML5 Canvas2D compatible surface as well as the conventional [Skia](https://skia.org/) 2D API, including Skia [SkSL](https://skia.org/docs/user/sksl/) shaders. The engine does not rely on an embedded browser for executing JavaScript or rendering which allows it to be extremely fast for drawing. Snap.svg and Canvas2D APIs were chosen simply for how much JavaScript code currently exists for drawing using these 2 API shapes. Both vector and raster APIs in Polson draw directly to Skia canvases where they can be rendered as bitmaps in different image formats like WebP.
 
 A procedural, code-as-state drawing engine is a practical implementation of a "regime" from the Emergence Machine architecture. When agents write JavaScript code to build a scene, that code becomes the rigid organizational structure (the regime). Because the state is held externally in the code rather than hidden inside a neural network's latent space, an agent can perform true Enactive Drift Regulation, exactly as when an agent uses code and tools to prevent drift during software development. If the human director asks for a change, the agent does not hallucinate a completely new image from scratch. It reads the existing code regime, locates the specific variable or path that needs changing, and surgically update it while maintaining total structural coherence with the rest of the canvas.
 
@@ -137,32 +144,7 @@ The Polson
 ### Code Mode MCP Server
 The Polson procedural drawing engine is exposed to agents as a 'Code Mode' MCP server. Code Mode is a technique for [programmatic tool calling](https://platform.claude.com/cookbook/tool-use-programmatic-tool-calling-ptc) by agents using a code execution environment described by [Cloudfare](https://blog.cloudflare.com/code-mode-mcp/) and [Anthropic](https://www.anthropic.com/engineering/code-execution-with-mcp). Instead of requiring the agent to call individual drawing tools one-at-time with a full model round-trip with each result, the agent writes an entire JavaScript program against a typed SDK to complete one stage of the graphic production process. 
 
-Polson leverages the massive amounts of program generation and instruction data LLMs like Claude are trained on by providing a typed SDK and constrained code execution environment for procedural drawing and acquiring assets, in contrast to using a large MCP tool catalog o. The SDK and constrained code generation approach is a far more reliable and deterministic and context-efficient approach to drawing and graphic design than agents using natural language skills and shell command orchestration or individual MCP tool calls. 
 
-The [Polson MCP server](https://github.com/allisterb/Polson/blob/master/src/Polson.MCPServer/PolsonMCPServer.cs) provides one main tool for pro: `ExecuteScript` that agents use for procedural draw The agent generates a complete JavaScript program to carry out all the tasks in an investigation step and executes it using the tool without having to wait to process and reason over intermediate tool results. The [Camel JavaScript SDK](https://github.com/allisterb/Camel/blob/master/docs/Camel.core.md) references are available as MCP resources which the agent reads when the session begins. The code environment provides baseline features like logging and audit functions, async execution, and session storage that persists between script runs:
-```js
-auditInfo("Evidence: disk rocba-cdrive.e01 (EnCase E01, Win10 19042, 81GiB, acq 2020-12-18, embedded MD5=5efc207c85587683e5ca5fa2d5ef1aa4); memory Rocba-Memory.raw (Win10 19041, captured 2020-11-16 02:32:38 UTC). Host TZ EST5EDT. Break-in 2020-11-13.");
-
-const mem = "/mnt/artifacts/Rocba-Memory.raw";
-const [pstree, netscan, cmdline] = await Promise.all([
-  MemoryAnalysisToolkit.WindowsPsTreeAsync(mem),
-  MemoryAnalysisToolkit.WindowsNetScanAsync(mem),
-  MemoryAnalysisToolkit.WindowsCmdLineAsync(mem)
-]);
-log(`pstree nodes(top)=${pstree?.length ?? 0}, netscan=${netscan?.length ?? 0}, cmdline=${cmdline?.length ?? 0}`);
-if (cmdline) Session["cmdline"] = cmdline;
-if (netscan) Session["netscan"] = netscan;
-
-// Render process tree flat
-function walk(nodes, depth) {
-  for (const n of nodes ?? []) {
-    log(`${"  ".repeat(depth)}${n.PID}/${n.PPID} ${n.ImageFileName} | ${n.CreateTime ?? ""} | ${(n.Cmd ?? "").slice(0,90)}`);
-    if (n.__children && n.__children.length) walk(n.__children, depth+1);
-  }
-}
-log("=== PSTREE ===");
-walk(pstree, 0);
-```
 
 Using AI to execute code, be it shell scripts or JavaScript, is always fraught with problems and these are multiplied in a potentially adversial scenario like a DFIR investigation. The Camel JavaScript interpreter has a number of safety constraints imposed on it:
 
@@ -234,16 +216,29 @@ The Polson JavaScript procedural drawing engine, extended mind MCP tools, and CL
 * **Deterministic Re-execution (Zero Generational Loss):** Executing code is a deterministic transformation: $f(\text{code}) = \text{pixels}$. Re-running `artwork.js` 1,000 times produces bit-exact, identical pixel arrays every single time. Stochastic visual elements (such as starfield distributions or ocean chop) are governed by seeded pseudo-random number generators (LCGs), ensuring that random distributions remain completely reproducible. Code modifications incur zero generational degradation.
 * **Stochastic Re-sampling (Accumulated Quantization Noise):** Editing a raster image requires passing pixels through a neural encoder (e.g., a VAE encoder) into a latent representation, altering the latent vector, and running a decoder to project back to pixel space. Because neural encoding and decoding are probabilistic approximations, every edit cycle introduces quantization noise, anti-aliasing artifacts, and fine-detail blurring. Over multiple iterative turns, this "re-sampling tax" leads to severe visual degradation, analogous to repeatedly saving a compressed JPEG file.
 
----
 
-### 7. Feedback Ergonomics: Surgical Variable Mutation vs. Coarse Macro Prompting
+#### 7. Feedback Ergonomics: Surgical Variable Mutation vs. Coarse Macro Prompting
 
-* **Surgical Code Diffs (Fine-Grained Parametric Tuning):** Human design feedback is frequently precise, numerical, and localized ("tilt the ship's heel by $5^\circ$", "darken the primary color by $10\%$", "shift the moon $200\text{px}$ left"). In a code-based architecture, an agent translates these directives into surgical code diffs—altering a single constant or variable assignment (`SHIP.heel = 0.087;`). The surrounding geometry, background shaders, and character details remain perfectly locked.
+* **Surgical Code Diffs and fine-grained Parametric Tuning):** Human design feedback is frequently precise, numerical, and localized ("tilt the ship's heel by $5^\circ$", "darken the primary color by $10\%$", "shift the moon $200\text{px}$ left"). In a code-based architecture, an agent translates these directives into surgical code diffs—altering a single constant or variable assignment (`SHIP.heel = 0.087;`). The surrounding geometry, background shaders, and character details remain perfectly locked.
 * **Coarse Macro Prompting (Global Latent Resampling):** Direct diffusion pipelines force fine-grained creative direction through a coarse-grained macro interface: natural language prompts. When a user prompts a model to "tilt the ship slightly," the model re-samples the entire latent tensor grid. Because the model lacks localized parametric controls, the request to tilt the ship often results in a completely re-imagined vessel—altering sail count, changing wood textures, shifting lighting direction, and destroying historical context.
 
 ---
 
-### 8. Asset Scalability: Resolution-Agnostic Scripts vs. Fixed Spatial Grids
+#### 8. Asset Scalability: Resolution-Agnostic Scripts vs. Fixed Spatial Grids
 
-* **Code as a Universal Vector (Context-Agnostic Execution):** Executable graphics code is inherently resolution- and context-agnostic. A single script (`artwork_2.js`) can simultaneously emit scalable SVG vector paths (`output.svg`), render a 16px crisp favicon, draw an app icon squircle, and paint a high-resolution $1600 \times 1000$ brand presentation board. Geometry, font tracking, and clear-space guides scale mathematically across layouts without aspect-ratio distortion or resolution loss.
-* **Fixed Spatial Grids (Resolution-Bound Matrices):** Diffusion model outputs are bound to fixed pixel dimensions (e.g., $1024 \times 1024$ raster grids). Adapting a generated image to different aspect ratios, responsive web layouts, or large-scale print formats requires lossy spatial cropping, generative outpainting, or AI upscaling. Each adaptation pass runs the risk of introducing visual hallucinations, distorting typography, or altering established spatial proportions.
+* Resolutiom-independent graphics code: Polson graphics is inherently resolution- and context-agnostic. A single script can simultaneously emit scalable SVG vector paths , render a 16px crisp favicon, draw an app icon squircle, and paint a high-resolution $1600 \times 1000$ brand presentation board. Geometry, font tracking, and clear-space guides scale mathematically across layouts without aspect-ratio distortion or resolution loss.
+* Resolution-bound matrices: Diffusion model outputs are bound to fixed pixel dimensions (e.g., $1024 \times 1024$ raster grids). Adapting a generated image to different aspect ratios, responsive web layouts, or large-scale print formats requires lossy spatial cropping, generative outpainting, or AI upscaling. Each adaptation pass runs the risk of introducing visual hallucinations, distorting typography, or altering established spatial proportions.
+
+#### 9. Executable architectural blueprints vs. probabilistic Semantic Steering
+
+* **Code-Mode Action Space (Deterministic Engineering Blueprints):** In a code-governed environment, an agent’s chain-of-thought (CoT) reasoning directly mirrors a deterministic, parametric action space. The agent reasons like a structural engineer or technical director—calculating exact spatial coordinates, hex color values, alpha gradient steps, Bézier control points, and AST logic (`MOON.x = 912; opacity = 0.95;`). Because the action space consists of executable code parameters, there is a $1:1$ causal link between internal reasoning and external rendering: the agent’s CoT functions as an actionable, bit-exact blueprint that the graphics engine executes with $100\%$ mathematical fidelity.
+* **Diffusion-Mode Action Space (Probabilistic Semantic Steering):** In a pure neural image pipeline, an agent’s action space is restricted to natural language text prompting or coarse spatial masking. Its internal CoT is inherently rhetorical and semantic—focusing on keyword weighting, mood adjectives, style triggers, and prompt placement to bias high-dimensional latent distributions. Even if an agent attempts to "think" in precise coordinates or exact hex codes, the underlying model processes those numbers as un-grounded text tokens rather than spatial or color parameters. Consequently, the agent's reasoning degrades from a precise execution plan into a wishlist of semantic descriptors fed into a black-box generator.
+
+## How it works
+When you run `polson create-poject`, the Polson CLI creates a directory with all the files that Gemini needs to use Polson to create a drawing or image or infographic etc, including config for the Polson MCP tools and hooks that fire at session stop and end to call the CLI to copy Gemini chat logs for the case session from your profile directory to the Polson case directory. The generated GEMINI.md contains the instructions and prompt guardrails for carrying out the drawing workflow you specified when running the CLI. See `[./]polson --help` for the different verbs and args you can use with the CLI. 
+
+When an investigation starts, Gemini calls the Polson `Search` and `ExecuteScript` MCP tools, and to get the SDK and enough info to begin the drawing process
+
+When agents make a drawing the rendered drawing is sto
+The agents are instructed to keep a log of everything they do 
+

@@ -22,6 +22,7 @@ completed is still evidence of what the agent was doing.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .events import EventLog
@@ -63,18 +64,20 @@ class Transcript:
         self.counts: dict[str, int] = {}
         self._unfinished: dict[str, Any] = {}
         self._written: set[str] = set()
+        self._first_seen: dict[str, float] = {}
 
     # region Turn lifecycle
     def turn_start(self, prompt: str) -> None:
         """Opens a turn. The prompt is recorded by size, not text — the director's own file holds the words."""
         self._unfinished.clear()
         self._written.clear()
+        self._first_seen.clear()
         self._emit("turn.start", chars=len(prompt or ""))
 
     def turn_end(self, status: str, error: str | None = None) -> None:
         """Closes a turn, writing down whatever had not finished."""
-        for step in sorted(self._unfinished.values(), key=lambda s: getattr(s, "step_index", 0)):
-            self._write(step, partial=True)
+        for key, step in sorted(self._unfinished.items(), key=lambda kv: getattr(kv[1], "step_index", 0)):
+            self._write(step, partial=True, elapsed=self._elapsed(key))
         self._unfinished.clear()
 
         self._emit("turn.end", status=status, error=error or None)
@@ -87,26 +90,46 @@ class Transcript:
         if key in self._written:
             return
 
+        # The SDK's Step carries no timestamp of its own — the desktop host's transcript does, the
+        # library's model does not — so first sight is the only start time available. Without it every
+        # event is an instant and a run has no durations: no way to tell deliberation from a slow
+        # tool, which is exactly the distinction the interaction record needs to be worth reading.
+        self._first_seen.setdefault(key, time.monotonic())
+
         if self._status(step) in self.SETTLED:
             self._unfinished.pop(key, None)
             self._written.add(key)
-            self._write(step)
+            self._write(step, elapsed=self._elapsed(key))
         else:
             self._unfinished[key] = step
+
+    def _elapsed(self, key: str) -> int | None:
+        """Milliseconds from first sight of a step to now, or None if it was never seen before."""
+        started = self._first_seen.pop(key, None)
+        return None if started is None else max(0, round((time.monotonic() - started) * 1000))
 
     @staticmethod
     def _status(step: Any) -> str:
         return getattr(getattr(step, "status", None), "name", "") or ""
 
-    def _write(self, step: Any, *, partial: bool = False) -> None:
+    def _write(self, step: Any, *, partial: bool = False, elapsed: int | None = None) -> None:
         kind = getattr(getattr(step, "type", None), "name", "UNKNOWN")
 
         # A step that ended badly says so on its own event. It is not the end of the turn — the SDK
         # retries a 429 and carries on — so it must not be recorded as one.
+        #
+        # `depth` and `trajectory` are what distinguish a subagent's work from the main agent's. The
+        # SDK carries both on every step and we were dropping them, which flattened a run with
+        # delegated work into one undifferentiated sequence — the one thing a record of collaboration
+        # cannot afford to lose.
+        depth = getattr(step, "depth", 0) or 0
         state = {
             "status": self._status(step) if self._status(step) != "DONE" else None,
             "error": getattr(step, "error", "") or None,
             "partial": partial or None,
+            "ms": elapsed,
+            "depth": depth or None,
+            "trajectory": getattr(step, "trajectory_id", "") or None if depth else None,
         }
 
         if kind == "TOOL_CALL":

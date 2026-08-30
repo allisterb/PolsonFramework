@@ -127,6 +127,19 @@ internal static class RunReport
         // transcript that exists but recorded nothing is a distinct state worth seeing.
         var agentSteps = agentEvents.Count(e => Type(e) is not ("run.start" or "run.end" or "turn.start" or "turn.end"));
 
+        // What the run perceived, not just what it produced. An `inspect` event carries a tally per
+        // execution; `artifact.read` names a file an earlier pass wrote. The second is the one worth
+        // a line of its own: it is the only direct evidence in the record that one pass built on
+        // another through the environment rather than from its own context.
+        var probes = events.Where(e => Type(e) == "inspect")
+            .Sum(e => e["total"]?.GetValue<int>() ?? 0);
+
+        var artifactsRead = events.Where(e => Type(e) == "artifact.read")
+            .Select(e => e["artifact"]?.GetValue<string>() ?? "")
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         var stages = events.Where(e => Type(e) == "stage.begin")
             .Select(e => e["stage"]?.GetValue<string>() ?? "")
             .Where(s => s.Length > 0)
@@ -141,6 +154,9 @@ internal static class RunReport
             ["scriptsFailed"] = Count("script.error"),
             ["renders"] = Count("render"),
             ["notes"] = Count("note"),
+            ["inspections"] = Count("inspect"),
+            ["probes"] = probes,
+            ["artifactsRead"] = new JsonArray([.. artifactsRead.Select(a => (JsonNode)a!)]),
             ["stages"] = new JsonArray([.. stages.Select(s => (JsonNode)s!)]),
             ["scriptFilesOnDisk"] = scriptFiles.Length,
             ["artifactFilesOnDisk"] = artifactFiles.Length,
@@ -243,6 +259,17 @@ internal static class RunReport
             : "none — the session's conversation was not kept";
     }
 
+    /// <summary>
+    /// Which earlier artifacts this run consulted, which is what stigmergy looks like in the record.
+    /// </summary>
+    private static string Read(JsonObject report)
+    {
+        var read = (report["artifactsRead"] as JsonArray ?? []).Select(a => a?.ToString() ?? "").ToArray();
+        return read.Length == 0
+            ? "none - no pass built on an earlier pass's render"
+            : string.Join(", ", read);
+    }
+
     private static void Print(string dir, JsonObject report)
     {
         int Num(string key) => report[key]?.GetValue<int>() ?? 0;
@@ -259,6 +286,10 @@ internal static class RunReport
             ("scripts failed", Num("scriptsFailed").ToString(CultureInfo.InvariantCulture)),
             ("renders recorded", Num("renders").ToString(CultureInfo.InvariantCulture)),
             ("stage notes", Num("notes").ToString(CultureInfo.InvariantCulture)),
+            ("looked before drawing", Num("inspections") == 0
+                ? "never - no script measured, sampled or read anything back"
+                : $"{Num("probes")} probes across {Num("inspections")} of {Num("scriptsExecuted")} scripts"),
+            ("artifacts read back", Read(report)),
             ("stages declared", string.Join(" -> ", (report["stages"] as JsonArray ?? []).Select(s => s?.ToString() ?? ""))),
             ("files in scripts/", Num("scriptFilesOnDisk").ToString(CultureInfo.InvariantCulture)),
             ("files in artifacts/", Num("artifactFilesOnDisk").ToString(CultureInfo.InvariantCulture)),

@@ -125,6 +125,7 @@ public class SkiaBitmapWrapper : IDisposable
 
     public string GetPixel(int x, int y)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Sample);
         if (x < 0 || x >= Bitmap.Width || y < 0 || y >= Bitmap.Height)
             return "#00000000";
         var c = Bitmap.GetPixel(x, y);
@@ -204,6 +205,7 @@ public class SkiaBitmapWrapper : IDisposable
     /// </remarks>
     public Dictionary<string, object> Diff(SkiaBitmapWrapper other, object? options = null)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Compare);
         ArgumentNullException.ThrowIfNull(other);
         RequireSameSize(other, "diff");
 
@@ -255,6 +257,7 @@ public class SkiaBitmapWrapper : IDisposable
     /// </remarks>
     public SkiaBitmapWrapper DiffMap(SkiaBitmapWrapper other, object? options = null)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Compare);
         ArgumentNullException.ThrowIfNull(other);
         RequireSameSize(other, "diffMap");
 
@@ -296,6 +299,7 @@ public class SkiaBitmapWrapper : IDisposable
     /// </remarks>
     public Dictionary<string, object>[] RowProfile(string color, object? options = null)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Sample);
         var target = SkiaColorParser.Parse(color);
         var tolerance = OptionInt(options, "tolerance", 24);
         var minCount = OptionInt(options, "minCount", 1);
@@ -342,6 +346,7 @@ public class SkiaBitmapWrapper : IDisposable
     /// </remarks>
     public Dictionary<string, object>[] Palette(int count = 8, object? options = null)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Sample);
         var buckets = Math.Clamp(OptionInt(options, "buckets", 16), 2, 64);
         var size = 256 / buckets;
         var tally = new Dictionary<int, (long Count, long R, long G, long B)>();

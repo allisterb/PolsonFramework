@@ -90,12 +90,29 @@ public class SkiaImageApi
                 full);
         }
 
+        ProbeScope.RecordRead(Relative(full) ?? filePath);
+
         using var stream = File.OpenRead(full);
         var bmp = SKBitmap.Decode(stream);
         if (bmp == null)
             throw new InvalidOperationException($"Failed to decode image from {filePath}");
 
         return new SkiaBitmapWrapper(bmp);
+    }
+
+    /// <summary>
+    /// A resolved path expressed the way a script would have written it, for the run record.
+    /// </summary>
+    /// <remarks>
+    /// The record is read alongside <c>render</c> events, whose artifact paths are project-relative,
+    /// so a read of <c>artifacts/03.webp</c> has to be the same string as the write that produced it
+    /// or nothing joins them up. Returns null when there is no project root to be relative to.
+    /// </remarks>
+    private string? Relative(string full)
+    {
+        if (string.IsNullOrEmpty(projectRoot)) return null;
+        var rel = Path.GetRelativePath(projectRoot, full);
+        return rel.StartsWith("..", StringComparison.Ordinal) ? null : rel.Replace('\\', '/');
     }
 
     public SkiaBitmapWrapper FromDataUrl(string dataUrl)
@@ -555,6 +572,7 @@ public class SkiaFontApi
     /// <summary>Every font family installed on this machine, sorted.</summary>
     public string[] Families()
     {
+        ProbeScope.Record(ProbeScope.Kinds.Capability);
         using var manager = SKFontManager.CreateDefault();
         return [.. manager.FontFamilies.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)];
     }
@@ -570,6 +588,8 @@ public class SkiaFontApi
     /// </summary>
     public string Resolve(string family)
     {
+        // Has() delegates here, so counting in both would report one question as two.
+        ProbeScope.Record(ProbeScope.Kinds.Capability);
         if (string.IsNullOrWhiteSpace(family)) return SKTypeface.Default.FamilyName;
 
         using var typeface = SKTypeface.FromFamilyName(family.Trim());

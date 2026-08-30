@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 using ModelContextProtocol.Server;
@@ -196,7 +197,13 @@ internal static class ProjectGenerator
         var preserved = opts.Reset ? ClearRun(dir, HostFiles.For(sdk)) : [];
 
         var host = HostFiles.For(sdk);
-        var profile = opts.Standalone ? "standalone" : "managed";
+        // A reset clears the run; it does not decide what the project is. Without this, resetting a
+        // standalone project without repeating --standalone silently downgraded it to managed —
+        // rewriting project.json, dropping the orchestrator's own files, and taking `session/` out
+        // of .gitignore, which exposed SDK state already on disk. The flag can still promote a
+        // managed project, because that is someone asking for it; only the silent demotion is wrong.
+        var standalone = opts.Standalone || (opts.Reset && WasStandalone(dir));
+        var profile = standalone ? "standalone" : "managed";
         string briefText;
         try
         {
@@ -211,7 +218,7 @@ internal static class ProjectGenerator
         var createdUtc = DateTime.UtcNow.ToString("O");
 
         var dirs = new List<string> { "artifacts", "scripts", "events" };
-        if (opts.Standalone)
+        if (standalone)
         {
             // LocalAgentConfig.save_dir and app_data_dir — a Python SDK concept, meaningless when a
             // desktop host owns the session.
@@ -252,8 +259,8 @@ internal static class ProjectGenerator
             WriteText(dir, "brief.md", Render(workflow, "brief.md", tokens));
         }
 
-        WriteText(dir, ".gitignore", GitIgnore(opts.Standalone));
-        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, opts.Standalone));
+        WriteText(dir, ".gitignore", GitIgnore(standalone));
+        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, standalone));
 
         // Roles, checklists, anything else the workflow ships. Rendered like the rest, so they can
         // carry the same tokens.
@@ -268,11 +275,15 @@ internal static class ProjectGenerator
         }
 
         WriteJson(dir, host.McpConfig, McpConfig(dir));
-        WriteJson(dir, host.Permissions, Permissions(sdk, opts.Standalone, workflow, dir));
+        WriteJson(dir, host.Permissions, Permissions(sdk, standalone, workflow, dir));
 
         // Antigravity keeps hooks in their own file; Claude Code carries them inside the settings
         // file written just above, so only one of these two lines does anything per host.
-        if (sdk == "agy") WriteJson(dir, ".agents/hooks.json", AgyHooks(sdk, dir));
+        if (sdk == "agy")
+        {
+            WriteJson(dir, ".agents/hooks.json", AgyHooks(sdk, dir));
+            WriteScript(dir, HookScriptPath, HookScript(sdk, dir));
+        }
 
         // Only Antigravity has a registry to write to. A Claude Code director runs the same roles as
         // sequential personas, reading the same files, which is what the instructions describe for
@@ -282,12 +293,12 @@ internal static class ProjectGenerator
             WriteJson(dir, ".agents/agents.json", MultiAgentConfig(id, host.Instructions, roles));
         }
 
-        if (opts.Standalone)
+        if (standalone)
         {
             WriteJson(dir, "agent.config.json", AgentConfig(host));
         }
 
-        Report(dir, id, workflow, type, sdk, opts.Standalone, host, preserved);
+        Report(dir, id, workflow, type, sdk, standalone, host, preserved);
         return true;
     }
 
@@ -632,6 +643,31 @@ internal static class ProjectGenerator
     /// <c>ProjectTemplate/&lt;workflow&gt;/instructions.md</c>, where every project gets it.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Whether the project already in this directory was generated as standalone.
+    /// </summary>
+    /// <remarks>
+    /// Read from its own manifest rather than assumed, and false for anything unreadable: a project
+    /// that cannot say what it is gets the safer of the two, since a later regeneration with the
+    /// flag can still add whatever standalone needs.
+    /// </remarks>
+    static bool WasStandalone(string dir)
+    {
+        try
+        {
+            var manifest = Path.Combine(dir, "project.json");
+            if (!File.Exists(manifest)) return false;
+
+            return string.Equals(
+                JsonNode.Parse(File.ReadAllText(manifest))?["profile"]?.GetValue<string>(),
+                "standalone", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     static string[] ClearRun(string dir, HostFiles host)
     {
         foreach (var name in new[] { "events", "scripts", "artifacts" })
@@ -667,9 +703,62 @@ internal static class ProjectGenerator
     /// <c>Stop</c> names a conversation and no transcript, so the verb has to know whose store to
     /// look in. It is a hint for the fallback only — a payload that names its transcript still wins.
     /// </remarks>
+    /// <summary>The wrapper a hook invokes, beside <c>hooks.json</c> and named without spaces.</summary>
+    const string HookScriptPath = ".agents/preserve-chatlog.cmd";
+
+    /// <summary>
+    /// What a host's hook actually runs: a bare filename, deliberately.
+    /// </summary>
+    /// <remarks>
+    /// The Antigravity CLI hands the command line to <c>cmd /c</c> as a single argument, and the Go
+    /// side escapes the quotes inside it. A command beginning with a quoted path therefore reaches
+    /// cmd as <c>\"C:/...\"</c> — quotes and all, as part of the command name — and dies with
+    /// "is not recognized as an internal or external command". Every quoting scheme tried against
+    /// that had the same shape of problem, so this stops quoting altogether: the command is one
+    /// bare token with no path, no spaces and no quotes.
+    /// <para>
+    /// That works because a hook does <b>not</b> run in the project directory. It runs in the folder
+    /// holding <c>hooks.json</c> — <c>.agents/</c> — which is exactly where the wrapper is written.
+    /// The one awkward fact about hooks turns out to be the thing that makes them reliable.
+    /// </para>
+    /// <para>
+    /// The leading <c>.\</c> is not decoration. <c>cmd.exe</c> searches the working directory for a
+    /// bare command name only while <c>NoDefaultCurrentDirectoryInExePath</c> is unset, and it is set
+    /// on at least one machine this has to work on — where the bare name failed with the same
+    /// "is not recognized" message as the quoted path did. Naming the directory explicitly is immune
+    /// to the setting either way.
+    /// </para>
+    /// </remarks>
     static string HookCommand(string sdk, string projectDir) =>
-        $"dotnet \"{Forward(Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll"))}\" preserve-chatlog"
-        + $" --host {sdk} --project-dir \"{Forward(projectDir)}\"";
+        sdk == "agy" ? ".\\" + Path.GetFileName(HookScriptPath) : DirectCommand(sdk, projectDir);
+
+    /// <summary>
+    /// The batch wrapper itself, where quoting is safe because cmd parses the file normally.
+    /// </summary>
+    /// <remarks>
+    /// Backslashes and CRLF, because this one file is read by <c>cmd.exe</c> rather than by us.
+    /// Its own paths are absolute for the reason the command line could not be: the working
+    /// directory is <c>.agents/</c>, one level below the project.
+    /// </remarks>
+    static string HookScript(string sdk, string projectDir) =>
+        $"@echo off{Environment.NewLine}"
+        + $"REM Generated by `polson create-project`. Invoked by .agents/hooks.json.{Environment.NewLine}"
+        + $"REM A hook runs with its working directory set to this folder, not the project root,{Environment.NewLine}"
+        + $"REM which is why every path below is absolute.{Environment.NewLine}"
+        + $"{DirectCommand(sdk, projectDir, windows: true)}{Environment.NewLine}";
+
+    /// <summary>The command itself, for a host that can take one without mangling its quotes.</summary>
+    static string DirectCommand(string sdk, string projectDir, bool windows = false)
+    {
+        string Path_(string p) => windows ? p.Replace('/', '\\') : Forward(p);
+
+        var exe = Path.Combine(AppContext.BaseDirectory, "Polson.CLI.exe");
+        var launcher = File.Exists(exe)
+            ? $"\"{Path_(Forward(exe))}\""
+            : $"dotnet \"{Path_(Forward(Path.Combine(AppContext.BaseDirectory, "Polson.CLI.dll")))}\"";
+
+        return $"{launcher} preserve-chatlog --host {sdk} --project-dir \"{Path_(Forward(projectDir))}\"";
+    }
 
     /// <summary>
     /// Antigravity's hook registry: the chat transcript, preserved into the project.
@@ -924,6 +1013,21 @@ internal static class ProjectGenerator
           # if a particular stage is worth keeping in history.
           artifacts/
           """;
+
+    /// <summary>
+    /// Writes a batch file, which is the one thing here that must not have Unix line endings.
+    /// </summary>
+    /// <remarks>
+    /// <c>cmd.exe</c> mishandles LF-only <c>.cmd</c> files — the repository's own
+    /// <c>.gitattributes</c> pins <c>*.cmd</c> to CRLF for exactly this reason — so this bypasses
+    /// <see cref="WriteText"/>, which normalises everything to LF.
+    /// </remarks>
+    static void WriteScript(string dir, string name, string body)
+    {
+        var path = Path.Combine(dir, name.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, body.ReplaceLineEndings("\r\n"), new UTF8Encoding(false));
+    }
 
     /// <summary>Writes a file, creating the directory a nested name implies.</summary>
     static void WriteText(string dir, string name, string body)

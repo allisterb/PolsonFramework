@@ -16,6 +16,7 @@ See `docs/project-layout.md` for the directory contract this implements.
 """
 
 from .broker import Broker, Subscription
+from .csm import Coded, Curve
 from .director import Reply, WebDirector
 from .events import EventLog, merge, read_events
 from .project import Project, ProjectError, load
@@ -26,6 +27,8 @@ from .watch import RunStream
 
 __all__ = [
     "Broker",
+    "Coded",
+    "Curve",
     "EventLog",
     "Project",
     "ProjectError",

@@ -204,6 +204,12 @@ internal static class ChatlogPreserver
     /// the directory is the conversation id the desktop shows beside the chat.
     /// </para>
     /// <para>
+    /// There are <b>three</b> stores, one per Antigravity surface, and they share a layout: the
+    /// desktop writes <c>antigravity/</c>, the CLI <c>antigravity-cli/</c>, and the IDE
+    /// <c>antigravity-ide/</c>. Searching only the desktop's was a real miss — a CLI run kept its
+    /// transcript at the identical path under a different root, so the fallback reported nothing
+    /// found while the file sat there. All three are searched, desktop first.
+    /// <para>
     /// <c>~/.gemini/antigravity/brain/</c> is the <b>default</b> <c>app_data_dir</c>, not a fixed
     /// location — the Python SDK documents overriding it on <c>LocalAgentConfig</c>, and nothing in
     /// the hook payload says where it ended up. An override therefore misses, and misses visibly in
@@ -214,6 +220,28 @@ internal static class ChatlogPreserver
     /// deletes transcripts after an age (30 days by default), so the host's copy is not an archive.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Antigravity's per-surface data roots under <c>~/.gemini</c>, in the order to try them.
+    /// </summary>
+    /// <remarks>
+    /// Named by the shipped hook documentation, which lists the surfaces alongside the transcript
+    /// path they produce. The layout below each is identical, so only the root differs.
+    /// </remarks>
+    private static readonly string[] AntigravityStores = ["antigravity", "antigravity-cli", "antigravity-ide"];
+
+    /// <summary>
+    /// Where a conversation's transcript could be, one path per Antigravity surface, in search order.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Locate"/> and internal so it can be tested: the home directory comes
+    /// from <see cref="Environment.SpecialFolder.UserProfile"/>, which a test cannot move, and the
+    /// defect this exists to prevent — searching one store when there are three — is invisible on a
+    /// machine that happens to have used the store you did search.
+    /// </remarks>
+    internal static IEnumerable<string> AntigravityTranscripts(string home, string session) =>
+        AntigravityStores.Select(store => Path.Combine(
+            home, ".gemini", store, "brain", session, ".system_generated", "logs", "transcript.jsonl"));
+
     private static (string? Path, string How) Locate(JsonObject payload, string host, string session, string events)
     {
         if (Text(payload, "transcript_path", "transcriptPath") is { } given && File.Exists(given))
@@ -228,10 +256,10 @@ internal static class ChatlogPreserver
         // what happened, and the trace below would be the only place it was ever contradicted.
         if (host.StartsWith("agy", StringComparison.OrdinalIgnoreCase))
         {
-            var byId = Path.Combine(Home(), ".gemini", "antigravity", "brain",
-                session, ".system_generated", "logs", "transcript.jsonl");
-
-            if (File.Exists(byId)) return (byId, "host:conversationId");
+            foreach (var byId in AntigravityTranscripts(Home(), session))
+            {
+                if (File.Exists(byId)) return (byId, "host:conversationId");
+            }
         }
 
         if (host.StartsWith("claude", StringComparison.OrdinalIgnoreCase))

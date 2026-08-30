@@ -4,14 +4,14 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "dotnet \"C:/Projects/Polson/bin/cli/Polson.CLI.dll\" preserve-chatlog --host agy --project-dir \"C:/Projects/Polson/tests/agent/infographic/agy/inf-1\"",
+        "command": ".\\preserve-chatlog.cmd",
         "timeout": 30
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "dotnet \"C:/Projects/Polson/bin/cli/Polson.CLI.dll\" preserve-chatlog --host agy --project-dir \"C:/Projects/Polson/tests/agent/infographic/agy/inf-1\"",
+        "command": ".\\preserve-chatlog.cmd",
         "timeout": 30
       }
     ]

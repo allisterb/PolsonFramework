@@ -360,6 +360,15 @@ public class SnapElement
 
     public virtual SnapBBox GetBBox(bool isWithoutTransform = false)
     {
+        // Only the agent-facing spelling is counted. attr() and transform() call this internally with
+        // isWithoutTransform: true on every attribute set, and a group's box is computed by recursing
+        // over its children — counting either would report a script as inspecting when it was drawing.
+        if (!isWithoutTransform) ProbeScope.Record(ProbeScope.Kinds.Measure);
+        return Bounds(isWithoutTransform);
+    }
+
+    private SnapBBox Bounds(bool isWithoutTransform)
+    {
         SnapMatrix? matrix = null;
         if (!isWithoutTransform && Node.Transforms != null && Node.Transforms.Count > 0)
         {
@@ -377,12 +386,14 @@ public class SnapElement
 
     public virtual float GetTotalLength()
     {
+        ProbeScope.Record(ProbeScope.Kinds.Measure);
         using var skPath = ToSkPath();
         return skPath != null ? SnapPathMeasurement.GetTotalLength(skPath) : 0f;
     }
 
     public virtual SnapPoint GetPointAtLength(float length)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Measure);
         using var skPath = ToSkPath();
         return skPath != null ? SnapPathMeasurement.GetPointAtLength(skPath, length) : default;
     }
@@ -528,7 +539,7 @@ public class SnapElement
             var hasChild = false;
             foreach (var child in element.Children)
             {
-                var childBox = Wrap(child).GetBBox(false);
+                var childBox = Wrap(child).Bounds(false);
                 if (childBox.Width > 0 || childBox.Height > 0)
                 {
                     minX = MathF.Min(minX, childBox.X);

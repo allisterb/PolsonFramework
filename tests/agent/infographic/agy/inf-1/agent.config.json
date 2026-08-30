@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "agentBehavior": "interactive",
+  "instructionsFile": "GEMINI.md",
   "deniedTools": [
     "generate_image",
     "run_command"

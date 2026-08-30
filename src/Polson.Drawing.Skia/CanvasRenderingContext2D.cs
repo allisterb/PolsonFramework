@@ -611,6 +611,7 @@ public class CanvasRenderingContext2D
     /// </remarks>
     public Dictionary<string, object> MeasureWrappedText(string text, float maxWidth, float? lineHeight = null)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Measure);
         if (string.IsNullOrEmpty(text)) return EmptyBlock(0f, 0f, lineHeight);
 
         using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
@@ -728,6 +729,7 @@ public class CanvasRenderingContext2D
 
     public Dictionary<string, object> MeasureText(string text)
     {
+        ProbeScope.Record(ProbeScope.Kinds.Measure);
         text ??= string.Empty;
         using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         var width = MeasureRun(text, font, ResolveLetterSpacing());

@@ -417,4 +417,47 @@ public class ChatlogPreserverTests : TestsRuntime, IDisposable
     private readonly string root;
     private readonly string transcript;
     #endregion
+    #region Transcript Store Tests
+    /// <summary>
+    /// Antigravity has three surfaces and three data roots, and they share a layout.
+    /// </summary>
+    /// <remarks>
+    /// Searching only the desktop's <c>antigravity/</c> was a real miss: a run through the
+    /// Antigravity CLI kept its transcript at the identical path under <c>antigravity-cli/</c>, so
+    /// the fallback reported nothing found while the file sat there. The bug is invisible on a
+    /// machine that only ever used the surface you happened to search, which is why this is pinned
+    /// rather than left to the integration path.
+    /// </remarks>
+    [Fact]
+    public void TestEveryAntigravitySurfaceIsSearched()
+    {
+        var paths = ChatlogPreserver.AntigravityTranscripts(@"C:/home", "conv-1").ToArray();
+
+        Assert.Equal(3, paths.Length);
+        Assert.Contains(paths, p => p.Contains(Path.Combine(".gemini", "antigravity", "brain"), StringComparison.Ordinal));
+        Assert.Contains(paths, p => p.Contains(Path.Combine(".gemini", "antigravity-cli", "brain"), StringComparison.Ordinal));
+        Assert.Contains(paths, p => p.Contains(Path.Combine(".gemini", "antigravity-ide", "brain"), StringComparison.Ordinal));
+    }
+
+    /// <summary>The desktop is tried first, being the common case; the order is otherwise arbitrary.</summary>
+    [Fact]
+    public void TestTheDesktopStoreIsTriedFirst()
+    {
+        var first = ChatlogPreserver.AntigravityTranscripts(@"C:/home", "conv-1").First();
+
+        Assert.Contains(Path.Combine(".gemini", "antigravity", "brain"), first, StringComparison.Ordinal);
+    }
+
+    /// <summary>The layout below each root is the one the host writes, conversation id and all.</summary>
+    [Fact]
+    public void TestTheTranscriptLayoutIsTheHostsOwn()
+    {
+        var path = ChatlogPreserver.AntigravityTranscripts(@"C:/home", "conv-abc").First();
+
+        Assert.EndsWith(
+            Path.Combine("brain", "conv-abc", ".system_generated", "logs", "transcript.jsonl"),
+            path, StringComparison.Ordinal);
+    }
+    #endregion
+
 }

@@ -309,6 +309,12 @@ public class DrawingMcpTools
         var scriptPath = Events.SaveScript(script);
         Events.Append("script.start", session.Stage, executionId, new Dictionary<string, object?> { ["script"] = scriptPath, ["session"] = sessionId });
 
+        // What the script looks at, not just what it draws. The scope is opened here rather than
+        // inside the engine because this is where the event log is, and it flows into the Task.Run
+        // below with the execution context — the toolkits mutate the same instance, so the tallies
+        // are readable again on this side once the run returns.
+        using var probes = ProbeScope.Begin();
+
         try
         {
             var fmt = format ?? "webp";
@@ -378,8 +384,48 @@ public class DrawingMcpTools
         }
         finally
         {
+            // In the finally so a script that crashed still reports what it managed to look at first
+            // — an agent that measured, disliked what it found and then failed has told the record
+            // something, and losing that would make the failure look like it came from nowhere.
+            RecordProbes(session.Stage, executionId, scriptPath, probes);
             session.LeaveCall();
         }
+    }
+
+    /// <summary>
+    /// Writes what one execution perceived: which artifacts it read back, and a tally of its probes.
+    /// </summary>
+    /// <remarks>
+    /// Two events rather than one, because they answer different questions. <c>artifact.read</c> names
+    /// a file an earlier pass produced, which is the only direct evidence the record carries that one
+    /// pass coordinated with another through the environment rather than through its own memory; its
+    /// <c>artifact</c> path is spelled exactly as the <c>render</c> event that wrote it, so the two
+    /// join. <c>inspect</c> is a count, because a single <c>getPixel</c> loop runs thousands of times
+    /// and the useful reading is how much looking happened, not each look.
+    /// <para>
+    /// Nothing is written when a script only drew. Silence means it never looked, which is itself
+    /// worth being able to see.
+    /// </para>
+    /// </remarks>
+    private void RecordProbes(string? stage, string executionId, string? scriptPath, ProbeScope probes)
+    {
+        if (!probes.Any) return;
+
+        foreach (var artifact in probes.Reads)
+        {
+            Events.Append("artifact.read", stage, executionId, new Dictionary<string, object?>
+            {
+                ["script"] = scriptPath,
+                ["artifact"] = artifact
+            });
+        }
+
+        Events.Append("inspect", stage, executionId, new Dictionary<string, object?>
+        {
+            ["script"] = scriptPath,
+            ["probes"] = probes.Counts,
+            ["total"] = probes.Total
+        });
     }
 
     public Task<DrawingExecutionResult> ExecuteSvgScript(

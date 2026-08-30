@@ -2,9 +2,8 @@
   "schema": 1,
   "id": "inf-1",
   "workflow": "infographic",
-  "type": "brutalist",
   "sdk": "agy",
   "profile": "standalone",
-  "createdUtc": "2026-08-30T19:52:39.5582083Z",
-  "conversationId": "9e6339d440d39698dd82d5615f6575c7"
+  "createdUtc": "2026-08-30T23:25:25.2727434Z",
+  "conversationId": null
 }

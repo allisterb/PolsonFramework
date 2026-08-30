@@ -3,7 +3,10 @@ namespace Polson.Tests.CLI;
 using System;
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Polson.CLI;
 using Xunit;
 
@@ -49,6 +52,126 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
             .Select(f => Path.GetRelativePath(Path.Combine(root, name), f).Replace('\\', '/'))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToArray();
+    #endregion
+
+    #region Hook Command Tests
+    /// <summary>
+    /// The Antigravity hook command is a bare relative filename, carrying no quotes and no spaces.
+    /// </summary>
+    /// <remarks>
+    /// The CLI hands the command line to <c>cmd /c</c> as one argument and escapes the quotes inside
+    /// it, so anything beginning with a quoted path arrives as <c>QUOTE C:/... QUOTE</c> — quotes and
+    /// all, as part of the command name — and dies with "is not recognized as an internal or external
+    /// command". Two separate quoting schemes failed that way against a real run before this settled
+    /// on not quoting at all.
+    /// </remarks>
+    [Fact]
+    public void TestTheAgyHookCommandIsUnquotedAndRelative()
+    {
+        Assert.True(ProjectGenerator.Create(Options("hookcmd")));
+
+        var command = Assert.Single(Commands(File.ReadAllText(
+            Path.Combine(root, "hookcmd", ".agents/hooks.json"))).Distinct());
+
+        Assert.DoesNotContain("\"", command, StringComparison.Ordinal);
+        Assert.DoesNotContain(" ", command, StringComparison.Ordinal);
+        Assert.Equal(".\\preserve-chatlog.cmd", command);
+    }
+
+    /// <summary>
+    /// The wrapper it names is written beside <c>hooks.json</c>, which is where a hook actually runs.
+    /// </summary>
+    /// <remarks>
+    /// A hook's working directory is the folder holding <c>hooks.json</c> — <c>.agents/</c>, not the
+    /// project root. That was established by reproducing "The system cannot find the path specified"
+    /// against a real run, and it is the reason the wrapper can be named relatively at all.
+    /// </remarks>
+    [Fact]
+    public void TestTheWrapperIsWrittenWhereTheHookRuns()
+    {
+        Assert.True(ProjectGenerator.Create(Options("hookwrapper")));
+
+        var wrapper = Path.Combine(root, "hookwrapper", ".agents", "preserve-chatlog.cmd");
+        Assert.True(File.Exists(wrapper), "the hook names a wrapper that was never written");
+
+        var body = File.ReadAllText(wrapper);
+        Assert.Contains("preserve-chatlog", body, StringComparison.Ordinal);
+        Assert.Contains("--project-dir", body, StringComparison.Ordinal);
+
+        // CRLF: cmd.exe mishandles LF-only batch files, which .gitattributes already records.
+        Assert.Contains("\r\n", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every path inside the wrapper is absolute, because the working directory is not the project.
+    /// </summary>
+    [Fact]
+    public void TestTheWrapperResolvesEverythingAbsolutely()
+    {
+        Assert.True(ProjectGenerator.Create(Options("hookabs")));
+
+        var project = Path.Combine(root, "hookabs");
+        var line = File.ReadAllLines(Path.Combine(project, ".agents", "preserve-chatlog.cmd"))
+            .First(l => l.Contains("preserve-chatlog", StringComparison.Ordinal)
+                     && !l.StartsWith("REM", StringComparison.Ordinal));
+
+        foreach (var quoted in Regex.Matches(line, "\"([^\"]+)\"").Select(m => m.Groups[1].Value))
+        {
+            Assert.Matches(@"^[A-Za-z]:\\", quoted);
+        }
+
+        // And the launcher it names is really there, so the hook cannot point at nothing.
+        var launcher = Regex.Match(line, "\"([^\"]+)\"").Groups[1].Value;
+        Assert.True(File.Exists(launcher), $"the wrapper points at a file that is not there: {launcher}");
+    }
+
+    /// <summary>A Claude project gets no wrapper: its host takes a command without mangling it.</summary>
+    [Fact]
+    public void TestClaudeKeepsTheDirectCommand()
+    {
+        Assert.True(ProjectGenerator.Create(Options("hookclaude", o => o.Sdk = "claude")));
+
+        Assert.False(File.Exists(Path.Combine(root, "hookclaude", ".agents", "preserve-chatlog.cmd")));
+
+        foreach (var command in Commands(File.ReadAllText(
+            Path.Combine(root, "hookclaude", ".claude/settings.local.json"))))
+        {
+            Assert.Contains("preserve-chatlog", command, StringComparison.Ordinal);
+            Assert.Matches(@"--project-dir ""[A-Za-z]:/", command);
+        }
+    }
+
+    /// <summary>Every hook command in a generated config file, whatever shape the host's file takes.</summary>
+    static string[] Commands(string json)
+    {
+        var found = new List<string>();
+        Walk(JsonNode.Parse(json));
+        Assert.NotEmpty(found);
+        return [.. found];
+
+        void Walk(JsonNode? node)
+        {
+            switch (node)
+            {
+                case JsonObject o:
+                    foreach (var (key, value) in o)
+                    {
+                        if (key == "command" && value is JsonValue v && v.TryGetValue<string>(out var cmd))
+                        {
+                            found.Add(cmd);
+                        }
+                        else
+                        {
+                            Walk(value);
+                        }
+                    }
+                    break;
+                case JsonArray a:
+                    foreach (var item in a) Walk(item);
+                    break;
+            }
+        }
+    }
     #endregion
 
     #region Layout Tests

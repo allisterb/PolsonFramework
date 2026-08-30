@@ -37,9 +37,74 @@ def step(kind: str, **fields) -> SimpleNamespace:
         error="",
         is_complete_response=None,
         usage_metadata=None,
+        depth=fields.pop("depth", 0),
+        trajectory_id=fields.pop("trajectory_id", ""),
     )
     defaults.update(fields)
     return SimpleNamespace(**defaults)
+
+
+class InteractionRecordTests(unittest.TestCase):
+    """What the transcript has to carry for a run to be readable as interaction, not just output.
+
+    Two fields, both cheap, both previously dropped. Without a duration every step is an instant, so
+    deliberation cannot be told from a slow tool. Without depth a run with delegated work flattens
+    into one undifferentiated sequence, which is the one thing a record of collaboration must not do.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-record-"))
+        self.log = events.EventLog(self.root / "agent.jsonl", "agent")
+        self.transcript = transcript_mod.Transcript(self.log)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def written(self) -> list[dict]:
+        return events.read_events(self.root / "agent.jsonl")
+
+    def test_a_step_carries_how_long_it_took(self):
+        """First sight to settled. The SDK's Step has no timestamp of its own, so this is the only source."""
+        self.transcript.observe(step("THINKING", id="a", status="IN_PROGRESS", thinking="considering"))
+        self.transcript.observe(step("THINKING", id="a", thinking="considering"))
+
+        record = self.written()[0]
+        self.assertEqual(record["type"], "thinking")
+        self.assertIn("ms", record)
+        self.assertGreaterEqual(record["ms"], 0)
+
+    def test_a_step_seen_only_once_still_reports_a_duration(self):
+        """A step that arrives already settled is stamped on arrival, so ms is 0 rather than missing."""
+        self.transcript.observe(step("TEXT_RESPONSE", id="b", content="done"))
+
+        self.assertEqual(self.written()[0]["ms"], 0)
+
+    def test_a_subagents_work_is_attributed_to_it(self):
+        """depth and trajectory_id are what separate a delegated pass from the main agent's own."""
+        self.transcript.observe(step("TEXT_RESPONSE", id="c", content="designing", depth=1,
+                                     trajectory_id="traj-designer"))
+
+        record = self.written()[0]
+        self.assertEqual(record["depth"], 1)
+        self.assertEqual(record["trajectory"], "traj-designer")
+
+    def test_the_main_agents_own_work_carries_neither(self):
+        """Absent rather than null, matching the rest of the record: depth 0 is the ordinary case."""
+        self.transcript.observe(step("TEXT_RESPONSE", id="d", content="drawing"))
+
+        record = self.written()[0]
+        self.assertNotIn("depth", record)
+        self.assertNotIn("trajectory", record)
+
+    def test_an_unfinished_step_written_at_turn_end_still_has_its_duration(self):
+        """A turn that timed out should still say how long its last step had been running."""
+        self.transcript.turn_start("go")
+        self.transcript.observe(step("THINKING", id="e", status="IN_PROGRESS", thinking="mid-thought"))
+        self.transcript.turn_end("timeout", "the turn did not complete")
+
+        partial = [e for e in self.written() if e["type"] == "thinking"][0]
+        self.assertTrue(partial["partial"])
+        self.assertIn("ms", partial)
 
 
 class EventLogTests(unittest.TestCase):

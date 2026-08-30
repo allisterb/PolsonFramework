@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "id": "claude",
-  "workflow": "harness",
-  "type": "logo",
-  "sdk": "claude",
-  "profile": "managed",
-  "createdUtc": "2026-08-29T18:54:35.3233891Z"
-}

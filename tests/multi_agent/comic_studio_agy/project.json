@@ -1,8 +1,0 @@
-{
-  "schema": 1,
-  "id": "comic_studio_agy",
-  "workflow": "comic_studio",
-  "sdk": "agy",
-  "profile": "managed",
-  "createdUtc": "2026-08-29T22:37:17.2373400Z"
-}

@@ -147,7 +147,7 @@ A mood board exists to make competing stylistic directions comparable side by si
 Each compartment carries:
 
 - **A palette** — four swatches, dominant to lightest. Enough to see temperature and contrast, not so many that the direction becomes vague.
-- **A type specimen**, set in a family you have confirmed exists with `Skia.Font.has(...)`. A substituted family makes the whole compartment a lie, since the specimen would show a face you cannot use.
+- **A type specimen**, set in a family you have confirmed exists with `Skia.Font.has(...)`. A substituted family makes the whole compartment a lie, since the specimen would show a face you cannot use. A fallback list in `ctx.font` would keep the *drawing* honest, but not the specimen — the board has to print which family it is showing, and only `has`/`resolve` can tell you which one the list landed on. Ask first, then set the font and the caption from the same answer.
 - **A shape language** — one form stating the direction's stance on Bokhua's oppositions: sharp against round, solid against line, symmetric against asymmetric.
 
 ```javascript
@@ -272,8 +272,16 @@ Each archetype has conditions under which it works. The conditions matter more t
   - 2 Neutral Background/Text Tones (slate dark, crisp light).
 - **Typography Selection (Robin Williams & Doyald Young)**:
   - `LogoType.evaluateFontPairing(primaryCat, secondaryCat)` to ensure high contrast without conflict.
-  - `LogoType.computeWordmarkTracking(fontSize, isAllCaps)` for tight display tracking.
+  - `LogoType.computeWordmarkTracking(fontSize, isAllCaps)` for tight display tracking, applied with
+    `ctx.letterSpacing = tracking + 'em'` — the figure comes back as an em fraction and goes on as one.
   - `LogoType.computeOpticalKerning(c1, c2, fontSize)` for character boundary balancing.
+  - `ctx.font = '600 21px "Inter Tight", Helvetica, sans-serif'` to *reach* the face: numeric weights,
+    quoted multi-word names and fallback lists all parse. End the list in the category's generic, and
+    confirm the faces you care about with `Skia.Font.has(...)` — a missing family substitutes in
+    silence, which turns a chosen pairing into an accidental one without changing the render's
+    appearance of being finished. See Manual 11 §3.
+  - `ctx.fillText(name, x, y, maxWidth)` where the lockup must fit a fixed box; it condenses rather
+    than shrinking, so a column of names of different lengths keeps one cap height. See Manual 11 §7.
 
 ### Stage 6: Multi-Scale Stress Testing & Environments
 - **Objective**: Verify that the mark functions in all real-world digital and physical conditions.

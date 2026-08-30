@@ -406,11 +406,22 @@ and the results chain: `a.union(b).subtract(c)`.
 > ```
 
 ### Typography
-- `ctx.font` — Font specification string: e.g. `"bold 24px Arial"`, `"italic 16px Georgia"`. An unavailable family is **silently substituted**, so confirm it with `Skia.Font.has(...)` before relying on it.
+- `ctx.font` — CSS font shorthand: `"bold 24px Arial"`, `"600 21px Inter Tight"`, `"italic 400 46px 'Source Serif 4', Georgia, serif"`. Parsed by the shorthand's grammar, so **numeric weights** (`100`–`900`), **multi-word and quoted family names**, and **comma-separated fallback lists** all work, as do the generic families (`serif`, `sans-serif`, `monospace`, `cursive`, `fantasy`, `system-ui`). Sizes may be `px` or `pt`. Weight also accepts the foundry names — `semibold`, `medium`, `black` — which a browser would reject.
 - `ctx.textAlign` — Alignment: `"left"`, `"center"`, `"right"`, `"start"`, `"end"`.
 - `ctx.textBaseline` — Baseline: `"top"`, `"middle"`, `"bottom"`, `"alphabetic"`, `"hanging"`.
+- `ctx.letterSpacing` — Tracking between glyphs: `"3px"`, `"0.15em"`, or a bare number read as px. `em` resolves against the font size in force when the text is drawn, which is why `LogoType.computeWordmarkTracking(...)` — an em fraction — applies directly: `ctx.letterSpacing = LogoType.computeWordmarkTracking(48, true) + 'em'`. Spacing goes **between** glyphs and not after the last, so a tracked run stays centred under `textAlign`. It is part of the drawing state, so `save()`/`restore()` scope it.
+
+> [!IMPORTANT]
+> A family Skia does not have is **silently substituted** — no error, no signal — so a fallback list is the difference between the face you chose and one you did not. `ctx.font = '40px "Didot", Georgia, serif'` uses Georgia when Didot is missing, which is a decision you made; `'40px Didot'` alone renders in whatever the platform substitutes, which is not. Check the face you actually care about with `Skia.Font.has(...)` and let the list handle the rest.
+>
+> Any non-zero `letterSpacing` places glyphs one at a time, which loses kerning — the trade tracking always makes, in any tool. Leave it at `0` for body text, where the shaper's kerning is worth more than tracking is.
 - `ctx.fillText(text: string, x: number, y: number, maxWidth?: number)` — Draws filled text (supports multi-line strings with `\n`).
 - `ctx.strokeText(text: string, x: number, y: number, maxWidth?: number)` — Draws stroked text outline (supports multi-line strings with `\n`).
+
+> [!TIP]
+> `maxWidth` **condenses** the type horizontally rather than shrinking it, so the cap height survives what the width does not — which is what keeps a row of fitted labels reading as one row. Tracking is condensed with it. A multi-line string is condensed once, by its widest line, so the block stays internally consistent. A `maxWidth` of zero or less draws nothing, so a bad value shows up rather than silently lifting the limit.
+>
+> Use it to *fit* a label into a known box. To *flow* a paragraph, use `fillWrappedText`, whose `maxWidth` breaks lines instead of narrowing glyphs.
 - `ctx.fillWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` — Automatically word-wraps and draws filled paragraph text within `maxWidth`.
 - `ctx.strokeWrappedText(text: string, x: number, y: number, maxWidth: number, lineHeight?: number)` — Automatically word-wraps and strokes paragraph text within `maxWidth`.
 - `ctx.measureText(text: string)` → `TextMetrics` — Returns `{ width, actualBoundingBoxAscent, actualBoundingBoxDescent, fontBoundingBoxAscent, fontBoundingBoxDescent }`.
@@ -594,6 +605,8 @@ ctx.stroke(outline);
 ## `Skia.Font`
 
 Which typefaces this machine can actually render. **Check before you commit to a typeface.** Skia substitutes a default face for a family it does not have — silently, with no error and no signal — so `ctx.font = '40px Didot'` renders and measures as something else entirely, and a wordmark can end up set in a face you never chose.
+
+A **fallback list** in `ctx.font` is the other half of this: `'40px Didot, "Playfair Display", serif'` degrades to a face still in the right category, so the drawing survives a missing family without you asking. Ask here when you need to *know* which face you got — to caption a specimen, to pick between two directions, or to decide whether a design that depends on one face is viable at all.
 
 - `Skia.Font.families()` → `string[]` — Every installed family, sorted.
 - `Skia.Font.has(family: string)` → `boolean` — Whether `family` resolves to itself rather than a substitute.
@@ -804,6 +817,8 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 
 > [!IMPORTANT]
 > The two spacing calls return **different units**. `computeWordmarkTracking` is an em fraction and scales with the size you apply it at; `computeOpticalKerning` is already in **pixels** at the size you passed it. `tracking * fontSize` is comparable to a kerning value; `tracking` alone is not.
+>
+> Apply tracking with `ctx.letterSpacing`, which takes either unit — so the em fraction goes on as it comes back, with no multiplication to get wrong: `ctx.letterSpacing = LogoType.computeWordmarkTracking(48, true) + 'em'`.
 
 ## Typographic Scale & Font Harmony
 - `LogoType.calculateTypographicScale(baseSize?: number, ratio?: 'goldenRatio' | 'perfectFifth' | 'augmentedFourth' | 'perfectFourth' | 'majorThird' | 'minorThird', stepsDown?: number, stepsUp?: number)` → `object` — Generates harmonic font size ladder (`micro`, `caption`, `body`, `h4`, `h3`, `h2`, `h1`, `display`).

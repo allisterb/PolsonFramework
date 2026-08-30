@@ -72,6 +72,50 @@ In brand and identity design, layout and typography must strictly adhere to four
 | **Script** | Handwritten, cursive, calligraphic loops, connected stems. | Boutiques, signatures, luxury food, artisanal. | Personal, creative, fluid, bespoke. |
 | **Decorative** | Unique custom letterforms, extreme weights, stylized flourishes. | Hero display logos, album titles, gaming. | Expressive, idiosyncratic, memorable. |
 
+### Reaching a Category in Code
+
+> **Implemented by**: `ctx.font`, plus `Skia.Font.has(family)` / `Skia.Font.families()` to find out what
+> this machine can actually set.
+
+A category is a judgement; a **typeface** is a string, and the string has to name a face that exists.
+Skia substitutes a default for a family it does not have — no error, no warning — so a Modern wordmark
+asked for in Didot renders in the platform sans and still *looks* like a finished mark. Nothing in the
+render says the category was lost.
+
+Write the font as a CSS shorthand, with a fallback list ending in the generic for the category:
+
+```
+ctx.font = '600 21px "Inter Tight", Helvetica, sans-serif';    // Sans Serif
+ctx.font = 'italic 400 46px "Playfair Display", Didot, serif'; // Modern
+ctx.font = '700 34px "Roboto Slab", Rockwell, serif';          // Slab
+```
+
+The list is the point. `'46px Didot'` alone renders in whatever the platform substitutes — a decision
+nobody made. `'46px Didot, "Playfair Display", serif'` degrades to a face still in the right category,
+which is a decision you made. End every list with the generic (`serif`, `sans-serif`, `monospace`,
+`cursive`, `fantasy`), because that is the last rung that keeps the category when the named faces
+are missing.
+
+What the shorthand accepts:
+
+| Part | Spelling | Note |
+| --- | --- | --- |
+| Weight | `100`–`900`, or `bold`, `semibold`, `medium`, `black` | Numeric is what a type spec uses; both work. |
+| Style | `italic`, `oblique` | Before the size, as in CSS. |
+| Size | `46px`, `30pt` | Points convert; §4's size contrast is quoted in pt. |
+| Family | `"Source Serif 4", Georgia, serif` | Quoted, multi-word and comma-separated all parse. |
+
+> [!TIP]
+> Confirm the faces you actually care about before building on them, rather than after:
+>
+> ```js
+> const wanted = ['Didot', 'Bodoni MT', 'Playfair Display', 'Georgia'];
+> log('usable: ' + wanted.filter(f => Skia.Font.has(f)).join(', '));
+> ```
+>
+> `Skia.Font.resolve(family)` reports what a name would *actually* become — when it comes back as
+> something other than what you asked for, that request fell through.
+
 ---
 
 ## 4. The 6 Modes of Typographic Contrast
@@ -80,8 +124,8 @@ In brand and identity design, layout and typography must strictly adhere to four
 
 When creating typographic hierarchy in a brand identity, contrast must be applied across multiple axes:
 
-1. **Size Contrast**: Dramatic scale jumps ($36\text{pt}$ vs. $10\text{pt}$). Use harmonic musical scales (Golden Ratio $1.618$, Perfect Fourth $1.333$).
-2. **Weight Contrast**: Ultra-Light or Regular paired with Heavy Black/Extra-Bold.
+1. **Size Contrast**: Dramatic scale jumps ($36\text{pt}$ vs. $10\text{pt}$). Use harmonic musical scales (Golden Ratio $1.618$, Perfect Fourth $1.333$). `ctx.font` takes either unit, so these figures can go in as written: `'36pt ...'` and `'10pt ...'`.
+2. **Weight Contrast**: Ultra-Light or Regular paired with Heavy Black/Extra-Bold — `'300 ...'` against `'900 ...'`. The named steps are `thin` 100, `light` 300, `regular` 400, `medium` 500, `semibold` 600, `bold` 700, `black` 900; a family only has the weights it ships, so a missing one substitutes silently and the contrast quietly halves. Two weights that both resolve are worth more than two you hoped for.
 3. **Structure Contrast**: Combining distinct categories (e.g. Geometric Sans + Classical Oldstyle Serif).
 4. **Form Contrast**: Roman upright vs. True Italic; All-Caps with generous tracking vs. Lowercase.
 5. **Direction Contrast**: Horizontal wordmark paired with vertical margin labels or arched text.
@@ -125,6 +169,16 @@ Doyald Young's master rules for drawing and spacing custom logotypes:
 ## 6. Optical Kerning & Letter-Spacing Formulas
 
 > **Implemented by**: `LogoType.computeOpticalKerning(charLeft, charRight, fontSize, fontCategory)` → pixel offset for that specific pair, and `LogoType.computeWordmarkTracking(fontSize, isAllCaps, role)` → tracking for the run as a whole. Use the pair function between glyphs, the tracking function for the whole word.
+>
+> Tracking is **applied** with `ctx.letterSpacing`, which takes the em fraction as it comes back —
+> `ctx.letterSpacing = LogoType.computeWordmarkTracking(13, true, 'tagline') + 'em'` — and then
+> `fillText` handles the rest, including keeping the run centred under `textAlign`. A pair kerning
+> value is in pixels and is still applied by hand, because it belongs to one junction rather than to
+> the run.
+>
+> Any non-zero tracking places glyphs individually and so loses the shaper's kerning. That is the
+> trade in every tool, and it is why tracking belongs on display type and all-caps taglines and not
+> on body text.
 
 Letter spacing is an area-balancing task between character silhouettes:
 
@@ -182,6 +236,38 @@ Letter spacing is an area-balancing task between character silhouettes:
   - Canvas2D: `LogoType.drawWordmarkLockup(ctx, markFn, 'NEXUS', 'ADVANCED SYSTEMS', { layout: 'horizontal' })`, also reachable as `ctx.drawWordmarkLockup(markFn, ...)`.
   - Snap.svg: **no vector equivalent yet.** Lockup composition is raster-only; build the mark in Snap, render it, and compose the lockup on a Canvas2D context. There is no `wordmarkLockup` method on `paper`; earlier drafts of this manual claimed one.
 
+### Fitting a Lockup Into a Fixed Width
+
+> **Implemented by**: the `maxWidth` argument of `ctx.fillText(text, x, y, maxWidth)` and
+> `ctx.strokeText(...)`.
+
+A lockup rarely gets to choose its width. A header, a card, a sidebar and an app-store listing each
+hand it a box, and a brand with a long name overruns boxes a short one clears. `maxWidth` fits the
+run to the box by **condensing** it horizontally — the cap height holds and the letters narrow:
+
+```
+ctx.font = '600 26px sans-serif';
+ctx.fillText('ADVANCED DIAGNOSTICS', x, y, 380);   // never wider than 380
+```
+
+Cap height is what makes a column of labels read as one column, which is why condensing beats
+reducing the size: five labels condensed to a shared width still align on one baseline and share one
+optical weight, while five labels at five different sizes read as five unrelated things.
+
+The limits worth knowing before relying on it:
+
+1. **Condensing is a distortion.** Past roughly $85\%$ the letterforms stop being the typeface you
+   chose — stems thin against unchanged horizontals, and a Modern face, whose whole identity is its
+   thick/thin contrast, degrades first. Past that point, shorten the words, drop to a second line, or
+   choose a face that ships a real condensed cut.
+2. **It fits, it does not wrap.** `maxWidth` narrows glyphs; `ctx.fillWrappedText(text, x, y, maxWidth)`
+   breaks lines. A tagline that wants to become two lines wants the second call.
+3. **Tracking is condensed with the type**, so a tracked tagline still honours the box — but tracking
+   and condensing pull against each other. If a run needs both, set the tracking the design calls for
+   and let `maxWidth` be the guard rail, not the design.
+4. **A `maxWidth` of zero or less draws nothing**, deliberately. A width computed from an empty
+   measurement shows up as absence rather than as an ignored limit.
+
 ---
 
 ## 8. Symbol → SDK Parameter Map
@@ -196,6 +282,10 @@ Letter spacing is an area-balancing task between character silhouettes:
 | Ratio factor | `scale.ratioFactor` | The multiplier actually applied. |
 | Pair kerning | `LogoType.computeOpticalKerning(l, r, fontSize, category)` | Pixels for that **specific pair**. |
 | Run tracking | `LogoType.computeWordmarkTracking(fontSize, isAllCaps, role)` | For the **whole word**; `role` is `'wordmark'` or `'tagline'`. |
+| Applying tracking | `ctx.letterSpacing = tracking + 'em'` | Takes `em` or `px`; `em` resolves against the current font size. |
+| Choosing the face | `ctx.font = '600 21px "Inter Tight", Helvetica, sans-serif'` | Numeric weights, quoted multi-word names and fallback lists all parse. |
+| Face actually used | `Skia.Font.has(family)`, `Skia.Font.resolve(family)` | A missing family substitutes silently; these are the only way to know. |
+| Fitting to a box | `ctx.fillText(text, x, y, maxWidth)` | Condenses to fit. `fillWrappedText` breaks lines instead. |
 | Ogee amplitude / inflection | `amplitude`, `inflectionT` | Arguments 6 and 5 of `createOgeeCurvePath`. |
 | Lockup layout | `options.layout` | `'horizontal'` or `'vertical'`. |
 
@@ -247,8 +337,40 @@ for (let i = 0; i < pairs.length; i++) {
 }
 
 // §6 — Tracking applies to the run, and a tagline wants far more of it than a wordmark.
+const taglineTracking = LogoType.computeWordmarkTracking(13, true, 'tagline');
 log('wordmark tracking = ' + LogoType.computeWordmarkTracking(42, false, 'wordmark').toFixed(2) +
-    ', tagline tracking = ' + LogoType.computeWordmarkTracking(13, true, 'tagline').toFixed(2));
+    ', tagline tracking = ' + taglineTracking.toFixed(2));
+
+// The figure is an em fraction, so it goes onto ctx.letterSpacing unchanged. Scoped with
+// save/restore, because tracking is drawing state and would otherwise leak into the lockup.
+ctx.save();
+ctx.font = '500 13px sans-serif';
+ctx.fillStyle = '#6b7684';
+ctx.fillText('UNTRACKED — CRAMPED SMALL PRINT', 60, y + 10);
+ctx.letterSpacing = taglineTracking + 'em';
+ctx.fillText('TRACKED — SET AS A TAGLINE SHOULD BE', 60, y + 34);
+ctx.restore();
+
+// §3 — A face you did not confirm is a face you did not choose. The list ends in the
+// generic, so even when every named face is missing the category survives.
+const wanted = ['Playfair Display', 'Didot', 'Georgia'];
+log('usable serifs: ' + (wanted.filter(f => Skia.Font.has(f)).join(', ') || 'none — falling through to serif'));
+ctx.font = 'italic 400 22px "' + wanted.join('", "') + '", serif';
+ctx.fillText('Fallback list — the category survives', 60, y + 78);
+
+// §7 — maxWidth condenses a run into a fixed box. Three names of very different
+// lengths, one column width, one cap height.
+const BOX = 380;
+ctx.strokeStyle = '#d8d2c6';
+ctx.lineWidth = 1;
+let fy = y + 122;
+const names = ['NEXUS', 'NEXUS ADVANCED SYSTEMS', 'NEXUS ADVANCED AUTONOMOUS SYSTEMS'];
+for (let i = 0; i < names.length; i++) {
+    ctx.strokeRect(60, fy - 20, BOX, 32);
+    ctx.font = '600 20px sans-serif';
+    ctx.fillText(names[i], 66, fy, BOX - 12);
+    fy += 46;
+}
 
 // §7 — The lockup composes a mark with the name. The mark is a function so the
 // lockup can size it: (ctx, size) => void.

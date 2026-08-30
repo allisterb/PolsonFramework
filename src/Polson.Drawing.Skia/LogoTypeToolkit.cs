@@ -333,7 +333,9 @@ public class LogoTypeToolkit
 
         // Manual 11 §6: small all-caps taglines want +150‰ to +300‰. The toolkit computes that
         // figure and its own lockup was not applying it, so the tagline read as cramped small print.
-        var taglineTracking = ComputeWordmarkTracking(taglineFontSize, true, "tagline") * taglineFontSize;
+        // The figure is an em fraction, which is the unit ctx.letterSpacing takes as-is.
+        var taglineTracking = ComputeWordmarkTracking(taglineFontSize, true, "tagline")
+            .ToString("0.####", CultureInfo.InvariantCulture) + "em";
 
         ctx.Save();
 
@@ -364,7 +366,8 @@ public class LogoTypeToolkit
             {
                 ctx.FillStyle = taglineColor;
                 ctx.Font = $"500 {taglineFontSize}px {taglineFamily}";
-                FillTrackedText(ctx, tagline.ToUpperInvariant(), markX + markSize * 0.5f, textY + brandFontSize + 8f, taglineTracking);
+                ctx.LetterSpacing = taglineTracking;
+                ctx.FillText(tagline.ToUpperInvariant(), markX + markSize * 0.5f, textY + brandFontSize + 8f);
             }
         }
         else
@@ -399,50 +402,14 @@ public class LogoTypeToolkit
                 ctx.FillStyle = taglineColor;
                 ctx.Font = $"500 {taglineFontSize}px {taglineFamily}";
                 ctx.TextBaseline = "top";
-                FillTrackedText(ctx, tagline.ToUpperInvariant(), textStartX + 1f, wordmarkY + 6f, taglineTracking);
+                ctx.LetterSpacing = taglineTracking;
+                ctx.FillText(tagline.ToUpperInvariant(), textStartX + 1f, wordmarkY + 6f);
             }
         }
 
         ctx.Restore();
     }
     #endregion
-
-    /// <summary>
-    /// Draws text with per-glyph tracking, honouring the context's current <c>textAlign</c>.
-    /// </summary>
-    /// <remarks>
-    /// There is no letter-spacing property on the 2D context, so tracking has to be applied by
-    /// advancing glyph by glyph. Alignment is resolved up front from the tracked total width,
-    /// because drawing each glyph individually would otherwise centre every glyph on the same point.
-    /// </remarks>
-    private static void FillTrackedText(CanvasRenderingContext2D ctx, string text, float x, float y, float tracking)
-    {
-        if (string.IsNullOrEmpty(text) || MathF.Abs(tracking) < 0.01f)
-        {
-            ctx.FillText(text ?? string.Empty, x, y);
-            return;
-        }
-
-        var widths = text.Select(c => Convert.ToSingle(ctx.MeasureText(c.ToString())["width"], CultureInfo.InvariantCulture)).ToArray();
-        var total = widths.Sum() + tracking * (text.Length - 1);
-
-        var align = ctx.TextAlign;
-        var cursor = align switch
-        {
-            "center" => x - total * 0.5f,
-            "right" or "end" => x - total,
-            _ => x,
-        };
-
-        ctx.TextAlign = "left";
-        for (var i = 0; i < text.Length; i++)
-        {
-            ctx.FillText(text[i].ToString(), cursor, y);
-            cursor += widths[i] + tracking;
-        }
-
-        ctx.TextAlign = align;
-    }
 
     #region Fields
     /// <summary>

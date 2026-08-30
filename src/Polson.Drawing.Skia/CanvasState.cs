@@ -22,6 +22,7 @@ public class CanvasState
         Typeface = SKTypeface.Default;
         TextAlign = "start";
         TextBaseline = "alphabetic";
+        LetterSpacing = "0px";
     }
 
     public CanvasState(CanvasState other)
@@ -58,6 +59,7 @@ public class CanvasState
         Typeface = other.Typeface;
         TextAlign = other.TextAlign;
         TextBaseline = other.TextBaseline;
+        LetterSpacing = other.LetterSpacing;
 
         ImageFilter = other.ImageFilter;
         ColorFilter = other.ColorFilter;
@@ -98,6 +100,13 @@ public class CanvasState
     public SKTypeface Typeface { get; set; }
     public string TextAlign { get; set; }
     public string TextBaseline { get; set; }
+
+    /// <summary>
+    /// Tracking as an unresolved CSS length (<c>"3px"</c>, <c>"0.15em"</c>). Kept as written because
+    /// <c>em</c> resolves against whatever <see cref="FontSize"/> is in force when the text is drawn,
+    /// not when the spacing was set.
+    /// </summary>
+    public string LetterSpacing { get; set; }
 
     public SKImageFilter? ImageFilter { get; set; }
     public SKColorFilter? ColorFilter { get; set; }

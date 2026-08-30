@@ -195,6 +195,22 @@ public class CanvasRenderingContext2D
         set => _currentState.TextBaseline = value.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Tracking added between glyphs: <c>"3px"</c>, <c>"0.15em"</c>, or a bare number read as px.
+    /// </summary>
+    /// <remarks>
+    /// <c>em</c> is the unit <c>LogoType.computeWordmarkTracking</c> returns, so its result applies
+    /// directly: <c>ctx.letterSpacing = LogoType.computeWordmarkTracking(48, true) + 'em'</c>.
+    /// Spacing goes <b>between</b> glyphs and not after the last, so a tracked run stays centred
+    /// under <c>textAlign</c>. Any non-zero value forces glyph-by-glyph placement, which loses
+    /// kerning — the trade tracking always makes. Zero keeps the fast, kerned path.
+    /// </remarks>
+    public string LetterSpacing
+    {
+        get => _currentState.LetterSpacing;
+        set => _currentState.LetterSpacing = string.IsNullOrWhiteSpace(value) ? "0px" : value.Trim();
+    }
+
     public SKImageFilter? Filter
     {
         get => _currentState.ImageFilter;
@@ -547,89 +563,53 @@ public class CanvasRenderingContext2D
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateFillPaint();
-
-        if (text.Contains('\n'))
-        {
-            Font.GetFontMetrics(out var m);
-            var lineHeight = (m.Descent - m.Ascent) * 1.2f;
-            var lines = text.Split('\n');
-            for (var i = 0; i < lines.Length; i++)
-            {
-                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, Font);
-                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
-            }
-        }
-        else
-        {
-            var (adjX, adjY) = AdjustTextPosition(text, x, y, Font);
-            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, Font, paint);
-        }
+        DrawTextLines(text, x, y, font, paint, maxWidth);
     }
 
     public void StrokeText(string text, float x, float y, float? maxWidth = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateStrokePaint();
-
-        if (text.Contains('\n'))
-        {
-            Font.GetFontMetrics(out var m);
-            var lineHeight = (m.Descent - m.Ascent) * 1.2f;
-            var lines = text.Split('\n');
-            for (var i = 0; i < lines.Length; i++)
-            {
-                var (adjX, adjY) = AdjustTextPosition(lines[i], x, y + i * lineHeight, Font);
-                Canvas.SkCanvas.DrawText(lines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
-            }
-        }
-        else
-        {
-            var (adjX, adjY) = AdjustTextPosition(text, x, y, Font);
-            Canvas.SkCanvas.DrawText(text, adjX, adjY, SKTextAlign.Left, Font, paint);
-        }
+        DrawTextLines(text, x, y, font, paint, maxWidth);
     }
 
     public void FillWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateFillPaint();
-
-        Font.GetFontMetrics(out var m);
-        var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
-
-        var wrappedLines = WrapText(text, maxWidth, Font);
-        for (var i = 0; i < wrappedLines.Count; i++)
-        {
-            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, Font);
-            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
-        }
+        DrawWrapped(text, x, y, maxWidth, lineHeight, font, paint);
     }
 
     public void StrokeWrappedText(string text, float x, float y, float maxWidth, float? lineHeight = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
         using var paint = _currentState.CreateStrokePaint();
+        DrawWrapped(text, x, y, maxWidth, lineHeight, font, paint);
+    }
 
-        Font.GetFontMetrics(out var m);
+    private void DrawWrapped(string text, float x, float y, float maxWidth, float? lineHeight,
+        SKFont font, SKPaint paint)
+    {
+        font.GetFontMetrics(out var m);
         var lh = lineHeight ?? (m.Descent - m.Ascent) * 1.25f;
+        var spacing = ResolveLetterSpacing();
 
-        var wrappedLines = WrapText(text, maxWidth, Font);
+        var wrappedLines = WrapText(text, maxWidth, font, spacing);
         for (var i = 0; i < wrappedLines.Count; i++)
         {
-            var (adjX, adjY) = AdjustTextPosition(wrappedLines[i], x, y + i * lh, Font);
-            Canvas.SkCanvas.DrawText(wrappedLines[i], adjX, adjY, SKTextAlign.Left, Font, paint);
+            DrawTextRun(wrappedLines[i], x, y + i * lh, font, paint, spacing);
         }
     }
 
-    private static List<string> WrapText(string text, float maxWidth, SKFont Font)
+    private static List<string> WrapText(string text, float maxWidth, SKFont font, float spacing)
     {
         var result = new List<string>();
         var paragraphs = text.Split('\n');
@@ -647,7 +627,7 @@ public class CanvasRenderingContext2D
             for (var i = 1; i < words.Length; i++)
             {
                 var candidate = currentLine + " " + words[i];
-                if (Font.MeasureText(candidate) <= maxWidth)
+                if (MeasureRun(candidate, font, spacing) <= maxWidth)
                 {
                     currentLine = candidate;
                 }
@@ -669,9 +649,9 @@ public class CanvasRenderingContext2D
     public Dictionary<string, object> MeasureText(string text)
     {
         text ??= string.Empty;
-        using var Font = new SKFont(_currentState.Typeface, _currentState.FontSize);
-        var width = Font.MeasureText(text);
-        Font.GetFontMetrics(out var metrics);
+        using var font = new SKFont(_currentState.Typeface, _currentState.FontSize);
+        var width = MeasureRun(text, font, ResolveLetterSpacing());
+        font.GetFontMetrics(out var metrics);
 
         return new Dictionary<string, object>
         {
@@ -683,19 +663,71 @@ public class CanvasRenderingContext2D
         };
     }
 
-    private (float x, float y) AdjustTextPosition(string text, float x, float y, SKFont Font)
+    /// <summary>Tracking in pixels, resolving <c>em</c> against the size currently in force.</summary>
+    private float ResolveLetterSpacing()
     {
-        var width = Font.MeasureText(text);
-        Font.GetFontMetrics(out var metrics);
+        var raw = _currentState.LetterSpacing;
+        if (string.IsNullOrWhiteSpace(raw)) return 0f;
 
-        var adjX = _currentState.TextAlign switch
+        var text = raw.Trim();
+        var split = text.Length;
+        while (split > 0 && (char.IsLetter(text[split - 1]) || text[split - 1] == '%')) split--;
+
+        var unit = text[split..].ToLowerInvariant();
+        if (!float.TryParse(text[..split].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
+        {
+            return 0f;
+        }
+
+        // em is what LogoType.computeWordmarkTracking deals in; anything else is taken as pixels.
+        return unit is "em" or "rem" ? n * _currentState.FontSize : n;
+    }
+
+    /// <summary>Grapheme clusters, so tracking never splits an emoji or a combining accent.</summary>
+    private static List<string> Graphemes(string text)
+    {
+        var result = new List<string>();
+        var walker = StringInfo.GetTextElementEnumerator(text);
+        while (walker.MoveNext()) result.Add((string)walker.Current);
+        return result;
+    }
+
+    /// <summary>
+    /// Advance width of a run, including tracking.
+    /// </summary>
+    /// <remarks>
+    /// A tracked run is measured as the sum of its individual glyph advances rather than as one
+    /// shaped string, because that is how it will be <i>drawn</i>. Measuring it the other way would
+    /// leave the kerning in the measurement but not in the render, and centred text would sit off
+    /// its point by exactly the kerning the shaper applied.
+    /// </remarks>
+    private static float MeasureRun(string text, SKFont font, float spacing)
+    {
+        if (string.IsNullOrEmpty(text)) return 0f;
+        if (spacing == 0f) return font.MeasureText(text);
+
+        var glyphs = Graphemes(text);
+        var total = 0f;
+        foreach (var g in glyphs) total += font.MeasureText(g);
+        return total + spacing * Math.Max(0, glyphs.Count - 1);
+    }
+
+    /// <summary>Draws one run, resolving <c>textAlign</c> and <c>textBaseline</c> and any tracking.</summary>
+    private void DrawTextRun(string text, float x, float y, SKFont font, SKPaint paint, float spacing)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        var width = MeasureRun(text, font, spacing);
+        font.GetFontMetrics(out var metrics);
+
+        var startX = _currentState.TextAlign switch
         {
             "center" => x - width / 2f,
             "right" or "end" => x - width,
             _ => x
         };
 
-        var adjY = _currentState.TextBaseline switch
+        var baselineY = _currentState.TextBaseline switch
         {
             "top" or "hanging" => y - metrics.Ascent,
             "middle" => y - (metrics.Ascent + metrics.Descent) / 2f,
@@ -703,39 +735,162 @@ public class CanvasRenderingContext2D
             _ => y // alphabetic
         };
 
-        return (adjX, adjY);
-    }
-
-    private static void ParseFont(string fontStr, out float fontSize, out SKTypeface typeface)
-    {
-        fontSize = 10f;
-        var family = "sans-serif";
-        var weight = SKFontStyleWeight.Normal;
-        var slant = SKFontStyleSlant.Upright;
-
-        if (string.IsNullOrWhiteSpace(fontStr))
+        if (spacing == 0f)
         {
-            typeface = SKTypeface.Default;
+            Canvas.SkCanvas.DrawText(text, startX, baselineY, SKTextAlign.Left, font, paint);
             return;
         }
 
-        var lower = fontStr.ToLowerInvariant();
-        if (lower.Contains("bold")) weight = SKFontStyleWeight.Bold;
-        if (lower.Contains("italic") || lower.Contains("oblique")) slant = SKFontStyleSlant.Italic;
-
-        var sizeMatch = Regex.Match(fontStr, @"([0-9.]+)\s*px", RegexOptions.IgnoreCase);
-        if (sizeMatch.Success)
+        var cursor = startX;
+        foreach (var g in Graphemes(text))
         {
-            fontSize = float.Parse(sizeMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+            Canvas.SkCanvas.DrawText(g, cursor, baselineY, SKTextAlign.Left, font, paint);
+            cursor += font.MeasureText(g) + spacing;
+        }
+    }
+
+    /// <summary>
+    /// Draws text that may contain <c>\n</c>, one run per line, condensed to <paramref name="maxWidth"/>.
+    /// </summary>
+    /// <remarks>
+    /// <c>maxWidth</c> condenses the type horizontally rather than shrinking it, which is what the
+    /// HTML canvas specifies and what a caller fitting a label into a fixed box wants: the cap
+    /// height stays put and the run narrows. Tracking is condensed with it, or a tracked run would
+    /// overshoot the limit by exactly its spacing.
+    /// <para>
+    /// A multi-line string is condensed once, by its widest line, so the block stays internally
+    /// consistent — condensing each line to its own scale would leave every line a different width
+    /// of the same typeface. A <c>maxWidth</c> that is zero, negative or NaN draws nothing, as the
+    /// specification requires; that surfaces a bad value instead of quietly ignoring the limit.
+    /// </para>
+    /// </remarks>
+    private void DrawTextLines(string text, float x, float y, SKFont font, SKPaint paint, float? maxWidth)
+    {
+        if (maxWidth is { } given && (given <= 0f || float.IsNaN(given))) return;
+
+        var spacing = ResolveLetterSpacing();
+        var lines = text.Contains('\n') ? text.Split('\n') : [text];
+
+        if (maxWidth is { } limit)
+        {
+            var widest = 0f;
+            foreach (var line in lines) widest = Math.Max(widest, MeasureRun(line, font, spacing));
+
+            if (widest > limit && widest > 0f)
+            {
+                var scale = limit / widest;
+                font.ScaleX = scale;
+                spacing *= scale;
+            }
         }
 
-        var parts = fontStr.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length > 0)
+        if (lines.Length == 1)
         {
-            family = parts[^1].Trim('\'', '"', ';');
+            DrawTextRun(lines[0], x, y, font, paint, spacing);
+            return;
         }
 
-        typeface = SKTypeface.FromFamilyName(family, weight, SKFontStyleWidth.Normal, slant) ?? SKTypeface.Default;
+        font.GetFontMetrics(out var m);
+        var lineHeight = (m.Descent - m.Ascent) * 1.2f;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            DrawTextRun(lines[i], x, y + i * lineHeight, font, paint, spacing);
+        }
+    }
+
+    /// <summary>
+    /// Parses a CSS font shorthand into a size and a typeface.
+    /// </summary>
+    /// <remarks>
+    /// Follows the shorthand's grammar rather than scanning for keywords: everything before the size
+    /// token is style/variant/weight/stretch, the size token carries its unit and an optional
+    /// <c>/line-height</c>, and everything after it is the family list. That is what lets numeric
+    /// weights (<c>600</c>), quoted multi-word families (<c>"Source Serif 4"</c>) and fallback lists
+    /// (<c>Inter Tight, Helvetica, sans-serif</c>) parse — all three of which a keyword scan gets
+    /// wrong, silently, by rendering in a face that was never asked for.
+    /// <para>
+    /// Deliberately more forgiving than a browser: named weights outside the CSS keyword set
+    /// (<c>semibold</c>, <c>medium</c>, <c>black</c>) are accepted, because an agent writing a font
+    /// string from a design spec reaches for them and a browser's silent rejection teaches nothing.
+    /// </para>
+    /// </remarks>
+    private static void ParseFont(string fontStr, out float fontSize, out SKTypeface typeface)
+    {
+        fontSize = 10f;
+        typeface = SKTypeface.Default;
+        if (string.IsNullOrWhiteSpace(fontStr)) return;
+
+        var text = fontStr.Trim().TrimEnd(';').Trim();
+        var weight = SKFontStyleWeight.Normal;
+        var slant = SKFontStyleSlant.Upright;
+
+        // The size token anchors the grammar: descriptors precede it, families follow it.
+        var size = Regex.Match(text, @"(?<![\w.-])(\d*\.?\d+)\s*(px|pt)\b(\s*/\s*[\d.]+\w*)?",
+            RegexOptions.IgnoreCase);
+
+        if (size.Success)
+        {
+            var value = float.Parse(size.Groups[1].Value, CultureInfo.InvariantCulture);
+            fontSize = size.Groups[2].Value.Equals("pt", StringComparison.OrdinalIgnoreCase)
+                ? value * 4f / 3f
+                : value;
+
+            foreach (var token in text[..size.Index].Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                var descriptor = token.Trim().ToLowerInvariant();
+                if (descriptor is "italic" or "oblique")
+                {
+                    slant = SKFontStyleSlant.Italic;
+                }
+                else if (NamedWeights.TryGetValue(descriptor, out var named))
+                {
+                    weight = named;
+                }
+                else if (int.TryParse(descriptor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric)
+                    && numeric is >= 1 and <= 1000)
+                {
+                    weight = (SKFontStyleWeight)numeric;
+                }
+            }
+        }
+
+        var familyList = size.Success ? text[(size.Index + size.Length)..] : text;
+        typeface = ResolveFamily(familyList, weight, slant);
+    }
+
+    /// <summary>
+    /// Picks a typeface from a CSS family list, honouring fallbacks the way a browser does.
+    /// </summary>
+    /// <remarks>
+    /// A candidate is only accepted when Skia resolves it to <i>itself</i>. Skia substitutes a
+    /// default face for a family it does not have and reports no error, so taking the first
+    /// candidate would make every fallback list resolve to its first entry whether installed or
+    /// not — the failure <c>Skia.Font.has</c> exists to expose. If nothing resolves exactly, the
+    /// first substitute is used, since it still carries the requested weight and slant.
+    /// </remarks>
+    private static SKTypeface ResolveFamily(string familyList, SKFontStyleWeight weight, SKFontStyleSlant slant)
+    {
+        SKTypeface? substitute = null;
+
+        foreach (var raw in familyList.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var name = raw.Trim().Trim('\'', '"').Trim();
+            if (name.Length == 0) continue;
+
+            var candidates = GenericFamilies.TryGetValue(name.ToLowerInvariant(), out var ladder)
+                ? ladder
+                : [name];
+
+            foreach (var candidate in candidates)
+            {
+                var face = SKTypeface.FromFamilyName(candidate, weight, SKFontStyleWidth.Normal, slant);
+                if (face is null) continue;
+                if (string.Equals(face.FamilyName, candidate, StringComparison.OrdinalIgnoreCase)) return face;
+                substitute ??= face;
+            }
+        }
+
+        return substitute ?? SKTypeface.Default;
     }
     #endregion
 
@@ -1031,6 +1186,48 @@ public class CanvasRenderingContext2D
     private readonly Stack<CanvasState> _states;
     private CanvasState _currentState;
     private readonly CanvasPath _currentPath;
+
+    /// <summary>
+    /// Weight names accepted in a font shorthand. The CSS keywords, plus the names type foundries
+    /// and design specs actually use for the numeric steps.
+    /// </summary>
+    private static readonly Dictionary<string, SKFontStyleWeight> NamedWeights = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["thin"] = SKFontStyleWeight.Thin,
+        ["hairline"] = SKFontStyleWeight.Thin,
+        ["extralight"] = SKFontStyleWeight.ExtraLight,
+        ["ultralight"] = SKFontStyleWeight.ExtraLight,
+        ["light"] = SKFontStyleWeight.Light,
+        ["normal"] = SKFontStyleWeight.Normal,
+        ["regular"] = SKFontStyleWeight.Normal,
+        ["book"] = SKFontStyleWeight.Normal,
+        ["medium"] = SKFontStyleWeight.Medium,
+        ["semibold"] = SKFontStyleWeight.SemiBold,
+        ["demibold"] = SKFontStyleWeight.SemiBold,
+        ["bold"] = SKFontStyleWeight.Bold,
+        ["bolder"] = SKFontStyleWeight.Bold,
+        ["lighter"] = SKFontStyleWeight.Light,
+        ["extrabold"] = SKFontStyleWeight.ExtraBold,
+        ["ultrabold"] = SKFontStyleWeight.ExtraBold,
+        ["black"] = SKFontStyleWeight.Black,
+        ["heavy"] = SKFontStyleWeight.Black
+    };
+
+    /// <summary>
+    /// What each CSS generic family is tried as, in order. Skia has no notion of a generic, so a
+    /// bare <c>sans-serif</c> would otherwise resolve to whatever the platform substitutes.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> GenericFamilies = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["serif"] = ["Times New Roman", "Georgia", "Liberation Serif", "DejaVu Serif", "serif"],
+        ["sans-serif"] = ["Segoe UI", "Helvetica", "Arial", "Liberation Sans", "DejaVu Sans", "sans-serif"],
+        ["system-ui"] = ["Segoe UI", "Helvetica", "Arial", "Liberation Sans", "DejaVu Sans", "sans-serif"],
+        ["ui-sans-serif"] = ["Segoe UI", "Helvetica", "Arial", "Liberation Sans", "DejaVu Sans", "sans-serif"],
+        ["monospace"] = ["Consolas", "Menlo", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"],
+        ["ui-monospace"] = ["Consolas", "Menlo", "DejaVu Sans Mono", "Liberation Mono", "Courier New", "monospace"],
+        ["cursive"] = ["Comic Sans MS", "Apple Chancery", "cursive"],
+        ["fantasy"] = ["Impact", "Papyrus", "fantasy"]
+    };
     #endregion
 }
 

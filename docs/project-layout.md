@@ -222,8 +222,16 @@ Generated into `agent.config.json` (standalone) and the managed profile's settin
 | Tool | Profile | Why |
 | :--- | :--- | :--- |
 | `GENERATE_IMAGE` | **both** | Bypasses `Polson.ExtendedMind` entirely — no budget, no content-addressed cache, no form-versus-substance classifier. An agent that can generate a finished picture directly dissolves the project's central claim, that the model supplies material and code supplies form. This is an integrity control, not a security one, and it is the most important line the generator emits. |
-| `RUN_COMMAND` | standalone | A public URL must not reach a shell (§6). |
-| `CREATE_FILE` / `EDIT_FILE` | standalone | Constrained to the project directory; the agent's own scratch already goes to `session/appdata/` via `app_data_dir`. |
+| `RUN_COMMAND` | standalone | Two reasons that happen to agree. A public URL must not reach a shell (§6); and the instructions forbid reaching the drawing engine or the docs through a command line, which this is the profile that can *enforce* rather than request. Polson's own CLI can draw and can search, and a script run that way leaves an image with no record of how it came to exist. |
+
+The names above are the `BuiltinTools` **member** names, for readability. The generator emits the
+enum's **values** — `generate_image`, `run_command` — which is what the SDK matches on.
+
+`CREATE_FILE` and `EDIT_FILE` are **not** denied, and an earlier version of this table wrongly
+implied they were. The harness workflow writes `findings.md`, so denying them would break it. What
+constrains them is `workspaces=[project.root]` in `LocalAgentConfig`, which confines file access to
+the project directory rather than removing the tools — and the agent's own scratch goes to
+`session/appdata/` via `app_data_dir` regardless.
 
 ## Profiles
 

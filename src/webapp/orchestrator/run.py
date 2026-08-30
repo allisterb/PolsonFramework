@@ -92,11 +92,16 @@ def build_config(
     project.app_data_dir.mkdir(parents=True, exist_ok=True)
 
     return LocalAgentConfig(
+        # Deliberately says almost nothing. An earlier version restated the working rules here —
+        # use the MCP tools, save every render with outFile — which put a second copy of policy in
+        # Python, free to drift from the template that owns it and invisible to anyone reading the
+        # project. This points at the file and gets out of the way; the filename comes from
+        # `agent.config.json` rather than being assumed, because the generator is what knows it.
         system_instructions=(
-            f"You are the designer on the Polson project in {project.root}. Your instructions are "
-            f"in GEMINI.md in that directory — read it first, and follow it. Use the "
-            f"{project.mcp.name} MCP tools to draw. Save every render with outFile, relative to the "
-            f"project directory."
+            f"You are the designer on the Polson project in {project.root}. Read "
+            f"{project.instructions_file} in that directory before anything else and follow it "
+            f"exactly. It is the authority on how to work here, and nothing in this message "
+            f"overrides it."
         ),
         mcp_servers=[server],
         policies=policies,

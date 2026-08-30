@@ -61,6 +61,7 @@ class Project:
     profile: str
     conversation_id: str | None
     agent_behavior: str
+    instructions_file: str
     denied_tools: tuple[str, ...]
     mcp: McpWiring
     save_dir: Path
@@ -176,6 +177,9 @@ def load(directory: Path) -> Project:
         profile=manifest.get("profile") or "standalone",
         conversation_id=manifest.get("conversationId"),
         agent_behavior=policy.get("agentBehavior") or "interactive",
+        # Named by the generator, which knows the host. Defaulting to GEMINI.md keeps older
+        # projects working, and this module already refuses anything but an `agy` project.
+        instructions_file=policy.get("instructionsFile") or "GEMINI.md",
         denied_tools=tuple(policy.get("deniedTools") or ()),
         mcp=McpWiring(name=name, command=command, args=tuple(server.get("args") or ())),
         save_dir=root / (policy.get("saveDir") or "session/save"),

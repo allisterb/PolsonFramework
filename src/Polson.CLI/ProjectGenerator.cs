@@ -284,7 +284,7 @@ internal static class ProjectGenerator
 
         if (opts.Standalone)
         {
-            WriteJson(dir, "agent.config.json", AgentConfig());
+            WriteJson(dir, "agent.config.json", AgentConfig(host));
         }
 
         Report(dir, id, workflow, type, sdk, opts.Standalone, host, preserved);
@@ -561,11 +561,24 @@ internal static class ProjectGenerator
     /// studio's whole premise, that the model supplies material and code supplies form, stops being
     /// true. In the managed profile this file is a record of intent only: the desktop host owns tool
     /// policy, so the prohibition is carried in GEMINI.md as a rule the agent must follow.
+    /// <para>
+    /// <c>run_command</c> is the standalone half of that story, and it is the one place a rule in
+    /// the instructions becomes a rule the runtime keeps: the engine-only section tells every agent
+    /// never to reach the drawing engine or the docs through a command line, and here that stops
+    /// being a request. A public URL must not reach a shell either, which is the same denial
+    /// arriving for a second reason.
+    /// </para>
+    /// <para>
+    /// <c>instructionsFile</c> exists so the orchestrator does not have to know the name. It composed
+    /// its bootstrap prompt around a hardcoded <c>GEMINI.md</c> and a restatement of how to work —
+    /// a second copy of policy, in Python, able to drift from the template that owns it.
+    /// </para>
     /// </remarks>
-    static object AgentConfig() => new
+    static object AgentConfig(HostFiles host) => new
     {
         schema = 1,
         agentBehavior = "interactive",
+        instructionsFile = host.Instructions,
         deniedTools = AlwaysDenied.Concat(StandaloneDenied).ToArray(),
         saveDir = "session/save",
         appDataDir = "session/appdata",

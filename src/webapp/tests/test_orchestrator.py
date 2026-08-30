@@ -308,6 +308,27 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(str(p.root), args[-1])
         self.assertNotIn(".", args[-1:])
 
+    def test_the_instructions_filename_comes_from_the_policy(self):
+        """The generator names the instructions file; the orchestrator does not assume it.
+
+        The bootstrap prompt used to hardcode `GEMINI.md` and restate the working rules, which put a
+        second copy of policy in Python where it could drift from the template that owns it.
+        """
+        self.write("agent.config.json", {"schema": 1, "agentBehavior": "interactive",
+                                         "instructionsFile": "GEMINI.md",
+                                         "deniedTools": ["generate_image"],
+                                         "saveDir": "session/save", "appDataDir": "session/appdata"})
+
+        self.assertEqual("GEMINI.md", project_mod.load(self.dir).instructions_file)
+
+    def test_an_older_project_without_the_field_still_loads(self):
+        """Projects generated before `instructionsFile` existed keep working.
+
+        The default is safe because this module already refuses anything but an `agy` project, and
+        every `agy` project's instructions are `GEMINI.md`.
+        """
+        self.assertEqual("GEMINI.md", project_mod.load(self.dir).instructions_file)
+
     def test_a_missing_gemini_md_is_refused(self):
         (self.dir / "GEMINI.md").unlink()
 

@@ -442,5 +442,3 @@ reference/*
 /.*/
 **/.polson/*
 **/archive/*
-tests/**/scripts
-tests/**/events

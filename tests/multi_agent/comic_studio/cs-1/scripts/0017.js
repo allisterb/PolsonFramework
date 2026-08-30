@@ -1,0 +1,225 @@
+// ============================================================================
+// cs-1 · Stage 1 · PENCILER — construction sheet, pass 3 (final for this stage)
+// ============================================================================
+Stage.begin('Penciler');
+Stage.note('Pass 3. Pass 2 fixed the drawing of the background but broke the far ear: slicing the ellipse to an arc left the contour open and the inner ridge started from an arbitrary index on it, drawing a line across the lobe. The far ear is a closed lobe in the reference, so it is drawn closed and the head contour is drawn over it. Also carrying the trunk edge down to y138 where the far ear actually takes it, and adding the right rabbit skull top behind the ears as construction.');
+
+const RW = 620, RH = 336, S = 2;
+const PENCIL = { ground: '#faf8f2', blue: '#4a90e2', blueSoft: '#5b8db8', graphite: '#444444', graphiteSoft: '#6b6b6b' };
+
+const ANCHORS = {
+    frame: { w: RW, h: RH },
+    trunk: {
+        left: [[80, 0], [80, 60], [82, 100], [88, 140], [96, 186]],       // MEASURED rows 0..96
+        right: [[162, 0], [163, 40], [168, 62], [172, 110], [176, 160]],
+        visibleLeftTo: 138, visibleRightTo: 62
+    },
+    L: {
+        farEar: { c: [56, 134], rx: 46, ry: 66, rot: -24 },               // FITTED to 4x zoom
+        nearEar: {
+            left: [[136, 45], [122, 62], [117, 90], [114, 120], [116, 150], [121, 176]],
+            right: [[136, 45], [154, 56], [168, 76], [176, 102], [174, 132], [166, 160], [157, 179]],
+            ridge: [[138, 72], [143, 112], [148, 156]]
+        },
+        cranium: { c: [172, 232], r: 62 },                                // FITTED
+        muzzle: { c: [248, 262], r: 34 },                                 // FITTED
+        noseTip: [281, 258],
+        skullTop: [[100, 190], [120, 183], [140, 179], [157, 179]],
+        crown: [[157, 179], [180, 177], [205, 182], [228, 194], [246, 208], [258, 222], [266, 236], [274, 248], [281, 258]],
+        jaw: [[281, 258], [277, 272], [270, 285], [255, 302], [228, 314], [196, 320], [160, 323], [130, 331], [122, 336]],
+        back: [[74, 190], [84, 200], [96, 215], [100, 232], [103, 250], [108, 265], [113, 282], [118, 300], [119, 320], [117, 336]],
+        eye: {
+            almond: [[160, 199], [172, 187], [190, 181], [208, 185], [219, 197], [210, 215], [192, 228], [173, 221]],
+            pupil: { c: [190, 206], rx: 23, ry: 17, rot: -10 }, catch: [184, 201]
+        },
+        brow: [[150, 188], [176, 175], [205, 171], [232, 182]],
+        muzzleTop: [[228, 248], [246, 246], [262, 252], [272, 262]],
+        chinLobe: [[209, 272], [216, 288], [232, 300], [252, 303]],
+        mouthLine: [[231, 266], [243, 279], [257, 292]],
+        teeth: [[250, 271], [268, 273], [264, 291], [252, 289]],
+        whiskerRoot: [231, 262], whiskerEnds: [[152, 240], [148, 260], [156, 280]]
+    },
+    R: {
+        earFar: { left: [[398, 0], [395, 26], [392, 48], [389, 62], [382, 76]], right: [[444, 0], [443, 26], [441, 46], [446, 60], [452, 68]] },
+        earNear: { left: [[459, 0], [456, 20], [452, 40], [450, 53], [452, 66]], right: [[525, 0], [512, 24], [501, 41], [494, 53], [489, 68]], ridge: [[473, 6], [466, 30], [462, 51]] },
+        skullTop: [[382, 76], [400, 62], [430, 56], [462, 60], [489, 68]],
+        cranium: { c: [430, 132], r: 70 },                                // FITTED
+        muzzle: { c: [398, 188], r: 44 },                                 // FITTED
+        eyeNear: { ring: { c: [443, 118], rx: 26, ry: 40, rot: -6 }, lid: { c: [441, 118], rx: 14, ry: 26, rot: -14 }, pupil: { c: [441, 118], rx: 11, ry: 22, rot: -16 }, catch: [443, 121] },
+        eyeFar: { pupil: { c: [369, 114], rx: 8, ry: 15, rot: -8 }, catch: [371, 117] },
+        noseBridge: [[378, 168], [390, 163], [404, 168], [410, 178]],
+        lowerMuzzle: [[366, 196], [372, 212], [386, 222], [404, 222], [418, 214]],
+        mouthLine: [[379, 195], [391, 205], [406, 211]],
+        teeth: [[387, 201], [405, 204], [402, 216], [389, 214]],
+        faceLeft: [[382, 76], [374, 84], [370, 90], [367, 112], [361, 136], [362, 156], [367, 172], [361, 182], [350, 192], [346, 200]],
+        faceRight: [[489, 68], [487, 80], [490, 104], [494, 128], [496, 148], [491, 164], [484, 178], [473, 192], [470, 206]],
+        chestLeft: [[346, 200], [335, 224], [320, 248], [303, 272], [289, 284], [274, 296], [261, 308], [249, 320], [241, 336]],
+        chestRight: [[470, 206], [477, 236], [480, 260], [480, 284], [475, 296], [471, 308], [461, 320], [455, 336]],
+        whiskerRoot: [382, 186], whiskerEnds: [[276, 136], [266, 158], [272, 182], [290, 202]],
+        whiskerEndsR: [[498, 200], [502, 218], [494, 234]]
+    },
+    stems: [[[203, 0], [262, 105], [300, 165], [345, 252]], [[70, 0], [64, 50], [58, 105], [54, 142]],
+    [[468, 212], [575, 98]], [[575, 98], [620, 150]], [[500, 224], [620, 252]]],
+    leaves: [[218, 14, 17, -28], [243, 27, 13, 14], [262, 41, 18, -36], [288, 57, 12, 26],
+    [311, 75, 19, -18], [331, 99, 14, 33], [357, 9, 15, -30], [381, 17, 11, 22]],
+    grass: [{ x0: 0, x1: 118, base: 340, lo: 55, hi: 150, n: 26 }, { x0: 0, x1: 74, base: 300, lo: 40, hi: 96, n: 13 },
+    { x0: 228, x1: 344, base: 340, lo: 26, hi: 64, n: 15 }, { x0: 452, x1: 622, base: 340, lo: 38, hi: 98, n: 21 }]
+};
+
+const canvas = createCanvas(RW * S, RH * S);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = PENCIL.ground; ctx.fillRect(0, 0, RW * S, RH * S);
+ctx.scale(S, S); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+function rnd(i) { const s = Math.sin(i * 127.1 + 11.7) * 43758.5453; return s - Math.floor(s); }
+function ellipsePts(cx, cy, rx, ry, rotDeg, n) {
+    const a = rotDeg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), p = [];
+    for (let i = 0; i < n; i++) { const t = i / n * Math.PI * 2, x = rx * Math.cos(t), y = ry * Math.sin(t); p.push([cx + x * ca - y * sa, cy + x * sa + y * ca]); }
+    return p;
+}
+function line(pts, close) {
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    if (close) ctx.closePath(); ctx.stroke();
+}
+function smooth(pts, close) {
+    if (pts.length < 3) return line(pts, close);
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
+        ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+    }
+    ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    if (close) ctx.closePath(); ctx.stroke();
+}
+function set(col, w, a) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.globalAlpha = a === undefined ? 1 : a; }
+function tick(p, r) { ctx.beginPath(); ctx.moveTo(p[0] - r, p[1]); ctx.lineTo(p[0] + r, p[1]); ctx.moveTo(p[0], p[1] - r); ctx.lineTo(p[0], p[1] + r); ctx.stroke(); }
+
+function drawArmature() {
+    set(PENCIL.blueSoft, 0.4, 0.4);
+    for (let i = 1; i < 3; i++) { line([[RW * i / 3, 0], [RW * i / 3, RH]]); line([[0, RH * i / 3], [RW, RH * i / 3]]); }
+    set(PENCIL.blue, 0.5, 0.5);
+    for (const p of [[RW / 3, RH / 3], [2 * RW / 3, RH / 3], [RW / 3, 2 * RH / 3], [2 * RW / 3, 2 * RH / 3]]) tick(p, 5);
+    set(PENCIL.blueSoft, 0.4, 0.4);
+    line([[190, 206], [441, 118]]); line([[346, 200], [241, 336]]);
+    ctx.globalAlpha = 1;
+}
+function drawBackground() {
+    const T = ANCHORS.trunk;
+    set(PENCIL.blue, 0.45, 0.4); smooth(T.left); smooth(T.right);
+    set(PENCIL.graphite, 1.6, 1);
+    smooth([[80, 0], [80, 60], [82, 100], [86, 130], [88, 140]]);       // visible to y138
+    smooth([[162, 0], [163, 40], [168, 62]]);
+    set(PENCIL.graphiteSoft, 0.6, 0.5); line([[104, 0], [106, 56]]); line([[132, 0], [134, 52]]);
+
+    set(PENCIL.graphite, 1.0, 0.8);
+    for (const s of ANCHORS.stems) line(s);
+    for (const lf of ANCHORS.leaves) {
+        const a = lf[3] * Math.PI / 180, L = lf[2], w = L * 0.3;
+        const dx = Math.cos(a) * L, dy = Math.sin(a) * L, nx = -Math.sin(a) * w, ny = Math.cos(a) * w;
+        ctx.beginPath(); ctx.moveTo(lf[0], lf[1]);
+        ctx.quadraticCurveTo(lf[0] + dx * 0.5 + nx, lf[1] + dy * 0.5 + ny, lf[0] + dx, lf[1] + dy);
+        ctx.quadraticCurveTo(lf[0] + dx * 0.5 - nx, lf[1] + dy * 0.5 - ny, lf[0], lf[1]); ctx.stroke();
+    }
+    let k = 0;
+    for (const g of ANCHORS.grass) for (let i = 0; i < g.n; i++) {
+        k++;
+        const bx = g.x0 + (g.x1 - g.x0) * (i + rnd(k) * 0.8) / g.n;
+        const h = g.lo + (g.hi - g.lo) * rnd(k + 300);
+        const lean = (rnd(k + 700) - 0.5) * h * 0.75, by = g.base - rnd(k + 900) * 14;
+        set(PENCIL.graphiteSoft, 0.45 + rnd(k + 50) * 0.5, 0.45 + rnd(k + 90) * 0.35);
+        ctx.beginPath(); ctx.moveTo(bx, by);
+        ctx.quadraticCurveTo(bx + lean * 0.2, by - h * 0.6, bx + lean, by - h); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+}
+function drawVolumes() {
+    const L = ANCHORS.L, R = ANCHORS.R;
+    set(PENCIL.blue, 0.8, 0.8);
+    line(ellipsePts(L.cranium.c[0], L.cranium.c[1], L.cranium.r, L.cranium.r, 0, 48), true);
+    line(ellipsePts(R.cranium.c[0], R.cranium.c[1], R.cranium.r, R.cranium.r, 0, 48), true);
+    set(PENCIL.blue, 0.6, 0.65);
+    line(ellipsePts(L.muzzle.c[0], L.muzzle.c[1], L.muzzle.r, L.muzzle.r, 0, 40), true);
+    line(ellipsePts(R.muzzle.c[0], R.muzzle.c[1], R.muzzle.r, R.muzzle.r, 0, 40), true);
+    set(PENCIL.blueSoft, 0.4, 0.5);
+    line([[112, 206], [234, 206]]); line([[362, 118], [502, 118]]);
+    line([L.cranium.c, L.muzzle.c]); line([R.cranium.c, R.muzzle.c]);
+    ctx.globalAlpha = 1;
+}
+function drawLeft() {
+    const L = ANCHORS.L;
+    set(PENCIL.graphite, 1.6, 1);
+    smooth(ellipsePts(L.farEar.c[0], L.farEar.c[1], L.farEar.rx, L.farEar.ry, L.farEar.rot, 40), true);
+    set(PENCIL.graphiteSoft, 0.8, 0.85);            // inner-ear ridge, concentric, well inside
+    smooth(ellipsePts(L.farEar.c[0] + 3, L.farEar.c[1] + 4, L.farEar.rx - 15, L.farEar.ry - 17, L.farEar.rot, 32), true);
+    set(PENCIL.graphite, 1.6, 1);
+    smooth(L.back); smooth(L.jaw); smooth(L.crown);
+    set(PENCIL.graphite, 1.25, 0.95);
+    smooth(L.nearEar.left); smooth(L.nearEar.right);
+    smooth([[121, 176], [138, 181], [157, 179]]);
+    set(PENCIL.blueSoft, 0.5, 0.55); smooth(L.skullTop);
+    set(PENCIL.graphiteSoft, 0.75, 0.85); smooth(L.nearEar.ridge);
+    ctx.globalAlpha = 1;
+}
+function drawRight() {
+    const R = ANCHORS.R;
+    set(PENCIL.blueSoft, 0.5, 0.55); smooth(R.skullTop);
+    set(PENCIL.graphite, 1.6, 1);
+    smooth(R.earFar.left); smooth(R.earFar.right);
+    smooth(R.earNear.left); smooth(R.earNear.right);
+    smooth(R.faceLeft); smooth(R.faceRight);
+    smooth(R.chestLeft); smooth(R.chestRight);
+    set(PENCIL.graphiteSoft, 0.75, 0.85);
+    smooth(R.earNear.ridge); smooth([[418, 12], [414, 40], [412, 58]]);
+    ctx.globalAlpha = 1;
+}
+function wedgeTeeth(q) {
+    ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); ctx.lineTo(q[1][0], q[1][1]);
+    ctx.lineTo(q[2][0], q[2][1]); ctx.lineTo(q[3][0], q[3][1]); ctx.closePath(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo((q[0][0] + q[1][0]) / 2, (q[0][1] + q[1][1]) / 2);
+    ctx.lineTo((q[2][0] + q[3][0]) / 2, (q[2][1] + q[3][1]) / 2); ctx.stroke();
+}
+function fan(root, ends, lift) {
+    for (const e of ends) {
+        ctx.beginPath(); ctx.moveTo(root[0], root[1]);
+        ctx.quadraticCurveTo((root[0] + e[0]) / 2, (root[1] + e[1]) / 2 - lift, e[0], e[1]); ctx.stroke();
+    }
+}
+function drawFeatures() {
+    const L = ANCHORS.L, R = ANCHORS.R;
+    set(PENCIL.graphite, 1.15, 1);
+    smooth(L.eye.almond, true);
+    smooth(ellipsePts(L.eye.pupil.c[0], L.eye.pupil.c[1], L.eye.pupil.rx, L.eye.pupil.ry, L.eye.pupil.rot, 32), true);
+    set(PENCIL.graphiteSoft, 0.75, 0.85); smooth(L.brow);
+    set(PENCIL.blue, 0.7, 1); tick(L.eye.catch, 4);
+    set(PENCIL.graphite, 1.15, 1);
+    smooth(ellipsePts(R.eyeNear.lid.c[0], R.eyeNear.lid.c[1], R.eyeNear.lid.rx, R.eyeNear.lid.ry, R.eyeNear.lid.rot, 32), true);
+    smooth(ellipsePts(R.eyeNear.pupil.c[0], R.eyeNear.pupil.c[1], R.eyeNear.pupil.rx, R.eyeNear.pupil.ry, R.eyeNear.pupil.rot, 32), true);
+    set(PENCIL.blueSoft, 0.55, 0.6);
+    smooth(ellipsePts(R.eyeNear.ring.c[0], R.eyeNear.ring.c[1], R.eyeNear.ring.rx, R.eyeNear.ring.ry, R.eyeNear.ring.rot, 40), true);
+    set(PENCIL.blue, 0.7, 1); tick(R.eyeNear.catch, 4);
+    set(PENCIL.graphite, 1.05, 1);
+    smooth(ellipsePts(R.eyeFar.pupil.c[0], R.eyeFar.pupil.c[1], R.eyeFar.pupil.rx, R.eyeFar.pupil.ry, R.eyeFar.pupil.rot, 28), true);
+    set(PENCIL.blue, 0.7, 1); tick(R.eyeFar.catch, 3);
+    set(PENCIL.graphite, 1.15, 1);
+    smooth(L.muzzleTop); smooth(L.mouthLine); smooth(L.chinLobe); wedgeTeeth(L.teeth);
+    smooth(R.noseBridge); smooth(R.mouthLine); smooth(R.lowerMuzzle); wedgeTeeth(R.teeth);
+    set(PENCIL.graphiteSoft, 0.5, 0.65);
+    fan(L.whiskerRoot, L.whiskerEnds, 5);
+    fan(R.whiskerRoot, R.whiskerEnds, 7);
+    fan([440, 192], R.whiskerEndsR, 5);
+    ctx.globalAlpha = 1;
+}
+function drawLabels() {
+    ctx.fillStyle = PENCIL.blue; ctx.font = '7px sans-serif'; ctx.globalAlpha = 0.9;
+    const labs = [['L.cranium c(172,232) r62', 128, 306], ['L.muzzle c(248,262) r34', 252, 236],
+    ['L.farEar rx46 ry66 -24deg', 4, 62], ['L.nearEar tip(136,45)', 92, 38],
+    ['R.cranium c(430,132) r70', 366, 258], ['R.muzzle c(398,188) r44', 326, 154],
+    ['both ears cropped by frame', 372, 90], ['noseTip(281,258)', 288, 252],
+    ['R.eyeFar c(369,114)', 296, 110]];
+    for (const l of labs) ctx.fillText(l[0], l[1], l[2]);
+    ctx.globalAlpha = 1;
+}
+drawArmature(); drawBackground(); drawVolumes(); drawLeft(); drawRight(); drawFeatures(); drawLabels();
+canvas;

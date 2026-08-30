@@ -1,0 +1,63 @@
+Stage.begin('Critic');
+Stage.note('Scoring refinement pass 2 against pass 1 and stage 3, region by region, to confirm every change earned its place rather than trading one error for another.');
+
+const ref = Skia.Image.load('reference_images/comic1.png');
+const s3 = Skia.Image.load('artifacts/stage3_inker.webp');
+const s4 = Skia.Image.load('artifacts/stage4_critic.webp');
+const REGIONS = [
+    ['cape left wing',  200, 460, 430, 640], ['cape upper-left', 330, 300, 470, 460],
+    ['cape lower/tail', 300, 640, 520, 830], ['cape far lobe',   680, 360, 780, 640],
+    ['cape mid-right',  600, 640, 740, 800], ['suit torso',      460, 320, 700, 490],
+    ['suit legs',       420, 560, 670, 800], ['suit raised arm', 690, 200, 830, 315],
+    ['gauntlet',        650,  20, 825, 205], ['head+hair',       500,  60, 700, 300],
+    ['boot',            370, 815, 545, 1000], ['belt+buckle',     490, 480, 680, 552]
+];
+function meanDist(img, x0, y0, x1, y1) {
+    let s = 0, n = 0;
+    for (let y = y0; y <= y1; y += 4) {
+        for (let x = x0; x <= x1; x += 4) {
+            const ha = ref.getPixel(x, y), hb = img.getPixel(x, y);
+            if (parseInt(ha.substr(7, 2), 16) < 240 || parseInt(hb.substr(7, 2), 16) < 240) continue;
+            const dr = parseInt(ha.substr(1, 2), 16) - parseInt(hb.substr(1, 2), 16);
+            const dg = parseInt(ha.substr(3, 2), 16) - parseInt(hb.substr(3, 2), 16);
+            const db = parseInt(ha.substr(5, 2), 16) - parseInt(hb.substr(5, 2), 16);
+            s += Math.sqrt(dr * dr + dg * dg + db * db); n++;
+        }
+    }
+    return n ? s / n : -1;
+}
+table(REGIONS.map(R => {
+    const a = meanDist(s3, R[1], R[2], R[3], R[4]), b = meanDist(s4, R[1], R[2], R[3], R[4]);
+    return { region: R[0], stage3: a.toFixed(1), final: b.toFixed(1),
+             delta: (b - a).toFixed(1), verdict: b < a - 1 ? 'BETTER' : (b > a + 1 ? 'WORSE' : 'same') };
+}));
+
+function classOf(h) {
+    if (parseInt(h.substr(7, 2), 16) < 128) return '.';
+    const r = parseInt(h.substr(1, 2), 16), g = parseInt(h.substr(3, 2), 16), b = parseInt(h.substr(5, 2), 16);
+    if (r > 200 && g > 140 && b < 140) return 'Y';
+    if (b > 130 && (b - r) > 40) return 'B';
+    if (r < 150 && g < 150 && b < 150 && (r - b) < 70) return 'H';
+    return 'R';
+}
+function overall(img) {
+    let same = 0, bad = 0, s = 0, n = 0;
+    for (let y = 6; y < 1024; y += 6) {
+        for (let x = 6; x < 1024; x += 6) {
+            const ha = ref.getPixel(x, y), hb = img.getPixel(x, y);
+            const a = classOf(ha), b = classOf(hb);
+            if (a === '.' && b === '.') continue;
+            if (a === b) same++; else bad++;
+            if (a !== '.' && b !== '.') {
+                const dr = parseInt(ha.substr(1, 2), 16) - parseInt(hb.substr(1, 2), 16);
+                const dg = parseInt(ha.substr(3, 2), 16) - parseInt(hb.substr(3, 2), 16);
+                const db = parseInt(ha.substr(5, 2), 16) - parseInt(hb.substr(5, 2), 16);
+                s += Math.sqrt(dr * dr + dg * dg + db * db); n++;
+            }
+        }
+    }
+    return { coverageErrPct: (100 * bad / (same + bad)).toFixed(2), meanRGBdist: (s / n).toFixed(1) };
+}
+log('stage3 overall: ' + JSON.stringify(overall(s3)));
+log('final  overall: ' + JSON.stringify(overall(s4)));
+exit('pass 2 scored');

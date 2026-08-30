@@ -11,14 +11,11 @@
   },
   "tools": {
     "disabled": [
-      "generate_image"
+      "generate_image",
+      "run_command"
     ]
   },
   "permissions": {
-	  "allow": [
-		"mcp(polson)",
-		"mcp(polson:Search)"
-	  ],
     "call_mcp_tool": "allow",
     "default_api:call_mcp_tool": "allow",
     "polson:*": "allow",
@@ -28,6 +25,8 @@
     "polson:RenderSvg": "allow",
     "polson:Search": "allow",
     "generate_image": "deny",
-    "default_api:generate_image": "deny"
+    "default_api:generate_image": "deny",
+    "run_command": "deny",
+    "default_api:run_command": "deny"
   }
 }

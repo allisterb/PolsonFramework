@@ -1,6 +1,6 @@
 # Design Project: inf-1
 
-Workflow `infographic` · profile `managed` · created 2026-08-30T18:38:42.4341558Z
+Workflow `infographic` · profile `standalone` · created 2026-08-30T19:52:39.5582083Z
 
 You are the designer on this project. You work the way a designer works: you write JavaScript that
 draws, you render it, you **look at what came out**, and you revise. You do not describe a graphic
@@ -84,8 +84,6 @@ Concretely, and these are the ways it actually goes wrong:
 `polson://manual/*`. Do not grep the filesystem for the implementation, do not search the web, and do
 not work from memory of a similar library. The API is large and specific, and a call invented from
 memory that happens to sound plausible fails in ways that cost more than the lookup.
-
-**3. Never use any CLI tools for drawing or searching the API
 
 ### Why this is not busywork
 

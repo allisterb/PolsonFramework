@@ -106,12 +106,26 @@ internal static class RunReport
             .Where(f => !scriptsRun.Any(s => Path.GetFileName(s).Equals(f, StringComparison.OrdinalIgnoreCase)))
             .ToArray();
 
-        // The host's own transcript, if a hook preserved it. Not part of the reconciliation — it is
-        // written by the hook rather than by the engine — but its presence is what tells a reader
-        // whether the conversation behind the run is still recoverable.
+        // The conversation behind the run. Never part of the reconciliation — it is written by the
+        // host or the orchestrator rather than by the engine — but its presence is what tells a reader
+        // whether the session is still recoverable. It arrives by one of two routes, and a run has
+        // whichever its profile gives it: under a desktop host the preserve-chatlog hook copies the
+        // host's transcript in as events/chat-*.jsonl; under the orchestrator there is no host to copy
+        // from, because the orchestrator is itself holding the conversation, and it writes
+        // events/agent.jsonl as it consumes the turn. Reporting only the first called every standalone
+        // run unrecorded while its transcript sat in the same directory.
         var chatLogs = Files(dir, "events")
             .Where(f => f.StartsWith("chat-", StringComparison.OrdinalIgnoreCase))
             .ToArray();
+
+        var agentLog = Path.Combine(dir, "events", "agent.jsonl");
+        var agentEvents = ReadEvents(agentLog);
+        var agentTurns = agentEvents.Count(e => Type(e) == "turn.start");
+
+        // Steps, not events. The run and turn brackets are written whether or not the agent ever said
+        // anything, so counting every line would report an empty transcript as a full one — and a
+        // transcript that exists but recorded nothing is a distinct state worth seeing.
+        var agentSteps = agentEvents.Count(e => Type(e) is not ("run.start" or "run.end" or "turn.start" or "turn.end"));
 
         var stages = events.Where(e => Type(e) == "stage.begin")
             .Select(e => e["stage"]?.GetValue<string>() ?? "")
@@ -131,6 +145,10 @@ internal static class RunReport
             ["scriptFilesOnDisk"] = scriptFiles.Length,
             ["artifactFilesOnDisk"] = artifactFiles.Length,
             ["chatLogs"] = chatLogs.Length,
+            ["agentTranscript"] = File.Exists(agentLog),
+            ["agentTurns"] = agentTurns,
+            ["agentSteps"] = agentSteps,
+            ["conversationRecord"] = ConversationRecord(chatLogs.Length, File.Exists(agentLog), agentTurns, agentSteps),
             ["scriptFilesNeverExecuted"] = new JsonArray([.. scriptsNeverRun.Select(s => (JsonNode)s!)]),
             ["artifactsNoRenderProduced"] = new JsonArray([.. unexplainedArtifacts.Select(s => (JsonNode)s!)]),
             ["warnings"] = new JsonArray([.. Warnings(hasLog, scriptsRun.Length, Count("render"),
@@ -193,6 +211,38 @@ internal static class RunReport
             : [];
     }
 
+    /// <summary>
+    /// How the run's conversation was kept, in words.
+    /// </summary>
+    /// <remarks>
+    /// A transcript that exists but recorded nothing is reported as such rather than as absent: the
+    /// orchestrator writes the file when the run starts, so its mere presence proves only that a run
+    /// was attempted. Both routes are reported when both are present, which is what a managed project
+    /// later re-run through the orchestrator looks like.
+    /// </remarks>
+    private static string ConversationRecord(int chatLogs, bool agentTranscript, int turns, int steps)
+    {
+        var parts = new List<string>();
+
+        if (chatLogs > 0)
+        {
+            parts.Add($"{chatLogs} chat log{(chatLogs == 1 ? "" : "s")} copied in by the hook");
+        }
+
+        if (steps > 0)
+        {
+            parts.Add($"events/agent.jsonl — {turns} turn{(turns == 1 ? "" : "s")}, {steps} steps");
+        }
+        else if (agentTranscript)
+        {
+            parts.Add("events/agent.jsonl, but it recorded no steps");
+        }
+
+        return parts.Count > 0
+            ? string.Join("; ", parts)
+            : "none — the session's conversation was not kept";
+    }
+
     private static void Print(string dir, JsonObject report)
     {
         int Num(string key) => report[key]?.GetValue<int>() ?? 0;
@@ -212,9 +262,7 @@ internal static class RunReport
             ("stages declared", string.Join(" -> ", (report["stages"] as JsonArray ?? []).Select(s => s?.ToString() ?? ""))),
             ("files in scripts/", Num("scriptFilesOnDisk").ToString(CultureInfo.InvariantCulture)),
             ("files in artifacts/", Num("artifactFilesOnDisk").ToString(CultureInfo.InvariantCulture)),
-            ("chat logs preserved", Num("chatLogs") == 0
-                ? "none — the session's conversation was not kept"
-                : Num("chatLogs").ToString(CultureInfo.InvariantCulture)),
+            ("conversation record", report["conversationRecord"]?.ToString() ?? ""),
         };
 
         foreach (var (label, value) in rows)

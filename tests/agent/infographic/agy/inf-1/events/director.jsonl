@@ -1,0 +1,1 @@
+{"ts":"2026-08-30T19:53:27.553Z","seq":1,"src":"director","type":"message","text":"Read GEMINI.md in this project directory, then brief.md, and begin the project. Work through the stages it names, declaring each one with Stage.begin, and save every render to artifacts/ with outFile."}

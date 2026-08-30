@@ -50,6 +50,14 @@ public class RunReportTests : TestsRuntime, IDisposable
     private void Events(params string[] lines) =>
         File.WriteAllLines(Path.Combine(root, "events", "server.jsonl"), lines);
 
+    /// <summary>The orchestrator's own transcript, which is where a standalone run's conversation lives.</summary>
+    private void AgentEvents(params string[] lines) =>
+        File.WriteAllLines(Path.Combine(root, "events", "agent.jsonl"), lines);
+
+    /// <summary>A transcript copied in by the preserve-chatlog hook, which is where a managed run's lives.</summary>
+    private void ChatLog(string name) =>
+        File.WriteAllText(Path.Combine(root, "events", name), """{"role":"user"}""");
+
     /// <summary>Runs the report and returns its JSON, which is the same data the table prints.</summary>
     private JsonObject Report()
     {
@@ -197,6 +205,97 @@ public class RunReportTests : TestsRuntime, IDisposable
             """{"type":"script.ok","script":"scripts/0001.js"}""");
 
         Assert.Equal(1, Report()["scriptsExecuted"]!.GetValue<int>());
+    }
+
+    /// <summary>
+    /// A standalone run's conversation is <c>agent.jsonl</c>, and the report must say so.
+    /// </summary>
+    /// <remarks>
+    /// There is no chat log to copy under the orchestrator, because the orchestrator is itself holding
+    /// the conversation. Counting only hook-copied files reported every standalone run as unrecorded
+    /// while its full transcript sat in the same directory — the report contradicting the run.
+    /// </remarks>
+    [Fact]
+    public void TestAStandaloneRunsTranscriptCountsAsItsConversationRecord()
+    {
+        Events("""{"type":"run.start"}""");
+        AgentEvents(
+            """{"type":"run.start"}""",
+            """{"type":"turn.start","chars":80}""",
+            """{"type":"thinking"}""",
+            """{"type":"tool.call","name":"ExecuteScript.json"}""",
+            """{"type":"text"}""",
+            """{"type":"turn.end","status":"done"}""",
+            """{"type":"run.end"}""");
+
+        var report = Report();
+
+        Assert.Equal(0, report["chatLogs"]!.GetValue<int>());
+        Assert.True(report["agentTranscript"]!.GetValue<bool>());
+        Assert.Equal(1, report["agentTurns"]!.GetValue<int>());
+
+        // Three steps, not seven events: the run and turn brackets are not things the agent said.
+        Assert.Equal(3, report["agentSteps"]!.GetValue<int>());
+
+        var record = report["conversationRecord"]!.ToString();
+        Assert.Contains("agent.jsonl", record, StringComparison.Ordinal);
+        Assert.Contains("1 turn,", record, StringComparison.Ordinal);
+        Assert.Contains("3 steps", record, StringComparison.Ordinal);
+        Assert.DoesNotContain("not kept", record, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A transcript that exists but recorded nothing is a distinct state from one that is absent.
+    /// </summary>
+    /// <remarks>
+    /// The orchestrator opens the file as the run starts, so its presence proves only that a run was
+    /// attempted. Reporting that as a kept conversation would hide the case worth seeing: the agent
+    /// never got a turn.
+    /// </remarks>
+    [Fact]
+    public void TestAnEmptyTranscriptIsReportedAsEmptyRatherThanAsKept()
+    {
+        Events("""{"type":"run.start"}""");
+        AgentEvents("""{"type":"run.start"}""", """{"type":"run.end","status":"incomplete"}""");
+
+        var report = Report();
+
+        Assert.True(report["agentTranscript"]!.GetValue<bool>());
+        Assert.Equal(0, report["agentSteps"]!.GetValue<int>());
+        Assert.Contains("recorded no steps", report["conversationRecord"]!.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>A managed run's hook-copied logs are still counted, and both routes report together.</summary>
+    [Fact]
+    public void TestHookCopiedLogsAreCountedAndBothRoutesAreReported()
+    {
+        Events("""{"type":"run.start"}""");
+        ChatLog("chat-abc.jsonl");
+        ChatLog("chat-abc-full.jsonl");
+
+        var hookOnly = Report();
+        Assert.Equal(2, hookOnly["chatLogs"]!.GetValue<int>());
+        Assert.False(hookOnly["agentTranscript"]!.GetValue<bool>());
+        Assert.Contains("2 chat logs", hookOnly["conversationRecord"]!.ToString(), StringComparison.Ordinal);
+
+        AgentEvents("""{"type":"turn.start"}""", """{"type":"text"}""");
+
+        var both = Report();
+        var record = both["conversationRecord"]!.ToString();
+        Assert.Contains("2 chat logs", record, StringComparison.Ordinal);
+        Assert.Contains("agent.jsonl", record, StringComparison.Ordinal);
+    }
+
+    /// <summary>With neither route present, the report says the conversation was not kept.</summary>
+    [Fact]
+    public void TestNoConversationAtAllIsReportedAsNotKept()
+    {
+        Events("""{"type":"run.start"}""");
+
+        var report = Report();
+
+        Assert.False(report["agentTranscript"]!.GetValue<bool>());
+        Assert.Contains("not kept", report["conversationRecord"]!.ToString(), StringComparison.Ordinal);
     }
 
     /// <summary>A missing directory is refused rather than reported as an empty run.</summary>

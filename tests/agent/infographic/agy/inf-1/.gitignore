@@ -1,3 +1,6 @@
+# SDK-owned session state: regenerable, sometimes large, never the deliverable.
+session/
+
 # Renders are reproducible from scripts/ and are noisy in review. Commit deliberately
 # if a particular stage is worth keeping in history.
 artifacts/

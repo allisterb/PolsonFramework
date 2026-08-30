@@ -4,6 +4,7 @@
   "workflow": "infographic",
   "type": "brutalist",
   "sdk": "agy",
-  "profile": "managed",
-  "createdUtc": "2026-08-30T18:38:42.4341558Z"
+  "profile": "standalone",
+  "createdUtc": "2026-08-30T19:52:39.5582083Z",
+  "conversationId": "9e6339d440d39698dd82d5615f6575c7"
 }

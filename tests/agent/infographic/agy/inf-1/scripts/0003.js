@@ -1,55 +1,57 @@
-Stage.begin('Data');
+Stage.begin('Composition');
 
-Stage.note('CLAIM:   Progress is constant — it never stopped coming, but it never once came on schedule.');
-Stage.note('READER:  General. Knows all seven events already; has never seen the gaps between them drawn to scale.');
-Stage.note('PLACE:   At a line printer, watching fanfold paper feed through the platen');
+Stage.note('NAMED PATTERN: Editorial spread & Overlap stack — A strong vertical structural spine with asymmetrical offset milestone blocks, high-contrast visual tension, and stamp overlays breaking container boundaries.');
+Stage.note('PLACE: At a line printer, watching fanfold tractor-feed paper emerge from the platen. The canvas features continuous tractor-feed sprocket tracks on the outer edges and dot-matrix registration marks.');
+Stage.note('TENSION RULES: (1) Dense zone: 1989–2007 cluster (Web, Mosaic, Google, Facebook, iPhone tightly packed); Empty zone: 1969–1989 20-year gap breathing space (~20% canvas height). (2) Hierarchy: Hero display headline at 84px vs body copy at 14px (6x-8x ladder). (3) Boundary breaking: The "53 YEARS" hero badge tilts at -5 deg and overlaps the header rule into the timeline zone; the 1969 ARPANET card bleeds slightly past the timeline rail. (4) Ground: Fanfold paper tint (#f4f0e6) with subtle dot-matrix grid and side tractor perforation margins.');
 
-log('=== STAGE 1: DATA & CLAIM ===');
-log('CLAIM:   Progress is constant — it never stopped coming, but it never once came on schedule.');
-log('READER:  General. Knows all seven events already; has never seen the gaps between them drawn to scale.');
-log('PLACE:   At a line printer, watching fanfold paper feed through the platen');
+const canvas = createCanvas(1080, 1920);
+const ctx = canvas.getContext('2d');
 
-const milestones = [
-  { year: 1969, title: 'ARPANET sends its first message (it crashed after "LO")', short: 'ARPANET First Message', tag: 'CRASHED AFTER "LO"' },
-  { year: 1989, title: 'Tim Berners-Lee proposes the World Wide Web', short: 'World Wide Web Proposed', tag: 'BERNERS-LEE PROPOSAL' },
-  { year: 1993, title: 'Mosaic makes the web visual', short: 'Mosaic Web Browser', tag: 'THE WEB GOES VISUAL' },
-  { year: 1998, title: 'Google is founded', short: 'Google Founded', tag: 'SEARCH REVOLUTION' },
-  { year: 2004, title: 'Facebook launches — the social era begins', short: 'Facebook Launches', tag: 'SOCIAL ERA BEGINS' },
-  { year: 2007, title: 'The iPhone puts the web in every pocket', short: 'iPhone Announced', tag: 'WEB IN EVERY POCKET' },
-  { year: 2022, title: 'ChatGPT reaches 100M users in 2 months', short: 'ChatGPT 100M Users', tag: 'FASTEST 100M ADOPTION' }
-];
+// Base ground
+ctx.fillStyle = '#f5f1e8';
+ctx.fillRect(0, 0, 1080, 1920);
 
-const gaps = [
-  { fromYear: 1969, toYear: 1989, arithmetic: '1989 - 1969', years: 20, desc: 'ARPANET → Web gap', label: '20 YR LULL' },
-  { fromYear: 1989, toYear: 1993, arithmetic: '1993 - 1989', years: 4, desc: 'Web → Mosaic gap', label: '4 YR GAP' },
-  { fromYear: 1993, toYear: 1998, arithmetic: '1998 - 1993', years: 5, desc: 'Mosaic → Google gap', label: '5 YR GAP' },
-  { fromYear: 1998, toYear: 2004, arithmetic: '2004 - 1998', years: 6, desc: 'Google → Facebook gap', label: '6 YR GAP' },
-  { fromYear: 2004, toYear: 2007, arithmetic: '2007 - 2004', years: 3, desc: 'Facebook → iPhone gap', label: '3 YR GAP' },
-  { fromYear: 2007, toYear: 2022, arithmetic: '2022 - 2007', years: 15, desc: 'iPhone → ChatGPT gap', label: '15 YR GAP' }
-];
+// Tractor margins
+const marginW = 44;
+ctx.fillStyle = '#ebe5d8';
+ctx.fillRect(0, 0, marginW, 1920);
+ctx.fillRect(1080 - marginW, 0, marginW, 1920);
 
-const totalSpan = 2022 - 1969; // 53 years
-const lullYears = 20 + 15; // 35 years
-const clusterYears = 2007 - 1989; // 18 years
-const lullPct = (lullYears / totalSpan) * 100; // 66.0377%
-const clusterPct = (clusterYears / totalSpan) * 100; // 33.9623%
+// Inner page area
+const page = Layout.rect(marginW, 0, 1080 - marginW * 2, 1920);
+const [headerZone, contentZone, footerZone] = Layout.rows(page, [280, 1260, 380], 0);
 
-log('Milestones recorded: ' + milestones.length);
-table(milestones);
+// Draw Zone Blocking for visualization
+ctx.strokeStyle = '#000000';
+ctx.lineWidth = 4;
 
-log('Derived gaps:');
-table(gaps);
+// Header box
+ctx.fillStyle = '#ffde59';
+ctx.fillRect(headerZone.x, headerZone.y + 20, headerZone.width, headerZone.height - 30);
+ctx.strokeRect(headerZone.x, headerZone.y + 20, headerZone.width, headerZone.height - 30);
 
-log('Total Timeline Span: ' + totalSpan + ' years (1969 to 2022)');
-log('Long Lulls (1969-1989: 20y + 2007-2022: 15y): ' + lullYears + ' years (' + lullPct.toFixed(1) + '%)');
-log('Rapid Cluster (1989-2007): ' + clusterYears + ' years (' + clusterPct.toFixed(1) + '%)');
+// Content zone: split into Timeline (left 62%) and Secondary/Gaps (right 38%) or Full width timeline
+const [timelineCol, statsCol] = Layout.columns(contentZone, [62, 38], 20);
 
-Session.data = {
-  milestones,
-  gaps,
-  totalSpan,
-  lullYears,
-  clusterYears,
-  lullPct,
-  clusterPct
-};
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(timelineCol.x, timelineCol.y, timelineCol.width, timelineCol.height);
+ctx.strokeRect(timelineCol.x, timelineCol.y, timelineCol.width, timelineCol.height);
+
+ctx.fillStyle = '#00f0ff';
+ctx.fillRect(statsCol.x, statsCol.y, statsCol.width, statsCol.height);
+ctx.strokeRect(statsCol.x, statsCol.y, statsCol.width, statsCol.height);
+
+// Footer zone
+ctx.fillStyle = '#ff3366';
+ctx.fillRect(footerZone.x, footerZone.y + 10, footerZone.width, footerZone.height - 20);
+ctx.strokeRect(footerZone.x, footerZone.y + 10, footerZone.width, footerZone.height - 20);
+
+// Labels
+ctx.fillStyle = '#000000';
+ctx.font = '900 32px monospace';
+ctx.fillText('ZONE 1: HEADER & CLAIM LOCKUP', headerZone.x + 30, headerZone.y + 80);
+ctx.fillText('ZONE 2A: SCALED TIMELINE', timelineCol.x + 20, timelineCol.y + 60);
+ctx.fillText('ZONE 2B: GAP BARS', statsCol.x + 20, statsCol.y + 60);
+ctx.fillText('ZONE 3: SUMMARY & FOOTER', footerZone.x + 30, footerZone.y + 80);
+
+canvas;

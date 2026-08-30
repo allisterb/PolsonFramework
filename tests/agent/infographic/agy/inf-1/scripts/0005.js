@@ -1,95 +1,83 @@
-Stage.begin('Composition');
+Stage.begin('Palette & Type');
 
-Stage.note('Named Pattern: Editorial Spread with Overlap Stack (Manual 13 §4).');
-Stage.note('Place: At a line printer, watching fanfold paper feed through the platen.');
-Stage.note('Tension Rules (Manual 13 §5):');
-Stage.note('- One dense zone (1989-2007 cluster of 5 milestones in 18 years) vs one empty zone (1969-1989 20-year lull and 2007-2022 15-year lull).');
-Stage.note('- Three sizes minimum: 64px display header down to 11px printer metadata (scale ratio >8x).');
-Stage.note('- Something crosses a boundary: Rotated neo-brutalist status stamp and connector brackets break container borders.');
-Stage.note('- Ground participates: Authentic green-bar fanfold paper with tractor feed sprocket margins and registration marks.');
-Stage.note('- One committed rotation: -4deg stamp for visual punch.');
+// Check available typefaces
+const fontsToCheck = [
+  'Impact', 'Arial Black', 'Courier New', 'Consolas', 'Trebuchet MS',
+  'Helvetica', 'Arial', 'Segoe UI', 'Roboto', 'Inter', 'Menlo', 'Monaco'
+];
 
-log('=== STAGE 3: COMPOSITION BLOCKING ===');
+const available = fontsToCheck.filter(f => Skia.Font.has(f));
+log('Available typefaces: ' + available.join(', '));
+Stage.note('Available typefaces checked: ' + available.join(', '));
 
-const width = 1080;
-const height = 1920;
-const canvas = createCanvas(width, height);
-const ctx = canvas.getContext('2d');
+// Check font pairing evaluation
+const pairEval = LogoType.evaluateFontPairing('sansSerif', 'sansSerif');
+log('Pairing eval: ' + pairEval.relationship + ' (score ' + pairEval.score + ')');
 
-// 1. Background Ground - Fanfold paper
-ctx.fillStyle = '#F5F2EB';
-ctx.fillRect(0, 0, width, height);
-
-// Draw alternating green-bar paper stripes (each 32px tall)
-ctx.fillStyle = '#ECF3E8';
-for (let y = 0; y < height; y += 64) {
-  ctx.fillRect(0, y, width, 32);
-}
-
-// 2. Tractor feed sprocket margins (Left and Right 54px)
-const marginW = 54;
-ctx.fillStyle = '#EBE6DC';
-ctx.fillRect(0, 0, marginW, height);
-ctx.fillRect(width - marginW, 0, marginW, height);
-
-// Marginal rules
-ctx.strokeStyle = '#000000';
-ctx.lineWidth = 3;
-ctx.beginPath();
-ctx.moveTo(marginW, 0);
-ctx.lineTo(marginW, height);
-ctx.moveTo(width - marginW, 0);
-ctx.lineTo(width - marginW, height);
-ctx.stroke();
-
-// Punch holes in tractor margins
-for (let y = 24; y < height; y += 48) {
-  // Left hole
-  ctx.fillStyle = '#D8D1C3';
-  ctx.beginPath();
-  ctx.arc(marginW / 2, y, 10, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  
-  // Right hole
-  ctx.beginPath();
-  ctx.arc(width - marginW / 2, y, 10, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-}
-
-// 3. Layout Zones using Layout.*
-const contentRect = Layout.rect(marginW + 24, 24, width - (marginW * 2) - 48, height - 48);
-
-// Divide into Header, Main Body, Bottom Macro, Footer
-const [headerRect, midRect, bottomRect] = Layout.rows(contentRect, [13, 62, 25], 24);
-
-log('Header Zone: y=' + headerRect.y.toFixed(0) + ', h=' + headerRect.height.toFixed(0));
-log('Mid Zone: y=' + midRect.y.toFixed(0) + ', h=' + midRect.height.toFixed(0));
-log('Bottom Zone: y=' + bottomRect.y.toFixed(0) + ', h=' + bottomRect.height.toFixed(0));
-
-// Draw blocking rectangles with brutalist border
-const drawBlock = (r, fill, title) => {
-  ctx.fillStyle = fill;
-  ctx.fillRect(r.x, r.y, r.width, r.height);
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(r.x, r.y, r.width, r.height);
-  
-  ctx.fillStyle = '#000000';
-  ctx.font = '700 20px Consolas, monospace';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('[BLOCK: ' + title + ']', r.x + 12, r.y + 12);
+// Define Neo-Brutalist Color Palette & Typographic System
+const NeoPalette = {
+  paper: '#F6F2E9',
+  paperDark: '#ECE6D8',
+  ink: '#000000',
+  yellow: '#FFE600',
+  cyan: '#00F0FF',
+  coral: '#FF3366',
+  green: '#22EE77',
+  orange: '#FF7700',
+  purple: '#B366FF',
+  white: '#FFFFFF',
+  shadowOffset: 6,
+  borderWidth: 4
 };
 
-drawBlock(headerRect, '#FFE500', 'HEADER & CLAIM');
+// Test typographic scale
+const typeScale = LogoType.calculateTypographicScale(16, 'goldenRatio', 1, 4);
+log('Typographic scale ratio: ' + typeScale.ratioName + ' factor: ' + typeScale.ratioFactor);
 
-// Split midRect into Left (Timeline Spine 58%) and Right (Gap Analysis 42%)
-const [timelineRect, sideRect] = Layout.columns(midRect, [58, 42], 24);
-drawBlock(timelineRect, '#FFFFFF', 'TIMELINE SPINE (1969-2022)');
-drawBlock(sideRect, '#00E5FF', 'GAP COMPARISON & BURST STATS');
+const canvas = createCanvas(1080, 1920);
+const ctx = canvas.getContext('2d');
 
-drawBlock(bottomRect, '#FFFFFF', '53-YEAR MACRO BREAKDOWN & WAFFLE');
+ctx.fillStyle = NeoPalette.paper;
+ctx.fillRect(0, 0, 1080, 1920);
+
+// Helper for Neo-brutalist box with hard offset shadow and structural border
+const drawNeoBox = (x, y, w, h, fill, border = NeoPalette.ink, shadow = NeoPalette.ink, offset = 6) => {
+  ctx.fillStyle = shadow;
+  ctx.fillRect(x + offset, y + offset, w, h);
+  ctx.fillStyle = fill;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = border;
+  ctx.lineWidth = NeoPalette.borderWidth;
+  ctx.strokeRect(x, y, w, h);
+};
+
+// Swatches test
+const swatches = [
+  { name: 'YELLOW #FFE600', fill: NeoPalette.yellow },
+  { name: 'CYAN #00F0FF', fill: NeoPalette.cyan },
+  { name: 'CORAL #FF3366', fill: NeoPalette.coral },
+  { name: 'GREEN #22EE77', fill: NeoPalette.green },
+  { name: 'ORANGE #FF7700', fill: NeoPalette.orange },
+  { name: 'PURPLE #B366FF', fill: NeoPalette.purple }
+];
+
+let sy = 80;
+for (const s of swatches) {
+  drawNeoBox(80, sy, 400, 70, s.fill);
+  ctx.fillStyle = NeoPalette.ink;
+  ctx.font = '900 20px "Courier New", monospace';
+  ctx.fillText(s.name, 100, sy + 42);
+  sy += 95;
+}
+
+// Display Typography Test
+ctx.save();
+const heroSize = 56;
+const tracking = LogoType.computeWordmarkTracking(heroSize, true, 'wordmark');
+ctx.font = '900 ' + heroSize + 'px "Arial Black", Impact, sans-serif';
+ctx.letterSpacing = tracking + 'em';
+ctx.fillStyle = NeoPalette.ink;
+ctx.fillText('NEO-BRUTALIST TYPE SPECIMEN', 80, 720);
+ctx.restore();
 
 canvas;

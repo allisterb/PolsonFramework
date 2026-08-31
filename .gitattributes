@@ -12,6 +12,15 @@
 *.sh   text eol=lf
 *.bash text eol=lf
 
+# The shell scripts carry no extension by convention, so the rule above does not reach them and they
+# would fall back to `* text=auto` - which on Windows means CRLF, which means a broken shebang:
+# the kernel reads the interpreter as "/usr/bin/env bash" and the file looks perfectly fine in an
+# editor. Every extensionless script has to be listed here by name.
+build         text eol=lf
+polson        text eol=lf
+polson_webapp text eol=lf
+polson_run    text eol=lf
+
 *.cmd  text eol=crlf
 *.bat  text eol=crlf
 *.ps1  text eol=crlf

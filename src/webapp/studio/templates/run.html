@@ -47,6 +47,7 @@
           <dt>read back</dt><dd>this pass opened an artifact an earlier pass made — the record of one pass building on another</dd>
           <dt>thinking</dt><dd>the model's own reasoning. Folded to a line; click to open</dd>
           <dt>said</dt><dd>the agent speaking to you. Clipped to five lines; click to open</dd>
+          <dt>provider</dt><dd>the model's own hosting failing, not the agent — a rate limit or an outage. Retryable ones are retried and the run carries on</dd>
           <dt>tool</dt><dd>a call to something outside the drawing engine — a file read, a search</dd>
           <dt>asking / answered</dt><dd>a question put to you, and how it was settled</dd>
           <dt>director</dt><dd>you, speaking into the run</dd>
@@ -155,13 +156,23 @@
     if (kind === 'question.open') ask(event);
     if (kind === 'question.closed') settle(event.id);
 
+    // The SDK yields a platform failure as an ordinary step before deciding what to do with it, so a
+    // provider outage arrives on the same channel as the agent's own words and was being labelled
+    // `said` — the model's hosting attributed to the agent's voice. `source` and `status` tell them
+    // apart exactly. A 429 is retried and the run carries on, which is why one can pass unnoticed.
+    const fromProvider = kind === 'text' && event.source === 'SYSTEM' && event.status === 'ERROR';
+
     const li = document.createElement('li');
-    li.className = 'ev ' + kind.replace('.', '-');
+    li.className = 'ev ' + kind.replace('.', '-') + (fromProvider ? ' provider' : '');
     // The marker rides in every row and is shown only once the row is known to have a render, which
     // can be after it was appended — a script.start arrives before the render it produces.
     li.innerHTML =
-      `<span class="kind">${LABEL[kind] || kind}<span class="art" title="has a render — click to see it"></span></span>` +
-      (event.stage ? `<span class="stage">${esc(event.stage)}</span>` : '') +
+      `<span class="kind">${fromProvider ? 'provider' : (LABEL[kind] || kind)}` +
+      `<span class="art" title="has a render — click to see it"></span></span>` +
+      // Always emitted, empty or not. The row is a three-column grid, so omitting this cell moved the
+      // detail up into the 7rem stage column — and every event that carries no stage (said, thinking,
+      // tool, director, the run brackets) was being read in a 112px gutter as a result.
+      `<span class="stage">${esc(event.stage || '')}</span>` +
       `<span class="detail">${esc(detail(kind, event))}</span>`;
 
     // Thinking arrives folded to one line. It is the bulkiest thing in the trace and the least
@@ -171,7 +182,7 @@
     // long one buries the trace just as effectively. It is clipped to five lines rather than one,
     // and given the full width to read across, since prose in a third of a column is the thing that
     // made it hard work in the first place.
-    if (kind === 'thinking' || kind === 'text') {
+    if ((kind === 'thinking' || kind === 'text') && !fromProvider) {
       li.classList.add(kind === 'thinking' ? 'folded' : 'clamped');
       li.addEventListener('click', () => li.classList.toggle(kind === 'thinking' ? 'folded' : 'clamped'));
     }

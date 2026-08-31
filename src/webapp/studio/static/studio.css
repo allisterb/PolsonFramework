@@ -92,14 +92,20 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
 .ev.thinking:hover { background: #f6f9fb; }
 .ev.folded .detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* What the agent said: worth reading in full, but a long one buries the trace as thoroughly as
-   thinking does. Clipped to five lines and given the whole row width, because prose in a third of a
-   column is what made it hard to read. Clicking opens it. */
-.ev.text { grid-template-columns: 6.5rem 1fr; cursor: pointer; row-gap: .25rem; }
-.ev.text .detail { grid-column: 1 / -1; font-family: inherit; font-size: .87rem; }
+/* What the agent said: prose, so it reads in the detail column like a note rather than in the mono
+   the machine-written rows use. Clipped to five lines because a long one buries the trace as
+   thoroughly as thinking does; clicking opens it. */
+.ev.text { cursor: pointer; }
+.ev.text .detail { font-family: inherit; font-size: .87rem; white-space: pre-wrap; }
 .ev.text:hover { background: #f6f9fb; }
 .ev.text.clamped .detail { display: -webkit-box; -webkit-line-clamp: 5; line-clamp: 5;
-                           -webkit-box-orient: vertical; overflow: hidden; }
+                           -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+
+/* The model's hosting failing, which arrives on the same channel as the agent's own words. Neither
+   clipped nor clickable: it is one line, and it is not speech to be expanded. */
+.ev.provider { cursor: default; }
+.ev.provider:hover { background: transparent; }
+.ev.provider .kind, .ev.provider .detail { color: var(--warn); }
 
 /* Which lines lead to something to look at. The question this answers is "if I click, do I get a
    picture?" — so it marks every line of a pass that rendered, not the render line alone. */

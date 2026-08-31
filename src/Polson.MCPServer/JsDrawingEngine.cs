@@ -453,7 +453,7 @@ public partial class JsDrawingEngine : Runtime
             sw.Stop();
             result.ExecutionTimeMs = sw.ElapsedMilliseconds;
             result.Success = false;
-            result.Error = $"JavaScript error: {jsex.Message}";
+            result.Error = Explain(jsex);
             Runtime.Error("JavaScript execution error: {0}", result.Error);
         }
         catch (Exception ex)
@@ -493,6 +493,11 @@ public partial class JsDrawingEngine : Runtime
     {
         var message = ex.Message ?? string.Empty;
 
+        if (ex is JavaScriptException js)
+        {
+            return $"JavaScript error: {message}{Where(js)}{ArgumentHelp(message)}";
+        }
+
         // Anywhere in the chain: the load failure is usually two or three levels under whatever the
         // engine surfaced, and which level it sits at is not worth depending on.
         for (var cause = ex; cause is not null; cause = cause.InnerException)
@@ -527,6 +532,36 @@ public partial class JsDrawingEngine : Runtime
             "bitmap.palette(...) measure natively, and Skia.Shader / Skia.ImageFilter transform " +
             "natively.";
     }
+
+    /// <summary>Where in the script it happened, when Jint recorded a position.</summary>
+    private static string Where(JavaScriptException ex)
+    {
+        var line = ex.Location.Start.Line;
+        return line > 0 ? $" (line {line})" : string.Empty;
+    }
+
+    /// <summary>
+    /// Jint's overload-resolution failure, which names neither the method nor the argument.
+    /// </summary>
+    /// <remarks>
+    /// "No public methods with the specified arguments were found" is what a script gets for passing
+    /// an argument of the wrong type, and by far its commonest cause is <c>undefined</c> from a
+    /// property that does not exist. A live run lost a full 97-line composition to
+    /// <c>rect.w</c> — the toolkit's rectangles carry <c>width</c> and <c>height</c> — which made
+    /// <c>ctx.fillRect(x, y, undefined, undefined)</c>, and the message said none of that.
+    /// <para>
+    /// The line number from <see cref="Where"/> is what actually locates it; this adds the reading
+    /// that turns a located line into a fixed one.
+    /// </para>
+    /// </remarks>
+    private static string ArgumentHelp(string message) =>
+        message.Contains("No public methods with the specified arguments", StringComparison.OrdinalIgnoreCase)
+            ? " An argument is not a type the method accepts, and the commonest reason is that one of " +
+              "them is undefined — reading a property that does not exist yields undefined rather than " +
+              "failing, and no overload matches it. Check the spelling of every property read on that " +
+              "line: rectangles from Layout, getBBox and measureWrappedText carry width and height, " +
+              "not w and h. Logging the arguments before the call is the quickest way to see which one."
+            : string.Empty;
 
     #region ASCII Table Rendering
     internal static string RenderTable(JsValue[] args)

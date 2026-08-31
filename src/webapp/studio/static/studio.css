@@ -92,8 +92,34 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
 .ev.thinking:hover { background: #f6f9fb; }
 .ev.folded .detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* What the agent said: worth reading in full, but a long one buries the trace as thoroughly as
+   thinking does. Clipped to five lines and given the whole row width, because prose in a third of a
+   column is what made it hard to read. Clicking opens it. */
+.ev.text { grid-template-columns: 6.5rem 1fr; cursor: pointer; row-gap: .25rem; }
+.ev.text .detail { grid-column: 1 / -1; font-family: inherit; font-size: .87rem; }
+.ev.text:hover { background: #f6f9fb; }
+.ev.text.clamped .detail { display: -webkit-box; -webkit-line-clamp: 5; line-clamp: 5;
+                           -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Which lines lead to something to look at. The question this answers is "if I click, do I get a
+   picture?" — so it marks every line of a pass that rendered, not the render line alone. */
+.ev .art { display: none; }
+.ev.hasart .art { display: inline-block; width: 7px; height: 7px; margin-left: .4rem;
+                  background: var(--good); border-radius: 1px; }
+
 /* The pass the director pinned, marked on every line that shares its execution. */
 .ev.chosen { background: #eef5f8; box-shadow: inset 3px 0 0 var(--accent); }
+
+/* The key to the vocabulary, closed until wanted. */
+.legend { margin: 0 0 .6rem; font-size: .85rem; }
+.legend summary { color: var(--accent); cursor: pointer; font-size: .82rem; }
+.legend dl { display: grid; grid-template-columns: 9rem 1fr; gap: .2rem .8rem;
+             margin: .6rem 0 0; padding: .7rem .9rem; background: var(--panel);
+             border: 1px solid var(--line); border-radius: 3px; }
+.legend dt { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+.legend dd { margin: 0; font-size: .85rem; }
+.legend .art { display: inline-block; width: 7px; height: 7px; background: var(--good);
+               border-radius: 1px; }
 
 /* Sticky, so the render stays put as the trace grows past it. */
 .latest { position: sticky; top: 1rem; }
@@ -155,6 +181,12 @@ form#interject button, .question .actions button { margin-top: 0; white-space: n
 #plot .zero { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 #plot circle { cursor: pointer; }
 #plot circle:hover { r: 5; }
+
+/* An execution that produced a render: the moment the artifact changed, which at a uniform radius
+   was lost among the notes around it. The stem is what makes one findable at a glance. */
+#plot circle.made:hover { r: 7.5; }
+#plot .stem { stroke: var(--good); stroke-width: 1; opacity: .35;
+              vector-effect: non-scaling-stroke; }
 #tally { margin: .4rem 0 0; font-family: var(--mono); font-size: .76rem; }
 
 /* Code beside the render */

@@ -1,6 +1,7 @@
 namespace Polson.Tests.Drawing;
 
 using System;
+using Polson.Drawing.Svg;
 using Polson.MCPServer;
 using SkiaSharp;
 using Xunit;
@@ -153,6 +154,54 @@ public class SnapPaintServerTests : TestsRuntime
         Assert.True(result.Success, result.Error);
         return result.SvgXml;
     }
+
+    #region Clearing Tests
+    /// <summary>
+    /// Clearing a paper keeps its paint servers, and does so through a base reference too.
+    /// </summary>
+    /// <remarks>
+    /// <c>SnapPaper.Clear</c> keeps <c>&lt;defs&gt;</c> where <c>SnapElement.Clear</c> empties every
+    /// child. While it merely *hid* the base method rather than overriding it, which of the two ran
+    /// depended on the static type of the reference — so the same paper either kept its gradients or
+    /// silently destroyed them, leaving every later <c>url(#…)</c> dangling. The compiler said so as
+    /// CS0114 and the warning sat among eleven others that were only duplicates.
+    /// <para>
+    /// Asserted through <see cref="SnapElement"/> deliberately: calling it on the derived type would
+    /// pass either way and prove nothing.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestClearingAPaperKeepsItsPaintServersThroughABaseReference()
+    {
+        var paper = new SnapPaper(200, 200);
+        var gradient = paper.Gradient("l(0,0,1,0)#ff0000-#0000ff");
+        var id = gradient.Attr("id")?.ToString();
+        paper.Rect(0, 0, 200, 200).Attr("fill", $"url(#{id})");
+
+        SnapElement asElement = paper;
+        asElement.Clear();
+
+        Assert.Contains("<defs", paper.ToString(), StringComparison.Ordinal);
+        Assert.Contains(id!, paper.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("<rect", paper.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>The inherited factories still reach the document now the copies are gone.</summary>
+    /// <remarks>
+    /// Eleven of SnapPaper's methods were character-identical to the virtuals they hid, because a
+    /// paper's `Node` is its `Document`. Deleting them is only safe if `paper.rect(...)` still lands
+    /// in the document rather than nowhere, which is what this draws to find out.
+    /// </remarks>
+    [Fact]
+    public void TestInheritedFactoriesStillAppendToTheDocument()
+    {
+        var svg = Svg("paper.rect(0, 0, 50, 50); paper.circle(100, 100, 20); paper.text(10, 180, 'hi');");
+
+        Assert.Contains("<rect", svg, StringComparison.Ordinal);
+        Assert.Contains("<circle", svg, StringComparison.Ordinal);
+        Assert.Contains("hi", svg, StringComparison.Ordinal);
+    }
+    #endregion
 
     private static byte[] Render(string body)
     {

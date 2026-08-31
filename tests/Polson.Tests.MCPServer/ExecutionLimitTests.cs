@@ -110,6 +110,53 @@ public class ExecutionLimitTests : TestsRuntime
         Assert.Contains("report it", error, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// A script error says which line it happened on.
+    /// </summary>
+    /// <remarks>
+    /// Jint records a position and we were discarding it, so every script failure arrived with no
+    /// way to find it but re-reading the whole program. A live run lost a 97-line composition this
+    /// way.
+    /// </remarks>
+    [Fact]
+    public void TestAScriptErrorNamesItsLine()
+    {
+        var result = new JsDrawingEngine().Execute("""
+            const a = 1;
+            const b = 2;
+            thisIsNotDefined();
+            """, 40, 40, null, "png", 100);
+
+        Assert.False(result.Success);
+        Assert.Contains("line 3", result.Error ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An argument Jint cannot bind says what that usually means, since its own message does not.
+    /// </summary>
+    /// <remarks>
+    /// "No public methods with the specified arguments were found" names neither the method nor the
+    /// argument. Its commonest cause by far is <c>undefined</c> from a property that does not exist:
+    /// the run that prompted this used <c>rect.w</c>, where the toolkit's rectangles carry
+    /// <c>width</c>, making the call <c>fillRect(x, y, undefined, undefined)</c>.
+    /// </remarks>
+    [Fact]
+    public void TestAnUnbindableArgumentExplainsWhatUsuallyCausesIt()
+    {
+        var result = new JsDrawingEngine().Execute("""
+            const r = Layout.rect(10, 10, 100, 50);
+            const ctx = createCanvas(200, 100).getContext('2d');
+            ctx.fillRect(r.x, r.y, r.w, r.h);
+            """, 200, 100, null, "png", 100);
+
+        var error = result.Error ?? string.Empty;
+
+        Assert.False(result.Success);
+        Assert.Contains("line 3", error, StringComparison.Ordinal);
+        Assert.Contains("undefined", error, StringComparison.Ordinal);
+        Assert.Contains("width and height", error, StringComparison.Ordinal);
+    }
+
     /// <summary>The cause is found however deep it is buried.</summary>
     [Fact]
     public void TestTheLoadFailureIsFoundThroughNestedExceptions()

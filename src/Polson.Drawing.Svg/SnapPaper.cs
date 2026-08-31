@@ -55,112 +55,16 @@ public class SnapPaper : SnapElement
     #endregion
 
     #region Methods
-    public SnapRect Rect(float x, float y, float width, float height, float rx = 0f, float ry = 0f)
-    {
-        var rect = new SvgRectangle
-        {
-            X = new SvgUnit(x),
-            Y = new SvgUnit(y),
-            Width = new SvgUnit(width),
-            Height = new SvgUnit(height),
-            CornerRadiusX = new SvgUnit(rx),
-            CornerRadiusY = new SvgUnit(ry > 0f ? ry : rx)
-        };
-        Document.Children.Add(rect);
-        return new SnapRect(rect, this);
-    }
-
-    public SnapCircle Circle(float cx, float cy, float r)
-    {
-        var circle = new SvgCircle
-        {
-            CenterX = new SvgUnit(cx),
-            CenterY = new SvgUnit(cy),
-            Radius = new SvgUnit(r)
-        };
-        Document.Children.Add(circle);
-        return new SnapCircle(circle, this);
-    }
-
-    public SnapEllipse Ellipse(float cx, float cy, float rx, float ry)
-    {
-        var ellipse = new SvgEllipse
-        {
-            CenterX = new SvgUnit(cx),
-            CenterY = new SvgUnit(cy),
-            RadiusX = new SvgUnit(rx),
-            RadiusY = new SvgUnit(ry)
-        };
-        Document.Children.Add(ellipse);
-        return new SnapEllipse(ellipse, this);
-    }
-
-    public SnapPath Path(string d = "")
-    {
-        var path = new SvgPath
-        {
-            PathData = SvgPathBuilder.Parse(d)
-        };
-        Document.Children.Add(path);
-        return new SnapPath(path, this);
-    }
-
-    public SnapGroup G(params SnapElement[] elements) => Group(elements);
-
-    public SnapGroup Group(params SnapElement[] elements)
-    {
-        var group = new SvgGroup();
-        Document.Children.Add(group);
-        var snapGroup = new SnapGroup(group, this);
-        if (elements != null)
-        {
-            foreach (var el in elements)
-            {
-                if (el != null) snapGroup.Append(el);
-            }
-        }
-        return snapGroup;
-    }
-
-    public SnapImage Image(string src, float x = 0f, float y = 0f, float width = 0f, float height = 0f)
-    {
-        var image = new SvgImage
-        {
-            Href = src,
-            X = new SvgUnit(x),
-            Y = new SvgUnit(y),
-            Width = new SvgUnit(width),
-            Height = new SvgUnit(height)
-        };
-        Document.Children.Add(image);
-        return new SnapImage(image, this);
-    }
-
-    public SnapText Text(float x, float y, object? text)
-    {
-        var textStr = text?.ToString() ?? string.Empty;
-        var svgText = new SvgText
-        {
-            X = new SvgUnitCollection { new SvgUnit(x) },
-            Y = new SvgUnitCollection { new SvgUnit(y) },
-            Text = textStr
-        };
-        Document.Children.Add(svgText);
-        return new SnapText(svgText, this);
-    }
-
-    public SnapLine Line(float x1, float y1, float x2, float y2)
-    {
-        var line = new SvgLine
-        {
-            StartX = new SvgUnit(x1),
-            StartY = new SvgUnit(y1),
-            EndX = new SvgUnit(x2),
-            EndY = new SvgUnit(y2)
-        };
-        Document.Children.Add(line);
-        return new SnapLine(line, this);
-    }
+    // Rect, Circle, Ellipse, Path, G, Group, Image, Text, Line, Use and El are deliberately absent:
+    // they are inherited. `SnapPaper(SvgDocument)` passes the document to `base(document)`, so a
+    // paper's `Node` *is* its `Document` and its `Paper` is itself — which made the twelve copies
+    // that used to live here character-identical to the virtuals they hid once those two spellings
+    // were normalised. Each one also raised CS0114, because a copy that neither overrides nor hides
+    // explicitly is the compiler asking which was meant.
+    //
+    // `Clear` was the one that genuinely differed, and it is below as an override. That is the whole
+    // value of removing the rest: the one method that really does something else is now visible as
+    // such, instead of being the twelfth near-identical body in a row.
 
     public SnapPolyline Polyline(params object[] points)
     {
@@ -321,30 +225,19 @@ public class SnapPaper : SnapElement
         return new SnapPattern(ptrn, this);
     }
 
-    public SnapUse Use(object target)
-    {
-        var id = target is SnapElement el ? el.Id : target?.ToString() ?? string.Empty;
-        var use = new SvgUse
-        {
-            ReferencedElement = new Uri(id.StartsWith('#') ? id : "#" + id, UriKind.RelativeOrAbsolute)
-        };
-        Document.Children.Add(use);
-        return new SnapUse(use, this);
-    }
-
-    public SnapElement El(string name, IDictionary<string, object?>? attrs = null)
-    {
-        var element = CreateElementByName(name);
-        Document.Children.Add(element);
-        var snapEl = Wrap(element, this);
-        if (attrs != null)
-        {
-            snapEl.Attr(attrs);
-        }
-        return snapEl;
-    }
-
-    public void Clear()
+    /// <summary>
+    /// Clears the drawing but keeps <c>&lt;defs&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// An <c>override</c>, not a hiding method, and the distinction is the point. The base wipes
+    /// every child; a paper keeps its <c>&lt;defs&gt;</c>, because the gradients, masks and patterns
+    /// in there are referenced by id from whatever gets drawn next, and clearing the canvas is not a
+    /// request to destroy the palette. While this merely hid the base version, the same paper did one
+    /// thing or the other depending on the static type of the reference it was called through — the
+    /// base being reached through a <see cref="SnapElement"/> would have taken the paint servers with
+    /// it, silently, leaving every later `url(#…)` dangling.
+    /// </remarks>
+    public override void Clear()
     {
         var defsNode = _defs?.Node;
         var toRemove = Document.Children.Where(c => c != defsNode).ToList();

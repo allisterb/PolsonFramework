@@ -37,6 +37,13 @@ VALUES: dict[str, float] = {
     "gather": 1.0,
     "inspect": 0.5,
     "wait": 0.0,
+
+    # An attempt to produce that the environment refused. Zero, like waiting, because the artifact
+    # did not change and a curve that fell here would say a broken engine had produced something.
+    # It is a mode of its own rather than folded into `wait` so that a run of them is legible: a
+    # failed run is otherwise indistinguishable from a healthy one that has not started drawing.
+    "attempt": 0.0,
+
     "execute": -1.0,
 }
 
@@ -189,6 +196,11 @@ class Curve:
             "counts": counts,
             "regulating": regulating,
             "executing": executing,
+
+            # Neither regulating nor producing: tried to draw and drew nothing. A count worth its own
+            # line, because a run where this is most of the drawing is a broken environment rather
+            # than a deliberative one, and the curve alone cannot say so — every attempt is flat.
+            "refused": counts.get("attempt", 0),
             # Net displacement over actions: positive means the run spent more of itself making sense
             # of the work than producing it. Neither sign is good or bad on its own — a run that only
             # produces never checked anything, and one that only regulates never made a mark.
@@ -300,9 +312,23 @@ def _code_one(event: dict[str, Any], rendered: set[Any]) -> Coded | None:
 
 def _code_server(event: dict[str, Any], kind: str, rendered: set[Any]) -> Coded | None:
     if kind in ("script.ok", "script.error"):
-        if event.get("execution") not in rendered:
-            return None   # a probe script; its inspect event already speaks for it
         detail = event.get("script") or ""
+
+        if event.get("execution") not in rendered:
+            # Nothing was drawn. Which of two very different things that means depends on whether the
+            # script was trying to: one that succeeded is a probe — measure the fonts, check a
+            # colour, exit — and is regulation already spoken for by its own `inspect` event, so
+            # coding it again would double it. One that *failed* drew nothing because it could not,
+            # and until this was coded it vanished from the record entirely.
+            #
+            # A Linux run made the cost plain: nine scripts, four refused by a missing native
+            # library, and a curve that rose smoothly throughout because the only negative value in
+            # the table needs a render to be assigned. The run read as a long thoughtful regulation
+            # phase. What it was, was blocked.
+            if kind != "script.error":
+                return None
+            return _make(event, "attempt", kind, f"{detail} — failed, nothing drawn")
+
         if kind == "script.error":
             # Production that did not land. In the free-energy account this is the surprise term, and
             # it is what the next unclamp is a response to.

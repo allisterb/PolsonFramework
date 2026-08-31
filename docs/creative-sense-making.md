@@ -81,12 +81,18 @@ executing a plan; a run that never clamps is never producing anything.
 Following the 2025 scale (Davis & Rafner, Table 2), which is the one that makes a **cumulative** curve
 read correctly.
 
+**Attempt is ours, not his.** Every other row maps a mode of his onto our events; that one adds a
+mode, for a failure that has no counterpart in a medium where the hand always makes a mark. It is
+flat, so it changes no reading either source describes — it only stops a refusal being recorded as
+nothing. Do not cite it to Davis.
+
 | Interaction mode | Polson events | Source | Cognitive mode | Value |
 | :--- | :--- | :--- | :--- | ---: |
 | **Communicate** | `note`, `stage.begin`, `stage.end`, `question` / `answer` | `server.jsonl`, `director.jsonl` | Functional unclamp | **+1** |
 | **Gather** | asset requisition, `Search`, `polson://` doc reads | `server.jsonl`, enrichment | Functional unclamp | **+1** |
 | **Inspect** | `inspect`, `artifact.read`, `view_file`, `list_directory` | `server.jsonl`, enrichment | Partial functional unclamp | **+0.5** |
 | **Wait** | `thinking`, and any gap between events | enrichment, derived | Interactional unclamp | **0** |
+| **Attempt** | `script.error` that produced **no** render | `server.jsonl` | Neither | **0** |
 | **Execute** | `script.ok` / `script.error` **that produced a render** | `server.jsonl` | Clamped | **−1** |
 
 > [!NOTE]
@@ -103,18 +109,43 @@ read correctly.
 
 ### Rules that are not obvious
 
-**A script that drew nothing is not an execution.** `script.ok` codes as *execute* only when the same
-`execution` id also produced a `render`. A probe script — one that measures fonts, checks a palette
-and exits — is entirely unclamped work, and counting it as production would flatten exactly the
-distinction the curve exists to show.
+**A script that drew nothing is not an execution — but drawing nothing means two different things.**
+`script.ok` codes as *execute* only when the same `execution` id also produced a `render`. A probe
+script — one that measures fonts, checks a palette and exits — is entirely unclamped work, and
+counting it as production would flatten exactly the distinction the curve exists to show. It is also
+already spoken for by its own `inspect` event, so coding the script as well would count it twice.
+
+A script that **failed** before rendering is the other case, and it is not a probe: it was trying to
+produce and the environment refused. That codes as *attempt*.
+
+**Attempt is `0`, and is its own mode rather than folded into wait.** Zero because the artifact did
+not change — a curve that fell here would say a broken engine had produced something. Its own mode
+because otherwise a blocked run is indistinguishable from a deliberative one.
+
+> [!IMPORTANT]
+> **This row was added after a run that the curve could not describe.** A Linux session hit a missing
+> SkiaSharp native library: nine scripts, four refused the moment they touched the engine, no
+> artifact produced at all. The curve rose smoothly for its whole length and read as a long,
+> thoughtful regulation phase.
+>
+> It was not wrong — the agent genuinely never produced anything — but it was **unable to be right**.
+> `execute` is the only negative value in the table and it requires a render to be assigned, so with
+> no renders the curve *cannot* fall, and a run that was blocked looked identical to one that had not
+> started yet. The four most informative events in the session were coded as nothing at all.
+>
+> Attempt is flat, so it still does not move the curve. What it does is make the refusals *visible* —
+> as their own colour on the plot, and as a `refused` count that leads the tally when it is non-zero.
+> The reading a viewer needs there is not a number but a fact: this run tried.
 
 **One event, one point — not one probe, one point.** An `inspect` event carries a tally that can run
 to thousands (`getPixel` in a loop). It contributes **one** coded point at `+0.5`; the tally travels
 with the point as magnitude, for annotating the curve. Weighting by probe count would let a single
 loop swamp a whole session.
 
-**A failed script still codes as execute.** `script.error` is production that didn't land, not an
-absence of production. Its value in the record is as the *surprise* term — see §6.
+**A failed script that *did* render still codes as execute.** `script.error` is production that
+didn't land, not an absence of production — the artifact changed, and the script then failed. Its
+value in the record is as the *surprise* term — see §6. Only a failure that rendered nothing is an
+*attempt*.
 
 **Internal machinery is not inspection.** `attr()` and `transform()` call `getBBox` internally; a
 group's bounds recurse over its children. None of that is the agent looking at anything, and the

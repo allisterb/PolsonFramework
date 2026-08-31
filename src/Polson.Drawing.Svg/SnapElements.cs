@@ -102,7 +102,16 @@ public class SnapText : SnapElement
 
     #region Properties
     public SvgText TextNode => (SvgText)Node;
-    public string Text
+
+    /// <summary>This element's own string content — `textEl.text` in script.</summary>
+    /// <remarks>
+    /// <c>new</c> because it hides <see cref="SnapElement.Text(float, float, object?)"/>, the factory
+    /// that appends a child <c>&lt;text&gt;</c>, and the hiding is meant: on a <c>&lt;text&gt;</c>
+    /// element the useful meaning of <c>text</c> is what it says, not a request to nest another one
+    /// inside it. Said explicitly so the compiler stops asking, and so a reader knows this shadowing
+    /// was a decision rather than a collision nobody noticed.
+    /// </remarks>
+    public new string Text
     {
         get => TextNode.Text ?? string.Empty;
         set => TextNode.Text = value;

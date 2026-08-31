@@ -153,7 +153,7 @@ Represents the root SVG canvas surface:
 - `paper.g(...elements: SnapElement[])` / `paper.group(...)` → `SnapElement` — Creates and appends a container `<g>`.
 - `paper.svg(x: number, y: number, width: number, height: number)` → `SnapElement` — Creates a nested `<svg>` element.
 - `paper.use(element: SnapElement)` → `SnapElement` — Creates a `<use>` element referencing another element.
-- `paper.clear()` → `void` — Removes all child nodes from the document.
+- `paper.clear()` → `void` — Removes every drawn element, **keeping `<defs>`**. Gradients, masks and patterns survive a clear and their ids stay valid, so a redraw can reference the paint servers it already made. To drop those too, start a new `Snap(w, h)`.
 - `paper.toString()` → `string` — Serializes the document tree to an SVG XML string.
 - `paper.toImageBytes(width?: number, height?: number, format?: string, quality?: number)` → `byte[]` — Headlessly renders the SVG to image bytes (default: WebP Q=85).
 - `paper.toDataUri(format?: string, width?: number, height?: number, quality?: number)` → `string` — Renders to a `data:image/...;base64,...` URI (defaults to `format: 'svg'`).

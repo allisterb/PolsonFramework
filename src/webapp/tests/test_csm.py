@@ -62,6 +62,47 @@ class CodingTests(unittest.TestCase):
         self.assertEqual([p.mode for p in coded], ["execute"])
         self.assertIn("failed", coded[0].detail)
 
+    def test_a_script_that_tried_to_draw_and_could_not_is_an_attempt(self):
+        """Drawing nothing means two different things, and only one of them is a probe.
+
+        A script that failed before rendering was dropped entirely, because the only negative value
+        in the table needs a render to be assigned. A Linux run made the cost plain: nine scripts,
+        four refused by a missing native library, and a curve that rose smoothly throughout — the
+        run read as a long deliberative phase when what it was, was blocked.
+        """
+        coded = csm.code(executed(1, "e1", rendered=False, failed=True)).points
+
+        self.assertEqual([p.mode for p in coded], ["attempt"])
+        self.assertIn("nothing drawn", coded[0].detail)
+
+    def test_an_attempt_leaves_the_curve_flat_rather_than_falling(self):
+        """Zero, like waiting. A curve that fell here would say a broken engine had produced."""
+        self.assertEqual(csm.VALUES["attempt"], 0.0)
+
+        curve = csm.code(executed(1, "e1", rendered=False, failed=True))
+
+        self.assertEqual(curve.summary()["net"], 0.0)
+
+    def test_attempts_are_counted_apart_from_both_regulating_and_producing(self):
+        """Neither sense-making nor a mark on the canvas, so it belongs in neither total."""
+        events = executed(1, "e1", rendered=False, failed=True) + executed(4, "e2")
+        summary = csm.code(events).summary()
+
+        self.assertEqual(summary["refused"], 1)
+        self.assertEqual(summary["executing"], 1)
+        self.assertEqual(summary["regulating"], 0)
+
+    def test_a_probe_that_succeeded_is_still_not_coded_twice(self):
+        """The rule this narrows, unchanged where it was aimed.
+
+        A probe drew nothing deliberately and is already spoken for by its own `inspect` event;
+        coding the script as well would count one action twice.
+        """
+        events = executed(1, "e1", rendered=False)
+        events.append(server("inspect", 4, execution="e1", probes={"capability": 3}, total=3))
+
+        self.assertEqual(self.modes(events), ["inspect"])
+
     def test_looking_and_reading_back_are_partial_unclamps(self):
         events = [
             server("inspect", 1, execution="e1", probes={"measure": 3}, total=3),

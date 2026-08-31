@@ -16,7 +16,7 @@
 
   <section class="curve">
     <h2>Creative sense-making
-      <span class="hint" id="curveread">rising: regulating &middot; falling: producing &middot; flat: waiting</span>
+      <span class="hint" id="curveread">rising: regulating &middot; falling: producing &middot; flat: waiting &middot; stemmed: a render</span>
       <label class="follow">
         <select id="reading">
           <option value="cumulative">by action</option>
@@ -34,6 +34,25 @@
         <span class="hint" id="count">0 events</span>
         <label class="follow"><input type="checkbox" id="follow" checked> follow</label>
       </h2>
+
+      <details class="legend">
+        <summary>what these mean</summary>
+        <dl>
+          <dt>stage</dt><dd>the agent declaring which phase of the work it has entered</dd>
+          <dt>note</dt><dd>its own account of what it is doing and why — written for you, not for itself</dd>
+          <dt>executing / executed</dt><dd>a script sent to the drawing engine, and its return</dd>
+          <dt>failed</dt><dd>a script the engine refused; the message says why</dd>
+          <dt>rendered</dt><dd>an image was written. <b>Click any line with a <span class="art"></span> to see it</b></dd>
+          <dt>looked</dt><dd>the script measured, sampled or compared something before drawing</dd>
+          <dt>read back</dt><dd>this pass opened an artifact an earlier pass made — the record of one pass building on another</dd>
+          <dt>thinking</dt><dd>the model's own reasoning. Folded to a line; click to open</dd>
+          <dt>said</dt><dd>the agent speaking to you. Clipped to five lines; click to open</dd>
+          <dt>tool</dt><dd>a call to something outside the drawing engine — a file read, a search</dd>
+          <dt>asking / answered</dt><dd>a question put to you, and how it was settled</dd>
+          <dt>director</dt><dd>you, speaking into the run</dd>
+          <dt>gap</dt><dd>events the stream could not keep, said plainly rather than passed over</dd>
+        </dl>
+      </details>
 
       <div id="asking"></div>
       <ol id="events"></ol>
@@ -96,10 +115,19 @@
     'run.error': 'run failed'
   };
 
-  // The five modes of the coding table, in docs/creative-sense-making.md.
+  // Which lines carry the "there is a picture behind this" marker. Every line of a pass opens that
+  // pass, so marking them all would be truthful — and useless: on a real run it put a marker on 84
+  // of 96 rows, which is wallpaper rather than a signpost. These are the lines a reader scans for
+  // when looking for the work itself, so the mark goes where it can still be seen.
+  const MARKS_ART = new Set(['render', 'script.ok', 'script.error']);
+  const MARKED_ROW = /\b(render|script-ok|script-error)\b/;
+
+  // The modes of the coding table, in docs/creative-sense-making.md. `attempt` is the one that
+  // needs to carry alarm: it is flat like waiting, so colour is all that separates a blocked run
+  // from a deliberative one.
   const MODE = {
     communicate: '#d9a520', gather: '#7b5ea7', inspect: '#1f6f8b',
-    wait: '#9aa4ae', execute: '#2f7a4f'
+    wait: '#9aa4ae', attempt: '#b4442c', execute: '#2f7a4f'
   };
 
   let n = 0;
@@ -129,16 +157,23 @@
 
     const li = document.createElement('li');
     li.className = 'ev ' + kind.replace('.', '-');
+    // The marker rides in every row and is shown only once the row is known to have a render, which
+    // can be after it was appended — a script.start arrives before the render it produces.
     li.innerHTML =
-      `<span class="kind">${LABEL[kind] || kind}</span>` +
+      `<span class="kind">${LABEL[kind] || kind}<span class="art" title="has a render — click to see it"></span></span>` +
       (event.stage ? `<span class="stage">${esc(event.stage)}</span>` : '') +
       `<span class="detail">${esc(detail(kind, event))}</span>`;
 
     // Thinking arrives folded to one line. It is the bulkiest thing in the trace and the least
     // often wanted, and left open it buries everything that says what the agent actually did.
-    if (kind === 'thinking') {
-      li.classList.add('folded');
-      li.addEventListener('click', () => li.classList.toggle('folded'));
+    //
+    // What the agent *said* is the opposite case: worth reading, and worth reading in full, but a
+    // long one buries the trace just as effectively. It is clipped to five lines rather than one,
+    // and given the full width to read across, since prose in a third of a column is the thing that
+    // made it hard work in the first place.
+    if (kind === 'thinking' || kind === 'text') {
+      li.classList.add(kind === 'thinking' ? 'folded' : 'clamped');
+      li.addEventListener('click', () => li.classList.toggle(kind === 'thinking' ? 'folded' : 'clamped'));
     }
 
     // Any event belonging to a pass opens that pass — its render and the script that made it,
@@ -164,6 +199,7 @@
         // A pass is pinned before it has finished writing itself into the trace, so a line that
         // arrives afterwards has to mark itself; `mark()` only ever sees the rows already there.
         if (pinned === key) li.classList.add('chosen');
+        if (made.artifact && MARKS_ART.has(kind)) li.classList.add('hasart');
       }
     }
 
@@ -175,6 +211,12 @@
     if (kind === 'render' && event.artifact) {
       latest = key;
       if (!pinned) present(key);
+
+      // The execution lines of this pass are marked once its render exists — they are written before
+      // it does, so they cannot mark themselves at the time.
+      for (const row of list.querySelectorAll('.ev')) {
+        if (row.dataset.key === key && MARKED_ROW.test(row.className)) row.classList.add('hasart');
+      }
     }
 
     // Every event can move the curve, so every event schedules a redraw — but coalesced, because
@@ -233,11 +275,22 @@
 
     // A transparent stroke widens what is clickable without changing what is drawn: at this density
     // the visible dot is a few pixels across and was almost impossible to hit.
-    const dots = trace.map((p, i) =>
-      `<circle cx="${x(p, i).toFixed(1)}" cy="${y(p[key]).toFixed(1)}" r="3.5" ` +
-      `fill="${MODE[p.mode] || '#999'}" stroke="transparent" stroke-width="9" ` +
-      `data-i="${i}"><title>${esc(p.mode)} · ` +
-      `${esc(p.stage || '')} ${esc(p.detail).slice(0, 90)}</title></circle>`).join('');
+    //
+    // An execution that produced a render is drawn as a mark rather than a dot. Everything else on
+    // this plot is the agent getting ready to draw; these are the moments the artifact actually
+    // changed, and at a uniform 3.5px a run's half-dozen creative events sat indistinguishable among
+    // its two hundred notes. A stem to the baseline is what makes them findable without reading.
+    const dots = trace.map((p, i) => {
+      const made = p.mode === 'execute';
+      const cx = x(p, i).toFixed(1), cy = y(p[key]).toFixed(1);
+      const stem = made ? `<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${zero.toFixed(1)}" class="stem"/>` : '';
+
+      return stem +
+        `<circle cx="${cx}" cy="${cy}" r="${made ? 6 : 3.5}" ` +
+        `fill="${MODE[p.mode] || '#999'}" stroke="transparent" stroke-width="9" ` +
+        `class="${made ? 'made' : ''}" data-i="${i}"><title>${esc(p.mode)} · ` +
+        `${esc(p.stage || '')} ${esc(p.detail).slice(0, 90)}</title></circle>`;
+    }).join('');
 
     plot.innerHTML =
       `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img">` +
@@ -265,7 +318,10 @@
       .sort((a, b) => b[1] - a[1])
       .map(([mode, ms]) => `${mode} ${(ms / 1000).toFixed(0)}s`).join(' · ');
     const signed = (v) => (v > 0 ? '+' : '') + v.toFixed(1);
+    // Refusals lead when there are any: every attempt is flat, so the curve's own shape cannot say
+    // that a run drew nothing because it could not rather than because it was still thinking.
     tally.textContent =
+      (s.refused ? `${s.refused} drawing ${s.refused === 1 ? 'attempt' : 'attempts'} refused · ` : '') +
       `${s.actions} actions · by action ${signed(s.net)} · by time ${signed(s.integral)} · ${held}` +
       (s.missing && s.missing.length ? ` · no ${s.missing.join(', ')} recorded` : '');
   }

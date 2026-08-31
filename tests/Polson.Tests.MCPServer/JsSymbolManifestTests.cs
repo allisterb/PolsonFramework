@@ -164,7 +164,29 @@ public class JsSymbolManifestTests
 
         Assert.NotNull(attr);
         Assert.True(attr!.Inherited);
-        Assert.False(JsSymbolManifest.Resolve("paper.circle")!.Inherited);
+
+        // `gradient` rather than `circle`, which used to serve here. SnapPaper carried its own copies
+        // of the shape factories, character-identical to the inherited ones because a paper's `Node`
+        // is its `Document`; deleting them made `paper.circle` genuinely inherited, and the manifest
+        // now says so. Paint servers live on the paper alone and are declared there.
+        Assert.False(JsSymbolManifest.Resolve("paper.gradient")!.Inherited);
+    }
+
+    /// <summary>
+    /// The shape factories still resolve on a paper after being left to inheritance.
+    /// </summary>
+    /// <remarks>
+    /// They are the primary way to draw, and an agent writing <c>paper.rect(...)</c> must find them
+    /// whichever class declares them. Marked inherited is fine; missing would not be.
+    /// </remarks>
+    [Theory]
+    [InlineData("paper.rect")]
+    [InlineData("paper.circle")]
+    [InlineData("paper.text")]
+    [InlineData("paper.group")]
+    public void TestPaperShapeFactoriesStillResolve(string symbol)
+    {
+        Assert.NotNull(JsSymbolManifest.Resolve(symbol));
     }
     #endregion
 

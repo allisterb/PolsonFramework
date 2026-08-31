@@ -143,7 +143,7 @@ internal class Program : Runtime
         if (generator is null)
         {
             Warn("Asset requisition disabled: no ApiKeys:GoogleAgentPlatform in {0}. "
-               + "Copy src/Polson.CLI/appsettings.json.example there and fill in the key.",
+               + "Copy appsettings.json.example from the repository root there and fill in the key.",
                 Path.Combine(AssemblyLocation, "appsettings.json"));
         }
         else

@@ -1,7 +1,7 @@
 """The one place that knows where the credential lives, and which endpoint it belongs to.
 
 **One home, deliberately: `ApiKeys:GoogleAgentPlatform` in `bin/cli/appsettings.json`** — the copy
-beside the built CLI, not the one beside its source. `src/Polson.CLI/appsettings.json.example` is a
+beside the built CLI, not the one at the repository root. `appsettings.json.example` there is a
 template to copy, read by nothing.
 
 There is no environment override, and that is the point. The .NET MCP server reads only that file, so
@@ -33,7 +33,7 @@ CLI_DLL = CLI_DIR / "Polson.CLI.dll"
 CLI_SETTINGS = CLI_DIR / "appsettings.json"
 
 #: The template to copy, for the message that tells someone to copy it.
-CLI_SETTINGS_EXAMPLE = REPO_ROOT / "src" / "Polson.CLI" / "appsettings.json.example"
+CLI_SETTINGS_EXAMPLE = REPO_ROOT / "appsettings.json.example"
 
 
 class CredentialError(Exception):

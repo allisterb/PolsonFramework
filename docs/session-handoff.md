@@ -1,129 +1,201 @@
-# Session Handoff — 2026-08-27 (late)
+# Session Handoff — 2026-08-31
 
-State after the session that built the ExtendedMind asset-requisition layer, replaced markdown-parsing
-with a generated symbol index, and OCR'd the drawing reference.
+State after the session that built the standalone web app (Milestone 6, phase 2 complete), added
+inspection events to the engine, and implemented Davis's creative sense-making curve over a real run.
 
----
-
-## Where things stand
-
-**Tests: 349 of 350 passing.** `Polson.Tests.MCPServer` went 86 → 126; `Polson.Tests.ExtendedMind` is
-new at 63; `Polson.Tests.Drawing` is 165/166. The single failure is pre-existing —
-`TestEncodePerformanceBenchmark` loads a fixture from the deleted `tests/agent/mcp_server/`.
-
-Three threads ran through the session, and each turned out to be the same problem wearing a different
-hat: **an agent cannot tell a confident wrong answer from a right one.**
+**Tests: 938 .NET, 178 Python — all passing.** Last commit `980ca11`; uncommitted after it are
+this handoff, a moved `appsettings.json.example` (now at the repository root), and a further
+`inf-1` run under `tests/agent/`.
 
 ---
 
-## 1. Asset requisition (`Polson.ExtendedMind`)
+## The reframing that happened
 
-Agents can now requisition raw material from a cloud image model — flat tiling textures, background
-plates, greyscale mattes. There is deliberately **no call that returns a finished picture**.
+Polson stopped being "an MCP server plus prompts that Claude or Gemini drives" and became a
+**standalone co-creative studio**. A visitor needs a brief, a workflow, and the willingness to say
+"make the background green". Not JavaScript, not which model is behind it, not that there is a model.
 
-The constraint is structural, not advisory. `Assets.material('a wooden ship')` is refused before any
-network call, because the descriptor names an object rather than a substance; `'weathered ship hull
-planking'` is allowed. A policy in a manual would not survive goal pressure — a type signature does.
+The boundary that makes this true already existed: a **managed** project carries no
+`agent.config.json`, so its host owns tool policy and `project.load` refuses to run it; a
+**standalone** project carries its own policy, instructions and session directories. The orchestrator
+supplies the human, and the browser supplies the human's hands.
 
-What was measured rather than assumed, all verified live:
+A second reframing, from Davis's *Quantifying* deck: the sense-making curve is not only a viewer for
+the director. It is meant to be **machine-consumed** — the agent reading its own interaction model
+and adapting. We serve two of his four purposes (analysis, explainability) and not the other two
+(adaptability, partnership). That is written down in `docs/creative-sense-making.md` §7.
 
-| Finding | Consequence in the design |
+---
+
+## 1. The web app (`src/webapp/studio/`)
+
+```bash
+./polson_webapp projects          # browser, http://127.0.0.1:8000
+./polson_run projects/acme        # one turn in the terminal, you as the director
+```
+
+The argument means different things — a directory *of* projects versus *one* project — which is why
+they are separate scripts rather than one with a flag.
+
+| Route | Does |
 | :--- | :--- |
-| Output is **always 1024²** — `ImageSize` offers only 1K/2K/4K and the prompt cannot move it | `size` is a local resample of a cached master, so it costs nothing; caps defend context, not spend |
-| An image costs **~1,290 output tokens** regardless of model or size | Budget is a generation count (knowable in advance); `TokensSpent` records what it actually cost |
-| A **conditioned** backdrop costs roughly double — the blocking goes up as prompt tokens | Conditioning is the most expensive *and* riskiest requisition |
-| "Seamless" is **not honoured** and fails silently | Tiling is verified on receipt and repaired here, never requested |
-| Conditioning bakes the blocking silhouette into the plate as black | The plate is welded to that blocking; `BoundTo` records it |
-| `IMAGE_RECITATION` — a too-generic descriptor is **refused outright** | Its own failure mode; retrying the same words recites again |
+| `GET /` | Brief form; project list with `has a session` / `not started` |
+| `POST /projects` | `create-project` as a subprocess → optionally start |
+| `POST /runs` | Start a run on an existing project |
+| `GET /runs/{id}` | The page: curve, trace, render, script |
+| `GET /runs/{id}/events` | SSE — replay then live tail |
+| `POST /runs/{id}/answer` | `WebDirector.reply()` |
+| `POST /runs/{id}/say` | Mid-run interjection, via an SDK trigger |
+| `GET /runs/{id}/artifacts/{path}` | Renders, path-contained |
+| `GET /runs/{id}/scripts/{name}` | Source, pygments-highlighted |
+| `GET /runs/{id}/curve` | The coded run |
 
-Every call returns a result carrying a classified failure and a `remedy` phrased for the agent that
-reads it. Nothing throws. A network fault never charges the budget.
+**The demonstration that matters.** Mid-run, the director typed *"instead if yello could you use a
+green background"*. 93 seconds later the agent opened a new stage with:
 
-**Async:** requisition is network I/O, so the engine uses Jint's `ExperimentalFeature.TaskInterop` —
-CLR `Task<T>` becomes an awaitable promise — following the pattern in `reference/projects/Camel.Server`.
-Scripts containing `await` are wrapped in an async IIFE; scripts without it execute unwrapped, because
-inside a function body a bare trailing `paper;` is no longer a completion value.
+> `Settling Design Language: Neo-brutalist green-bar line printer aesthetic.`
 
-**Configuration:** `ConfigureAssetRequisition` in `Polson.CLI/Program.cs` reads
-`ApiKeys:GoogleAgentPlatform`, `Assets:Model`, `Assets:Budget` (default **12** per server run) and
-`Assets:CacheDir`. No key is a normal configuration: the global is still registered and returns a
-readable `NotConfigured` refusal rather than a `ReferenceError`.
+It did not swap a hex value. It reinterpreted the conceit — **green-bar paper** is the real
+alternating-band continuous-feed stock, historically correct for the printout the piece imitates, and
+the bands appear in the render. The interjection was made sense of against the evolving artifact
+rather than executed. That is Davis's "disruption as creative catalyst", observed.
 
----
-
-## 2. The symbol index — the API docs stop being parsed
-
-The reference could not be read reliably enough to answer *"does this call exist?"*. Five failure
-classes were measured: one whole area (`VectorLogo`) invisible to search because of a heading-text
-mismatch; three chunks too large to split; 14 bullets carrying two symbols on one line; 22 `ctx.*`
-shortcuts documented only in a middle-dot prose run; and `gradient` naming four CLR types with
-**reversed argument order** between two of them.
-
-`JsSymbols.cs` now generates a **434-symbol manifest by reflection** over the types the engine
-actually registers, served at `polson://sdk/symbols` and `polson://sdk/symbols/{Receiver}`.
-
-`Search` routes symbol-shaped queries there first. The difference that matters:
-
-| Query | Before | Now |
-| :--- | :--- | :--- |
-| `paper.squircle` | prose hit for the **raster** `Logo` toolkit | `direct` — exact signature |
-| `paper.squirkle` | a confident wrong hit | `no-match`, zero results, `nearest: paper.squircle` |
-| *"how do I make a cast shadow fall off"* | prose | `related` — prose, correctly |
-
-A `no-match` on a call name is now **definitive**, which similarity search can never be.
-
-`ApiDocumentationTests` already existed and is better than what I would have written; its receiver map
-and exclusion list moved into `JsSurface` so the drift test and the manifest share one source. That
-widened coverage from 14 to 22 receivers and immediately surfaced four previously invisible gaps. The
-tests then caught the undeclared `Assets` global the moment it was registered.
+It also finished the script it was mid-way through rather than abandoning it, and applied the change
+at the next point where colour was actually decided.
 
 ---
 
-## 3. The reference material
+## 2. Inspection events (.NET)
 
-**`Imaginative Drawing` is fully OCR'd — 647 pages, 124,091 words.** The PDFs are image-only scans
-with zero extractable text; `reference/ocr-book.sh` renders at 300dpi, OCRs to TSV, and
-`reference/ocr-reflow.pl` rebuilds reading order from block coordinates so sidebar captions are not
-spliced into the body paragraph beside them.
+The record was **only ever writes**: scripts executed, artifacts rendered, stages declared. It said
+what an agent did and never what it perceived — half of the perception–action loop, and the half that
+says whether an action was informed or blind.
 
-**The manuals are not sourced the way they claim.** Manuals 05–09 cite specific pages; three of four
-checked citations do not support their claim, and the 8-head canon that organises Manual 08 is not in
-the book at all. Cause: Gemini was given a 53-page sample of a 647-page book and cited only pages it
-had seen. Full detail in `docs/memory-design.md` §4.
+`ProbeScope` (in `Polson.Runtime`, reachable from both drawing layers) adds two events:
 
-**Janson** (`reference/books/janson-pencilling/`, 20 files, 171 figures) is extracted and verified but
-is **copyright — private testing only**, excluded from any public corpus.
+- **`inspect`** — a per-execution tally by kind: `measure`, `sample`, `compare`, `capability`, `read`.
+  Counts, not events, because one `getPixel` loop runs thousands of times.
+- **`artifact.read`** — one pass reading what an earlier pass left, by the same path the `render`
+  event named, so the two join. The only direct evidence in the record that coordination happened
+  through the environment.
 
----
-
-## Next session: the audit and coverage diff
-
-The task, in order:
-
-1. **Section map** from the OCR — every `N.M Section Title` across 647 pages. The TOC (pages 4–6) is
-   already readable and gives the skeleton.
-2. **Coverage diff** — book section → existing toolkit method → manual. Classify each of the 39
-   documented `Drawing.*` methods: grounded in the book, invented but useful, or missing.
-3. **Re-derive the manuals** from real text with citations that are mechanically checkable now that
-   every page is a file. Add a test asserting every `Page N` citation names a page that exists.
-
-**Do not rewrite `ConstructiveDrawingToolkit` blind.** No bad geometry was found — the defect is
-provenance and coverage. The mannequin case is the argument: §4.6 *Gesture Line / Box Forms /
-Mannequin Form* (pp. 553–556) turns out to be real source for `drawMannequinSolid`, so that method
-needs a correct citation, not a reimplementation.
-
-Also open: `ImageGenerator.ProbeModels` is unimplemented (each probe that reaches a live model bills);
-the OCR text needs a codepoint scan and a `reference/README.md` ledger entry before it is read into
-agent context; and `docs/memory-design.md` still proposes `Citation` and `KnowledgeAnswer` types that
-are designed but not built.
+Three things had to be right or the tally would be worthless: `attr()`/`transform()` call `getBBox`
+internally (split the counting boundary from the computation), `Has()` delegates to `Resolve()`
+(count once), and probes are written in `finally` so a script that looked and then crashed still
+reports what it saw.
 
 ---
 
-## Running the harness
+## 3. Creative sense-making (`orchestrator/csm.py`, `docs/creative-sense-making.md`)
 
-`tests/agent/test1/claude` is scaffolded for a moonlit wooden sailing ship, with the requisition rules
-stated up front and a `findings.md` brief that asks specifically for *what misled you* and *what you
-concluded did not exist*.
+Davis's framework in a medium he did not have. His **categories** are domain-independent and adopted
+unchanged; his **coding table** is drawing-specific and re-derived for scripts.
 
-A live MCP server holds `bin/cli/*.dll` open, so `dotnet build` fails with MSB3021 while a session is
-up. **Build first, then start the agent.**
+| Interaction mode | Value | Polson |
+| :--- | ---: | :--- |
+| Communicate | +1 | `note`, `stage.*`, director turns |
+| Gather | +1 | asset requisition, `Search` |
+| Inspect | +0.5 | `inspect`, `artifact.read`, `view_file` |
+| Wait | 0 | `thinking`, gaps |
+| Execute | −1 | `script.ok`/`script.error` **that produced a render** |
+
+**`server.jsonl` is the spine** — the MCP server writes it under every host — and the transcript is
+host-specific *enrichment*. The three transcript formats differ in kind, not field names: ours and
+Claude's are typed; Antigravity's records a tool call as a `GENERIC` step whose content is rendered
+prose. So the medium-specific half needs no adapter at all.
+
+**Two readings, which disagree in sign on real runs.** Counting actions gave `+92.5`; counting time
+gave `−1159.7`. Eighty-three notes occupied eight seconds between them while eleven executions took
+thirty-one minutes. Reporting one number would have been confidently wrong, so `summary()` reports
+both plus `heldMs` per mode, and each gets the x-axis that matches it.
+
+Corroborated on two sources for the scale, and the structural argument settles it: only under the
+2025 table does a cumulative curve rise while regulating and fall while producing. Under the 2017
+scale `execute = 0` and producing would not move the curve at all.
+
+---
+
+## Bugs found and fixed, worth remembering
+
+**`TypeError: cannot pickle '_thread.lock' object` — every browser run failed at startup.**
+`Agent.__init__` does `config.model_copy(deep=True)`, and hooks and triggers are fields on it, so
+everything reachable from them is copied. `WebDirector` held `broker.publish`, a bound method whose
+`__self__` is a `Broker` holding a lock. `EventLog` already carried a `__deepcopy__` guard **and its
+docstring names this exact error**; three new handle objects were added on the same path without it.
+Terminal runs never broke, because a terminal director holds only a log.
+
+**A second run replayed the first run's events as its own.** A project's `server.jsonl` is appended
+to across runs, and the tailer followed from byte zero. The offset is now fixed *synchronously* at
+`start()`, not on the first poll.
+
+**A resumed run spent a full session being told the work was done.** `project.json` records a
+`conversationId`; `run_turn` defaults `resume=True`; the web layer passed nothing. Given the opening
+prompt, the agent correctly answered "the project has completed all 7 stages". One place now decides
+what a blank prompt means, because it means opposite things.
+
+**The Antigravity hook, after three sessions.** The CLI log at
+`~/.gemini/antigravity-cli/log/cli-*.log` had the answer the whole time — `hooks_manager` says what
+loaded, `command_hook_executor` gives the command's stderr verbatim. Hooks were firing all along.
+Three separate command-level faults: a live MCP server holding `bin/cli/*.dll` so a build left it
+stale; `cmd /c` mangling a command that *begins* with a quoted path; and
+`NoDefaultCurrentDirectoryInExePath=1`, which stops cmd finding a bare filename in the working
+directory. Generated projects now carry `.agents/preserve-chatlog.cmd` and the hook invokes
+`.\preserve-chatlog.cmd` — no quotes, no spaces, no path.
+
+**`--reset` silently downgraded a standalone project to managed**, rewriting `project.json`, dropping
+`agent.config.json` from the plan, and taking `session/` out of `.gitignore` — which exposed SDK
+session state. A reset clears the run; it does not decide what the project is.
+
+**`polson_webapp.cmd` failed with `'M' is not recognized`** — an em dash in a `REM` comment. Batch
+files must be ASCII; all four `.cmd` files are now clean.
+
+---
+
+## Environment traps that cost real time
+
+- **`bash` heredocs silently eat backslashes**, even with a quoted delimiter. It corrupted a C#
+  string literal and three Python ones this session. Build escapes from `chr(92)` or use the Write
+  tool; never a heredoc for content containing `\n` or `\\`.
+- **Extensionless scripts need a `.gitattributes` line each.** No pattern catches them, they fall
+  back to `* text=auto`, and on Windows that means a CRLF shebang and `bad interpreter`. `build`,
+  `polson`, `polson_webapp`, `polson_run` are listed; a new one gets no protection until added.
+- **`git-bash /tmp` and Python's `/tmp` are different directories** (`C:\Users\…\Temp` vs `C:\tmp`).
+- **The credential lives in `bin/cli/appsettings.json`**, which is build output: gitignored, never
+  committed, and never restored by a fresh clone. There is deliberately **no** `GEMINI_API_KEY`
+  override — the .NET MCP server reads only that file, and two halves of one studio cannot have two
+  answers to "which key".
+
+---
+
+## Where to pick up
+
+**Immediately next — two UI changes the director asked for, mid-sentence when the session ended:**
+
+1. **Collapse `thinking` entries by default**, with click to expand. They are verbose and they bury
+   the trace.
+2. **Make the right pane show *any* execution's artifact**, not just the latest render. Clicking an
+   `ExecuteScript` entry should show that render *and* its script together — the script panel already
+   does half of this.
+
+**Then, in rough order of value:**
+
+- **`artifacts read back: none`** across a whole run. The stigmergy column is still empty: a single
+  agent holds its own context so it never needs to look back. Worth pushing in the workflow templates
+  — looking is what makes the trace legible to anyone else.
+- **Group the trace by server session.** The stage list reads `Data → … → Encode → Data → … → Encode`
+  when a project has run twice. `polson report` counts sessions; the page does not use it.
+- **Builder vocabulary in a visitor's view** — the front page shows `sdk: agy`, `profile: standalone`.
+- **Multi-agent.** The record is shaped for it (`src`, `depth`, `trajectory`); the runner is not.
+  Two curves on a shared axis is where *participatory* sense-making becomes visible, and it is the
+  claim the theory rests on. Choose it deliberately; it is the largest remaining piece.
+- **Adaptability** — the agent consuming its own curve. `docs/creative-sense-making.md` §7 names the
+  gap; the 2014 Creative Trajectory Monitor is the precedent.
+
+**Also open:** the devpost draft (`docs/devpost/Polson.md`) still carries Camel leftovers — "a DFIR
+investigation", "the Camel JavaScript interpreter", a link to `allisterb/Camel`, "case session",
+"When an investigation starts" — plus `bake-report` (the verb is `report`), `create-poject`, a
+missing `eval`, and six sentences that stop mid-thought. The director is editing it.
+
+**One unexplained flake:** `Polson.Tests.Drawing` failed once in a full-solution run and passed on
+five consecutive re-runs. The only output was a deliberate negative test's log line. Not reproduced,
+not diagnosed.

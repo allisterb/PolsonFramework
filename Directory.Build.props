@@ -15,6 +15,11 @@
        FileVersion / Version to this property, so bumping the version here restamps them all on the next build. -->
   <PropertyGroup Label="Versioning">
     <ProjectAssemblyVersion>0.1.0</ProjectAssemblyVersion>
+
+    <!-- Version is the one the CLI prints. AssemblyVersion and FileVersion were mapped per project
+         and Version was not, so it kept the SDK default of 1.0.0 and the banner reported a version
+         no file agreed with. Set here so every project inherits it. -->
+    <Version>$(ProjectAssemblyVersion)</Version>
   </PropertyGroup>
 
   <!-- Supply chain. A lock file records the exact resolved graph, transitive packages included, so a

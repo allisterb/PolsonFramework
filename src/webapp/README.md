@@ -9,8 +9,8 @@ behalf. The commands below are for you to run and review.
 ## Two ways in
 
 ```bash
-./polson_webapp.sh projects            # the browser, at http://127.0.0.1:8000
-./polson_run.sh projects/acme          # one turn in the terminal, you as the director
+./polson_webapp projects            # the browser, at http://127.0.0.1:8000
+./polson_run projects/acme          # one turn in the terminal, you as the director
 ```
 
 They differ in what the argument means, which is why they are separate scripts rather than one with

@@ -115,12 +115,25 @@ internal class Program : Runtime
     /// ReferenceError it cannot interpret. The budget is a hard ceiling on generations per server
     /// run, so a runaway agent cannot spend without bound.
     /// </remarks>
+    /// <summary>
+    /// A configuration value, treating blank as absent.
+    /// </summary>
+    /// <remarks>
+    /// <c>IConfiguration</c>'s indexer returns null for a missing key but an empty string for a
+    /// present-and-empty one, so <c>??</c> does not catch the second. That matters because the
+    /// shipped example carries <c>""</c> placeholders for a person to fill in: copied as-is it would
+    /// have set the image model to the empty string and resolved the asset cache to nowhere, both
+    /// silently.
+    /// </remarks>
+    static string? Setting(string key) =>
+        config?[key] is { } value && !string.IsNullOrWhiteSpace(value) ? value : null;
+
     static void ConfigureAssetRequisition(string projectDir)
     {
-        var apiKey = config?["ApiKeys:GoogleAgentPlatform"];
-        var model = config?["Assets:Model"] ?? ImageGenerator.DefaultModel;
-        var budget = int.TryParse(config?["Assets:Budget"], out var b) ? b : DefaultAssetBudget;
-        var cacheDir = config?["Assets:CacheDir"] ?? Path.Combine(projectDir, ".polson", "assets");
+        var apiKey = Setting("ApiKeys:GoogleAgentPlatform");
+        var model = Setting("Assets:Model") ?? ImageGenerator.DefaultModel;
+        var budget = int.TryParse(Setting("Assets:Budget"), out var b) ? b : DefaultAssetBudget;
+        var cacheDir = Setting("Assets:CacheDir") ?? Path.Combine(projectDir, ".polson", "assets");
 
         var generator = string.IsNullOrWhiteSpace(apiKey) ? null : new ImageGenerator(apiKey, model);
 
@@ -129,7 +142,9 @@ internal class Program : Runtime
 
         if (generator is null)
         {
-            Warn("Asset requisition disabled: no ApiKeys:GoogleAgentPlatform in appsettings.json.");
+            Warn("Asset requisition disabled: no ApiKeys:GoogleAgentPlatform in {0}. "
+               + "Copy src/Polson.CLI/appsettings.json.example there and fill in the key.",
+                Path.Combine(AssemblyLocation, "appsettings.json"));
         }
         else
         {

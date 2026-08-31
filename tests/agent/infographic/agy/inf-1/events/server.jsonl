@@ -119,3 +119,70 @@
 {"ts":"2026-08-31T05:03:54.011Z","seq":119,"src":"server","type":"run.end"}
 {"ts":"2026-08-31T06:53:56.909Z","seq":120,"src":"server","type":"run.start","transport":"stdio","project":"C:\\Projects\\Polson\\tests\\agent\\infographic\\agy\\inf-1"}
 {"ts":"2026-08-31T06:54:24.705Z","seq":121,"src":"server","type":"run.end"}
+{"ts":"2026-08-31T07:40:02.162Z","seq":122,"src":"server","type":"run.start","transport":"stdio","project":"C:\\Projects\\Polson\\tests\\agent\\infographic\\agy\\inf-1"}
+{"ts":"2026-08-31T07:40:51.489Z","seq":123,"src":"server","type":"script.start","execution":"c73f6ecd","script":"scripts/0012.js","session":"default"}
+{"ts":"2026-08-31T07:40:52.217Z","seq":124,"src":"server","type":"stage.begin","stage":"Data","execution":"c73f6ecd"}
+{"ts":"2026-08-31T07:40:52.223Z","seq":125,"src":"server","type":"note","stage":"Data","execution":"c73f6ecd","message":"Settling data, claim, reader, place, and inspecting environment/fonts."}
+{"ts":"2026-08-31T07:40:52.439Z","seq":126,"src":"server","type":"render","stage":"Data","execution":"c73f6ecd","script":"scripts/0012.js","artifact":"artifacts/01_data.webp","format":"webp","bytes":17094}
+{"ts":"2026-08-31T07:40:52.440Z","seq":127,"src":"server","type":"script.ok","stage":"Data","execution":"c73f6ecd","script":"scripts/0012.js","ms":387}
+{"ts":"2026-08-31T07:40:52.450Z","seq":128,"src":"server","type":"inspect","stage":"Data","execution":"c73f6ecd","script":"scripts/0012.js","probes":{"capability":7},"total":7}
+{"ts":"2026-08-31T07:41:07.733Z","seq":129,"src":"server","type":"script.start","stage":"Data","execution":"a6000e3d","script":"scripts/0013.js","session":"default"}
+{"ts":"2026-08-31T07:41:07.737Z","seq":130,"src":"server","type":"stage.end","stage":"Data","execution":"a6000e3d","reason":"superseded"}
+{"ts":"2026-08-31T07:41:07.737Z","seq":131,"src":"server","type":"stage.begin","stage":"Forms","execution":"a6000e3d"}
+{"ts":"2026-08-31T07:41:07.738Z","seq":132,"src":"server","type":"note","stage":"Forms","execution":"a6000e3d","message":"Form 1: Continuous Linear Scale Vertical Timeline Spine — answers Over time / Progression over time. True year-to-pixel ratio."}
+{"ts":"2026-08-31T07:41:07.739Z","seq":133,"src":"server","type":"note","stage":"Forms","execution":"a6000e3d","message":"Rejected Form 1: Discrete step timeline — rejected because equal step spacing hides the 20-year and 15-year gaps, destroying the core argument."}
+{"ts":"2026-08-31T07:41:07.740Z","seq":134,"src":"server","type":"note","stage":"Forms","execution":"a6000e3d","message":"Form 2: Scaled Horizontal Gap Comparison Bars — answers Compared to what / How long were the silent gaps. Zero-based linear scale."}
+{"ts":"2026-08-31T07:41:07.741Z","seq":135,"src":"server","type":"note","stage":"Forms","execution":"a6000e3d","message":"Rejected Form 2: Pie/Donut chart — rejected because sequential waiting times are comparative durations, not parts of a closed circular budget."}
+{"ts":"2026-08-31T07:41:07.741Z","seq":136,"src":"server","type":"note","stage":"Forms","execution":"a6000e3d","message":"Form 3: Neo-brutalist High-Impact Metric Badges — answers How big / Key summary magnitudes (53-year total span, 14-year burst cluster)."}
+{"ts":"2026-08-31T07:41:07.742Z","seq":137,"src":"server","type":"note","stage":"Forms","execution":"a6000e3d","message":"Rejected Form 3: Plain bulleted text — rejected because brutalist poster energy requires punchy stamped callouts."}
+{"ts":"2026-08-31T07:41:07.742Z","seq":138,"src":"server","type":"note","stage":"Forms","execution":"a6000e3d","message":"Form 4: Proportional Area Nodes & Connectors — answers Area/Magnitude using Scale.radiusFor square-root scaling."}
+{"ts":"2026-08-31T07:41:07.899Z","seq":139,"src":"server","type":"render","stage":"Forms","execution":"a6000e3d","script":"scripts/0013.js","artifact":"artifacts/02_forms.webp","format":"webp","bytes":56648}
+{"ts":"2026-08-31T07:41:07.899Z","seq":140,"src":"server","type":"script.ok","stage":"Forms","execution":"a6000e3d","script":"scripts/0013.js","ms":38}
+{"ts":"2026-08-31T07:41:25.567Z","seq":141,"src":"server","type":"script.start","stage":"Forms","execution":"378cffa5","script":"scripts/0014.js","session":"default"}
+{"ts":"2026-08-31T07:41:25.571Z","seq":142,"src":"server","type":"stage.end","stage":"Forms","execution":"378cffa5","reason":"superseded"}
+{"ts":"2026-08-31T07:41:25.571Z","seq":143,"src":"server","type":"stage.begin","stage":"Composition","execution":"378cffa5"}
+{"ts":"2026-08-31T07:41:25.572Z","seq":144,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"Named Composition Pattern: Overlap Stack on Fanfold Feed."}
+{"ts":"2026-08-31T07:41:25.573Z","seq":145,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"Reader Position: Standing at a line printer, watching fanfold continuous paper feed through the platen."}
+{"ts":"2026-08-31T07:41:25.574Z","seq":146,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"Tension Rules:"}
+{"ts":"2026-08-31T07:41:25.574Z","seq":147,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"1. Dense vs Empty: 1993-2007 cluster packs 4 major milestones tightly; 1969-1989 and 2007-2022 voids breathe with large gap markers."}
+{"ts":"2026-08-31T07:41:25.575Z","seq":148,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"2. Scale ladder: 96px hero numerals, 36px section headers, 24px milestone titles, 14-16px detail labels (>6x ratio)."}
+{"ts":"2026-08-31T07:41:25.575Z","seq":149,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"3. Boundary breaking: Badges and milestone cards overlap the continuous timeline spine and cross column boundaries."}
+{"ts":"2026-08-31T07:41:25.576Z","seq":150,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"4. Non-uniform ground: Green-bar fanfold paper with tractor-feed perforations, horizontal fold lines, and dot-matrix grain."}
+{"ts":"2026-08-31T07:41:25.576Z","seq":151,"src":"server","type":"note","stage":"Composition","execution":"378cffa5","message":"5. Single rotated system: Stamped alert/milestone highlight badges rotated by -2.5 deg."}
+{"ts":"2026-08-31T07:41:25.712Z","seq":152,"src":"server","type":"render","stage":"Composition","execution":"378cffa5","script":"scripts/0014.js","artifact":"artifacts/03_composition.webp","format":"webp","bytes":43326}
+{"ts":"2026-08-31T07:41:25.713Z","seq":153,"src":"server","type":"script.ok","stage":"Composition","execution":"378cffa5","script":"scripts/0014.js","ms":37}
+{"ts":"2026-08-31T07:41:51.932Z","seq":154,"src":"server","type":"script.start","stage":"Composition","execution":"4dbc830c","script":"scripts/0015.js","session":"default"}
+{"ts":"2026-08-31T07:41:51.941Z","seq":155,"src":"server","type":"stage.end","stage":"Composition","execution":"4dbc830c","reason":"superseded"}
+{"ts":"2026-08-31T07:41:51.941Z","seq":156,"src":"server","type":"stage.begin","stage":"Encode","execution":"4dbc830c"}
+{"ts":"2026-08-31T07:41:51.942Z","seq":157,"src":"server","type":"note","stage":"Encode","execution":"4dbc830c","message":"Encoding Stage: Strict geometric mappings with Scale.linear, Scale.nice, Scale.extent, and Scale.radiusFor."}
+{"ts":"2026-08-31T07:41:51.961Z","seq":158,"src":"server","type":"note","stage":"Encode","execution":"4dbc830c","message":"Asserted zero baseline on gap duration scale: isZeroBased=true"}
+{"ts":"2026-08-31T07:41:52.141Z","seq":159,"src":"server","type":"render","stage":"Encode","execution":"4dbc830c","script":"scripts/0015.js","artifact":"artifacts/04_encode.webp","format":"webp","bytes":92968}
+{"ts":"2026-08-31T07:41:52.141Z","seq":160,"src":"server","type":"script.ok","stage":"Encode","execution":"4dbc830c","script":"scripts/0015.js","ms":83}
+{"ts":"2026-08-31T07:42:32.212Z","seq":161,"src":"server","type":"script.start","stage":"Encode","execution":"99027c2e","script":"scripts/0016.js","session":"default"}
+{"ts":"2026-08-31T07:42:32.217Z","seq":162,"src":"server","type":"stage.end","stage":"Encode","execution":"99027c2e","reason":"superseded"}
+{"ts":"2026-08-31T07:42:32.218Z","seq":163,"src":"server","type":"stage.begin","stage":"Palette & Type","execution":"99027c2e"}
+{"ts":"2026-08-31T07:42:32.218Z","seq":164,"src":"server","type":"note","stage":"Palette & Type","execution":"99027c2e","message":"Settling Design Language: Neo-brutalist green-bar line printer aesthetic."}
+{"ts":"2026-08-31T07:42:32.219Z","seq":165,"src":"server","type":"note","stage":"Palette & Type","execution":"99027c2e","message":"Colors: Fanfold pale green background (#eef9f2 / #d8f3e5), Electric Mint Header (#00f076), Stamped Hot Pink (#ff2a5f), Hard Black Borders & Shadows (#0a0a0a)."}
+{"ts":"2026-08-31T07:42:32.220Z","seq":166,"src":"server","type":"note","stage":"Palette & Type","execution":"99027c2e","message":"Typography: Consolas & Courier New monospace, rigorous scale ladder from 14px to 44px."}
+{"ts":"2026-08-31T07:42:33.295Z","seq":167,"src":"server","type":"render","stage":"Palette & Type","execution":"99027c2e","script":"scripts/0016.js","artifact":"artifacts/05_palette_type.webp","format":"webp","bytes":107282}
+{"ts":"2026-08-31T07:42:33.296Z","seq":168,"src":"server","type":"script.ok","stage":"Palette & Type","execution":"99027c2e","script":"scripts/0016.js","ms":951}
+{"ts":"2026-08-31T07:43:13.384Z","seq":169,"src":"server","type":"script.start","stage":"Palette & Type","execution":"e3f9e551","script":"scripts/0017.js","session":"default"}
+{"ts":"2026-08-31T07:43:13.388Z","seq":170,"src":"server","type":"stage.end","stage":"Palette & Type","execution":"e3f9e551","reason":"superseded"}
+{"ts":"2026-08-31T07:43:13.389Z","seq":171,"src":"server","type":"stage.begin","stage":"Detail","execution":"e3f9e551"}
+{"ts":"2026-08-31T07:43:13.391Z","seq":172,"src":"server","type":"note","stage":"Detail","execution":"e3f9e551","message":"Detail & Scene: Adding line printer fanfold paper textures, perforated margins, fold creases, stamped brutalist badges, diegetic telemetry, and a ranked gap comparison sub-chart in the 20-year breathing void."}
+{"ts":"2026-08-31T07:43:13.570Z","seq":173,"src":"server","type":"render","stage":"Detail","execution":"e3f9e551","script":"scripts/0017.js","artifact":"artifacts/06_detail.webp","format":"webp","bytes":144186}
+{"ts":"2026-08-31T07:43:13.571Z","seq":174,"src":"server","type":"script.ok","stage":"Detail","execution":"e3f9e551","script":"scripts/0017.js","ms":39}
+{"ts":"2026-08-31T07:43:59.523Z","seq":175,"src":"server","type":"script.start","stage":"Detail","execution":"24e8c53c","script":"scripts/0018.js","session":"default"}
+{"ts":"2026-08-31T07:43:59.530Z","seq":176,"src":"server","type":"stage.end","stage":"Detail","execution":"24e8c53c","reason":"superseded"}
+{"ts":"2026-08-31T07:43:59.531Z","seq":177,"src":"server","type":"stage.begin","stage":"Audit","execution":"24e8c53c"}
+{"ts":"2026-08-31T07:43:59.531Z","seq":178,"src":"server","type":"note","stage":"Audit","execution":"24e8c53c","message":"Running Stage 7 Audit against the final render."}
+{"ts":"2026-08-31T07:43:59.533Z","seq":179,"src":"server","type":"note","stage":"Audit","execution":"24e8c53c","message":"Audit Check 1: Zero-baseline verified on gap bar chart (domainStart=0)."}
+{"ts":"2026-08-31T07:43:59.534Z","seq":180,"src":"server","type":"note","stage":"Audit","execution":"24e8c53c","message":"Audit Check 2: Timeline scale mapping verified: 1969 mapped to y=310, 2022 mapped to y=1680."}
+{"ts":"2026-08-31T07:43:59.576Z","seq":181,"src":"server","type":"note","stage":"Audit","execution":"24e8c53c","message":"Litmus Test 1: Could this layout hold a SaaS dashboard? No — it is diegetic fanfold line-printer continuous spool with tractor perforations and true-scale timeline."}
+{"ts":"2026-08-31T07:43:59.576Z","seq":182,"src":"server","type":"note","stage":"Audit","execution":"24e8c53c","message":"Litmus Test 2: Is the topic recognisable with text covered? Yes — the vertical timeline spine with lumpy clusters, leader vectors, and tractor feed sprocket margins instantly communicates historical timeline progression."}
+{"ts":"2026-08-31T07:43:59.577Z","seq":183,"src":"server","type":"note","stage":"Audit","execution":"24e8c53c","message":"Litmus Test 3: Are all four corners doing equal work? No — asymmetrical platen header at top, dense cluster in lower-middle, summary telemetry at bottom."}
+{"ts":"2026-08-31T07:43:59.577Z","seq":184,"src":"server","type":"note","stage":"Audit","execution":"24e8c53c","message":"Litmus Test 4: Is any baseline non-zero or any circle sized by radius? No — gap bar scale strictly zero-based and circles sized by area."}
+{"ts":"2026-08-31T07:43:59.718Z","seq":185,"src":"server","type":"render","stage":"Audit","execution":"24e8c53c","script":"scripts/0018.js","artifact":"artifacts/07_audit.webp","format":"webp","bytes":137184}
+{"ts":"2026-08-31T07:43:59.718Z","seq":186,"src":"server","type":"script.ok","stage":"Audit","execution":"24e8c53c","script":"scripts/0018.js","ms":54}
+{"ts":"2026-08-31T07:43:59.719Z","seq":187,"src":"server","type":"inspect","stage":"Audit","execution":"24e8c53c","script":"scripts/0018.js","probes":{"sample":3},"total":3}
+{"ts":"2026-08-31T07:44:12.297Z","seq":188,"src":"server","type":"run.end"}

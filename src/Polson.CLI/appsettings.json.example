@@ -1,0 +1,13 @@
+{
+  "ApiKeys": {
+    "GoogleAgentPlatform": ""
+  },
+  "Assets": {
+    "Model": "gemini-2.5-flash-image",
+    "Budget": 12,
+    "CacheDir": ""
+  },
+  "Server": {
+    "DefaultTimeoutSeconds": 30
+  }
+}

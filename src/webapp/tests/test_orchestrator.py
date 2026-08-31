@@ -445,14 +445,19 @@ class ConfigTests(unittest.TestCase):
             json.dumps({"mcpServers": {"polson": {"command": "dotnet", "args": ["x.dll", "server"]}}}),
             encoding="utf-8")
 
-        self.previous_key = os.environ.get("GEMINI_API_KEY")
-        os.environ["GEMINI_API_KEY"] = "test-key-not-used"
+        # `build_config` reads the credential, and there is deliberately no environment override:
+        # the .NET MCP server reads only bin/cli/appsettings.json, and two halves of one studio
+        # cannot have two answers to "which key". So the seam is patched instead — on `run`, which
+        # imported the name, not on `credentials`, which no longer owns the lookup at that point.
+        from orchestrator import run as run_mod
+
+        self.previous_reader = run_mod.read_api_key
+        run_mod.read_api_key = lambda: "test-key-not-used"
 
     def tearDown(self) -> None:
-        if self.previous_key is None:
-            os.environ.pop("GEMINI_API_KEY", None)
-        else:
-            os.environ["GEMINI_API_KEY"] = self.previous_key
+        from orchestrator import run as run_mod
+
+        run_mod.read_api_key = self.previous_reader
         shutil.rmtree(self.root, ignore_errors=True)
 
     def test_a_global_allow_accompanies_every_deny(self):

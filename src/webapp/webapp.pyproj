@@ -22,11 +22,13 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="run_studio.py" />
-    <Compile Include="orchestrator\project.py" />
+    <Compile Include="*.py" />
+    <Compile Include="orchestrator\**\*.py" />
+    <Compile Include="studio\**\*.py" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="orchestrator\" />
+    <Folder Include="studio\" />
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include="..\..\python\">

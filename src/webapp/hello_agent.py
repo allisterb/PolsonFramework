@@ -29,7 +29,7 @@ Run it against a directory made by `polson create-project`:
     python src/webapp/hello_agent.py path/to/project --task stages --timeout 300
 
 The credential comes from `bin/cli/appsettings.json` (`ApiKeys:GoogleAgentPlatform`), the same one
-the .NET side uses; `GEMINI_API_KEY` overrides it. That key is an **Agent Platform** credential, so
+the .NET side uses, and the only place it looks. That key is an **Agent Platform** credential, so
 the default endpoint here is the Agent Platform one — `--public` switches to the public Gemini API.
 
 Nothing here installs anything; see README.md.

@@ -47,7 +47,10 @@ internal static class ProjectGenerator
     /// exists at all, and which types it offers — is discovered from its embedded templates, so
     /// adding either is adding a file rather than editing this class.
     /// </remarks>
-    static readonly Dictionary<string, string> DefaultTypes = new() { ["harness"] = "image" };
+    static readonly Dictionary<string, string> DefaultTypes = new() { ["harness"] = "image", ["drawing"] = "review", ["comic"] = "review" };
+
+    /// <summary>Used when the optional third positional is omitted.</summary>
+    const string DefaultSdk = "agy";
 
     static readonly Regex ValidId = new(@"^[A-Za-z0-9._-]{1,64}$", RegexOptions.Compiled);
     #endregion
@@ -122,10 +125,22 @@ internal static class ProjectGenerator
             return Fail($"Unknown workflow '{opts.Workflow}'. Known: {string.Join(", ", KnownWorkflows)}.");
         }
 
-        var sdk = opts.Sdk.ToLowerInvariant();
-        if (sdk is not ("agy" or "claude"))
+        // The third positional is optional and defaults to Antigravity, which is the host the studio
+        // is built around; naming 'claude' is the deliberate act. Because it may now be omitted, a
+        // stray token in that slot is most often a workflow or type the caller meant to flag, so the
+        // error says so rather than only naming the two SDKs.
+        var sdk = opts.Sdk.Trim().ToLowerInvariant();
+        if (sdk.Length == 0)
         {
-            return Fail($"Unknown SDK '{opts.Sdk}'. Use 'agy' (Google Antigravity) or 'claude' (Claude Code).");
+            sdk = DefaultSdk;
+        }
+        else if (sdk is not ("agy" or "claude"))
+        {
+            var hint = KnownWorkflows.Contains(sdk)
+                ? $" '{opts.Sdk}' is a workflow — did you mean --workflow {sdk}?"
+                : string.Empty;
+            return Fail($"Unknown SDK '{opts.Sdk}'. Use 'agy' (Google Antigravity) or 'claude' (Claude Code), "
+                + $"or omit it for '{DefaultSdk}'.{hint}");
         }
 
         // What a type means is the workflow's business; whether one was offered is not. Refused
@@ -258,6 +273,15 @@ internal static class ProjectGenerator
             // templates cannot drift apart on the rule that matters most. `_shared` is not a
             // workflow: it carries no instructions.md, which is the only thing discovery looks for.
             ["ENGINE_ONLY"] = Render("_shared", "engine_only.md", []),
+
+            // How to open when the visitor had nothing to say yet. Shared for the same reason:
+            // every workflow can be started from the web form with an empty brief, so every one of
+            // them needs the same answer to it.
+            ["BLANK_BRIEF"] = Render("_shared", "blank_brief.md", []),
+
+            // How to write the files the workflow asks for. Shared because the trap is the host's,
+            // not the workflow's: every one of them asks for plain files in the project directory.
+            ["DELIVERABLES"] = Render("_shared", "deliverables.md", []),
         };
 
         // The instructions are always rewritten: they are the project's system prompt, generated
@@ -379,7 +403,7 @@ internal static class ProjectGenerator
     /// have to be edited in lockstep with the templates, and the failure when it was not is a
     /// workflow that exists on disk and is refused by name.
     /// </remarks>
-    static string[] KnownWorkflows => TemplateNames("instructions.md");
+    internal static string[] KnownWorkflows => TemplateNames("instructions.md");
 
     /// <summary>
     /// The types a workflow offers. What a type <em>means</em> is the workflow's business.

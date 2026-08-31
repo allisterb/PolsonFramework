@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "name": "cs-3",
+  "orchestrator": {
+    "role": "Studio Director",
+    "promptFile": "../GEMINI.md"
+  },
+  "subagents": [
+    {
+      "name": "penciler",
+      "role": "Composition & Pose Agent (Penciler / Layout)",
+      "promptFile": "../roles/01_penciler.md",
+      "tools": [
+        "polson.ExecuteScript",
+        "polson.History",
+        "polson.MeasureSvgPath",
+        "polson.RenderSvg",
+        "polson.Search",
+        "view_file"
+      ]
+    },
+    {
+      "name": "inker",
+      "role": "Contour & Line Art Agent (Inker)",
+      "promptFile": "../roles/02_inker.md",
+      "tools": [
+        "polson.ExecuteScript",
+        "polson.History",
+        "polson.MeasureSvgPath",
+        "polson.RenderSvg",
+        "polson.Search",
+        "view_file"
+      ]
+    },
+    {
+      "name": "colorist",
+      "role": "Palette & Lighting Agent (Flatter / Colorist)",
+      "promptFile": "../roles/03_colorist.md",
+      "tools": [
+        "polson.ExecuteScript",
+        "polson.History",
+        "polson.MeasureSvgPath",
+        "polson.RenderSvg",
+        "polson.Search",
+        "view_file"
+      ]
+    },
+    {
+      "name": "critic",
+      "role": "Vision Critic Agent (Adversarial Art Director & QA)",
+      "promptFile": "../roles/04_critic.md",
+      "tools": [
+        "polson.ExecuteScript",
+        "polson.History",
+        "polson.MeasureSvgPath",
+        "polson.RenderSvg",
+        "polson.Search",
+        "view_file"
+      ]
+    }
+  ]
+}

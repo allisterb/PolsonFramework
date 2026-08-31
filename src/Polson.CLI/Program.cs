@@ -28,13 +28,26 @@ internal class Program : Runtime
 
     #region Constants
     /// <summary>
-    /// Generations allowed per server run when <c>Assets:Budget</c> is not configured.
+    /// Generations allowed per server run when <c>Assets:Budget</c> is not set.
     /// </summary>
     /// <remarks>
-    /// Deliberately small. An image costs roughly 1,300 tokens whatever is asked for, so a default
-    /// that quietly allows hundreds would turn a stuck retry loop into real money.
+    /// An image costs roughly 1,300 tokens whatever is asked for, so this is still a ceiling rather
+    /// than an allowance — but it is sized for the work rather than for a runaway. A painting is
+    /// built from many surfaces (planking, rope, cloth, sky, a backdrop plate, mattes), and a budget
+    /// that runs out mid-piece is worse than one that is never reached: the agent has already
+    /// committed to a composition it can no longer finish.
+    /// <para>
+    /// Two things keep this from being an open cheque. The form-versus-substance classifier refuses
+    /// a descriptor naming an object rather than a material, so the budget cannot be spent on
+    /// finished pictures; and requisitions are cached by content, so a repeated one costs nothing.
+    /// </para>
+    /// <para>
+    /// It is still a per-<i>server-run</i> ceiling, not a per-day one. A public deployment needs its
+    /// own limit on top — see <c>DAILY_RUNS</c> in the web app, which is the crude cap this fine
+    /// one sits inside.
+    /// </para>
     /// </remarks>
-    const int DefaultAssetBudget = 12;
+    const int DefaultAssetBudget = 120;
     #endregion
 
     #region Methods
@@ -57,18 +70,20 @@ internal class Program : Runtime
         // Every verb but the default stdio server is free to write to standard output; stdio reserves it for JSON-RPC framing.
         var isConsoleVerb = (isHttp || isEval || isCreate) && !isHook;
 
-        if ((isConsoleVerb || isHelp) && !isHook)
+        // The hook is checked first: its standard output belongs to the host's JSON reply, so it
+        // gets no logo and no console sink. A stray byte on stdout makes the hook malformed on every
+        // turn, which presents as the whole integration being broken rather than as a stray byte.
+        // `logdir` is left to default to the assembly location; a hardcoded path here stopped
+        // working the moment this ran on a second machine.
+        if (isHook)
+        {
+            Runtime.WithFileLogging("Polson", "CLI-hook", isDebug);
+        }
+        else if (isConsoleVerb || isHelp)
         {
             PrintLogo();
             Runtime.WithFileAndConsoleLogging("Polson", "CLI", isDebug);
         }
-       
-            if (isHook)
-            {
-            Console.Write("ff");    
-            Runtime.WithFileLogging("Polson", "CLI-hook", isDebug, "C:\\Projects\\Polson\\bin");
-            }
-        
         else
         {
             // Stdio transport: standard output is strictly reserved for JSON-RPC framing; logs go to file/stderr
@@ -128,11 +143,35 @@ internal class Program : Runtime
     static string? Setting(string key) =>
         config?[key] is { } value && !string.IsNullOrWhiteSpace(value) ? value : null;
 
+    /// <summary>
+    /// The generation ceiling from <c>Assets:Budget</c>, or the default.
+    /// </summary>
+    /// <remarks>
+    /// A value that is present but unusable is <b>reported and ignored</b> rather than accepted. The
+    /// failure it avoids is specific: <c>int.TryParse</c> leaves <c>0</c> on failure, and a budget of
+    /// zero disables requisition entirely — so a typo would present as "asset generation is broken"
+    /// with nothing anywhere saying why. Zero and negatives are refused for the same reason; to turn
+    /// requisition off, leave the API key unset, which says so explicitly at startup.
+    /// </remarks>
+    static int AssetBudgetSetting() => ResolveAssetBudget(Setting("Assets:Budget"));
+
+    /// <summary>Reads the configured value; separated from the config lookup so it can be tested.</summary>
+    internal static int ResolveAssetBudget(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured)) return DefaultAssetBudget;
+
+        if (int.TryParse(configured.Trim(), out var parsed) && parsed > 0) return parsed;
+
+        Warn("Ignoring Assets:Budget='{0}': it must be a positive whole number. Using {1}.",
+            configured, DefaultAssetBudget);
+        return DefaultAssetBudget;
+    }
+
     static void ConfigureAssetRequisition(string projectDir)
     {
         var apiKey = Setting("ApiKeys:GoogleAgentPlatform");
         var model = Setting("Assets:Model") ?? ImageGenerator.DefaultModel;
-        var budget = int.TryParse(Setting("Assets:Budget"), out var b) ? b : DefaultAssetBudget;
+        var budget = AssetBudgetSetting();
         var cacheDir = Setting("Assets:CacheDir") ?? Path.Combine(projectDir, ".polson", "assets");
 
         var generator = string.IsNullOrWhiteSpace(apiKey) ? null : new ImageGenerator(apiKey, model);

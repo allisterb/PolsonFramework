@@ -1,0 +1,19 @@
+{
+  "polson-chatlog": {
+    "enabled": true,
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": ".\\preserve-chatlog.cmd",
+        "timeout": 30
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": ".\\preserve-chatlog.cmd",
+        "timeout": 30
+      }
+    ]
+  }
+}

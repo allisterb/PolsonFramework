@@ -148,6 +148,18 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
                      padding-top: .4rem; }
 .latest .empty { padding: .7rem .2rem; margin: 0; }
 #unpin { color: var(--accent); }
+.latest img { cursor: zoom-in; }
+
+/* Full-size render. `hidden` is what opens and closes it, so the display rule has to beat the
+   attribute's own `display: none` — hence [hidden] being spelled out rather than relying on order. */
+#lightbox { position: fixed; inset: 0; z-index: 50; display: flex; cursor: zoom-out;
+            flex-direction: column; align-items: center; justify-content: center; gap: .5rem;
+            padding: 2rem; background: rgba(28, 39, 51, .82); }
+#lightbox[hidden] { display: none; }
+#lightbox img { max-width: 100%; max-height: calc(100vh - 7rem); width: auto; height: auto;
+                background: var(--panel); border-radius: 3px; box-shadow: 0 2px 24px rgba(0,0,0,.35); }
+#lightbox p { margin: 0; color: var(--panel); font-family: var(--mono); font-size: .8rem; }
+#lightbox .hint { opacity: .7; }
 
 /* The brief form */
 form.brief { background: var(--panel); border: 1px solid var(--line); border-radius: 3px;

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "inf-2",
+  "workflow": "infographic",
+  "type": "brutalist",
+  "sdk": "agy",
+  "profile": "managed",
+  "createdUtc": "2026-08-31T19:24:08.2489782Z",
+  "conversationId": null
+}

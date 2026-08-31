@@ -3,7 +3,7 @@ Programmers today are accustomed to collaborating with LLM-based agents on devel
 
 LLMs that generate images suffer from a core problem in modern artificial intelligence: the innate inability of neural models to handle prolonged, iterative human interaction over non-language data. Language in all its human (and artificial) varieties is discrete, segmentable, addressable. Visual information is continuous, non-segmented, and entangled. When you ask a standard diffusion model to change a design, it does not actually revise the existing image; it generates a completely new statistical sample that often destroys the established visual context. When an LLM operates purely as a text-to-image generator, every prompt revision forces the model to resample from its high-dimensional probability space. Because the internal state is hidden inside model weights, it cannot isolate changes—tweaking a prompt to "darken the sky" alters the entire tensor grid, destroying the character's face, the perspective, and the line art.
 
-Human collaboration with models like Google Omni or MidJourney is strictly one-way interaction: the human prompts the model and the model generates a video or image based on the prompt and on prior prompts. There are no *traces* external to the model, like source code diffs, a human could use to engage with
+Human collaboration with models like Google Omni or MidJourney is strictly one-way interaction: the human prompts the model and the model generates a video or image based on the prompt and on prior prompts. The CoT for agents using these models is very imprecise when attempting operations because there are no tools an agent can use to attempt precise operations on visual data like "make the hat red".  There are very limited *traces* external to the model, like source code diffs, an agent or human could use to engage and interact with the creative visual process in a specific targetted way.
 
 By contrast, asking a coding model to `rename variable x to xx` or `set the foreground color on x.hat to red`has a precise interpretation in code AST operations and numerous environment constraints to ensure the operation the model does meets a minimum level of coherency and correctness. Furthermore all code operations leave *traces* which anyone can use to reconstruct the purpose of the operation, from code comments (/* renamed to xx for clarity*/) to git commit messages.
 
@@ -31,15 +31,30 @@ Research in the area of visual collaboration between agents has gone down the pa
 To enable true computatioal creativti for agents
 
 ## What it does
-Polson is a a framework for agentic co-creative visual art and graphic design collaboration, built on the principles of [Enactive AI](https://computationalcreativity.net/iccc24/papers/ICCC24_paper_58.pdf). Polson replaces the fundamental limitations of diffusion based-based image generation models with a code-based procedural drawing engine that agents using multimodal LLMs write code for to create visual artifacts that they can perceive both visually and as code, and can interact with and make precise mutations of the visual artifact state in response to user or other agent feedback, without drifting and losing coherency. The agent has access to a wide range of tools to interact with the code, to access knowledge, to offload demanding high-entropy tasks like material generations to cloud-based systems like using Nano Banana to generate 
+Polson is a a framework for agentic co-creative visual art and graphic design collaboration, built on the principles of [Enactive Co-Creative AI](https://computationalcreativity.net/iccc24/papers/ICCC24_paper_58.pdf). Polson attempts to address the fundamental limitations of diffusion based-based image generation models with a code-based procedural drawing engine that agents using multimodal LLMs like Gemini 3.7 write code for to create visual artifacts that they can perceive both visually and as code, and can interact with and make precise mutations of the visual artifact state in response to user or other agent feedback, without drifting and losing coherency. Polson attempts to bring the same co-creative environment for software development collabortion to the task of visual art and graphic desigb  The agent has access to a wide range of tools to interact, experiment with, and verify the code, to access knowledge in drawing manuals or user-supplied references, to offload demanding high-entropy image-generation tasks like material generation to cloud-based systems like using Nano Banana to generate 
 
 In the field of computational creativity, co-creative agents collaborate with humans continuously in real time with improvisations that enrich the whole creative process. Co-creativity allows participants to improvise and fuse and construct ideas based on decisions of their peers so the whole creative product emerges through interaction and negotiation between multiple peers and is greater than the sum of individual parts.
 
-Polson is an implementation of Enactive Cognition and 
 
+### Principles of Enactive Co-Creative AI
+* At least one human and one agent collaborating on a shared creative product where the
+autonomy of the user and agent is maintained and meaning is built through interaction,
+coordination, communication, and feedback.
 
+* The agent and user engage in sense-making (regulating interaction with the environment)
+and participatory sense-making (regulating a social sense-making process) to understand
+each other’s creative intentions and enact or bring forth meaning in the environment.
 
-An agentic co-creative environment for visual arts and graphics design using a code-based procedural drawing engine mirrors the success of code-based environment for software development:
+* Both the user and agent are embodied, with perceptual processes rooted in their body (for the agent their mutimodal neural model pared with environment tools for reading code and images).
+
+* The agent engages in improvised interaction to yield emergent interaction dynamics.
+
+* The agent remembers its experience, storing the interaction history and utilizing that to inform the creative trajectory of the interaction.” 
+
+from (Davis et al., 2024)
+
+Polson is an implementation of Enactive Co-creative AI and  provides
+an agentic co-creative environment for visual arts and graphics design using a code-based procedural drawing engine and Google Cloud based services for memory which mirrors the success of code-based environment for software development:
 
 ### Agentic visual collaboration using Polson graphics code vs. using diffusion-based models
 #### 1. Data Substrate: Explicit, discrete, atomic symbols vs. continuous & entangled latents
@@ -69,15 +84,14 @@ An agentic co-creative environment for visual arts and graphics design using a c
 
 #### 5. Causal Teleology: Procedural Intent & Parametric Logic vs. Flattened Static Pixels
 
-* **Code as Procedural Teleology (Preserved Causal Logic):** Code preserves the underlying causal rules, mathematical relationships, and design intent behind a visual artifact. In a code engine, a line is not just a row of pixels; it is the output of an explicit algorithm—such as placing a mast on the Golden Section of a ship's beam ($\Phi = 1.61803$), applying optical bone-correction curves (`Logo.correctBoneEffect`), or running an SkSL Perlin noise shader to generate atmospheric clouds. The code records *why* the canvas looks the way it does and exposes those mathematical relationships as editable parameters.
-* **Bitmaps as Flattened Effects (Stripped Procedural Logic):** A raster bitmap records only the static, visual end-product of a generation pass. All procedural history, parametric dependencies, and algorithmic intent are flattened into static RGB values. An agent examining a PNG of a logo cannot read the underlying Golden Ratio math or the optical bone-correction formulas; it sees only a flat cluster of dark pixels, making it impossible to perform parametric adjustments while maintaining underlying design constraints.
+* Preserved causal logic: Code preserves the underlying causal rules, mathematical relationships, and design intent behind a visual artifact. In a code engine, a line is not just a row of pixels; it is the output of an explicit algorithm—such as placing a mast on the Golden Section of a ship's beam ($\Phi = 1.61803$), applying optical bone-correction curves (`Logo.correctBoneEffect`), or running an SkSL Perlin noise shader to generate atmospheric clouds. The code records *why* the canvas looks the way it does and exposes those mathematical relationships as editable parameters.
+* Stripped procedural logic: A raster bitmap records only the static, visual end-product of a generation pass. All procedural history, parametric dependencies, and algorithmic intent are flattened into static RGB values. An agent examining a PNG of a logo cannot read the underlying Golden Ratio math or the optical bone-correction formulas; it sees only a flat cluster of dark pixels, making it impossible to perform parametric adjustments while maintaining underlying design constraints.
 
----
 
 #### 6. State Preservation: Lossless Deterministic Execution vs. Lossy Stochastic Re-sampling
 
-* **Deterministic Re-execution (Zero Generational Loss):** Executing code is a deterministic transformation: $f(\text{code}) = \text{pixels}$. Re-running `artwork.js` 1,000 times produces bit-exact, identical pixel arrays every single time. Stochastic visual elements (such as starfield distributions or ocean chop) are governed by seeded pseudo-random number generators (LCGs), ensuring that random distributions remain completely reproducible. Code modifications incur zero generational degradation.
-* **Stochastic Re-sampling (Accumulated Quantization Noise):** Editing a raster image requires passing pixels through a neural encoder (e.g., a VAE encoder) into a latent representation, altering the latent vector, and running a decoder to project back to pixel space. Because neural encoding and decoding are probabilistic approximations, every edit cycle introduces quantization noise, anti-aliasing artifacts, and fine-detail blurring. Over multiple iterative turns, this "re-sampling tax" leads to severe visual degradation, analogous to repeatedly saving a compressed JPEG file.
+* Deterministic re-execution: Executing code is a deterministic transformation: $f(\text{code}) = \text{pixels}$. Re-running `artwork.js` 1,000 times produces bit-exact, identical pixel arrays every single time. Stochastic visual elements (such as starfield distributions or ocean chop) are governed by seeded pseudo-random number generators (LCGs), ensuring that random distributions remain completely reproducible. Code modifications incur zero generational degradation.
+* Stochastic re-sampling: Editing a raster image requires passing pixels through a neural encoder (e.g., a VAE encoder) into a latent representation, altering the latent vector, and running a decoder to project back to pixel space. Because neural encoding and decoding are probabilistic approximations, every edit cycle introduces quantization noise, anti-aliasing artifacts, and fine-detail blurring. Over multiple iterative turns, this "re-sampling tax" leads to severe visual degradation, analogous to repeatedly saving a compressed JPEG file.
 
 ---
 
@@ -175,19 +189,19 @@ The Polson JavaScript procedural drawing engine, extended mind MCP tools, and CL
 ## Key Dependencies
 * [SkiaSharp](https://github.com/mono/skiasharp) is a cross-platform 2D graphics API for .NET platforms based on Google's Skia Graphics Library
 * [Jint](https://github.com/sebastienros/jint) is a ECMAScript 2025 embedded JavaScript interpreter for .NET that has no native dependencies and supports several safety features like disabling eval. Jint is the core of the sandboxed code execution environment the Polson procedural drawing engine uses.
-* [Serilog](https://serilog.net/) - The Serilog logging library provides a powerful contextual logger that allows different events triggered by scripts to be correlated and traced.
+* [Serilog](https://serilog.net/) - The Serilog logging library provides a powerful contextual logger that allows different events triggered by scripts and tools to be correlated and traced.
+* [Google GenAI .NET SDK](https://github.com/googleapis/dotnet-genai/) .NET interface to Google's generative models used by the Polson extended mind implementation for material generation, declarative and procedural memory, search etc.
+* [Google AntiGravity SDK](https://github.com/google-antigravity/antigravity-sdk-python) Used by the standalone web interface to orchestrate agents.
 
 ## Key Deign goals
 
 
 
 ## How it works
-When you run `polson create-poject`, the Polson CLI creates a directory with all the files that Gemini needs to use Polson to create a drawing or image or infographic etc. including config for the Polson MCP tools and hooks that fire at session stop and end to call the CLI to copy Gemini chat logs for the case session from your profile directory to the Polson case directory. The generated GEMINI.md contains the instructions and prompt guardrails for carrying out the drawing workflow you specified when running the CLI. See `[./]polson --help` for the different verbs and args you can use with the CLI. 
+When you run `polson create-poject`, the Polson CLI creates a directory with all the files that an agent needs to use Polson to create a drawing or image or infographic etc. including config for the Polson MCP tools and hooks that fire at session stop and end to call the CLI to copy Gemini chat logs for the project session from your profile directory to the Polson project directory. The generated GEMINI.md contains the instructions and prompt guardrails and subagent roles for carrying out the drawing workflow you specified when running the CLI e.g. `./polson create-project projects drawing-1 --workflow drawing --type review`. See `[./]polson --help` for the different verbs and args you can use with the CLI. This project can be run both in a managed Gemini agent harness like AntiGravity Desktop by simply starting a new AGY project in the Polson project dir, or by using the standalone web app agent harness e.g. `/polson_webapp projects`. 
 
-When an investigation starts, Gemini calls the Polson `Search` and `ExecuteScript` MCP tools, and to get the SDK and enough info to begin the drawing process.
-
-When agents make a drawing the rendered drawing is stored both as JavaScript code and as a .webp image. The JavaScript code is the exact procedural code required to create a byte-for-byte identical render of  image and serves as the medium for collaboration and creativity over visual images, like drawings and logos and infographics.
+When an project starts, the agents calls the Polson `Search` and `ExecuteScript` and other MCP tools, and to get the SDK and drawing manuals and enough info to begin the drawing process. When agents make a drawing the rendered drawing is stored both as JavaScript code and as a .webp image. The JavaScript code is the exact procedural code required to create a byte-for-byte identical render of  image and serves as the medium for collaboration and creativity over visual images and graphics, like drawings and logos and infographics.
 
 
-The agents are instructed to keep a log of everything they do 
+The agents are instructed to log everything they do which serves as another stigmergic trace they and the human director can use to observe and direct the creative collaboration.
 

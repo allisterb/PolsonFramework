@@ -66,10 +66,10 @@ public class CreateProjectOptions : Options
     [Value(1, MetaName = "id", Required = true, HelpText = "Project id, and the name of the directory created (letters, digits, dot, underscore, dash).")]
     public string Id { get; set; } = string.Empty;
 
-    [Value(2, MetaName = "sdk", Required = true, HelpText = "Agent SDK to target: 'agy' (Google Antigravity) or 'claude' (Claude Code). It decides what the config files are called.")]
+    [Value(2, MetaName = "sdk", Required = false, HelpText = "Agent SDK to target: 'agy' (Google Antigravity, the default) or 'claude' (Claude Code). It decides what the config files are called. Omit it for an Antigravity project.")]
     public string Sdk { get; set; } = string.Empty;
 
-    [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate: 'logo', 'infographic', 'comic_studio' or 'harness'. Workflows are discovered from the embedded templates, so an unknown name lists what is actually available.")]
+    [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate: 'logo', 'infographic', 'drawing', 'comic', 'painting', 'comic_studio' (multi-agent) or 'harness'. Workflows are discovered from the embedded templates, so an unknown name lists what is actually available.")]
     public string Workflow { get; set; } = "logo";
 
     [Option("type", Required = false, HelpText = "Narrows the chosen workflow's direction. Which types exist depends on the workflow and 'comic_studio' has none, so an unknown name lists the ones on offer.")]

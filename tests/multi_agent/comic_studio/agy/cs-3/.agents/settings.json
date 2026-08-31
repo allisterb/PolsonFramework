@@ -1,0 +1,29 @@
+{
+  "mcp": {
+    "autoApprove": [
+      "polson:*",
+      "polson.ExecuteScript",
+      "polson.History",
+      "polson.MeasureSvgPath",
+      "polson.RenderSvg",
+      "polson.Search"
+    ]
+  },
+  "tools": {
+    "disabled": [
+      "generate_image"
+    ]
+  },
+  "permissions": {
+    "call_mcp_tool": "allow",
+    "default_api:call_mcp_tool": "allow",
+    "polson:*": "allow",
+    "polson:ExecuteScript": "allow",
+    "polson:History": "allow",
+    "polson:MeasureSvgPath": "allow",
+    "polson:RenderSvg": "allow",
+    "polson:Search": "allow",
+    "generate_image": "deny",
+    "default_api:generate_image": "deny"
+  }
+}

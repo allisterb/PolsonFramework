@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "readBy": "polson-orchestrator",
+  "agentBehavior": "interactive",
+  "instructionsFile": "GEMINI.md",
+  "deniedTools": [
+    "generate_image",
+    "run_command"
+  ],
+  "saveDir": "session/save",
+  "appDataDir": "session/appdata"
+}

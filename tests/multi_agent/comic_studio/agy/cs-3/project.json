@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "cs-3",
+  "workflow": "comic_studio",
+  "sdk": "agy",
+  "profile": "managed",
+  "createdUtc": "2026-08-31T19:33:17.8627880Z",
+  "conversationId": null
+}

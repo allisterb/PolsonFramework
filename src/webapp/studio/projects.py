@@ -36,11 +36,18 @@ VALID_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 #: Workflow → the types it offers, mirroring `ProjectTemplate/`. A closed set: the form offers these
 #: and this refuses anything else, so no visitor string ever selects a template by name.
 WORKFLOWS: dict[str, tuple[str, ...]] = {
-    "logo": (),
-    "infographic": (),
+    "logo": ("antique", "geometric", "modern"),
+    "infographic": ("blueprint", "brutalist", "editorial", "specimen", "swiss"),
+    "drawing": ("review", "seed"),
+    "comic": ("review", "seed"),
+    "painting": (),
     "comic_studio": (),
     "harness": ("image", "infographic", "logo"),
 }
+
+#: Every type any workflow offers, for building the form's one type control. Derived rather than
+#: listed, because the control and the closed set above cannot then disagree about what exists.
+ALL_TYPES: tuple[str, ...] = tuple(sorted({t for types in WORKFLOWS.values() for t in types}))
 
 #: A brief is prose, not a novel. Long enough for a real one, short enough not to be a payload.
 MAX_BRIEF = 8000
@@ -69,11 +76,16 @@ def check(root: Path, project_id: str, workflow: str, kind: str) -> None:
     if workflow not in WORKFLOWS:
         raise StudioError(f"Unknown workflow '{workflow}'. Choose one of: {', '.join(WORKFLOWS)}.")
 
+    # Omitting a type is legal, exactly as it is for `create-project`: the generator either has a
+    # default for that workflow or renders no type section at all. Only a type the workflow does not
+    # offer is refused — requiring one here would make the form stricter than the thing it drives,
+    # and a visitor cannot tell the difference between a rule and a bug.
     offered = WORKFLOWS[workflow]
-    if offered and kind not in offered:
-        raise StudioError(f"The {workflow} workflow needs a type: {', '.join(offered)}.")
-    if kind and not offered:
-        raise StudioError(f"The {workflow} workflow does not take a type.")
+    if kind and kind not in offered:
+        raise StudioError(
+            f"The {workflow} workflow does not offer a type '{kind}'."
+            + (f" Choose one of: {', '.join(offered)}, or leave it unset."
+               if offered else " It takes no type."))
 
     if (root / project_id).exists():
         raise StudioError(

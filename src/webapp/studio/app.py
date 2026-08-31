@@ -67,6 +67,7 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
             "runs": [r.summary() for r in app.state.registry.runs],
             "active": (a := app.state.registry.active) and a.id,
             "workflows": projects.WORKFLOWS,
+            "all_types": projects.ALL_TYPES,
             "form": {},
         })
 
@@ -343,6 +344,7 @@ def refuse(request: Request, why: str, form: dict[str, str] | None = None) -> An
         "runs": [r.summary() for r in request.app.state.registry.runs],
         "active": (a := request.app.state.registry.active) and a.id,
         "workflows": projects.WORKFLOWS,
+        "all_types": projects.ALL_TYPES,
         "refused": why,
         "form": form or {},
     }, status_code=409)

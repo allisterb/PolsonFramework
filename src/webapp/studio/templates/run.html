@@ -98,11 +98,20 @@
         <p class="empty">Nothing rendered yet.</p>
       </figure>
 
-      <h2>The script behind it <span class="hint" id="scriptname"></span></h2>
+      <h2>Script <span class="hint" id="scriptname"></span></h2>
       <div id="source"><p class="empty">Click any pass in the trace, or a point on the curve.</p></div>
     </aside>
   </div>
 </main>
+
+<!-- Full-size render. Hidden until a render is clicked; `hidden` rather than a class so it is out of
+     the accessibility tree too, and the image src is cleared on close so a large artifact is not
+     held in memory behind an invisible overlay. -->
+<div id="lightbox" hidden>
+  <img id="lightbox-img" alt="">
+  <p id="lightbox-caption"></p>
+  <p class="hint">click anywhere, or press Esc, to close</p>
+</div>
 
 <script>
 // Deliberately plain: no framework, no build step. The record is already the model — every event
@@ -588,8 +597,13 @@
     card.className = 'question';
     card.dataset.question = event.id;
 
-    const options = (event.options || []).map((text, i) =>
-      `<button type="submit" name="option" value="opt${i + 1}" class="option">${esc(text)}</button>`
+    // The value is the option's own text, because that is the only identifier the client has: the
+    // question published its options as text, and the runner validates a reply against those texts
+    // and the agent's own option ids. A synthetic `opt1` matches neither, so it validated as
+    // nothing, fell through to the free-text branch, found none, and settled the question as a
+    // skip — a click that reached the server, returned 200, and told the agent nobody answered.
+    const options = (event.options || []).map((text) =>
+      `<button type="submit" name="option" value="${esc(text)}" class="option">${esc(text)}</button>`
     ).join('');
 
     card.innerHTML =
@@ -658,6 +672,33 @@
     return String(s).replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
+
+  // ── the lightbox ───────────────────────────────────────────────────────────────────────────
+  // The panel render is scaled to a narrow column, which is fine for "what is happening" and no use
+  // for judging a drawing. Clicking it shows the artifact at its own size.
+  const lightbox = document.getElementById('lightbox');
+  const lightboxImg = document.getElementById('lightbox-img');
+  const lightboxCaption = document.getElementById('lightbox-caption');
+
+  // Delegated, because the render is replaced wholesale every time the pass changes — a listener
+  // bound to the image would be discarded with it.
+  render.addEventListener('click', (e) => {
+    const img = e.target.closest('img');
+    if (!img) return;
+    lightboxImg.src = img.src;
+    lightboxImg.alt = img.alt;
+    lightboxCaption.textContent = img.alt;
+    lightbox.hidden = false;
+  });
+
+  function closeLightbox() {
+    if (lightbox.hidden) return;
+    lightbox.hidden = true;
+    lightboxImg.removeAttribute('src');
+  }
+
+  lightbox.addEventListener('click', closeLightbox);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox(); });
 
   drawCurve();
 })();

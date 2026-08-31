@@ -883,11 +883,21 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// <c>ProjectTemplate/_shared/engine_only.md</c> into all four workflows so they cannot drift
     /// apart on the one instruction that decides whether a run is real.
     /// </remarks>
+    /// <summary>Every workflow the generator can produce, so this list cannot go stale.</summary>
+    /// <remarks>
+    /// It was a hardcoded four and three workflows were added without it; a shared rule that four
+    /// out of seven carry is not a shared rule. Enumerating the generator's own discovery means a
+    /// new template is covered the moment it exists.
+    /// </remarks>
+    public static TheoryData<string> EveryWorkflow()
+    {
+        var data = new TheoryData<string>();
+        foreach (var workflow in ProjectGenerator.KnownWorkflows) data.Add(workflow);
+        return data;
+    }
+
     [Theory]
-    [InlineData("logo")]
-    [InlineData("harness")]
-    [InlineData("comic_studio")]
-    [InlineData("infographic")]
+    [MemberData(nameof(EveryWorkflow))]
     public void TestEveryWorkflowCarriesTheEngineOnlyRule(string workflow)
     {
         Assert.True(ProjectGenerator.Create(Options($"engine-{workflow}", o => o.Workflow = workflow)));
@@ -897,6 +907,49 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.Contains("Two things go through the MCP server", instructions, StringComparison.Ordinal);
         Assert.Contains("Do not write SVG, HTML or any image file yourself", instructions, StringComparison.Ordinal);
         Assert.Contains("Do not hand-write files into `scripts/`", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// And the blank-brief rule, for the same reason.
+    /// </summary>
+    /// <remarks>
+    /// Every workflow can be started from the web form with an empty brief, so every one of them
+    /// needs an answer to it. Left to each template this drifts, and the failure is quiet: an agent
+    /// invents the half nobody supplied and presents the invention as though it had been asked for.
+    /// </remarks>
+    [Theory]
+    [MemberData(nameof(EveryWorkflow))]
+    public void TestEveryWorkflowSaysWhatToDoWithABlankBrief(string workflow)
+    {
+        Assert.True(ProjectGenerator.Create(Options($"blank-{workflow}", o => o.Workflow = workflow)));
+
+        var instructions = File.ReadAllText(Path.Combine(root, $"blank-{workflow}", "GEMINI.md"));
+
+        Assert.Contains("If the brief is blank", instructions, StringComparison.Ordinal);
+        Assert.Contains("Ask, and ask with options", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// And how to write the deliverables, which is a host trap rather than a workflow one.
+    /// </summary>
+    /// <remarks>
+    /// Antigravity's <c>write_to_file</c> is scoped to the host's own artifact store and refuses a
+    /// path inside the project — so the natural tool for "write `artwork.js`" is the wrong one, and
+    /// a live painting run lost a turn discovering it. Every workflow asks for plain files in the
+    /// project directory, so every one of them needs the warning.
+    /// </remarks>
+    [Theory]
+    [MemberData(nameof(EveryWorkflow))]
+    public void TestEveryWorkflowSaysHowToWriteItsDeliverables(string workflow)
+    {
+        Assert.True(ProjectGenerator.Create(Options($"deliv-{workflow}", o => o.Workflow = workflow)));
+
+        var instructions = File.ReadAllText(Path.Combine(root, $"deliv-{workflow}", "GEMINI.md"));
+
+        Assert.Contains("ordinary file-writing tool", instructions, StringComparison.Ordinal);
+        Assert.Contains("is not a valid artifact path", instructions, StringComparison.Ordinal);
         Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
     }
 
@@ -1101,15 +1154,49 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.False(ProjectGenerator.Create(Options("badflow", o => o.Workflow = workflow)));
 
     /// <summary>
-    /// The SDK decides every host filename, so an unrecognised one cannot be defaulted — guessing
-    /// would produce a project whose host silently finds no configuration at all.
+    /// The SDK decides every host filename, so an unrecognised one cannot be guessed at — that would
+    /// produce a project whose host silently finds no configuration at all. Omitting it is a
+    /// different thing from getting it wrong, and is covered below.
     /// </summary>
     [Theory]
     [InlineData("gemini")]
     [InlineData("antigravity")]
-    [InlineData("")]
+    [InlineData("claude-code")]
     public void TestUnknownSdkIsRefused(string sdk) =>
         Assert.False(ProjectGenerator.Create(Options("badsdk", o => o.Sdk = sdk)));
+
+    /// <summary>
+    /// The third positional is optional and defaults to Antigravity. Asserted on the *file set*
+    /// rather than on the manifest field, because the filenames are the only thing the SDK actually
+    /// decides — a manifest saying "agy" beside a CLAUDE.md would pass a field check and still be
+    /// the broken project this defaulting could produce.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TestOmittedSdkDefaultsToAntigravity(string sdk)
+    {
+        Assert.True(ProjectGenerator.Create(Options("nosdk", o => o.Sdk = sdk)));
+
+        var dir = Path.Combine(root, "nosdk");
+        Assert.True(File.Exists(Path.Combine(dir, "GEMINI.md")));
+        Assert.False(File.Exists(Path.Combine(dir, "CLAUDE.md")));
+        Assert.True(File.Exists(Path.Combine(dir, ".agents", "mcp_config.json")));
+        Assert.False(File.Exists(Path.Combine(dir, ".mcp.json")));
+    }
+
+    /// <summary>
+    /// Naming the SDK explicitly still works, and still decides the filenames.
+    /// </summary>
+    [Fact]
+    public void TestExplicitClaudeStillSelectsClaudeFiles()
+    {
+        Assert.True(ProjectGenerator.Create(Options("withsdk", o => o.Sdk = "claude")));
+
+        var dir = Path.Combine(root, "withsdk");
+        Assert.True(File.Exists(Path.Combine(dir, "CLAUDE.md")));
+        Assert.False(File.Exists(Path.Combine(dir, "GEMINI.md")));
+    }
 
     /// <summary>
     /// The orchestrator builds Antigravity SDK configurations only, so this combination is reported

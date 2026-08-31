@@ -175,8 +175,9 @@ start anything. `Environment.ProcessPath` is the apphost only when launched as `
 The signature changed, and so did the thing it branches on:
 
 ```bash
-polson create-project <directory> <id> <sdk> [--standalone] [--workflow W] [--type T] [--brief PATH | --prompt TEXT]
-polson create-project projects acme agy --standalone
+polson create-project <directory> <id> [sdk] [--standalone] [--workflow W] [--type T] [--brief PATH | --prompt TEXT]
+polson create-project projects acme --standalone          # sdk omitted -> agy
+polson create-project projects acme claude --standalone
 ```
 
 `<directory>` is now the **parent** — one directory holds many projects, and the id names the one

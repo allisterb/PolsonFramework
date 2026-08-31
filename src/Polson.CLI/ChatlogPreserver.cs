@@ -160,14 +160,20 @@ internal static class ChatlogPreserver
     }
 
     /// <summary>
-    /// Copies the uncompacted transcript too, when the host keeps one beside the active file.
+    /// Copies the other transcript too, when the host keeps one beside the file it named.
     /// </summary>
     /// <remarks>
     /// Antigravity writes <c>transcript_full.jsonl</c> next to <c>transcript.jsonl</c>, and the
-    /// difference is not cosmetic: the active file is <i>compacted</i>, so a long session drops
-    /// earlier exchanges from it. Preserving only that one would keep exactly the part of a run a
-    /// reader already remembers and lose the reasoning from the beginning, which is usually where a
+    /// difference is not cosmetic: one of them is <i>compacted</i>, so a long session drops earlier
+    /// exchanges from it. Preserving only that one would keep exactly the part of a run a reader
+    /// already remembers and lose the reasoning from the beginning, which is usually where a
     /// direction was chosen.
+    /// <para>
+    /// <b>Either file can be the one the payload names</b>, which is why the guard below matters: a
+    /// real run was observed where the payload named <c>transcript_full.jsonl</c> itself, and the
+    /// two destinations then held byte-identical copies of it while the other transcript was never
+    /// preserved at all.
+    /// </para>
     /// </remarks>
     private static void PreserveUncompacted(string source, string events, string session)
     {
@@ -175,7 +181,11 @@ internal static class ChatlogPreserver
         if (directory is null) return;
 
         var full = Path.Combine(directory, "transcript_full.jsonl");
-        if (!File.Exists(full) || string.Equals(full, source, StringComparison.OrdinalIgnoreCase)) return;
+
+        // Compared as canonical paths rather than as strings. The payload names the transcript with
+        // forward slashes and Path.Combine joins with the platform separator, so a string comparison
+        // never matched and the same file was copied under both names.
+        if (!File.Exists(full) || SamePath(full, source)) return;
 
         try
         {
@@ -186,6 +196,23 @@ internal static class ChatlogPreserver
         catch (Exception ex)
         {
             Runtime.Warn("preserve-chatlog: uncompacted copy skipped: {0}", ex.Message);
+        }
+    }
+
+    /// <summary>Whether two paths name the same file, whatever separators they were written with.</summary>
+    /// <remarks>
+    /// Falls back to comparing the strings if either path is malformed. This only decides whether to
+    /// make a second copy, so it must never be the thing that fails the hook.
+    /// </remarks>
+    private static bool SamePath(string left, string right)
+    {
+        try
+        {
+            return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
         }
     }
 

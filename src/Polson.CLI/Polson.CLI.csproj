@@ -29,7 +29,10 @@
     <EmbeddedResource Include="ProjectTemplate\**\*.md" />
   </ItemGroup>
 
-  <Target Name="CopyOutputToBin" AfterTargets="Build">
+  <!-- Skippable, because `bin/cli` is what a running agent session has loaded: while one is open the
+       copy fails and takes every build and test run with it, including ones that never needed the
+       deployed copy. `dotnet test -p:SkipCopyToBin=true` builds and tests without touching it. -->
+  <Target Name="CopyOutputToBin" AfterTargets="Build" Condition="'$(SkipCopyToBin)' != 'true'">
     <ItemGroup>
       <!-- Grab all files in the current project's build output directory -->
       <BuildOutputFiles Include="$(TargetDir)**\*.*" />

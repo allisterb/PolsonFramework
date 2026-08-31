@@ -33,12 +33,12 @@
         </select>
       </div>
       <div>
-        <label for="kind">Type <span class="hint">(harness only)</span></label>
+        <label for="kind">Type <span class="hint">(where the workflow offers one)</span></label>
         <select id="kind" name="kind">
           <option value="">—</option>
-          <option value="image" {{ 'selected' if form.kind == 'image' }}>image</option>
-          <option value="infographic" {{ 'selected' if form.kind == 'infographic' }}>infographic</option>
-          <option value="logo" {{ 'selected' if form.kind == 'logo' }}>logo</option>
+          {% for t in all_types %}
+            <option value="{{ t }}" {{ 'selected' if form.kind == t }}>{{ t }}</option>
+          {% endfor %}
         </select>
       </div>
     </div>
@@ -141,8 +141,10 @@
   sync();
 })();
 
-// Only the harness workflow takes a type. Disabling the control is what makes that legible without
-// a round trip; the server refuses the combination either way, so this is convenience, not a check.
+// Not every workflow takes a type, and the ones that do offer different ones. The option list holds
+// every type any workflow offers; this hides the ones the selected workflow does not, and disables
+// the control entirely when it offers none. The server refuses a bad combination either way, so this
+// is convenience rather than a check.
 (function () {
   const workflow = document.getElementById('workflow');
   const kind = document.getElementById('kind');

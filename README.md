@@ -23,6 +23,14 @@ There are two ways to work with it. The **standalone web interface** is the whol
    Edit the file and set your Google Agent Platform API key and any other preferred settings.
    This is the only place the key lives — the MCP server and the orchestrator both read it, so the two halves of the studio cannot disagree about which key. It is gitignored, and a rebuild does not overwrite it.
 
+   | Setting | Default | What it does |
+   | :--- | :--- | :--- |
+   | `ApiKeys:GoogleAgentPlatform` | — | The Agent Platform key. Leave it empty and asset requisition is disabled: `Assets.*` refuses in a way a script can read, and the server says so at startup. |
+   | `Assets:Model` | `gemini-2.5-flash-image` | The image model requisition calls. |
+   | `Assets:Budget` | `120` | **Generations allowed per server run** — a hard ceiling, so a stuck retry loop cannot spend without bound. It is per *run*, not per day. A painting is built from many surfaces, which is why the default is not small; lower it if you are paying per image and want a tighter leash, and note that a value that is not a positive whole number is warned about and ignored rather than silently becoming zero. Cache hits and refusals cost nothing against it. |
+   | `Assets:CacheDir` | `<project>/.polson/assets` | Where requisitions are cached by content. A repeated requisition is free and instant. |
+   | `Server:DefaultTimeoutSeconds` | `30` | How long one `ExecuteScript` may run. |
+
 3. Make a directory for your projects (e.g. `mkdir projects`). Projects hold everything a run produces and are independent of the repo; keep it outside the checkout, or add it to `.gitignore`.
 
 ### Workflows
@@ -33,6 +41,9 @@ Both interfaces start from a workflow, which decides the stages the agent works 
 | :--- | :--- | :--- |
 | `logo` | `antique`, `geometric`, `modern` | A logo or wordmark, with scale and monochrome stress tests. |
 | `infographic` | `blueprint`, `brutalist`, `editorial`, `specimen`, `swiss` | A data graphic, from the numbers in the brief. |
+| `drawing` | `review`, `seed` | A drawing made turn by turn with you, in pencil and pen. No colour. `seed` opens from a sketch of yours in `seed/`. |
+| `comic` | `review`, `seed` | A comic panel by one agent through pencil, colour, ink and self-critique. `seed` reproduces a reference in `reference_images/`. |
+| `painting` | — | A painted scene. The only workflow that requisitions material — surfaces from a cloud model, form drawn by the toolkit. |
 | `comic_studio` | — | A comic page. Multi-agent: penciler, colorist, inker, critic — colour before ink, deliberately. |
 | `harness` | `image`, `infographic`, `logo` | A test harness rather than a deliverable — for exercising the toolkit. |
 

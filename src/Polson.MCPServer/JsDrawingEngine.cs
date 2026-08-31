@@ -97,6 +97,10 @@ public partial class JsDrawingEngine : Runtime
                 options.TimeoutInterval(TimeSpan.FromSeconds(ScriptTimeoutSeconds));
                 options.LimitRecursion(100);
                 options.MaxStatements(MaxStatements);
+
+                // A script names an enum with a string, because that is what the SDK reference
+                // documents. See EnumStringTypeConverter.
+                options.SetTypeConverter(e => new EnumStringTypeConverter(e));
             });
 
             // Per-session scratch storage

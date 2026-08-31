@@ -22,7 +22,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from orchestrator import director as director_mod
 from orchestrator.broker import Broker
+from orchestrator.events import EventLog
 from studio import app as app_mod
 from studio import projects as projects_mod
 from studio.runs import Registry, Run, StudioError
@@ -262,6 +264,40 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(self.client.get("/static/studio.css").status_code, 200)
 
 
+class WorkflowCatalogueTests(unittest.TestCase):
+    """`WORKFLOWS` is a closed set, so it has to be the *same* closed set the generator ships.
+
+    It is deliberately hardcoded rather than discovered — no visitor string should ever select a
+    template by name — but a hardcoded mirror drifts, and it drifts silently: a workflow added to
+    `ProjectTemplate/` simply never appears in the form, and nobody finds out until someone asks why
+    the option is missing. This compares the two and names the difference.
+    """
+
+    #: The generator discovers a workflow by the presence of this file, and its types by `type.*.md`.
+    TEMPLATES = Path(__file__).resolve().parents[3] / "src" / "Polson.CLI" / "ProjectTemplate"
+
+    def shipped(self) -> dict[str, tuple[str, ...]]:
+        """What `create-project` would offer, read the way the generator reads it."""
+        found = {}
+        for d in sorted(self.TEMPLATES.iterdir()):
+            # `_shared` carries no instructions.md, which is the only thing discovery looks for.
+            if not d.is_dir() or not (d / "instructions.md").is_file():
+                continue
+            types = sorted(f.name[len("type."):-len(".md")] for f in d.glob("type.*.md"))
+            found[d.name] = tuple(types)
+        return found
+
+    def test_the_form_offers_exactly_the_shipped_workflows(self):
+        if not self.TEMPLATES.is_dir():
+            self.skipTest("template tree not present; running outside a source checkout")
+
+        self.assertEqual(self.shipped(), dict(projects_mod.WORKFLOWS))
+
+    def test_all_types_is_the_union_of_every_workflows_types(self):
+        union = sorted({t for types in projects_mod.WORKFLOWS.values() for t in types})
+        self.assertEqual(union, list(projects_mod.ALL_TYPES))
+
+
 class BriefValidationTests(unittest.TestCase):
     """What the form is allowed to send, checked before anything is spawned."""
 
@@ -285,15 +321,26 @@ class BriefValidationTests(unittest.TestCase):
         with self.assertRaises(StudioError):
             projects_mod.check(self.root, "acme", "../_shared", "")
 
-    def test_the_harness_needs_a_type_and_the_others_refuse_one(self):
-        with self.assertRaises(StudioError):
-            projects_mod.check(self.root, "acme", "harness", "")
+    def test_a_type_the_workflow_does_not_offer_is_refused(self):
+        """Only a wrong type is refused — omitting one is legal, as it is for `create-project`."""
         with self.assertRaises(StudioError):
             projects_mod.check(self.root, "acme", "harness", "sculpture")
         with self.assertRaises(StudioError):
+            # A real type, but of another workflow: `image` belongs to the harness, not to logo.
             projects_mod.check(self.root, "acme", "logo", "image")
+        with self.assertRaises(StudioError):
+            # `painting` offers none at all, so naming any is wrong rather than merely unmatched.
+            projects_mod.check(self.root, "acme", "painting", "seed")
 
         projects_mod.check(self.root, "acme", "harness", "infographic")
+        projects_mod.check(self.root, "acme", "logo", "geometric")
+        projects_mod.check(self.root, "acme", "drawing", "seed")
+
+    def test_omitting_the_type_is_legal_whatever_the_workflow_offers(self):
+        """The generator defaults it or renders no type section; neither is an error to refuse."""
+        for workflow in ("logo", "harness", "drawing", "comic", "painting"):
+            with self.subTest(workflow=workflow):
+                projects_mod.check(self.root, "acme", workflow, "")
 
     def test_an_existing_project_is_not_overwritten(self):
         """Nothing here writes into a directory that already holds someone's work."""
@@ -410,6 +457,66 @@ class BriefRouteTests(unittest.TestCase):
         self.assertEqual(page.headers["location"], "/")
         self.assertTrue((self.root / "ferry" / "project.json").is_file())
         self.assertIsNone(self.client.app.state.registry.active)
+
+
+class QuestionSelectionTests(unittest.IsolatedAsyncioTestCase):
+    """A chosen option has to survive the round trip, and it silently did not.
+
+    The runner validates a reply against the agent's own option ids *and* the option texts it
+    published. The page was posting a synthetic `opt1`, which matches neither — so a click validated
+    as nothing, fell through to the free-text branch, found none, and settled the question as a skip.
+    Every path returned 200 and the card showed as sent, while the agent was told nobody answered and
+    chose the subject of the drawing itself.
+
+    Two tests, because the bug lived in the seam: one pins the runner's contract, the other pins that
+    the page posts something satisfying it.
+    """
+
+    class _Entry:
+        """What the SDK hands the hook: options carrying an id and a text."""
+
+        class _Option:
+            def __init__(self, text: str) -> None:
+                self.id, self.text = "", text
+
+        def __init__(self, question: str, options: list[str]) -> None:
+            self.question = question
+            self.options = [self._Option(o) for o in options]
+            self.is_multi_select = False
+
+    async def _settled(self, reply_with: dict):
+        """Opens a question, replies to it the way the route does, and returns the response."""
+        published = []
+        log = EventLog(Path(tempfile.mkdtemp(prefix="polson-q-")) / "director.jsonl", "director")
+        director = director_mod.WebDirector(log, published.append, timeout=5.0)
+        entry = self._Entry("Which subject?", ["A street scene", "A portrait"])
+
+        task = asyncio.create_task(director.answer(entry, [o.text for o in entry.options]))
+        await asyncio.sleep(0)
+        opened = next(e for e in published if e["type"] == "question.open")
+        self.assertTrue(director.reply(opened["id"], **reply_with))
+        return await task
+
+    async def test_an_option_chosen_by_its_text_is_a_selection_not_a_skip(self):
+        response = await self._settled({"selected": ["A street scene"]})
+
+        self.assertFalse(response.skipped)
+        self.assertEqual(["A street scene"], list(response.selected_option_ids))
+
+    async def test_an_option_the_client_invented_is_still_refused(self):
+        """The narrowing that caused this is correct and stays: a made-up id must not choose."""
+        response = await self._settled({"selected": ["opt1"]})
+
+        self.assertTrue(response.skipped)
+
+    def test_the_page_posts_the_option_text_rather_than_a_synthetic_id(self):
+        source = (Path(app_mod.__file__).parent / "templates" / "run.html").read_text(encoding="utf-8")
+        button = re.search(r"<button type=\"submit\" name=\"option\" value=\"([^\"]*)\"", source)
+
+        self.assertIsNotNone(button, "the question card no longer renders an option button")
+        self.assertEqual("${esc(text)}", button.group(1),
+                         "the option button must post the option's own text; a synthetic id "
+                         "validates as nothing and settles the question as a skip")
 
 
 class DirectorRouteTests(unittest.TestCase):

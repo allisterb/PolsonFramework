@@ -4,7 +4,7 @@
   },
   "Assets": {
     "Model": "gemini-2.5-flash-image",
-    "Budget": 12,
+    "Budget": 120,
     "CacheDir": ""
   },
   "Server": {

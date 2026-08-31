@@ -74,7 +74,7 @@ The argument is the directory that **holds** projects, not a project. It serves 
 
 The front page has a brief form — a project name, a workflow, a type, and the brief itself: what you want made and anything it must respect. *Create and start* generates the project and begins a run; *Create only* leaves it for later. Projects already in the directory are listed below the form and can be started or continued from there. Nothing starts an agent until you press a button.
 
-Everything the form creates is a **standalone** project, which is what lets Polson own the tool policy and host the agent itself. A managed project in the same directory is still listed, but greyed out and labelled *managed — its host owns tool policy, so the orchestrator will not run it*. Open that one with your agent host instead; see below.
+Projects made elsewhere show up here too, and a project generated for a desktop host can be started from this page without being regenerated — every Antigravity project carries what the orchestrator needs, whichever host it was made for. Only a project with no tool policy at all is greyed out, with the reason.
 
 ### The run page
 
@@ -121,7 +121,9 @@ Polson can also be run inside Google Antigravity CLI or Desktop or IDE, or Claud
 
 3. Open the project directory with your agent host and tell it to begin. It reads its own instructions file, works through the workflow's stages, and draws through the Polson MCP server, which the generated wiring already points at your `bin/cli`.
 
-**The host owns tool policy in a managed project.** That is what "managed" means: Polson writes the permissions file your host expects, but cannot enforce it or check that it was honoured. Image generation is denied there and stated again as a rule in the instructions, because an entry a host does not recognise is silently inert and indistinguishable from one being enforced. If you want Polson to own the policy, generate the project with `--standalone` and run it with the interfaces above.
+**The host owns tool policy while the host is running it.** That is what "managed" means: Polson writes the permissions file your host expects, but cannot enforce it or check that it was honoured. Image generation is denied there and stated again as a rule in the instructions, because an entry a host does not recognise is silently inert and indistinguishable from one being enforced.
+
+**The profile is a label, not a gate.** Every Antigravity project — however it was generated — carries what the orchestrator needs, so you can run the same directory from the browser or the terminal above and Polson will own the policy for that run. `--standalone` only changes which way the project is set up for; it does not close the other door. Nothing needs regenerating to switch.
 
 ## Reading a run back
 

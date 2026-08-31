@@ -309,8 +309,14 @@ def discover(root: Path) -> list[dict[str, str]]:
             # A project that has run before will *continue* rather than start over, which changes
             # what a useful opening prompt is. The form has to say so before the turn is spent.
             entry["session"] = bool(data.get("conversationId"))
-            if entry["profile"] != "standalone":
-                entry["why"] = "managed — its host owns tool policy, so the orchestrator will not run it"
+
+            # Runnability is decided by the same thing `project.load` decides it by — the presence of
+            # a tool policy this side can read — and not by the `profile` label, which since every
+            # Antigravity project carries that file records only what the project was generated for.
+            # Two sources of truth for one question is how a page comes to disagree with the runner.
+            if not (manifest.parent / "agent.config.json").is_file():
+                entry["why"] = ("no agent.config.json — the orchestrator would have no tool policy "
+                                "for it. Regenerate it, or open it with a desktop host")
         except Exception as exc:  # noqa: BLE001
             entry["workflow"] = entry["profile"] = "?"
             entry["session"] = False

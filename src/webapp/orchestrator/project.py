@@ -75,7 +75,12 @@ class Project:
 
     @property
     def is_standalone(self) -> bool:
-        """Standalone means the Python orchestrator supplies the human; managed means a desktop host does."""
+        """What the project was generated for — a label, not a capability.
+
+        Every Antigravity project carries `agent.config.json` and can be run either way, so this
+        does not decide whether the orchestrator will run it: the presence of that file does, and
+        `load` checks it. Use this for display, never as a gate.
+        """
         return self.profile == "standalone"
 
     @property
@@ -138,14 +143,17 @@ def load(directory: Path) -> Project:
                            f"SDK configurations only.\n"
                            f"       Open it with that host, or generate an 'agy' project to run here.")
 
-    # A managed project deliberately carries no agent.config.json — its host owns tool policy. Running
-    # one here would silently mean *no* denied tools, including generate_image, which is the one
-    # control the whole studio's premise rests on. Refusing beats running wide open.
+    # Without this file there are no denied tools — including generate_image, the one control the
+    # whole studio's premise rests on — so refusing beats running wide open.
+    #
+    # Every Antigravity project now carries it, whatever profile it was generated for, so this is no
+    # longer the managed/standalone line: it is a project generated before that change, or one for
+    # another host. Either way the fix is to regenerate, and no flag is needed to get it.
     policy_file = root / "agent.config.json"
     if not policy_file.exists():
-        raise ProjectError(f"{root} has no agent.config.json, so it is a managed project — its host "
-                           f"owns tool policy, and running it here would apply no policy at all.\n"
-                           f"       Regenerate it with --standalone to run it from the orchestrator.")
+        raise ProjectError(f"{root} has no agent.config.json, so the orchestrator has no tool policy "
+                           f"for it and would run the agent with none at all.\n"
+                           f"       Regenerate it to add one:  polson create-project <parent> {root.name} agy")
     policy = _read_json(policy_file, "the agent config")
 
     instructions = root / "GEMINI.md"

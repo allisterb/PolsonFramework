@@ -12,6 +12,7 @@
     <PackageReference Include="Google.Cloud.AIPlatform.V1" Version="3.76.0" />
     <PackageReference Include="Google.GenAI" Version="1.20.0" />
     <PackageReference Include="SkiaSharp" Version="4.148.0" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.148.0" />
   </ItemGroup>
 
   <ItemGroup>

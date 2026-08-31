@@ -408,16 +408,31 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaises(project_mod.ProjectError):
             project_mod.load(self.dir)
 
-    def test_a_managed_project_is_refused_rather_than_run_with_no_policy(self):
+    def test_a_project_with_no_policy_is_refused_rather_than_run_wide_open(self):
         """No agent.config.json means no denied tools — including generate_image, the one control
         the studio's premise rests on. Running wide open is worse than not running."""
         (self.dir / "agent.config.json").unlink()
-        self.write("project.json", {"schema": 1, "id": "acme", "workflow": "logo", "sdk": "agy",
-                                    "profile": "managed"})
 
         with self.assertRaises(project_mod.ProjectError) as caught:
             project_mod.load(self.dir)
-        self.assertIn("--standalone", str(caught.exception))
+        self.assertIn("no tool policy", str(caught.exception))
+
+    def test_the_managed_label_does_not_decide_whether_it_runs(self):
+        """The file decides, not the manifest.
+
+        Every Antigravity project carries `agent.config.json` whatever profile it was generated for,
+        so one file set runs under either host. `profile` survives as a record of what it was made
+        for, and a project labelled managed is refused only if the policy is genuinely absent —
+        which is what stops a label and a file from disagreeing about the same question.
+        """
+        self.write("project.json", {"schema": 1, "id": "acme", "workflow": "logo", "sdk": "agy",
+                                    "profile": "managed"})
+
+        loaded = project_mod.load(self.dir)
+
+        self.assertEqual(loaded.profile, "managed")
+        self.assertFalse(loaded.is_standalone)
+        self.assertIn("generate_image", loaded.denied_tools)
 
     def test_the_conversation_id_is_written_back_for_resume(self):
         p = project_mod.load(self.dir)

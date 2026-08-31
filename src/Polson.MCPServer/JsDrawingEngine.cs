@@ -478,10 +478,41 @@ public partial class JsDrawingEngine : Runtime
     /// hitting it has no way to tell how far over budget it was. A run reported exactly this —
     /// three scripts lost to it — and noted that the fix is usually a different loop *shape* rather
     /// than less work, since reading each pixel once and classifying it beats one pass per class.
+    /// <para>
+    /// The second case is a failure the script cannot cause and cannot fix. A missing native library
+    /// surfaces as <c>TypeInitializationException</c>, whose message names the type that failed and
+    /// nothing else — the reason is in the inner exception, and returning only the outer message
+    /// threw it away. A Linux run cost <em>27 tool calls and a compaction</em> to that: told only
+    /// "the type initializer for 'SkiaSharp.SKImageInfo' threw an exception", the agent went looking
+    /// at fonts, at Snap versus Canvas2D, and at the documentation, for a file that was not on disk.
+    /// Naming the cause and saying plainly that no script can work around it is what stops the next
+    /// one spending a run the same way.
+    /// </para>
     /// </remarks>
-    private static string Explain(Exception ex)
+    internal static string Explain(Exception ex)
     {
         var message = ex.Message ?? string.Empty;
+
+        // Anywhere in the chain: the load failure is usually two or three levels under whatever the
+        // engine surfaced, and which level it sits at is not worth depending on.
+        for (var cause = ex; cause is not null; cause = cause.InnerException)
+        {
+            if (cause is DllNotFoundException or BadImageFormatException)
+            {
+                return $"{message} The underlying failure is: {cause.Message} " +
+                    "A native library the drawing engine depends on is missing or unusable for this " +
+                    "platform, which is a problem with how the server was built or deployed rather " +
+                    "than with this script. No script can work around it and every drawing call will " +
+                    "fail the same way, so stop and report it rather than trying another API.";
+            }
+        }
+
+        // Any other initializer failure: at least say why, instead of only which type.
+        if (ex is TypeInitializationException && ex.InnerException is { } reason)
+        {
+            return $"{message} The reason is: {reason.Message}";
+        }
+
         if (!message.Contains("maximum number of statements", StringComparison.OrdinalIgnoreCase))
         {
             return message;

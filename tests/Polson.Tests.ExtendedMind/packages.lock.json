@@ -388,6 +388,11 @@
           "SkiaSharp.NativeAssets.macOS": "4.148.0"
         }
       },
+      "SkiaSharp.NativeAssets.Linux": {
+        "type": "Transitive",
+        "resolved": "4.148.0",
+        "contentHash": "diba2vLeoKmWVkVTdXYOG14c7+s5FsH/AQZ5UPiFLRwLKgrCQNJPLKw8q60HzfOcJt+t/blv+1xkinqd5ZjX5A=="
+      },
       "SkiaSharp.NativeAssets.macOS": {
         "type": "Transitive",
         "resolved": "4.148.0",
@@ -471,8 +476,9 @@
         "dependencies": {
           "Google.Cloud.AIPlatform.V1": "[3.76.0, )",
           "Google.GenAI": "[1.20.0, )",
-          "Polson.Runtime": "[1.0.0, )",
-          "SkiaSharp": "[4.148.0, )"
+          "Polson.Runtime": "[0.1.0, )",
+          "SkiaSharp": "[4.148.0, )",
+          "SkiaSharp.NativeAssets.Linux": "[4.148.0, )"
         }
       },
       "polson.runtime": {

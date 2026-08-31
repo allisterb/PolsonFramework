@@ -76,4 +76,65 @@ public class ExecutionLimitTests : TestsRuntime
         Assert.DoesNotContain("bitmap.diff", result.Error ?? string.Empty, StringComparison.Ordinal);
     }
     #endregion
+
+    #region A failure no script can cause or fix
+    /// <summary>
+    /// A missing native library says why, not only which type failed to initialise.
+    /// </summary>
+    /// <remarks>
+    /// A Linux run met exactly this: SkiaSharp's Linux native asset was not in the build, so the
+    /// first drawing call threw <c>TypeInitializationException</c>, whose message names the type and
+    /// stops. Returning only that message discarded the <c>DllNotFoundException</c> underneath, and
+    /// the agent spent <em>27 tool calls and a compaction</em> investigating fonts, Snap versus
+    /// Canvas2D, and the SDK documentation — every one of them unable to help, because the file was
+    /// simply not on disk.
+    /// <para>
+    /// Constructed rather than provoked, unlike the statement-cap tests above: the enrichment keys
+    /// off the exception <em>type</em> rather than any wording, so the type is the contract, and the
+    /// alternative is a platform deliberately broken mid-test.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestAMissingNativeLibraryIsNamedRatherThanHidden()
+    {
+        var buried = new TypeInitializationException("SkiaSharp.SKImageInfo",
+            new DllNotFoundException("Unable to load shared library 'libSkiaSharp'."));
+
+        var error = JsDrawingEngine.Explain(buried);
+
+        // The cause, which the outer message never carries.
+        Assert.Contains("libSkiaSharp", error, StringComparison.Ordinal);
+
+        // And that it is nobody's script's fault, so the next agent stops instead of hunting.
+        Assert.Contains("native library", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("report it", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The cause is found however deep it is buried.</summary>
+    [Fact]
+    public void TestTheLoadFailureIsFoundThroughNestedExceptions()
+    {
+        var nested = new InvalidOperationException("script failed",
+            new TypeInitializationException("SkiaSharp.SKImageInfo",
+                new DllNotFoundException("Unable to load shared library 'libSkiaSharp'.")));
+
+        Assert.Contains("libSkiaSharp", JsDrawingEngine.Explain(nested), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An initializer that failed for some other reason still says which, rather than only which
+    /// type — the outer message alone is never enough to act on.
+    /// </summary>
+    [Fact]
+    public void TestAnyInitializerFailureReportsItsReason()
+    {
+        var other = new TypeInitializationException("Some.Type",
+            new InvalidOperationException("a config value was missing"));
+
+        var error = JsDrawingEngine.Explain(other);
+
+        Assert.Contains("a config value was missing", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("native library", error, StringComparison.OrdinalIgnoreCase);
+    }
+    #endregion
 }

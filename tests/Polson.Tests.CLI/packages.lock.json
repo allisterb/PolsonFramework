@@ -659,6 +659,11 @@
           "SkiaSharp.NativeAssets.macOS": "4.148.0"
         }
       },
+      "SkiaSharp.NativeAssets.Linux": {
+        "type": "Transitive",
+        "resolved": "4.148.0",
+        "contentHash": "diba2vLeoKmWVkVTdXYOG14c7+s5FsH/AQZ5UPiFLRwLKgrCQNJPLKw8q60HzfOcJt+t/blv+1xkinqd5ZjX5A=="
+      },
       "SkiaSharp.NativeAssets.macOS": {
         "type": "Transitive",
         "resolved": "4.148.0",
@@ -805,23 +810,24 @@
         "type": "Project",
         "dependencies": {
           "CommandLineParser": "[2.9.1, )",
-          "Polson.MCPServer": "[1.0.0, )",
-          "Polson.Runtime": "[1.0.0, )",
+          "Polson.MCPServer": "[0.1.0, )",
+          "Polson.Runtime": "[0.1.0, )",
           "Spectre.Console": "[0.54.0, )"
         }
       },
       "polson.drawing.skia": {
         "type": "Project",
         "dependencies": {
-          "Polson.Drawing.Svg": "[1.0.0, )",
-          "Polson.Runtime": "[1.0.0, )",
-          "SkiaSharp": "[4.148.0, )"
+          "Polson.Drawing.Svg": "[0.1.0, )",
+          "Polson.Runtime": "[0.1.0, )",
+          "SkiaSharp": "[4.148.0, )",
+          "SkiaSharp.NativeAssets.Linux": "[4.148.0, )"
         }
       },
       "polson.drawing.svg": {
         "type": "Project",
         "dependencies": {
-          "Polson.Runtime": "[1.0.0, )",
+          "Polson.Runtime": "[0.1.0, )",
           "Svg.Custom": "[5.2.1, )",
           "Svg.Model": "[5.2.1, )",
           "Svg.Skia": "[5.2.1, )"
@@ -832,8 +838,9 @@
         "dependencies": {
           "Google.Cloud.AIPlatform.V1": "[3.76.0, )",
           "Google.GenAI": "[1.20.0, )",
-          "Polson.Runtime": "[1.0.0, )",
-          "SkiaSharp": "[4.148.0, )"
+          "Polson.Runtime": "[0.1.0, )",
+          "SkiaSharp": "[4.148.0, )",
+          "SkiaSharp.NativeAssets.Linux": "[4.148.0, )"
         }
       },
       "polson.htmlparser": {
@@ -850,11 +857,11 @@
           "Microsoft.Extensions.Hosting": "[10.0.5, )",
           "ModelContextProtocol": "[1.4.0, )",
           "ModelContextProtocol.AspNetCore": "[1.4.0, )",
-          "Polson.Drawing.Skia": "[1.0.0, )",
-          "Polson.Drawing.Svg": "[1.0.0, )",
-          "Polson.ExtendedMind": "[1.0.0, )",
-          "Polson.HtmlParser": "[1.0.0, )",
-          "Polson.Runtime": "[1.0.0, )"
+          "Polson.Drawing.Skia": "[0.1.0, )",
+          "Polson.Drawing.Svg": "[0.1.0, )",
+          "Polson.ExtendedMind": "[0.1.0, )",
+          "Polson.HtmlParser": "[0.1.0, )",
+          "Polson.Runtime": "[0.1.0, )"
         }
       },
       "polson.runtime": {

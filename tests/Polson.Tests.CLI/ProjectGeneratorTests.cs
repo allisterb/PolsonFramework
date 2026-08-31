@@ -294,36 +294,81 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
-    /// Standalone adds to the managed set and takes nothing away, so the file set itself says which
-    /// kind of project this is — which a reader can check, unlike a flag inside a JSON file.
+    /// Both profiles generate the <em>same</em> file set, so one project runs under either host.
     /// </summary>
+    /// <remarks>
+    /// Standalone used to add <c>agent.config.json</c>, which meant choosing at generation time how
+    /// the project would be run and regenerating it if you chose wrong — and since that file is what
+    /// <c>project.load</c> keys on, choosing wrong was only discovered when the orchestrator refused
+    /// the project. The profile survives as a label for what it was made for, not as a gate.
+    /// <para>
+    /// The two tool policies still differ, and deliberately: see
+    /// <see cref="TestTheHostKeepsTheManagedPolicyWhileOursCarriesTheStandaloneOne"/>. Only the file
+    /// <em>set</em> is uniform.
+    /// </para>
+    /// </remarks>
     [Fact]
-    public void TestStandaloneIsASupersetOfManaged()
+    public void TestBothProfilesGenerateTheSameFileSet()
     {
         Assert.True(ProjectGenerator.Create(Options("sup-managed")));
         Assert.True(ProjectGenerator.Create(Options("sup-standalone", o => o.Standalone = true)));
 
-        var managed = FileSet("sup-managed");
-        var standalone = FileSet("sup-standalone");
+        Assert.Equal(FileSet("sup-managed"), FileSet("sup-standalone"));
+    }
 
-        Assert.Empty(managed.Except(standalone));
-        Assert.Equal(["agent.config.json"], standalone.Except(managed));
+    /// <summary>
+    /// The orchestrator's config ships in every Antigravity project, including managed ones.
+    /// </summary>
+    [Fact]
+    public void TestEveryAgyProjectCarriesThePolicyWhateverItsProfile()
+    {
+        Assert.True(ProjectGenerator.Create(Options("policy-managed")));
+
+        Assert.True(File.Exists(Path.Combine(root, "policy-managed", "agent.config.json")));
+    }
+
+    /// <summary>
+    /// A Claude project gets none of it, because the orchestrator refuses a non-Antigravity project
+    /// regardless — so the file would be one that nothing ever reads, which is the trap it exists to
+    /// avoid rather than an instance of it.
+    /// </summary>
+    [Fact]
+    public void TestAClaudeProjectCarriesNoOrchestratorConfig()
+    {
+        Assert.True(ProjectGenerator.Create(Options("policy-claude", o => o.Sdk = "claude")));
+
+        Assert.False(File.Exists(Path.Combine(root, "policy-claude", "agent.config.json")));
     }
 
     /// <summary>
     /// The session directories are <c>LocalAgentConfig.save_dir</c> and <c>app_data_dir</c> — a
-    /// Python SDK concept, meaningless when a desktop host owns the session.
+    /// Python SDK concept, so they follow the SDK rather than the profile: present wherever the
+    /// orchestrator can run, absent where it cannot.
     /// </summary>
     [Theory]
     [InlineData("session/save")]
     [InlineData("session/appdata")]
-    public void TestSessionDirectoriesAreStandaloneOnly(string dir)
+    public void TestSessionDirectoriesFollowTheSdkNotTheProfile(string dir)
     {
         Assert.True(ProjectGenerator.Create(Options("sess-managed")));
         Assert.True(ProjectGenerator.Create(Options("sess-standalone", o => o.Standalone = true)));
+        Assert.True(ProjectGenerator.Create(Options("sess-claude", o => o.Sdk = "claude")));
 
-        Assert.False(Directory.Exists(Path.Combine(root, "sess-managed", dir)));
+        Assert.True(Directory.Exists(Path.Combine(root, "sess-managed", dir)));
         Assert.True(Directory.Exists(Path.Combine(root, "sess-standalone", dir)));
+        Assert.False(Directory.Exists(Path.Combine(root, "sess-claude", dir)));
+    }
+
+    /// <summary>
+    /// <c>session/</c> is ignored wherever it can be created, so SDK state cannot be committed
+    /// because a flag was not passed. A reset that downgraded the profile once did exactly that.
+    /// </summary>
+    [Fact]
+    public void TestSessionStateIsIgnoredOnBothProfiles()
+    {
+        Assert.True(ProjectGenerator.Create(Options("ign-managed")));
+
+        Assert.Contains("session/", File.ReadAllText(Path.Combine(root, "ign-managed", ".gitignore")));
     }
 
     /// <summary>
@@ -610,15 +655,20 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.Equal(profile, r.GetProperty("profile").GetString());
     }
 
-    /// <summary>Resume belongs to the orchestrator, so a managed project carries no slot for it.</summary>
+    /// <summary>
+    /// Resume belongs to the orchestrator, so the slot exists wherever the orchestrator can run —
+    /// which is any Antigravity project now, and no Claude one.
+    /// </summary>
     [Fact]
-    public void TestConversationIdIsStandaloneOnly()
+    public void TestConversationIdFollowsTheSdkNotTheProfile()
     {
         Assert.True(ProjectGenerator.Create(Options("conv-managed")));
         Assert.True(ProjectGenerator.Create(Options("conv-standalone", o => o.Standalone = true)));
+        Assert.True(ProjectGenerator.Create(Options("conv-claude", o => o.Sdk = "claude")));
 
-        Assert.DoesNotContain("conversationId", File.ReadAllText(Path.Combine(root, "conv-managed", "project.json")));
+        Assert.Contains("conversationId", File.ReadAllText(Path.Combine(root, "conv-managed", "project.json")));
         Assert.Contains("conversationId", File.ReadAllText(Path.Combine(root, "conv-standalone", "project.json")));
+        Assert.DoesNotContain("conversationId", File.ReadAllText(Path.Combine(root, "conv-claude", "project.json")));
     }
     #endregion
 
@@ -713,16 +763,49 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
-    /// A managed project carries no policy file, because its host owns tool policy and ours would be
-    /// a file that reads as enforcement while enforcing nothing. The prohibition is carried in the
-    /// instructions instead, as a rule the agent must follow.
+    /// The file set is uniform; the two tool policies are not, and must not become so.
+    /// </summary>
+    /// <remarks>
+    /// <c>run_command</c> is denied because a public URL must not reach a shell — a fact about the
+    /// runtime, not about the file set. Each file is read by exactly one runtime: the host's by a
+    /// desktop host driven by a person at a keyboard, ours by the orchestrator that serves the web
+    /// app. So the denial belongs in ours and not in the host's, and the right policy then arrives
+    /// with whoever runs the project instead of being chosen when it was generated.
+    /// <para>
+    /// Copying the standalone denials into the managed host file would take the shell away from a
+    /// developer in their IDE for a reason that does not apply to them; leaving them out of ours
+    /// would hand a visitor a shell. This test fails on either mistake.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestTheHostKeepsTheManagedPolicyWhileOursCarriesTheStandaloneOne()
+    {
+        Assert.True(ProjectGenerator.Create(Options("split")));
+
+        var host = File.ReadAllText(Path.Combine(root, "split", ".agents", "settings.json"));
+        var ours = DeniedTools("split");
+
+        // Integrity, on both, whoever is running it: generate_image bypasses asset requisition.
+        Assert.Contains("generate_image", host, StringComparison.Ordinal);
+        Assert.Contains("generate_image", ours, StringComparison.Ordinal);
+
+        // Reachability, on ours alone.
+        Assert.DoesNotContain("run_command", host, StringComparison.Ordinal);
+        Assert.Contains("run_command", ours, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The config names the runtime that reads it, because it now ships in projects a desktop host
+    /// will run — where it is inert, and a policy file that reads as enforcement while enforcing
+    /// nothing is this project's oldest trap.
     /// </summary>
     [Fact]
-    public void TestManagedCarriesNoPolicyFile()
+    public void TestThePolicyFileNamesWhoReadsIt()
     {
-        Assert.True(ProjectGenerator.Create(Options("nopolicy")));
+        Assert.True(ProjectGenerator.Create(Options("readby")));
 
-        Assert.False(File.Exists(Path.Combine(root, "nopolicy", "agent.config.json")));
+        Assert.Contains("polson-orchestrator",
+            File.ReadAllText(Path.Combine(root, "readby", "agent.config.json")), StringComparison.Ordinal);
     }
 
     /// <summary>

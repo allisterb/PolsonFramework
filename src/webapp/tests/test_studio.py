@@ -29,11 +29,16 @@ from studio.runs import Registry, Run, StudioError
 
 
 def project_dir(root: Path, name: str, *, profile: str = "standalone", workflow: str = "logo",
-                conversation: str = "") -> Path:
+                conversation: str = "", policy: bool = True) -> Path:
     """A project directory of the shape `create-project` writes, without running the CLI.
 
     `conversation` stands for a project that has already run: the orchestrator records the id into
     `project.json` when a turn ends, and that is what makes the next run a continuation.
+
+    `policy` writes `agent.config.json`, which every Antigravity project now carries whatever its
+    profile — so it defaults on for a managed project too, matching what the generator emits. Pass
+    `policy=False` for the case that is genuinely unrunnable: a project generated before that
+    change, or for another host, where the orchestrator would have no tool policy at all.
     """
     project = root / name
     (project / "events").mkdir(parents=True)
@@ -44,7 +49,7 @@ def project_dir(root: Path, name: str, *, profile: str = "standalone", workflow:
         manifest["conversationId"] = conversation
     (project / "project.json").write_text(json.dumps(manifest), encoding="utf-8")
     (project / "GEMINI.md").write_text("# instructions", encoding="utf-8")
-    if profile == "standalone":
+    if policy:
         (project / "agent.config.json").write_text(
             json.dumps({"deniedTools": ["generate_image", "run_command"]}), encoding="utf-8")
     (project / ".agents").mkdir()
@@ -112,13 +117,26 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(found[0]["name"], "acme")
         self.assertEqual(found[0]["why"], "")
 
-    def test_a_managed_project_is_listed_with_the_reason_rather_than_hidden(self):
+    def test_a_project_with_no_policy_is_listed_with_the_reason_rather_than_hidden(self):
         """A project you cannot run is exactly the thing someone needs to see, and to see why."""
-        project_dir(self.root, "desktop", profile="managed")
+        project_dir(self.root, "desktop", profile="managed", policy=False)
         found = app_mod.discover(self.root)
 
         self.assertEqual(len(found), 1)
-        self.assertIn("managed", found[0]["why"])
+        self.assertIn("agent.config.json", found[0]["why"])
+
+    def test_a_managed_project_is_offered_because_the_file_set_is_the_same(self):
+        """The label is not the gate. The file is.
+
+        One file set runs under either host, so a project generated for a desktop host is startable
+        here too — the trap being that the page used to read `profile` while the runner read the
+        policy file, which is two answers to one question waiting to disagree.
+        """
+        project_dir(self.root, "desktop", profile="managed")
+        found = app_mod.discover(self.root)
+
+        self.assertEqual(found[0]["why"], "")
+        self.assertEqual(found[0]["profile"], "managed")
 
     def test_an_unreadable_manifest_reports_itself(self):
         project = self.root / "broken"
@@ -142,15 +160,15 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 
-    async def test_a_managed_project_is_refused_with_its_own_explanation(self):
+    async def test_a_project_with_no_policy_is_refused_with_its_own_explanation(self):
         """The orchestrator's refusal, surfaced rather than turned into a 500."""
         registry = Registry()
-        project = project_dir(self.root, "desktop", profile="managed")
+        project = project_dir(self.root, "desktop", profile="managed", policy=False)
 
         with self.assertRaises(StudioError) as caught:
             await registry.start(project, "begin")
 
-        self.assertIn("managed project", str(caught.exception))
+        self.assertIn("no tool policy", str(caught.exception))
 
     async def test_a_missing_project_is_refused(self):
         with self.assertRaises(StudioError):
@@ -226,11 +244,11 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("outside", page.text)
 
     def test_a_refusal_re_renders_the_page_rather_than_raising(self):
-        project_dir(self.root, "desktop", profile="managed")
+        project_dir(self.root, "desktop", profile="managed", policy=False)
         page = self.client.post("/runs", data={"project": "desktop"}, follow_redirects=False)
 
         self.assertEqual(page.status_code, 409)
-        self.assertIn("managed project", page.text)
+        self.assertIn("no tool policy", page.text)
 
         # Still the page they were on, keyed on the form rather than on a heading wording.
         self.assertIn('action="/runs"', page.text)

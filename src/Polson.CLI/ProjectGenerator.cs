@@ -204,6 +204,18 @@ internal static class ProjectGenerator
         // managed project, because that is someone asking for it; only the silent demotion is wrong.
         var standalone = opts.Standalone || (opts.Reset && WasStandalone(dir));
         var profile = standalone ? "standalone" : "managed";
+
+        // Whether the Polson orchestrator can host this project's agent — which is a fact about the
+        // SDK, not about the profile. Every Antigravity project gets the orchestrator's config, so a
+        // project generated for a desktop host can also be run from the terminal or the browser
+        // without being regenerated. `profile` survives as a label for what it was made for.
+        //
+        // The two policies stay separate on purpose, because they protect different situations. The
+        // host's permission file keeps the managed set; `agent.config.json` carries the standalone
+        // set, including the `run_command` denial that exists because a public URL must not reach a
+        // shell. Each is read by exactly one runtime, so the denial that matters arrives with the
+        // runtime that needs it instead of being chosen at generation time by guessing.
+        var orchestratable = sdk == "agy";
         string briefText;
         try
         {
@@ -217,11 +229,13 @@ internal static class ProjectGenerator
         var brief = SanitizeBrief(briefText);
         var createdUtc = DateTime.UtcNow.ToString("O");
 
+        // The orchestrator's session directories. Written for every Antigravity project rather than
+        // only the standalone ones, because any of them may now be run from the orchestrator — see
+        // the note on agent.config.json below. Empty and inert under a desktop host, which owns its
+        // own session.
         var dirs = new List<string> { "artifacts", "scripts", "events" };
-        if (standalone)
+        if (orchestratable)
         {
-            // LocalAgentConfig.save_dir and app_data_dir — a Python SDK concept, meaningless when a
-            // desktop host owns the session.
             dirs.AddRange(["session/save", "session/appdata"]);
         }
 
@@ -259,8 +273,8 @@ internal static class ProjectGenerator
             WriteText(dir, "brief.md", Render(workflow, "brief.md", tokens));
         }
 
-        WriteText(dir, ".gitignore", GitIgnore(standalone));
-        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, standalone));
+        WriteText(dir, ".gitignore", GitIgnore(orchestratable));
+        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, orchestratable));
 
         // Roles, checklists, anything else the workflow ships. Rendered like the rest, so they can
         // carry the same tokens.
@@ -293,7 +307,14 @@ internal static class ProjectGenerator
             WriteJson(dir, ".agents/agents.json", MultiAgentConfig(id, host.Instructions, roles));
         }
 
-        if (standalone)
+        // Written for every Antigravity project, not only the standalone ones. It is the file
+        // `project.load` keys on, so emitting it always is what lets one file set be run either way
+        // — and it removes the trap of choosing at generation time, discovering later that the
+        // orchestrator refuses the project, and having to regenerate it to get a flag flipped.
+        //
+        // Not written for `claude`: the orchestrator refuses a non-Antigravity project regardless,
+        // so the file would be one nothing ever reads.
+        if (orchestratable)
         {
             WriteJson(dir, "agent.config.json", AgentConfig(host));
         }
@@ -475,7 +496,7 @@ internal static class ProjectGenerator
     /// by probing filenames. <c>conversationId</c> is standalone-only state: resume belongs to us,
     /// and a desktop host neither writes nor reads it.
     /// </remarks>
-    static object ProjectManifest(string id, string workflow, string type, string sdk, string profile, string createdUtc, bool standalone)
+    static object ProjectManifest(string id, string workflow, string type, string sdk, string profile, string createdUtc, bool orchestratable)
     {
         // An ordered dictionary rather than an anonymous type: the optional fields would otherwise
         // need one shape per combination of them, and the order here is the order on disk.
@@ -487,7 +508,9 @@ internal static class ProjectGenerator
         manifest["profile"] = profile;
         manifest["createdUtc"] = createdUtc;
 
-        if (standalone) manifest["conversationId"] = null;
+        // The slot the orchestrator records a resumable session into, so it exists wherever the
+        // orchestrator can run — which is now any Antigravity project, not only a standalone one.
+        if (orchestratable) manifest["conversationId"] = null;
 
         return manifest;
     }
@@ -584,10 +607,18 @@ internal static class ProjectGenerator
     /// its bootstrap prompt around a hardcoded <c>GEMINI.md</c> and a restatement of how to work —
     /// a second copy of policy, in Python, able to drift from the template that owns it.
     /// </para>
+    /// <para>
+    /// <c>readBy</c> is written because this file now ships in every Antigravity project, including
+    /// ones a desktop host will run. A tool policy that is read by nothing in the current context is
+    /// the project's oldest trap — a file that looks like enforcement and enforces nothing — so the
+    /// file says which runtime reads it rather than leaving that to be inferred from its presence.
+    /// It is a constant, and nothing parses it.
+    /// </para>
     /// </remarks>
     static object AgentConfig(HostFiles host) => new
     {
         schema = 1,
+        readBy = "polson-orchestrator",
         agentBehavior = "interactive",
         instructionsFile = host.Instructions,
         deniedTools = AlwaysDenied.Concat(StandaloneDenied).ToArray(),
@@ -999,8 +1030,12 @@ internal static class ProjectGenerator
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
-    static string GitIgnore(bool standalone) =>
-        (standalone
+    /// <summary>
+    /// Ignores <c>session/</c> wherever the orchestrator can create it, which is every Antigravity
+    /// project — so the exposure does not depend on a flag having been passed at generation time.
+    /// </summary>
+    static string GitIgnore(bool orchestratable) =>
+        (orchestratable
             ? """
               # SDK-owned session state: regenerable, sometimes large, never the deliverable.
               session/
@@ -1079,19 +1114,37 @@ internal static class ProjectGenerator
         // it was never about.
         if (!standalone)
         {
-            AnsiConsole.MarkupLine("[yellow]  Note:[/] in [bold]managed[/] mode — this project, generated without [bold]--standalone[/] —");
-            AnsiConsole.MarkupLine("        the host owns tool policy, not us. Image generation is refused two ways");
+            AnsiConsole.MarkupLine("[yellow]  Note:[/] run in [bold]managed[/] mode — opened with a desktop host — that host owns");
+            AnsiConsole.MarkupLine("        tool policy, not us. Image generation is refused two ways");
             AnsiConsole.MarkupLine($"        in [bold]{Markup.Escape(host.Permissions)}[/] and carried in [bold]{Markup.Escape(host.Instructions)}[/] as a rule");
             AnsiConsole.MarkupLine("        as well — which form this host honours is not something we can check");
-            AnsiConsole.MarkupLine("        from here. A [bold]--standalone[/] project has none of this caveat: Polson");
-            AnsiConsole.MarkupLine("        hosts the agent and enforces the policy itself.");
+            AnsiConsole.MarkupLine("        from here. Run the same project from Polson instead and that caveat");
+            AnsiConsole.MarkupLine("        goes: we host the agent and enforce the policy ourselves.");
             AnsiConsole.WriteLine();
         }
 
-        AnsiConsole.MarkupLine($"  Next: fill in [bold]brief.md[/], then");
-        AnsiConsole.MarkupLine(standalone
-            ? $"        [bold]python src/webapp/run_studio.py {Markup.Escape(dir)}[/]"
-            : "        open the directory with your agent host.");
+        // Both ways are offered for any Antigravity project, because both now work on the same file
+        // set. Which is listed first follows the profile, since that is what the generator was asked
+        // for — but neither is a door that has been closed.
+        AnsiConsole.MarkupLine($"  Next: fill in [bold]brief.md[/], then run it either way:");
+
+        var orchestrator = $"        [bold]./polson_run {Markup.Escape(dir)}[/]  (or ./polson_webapp on its parent)";
+        const string desktop = "        open the directory with your agent host.";
+
+        if (sdk != "agy")
+        {
+            AnsiConsole.MarkupLine(desktop);
+        }
+        else if (standalone)
+        {
+            AnsiConsole.MarkupLine(orchestrator);
+            AnsiConsole.MarkupLine(desktop);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine(desktop);
+            AnsiConsole.MarkupLine(orchestrator);
+        }
     }
 
     static bool Fail(string message)

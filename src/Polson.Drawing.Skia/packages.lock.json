@@ -12,6 +12,12 @@
           "SkiaSharp.NativeAssets.macOS": "4.148.0"
         }
       },
+      "SkiaSharp.NativeAssets.Linux": {
+        "type": "Direct",
+        "requested": "[4.148.0, )",
+        "resolved": "4.148.0",
+        "contentHash": "diba2vLeoKmWVkVTdXYOG14c7+s5FsH/AQZ5UPiFLRwLKgrCQNJPLKw8q60HzfOcJt+t/blv+1xkinqd5ZjX5A=="
+      },
       "ExCSS": {
         "type": "Transitive",
         "resolved": "4.3.1",
@@ -275,7 +281,7 @@
       "polson.drawing.svg": {
         "type": "Project",
         "dependencies": {
-          "Polson.Runtime": "[1.0.0, )",
+          "Polson.Runtime": "[0.1.0, )",
           "Svg.Custom": "[5.2.1, )",
           "Svg.Model": "[5.2.1, )",
           "Svg.Skia": "[5.2.1, )"

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Runs one turn against a standalone project, with the terminal as the director.
+# Runs one turn against one project, with the terminal as the director.
 #
 #   ./polson_run path/to/project [--prompt "..."] [--fresh] [--unattended]
 #
 # The developer path: no browser, one turn per invocation, the agent's questions printed and your
 # reply typed back. For the browser over the same run_turn, use ./polson_webapp.
 #
-# The project must be a --standalone one. A managed project is refused by name, because its host
-# owns tool policy and running it here would apply none at all.
+# Any Antigravity project works, whichever profile it was generated for — they carry the same files
+# and the orchestrator applies its own tool policy for the run. Only a project with no
+# agent.config.json at all is refused, because running with an empty deny list is worse than not
+# running; regenerating adds it.
 
 set -euo pipefail
 
@@ -33,7 +35,7 @@ fi
 if [ $# -eq 0 ]; then
     echo "usage: ./polson_run <project-dir> [--prompt \"...\"] [--fresh] [--unattended]" >&2
     echo "       one project, not a directory of them" >&2
-    echo "       make one with:  dotnet bin/cli/Polson.CLI.dll create-project <parent> <id> agy --standalone" >&2
+    echo "       make one with:  dotnet bin/cli/Polson.CLI.dll create-project <parent> <id> agy" >&2
     echo "       for the browser instead:  ./polson_webapp <projects-dir>" >&2
     exit 1
 fi

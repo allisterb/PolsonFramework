@@ -442,3 +442,4 @@ reference/*
 /.*/
 **/.polson/*
 **/archive/*
+projects/

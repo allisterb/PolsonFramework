@@ -31,13 +31,13 @@ Designing the files as a transport as well would buy nothing and cost a concurre
   scripts/                  every JS execution, one file per call — the readable trace
 
   events/                   append-only JSONL, exactly one writer per file
-    server.jsonl              .NET MCP server        (both profiles)
-    agent.jsonl               Python orchestrator    (standalone only)
-    director.jsonl            director actions       (standalone only)
+    server.jsonl              .NET MCP server        (every run)
+    agent.jsonl               Python orchestrator    (orchestrator runs only)
+    director.jsonl            director actions       (orchestrator runs only)
 
   run.log                   human-readable rolling log
 
-  ── standalone only ────────────────────────────────────────────────────────
+  ── every Antigravity project; unused when a desktop host is the one running ────
   agent.config.json         tool policy and session directories for the orchestrator
 
   session/                  SDK-owned; never hand-edited, safe to delete to force a cold start
@@ -235,26 +235,53 @@ the project directory rather than removing the tools — and the agent's own scr
 
 ## Profiles
 
-**Standalone is a strict superset of managed.** It adds `agent.config.json` and `session/` and takes
-nothing away, so the file set itself says which kind of project this is — which a reader can check.
-An earlier version got this wrong: both profiles emitted identical files and differed only in a
-field inside one of them, which nothing enforced and no one could see.
+**Every Antigravity project has the same file set, and either host can run it.** The profile is a
+label for what the project was generated for, not a gate on what it can do.
 
-- **managed** (default) — a desktop or IDE host runs the agent and renders `ask_question` in its own
-  UI. No Python, no hooks, and **no `agent.config.json`**: that host owns tool policy, and a policy
-  file of ours sitting beside it would read as enforcement while enforcing nothing. Only
-  `events/server.jsonl` is written.
-- **standalone** (`--standalone`) — the Polson orchestrator hosts the agent: it reads
-  `agent.config.json`, applies the deny policies, registers an `OnInteractionHook` for the director,
-  and owns `session/` and the `conversationId` that makes a run resumable. All three event files are
-  written.
+This has changed twice, and the reasons are worth keeping. First both profiles emitted identical
+files and differed only in a field inside one of them, which nothing enforced and no one could see.
+Then standalone became a strict superset, adding `agent.config.json` and `session/` — which made the
+file set legible but meant **choosing at generation time how the project would be run**, and getting
+it wrong was only discovered later, when the orchestrator refused the project and it had to be
+regenerated to flip a flag. The file set is now uniform and the runtime decides.
 
-The consequence is that a **managed project cannot be run by the orchestrator**, and `project.load`
-refuses it rather than running with an empty deny list — which would silently permit
-`generate_image`, the one control the studio's premise rests on. Regenerate with `--standalone`.
+- **managed** (default) — generated for a desktop or IDE host, which runs the agent and renders
+  `ask_question` in its own UI. That host owns tool policy while it is the one running.
+- **standalone** (`--standalone`) — generated for the Polson orchestrator, which hosts the agent
+  itself: it applies the deny policies, registers an `OnInteractionHook` for the director, and owns
+  `session/` and the `conversationId` that makes a run resumable.
 
-`claude --standalone` is refused at generation: the orchestrator builds Antigravity SDK
-configurations only.
+Either project runs either way. What differs is which event files get written — a desktop host
+produces only `events/server.jsonl`, because the other two are the orchestrator's.
+
+### Two policies, one file set
+
+The file set is uniform; the tool policies are not, and must not become so. `run_command` is denied
+because **a public URL must not reach a shell** — a fact about the runtime, not about the file set.
+Each policy file is read by exactly one runtime:
+
+| File | Read by | Denies |
+| :--- | :--- | :--- |
+| the host's settings | a desktop host, driven by a person at a keyboard | `generate_image` |
+| `agent.config.json` | the orchestrator, which serves the web app | `generate_image`, `run_command` |
+
+So the denial that matters arrives with the runtime that needs it. Copying the standalone denials
+into the host file would take the shell from a developer in their IDE for a reason that does not
+apply to them; leaving them out of `agent.config.json` would hand a visitor a shell.
+
+`agent.config.json` carries `"readBy": "polson-orchestrator"` because it now ships in projects a
+desktop host will run, where it is inert — and a policy file that reads as enforcement while
+enforcing nothing is this project's oldest trap. The field says which runtime reads it rather than
+leaving that to be inferred from its presence.
+
+`project.load` still refuses a project with **no** `agent.config.json` rather than running with an
+empty deny list, which would silently permit `generate_image`. That now means a project generated
+before this change, or one for another host — not a managed one. Regenerating adds it; no flag is
+needed.
+
+`claude --standalone` is refused at generation, and a Claude project gets no `agent.config.json`,
+`session/` or `conversationId`: the orchestrator builds Antigravity SDK configurations only, so
+those files would be ones nothing ever reads.
 
 `AgentBehavior` is not this axis. It distinguishes *is a human attached* — a standalone run with a
 terminal or browser attached is `INTERACTIVE`; harness and unattended runs are `AUTONOMOUS`.

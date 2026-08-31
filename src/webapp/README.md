@@ -81,6 +81,7 @@ outliving the replay window, a client that stops reading — is announced in the
 | `serve_studio.py` | Web entry point. Serves `studio/` over HTTP. Milestone 6. |
 | `studio/` | The browser over `orchestrator`: routes, the run registry, the brief form, templates. |
 | `hello_agent.py` | A probe, not architecture — the cheapest check that the Python side still reaches the .NET side. `--task stages` also checks that one MCP session spans a whole run. |
+| `check_python.py` | Run by the install scripts before pip: refuses a venv older than the lock's recorded floor, so a wrong interpreter is one sentence rather than a pinned package failing three minutes in. |
 | `tests/` | Standard-library `unittest`. Nothing here installs a package, so there is no pytest. |
 
 ```bash
@@ -174,7 +175,12 @@ src\webapp\install.cmd
 On Linux or macOS, `src/webapp/install.sh`. The script checks that the environment and the compiled
 `requirements.txt` both exist and says what to do if either is missing, then runs the install below.
 
-Or run it yourself:
+It also checks the venv is new enough — the floor read from the lock's own header, so the two cannot
+disagree. pip would catch a too-old interpreter anyway, but part-way through and phrased as a pinned
+package rejecting the Python, which reads as a problem with the lock rather than with the environment
+it is going into.
+
+Or run it yourself — no checks, no settings copied, so the flags below are doing the work alone:
 
 ```bash
 python\Scripts\pip.exe install --require-hashes --only-binary=:all: -r src\webapp\requirements.txt

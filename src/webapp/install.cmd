@@ -11,6 +11,7 @@ set "REPO_ROOT=%SCRIPT_DIR%..\.."
 rem pip reads its settings from the venv root, under a different name on each platform: pip.ini here,
 rem pip.conf on Linux and macOS. Same contents, so install.sh copies the same file to the other name.
 set "VENV_PIP=%REPO_ROOT%\python\Scripts\pip.exe"
+set "VENV_PYTHON=%REPO_ROOT%\python\Scripts\python.exe"
 set "VENV_CONFIG=%REPO_ROOT%\python\pip.ini"
 set "REQUIREMENTS=%SCRIPT_DIR%requirements.txt"
 
@@ -29,6 +30,12 @@ if not exist "%REQUIREMENTS%" (
     echo        on the platform it was compiled on. 1>&2
     exit /b 1
 )
+
+rem Is this environment new enough for the lock about to be installed into it? Asked with the venv's
+rem own interpreter, and against the floor recorded in the lock's header, so neither half is a
+rem constant kept in step by hand. See check_python.py for why it is worth asking before pip does.
+"%VENV_PYTHON%" "%SCRIPT_DIR%check_python.py" "%REQUIREMENTS%"
+if errorlevel 1 exit /b 1
 
 rem The settings, into the venv where pip reads them. Copied on every install rather than once by
 rem hand: python -m venv rewrites this directory on every rebuild, so a copy that lives only here is

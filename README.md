@@ -56,9 +56,11 @@ src\webapp\install.cmd
 On Linux or macOS the venv puts executables in `bin/` rather than `Scripts/`, which the script handles:
 
 ```bash
-python3 -m venv python
+python3.13 -m venv python
 src/webapp/install.sh
 ```
+
+**Name the version, not `python3`.** On a distribution whose `python3` is older — Ubuntu 22.04's is 3.10 — `python3 -m venv` builds the environment with that one silently, and the failure surfaces later and further away, as pip refusing a pinned package that requires a newer Python. Where 3.13 is not the default it is usually installed alongside rather than over the system one (`ppa:deadsnakes/ppa` on older Ubuntu), which leaves `python3` untouched by design. Install `python3.13-venv` with it — Debian and Ubuntu split `venv` into its own package, and without it `python3.13 -m venv` fails on missing `ensurepip`.
 
 `requirements.txt` is committed with every package — transitive ones included — pinned to an exact version and hash, and the install refuses anything that does not match. See [`src/webapp/README.md`](src/webapp/README.md) for how to change a dependency and what to review when you do.
 

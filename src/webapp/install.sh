@@ -15,12 +15,15 @@ repo_root=$(cd -- "${script_dir}/../.." && pwd)
 # pip reads its settings from the venv root under a different name on each too: pip.conf here,
 # pip.ini on Windows.
 venv_pip="${repo_root}/python/bin/pip"
+venv_python="${repo_root}/python/bin/python"
 venv_config="${repo_root}/python/pip.conf"
 requirements="${script_dir}/requirements.txt"
 
 if [[ ! -x "${venv_pip}" ]]; then
     echo "error: no virtual environment at ${repo_root}/python" >&2
-    echo "       create it with:  python3 -m venv \"${repo_root}/python\"" >&2
+    echo "       create it with:  python3.13 -m venv \"${repo_root}/python\"" >&2
+    echo "       name the version rather than plain python3 -- where python3 is older the venv is" >&2
+    echo "       built with that one silently, and pip refuses a pin much later on." >&2
     echo "       then run this script again." >&2
     exit 1
 fi
@@ -34,6 +37,11 @@ if [[ ! -f "${requirements}" ]]; then
     echo "       on the platform it was compiled on." >&2
     exit 1
 fi
+
+# Is this environment new enough for the lock about to be installed into it? Asked with the venv's
+# own interpreter, and against the floor recorded in the lock's header, so neither half is a constant
+# kept in step by hand. See check_python.py for why it is worth asking before pip does.
+"${venv_python}" "${script_dir}/check_python.py" "${requirements}"
 
 # The settings, into the venv where pip reads them. Copied on every install rather than once by
 # hand: `python -m venv` rewrites this directory on every rebuild, so a copy that lives only here is

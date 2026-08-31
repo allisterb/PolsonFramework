@@ -250,3 +250,95 @@
 {"ts":"2026-08-31T13:10:57.459Z","seq":250,"src":"server","type":"script.ok","stage":"Audit","execution":"b43d5766","script":"scripts/0025.js","ms":26}
 {"ts":"2026-08-31T13:10:57.460Z","seq":251,"src":"server","type":"inspect","stage":"Audit","execution":"b43d5766","script":"scripts/0025.js","probes":{"measure":25,"sample":5},"total":30}
 {"ts":"2026-08-31T13:11:20.209Z","seq":252,"src":"server","type":"run.end"}
+{"ts":"2026-08-31T14:39:07.091Z","seq":253,"src":"server","type":"run.start","transport":"stdio","project":"C:\\Projects\\Polson\\tests\\agent\\infographic\\agy\\inf-1"}
+{"ts":"2026-08-31T14:40:23.247Z","seq":254,"src":"server","type":"script.start","execution":"d2f8d903","script":"scripts/0026.js","session":"default"}
+{"ts":"2026-08-31T14:40:23.798Z","seq":255,"src":"server","type":"stage.begin","stage":"Data","execution":"d2f8d903"}
+{"ts":"2026-08-31T14:40:23.805Z","seq":256,"src":"server","type":"note","stage":"Data","execution":"d2f8d903","message":"CLAIM: Progress is constant — it never stopped coming, but it never once came on schedule."}
+{"ts":"2026-08-31T14:40:23.806Z","seq":257,"src":"server","type":"note","stage":"Data","execution":"d2f8d903","message":"READER: General. Knows all seven events already; has never seen the gaps between them drawn to scale."}
+{"ts":"2026-08-31T14:40:23.806Z","seq":258,"src":"server","type":"note","stage":"Data","execution":"d2f8d903","message":"PLACE: At a line printer, watching fanfold paper feed through the platen"}
+{"ts":"2026-08-31T14:40:23.839Z","seq":259,"src":"server","type":"note","stage":"Data","execution":"d2f8d903","message":"Data verified: 7 milestones spanning 1969 to 2022 (53 years total). Gaps: 20, 4, 5, 6, 3, 15 years."}
+{"ts":"2026-08-31T14:40:23.999Z","seq":260,"src":"server","type":"render","stage":"Data","execution":"d2f8d903","script":"scripts/0026.js","artifact":"artifacts/01_data_init.webp","format":"webp","bytes":6360}
+{"ts":"2026-08-31T14:40:24.000Z","seq":261,"src":"server","type":"script.ok","stage":"Data","execution":"d2f8d903","script":"scripts/0026.js","ms":294}
+{"ts":"2026-08-31T14:40:24.007Z","seq":262,"src":"server","type":"inspect","stage":"Data","execution":"d2f8d903","script":"scripts/0026.js","probes":{"capability":16},"total":16}
+{"ts":"2026-08-31T14:40:58.154Z","seq":263,"src":"server","type":"script.start","stage":"Data","execution":"ee8fc9f9","script":"scripts/0027.js","session":"default"}
+{"ts":"2026-08-31T14:40:58.157Z","seq":264,"src":"server","type":"stage.end","stage":"Data","execution":"ee8fc9f9","reason":"superseded"}
+{"ts":"2026-08-31T14:40:58.157Z","seq":265,"src":"server","type":"stage.begin","stage":"Forms","execution":"ee8fc9f9"}
+{"ts":"2026-08-31T14:40:58.158Z","seq":266,"src":"server","type":"note","stage":"Forms","execution":"ee8fc9f9","message":"Form Selection Analysis (Manual 13 §1):"}
+{"ts":"2026-08-31T14:40:58.159Z","seq":267,"src":"server","type":"note","stage":"Forms","execution":"ee8fc9f9","message":"1. Over time? -> Calibrated Vertical Timeline track with linearly scaled physical vertical intervals (1969-2022). Rejected: equal-step card list (destroys temporal truth), horizontal timeline (awkward in 9:16 story format)."}
+{"ts":"2026-08-31T14:40:58.159Z","seq":268,"src":"server","type":"note","stage":"Forms","execution":"ee8fc9f9","message":"2. Compared to what? -> Zero-based horizontal delta bar chart comparing inter-milestone wait times (20y, 4y, 5y, 6y, 3y, 15y). Rejected: pie/donut (deltas are sequential durations, not parts-of-whole), radar chart (poor comparability)."}
+{"ts":"2026-08-31T14:40:58.160Z","seq":269,"src":"server","type":"note","stage":"Forms","execution":"ee8fc9f9","message":"3. How big? -> Neo-brutalist Big-Number stat badges (53 yr total span, 20 yr max gap, 3 yr min gap, 100M / 2 mo velocity). Rejected: gauge dials, 3D charts."}
+{"ts":"2026-08-31T14:40:58.160Z","seq":270,"src":"server","type":"note","stage":"Forms","execution":"ee8fc9f9","message":"4. How does it work? -> Milestone cards with high-contrast badge headers, year stamps, and monospace annotation blocks styled like continuous line printer output."}
+{"ts":"2026-08-31T14:40:58.287Z","seq":271,"src":"server","type":"render","stage":"Forms","execution":"ee8fc9f9","script":"scripts/0027.js","artifact":"artifacts/02_forms_selection.webp","format":"webp","bytes":6688}
+{"ts":"2026-08-31T14:40:58.288Z","seq":272,"src":"server","type":"script.ok","stage":"Forms","execution":"ee8fc9f9","script":"scripts/0027.js","ms":9}
+{"ts":"2026-08-31T14:41:20.728Z","seq":273,"src":"server","type":"script.start","stage":"Forms","execution":"707707ca","script":"scripts/0028.js","session":"default"}
+{"ts":"2026-08-31T14:41:20.742Z","seq":274,"src":"server","type":"stage.end","stage":"Forms","execution":"707707ca","reason":"superseded"}
+{"ts":"2026-08-31T14:41:20.742Z","seq":275,"src":"server","type":"stage.begin","stage":"Composition","execution":"707707ca"}
+{"ts":"2026-08-31T14:41:20.743Z","seq":276,"src":"server","type":"note","stage":"Composition","execution":"707707ca","message":"Named Composition Pattern: Editorial Spread (Manual 13 §4) with Line Printer Fanfold Armature."}
+{"ts":"2026-08-31T14:41:20.743Z","seq":277,"src":"server","type":"note","stage":"Composition","execution":"707707ca","message":"Armature: Asymmetric split with 280px left spine (calibrated tractor feed & timeline ruler) and 720px right column (milestone data cards & big typography)."}
+{"ts":"2026-08-31T14:41:20.744Z","seq":278,"src":"server","type":"note","stage":"Composition","execution":"707707ca","message":"Tension Rules (Manual 13 §5):"}
+{"ts":"2026-08-31T14:41:20.745Z","seq":279,"src":"server","type":"note","stage":"Composition","execution":"707707ca","message":"- Dense vs Empty: Dense 1989-2007 burst vs spacious 1969-1989 (20y) & 2007-2022 (15y) lull zones."}
+{"ts":"2026-08-31T14:41:20.746Z","seq":280,"src":"server","type":"note","stage":"Composition","execution":"707707ca","message":"- 3 Sizes: 84px display title / big numerals down to 14px monospace terminal details (>6x to 8x scale)."}
+{"ts":"2026-08-31T14:41:20.747Z","seq":281,"src":"server","type":"note","stage":"Composition","execution":"707707ca","message":"- Boundary crossing: Badge callouts and timeline connectors cross across the gutter between columns."}
+{"ts":"2026-08-31T14:41:20.747Z","seq":282,"src":"server","type":"note","stage":"Composition","execution":"707707ca","message":"- Ground: Fanfold paper tone with perforation holes, tractor margins, and subtle printer rule bands."}
+{"ts":"2026-08-31T14:41:20.917Z","seq":283,"src":"server","type":"render","stage":"Composition","execution":"707707ca","script":"scripts/0028.js","artifact":"artifacts/03_composition_blocking.webp","format":"webp","bytes":19436}
+{"ts":"2026-08-31T14:41:20.918Z","seq":284,"src":"server","type":"script.ok","stage":"Composition","execution":"707707ca","script":"scripts/0028.js","ms":62}
+{"ts":"2026-08-31T14:41:41.659Z","seq":285,"src":"server","type":"script.start","stage":"Composition","execution":"7f1ea5d2","script":"scripts/0029.js","session":"default"}
+{"ts":"2026-08-31T14:41:41.670Z","seq":286,"src":"server","type":"stage.end","stage":"Composition","execution":"7f1ea5d2","reason":"superseded"}
+{"ts":"2026-08-31T14:41:41.670Z","seq":287,"src":"server","type":"stage.begin","stage":"Encode","execution":"7f1ea5d2"}
+{"ts":"2026-08-31T14:41:41.671Z","seq":288,"src":"server","type":"note","stage":"Encode","execution":"7f1ea5d2","message":"Stage 4: Mathematical Encoding of Timeline and Gap Intervals."}
+{"ts":"2026-08-31T14:41:41.683Z","seq":289,"src":"server","type":"note","stage":"Encode","execution":"7f1ea5d2","message":"Zero-baseline check verified: gapScale isZeroBased = true"}
+{"ts":"2026-08-31T14:41:41.684Z","seq":290,"src":"server","type":"note","stage":"Encode","execution":"7f1ea5d2","message":"Total timeline span verified: 53 years (1969 to 2022)"}
+{"ts":"2026-08-31T14:41:41.825Z","seq":291,"src":"server","type":"render","stage":"Encode","execution":"7f1ea5d2","script":"scripts/0029.js","artifact":"artifacts/04_encoding_test.webp","format":"webp","bytes":38346}
+{"ts":"2026-08-31T14:41:41.826Z","seq":292,"src":"server","type":"script.ok","stage":"Encode","execution":"7f1ea5d2","script":"scripts/0029.js","ms":46}
+{"ts":"2026-08-31T14:42:08.713Z","seq":293,"src":"server","type":"script.start","stage":"Encode","execution":"f49c2195","script":"scripts/0030.js","session":"default"}
+{"ts":"2026-08-31T14:42:08.718Z","seq":294,"src":"server","type":"stage.end","stage":"Encode","execution":"f49c2195","reason":"superseded"}
+{"ts":"2026-08-31T14:42:08.719Z","seq":295,"src":"server","type":"stage.begin","stage":"Palette & Type","execution":"f49c2195"}
+{"ts":"2026-08-31T14:42:08.719Z","seq":296,"src":"server","type":"note","stage":"Palette & Type","execution":"f49c2195","message":"Design Language: Neo-Brutalist Line-Printer / Fanfold Terminal."}
+{"ts":"2026-08-31T14:42:09.014Z","seq":297,"src":"server","type":"note","stage":"Palette & Type","execution":"f49c2195","message":"CSS tokens loaded: 14 variables."}
+{"ts":"2026-08-31T14:42:09.017Z","seq":298,"src":"server","type":"note","stage":"Palette & Type","execution":"f49c2195","message":"Typographic evaluation: contrasting (65/100)"}
+{"ts":"2026-08-31T14:42:09.155Z","seq":299,"src":"server","type":"render","stage":"Palette & Type","execution":"f49c2195","script":"scripts/0030.js","artifact":"artifacts/05_palette_and_type.webp","format":"webp","bytes":38984}
+{"ts":"2026-08-31T14:42:09.155Z","seq":300,"src":"server","type":"script.ok","stage":"Palette & Type","execution":"f49c2195","script":"scripts/0030.js","ms":324}
+{"ts":"2026-08-31T14:43:12.551Z","seq":301,"src":"server","type":"script.start","stage":"Palette & Type","execution":"edeb8637","script":"scripts/0031.js","session":"default"}
+{"ts":"2026-08-31T14:43:12.561Z","seq":302,"src":"server","type":"stage.end","stage":"Palette & Type","execution":"edeb8637","reason":"superseded"}
+{"ts":"2026-08-31T14:43:12.562Z","seq":303,"src":"server","type":"stage.begin","stage":"Detail","execution":"edeb8637"}
+{"ts":"2026-08-31T14:43:12.563Z","seq":304,"src":"server","type":"note","stage":"Detail","execution":"edeb8637","message":"Stage 6: Rendering complete neo-brutalist fanfold line-printer infographic."}
+{"ts":"2026-08-31T14:43:12.564Z","seq":305,"src":"server","type":"note","stage":"Detail","execution":"edeb8637","message":"Scene elements: Tractor feed sprockets, green-bar accounting bands, diegetic line printer stamps, calibrated timeline track, zero-based gap delta meters, 7 milestone cards, and hero analytics dashboard."}
+{"ts":"2026-08-31T14:43:12.781Z","seq":306,"src":"server","type":"render","stage":"Detail","execution":"edeb8637","script":"scripts/0031.js","artifact":"artifacts/06_full_infographic.webp","format":"webp","bytes":149778}
+{"ts":"2026-08-31T14:43:12.781Z","seq":307,"src":"server","type":"script.ok","stage":"Detail","execution":"edeb8637","script":"scripts/0031.js","ms":74}
+{"ts":"2026-08-31T14:43:12.782Z","seq":308,"src":"server","type":"inspect","stage":"Detail","execution":"edeb8637","script":"scripts/0031.js","probes":{"measure":12},"total":12}
+{"ts":"2026-08-31T14:44:03.670Z","seq":309,"src":"server","type":"script.start","stage":"Detail","execution":"e05a1cb5","script":"scripts/0032.js","session":"default"}
+{"ts":"2026-08-31T14:44:03.672Z","seq":310,"src":"server","type":"stage.continue","stage":"Detail","execution":"e05a1cb5"}
+{"ts":"2026-08-31T14:44:03.673Z","seq":311,"src":"server","type":"note","stage":"Detail","execution":"e05a1cb5","message":"Detail Refinement: Adjusting typography metrics, badge lockups, and spine geometry for crisp readability and zero collisions."}
+{"ts":"2026-08-31T14:44:03.863Z","seq":312,"src":"server","type":"render","stage":"Detail","execution":"e05a1cb5","script":"scripts/0032.js","artifact":"artifacts/06_full_infographic_v2.webp","format":"webp","bytes":157624}
+{"ts":"2026-08-31T14:44:03.863Z","seq":313,"src":"server","type":"script.ok","stage":"Detail","execution":"e05a1cb5","script":"scripts/0032.js","ms":41}
+{"ts":"2026-08-31T14:44:03.863Z","seq":314,"src":"server","type":"inspect","stage":"Detail","execution":"e05a1cb5","script":"scripts/0032.js","probes":{"measure":12},"total":12}
+{"ts":"2026-08-31T14:45:00.042Z","seq":315,"src":"server","type":"script.start","stage":"Detail","execution":"2e07f3f8","script":"scripts/0033.js","session":"default"}
+{"ts":"2026-08-31T14:45:00.045Z","seq":316,"src":"server","type":"stage.end","stage":"Detail","execution":"2e07f3f8","reason":"superseded"}
+{"ts":"2026-08-31T14:45:00.045Z","seq":317,"src":"server","type":"stage.begin","stage":"Audit","execution":"2e07f3f8"}
+{"ts":"2026-08-31T14:45:00.045Z","seq":318,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"Stage 7: Comprehensive Mathematical, Visual, and Litmus Audit against brief.md."}
+{"ts":"2026-08-31T14:45:00.046Z","seq":319,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"AUDIT 1 - DATA FIDELITY:"}
+{"ts":"2026-08-31T14:45:00.046Z","seq":320,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Year 1969: \"ARPANET sends its first message (it crashed after \"LO\")\" -> VERIFIED ON CANVAS."}
+{"ts":"2026-08-31T14:45:00.047Z","seq":321,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Year 1989: \"Tim Berners-Lee proposes the World Wide Web\" -> VERIFIED ON CANVAS."}
+{"ts":"2026-08-31T14:45:00.047Z","seq":322,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Year 1993: \"Mosaic makes the web visual\" -> VERIFIED ON CANVAS."}
+{"ts":"2026-08-31T14:45:00.048Z","seq":323,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Year 1998: \"Google is founded\" -> VERIFIED ON CANVAS."}
+{"ts":"2026-08-31T14:45:00.048Z","seq":324,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Year 2004: \"Facebook launches — the social era begins\" -> VERIFIED ON CANVAS."}
+{"ts":"2026-08-31T14:45:00.048Z","seq":325,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Year 2007: \"The iPhone puts the web in every pocket\" -> VERIFIED ON CANVAS."}
+{"ts":"2026-08-31T14:45:00.049Z","seq":326,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Year 2022: \"ChatGPT reaches 100M users in 2 months\" -> VERIFIED ON CANVAS."}
+{"ts":"2026-08-31T14:45:00.049Z","seq":327,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"AUDIT 2 - DERIVED FIGURES & ARITHMETIC:"}
+{"ts":"2026-08-31T14:45:00.049Z","seq":328,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- 1989 - 1969 = 20 years -> VERIFIED on gap meter & footer stat card (LONGEST LULL)."}
+{"ts":"2026-08-31T14:45:00.050Z","seq":329,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- 1993 - 1989 = 4 years -> VERIFIED on gap meter."}
+{"ts":"2026-08-31T14:45:00.050Z","seq":330,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- 1998 - 1993 = 5 years -> VERIFIED on gap meter."}
+{"ts":"2026-08-31T14:45:00.051Z","seq":331,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- 2004 - 1998 = 6 years -> VERIFIED on gap meter."}
+{"ts":"2026-08-31T14:45:00.051Z","seq":332,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- 2007 - 2004 = 3 years -> VERIFIED on gap meter & footer stat card (FASTEST SPRINT)."}
+{"ts":"2026-08-31T14:45:00.052Z","seq":333,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- 2022 - 2007 = 15 years -> VERIFIED on gap meter."}
+{"ts":"2026-08-31T14:45:00.053Z","seq":334,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- 2022 - 1969 = 53 years -> VERIFIED on footer stat card (TOTAL SPAN)."}
+{"ts":"2026-08-31T14:45:00.057Z","seq":335,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"AUDIT 3 - MANUAL 13 §6 LITMUS TESTS:"}
+{"ts":"2026-08-31T14:45:00.057Z","seq":336,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Litmus Test 1 (Dashboard Check): Could this layout hold a SaaS dashboard? NO. The diegetic line-printer fanfold armature, tractor sprockets, calibrated physical ruler with radial leader lines, and neo-brutalist stamp language are deeply grounded in physical printer paper."}
+{"ts":"2026-08-31T14:45:00.058Z","seq":337,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Litmus Test 2 (Cover-the-text Recognition): Recognisable from shapes alone? YES. The continuous vertical timeline spine with severe clustering in the 1990s/2000s and long empty gap strides visually conveys temporal acceleration and lull cycles immediately."}
+{"ts":"2026-08-31T14:45:00.058Z","seq":338,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Litmus Test 3 (Corner balance): Are all four corners doing equal work? NO. Top corners anchor the bold yellow teletype masthead and badge; bottom corners anchor the high-contrast 4-metric executive analytics dashboard."}
+{"ts":"2026-08-31T14:45:00.059Z","seq":339,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"- Litmus Test 4 (Truthful Geometry): Are all bar baselines zero? YES. gapScale.isZeroBased = true (verified in code). Area encoding verified."}
+{"ts":"2026-08-31T14:45:00.083Z","seq":340,"src":"server","type":"note","stage":"Audit","execution":"2e07f3f8","message":"Pixel verification check: header fill is ##0A0A0AFF, canvas background is ##ECEEDFFF"}
+{"ts":"2026-08-31T14:45:00.239Z","seq":341,"src":"server","type":"render","stage":"Audit","execution":"2e07f3f8","script":"scripts/0033.js","artifact":"artifacts/07_final_infographic.webp","format":"webp","bytes":157624}
+{"ts":"2026-08-31T14:45:00.239Z","seq":342,"src":"server","type":"script.ok","stage":"Audit","execution":"2e07f3f8","script":"scripts/0033.js","ms":41}
+{"ts":"2026-08-31T14:45:00.240Z","seq":343,"src":"server","type":"inspect","stage":"Audit","execution":"2e07f3f8","script":"scripts/0033.js","probes":{"measure":12,"sample":2},"total":14}
+{"ts":"2026-08-31T14:45:42.558Z","seq":344,"src":"server","type":"run.end"}

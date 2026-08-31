@@ -77,12 +77,23 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
 .ev:last-child { border-bottom: 0; }
 .ev .kind { color: var(--dim); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
 .ev .stage { color: var(--accent); font-size: .8rem; }
-.ev .detail { font-family: var(--mono); font-size: .82rem; word-break: break-word; }
+/* min-width on a grid item, or the ellipsis below never appears: the default is auto, which refuses
+   to shrink below the content's own width. */
+.ev .detail { font-family: var(--mono); font-size: .82rem; word-break: break-word; min-width: 0; }
 
 .ev.script-error .detail, .ev.script-error .kind { color: var(--warn); }
 .ev.render .detail { color: var(--good); }
 .ev.note .detail { font-family: inherit; font-size: .87rem; }
 .ev.thinking .detail { color: var(--dim); font-family: inherit; font-style: italic; }
+
+/* Thinking is the bulkiest thing in the trace and the least often wanted, so it arrives folded to
+   one line. The ellipsis text-overflow draws is the affordance; the cursor confirms it. */
+.ev.thinking { cursor: pointer; }
+.ev.thinking:hover { background: #f6f9fb; }
+.ev.folded .detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The pass the director pinned, marked on every line that shares its execution. */
+.ev.chosen { background: #eef5f8; box-shadow: inset 3px 0 0 var(--accent); }
 
 /* Sticky, so the render stays put as the trace grows past it. */
 .latest { position: sticky; top: 1rem; }
@@ -91,6 +102,8 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
 .latest img { width: 100%; height: auto; display: block; }
 .latest figcaption { font-family: var(--mono); font-size: .78rem; color: var(--dim);
                      padding-top: .4rem; }
+.latest .empty { padding: .7rem .2rem; margin: 0; }
+#unpin { color: var(--accent); }
 
 /* The brief form */
 form.brief { background: var(--panel); border: 1px solid var(--line); border-radius: 3px;

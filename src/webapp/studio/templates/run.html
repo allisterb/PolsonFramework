@@ -52,13 +52,15 @@
     </section>
 
     <aside class="latest">
-      <h2>Latest render</h2>
+      <h2><span id="renderhead">Latest render</span>
+        <a href="#" class="follow" id="unpin" hidden>follow the latest</a>
+      </h2>
       <figure id="render">
         <p class="empty">Nothing rendered yet.</p>
       </figure>
 
       <h2>The script behind it <span class="hint" id="scriptname"></span></h2>
-      <div id="source"><p class="empty">Click a script, or a point on the curve.</p></div>
+      <div id="source"><p class="empty">Click any pass in the trace, or a point on the curve.</p></div>
     </aside>
   </div>
 </main>
@@ -80,6 +82,8 @@
   const reading = document.getElementById('reading');
   const source = document.getElementById('source');
   const scriptName = document.getElementById('scriptname');
+  const renderHead = document.getElementById('renderhead');
+  const unpin = document.getElementById('unpin');
 
   const LABEL = {
     'run.start': 'run started', 'run.end': 'run ended',
@@ -130,19 +134,47 @@
       (event.stage ? `<span class="stage">${esc(event.stage)}</span>` : '') +
       `<span class="detail">${esc(detail(kind, event))}</span>`;
 
-    // Anything that names a script opens it. The code is the half a render cannot carry.
-    if (event.script) {
-      li.classList.add('opens');
-      li.addEventListener('click', () => openScript(event.script));
+    // Thinking arrives folded to one line. It is the bulkiest thing in the trace and the least
+    // often wanted, and left open it buries everything that says what the agent actually did.
+    if (kind === 'thinking') {
+      li.classList.add('folded');
+      li.addEventListener('click', () => li.classList.toggle('folded'));
+    }
+
+    // Any event belonging to a pass opens that pass — its render and the script that made it,
+    // together. They arrive as separate events, so the pane is assembled from the execution id they
+    // share rather than read off any one line.
+    const key = keyOf(kind, event);
+    if (key) {
+      const made = pass(key);
+      if (event.script) made.script = event.script;
+
+      // A script writing both a raster and an SVG produces two renders for one pass. The raster is
+      // the one to show, so it wins whenever it arrives; the SVG only fills an empty slot.
+      if (kind === 'render' && event.artifact && (!made.artifact || event.format !== 'svg')) {
+        made.artifact = event.artifact;
+        made.v = n;
+      }
+
+      if (made.artifact || made.script) {
+        li.dataset.key = key;
+        li.classList.add('opens');
+        li.addEventListener('click', () => choose(key));
+
+        // A pass is pinned before it has finished writing itself into the trace, so a line that
+        // arrives afterwards has to mark itself; `mark()` only ever sees the rows already there.
+        if (pinned === key) li.classList.add('chosen');
+      }
     }
 
     list.appendChild(li);
     if (follow.checked) list.scrollTop = list.scrollHeight;
 
+    // A new render takes over the pane only while nobody has chosen otherwise. Pinning an earlier
+    // pass and then having it swapped out from under you is what this avoids.
     if (kind === 'render' && event.artifact) {
-      render.innerHTML =
-        `<img src="/runs/${runId}/${event.artifact}?v=${n}" alt="${esc(event.artifact)}">` +
-        `<figcaption>${esc(event.artifact)}</figcaption>`;
+      latest = key;
+      if (!pinned) present(key);
     }
 
     // Recoding is a file read plus a pass over a few hundred events, so it is done at the moments
@@ -203,6 +235,14 @@
     plot.querySelectorAll('circle').forEach((dot) => {
       dot.addEventListener('click', () => {
         const point = trace[Number(dot.dataset.i)];
+
+        // A coded point carries the execution it came from, so a dot opens the whole pass — render
+        // and script — exactly as its line in the trace does. The path in the detail is the
+        // fallback, for a point coded from an event that named a script and nothing else.
+        if (point.execution && passes.has(point.execution)) {
+          choose(point.execution);
+          return;
+        }
         const named = /scripts\/[\w.-]+\.js/.exec(point.detail || '');
         if (named) openScript(named[0]);
       });
@@ -218,16 +258,89 @@
       (s.missing && s.missing.length ? ` · no ${s.missing.join(', ')} recorded` : '');
   }
 
-  // ── the code ───────────────────────────────────────────────────────────────────────────────
+  // ── the pass, and its code ─────────────────────────────────────────────────────────────────
+  // What each pass produced. A render names the artifact, a script.* event names the source, and an
+  // inspect or artifact.read names neither — all of them carry the execution id that joins the two.
+  const passes = new Map();
+  let pinned = null, latest = null, showing = null;
+
+  // Fetching a script is slower than choosing one. Every request takes a number and only the newest
+  // may write to the pane, or a slow fetch lands after a newer choice and the code shown stops being
+  // the code named beside it.
+  let request = 0;
+
+  function keyOf(kind, event) {
+    if (event.execution) return event.execution;
+    // RenderSvg writes a render with no execution of its own, so the artifact path is its identity.
+    return kind === 'render' && event.artifact ? 'artifact:' + event.artifact : null;
+  }
+
+  function pass(key) {
+    let made = passes.get(key);
+    if (!made) { made = { artifact: null, script: null, v: 0 }; passes.set(key, made); }
+    return made;
+  }
+
+  // Choosing the newest pass means "follow along again", which is the same thing the link says.
+  function choose(key) {
+    pinned = key === latest ? null : key;
+    mark();
+    present(key);
+  }
+
+  function mark() {
+    for (const row of list.querySelectorAll('.ev')) {
+      row.classList.toggle('chosen', pinned !== null && row.dataset.key === pinned);
+    }
+    renderHead.textContent = pinned ? 'The pass you chose' : 'Latest render';
+    unpin.hidden = !pinned;
+  }
+
+  unpin.addEventListener('click', (e) => {
+    e.preventDefault();
+    pinned = null;
+    mark();
+    if (latest) present(latest);
+  });
+
+  function present(key) {
+    const made = passes.get(key);
+    if (!made) return;
+
+    // The version stamp is the one the render arrived under, not the current event count, so a
+    // pinned pass keeps a stable URL instead of re-fetching every time the trace moves.
+    render.innerHTML = made.artifact
+      ? `<img src="/runs/${runId}/${made.artifact}?v=${made.v}" alt="${esc(made.artifact)}">` +
+        `<figcaption>${esc(made.artifact)}</figcaption>`
+      : '<p class="empty">This pass rendered nothing.</p>';
+
+    if (made.script) openScript(made.script);
+    else if (showing !== null) {
+      showing = null;
+      request += 1;
+      scriptName.textContent = '';
+      source.innerHTML = '<p class="empty">No script was recorded for this render.</p>';
+    }
+  }
+
   async function openScript(path) {
+    if (showing === path) return;
+    showing = path;
+    const mine = ++request;
     scriptName.textContent = path;
     source.innerHTML = '<p class="empty">Loading…</p>';
     try {
       const response = await fetch(`/runs/${runId}/${path}`);
-      source.innerHTML = response.ok
-        ? await response.text()
-        : `<p class="why">That script is not on disk (${response.status}).</p>`;
+      if (mine !== request) return;
+      if (response.ok) {
+        source.innerHTML = await response.text();
+        return;
+      }
+      showing = null;
+      source.innerHTML = `<p class="why">That script is not on disk (${response.status}).</p>`;
     } catch (err) {
+      if (mine !== request) return;
+      showing = null;
       source.innerHTML = '<p class="why">The server could not be reached.</p>';
     }
   }

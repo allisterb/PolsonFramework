@@ -1,201 +1,254 @@
-# Session Handoff — 2026-08-31
+# Session Handoff — 2026-08-31 (second session)
 
-State after the session that built the standalone web app (Milestone 6, phase 2 complete), added
-inspection events to the engine, and implemented Davis's creative sense-making curve over a real run.
+State after the session that made the studio survive contact with a second machine, taught the run
+record to say when it was *blocked* rather than merely quiet, and made the sense-making curve
+readable by someone who has not read the papers.
 
-**Tests: 938 .NET, 178 Python — all passing.** Last commit `980ca11`; uncommitted after it are
-this handoff, a moved `appsettings.json.example` (now at the repository root), and a further
-`inf-1` run under `tests/agent/`.
-
----
-
-## The reframing that happened
-
-Polson stopped being "an MCP server plus prompts that Claude or Gemini drives" and became a
-**standalone co-creative studio**. A visitor needs a brief, a workflow, and the willingness to say
-"make the background green". Not JavaScript, not which model is behind it, not that there is a model.
-
-The boundary that makes this true already existed: a **managed** project carries no
-`agent.config.json`, so its host owns tool policy and `project.load` refuses to run it; a
-**standalone** project carries its own policy, instructions and session directories. The orchestrator
-supplies the human, and the browser supplies the human's hands.
-
-A second reframing, from Davis's *Quantifying* deck: the sense-making curve is not only a viewer for
-the director. It is meant to be **machine-consumed** — the agent reading its own interaction model
-and adapting. We serve two of his four purposes (analysis, explainability) and not the other two
-(adaptability, partnership). That is written down in `docs/creative-sense-making.md` §7.
+**Tests: 961 .NET, 189 Python — all passing.** The previous handoff (Milestone 6 phase 2) is
+superseded; its "where to pick up" list is done except for the two items carried forward below.
 
 ---
 
-## 1. The web app (`src/webapp/studio/`)
+## What this session was actually about
 
-```bash
-./polson_webapp projects          # browser, http://127.0.0.1:8000
-./polson_run projects/acme        # one turn in the terminal, you as the director
-```
+The last one built the studio. This one ran it **somewhere else** — WSL — and almost everything of
+value came out of that. A second machine is a test you cannot fake: it found a Windows-only lock
+file, a missing native library, a Python floor nobody had stated, and an error message that cost an
+agent 27 tool calls. None of those were visible from the machine the thing was written on.
 
-The argument means different things — a directory *of* projects versus *one* project — which is why
-they are separate scripts rather than one with a flag.
-
-| Route | Does |
-| :--- | :--- |
-| `GET /` | Brief form; project list with `has a session` / `not started` |
-| `POST /projects` | `create-project` as a subprocess → optionally start |
-| `POST /runs` | Start a run on an existing project |
-| `GET /runs/{id}` | The page: curve, trace, render, script |
-| `GET /runs/{id}/events` | SSE — replay then live tail |
-| `POST /runs/{id}/answer` | `WebDirector.reply()` |
-| `POST /runs/{id}/say` | Mid-run interjection, via an SDK trigger |
-| `GET /runs/{id}/artifacts/{path}` | Renders, path-contained |
-| `GET /runs/{id}/scripts/{name}` | Source, pygments-highlighted |
-| `GET /runs/{id}/curve` | The coded run |
-
-**The demonstration that matters.** Mid-run, the director typed *"instead if yello could you use a
-green background"*. 93 seconds later the agent opened a new stage with:
-
-> `Settling Design Language: Neo-brutalist green-bar line printer aesthetic.`
-
-It did not swap a hex value. It reinterpreted the conceit — **green-bar paper** is the real
-alternating-band continuous-feed stock, historically correct for the printout the piece imitates, and
-the bands appear in the render. The interjection was made sense of against the evolving artifact
-rather than executed. That is Davis's "disruption as creative catalyst", observed.
-
-It also finished the script it was mid-way through rather than abandoning it, and applied the change
-at the next point where colour was actually decided.
+The second theme was **legibility**. A run's record was complete and still unreadable: failures that
+coded as nothing, a curve with no axes, prose in a 112px gutter. The fixes are small individually;
+together they are the difference between a record that exists and one a judge can read.
 
 ---
 
-## 2. Inspection events (.NET)
+## 1. Portability — the WSL run
 
-The record was **only ever writes**: scripts executed, artifacts rendered, stages declared. It said
-what an agent did and never what it perceived — half of the perception–action loop, and the half that
-says whether an action was informed or blind.
+**The Python lock was Windows-only.** `uv pip compile` without `--universal` resolves for the machine
+it runs on and emits pins with the environment markers *stripped* — all 49 packages, no markers. So
+Linux dutifully tried to install `pywin32`, which has no Linux build at all, and failed. `mcp`
+declares it correctly as `sys_platform == 'win32'`; the lock is what lost the condition.
+Recompiled with `--universal --python-version 3.13`: same 49 packages, same versions, three markers
+gained. The compile command is documented in four places and all four now carry the flag, because
+the next regeneration would otherwise reintroduce it silently.
 
-`ProbeScope` (in `Polson.Runtime`, reachable from both drawing layers) adds two events:
+**SkiaSharp has no Linux native in the meta-package.** `bin/cli/runtimes/` carried
+`libHarfBuzzSharp.so` for thirteen architectures and `libSkiaSharp` for **osx and win only**. Every
+drawing call died in `SKImageInfo`'s type initializer. Fixed by adding
+`SkiaSharp.NativeAssets.Linux` — **take that one, not `.NoDependencies`**, which is built without
+fontconfig and would silently give an empty font manager: every family substituted, the whole
+`LogoType` surface quietly meaningless, no error anywhere.
 
-- **`inspect`** — a per-execution tally by kind: `measure`, `sample`, `compare`, `capability`, `read`.
-  Counts, not events, because one `getPixel` loop runs thousands of times.
-- **`artifact.read`** — one pass reading what an earlier pass left, by the same path the `render`
-  event named, so the two join. The only direct evidence in the record that coordination happened
-  through the environment.
-
-Three things had to be right or the tally would be worthless: `attr()`/`transform()` call `getBBox`
-internally (split the counting boundary from the computation), `Has()` delegates to `Resolve()`
-(count once), and probes are written in `finally` so a script that looked and then crashed still
-reports what it saw.
-
----
-
-## 3. Creative sense-making (`orchestrator/csm.py`, `docs/creative-sense-making.md`)
-
-Davis's framework in a medium he did not have. His **categories** are domain-independent and adopted
-unchanged; his **coding table** is drawing-specific and re-derived for scripts.
-
-| Interaction mode | Value | Polson |
-| :--- | ---: | :--- |
-| Communicate | +1 | `note`, `stage.*`, director turns |
-| Gather | +1 | asset requisition, `Search` |
-| Inspect | +0.5 | `inspect`, `artifact.read`, `view_file` |
-| Wait | 0 | `thinking`, gaps |
-| Execute | −1 | `script.ok`/`script.error` **that produced a render** |
-
-**`server.jsonl` is the spine** — the MCP server writes it under every host — and the transcript is
-host-specific *enrichment*. The three transcript formats differ in kind, not field names: ours and
-Claude's are typed; Antigravity's records a tool call as a `GENERIC` step whose content is rendered
-prose. So the medium-specific half needs no adapter at all.
-
-**Two readings, which disagree in sign on real runs.** Counting actions gave `+92.5`; counting time
-gave `−1159.7`. Eighty-three notes occupied eight seconds between them while eleven executions took
-thirty-one minutes. Reporting one number would have been confidently wrong, so `summary()` reports
-both plus `heldMs` per mode, and each gets the x-axis that matches it.
-
-Corroborated on two sources for the scale, and the structural argument settles it: only under the
-2025 table does a cumulative curve rise while regulating and fall while producing. Under the 2017
-scale `execute = 0` and producing would not move the curve at all.
+**A venv can be built with the wrong interpreter and nothing says so.** `python3 -m venv` on Ubuntu
+22.04 makes a 3.10 environment, and the failure surfaces minutes later as pip refusing `rpds-py`.
+`src/webapp/check_python.py` now runs before the install, with the venv's own interpreter, against
+the floor **read from the lock's `uv` header** — so the guard cannot drift from the file it guards.
+It caught a real 3.10 venv on its first outing.
 
 ---
 
-## Bugs found and fixed, worth remembering
+## 2. One file set, either host
 
-**`TypeError: cannot pickle '_thread.lock' object` — every browser run failed at startup.**
-`Agent.__init__` does `config.model_copy(deep=True)`, and hooks and triggers are fields on it, so
-everything reachable from them is copied. `WebDirector` held `broker.publish`, a bound method whose
-`__self__` is a `Broker` holding a lock. `EventLog` already carried a `__deepcopy__` guard **and its
-docstring names this exact error**; three new handle objects were added on the same path without it.
-Terminal runs never broke, because a terminal director holds only a log.
+`--standalone` used to decide at generation time how a project could ever be run, and choosing wrong
+was discovered only when the orchestrator refused it. Every Antigravity project now carries
+`agent.config.json`, so **the same directory runs under a desktop host or the orchestrator**, and
+`profile` survives as a label for what it was made for.
 
-**A second run replayed the first run's events as its own.** A project's `server.jsonl` is appended
-to across runs, and the tailer followed from byte zero. The offset is now fixed *synchronously* at
-`start()`, not on the first poll.
+The refinement that made it safe: **the file set is uniform, the two policies are not.**
 
-**A resumed run spent a full session being told the work was done.** `project.json` records a
-`conversationId`; `run_turn` defaults `resume=True`; the web layer passed nothing. Given the opening
-prompt, the agent correctly answered "the project has completed all 7 stages". One place now decides
-what a blank prompt means, because it means opposite things.
+| File | Read by | Denies |
+| :--- | :--- | :--- |
+| `.agents/settings.json` | a desktop host — a person at a keyboard | `generate_image` |
+| `agent.config.json` | the orchestrator — which serves the web app | `generate_image`, `run_command` |
 
-**The Antigravity hook, after three sessions.** The CLI log at
-`~/.gemini/antigravity-cli/log/cli-*.log` had the answer the whole time — `hooks_manager` says what
-loaded, `command_hook_executor` gives the command's stderr verbatim. Hooks were firing all along.
-Three separate command-level faults: a live MCP server holding `bin/cli/*.dll` so a build left it
-stale; `cmd /c` mangling a command that *begins* with a quoted path; and
-`NoDefaultCurrentDirectoryInExePath=1`, which stops cmd finding a bare filename in the working
-directory. Generated projects now carry `.agents/preserve-chatlog.cmd` and the hook invokes
-`.\preserve-chatlog.cmd` — no quotes, no spaces, no path.
+`run_command` is denied because *a public URL must not reach a shell* — a fact about the runtime, not
+about the file set. Each file is read by exactly one runtime, so the right policy now arrives with
+whoever runs the project instead of being guessed when it was generated. Copying the standalone
+denials into the host file would take the shell from a developer in their IDE; leaving them out of
+ours would hand a visitor one. A test fails on either mistake.
 
-**`--reset` silently downgraded a standalone project to managed**, rewriting `project.json`, dropping
-`agent.config.json` from the plan, and taking `session/` out of `.gitignore` — which exposed SDK
-session state. A reset clears the run; it does not decide what the project is.
+`agent.config.json` carries `"readBy": "polson-orchestrator"` because it now ships where a desktop
+host will ignore it, and a policy file that reads as enforcement while enforcing nothing is this
+project's oldest trap.
 
-**`polson_webapp.cmd` failed with `'M' is not recognized`** — an em dash in a `REM` comment. Batch
-files must be ASCII; all four `.cmd` files are now clean.
+**A latent bug fell out:** the web page decided runnability from the `profile` label while
+`project.load` decided from the file — two answers to one question, already able to disagree. Both
+now key on the file.
 
 ---
 
-## Environment traps that cost real time
+## 3. The record can now say it was blocked
 
-- **`bash` heredocs silently eat backslashes**, even with a quoted delimiter. It corrupted a C#
-  string literal and three Python ones this session. Build escapes from `chr(92)` or use the Write
-  tool; never a heredoc for content containing `\n` or `\\`.
-- **Extensionless scripts need a `.gitattributes` line each.** No pattern catches them, they fall
-  back to `* text=auto`, and on Windows that means a CRLF shebang and `bad interpreter`. `build`,
-  `polson`, `polson_webapp`, `polson_run` are listed; a new one gets no protection until added.
-- **`git-bash /tmp` and Python's `/tmp` are different directories** (`C:\Users\…\Temp` vs `C:\tmp`).
-- **The credential lives in `bin/cli/appsettings.json`**, which is build output: gitignored, never
-  committed, and never restored by a fresh clone. There is deliberately **no** `GEMINI_API_KEY`
-  override — the .NET MCP server reads only that file, and two halves of one studio cannot have two
-  answers to "which key".
+A Linux run met the missing Skia native: nine scripts, four refused, no artifact at all. **The curve
+rose smoothly for its whole length** and read as a long, thoughtful regulation phase.
+
+It was not wrong — the agent genuinely never produced anything — but it was *unable to be right*.
+`execute` is the only negative value in the table and it needs a render to be assigned, so with no
+renders the curve **cannot** fall, and a blocked run looked identical to one that had not started.
+The four most informative events in the session were coded as nothing at all.
+
+`attempt` (**0**, its own mode) now codes a `script.error` that produced no render. Flat, because the
+artifact did not change and a falling curve would say a broken engine had produced something — but
+visible, in its own colour, with a `refused` count that leads the tally. The rule it narrows is
+unchanged where it was aimed: a *probe* that drew nothing deliberately is still regulation, already
+spoken for by its own `inspect` event.
+
+**`attempt` is ours, not Davis's**, and `docs/creative-sense-making.md` §4 says so explicitly. Every
+other row maps one of his modes onto our events.
 
 ---
 
-## Where to pick up
+## 4. Diagnostics, which cost a whole run
 
-**Immediately next — two UI changes the director asked for, mid-sentence when the session ended:**
+The Skia failure reached the agent as `The type initializer for 'SkiaSharp.SKImageInfo' threw an
+exception.` — and it spent **27 tool calls and a compaction** investigating fonts, Snap versus
+Canvas2D, and the SDK documentation. Every one of them unable to help, because the file was not on
+disk. `Explain` was returning `ex.Message` and discarding the `DllNotFoundException` underneath.
 
-1. **Collapse `thinking` entries by default**, with click to expand. They are verbose and they bury
-   the trace.
-2. **Make the right pane show *any* execution's artifact**, not just the latest render. Clicking an
-   `ExecuteScript` entry should show that render *and* its script together — the script panel already
-   does half of this.
+Three fixes, all in `JsDrawingEngine.Explain`:
 
-**Then, in rough order of value:**
+- **The cause is found however deep it is buried**, and a native-library failure says plainly that no
+  script can work around it, so the next agent stops instead of hunting.
+- **`JavaScriptException` now routes through `Explain` too** — it was formatted bare, so *every*
+  script error arrived with no line number even though Jint records one. Now `(line 56)`.
+- **Jint's overload failure gets a reading.** "No public methods with the specified arguments were
+  found" names neither method nor argument; its commonest cause is `undefined` from a property that
+  does not exist. A live run lost a 97-line composition to `rect.w` — the toolkit's rectangles carry
+  `width` — making `fillRect(x, y, undefined, undefined)`.
 
-- **`artifacts read back: none`** across a whole run. The stigmergy column is still empty: a single
-  agent holds its own context so it never needs to look back. Worth pushing in the workflow templates
-  — looking is what makes the trace legible to anyone else.
-- **Group the trace by server session.** The stage list reads `Data → … → Encode → Data → … → Encode`
-  when a project has run twice. `polson report` counts sessions; the page does not use it.
-- **Builder vocabulary in a visitor's view** — the front page shows `sdk: agy`, `profile: standalone`.
-- **Multi-agent.** The record is shaped for it (`src`, `depth`, `trajectory`); the runner is not.
-  Two curves on a shared axis is where *participatory* sense-making becomes visible, and it is the
-  claim the theory rests on. Choose it deliberately; it is the largest remaining piece.
-- **Adaptability** — the agent consuming its own curve. `docs/creative-sense-making.md` §7 names the
-  gap; the 2014 Creative Trajectory Monitor is the precedent.
+---
 
-**Also open:** the devpost draft (`docs/devpost/Polson.md`) still carries Camel leftovers — "a DFIR
-investigation", "the Camel JavaScript interpreter", a link to `allisterb/Camel`, "case session",
-"When an investigation starts" — plus `bake-report` (the verb is `report`), `create-poject`, a
-missing `eval`, and six sentences that stop mid-thought. The director is editing it.
+## 5. The run page
 
-**One unexplained flake:** `Polson.Tests.Drawing` failed once in a full-solution run and passed on
-five consecutive re-runs. The only output was a deliberate negative test's log line. Not reproduced,
-not diagnosed.
+- **A legend** (`what these mean`) defining every event label in a reader's terms.
+- **`said` clipped to five lines**, click to expand, in proportional type.
+- **A ■ marker** on lines that lead to a picture. First attempt marked every line of a rendering
+  pass — truthful and useless at **84 of 96 rows**. Now on `rendered`/`executed` only: 16 of 99.
+- **Renders drawn as stemmed marks** on the curve, so production is findable at a glance.
+- **Axes** with ticks, labels and units on both readings. The tick rule is ported from
+  `ScaleToolkit.NiceStep`, verified to agree with `Scale.ticks` on five intervals.
+- **A `how this is coded` disclosure** built from the server's own `scale`, so the legend cannot
+  disagree with the curve.
+- **Provider failures are labelled as such.** The SDK yields a platform error on the same channel as
+  the agent's words, so a 429 was rendering as `SAID`.
+
+**One layout bug worth remembering:** the stage `<span>` was omitted when a row had no stage, so in a
+three-column grid the detail landed in the **7rem stage gutter**. Every stageless event — `said`,
+`thinking`, `tool`, `director` — had been reading in a 112px column.
+
+**The curve was project-scoped while the trace was run-scoped.** `csm.read` read all three event
+files whole, and they are appended to across runs: 393 points spanning 10.4 hours where the run was
+101 points over 6.2 minutes. Scoped by a `since` stamped at registration. Redraws are also coalesced
+now — they only fired on `script.ok`, so a stage of nothing but notes looked frozen.
+
+---
+
+## 6. `polson report` splits by session
+
+A project's log is appended to across runs, so the stages read
+`Data → … → Encode → Data → … → Encode`. The report now breaks it at each `run.start`, with each
+session's own counts and stage list, and the per-session counts **sum back to the project totals**.
+
+It immediately surfaced two sessions that had been invisible inside the totals: one that ran 28
+seconds and did nothing, and one of 0.0s in `cs-2`.
+
+---
+
+## 7. SnapPaper — eleven duplicates and one real bug
+
+The twelve `CS0114` warnings were verified mechanically, not by eye: normalising `Document`→`Node`
+and `this`→`Paper` (identical for a paper, since the constructor passes the document to `base`) made
+**eleven character-identical** to the virtuals they hid. Deleted.
+
+**`Clear` was the real one.** The base wipes every child; a paper keeps its `<defs>`. Because it hid
+rather than overrode, the same paper either kept its gradients or silently destroyed them depending
+on the static type of the reference. Now an `override`, with a test that calls it **through a
+`SnapElement`** deliberately — it fails without the fix.
+
+---
+
+## Reference material read this session
+
+Two more Davis-lineage papers, scanned and in the ledger:
+
+- **`p356-davis.pdf`** — *Creative Sense-Making*, C&C '17. The canonical methods paper. It settles two
+  things `docs/creative-sense-making.md` had been arguing unaided: the scale is explicitly
+  **domain-remappable** (the states are the framework; their placement on the axis is the analyst's
+  mapping), and the **sign convention is inconsequential** if consistent. It also lists as *future
+  work* the thing our medium gives away free — tagging the continuous curve with the events behind
+  it — and records the cost we avoid: **4 analyst-minutes per minute of video**.
+- **`3591196.3593514.pdf`** — *Observable Creative Sense-Making (OCSM)*, C&C '23, **CC BY 4.0**, the
+  only adaptable paper in `papers/`. **Read it before defending the curve to anyone.** From Magerko's
+  own lab, it names three conceptual limitations in CSM. Its applicability clause is what matters
+  here: CSM remains valid for collaborations *"that have identifiable behavior markers for the
+  corresponding cognitive states"* — and a code medium is the strongest instance of that clause,
+  because the markers are machine-recorded rather than inferred from video by a coder.
+
+---
+
+## Where to pick up: multi-agent
+
+This is what the director asked for next, and it is the largest remaining piece.
+
+**What already exists.** `comic_studio` is the multi-agent workflow: four roles
+(`01_penciler`, `02_inker`, `03_colorist`, `04_critic`), and `create-project` emits
+`.agents/agents.json` naming a Studio Director orchestrator plus one subagent per role, each with the
+Polson tools and `view_file`. Every event carries `src`; the transcript carries `depth` and
+`trajectory`, which is what separates a delegated subagent's work from the main agent's. `csm.py`
+already has `Curve.agents` and `Curve.per_agent()`.
+
+**What does not.** `run_turn` hosts **one** agent. Nothing splits the curve onto a shared axis in the
+UI, and nothing computes coupling.
+
+**The recipe is specified**, in `p356-davis.pdf`: the *creative trajectory* is the **elementwise sum
+of participants' cumulative integrals**, with trends read off it like stock-market buy/sell/hold
+signals. §9 of `docs/creative-sense-making.md` says "one curve per agent, stacked" — that is half of
+it; the summed third curve is the other half.
+
+**And a warning, from OCSM.** Its second critique is that CSM treats interaction as a *result* of
+individual mental states, where participatory sense-making holds interaction to be an irreducible
+unit analysed whole. Two per-agent curves summed is exactly the reduction it objects to. OCSM's
+`participation` dimension is the counter-proposal: level 3 is *joint* sense-making, and in our medium
+its marker is `artifact.read` — one agent reading what another left.
+
+**Known problems in `comic_studio` before running it** (from the parked `cs-2` review):
+
+- `roles/` numbering contradicts the pipeline: files are `02_inker` / `03_colorist` while the
+  instructions mandate **pencil → colour → ink** and explain why.
+- `roles/` assumes a painterly subject. A flat-vector reference made `02_inker.md`'s three-tier
+  weights, feathering and Ben-Day halftone into instructions to move *away* from the target.
+- The agy profile's no-peeking rule is prose in `GEMINI.md` only, with no source-path denies.
+
+### Also open
+
+- **`artifacts read back: none`** across whole runs. `artifact.read` exists and is instrumented; a
+  single agent holds its own context, so it never looks back. This is the column the enactive claim
+  most needs, and multi-agent is the setting where it should finally populate — one agent reading
+  another's render is stigmergy with nowhere else to happen.
+- **Newness, from OCSM.** `bitmap.diff` between consecutive renders gives *repeat / slight /
+  significant / new* as a measurement, where the dance study could only have a coder's judgement.
+  It answers a question the curve cannot: eleven executions that each changed almost nothing look
+  identical to eleven that transformed the piece.
+- **Adaptability.** Davis names four purposes; we serve analysis and explainability, not
+  adaptability or partnership. §7 records the gap.
+- **`SKPathBuilder` migration** — nine `CS0618` warnings, no behaviour change, will become errors on
+  a future SkiaSharp major.
+- **The devpost draft** still carries Camel leftovers.
+- **`reference/README.md` is gitignored** (`.gitignore:432`, `reference/*`), so the ingestion ledger
+  exists only on this machine. CLAUDE.md loads it labelled "checked into the codebase"; a fresh clone
+  has no verdicts, which is the outcome the ledger exists to prevent. One negation line would fix it.
+
+---
+
+## Environment traps confirmed again
+
+- **Read a live run's files by snapshotting them first.** Reading `projects/img-1` mid-run gave a
+  5-event file that was 34 events by the next command, and a recode that returned zero points and
+  looked like a regression in code I had just written.
+- **`bash -c` and heredocs eat backslashes.** A regex built in `python -c` lost its escape and threw
+  `unterminated character set`. Build escapes from `chr(92)`, or write the script to a file.
+- **Batch files must be ASCII.** `src/webapp/install.cmd` still had an em dash in a `rem`, the same
+  thing that broke `polson_webapp.cmd` last session. The four root `.cmd` files were cleaned then;
+  this one was missed.
+- **`TaskStop` does not kill a uvicorn child.** A test server survived the wrapper and kept serving a
+  deleted directory. Check the port, not the task.

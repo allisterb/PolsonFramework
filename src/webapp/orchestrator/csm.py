@@ -194,6 +194,11 @@ class Curve:
             "actions": len(self.points),
             "durationMs": self.duration_ms,
             "counts": counts,
+
+            # The coding table itself, so a viewer can show what the colours mean without a second
+            # copy of the numbers to keep in step. A legend that disagrees with the curve it explains
+            # is worse than none.
+            "scale": dict(VALUES),
             "regulating": regulating,
             "executing": executing,
 

@@ -83,6 +83,19 @@ class CodingTests(unittest.TestCase):
 
         self.assertEqual(curve.summary()["net"], 0.0)
 
+    def test_the_summary_carries_the_coding_table_itself(self):
+        """The viewer's legend is built from this rather than from a second copy of the numbers.
+
+        A legend that disagrees with the curve it explains is worse than no legend, so the scale
+        travels with the reading. Renaming the field would empty the legend silently.
+        """
+        scale = csm.code(executed(1, "e1")).summary()["scale"]
+
+        self.assertEqual(scale, csm.VALUES)
+        self.assertEqual(scale["execute"], -1.0)
+        self.assertEqual(scale["inspect"], 0.5)
+        self.assertEqual(scale["attempt"], 0.0)
+
     def test_attempts_are_counted_apart_from_both_regulating_and_producing(self):
         """Neither sense-making nor a mark on the canvas, so it belongs in neither total."""
         events = executed(1, "e1", rendered=False, failed=True) + executed(4, "e2")

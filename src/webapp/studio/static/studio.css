@@ -127,6 +127,18 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
 .legend .art { display: inline-block; width: 7px; height: 7px; background: var(--good);
                border-radius: 1px; }
 
+/* The coding table under the curve: prose first, then the scale itself. */
+.legend .key { margin-top: .6rem; padding: .8rem 1rem; background: var(--panel);
+               border: 1px solid var(--line); border-radius: 3px; }
+.legend .key p { margin: 0 0 .7rem; max-width: 78ch; }
+.legend .key dl { border: 0; padding: 0; margin: 0 0 .7rem;
+                  grid-template-columns: 11rem 1fr; }
+.legend .key dt { text-transform: none; letter-spacing: 0; font-size: .82rem;
+                  font-family: var(--mono); color: var(--ink); }
+.legend .key dt b { color: var(--dim); }
+.legend .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                  margin-right: .4rem; }
+
 /* Sticky, so the render stays put as the trace grows past it. */
 .latest { position: sticky; top: 1rem; }
 .latest figure { margin: 0; border: 1px solid var(--line); border-radius: 3px; padding: .5rem;

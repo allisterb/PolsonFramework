@@ -26,6 +26,25 @@
     </h2>
     <div id="plot"><p class="empty">Nothing coded yet.</p></div>
     <p class="hint" id="tally"></p>
+
+    <details class="legend" id="curvekey">
+      <summary>how this is coded</summary>
+      <div class="key">
+        <p>Every action is coded by what it does for the work — not by whether it was any good.
+           <b>Positive is the agent regulating how it engages</b>: saying what it is doing, fetching
+           material, looking at what is there. <b>Negative is production</b>, the moment the artifact
+           actually changes. The curve is the running total, so it climbs through preparation and
+           falls as work lands.</p>
+        <p>Neither direction is better. A run that only climbs never made a mark; one that only falls
+           never checked anything. What the shape is <i>for</i> is seeing how a collaboration moved
+           over time — and, once two agents share an axis, whether their turning points track each
+           other, which is where participatory sense-making becomes visible rather than argued.</p>
+        <dl id="curvescale"></dl>
+        <p class="hint">The categories are Nicholas Davis's; the values are his 2025 table, re-derived
+           for a medium of scripts and renders. <code>docs/creative-sense-making.md</code> carries the
+           derivation and says which row is ours rather than his.</p>
+      </div>
+    </details>
   </section>
 
   <div class="panes">
@@ -114,6 +133,17 @@
     'question.open': 'asking', 'question.closed': 'answered', 'message': 'director',
     'stream.lag': 'gap', 'stream.truncated': 'earlier events not kept',
     'run.error': 'run failed'
+  };
+
+  // What each mode is, in this medium. The *values* are not here on purpose — they come from the
+  // server's own coding table, so the legend cannot quietly disagree with the curve it explains.
+  const MODE_TEXT = {
+    communicate: 'saying what it is doing and why — notes, stage declarations, and your turns',
+    gather: 'reaching outside itself for material — requisitioning an asset, searching the manuals',
+    inspect: 'looking before acting — measuring, sampling a pixel, reading back an earlier render',
+    wait: 'thinking, and the gaps between one action and the next',
+    attempt: 'a script that tried to draw and drew nothing: the engine refused it',
+    execute: 'a script that produced a render — the one moment the artifact changes'
   };
 
   // What the y axis is counting, which is not the same quantity in the two readings — one sums the
@@ -278,6 +308,30 @@
   });
 
   /**
+   * The coding table, from the server's own values.
+   *
+   * Ordered by value so the scale reads as a scale — everything that counts as regulating, then the
+   * flat states, then the one that counts as production. Written once; the table does not change
+   * within a run.
+   */
+  let scalePainted = false;
+
+  function paintScale(scale) {
+    if (scalePainted || !scale) return;
+    scalePainted = true;
+
+    const signed = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v);
+
+    document.getElementById('curvescale').innerHTML = Object.entries(scale)
+      .sort((a, b) => b[1] - a[1])
+      .map(([mode, value]) =>
+        `<dt><span class="swatch" style="background:${MODE[mode] || '#999'}"></span>` +
+        `${esc(mode)} <b>${signed(value)}</b></dt>` +
+        `<dd>${esc(MODE_TEXT[mode] || '')}</dd>`)
+      .join('');
+  }
+
+  /**
    * Round tick values across an interval — steps of 1, 2, 5 or 10 times a power of ten.
    *
    * Ported from `ScaleToolkit.NiceStep`, which is what `Scale.ticks` gives a script, so the axis a
@@ -425,6 +479,8 @@
         if (named) openScript(named[0]);
       });
     });
+
+    paintScale(coded.summary.scale);
 
     const s = coded.summary;
     const held = Object.entries(s.heldMs || {})

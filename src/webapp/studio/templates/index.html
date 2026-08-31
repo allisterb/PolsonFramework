@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Polson Studio</title>
+<link rel="stylesheet" href="/static/studio.css">
+
+<main>
+  <h1>Polson Studio</h1>
+  <p class="sub">Projects in <code>{{ root }}</code></p>
+
+  {% if refused %}
+    <p class="refused">{{ refused }}</p>
+  {% endif %}
+
+  {% if active %}
+    <p class="active">A run is going — <a href="/runs/{{ active }}">watch it</a>. One at a time.</p>
+  {% endif %}
+
+  <h2>Start a run</h2>
+  {% if projects %}
+    <form method="post" action="/runs">
+      <table>
+        <thead><tr><th></th><th>project</th><th>workflow</th><th>profile</th><th></th></tr></thead>
+        <tbody>
+          {% for p in projects %}
+            <tr class="{{ 'unrunnable' if p.why else '' }}">
+              <td><input type="radio" name="project" value="{{ p.path }}"
+                         {{ 'disabled' if p.why }} {{ 'checked' if loop.first and not p.why }}></td>
+              <td><code>{{ p.name }}</code></td>
+              <td>{{ p.workflow }}</td>
+              <td>{{ p.profile }}</td>
+              <td class="why">{{ p.why }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <label for="prompt">Opening prompt <span class="hint">(blank uses the default)</span></label>
+      <textarea id="prompt" name="prompt" rows="3"
+                placeholder="Read GEMINI.md, then brief.md, and begin."></textarea>
+
+      <button type="submit" {{ 'disabled' if active }}>Start</button>
+      {% if active %}<span class="hint">A run is already going.</span>{% endif %}
+    </form>
+  {% else %}
+    <p class="empty">
+      No projects here. Make one with:<br>
+      <code>dotnet bin/cli/Polson.CLI.dll create-project {{ root }} &lt;id&gt; agy --standalone --prompt "..."</code>
+    </p>
+  {% endif %}
+
+  {% if runs %}
+    <h2>This session</h2>
+    <ul class="runs">
+      {% for r in runs %}
+        <li>
+          <a href="/runs/{{ r.id }}">{{ r.id }}</a>
+          <span class="status {{ r.status }}">{{ r.status }}</span>
+          <span class="hint">{{ r.workflow }} · {{ r.started }}</span>
+          {% if r.error %}<span class="why">{{ r.error }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</main>

@@ -157,9 +157,14 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
 
     @app.get("/runs/{run_id}/curve")
     async def curve(run_id: str) -> JSONResponse:
-        """The run coded as creative sense-making. See `docs/creative-sense-making.md`."""
+        """The run coded as creative sense-making. See `docs/creative-sense-making.md`.
+
+        Scoped to this run by `run.since`, for the same reason the tailer skips what is already in
+        `server.jsonl`: the event files belong to the project and outlive any one run. This is a run
+        page, so the trace and the curve have to be readings of the same events.
+        """
         run = found(app.state.registry, run_id)
-        coded = csm.read(run.project)
+        coded = csm.read(run.project, since=run.since)
         return JSONResponse({"summary": coded.summary(), "trace": coded.trace})
     # endregion
 

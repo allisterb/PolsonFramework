@@ -803,6 +803,75 @@ class StreamTests(unittest.TestCase):
         self.assertIn("event: run.closed", body)
 
 
+class CurveScopeTests(unittest.TestCase):
+    """The curve is a reading of *this run*, not of the project's whole history.
+
+    A project's three event files are appended to across runs, exactly as `server.jsonl` is for the
+    tailer. Reading them whole put an earlier run's work on this run's plot — and because the old
+    points dominated the axes, the live ones arrived too small to see, so the curve looked frozen
+    rather than wrong. That is the failure worth pinning: it is invisible on a project's first run
+    and appears only on its second.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-curve-"))
+        self.registry = Registry()
+        self.client = TestClient(app_mod.create_app(self.root, self.registry))
+
+        self.project = project_dir(self.root, "acme")
+        events = self.project / "events"
+
+        # Yesterday's run and today's, in the one file, as a real project accumulates them.
+        lines = [
+            _event("2026-08-30T09:00:00.000Z", 1, "stage.begin", stage="Yesterday"),
+            _event("2026-08-30T09:00:01.000Z", 2, "note", stage="Yesterday", message="an old note"),
+            _event("2026-08-31T15:00:00.000Z", 3, "stage.begin", stage="Today"),
+            _event("2026-08-31T15:00:01.000Z", 4, "note", stage="Today", message="a new note"),
+        ]
+        (events / "server.jsonl").write_text("".join(lines), encoding="utf-8")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _register(self, since: str) -> None:
+        self.registry._runs["acme-1"] = Run(
+            id="acme-1", project=_loaded(self.project), prompt="", stream=None,
+            started="2026-08-31T15:00:00+00:00", since=since, status="done")
+
+    def test_only_this_runs_events_are_coded(self):
+        self._register("2026-08-31T14:59:59.000Z")
+        trace = self.client.get("/runs/acme-1/curve").json()["trace"]
+
+        self.assertEqual([p["stage"] for p in trace], ["Today", "Today"])
+
+    def test_the_earlier_run_is_not_merely_ordered_last(self):
+        """Off-by-one on the cut would keep the old points and only move them."""
+        self._register("2026-08-31T14:59:59.000Z")
+        body = self.client.get("/runs/acme-1/curve").json()
+
+        self.assertEqual(body["summary"]["actions"], 2)
+        self.assertNotIn("an old note", [p["detail"] for p in body["trace"]])
+
+    def test_without_a_cut_the_whole_project_is_read(self):
+        """The fallback a caller with no run gets, and what the bug looked like."""
+        self._register("")
+        trace = self.client.get("/runs/acme-1/curve").json()["trace"]
+
+        self.assertEqual([p["stage"] for p in trace], ["Yesterday", "Yesterday", "Today", "Today"])
+
+    def test_the_first_point_is_relative_to_this_run_not_the_project(self):
+        """The x-axis starts when the run did; otherwise a resumed run opens hours along it."""
+        self._register("2026-08-31T14:59:59.000Z")
+        trace = self.client.get("/runs/acme-1/curve").json()["trace"]
+
+        self.assertEqual(trace[0]["t"], 0)
+        self.assertEqual(trace[-1]["t"], 1000)
+
+
+def _event(ts: str, seq: int, kind: str, **fields) -> str:
+    return json.dumps({"ts": ts, "seq": seq, "src": "server", "type": kind, **fields}) + "\n"
+
+
 class _StubStream:
     """A RunStream's surface, without the tailer or the agent behind it."""
 

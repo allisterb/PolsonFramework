@@ -249,17 +249,33 @@ def _with_holds(points: list[Coded]) -> list[Coded]:
     return held
 
 
-def read(project: Project, *, enrich: bool = True) -> Curve:
+def read(project: Project, *, enrich: bool = True, since: str | None = None) -> Curve:
     """Codes one project's run: the spine, plus the standalone transcript when it is there.
 
     `enrich=False` codes the spine alone, which is what a managed run gets until its host has an
     adapter. The result reports the difference rather than hiding it.
+
+    `since` scopes the reading to one run, and a caller showing a single run wants it. **All three
+    event files are appended to across runs**, so without it a second run is coded together with
+    every run before it, and what comes back is the project's whole history presented as this run's
+    curve — the earlier work dominating the plot while today's points arrive too small to see.
+
+    It is a timestamp in the record's own format (`events.timestamp()`), compared as a string. That
+    is sound because the Python and .NET writers emit the identical millisecond format, which is
+    also what `events.merge` already sorts on.
     """
     events = list(read_events(project.server_events))
     events += list(read_events(project.director_events))
 
     agent_events = list(read_events(project.agent_events)) if enrich else []
     events += agent_events
+
+    if since:
+        events = [e for e in events if (e.get("ts") or "") >= since]
+
+        # Filtered too, not just counted: a run whose transcript all predates the cut is not an
+        # enriched run, and reporting it as one would claim a medium-specific reading we do not have.
+        agent_events = [e for e in agent_events if (e.get("ts") or "") >= since]
 
     return code(events, enriched=bool(agent_events))
 

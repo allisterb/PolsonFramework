@@ -1073,12 +1073,18 @@ internal static class ProjectGenerator
         }
         AnsiConsole.WriteLine();
 
+        // Named as the mode it applies to, first thing. The note is only printed for a managed
+        // project, but a reader who has generated both cannot tell that from the text alone — and a
+        // caveat about unenforceable policy is exactly the kind a person carries over to the profile
+        // it was never about.
         if (!standalone)
         {
-            AnsiConsole.MarkupLine("[yellow]  Note:[/] the host owns tool policy in a managed project. Image generation is");
-            AnsiConsole.MarkupLine($"        refused two ways in [bold]{Markup.Escape(host.Permissions)}[/], and carried in");
-            AnsiConsole.MarkupLine($"        [bold]{Markup.Escape(host.Instructions)}[/] as a rule as well — which form this host honours");
-            AnsiConsole.MarkupLine("        is not something we can check from here.");
+            AnsiConsole.MarkupLine("[yellow]  Note:[/] in [bold]managed[/] mode — this project, generated without [bold]--standalone[/] —");
+            AnsiConsole.MarkupLine("        the host owns tool policy, not us. Image generation is refused two ways");
+            AnsiConsole.MarkupLine($"        in [bold]{Markup.Escape(host.Permissions)}[/] and carried in [bold]{Markup.Escape(host.Instructions)}[/] as a rule");
+            AnsiConsole.MarkupLine("        as well — which form this host honours is not something we can check");
+            AnsiConsole.MarkupLine("        from here. A [bold]--standalone[/] project has none of this caveat: Polson");
+            AnsiConsole.MarkupLine("        hosts the agent and enforces the policy itself.");
             AnsiConsole.WriteLine();
         }
 

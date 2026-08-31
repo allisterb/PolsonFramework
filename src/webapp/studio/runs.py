@@ -24,7 +24,7 @@ from typing import Any
 from orchestrator import project as project_mod
 from orchestrator import run as run_mod
 from orchestrator.broker import Subscription
-from orchestrator.events import EventLog
+from orchestrator.events import EventLog, timestamp
 from orchestrator.project import Project
 from orchestrator.watch import RunStream
 
@@ -58,6 +58,12 @@ class Run:
     prompt: str
     stream: RunStream
     started: str
+
+    #: Where this run begins in the project's event files, in the record's own timestamp format.
+    #: The files are appended to across runs, so this is what separates one run's reading of them
+    #: from the project's whole history — the same cut the tailer makes with a byte offset, in the
+    #: one form that works across all three files. Empty means read everything.
+    since: str = ""
     status: str = "starting"
     resumed: bool = False
     error: str | None = None
@@ -174,12 +180,16 @@ class Registry:
         if not prompt:
             prompt = DEFAULT_PROMPT
 
+        # Stamped before the stream starts, so the cut is never later than the tailer's byte offset.
+        # Erring that way includes an event or two the trace might miss; erring the other way would
+        # drop this run's own opening events out of its curve.
         run = Run(
             id=_run_id(project.id, len(self._runs)),
             project=project,
             prompt=prompt,
             stream=RunStream(project),
             started=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            since=timestamp(),
             resumed=resuming,
         )
 

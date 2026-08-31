@@ -177,15 +177,27 @@
       if (!pinned) present(key);
     }
 
-    // Recoding is a file read plus a pass over a few hundred events, so it is done at the moments
-    // the shape actually changes rather than on every line.
-    if (kind === 'script.ok' || kind === 'script.error' || kind === 'stage.begin') drawCurve();
+    // Every event can move the curve, so every event schedules a redraw — but coalesced, because
+    // recoding is a file read plus a pass over the run. Redrawing only when a script finished left
+    // a stage of nothing but notes looking frozen for minutes while its points piled up unseen.
+    curveSoon();
   }
 
   // ── the curve ──────────────────────────────────────────────────────────────────────────────
   let coded = null;
 
+  // One redraw per window however fast events arrive: a burst of replayed events costs a single
+  // fetch, and a live run is never more than a second behind what it has recorded.
+  const CURVE_WINDOW_MS = 1000;
+  let curveTimer = null;
+
+  function curveSoon() {
+    if (curveTimer !== null) return;
+    curveTimer = setTimeout(() => { curveTimer = null; drawCurve(); }, CURVE_WINDOW_MS);
+  }
+
   async function drawCurve() {
+    if (curveTimer !== null) { clearTimeout(curveTimer); curveTimer = null; }
     try {
       const response = await fetch(`/runs/${runId}/curve`);
       if (!response.ok) return;

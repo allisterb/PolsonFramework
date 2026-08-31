@@ -69,10 +69,10 @@ public class CreateProjectOptions : Options
     [Value(2, MetaName = "sdk", Required = true, HelpText = "Agent SDK to target: 'agy' (Google Antigravity) or 'claude' (Claude Code). It decides what the config files are called.")]
     public string Sdk { get; set; } = string.Empty;
 
-    [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate: 'logo' or 'harness' (default: 'logo').")]
+    [Option("workflow", Required = false, Default = "logo", HelpText = "Workflow template to generate: 'logo', 'infographic', 'comic_studio' or 'harness'. Workflows are discovered from the embedded templates, so an unknown name lists what is actually available.")]
     public string Workflow { get; set; } = "logo";
 
-    [Option("type", Required = false, HelpText = "For --workflow harness, the kind of task: 'image' (default) or 'logo'.")]
+    [Option("type", Required = false, HelpText = "Narrows the chosen workflow's direction. Which types exist depends on the workflow and 'comic_studio' has none, so an unknown name lists the ones on offer.")]
     public string Type { get; set; } = string.Empty;
 
     [Option("prompt", Required = false, HelpText = "The subject, in a line — a short form of --brief. Treated as untrusted data and quoted into brief.md exactly as --brief is.")]

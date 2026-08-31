@@ -72,6 +72,21 @@ class Director(hooks.OnInteractionHook):
             )
 
         return types.QuestionHookResult(responses=responses)
+    def __deepcopy__(self, memo: dict[int, Any]) -> "Director":
+        """A handle to something live, not a value: a copy of one must be the same object.
+
+        The SDK deep-copies the whole `LocalAgentConfig` in `Agent.__init__`, and hooks and
+        triggers are fields on it — so everything reachable from them is copied at startup.
+        A `threading.Lock` cannot be, and the run died with `TypeError: cannot pickle
+        '_thread.lock' object` before it had done anything. `EventLog` already carried this
+        guard for the same reason; a copied director would hold its own pending questions, so an
+        answer would settle a future nothing is waiting on.
+        """
+        memo[id(self)] = self
+        return self
+
+    def __copy__(self) -> "Director":
+        return self
 
     async def answer(self, entry: Any, options: list[str]) -> types.QuestionResponse:
         raise NotImplementedError

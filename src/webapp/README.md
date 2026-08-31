@@ -6,7 +6,23 @@ Nothing here installs itself. Per the project guardrails in `CLAUDE.md`, package
 always a deliberate act by a person — no script, build step, or agent runs `pip install` on your
 behalf. The commands below are for you to run and review.
 
-## Running a project
+## Two ways in
+
+```bash
+./polson_webapp.sh projects            # the browser, at http://127.0.0.1:8000
+./polson_run.sh projects/acme          # one turn in the terminal, you as the director
+```
+
+They differ in what the argument means, which is why they are separate scripts rather than one with
+a flag. `polson_webapp` takes the directory that **holds** projects: it lists what it finds, and a
+brief typed into its form creates another one beside them. `polson_run` takes **one** project and
+runs a single turn against it.
+
+Nothing starts an agent until you ask it to — the web app not until a button is pressed.
+
+On Windows use `polson_webapp.cmd` and `polson_run.cmd`.
+
+## Running a project from the terminal
 
 ```bash
 dotnet bin/cli/Polson.CLI.dll create-project projects acme agy --standalone --prompt "..."
@@ -61,7 +77,9 @@ outliving the replay window, a client that stops reading — is announced in the
 | `orchestrator/broker.py` | In-process fan-out of one run's events, with replay. Milestone 6. |
 | `orchestrator/tail.py` | Follows `server.jsonl`, which the .NET MCP server owns and we can only read. |
 | `orchestrator/watch.py` | `RunStream` — both halves of the record on one broker, for a watcher to attach to. |
-| `run_studio.py` | Entry point. The same program as `python -m orchestrator`, runnable from the repository root. |
+| `run_studio.py` | Terminal entry point. The same program as `python -m orchestrator`, runnable from the repository root. |
+| `serve_studio.py` | Web entry point. Serves `studio/` over HTTP. Milestone 6. |
+| `studio/` | The browser over `orchestrator`: routes, the run registry, the brief form, templates. |
 | `hello_agent.py` | A probe, not architecture — the cheapest check that the Python side still reaches the .NET side. `--task stages` also checks that one MCP session spans a whole run. |
 | `tests/` | Standard-library `unittest`. Nothing here installs a package, so there is no pytest. |
 

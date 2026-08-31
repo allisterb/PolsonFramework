@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from .broker import BACKLOG, HISTORY, Broker, Subscription
 from .director import WebDirector
+from .interject import Interjections
 from .events import EventLog
 from .project import Project
 from .tail import INTERVAL, Tailer
@@ -46,6 +47,12 @@ class RunStream:
         self.broker = Broker(history=history, backlog=backlog)
         self.tailer = Tailer(project.server_events, self.broker.publish, interval=interval)
         self._task: asyncio.Task | None = None
+
+        # Built when `run_turn` calls the factory, and kept so a later request can reach them. An
+        # answer arrives on a different HTTP request from the one that asked, and an interjection on
+        # no request at all, so neither can be handled by whatever built them.
+        self.director: WebDirector | None = None
+        self.interjections = Interjections(publish=self.broker.publish)
     # endregion
 
     # region Properties
@@ -67,8 +74,19 @@ class RunStream:
     async def __aexit__(self, *_exc: Any) -> None:
         await self.stop()
 
-    def start(self) -> None:
-        """Begins following `server.jsonl`. Idempotent."""
+    def start(self, *, replay_existing: bool = False) -> None:
+        """Begins following `server.jsonl`. Idempotent.
+
+        A project's record is appended to across runs, so by default everything already in the file
+        belongs to an earlier one and is skipped — otherwise a second run in the same project shows
+        the first run's work as its own, which it did. The skip happens here and synchronously, so
+        there is no window in which the server can write before the offset is fixed.
+
+        `replay_existing` is for reading a finished run back rather than following a live one.
+        """
+        if not replay_existing:
+            self.tailer.skip_existing()
+
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self.tailer.run())
 
@@ -91,7 +109,28 @@ class RunStream:
         """Registers a watcher, which then iterates the backlog and the live tail."""
         return self.broker.attach(replay=replay)
 
-    def director(self, log: EventLog, *, timeout: float = ANSWER_TIMEOUT) -> WebDirector:
-        """The browser's half of the loop, publishing onto this run's broker."""
-        return WebDirector(log, self.broker.publish, timeout=timeout)
+    def build_director(self, log: EventLog, *, timeout: float = ANSWER_TIMEOUT) -> WebDirector:
+        """The browser's half of the loop, publishing onto this run's broker.
+
+        Hand this to `run_turn` as its `director_factory`: it owns `director.jsonl`, and passing an
+        already-built director would put a second writer on a file whose whole concurrency model is
+        that it has one. The log arrives here, and the interjection channel adopts it too so that an
+        interruption lands in the same record as everything else the director said.
+        """
+        self.director = WebDirector(log, self.broker.publish, timeout=timeout)
+        self.interjections.log = log
+        return self.director
+
+    def answer(self, question_id: str, **reply: Any) -> bool:
+        """Answers an open question. False when there is no such question, or it is settled."""
+        return self.director is not None and self.director.reply(question_id, **reply)
+
+    def say(self, text: str) -> bool:
+        """The director interrupting, which is a contribution rather than a correction."""
+        return self.interjections.say(text)
+
+    @property
+    def triggers(self) -> list[Any]:
+        """What `run_turn` registers on the agent so an interjection can reach it mid-turn."""
+        return [self.interjections.trigger()]
     # endregion

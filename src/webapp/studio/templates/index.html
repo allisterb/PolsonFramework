@@ -15,37 +15,84 @@
     <p class="active">A run is going — <a href="/runs/{{ active }}">watch it</a>. One at a time.</p>
   {% endif %}
 
-  <h2>Start a run</h2>
+  <h2>New brief</h2>
+  <form method="post" action="/projects" class="brief">
+    <div class="row">
+      <div>
+        <label for="name">Project name</label>
+        <input id="name" name="name" required maxlength="64" pattern="[A-Za-z0-9._\-]{1,64}"
+               placeholder="acme-mark" value="{{ form.name or '' }}">
+      </div>
+      <div>
+        <label for="workflow">Workflow</label>
+        <select id="workflow" name="workflow">
+          {% for w, types in workflows.items() %}
+            <option value="{{ w }}" data-types="{{ types|join(',') }}"
+                    {{ 'selected' if form.workflow == w }}>{{ w }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="kind">Type <span class="hint">(harness only)</span></label>
+        <select id="kind" name="kind">
+          <option value="">—</option>
+          <option value="image" {{ 'selected' if form.kind == 'image' }}>image</option>
+          <option value="infographic" {{ 'selected' if form.kind == 'infographic' }}>infographic</option>
+          <option value="logo" {{ 'selected' if form.kind == 'logo' }}>logo</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="brief">The brief <span class="hint">— what you want made, and anything it must respect</span></label>
+    <textarea id="brief" name="brief" rows="7" required maxlength="8000"
+              placeholder="A wordmark for a coastal ferry company. Must work at 16px and in one colour.">{{ form.brief or '' }}</textarea>
+
+    <div class="actions">
+      <button type="submit" name="start_now" value="1" {{ 'disabled' if active }}>Create and start</button>
+      <button type="submit" class="secondary">Create only</button>
+      {% if active %}<span class="hint">A run is already going, so this will create without starting.</span>{% endif %}
+    </div>
+  </form>
+
+  <h2>Start an existing project</h2>
   {% if projects %}
-    <form method="post" action="/runs">
+    <form method="post" action="/runs" id="existing">
       <table>
-        <thead><tr><th></th><th>project</th><th>workflow</th><th>profile</th><th></th></tr></thead>
+        <thead><tr><th></th><th>project</th><th>workflow</th><th>state</th><th></th></tr></thead>
         <tbody>
           {% for p in projects %}
             <tr class="{{ 'unrunnable' if p.why else '' }}">
-              <td><input type="radio" name="project" value="{{ p.path }}"
+              <td><input type="radio" name="project" value="{{ p.path }}" data-session="{{ 'yes' if p.session else 'no' }}"
                          {{ 'disabled' if p.why }} {{ 'checked' if loop.first and not p.why }}></td>
               <td><code>{{ p.name }}</code></td>
               <td>{{ p.workflow }}</td>
-              <td>{{ p.profile }}</td>
+              <td>{{ 'has a session' if p.session else 'not started' }}</td>
               <td class="why">{{ p.why }}</td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
 
-      <label for="prompt">Opening prompt <span class="hint">(blank uses the default)</span></label>
-      <textarea id="prompt" name="prompt" rows="3"
+      <label for="prompt">What should it do <span class="hint" id="prompthint">(blank begins the project)</span></label>
+      <textarea id="prompt" name="prompt" rows="2"
                 placeholder="Read GEMINI.md, then brief.md, and begin."></textarea>
 
-      <button type="submit" {{ 'disabled' if active }}>Start</button>
-      {% if active %}<span class="hint">A run is already going.</span>{% endif %}
+      <div class="actions">
+        <button type="submit" {{ 'disabled' if active }}>Start</button>
+        <label class="inline" id="freshwrap" hidden>
+          <input type="checkbox" name="fresh" value="1" id="fresh"> start a fresh session
+        </label>
+        {% if active %}<span class="hint">A run is already going.</span>{% endif %}
+      </div>
+      <p class="hint" id="continuing" hidden>
+        This project has run before, so it will <strong>continue</strong> where it left off — the agent
+        keeps what it decided and why. Say what you want changed or added; "begin the project" will
+        get "it is already done".
+      </p>
     </form>
   {% else %}
-    <p class="empty">
-      No projects here. Make one with:<br>
-      <code>dotnet bin/cli/Polson.CLI.dll create-project {{ root }} &lt;id&gt; agy --standalone --prompt "..."</code>
-    </p>
+    <p class="empty">Nothing here yet — write a brief above, or generate one with
+      <code>create-project</code>.</p>
   {% endif %}
 
   {% if runs %}
@@ -62,3 +109,54 @@
     </ul>
   {% endif %}
 </main>
+
+<script>
+// A project that has run before continues rather than starts over, which changes what a useful
+// prompt is. Saying so before the turn is spent is the whole point: a resumed run given the opening
+// prompt costs a full agent session to be told the work is finished.
+(function () {
+  const form = document.getElementById('existing');
+  if (!form) return;
+
+  const prompt = document.getElementById('prompt');
+  const hint = document.getElementById('prompthint');
+  const continuing = document.getElementById('continuing');
+  const freshWrap = document.getElementById('freshwrap');
+  const fresh = document.getElementById('fresh');
+
+  function sync() {
+    const chosen = form.querySelector('input[name=project]:checked');
+    const hasSession = chosen && chosen.dataset.session === 'yes' && !fresh.checked;
+
+    continuing.hidden = !(chosen && chosen.dataset.session === 'yes');
+    freshWrap.hidden = !(chosen && chosen.dataset.session === 'yes');
+    prompt.required = Boolean(hasSession);
+    prompt.placeholder = hasSession
+      ? 'make the timeline bars thinner, and warm the palette'
+      : 'Read GEMINI.md, then brief.md, and begin.';
+    hint.textContent = hasSession ? '(required — it is continuing)' : '(blank begins the project)';
+  }
+
+  form.addEventListener('change', sync);
+  sync();
+})();
+
+// Only the harness workflow takes a type. Disabling the control is what makes that legible without
+// a round trip; the server refuses the combination either way, so this is convenience, not a check.
+(function () {
+  const workflow = document.getElementById('workflow');
+  const kind = document.getElementById('kind');
+  if (!workflow || !kind) return;
+
+  function sync() {
+    const types = (workflow.selectedOptions[0].dataset.types || '').split(',').filter(Boolean);
+    kind.disabled = types.length === 0;
+    if (kind.disabled) kind.value = '';
+    for (const option of kind.options) {
+      option.hidden = option.value !== '' && !types.includes(option.value);
+    }
+  }
+  workflow.addEventListener('change', sync);
+  sync();
+})();
+</script>

@@ -20,6 +20,7 @@ Three constants are carried in deliberately rather than rediscovered, because ea
 from __future__ import annotations
 
 import asyncio
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -68,6 +69,7 @@ def build_config(
     *,
     interactive: bool,
     hooks: list[Any] | None = None,
+    triggers: list[Any] | None = None,
     public: bool = False,
     model: str | None = None,
     resume: bool = True,
@@ -106,6 +108,11 @@ def build_config(
         mcp_servers=[server],
         policies=policies,
         hooks=hooks or [],
+
+        # A trigger runs for the agent's lifetime and may speak to it at any point. That is the only
+        # channel into a turn already in progress: a hook answers when the agent asks, and the
+        # director interrupting is the other direction entirely.
+        triggers=triggers or [],
         capabilities=types.CapabilitiesConfig(agent_behavior=behavior),
         workspaces=[str(project.root)],
         save_dir=str(project.save_dir),
@@ -152,6 +159,7 @@ async def run_turn(
     echo: bool = True,
     sink: Callable[[dict[str, Any]], None] | None = None,
     director_factory: Callable[[EventLog], director_mod.Director] | None = None,
+    triggers: list[Any] | None = None,
 ) -> RunResult:
     """Runs one turn against a project, writing `agent.jsonl` and `director.jsonl` as it goes.
 
@@ -177,6 +185,7 @@ async def run_turn(
         project,
         interactive=attended,
         hooks=[director],
+        triggers=triggers,
         public=public,
         model=model,
         resume=resume,
@@ -217,6 +226,12 @@ async def run_turn(
 
     except Exception as exc:  # noqa: BLE001 — reported, not swallowed
         result.error = f"{type(exc).__name__}: {exc}"
+
+        # The traceback goes into the record, not just the message. A startup failure is the case
+        # where the message alone is useless — `TypeError: cannot pickle '_thread.lock' object` names
+        # neither the object nor the line, and cost an afternoon that one frame would have ended.
+        agent_log.append("run.error", error=result.error,
+                         traceback=traceback.format_exc()[-4000:])
         transcript.turn_end("error", result.error)
 
     agent_log.append("run.end", status="ok" if result.completed else "incomplete", error=result.error)

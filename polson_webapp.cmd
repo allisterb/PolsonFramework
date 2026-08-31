@@ -1,14 +1,13 @@
 @echo off
-REM Runs the Polson studio against a standalone project directory.
+REM Serves the Polson studio - the browser over a project directory.
 REM
-REM   polson_webapp.cmd path\to\project [--prompt "..."] [--fresh] [--unattended]
+REM   polson_webapp.cmd path\to\projects [--host 0.0.0.0] [--port 8000]
 REM
-REM Today this is the terminal orchestrator: one turn per invocation, with the terminal acting as
-REM the director. Milestone 6 puts a browser over the same run_turn, and this script is where that
-REM will start from, which is why it is named for the destination rather than the current step.
+REM The argument is the directory that *holds* project directories, not a project: the front page
+REM lists what it finds there, and a brief typed into the form creates another one beside them.
+REM Nothing starts an agent until someone presses a button.
 REM
-REM The project must be a --standalone one. A managed project is refused by name, because its host
-REM owns tool policy and running it here would apply none at all.
+REM For one turn in the terminal instead, with no browser and you as the director, use polson_run.cmd.
 
 setlocal
 set "ROOT=%~dp0"
@@ -22,10 +21,12 @@ if not exist "%VENV%" (
 )
 
 if "%~1"=="" (
-    echo usage: polson_webapp.cmd ^<project-dir^> [--prompt "..."] [--fresh] [--unattended]
-    echo        make a project with:  bin\cli\Polson.CLI.exe create-project ^<parent^> ^<id^> agy --standalone
+    echo usage: polson_webapp.cmd ^<projects-dir^> [--host HOST] [--port PORT]
+    echo        the directory holds projects; it is not itself one
+    echo        serves http://127.0.0.1:8000 by default
+    echo        for one turn in the terminal instead:  polson_run.cmd ^<project-dir^>
     exit /b 1
 )
 
-"%VENV%" "%ROOT%src\webapp\run_studio.py" %*
+"%VENV%" "%ROOT%src\webapp\serve_studio.py" %*
 exit /b %ERRORLEVEL%

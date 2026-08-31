@@ -35,6 +35,15 @@ TURN_TIMEOUT = 1800.0
 #: argued with. The asset budget inside the engine is the fine-grained one.
 DAILY_RUNS = 24
 
+#: What starts an agent that has already been told everything else in its own instructions. Used only
+#: for a project that has never run — see `Registry.start`, which is the one place that decides
+#: whether this is the right thing to say.
+DEFAULT_PROMPT = (
+    "Read GEMINI.md in this project directory, then brief.md, and begin the project. "
+    "Work through the stages it names, declaring each one with Stage.begin, and save every render "
+    "to artifacts/ with outFile."
+)
+
 
 class StudioError(Exception):
     """Something a visitor is allowed to be told, in words they can act on."""
@@ -50,6 +59,7 @@ class Run:
     stream: RunStream
     started: str
     status: str = "starting"
+    resumed: bool = False
     error: str | None = None
     result: run_mod.RunResult | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -62,12 +72,25 @@ class Run:
     @property
     def artifacts(self) -> Path:
         return self.project.root / "artifacts"
+
+    @property
+    def scripts(self) -> Path:
+        """Where the engine saved every script it executed, named as the record names them."""
+        return self.project.root / "scripts"
     # endregion
 
     # region Methods
     def attach(self, *, replay: bool = True) -> Subscription:
         """A watcher's position in this run's stream. Replay is what makes a refresh survivable."""
         return self.stream.attach(replay=replay)
+
+    def answer(self, question_id: str, **reply: Any) -> bool:
+        """Answers a question the agent asked. False if it is unknown or already settled."""
+        return self.stream.answer(question_id, **reply)
+
+    def say(self, text: str) -> bool:
+        """Interrupts. False if there was nothing to say."""
+        return self.stream.say(text)
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -77,6 +100,7 @@ class Run:
             "workflow": self.project.workflow,
             "started": self.started,
             "status": self.status,
+            "resumed": self.resumed,
             "live": self.live,
             "error": self.error,
             "reply": (self.result.reply if self.result else "") or "",
@@ -110,8 +134,15 @@ class Registry:
     def get(self, run_id: str) -> Run | None:
         return self._runs.get(run_id)
 
-    async def start(self, root: Path, prompt: str) -> Run:
-        """Loads a project, registers a run, and starts it. Raises `StudioError` with a reason."""
+    async def start(self, root: Path, prompt: str, *, resume: bool = True) -> Run:
+        """Loads a project, registers a run, and starts it. Raises `StudioError` with a reason.
+
+        `resume` continues the project's recorded conversation, which is the default because carrying
+        on with a piece is the ordinary case — the agent keeps what it decided and why. It is also
+        the thing that quietly wastes a turn: resuming a *finished* project with the opening prompt
+        gets "the project has completed all 7 stages", one tool call, and no work, because the agent
+        is right. A resumed run needs something new to do, and the caller is made to supply it.
+        """
         if (busy := self.active) is not None:
             raise StudioError(
                 f"A run is already going ({busy.project.id}). One at a time — each is a live agent "
@@ -127,12 +158,29 @@ class Registry:
         except project_mod.ProjectError as exc:
             raise StudioError(str(exc)) from exc
 
+        # One place decides what an empty prompt means, because it means opposite things. A project
+        # that has never run wants the opening instruction; one that is being continued wants
+        # something new, and giving it the opening instruction spends a whole session being told the
+        # work is finished.
+        resuming = bool(resume and project.conversation_id)
+        prompt = prompt.strip()
+
+        if resuming and not prompt:
+            raise StudioError(
+                "That project already has a session, so this run would continue it — and continuing "
+                "with 'begin the project' gets 'it is already done'. Say what you want changed or "
+                "added, or start a fresh session instead.")
+
+        if not prompt:
+            prompt = DEFAULT_PROMPT
+
         run = Run(
             id=_run_id(project.id, len(self._runs)),
             project=project,
             prompt=prompt,
             stream=RunStream(project),
             started=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            resumed=resuming,
         )
 
         self._runs[run.id] = run
@@ -140,12 +188,12 @@ class Registry:
 
         run.stream.start()
         run.status = "running"
-        run.task = asyncio.create_task(self._drive(run))
+        run.task = asyncio.create_task(self._drive(run, resume=resume))
         return run
     # endregion
 
     # region Methods (private)
-    async def _drive(self, run: Run) -> None:
+    async def _drive(self, run: Run, *, resume: bool = True) -> None:
         """Runs the turn and closes the stream, whatever happens.
 
         Every failure lands on the run rather than in a traceback nobody sees: a visitor watching a
@@ -157,11 +205,16 @@ class Registry:
                 run.prompt,
                 timeout=self.timeout,
                 echo=False,
+                resume=resume,
                 sink=run.stream.sink,
 
                 # A factory, not a director: run_turn owns director.jsonl, and a second writer on it
                 # would break the one-writer rule the whole record depends on.
-                director_factory=run.stream.director,
+                director_factory=run.stream.build_director,
+
+                # The channel for an interruption. Registered up front because a trigger is started
+                # with the agent; there is no way to add one to a turn already under way.
+                triggers=run.stream.triggers,
             )
             run.status = "done" if run.result.completed else "incomplete"
             run.error = run.result.error

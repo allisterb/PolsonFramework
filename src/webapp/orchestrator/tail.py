@@ -136,6 +136,17 @@ class Tailer:
 
         return delivered
 
+    def skip_existing(self) -> None:
+        """Treats whatever is already in the file as belonging to somebody else.
+
+        Called synchronously when a run begins, rather than left to the first poll. A project's
+        `server.jsonl` is appended to across runs, so the offset has to be fixed at a moment the
+        caller controls — otherwise anything the server writes between starting the tailer and its
+        first tick is either replayed from a previous run or silently skipped, depending on which
+        happened first.
+        """
+        self._offset = self.path.stat().st_size if self.path.exists() else 0
+
     def stop(self) -> None:
         """Asks the loop in `run()` to finish, after one final read."""
         self._stopped.set()

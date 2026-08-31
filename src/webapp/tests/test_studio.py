@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -23,18 +24,25 @@ from fastapi.testclient import TestClient
 
 from orchestrator.broker import Broker
 from studio import app as app_mod
+from studio import projects as projects_mod
 from studio.runs import Registry, Run, StudioError
 
 
-def project_dir(root: Path, name: str, *, profile: str = "standalone", workflow: str = "logo") -> Path:
-    """A project directory of the shape `create-project` writes, without running the CLI."""
+def project_dir(root: Path, name: str, *, profile: str = "standalone", workflow: str = "logo",
+                conversation: str = "") -> Path:
+    """A project directory of the shape `create-project` writes, without running the CLI.
+
+    `conversation` stands for a project that has already run: the orchestrator records the id into
+    `project.json` when a turn ends, and that is what makes the next run a continuation.
+    """
     project = root / name
     (project / "events").mkdir(parents=True)
     (project / "artifacts").mkdir()
     (project / "scripts").mkdir()
-    (project / "project.json").write_text(
-        json.dumps({"id": name, "workflow": workflow, "sdk": "agy", "profile": profile}),
-        encoding="utf-8")
+    manifest = {"id": name, "workflow": workflow, "sdk": "agy", "profile": profile}
+    if conversation:
+        manifest["conversationId"] = conversation
+    (project / "project.json").write_text(json.dumps(manifest), encoding="utf-8")
     (project / "GEMINI.md").write_text("# instructions", encoding="utf-8")
     if profile == "standalone":
         (project / "agent.config.json").write_text(
@@ -223,7 +231,9 @@ class RoutingTests(unittest.TestCase):
 
         self.assertEqual(page.status_code, 409)
         self.assertIn("managed project", page.text)
-        self.assertIn("Start a run", page.text)   # still the page they were on
+
+        # Still the page they were on, keyed on the form rather than on a heading wording.
+        self.assertIn('action="/runs"', page.text)
 
     def test_an_unknown_run_is_a_404(self):
         for path in ("/runs/nope", "/runs/nope/events", "/runs/nope/curve",
@@ -232,6 +242,493 @@ class RoutingTests(unittest.TestCase):
 
     def test_the_stylesheet_is_served(self):
         self.assertEqual(self.client.get("/static/studio.css").status_code, 200)
+
+
+class BriefValidationTests(unittest.TestCase):
+    """What the form is allowed to send, checked before anything is spawned."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-brief-"))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_a_valid_request_passes(self):
+        projects_mod.check(self.root, "acme-mark", "logo", "")
+
+    def test_a_name_that_is_a_path_is_refused(self):
+        """The name becomes a directory. Nothing here builds a path out of an unchecked string."""
+        for bad in ("../escape", "a/b", "a\\b", "", ".", "..", "x" * 65, "has space", "semi;colon"):
+            with self.assertRaises(StudioError, msg=bad):
+                projects_mod.check(self.root, bad, "logo", "")
+
+    def test_an_unknown_workflow_is_refused(self):
+        """The workflow selects which template becomes the agent's instructions."""
+        with self.assertRaises(StudioError):
+            projects_mod.check(self.root, "acme", "../_shared", "")
+
+    def test_the_harness_needs_a_type_and_the_others_refuse_one(self):
+        with self.assertRaises(StudioError):
+            projects_mod.check(self.root, "acme", "harness", "")
+        with self.assertRaises(StudioError):
+            projects_mod.check(self.root, "acme", "harness", "sculpture")
+        with self.assertRaises(StudioError):
+            projects_mod.check(self.root, "acme", "logo", "image")
+
+        projects_mod.check(self.root, "acme", "harness", "infographic")
+
+    def test_an_existing_project_is_not_overwritten(self):
+        """Nothing here writes into a directory that already holds someone's work."""
+        (self.root / "taken").mkdir()
+
+        with self.assertRaises(StudioError) as caught:
+            projects_mod.check(self.root, "taken", "logo", "")
+
+        self.assertIn("already a project", str(caught.exception))
+
+
+class BriefCreationTests(unittest.IsolatedAsyncioTestCase):
+    """Making a real project by really running the CLI. Local, free, and no agent involved."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-create-"))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    @unittest.skipUnless(projects_mod.CLI_DLL.is_file(), "the Polson CLI is not built")
+    async def test_a_brief_becomes_a_standalone_project(self):
+        made = await projects_mod.create(
+            self.root, "ferry", "logo", "",
+            "A wordmark for a coastal ferry company. Must work at 16px and in one colour.")
+
+        manifest = json.loads((made / "project.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(manifest["profile"], "standalone")
+        self.assertEqual(manifest["workflow"], "logo")
+
+        # Standalone always: the orchestrator refuses a managed project, because running one would
+        # apply no tool policy at all - including the denial of generate_image.
+        self.assertTrue((made / "agent.config.json").is_file())
+        self.assertTrue((made / "GEMINI.md").is_file())
+
+    @unittest.skipUnless(projects_mod.CLI_DLL.is_file(), "the Polson CLI is not built")
+    async def test_the_brief_reaches_the_project_as_data(self):
+        """It arrives by file, is sanitised on the way in, and lands in brief.md."""
+        await projects_mod.create(self.root, "ferry", "logo", "",
+                                  "A wordmark. The client insists on a lighthouse.")
+
+        brief = (self.root / "ferry" / "brief.md").read_text(encoding="utf-8")
+        self.assertIn("lighthouse", brief)
+
+        # And it is marked as data for whatever reads it next.
+        self.assertIn("data", brief.lower())
+
+    async def test_an_empty_brief_is_refused_before_the_cli_is_spawned(self):
+        with self.assertRaises(StudioError) as caught:
+            await projects_mod.create(self.root, "ferry", "logo", "", "   ")
+
+        self.assertIn("cannot infer", str(caught.exception))
+        self.assertFalse((self.root / "ferry").exists())
+
+    async def test_an_oversized_brief_is_refused(self):
+        with self.assertRaises(StudioError) as caught:
+            await projects_mod.create(self.root, "ferry", "logo", "",
+                                      "x" * (projects_mod.MAX_BRIEF + 1))
+
+        self.assertIn("limit", str(caught.exception))
+
+    async def test_a_missing_cli_is_reported_rather_than_raised_as_a_traceback(self):
+        original = projects_mod.launcher
+        projects_mod.launcher = lambda: ["polson-does-not-exist"]
+        self.addCleanup(setattr, projects_mod, "launcher", original)
+
+        with self.assertRaises(StudioError) as caught:
+            await projects_mod.create(self.root, "ferry", "logo", "", "a brief")
+
+        self.assertIn("Could not run", str(caught.exception))
+
+
+class BriefRouteTests(unittest.TestCase):
+    """The form, driven the way a browser drives it."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-form-"))
+        self.client = TestClient(app_mod.create_app(self.root, Registry()))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_form_offers_every_workflow(self):
+        page = self.client.get("/")
+
+        for workflow in projects_mod.WORKFLOWS:
+            self.assertIn('value="' + workflow + '"', page.text)
+
+    def test_a_refused_brief_is_given_back_rather_than_lost(self):
+        """A refusal that clears the textarea costs the visitor their work."""
+        brief = "A wordmark for a coastal ferry company, and it must survive a fax machine."
+        page = self.client.post("/projects", data={
+            "name": "not a valid name", "workflow": "logo", "kind": "", "brief": brief})
+
+        self.assertEqual(page.status_code, 409)
+        self.assertIn("coastal ferry", page.text)
+        self.assertIn("letters, digits", page.text)
+
+    def test_a_traversing_name_never_reaches_the_filesystem(self):
+        page = self.client.post("/projects", data={
+            "name": "../../etc", "workflow": "logo", "kind": "", "brief": "anything"})
+
+        self.assertEqual(page.status_code, 409)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    @unittest.skipUnless(projects_mod.CLI_DLL.is_file(), "the Polson CLI is not built")
+    def test_create_only_makes_the_project_without_spending_anything(self):
+        """The two buttons differ by one field, and only one of them starts a billed session."""
+        page = self.client.post("/projects", data={
+            "name": "ferry", "workflow": "logo", "kind": "", "brief": "A ferry wordmark."},
+            follow_redirects=False)
+
+        self.assertEqual(page.status_code, 303)
+        self.assertEqual(page.headers["location"], "/")
+        self.assertTrue((self.root / "ferry" / "project.json").is_file())
+        self.assertIsNone(self.client.app.state.registry.active)
+
+
+class DirectorRouteTests(unittest.TestCase):
+    """Answering, and interrupting, over HTTP."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-director-"))
+        self.registry = Registry()
+        self.client = TestClient(app_mod.create_app(self.root, self.registry))
+
+        project = project_dir(self.root, "acme")
+        self.stream = _StubDirectorStream()
+        self.run = Run(id="acme-1", project=_loaded(project), prompt="", stream=self.stream,
+                       started="2026-08-30T00:00:00+00:00", status="running")
+        self.registry._runs["acme-1"] = self.run
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def live(self, yes: bool = True) -> None:
+        """A run is live when its task is unfinished, so this gives it one that says so.
+
+        Patching the property would have meant patching the *class*, which leaks into every other
+        test in the process — it did, and took an unrelated one down with it.
+        """
+        self.run.task = _Task(done=not yes)
+
+    def test_an_answer_reaches_the_director(self):
+        page = self.client.post("/runs/acme-1/answer",
+                                data={"question": "q1", "text": "warmer, and lose the globe"})
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(self.stream.answered, [("q1", {"skipped": False, "text": "warmer, and lose the globe"})])
+
+    def test_a_chosen_option_is_sent_as_an_option(self):
+        self.client.post("/runs/acme-1/answer", data={"question": "q1", "option": "opt2"})
+
+        self.assertEqual(self.stream.answered[0][1]["selected"], ["opt2"])
+
+    def test_letting_it_decide_is_a_skip(self):
+        self.client.post("/runs/acme-1/answer", data={"question": "q1", "skip": "1"})
+
+        self.assertTrue(self.stream.answered[0][1]["skipped"])
+
+    def test_a_settled_question_is_a_conflict_not_a_missing_page(self):
+        """404 would have a page retrying forever; 409 says the question existed and is done with."""
+        self.stream.settles = False
+        page = self.client.post("/runs/acme-1/answer", data={"question": "gone", "text": "hello"})
+
+        self.assertEqual(page.status_code, 409)
+        self.assertIn("already settled", page.json()["detail"])
+
+    def test_an_interjection_reaches_the_run(self):
+        self.live(True)
+        page = self.client.post("/runs/acme-1/say", data={"text": "make the background red"})
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(self.stream.said, ["make the background red"])
+
+    def test_nothing_can_be_said_to_a_finished_run(self):
+        self.live(False)
+        page = self.client.post("/runs/acme-1/say", data={"text": "too late"})
+
+        self.assertEqual(page.status_code, 409)
+        self.assertIn("nothing is listening", page.json()["detail"])
+        self.assertEqual(self.stream.said, [])
+
+    def test_an_interjection_is_capped(self):
+        """It reaches a running agent directly. Longer direction belongs in a brief."""
+        self.live(True)
+        page = self.client.post("/runs/acme-1/say",
+                                data={"text": "x" * (app_mod.MAX_INTERJECTION + 1)})
+
+        self.assertEqual(page.status_code, 413)
+        self.assertEqual(self.stream.said, [])
+
+    def test_an_unknown_run_is_still_a_404(self):
+        self.assertEqual(self.client.post("/runs/nope/answer",
+                                          data={"question": "q1"}).status_code, 404)
+        self.assertEqual(self.client.post("/runs/nope/say", data={"text": "hi"}).status_code, 404)
+
+
+class _Task:
+    """Just enough of an asyncio.Task for `Run.live`, which only ever asks whether it is done."""
+
+    def __init__(self, *, done: bool) -> None:
+        self._done = done
+
+    def done(self) -> bool:
+        return self._done
+
+
+class _StubDirectorStream:
+    """A RunStream's director surface, without an agent behind it."""
+
+    def __init__(self) -> None:
+        self.answered: list[tuple] = []
+        self.said: list[str] = []
+        self.settles = True
+
+    def answer(self, question_id: str, **reply) -> bool:
+        if not self.settles:
+            return False
+        self.answered.append((question_id, reply))
+        return True
+
+    def say(self, text: str) -> bool:
+        text = text.strip()
+        if not text:
+            return False
+        self.said.append(text)
+        return True
+
+    def attach(self, *, replay: bool = True):
+        raise AssertionError("not used by these tests")
+
+
+class ContinuationTests(unittest.IsolatedAsyncioTestCase):
+    """A project that has run before continues rather than starts over.
+
+    Continuing is right — it is what carrying on with a piece means, and the agent keeps what it
+    decided and why. It is also the quiet way to waste a turn: a finished project resumed with the
+    opening prompt answers "the project has completed all 7 stages", spends a full agent session, and
+    draws nothing. That happened on a real run before any of this existed.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-resume-"))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    async def test_continuing_with_the_opening_prompt_is_refused(self):
+        project = project_dir(self.root, "acme", conversation="conv-1")
+
+        with self.assertRaises(StudioError) as caught:
+            await Registry().start(project, "")
+
+        self.assertIn("already has a session", str(caught.exception))
+        self.assertIn("already done", str(caught.exception))
+
+    async def test_a_project_that_never_ran_needs_no_instruction(self):
+        """Nothing to continue, so the opening prompt is exactly right."""
+        registry = Registry()
+        project = project_dir(self.root, "acme")
+
+        run = await registry.start(project, "")
+        self.addCleanup(run.task.cancel)
+
+        self.assertFalse(run.resumed)
+
+    async def test_a_fresh_session_ignores_the_recorded_conversation(self):
+        """Starting over is allowed, and then the opening prompt is right again."""
+        registry = Registry()
+        project = project_dir(self.root, "acme", conversation="conv-1")
+
+        run = await registry.start(project, "", resume=False)
+        self.addCleanup(run.task.cancel)
+
+        self.assertFalse(run.resumed)
+
+    async def test_continuing_with_something_to_do_is_allowed_and_says_so(self):
+        registry = Registry()
+        project = project_dir(self.root, "acme", conversation="conv-1")
+
+        run = await registry.start(project, "make the timeline bars thinner")
+        self.addCleanup(run.task.cancel)
+
+        self.assertTrue(run.resumed)
+        self.assertTrue(run.summary()["resumed"])
+
+
+class ContinuationRouteTests(unittest.TestCase):
+    """What the form shows before a turn is spent."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-resume-route-"))
+        self.client = TestClient(app_mod.create_app(self.root, Registry()))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_page_says_which_projects_have_a_session(self):
+        project_dir(self.root, "started", conversation="conv-1")
+        project_dir(self.root, "untouched")
+
+        found = {p["name"]: p["session"] for p in app_mod.discover(self.root)}
+        self.assertEqual(found, {"started": True, "untouched": False})
+
+        page = self.client.get("/")
+        self.assertIn("has a session", page.text)
+        self.assertIn("not started", page.text)
+
+    def test_the_refusal_reaches_the_page_rather_than_a_traceback(self):
+        project_dir(self.root, "started", conversation="conv-1")
+        page = self.client.post("/runs", data={"project": "started", "prompt": ""},
+                                follow_redirects=False)
+
+        self.assertEqual(page.status_code, 409)
+        self.assertIn("already has a session", page.text)
+
+    def test_asking_for_a_fresh_session_bypasses_the_refusal(self):
+        project_dir(self.root, "started", conversation="conv-1")
+        page = self.client.post("/runs", data={"project": "started", "prompt": "", "fresh": "1"},
+                                follow_redirects=False)
+
+        self.assertEqual(page.status_code, 303)
+
+        # By its id from the redirect, not via `active`: with no credentials the turn fails at once,
+        # so the run is registered but no longer live by the time this looks.
+        run_id = page.headers['location'].rsplit('/', 1)[-1]
+        run = self.client.app.state.registry.get(run_id)
+        self.addCleanup(run.task.cancel)
+        self.assertFalse(run.resumed)
+
+
+class ScriptRouteTests(unittest.TestCase):
+    """The half of a run a rendered image cannot carry.
+
+    A bitmap records what the canvas ended up looking like. The script records why — the ratio a
+    mast was placed on, the scale a bar was measured against, the direction tried and abandoned in a
+    comment. Serving it beside the render is what makes the trace readable as reasoning.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-scripts-"))
+        self.registry = Registry()
+        self.client = TestClient(app_mod.create_app(self.root, self.registry))
+
+        project = project_dir(self.root, "acme")
+        (project / "scripts" / "0001.js").write_text(
+            "// Golden section, not a guess.\nconst mast = beam * 0.618;\n", encoding="utf-8")
+        (self.root / "outside.txt").write_text("never", encoding="utf-8")
+
+        self.registry._runs["acme-1"] = Run(
+            id="acme-1", project=_loaded(project), prompt="", stream=None,
+            started="2026-08-30T00:00:00+00:00", status="done")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_a_script_is_served_highlighted(self):
+        page = self.client.get("/runs/acme-1/scripts/0001.js")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("createCanvas" if False else "mast", page.text)
+
+        # Highlighted rather than plain: the comment and the keyword are marked up differently.
+        self.assertIn('class="code"', page.text)
+        self.assertIn("<span", page.text)
+
+    def test_the_source_survives_highlighting(self):
+        """A viewer reads this to understand the run, so the text has to be the text."""
+        page = self.client.get("/runs/acme-1/scripts/0001.js")
+
+        stripped = re.sub(r"<[^>]+>", "", page.text)
+        self.assertIn("Golden section, not a guess.", stripped)
+        self.assertIn("0.618", stripped)
+
+    def test_line_numbers_are_present(self):
+        """The record names scripts by path; a person names lines within them."""
+        self.assertIn("linenos", self.client.get("/runs/acme-1/scripts/0001.js").text)
+
+    def test_a_missing_script_is_a_404(self):
+        self.assertEqual(self.client.get("/runs/acme-1/scripts/9999.js").status_code, 404)
+
+    def test_traversal_out_of_the_scripts_directory_is_refused(self):
+        """Same containment as artifacts: a script name is a visitor-supplied path too."""
+        for attempt in ("../project.json", "../../outside.txt", "../GEMINI.md",
+                        "../artifacts/01.webp"):
+            page = self.client.get(f"/runs/acme-1/scripts/{attempt}")
+            self.assertEqual(page.status_code, 404, attempt)
+            self.assertNotIn("never", page.text)
+
+    def test_the_highlighting_styles_are_served(self):
+        page = self.client.get("/code.css")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("text/css", page.headers["content-type"])
+        self.assertIn(".code", page.text)
+
+
+class CurveRouteTests(unittest.TestCase):
+    """The run coded as creative sense-making, for the page to draw."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-curve-"))
+        self.registry = Registry()
+        self.client = TestClient(app_mod.create_app(self.root, self.registry))
+
+        project = project_dir(self.root, "acme")
+        (project / "events" / "server.jsonl").write_text("\n".join([
+            json.dumps({"ts": "2026-08-30T20:00:01.000Z", "seq": 1, "src": "server",
+                        "type": "stage.begin", "stage": "Blocking"}),
+            json.dumps({"ts": "2026-08-30T20:00:02.000Z", "seq": 2, "src": "server",
+                        "type": "inspect", "execution": "e1", "probes": {"measure": 3}, "total": 3}),
+            json.dumps({"ts": "2026-08-30T20:00:03.000Z", "seq": 3, "src": "server",
+                        "type": "render", "execution": "e1", "artifact": "artifacts/01.webp"}),
+            json.dumps({"ts": "2026-08-30T20:00:20.000Z", "seq": 4, "src": "server",
+                        "type": "script.ok", "execution": "e1", "script": "scripts/0001.js"}),
+        ]) + "\n", encoding="utf-8")
+
+        self.registry._runs["acme-1"] = Run(
+            id="acme-1", project=_loaded(project), prompt="", stream=None,
+            started="2026-08-30T00:00:00+00:00", status="done")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_curve_carries_a_point_per_coded_action(self):
+        body = self.client.get("/runs/acme-1/curve").json()
+
+        self.assertEqual([p["mode"] for p in body["trace"]],
+                         ["communicate", "inspect", "execute"])
+
+    def test_every_point_can_be_traced_back_to_what_caused_it(self):
+        """The thing a stroke-based curve cannot do: each point opens the script behind it."""
+        executed = [p for p in self.client.get("/runs/acme-1/curve").json()["trace"]
+                    if p["mode"] == "execute"][0]
+
+        self.assertEqual(executed["execution"], "e1")
+        self.assertIn("scripts/0001.js", executed["detail"])
+
+    def test_both_readings_are_returned(self):
+        """Counting actions and counting time disagree, sometimes in sign. Neither is the answer."""
+        body = self.client.get("/runs/acme-1/curve").json()
+
+        self.assertIn("net", body["summary"])
+        self.assertIn("integral", body["summary"])
+        self.assertIn("heldMs", body["summary"])
+        for point in body["trace"]:
+            self.assertIn("cumulative", point)
+            self.assertIn("integral", point)
+
+    def test_a_spine_only_run_says_what_it_could_not_see(self):
+        """No agent.jsonl means no deliberation was recorded, and the page must not imply otherwise."""
+        self.assertIn("wait", self.client.get("/runs/acme-1/curve").json()["summary"]["missing"])
 
 
 class ArtifactRouteTests(unittest.TestCase):

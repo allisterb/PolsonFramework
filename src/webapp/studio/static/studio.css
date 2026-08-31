@@ -84,8 +84,81 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
 .ev.note .detail { font-family: inherit; font-size: .87rem; }
 .ev.thinking .detail { color: var(--dim); font-family: inherit; font-style: italic; }
 
+/* Sticky, so the render stays put as the trace grows past it. */
+.latest { position: sticky; top: 1rem; }
 .latest figure { margin: 0; border: 1px solid var(--line); border-radius: 3px; padding: .5rem;
                  background: var(--panel); }
 .latest img { width: 100%; height: auto; display: block; }
 .latest figcaption { font-family: var(--mono); font-size: .78rem; color: var(--dim);
                      padding-top: .4rem; }
+
+/* The brief form */
+form.brief { background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+             padding: 1rem 1.1rem 1.2rem; }
+.row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: .9rem; }
+@media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+
+input[type=text], input:not([type]), select {
+  width: 100%; font: inherit; padding: .45rem .55rem; border: 1px solid var(--line);
+  border-radius: 3px; background: #fff; color: var(--ink);
+}
+select[disabled] { background: #f4f5f7; color: var(--dim); }
+
+.actions { display: flex; gap: .8rem; align-items: center; margin-top: .9rem; }
+button.secondary { background: transparent; color: var(--accent);
+                   box-shadow: inset 0 0 0 1px var(--line); }
+button.secondary:hover { box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* Asking, and being interrupted */
+h2 .follow { float: right; font-weight: 400; text-transform: none; letter-spacing: 0;
+             font-size: .8rem; color: var(--dim); }
+h2 .follow input { margin-right: .25rem; vertical-align: -1px; }
+
+.question { background: #fffdf3; border: 1px solid #e8dcae; border-left: 3px solid #d9a520;
+            border-radius: 3px; padding: .8rem .9rem; margin-bottom: .8rem; }
+.question.sent { opacity: .5; }
+.question .q { margin: 0 0 .6rem; font-size: .95rem; }
+.question .options { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .6rem; }
+.question .actions { margin-top: 0; }
+button.option { margin-top: 0; background: #fff; color: var(--ink);
+                box-shadow: inset 0 0 0 1px #e8dcae; }
+button.option:hover { box-shadow: inset 0 0 0 1px #d9a520; }
+
+form#interject { margin-top: .9rem; }
+form#interject.gone { display: none; }
+form#interject input { flex: 1; }
+form#interject .actions, .question .actions { display: flex; gap: .6rem; align-items: center; }
+form#interject button, .question .actions button { margin-top: 0; white-space: nowrap; }
+
+.ev.run-error .detail { color: var(--warn); white-space: pre-wrap; font-size: .78rem; }
+
+/* The sense-making curve */
+.curve { margin-top: 1.4rem; }
+.curve h2 select { width: auto; display: inline-block; padding: .1rem .3rem; font-size: .8rem; }
+#plot { border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
+        padding: .3rem; }
+#plot svg { width: 100%; height: 150px; display: block; overflow: visible; }
+#plot .curveline { fill: none; stroke: var(--ink); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+#plot .zero { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+#plot circle { cursor: pointer; }
+#plot circle:hover { r: 5; }
+#tally { margin: .4rem 0 0; font-family: var(--mono); font-size: .76rem; }
+
+/* Code beside the render */
+.ev.opens { cursor: pointer; }
+.ev.opens:hover { background: #f6f9fb; }
+#source { border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
+          max-height: 46vh; overflow: auto; font-size: .78rem; }
+#source .code { margin: 0; }
+#source .codetable { border-collapse: collapse; width: 100%; }
+#source .linenos { text-align: right; padding: 0 .5rem 0 .4rem; user-select: none;
+                   color: var(--dim); background: #f7f8f9; vertical-align: top; }
+#source td.code { padding-left: .5rem; vertical-align: top; }
+#source pre { margin: 0; font-family: var(--mono); line-height: 1.45; }
+#source .empty, #source .why { padding: .7rem; margin: 0; }
+#scriptname { font-family: var(--mono); font-size: .76rem; }
+
+label.inline { display: inline-flex; align-items: center; gap: .35rem; margin: 0;
+               font-size: .85rem; color: var(--dim); }
+label.inline input { width: auto; }
+#continuing { margin: .6rem 0 0; max-width: 60ch; }

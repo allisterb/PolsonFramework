@@ -160,6 +160,21 @@ class Broker:
             loop.call_soon_threadsafe(self._release)
         except RuntimeError:
             pass
+    def __deepcopy__(self, memo: dict[int, Any]) -> "Broker":
+        """A handle to something live, not a value: a copy of one must be the same object.
+
+        The SDK deep-copies the whole `LocalAgentConfig` in `Agent.__init__`, and hooks and
+        triggers are fields on it — so everything reachable from them is copied at startup.
+        A `threading.Lock` cannot be, and the run died with `TypeError: cannot pickle
+        '_thread.lock' object` before it had done anything. `EventLog` already carried this
+        guard for the same reason; a copied broker would be a second one, with its own subscriber
+        list and nobody attached to it.
+        """
+        memo[id(self)] = self
+        return self
+
+    def __copy__(self) -> "Broker":
+        return self
 
     def history(self) -> list[dict[str, Any]]:
         """A copy of the replay window, for a caller that wants it without subscribing."""

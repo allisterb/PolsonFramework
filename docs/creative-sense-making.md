@@ -10,10 +10,12 @@ re-derived for a studio where the fine-grained unit of contribution is a script 
 
 **Sources.** Davis, *Creative Sense-Making: A Cognitive Framework for Quantifying Interaction
 Dynamics in Co-Creation* (dissertation, Georgia Tech, 2017), Ch. VII. Davis & Rafner, *AI Drawing
-Partner: Co-Creative Drawing Agent and Research Platform to Model Co-Creation* (2025), §3. Davis et
-al., *The Five Pillars of Enaction as a Theoretical Framework for Co-Creative AI* (ICCC'24). Davis,
-*Enactive Drift Regulation and the Emergence Machine* (2026). All are third-party and mostly
-all-rights-reserved; see `reference/README.md`. Distil and cite — never quote at length.
+Partner: Co-Creative Drawing Agent and Research Platform to Model Co-Creation* (2025), §3. Davis,
+*Quantifying and Modeling Human-AI Co-Creation to Develop Adaptive Co-Creative AI* (slide deck,
+Co-Creative AI Consulting). Davis et al., *The Five Pillars of Enaction as a Theoretical Framework
+for Co-Creative AI* (ICCC'24). Davis, *Enactive Drift Regulation and the Emergence Machine* (2026).
+All are third-party and mostly all-rights-reserved; see `reference/README.md`. Distil and cite —
+never quote at length.
 
 ---
 
@@ -88,10 +90,16 @@ read correctly.
 | **Execute** | `script.ok` / `script.error` **that produced a render** | `server.jsonl` | Clamped | **−1** |
 
 > [!NOTE]
-> The 2017 dissertation uses a different scale — clamped at `0`, waiting at `−0.5`, disengagement at
-> `−1`, with sign distinguishing physical from perceptual sense-making. The 2025 scale supersedes it
-> and is the one used here. Anyone reading both will notice; the difference is real, not a
-> transcription error.
+> **The 2017 dissertation uses a different scale** — clamped at `0`, waiting at `−0.5`,
+> disengagement at `−1`, with sign distinguishing physical from perceptual sense-making. Anyone
+> reading both will notice; the difference is real, not a transcription error.
+>
+> The table above follows the later one, and does so on two independent sources rather than on a
+> judgement call: Davis & Rafner (2025) Table 2, and the *Quantifying and Modeling Human-AI
+> Co-Creation* deck, which carries the same four rows with the same values and the same behavioural
+> markers. It is also the only scale under which a **cumulative** curve reads as described — rising
+> while regulating, falling while producing, flat while waiting — which is how both sources describe
+> it. Under the 2017 scale, producing would not move the curve at all.
 
 ### Rules that are not obvious
 
@@ -203,7 +211,30 @@ the regime when coherence degrades.
 
 ---
 
-## 7. Where the data comes from
+## 7. What the measurement is *for*
+
+Four uses, from *Quantifying and Modeling Human-AI Co-Creation*. Polson currently serves two of them
+and could serve a third:
+
+| Use | Where Polson stands |
+| :--- | :--- |
+| **Analysis** — comparing sessions, participants, domains | Served. `csm.read(project)` codes any run, live or finished |
+| **Explainability** — the system accounting for the process visually and in words | Served. The curve on the run page, and every point opening the script behind it |
+| **Adaptability** — the agent consuming its own interaction model and changing how it collaborates | **Not built.** Every measurement here points outward, at the director |
+| **Partnership** — the model as feedback the agent learns from over time | Not built |
+
+The third is the interesting gap, and it is the one the Emergence Machine's *coherence measures*
+describe: a signal that informs whether to maintain, adjust, or reorganise. The 2014 Drawing
+Apprentice paper has a concrete precedent in its **Creative Trajectory Monitor**, which averages the
+last 10–15 seconds of a collaborator's behaviour and adopts the perceptual logic it infers.
+
+In Polson that would read: a Facilitator watching the live curve sees a run clamped for twenty
+minutes with no inspection and pushes it to look; or sees it thrashing unclamped and tightens the
+regime. Nothing here does that yet, and the curve should not be described as if it did.
+
+---
+
+## 8. Where the data comes from
 
 **`events/server.jsonl` is the spine.** The Polson MCP server writes it in every mode — under the
 Antigravity desktop, under Claude Code, under the standalone orchestrator — because the server is
@@ -229,7 +260,7 @@ enrichment says so.
 
 ---
 
-## 8. Multi-agent
+## 9. Multi-agent
 
 The record is already shaped for it and the runner is not yet.
 
@@ -246,7 +277,7 @@ The record is already shaped for it and the runner is not yet.
 
 ---
 
-## 9. Implementation
+## 10. Implementation
 
 `src/webapp/orchestrator/csm.py` — the coder, the curve, and the summary. Spine-only by default;
 `enrich=True` merges the standalone transcript.

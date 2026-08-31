@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Runs the Polson studio against a standalone project directory.
+# Serves the Polson studio — the browser over a project directory.
 #
-#   ./polson_webapp.sh path/to/project [--prompt "..."] [--fresh] [--unattended]
+#   ./polson_webapp.sh path/to/projects [--host 0.0.0.0] [--port 8000]
 #
-# Today this is the terminal orchestrator: one turn per invocation, with the terminal acting as the
-# director. Milestone 6 puts a browser over the same run_turn, and this script is where that will
-# start from, which is why it is named for the destination rather than the current step.
+# The argument is the directory that *holds* project directories, not a project: the front page
+# lists what it finds there, and a brief typed into the form creates another one beside them.
+# Nothing starts an agent until someone presses a button.
 #
-# The project must be a --standalone one. A managed project is refused by name, because its host
-# owns tool policy and running it here would apply none at all.
+# For one turn in the terminal instead, with no browser and you as the director, use ./polson_run.sh.
 
 set -euo pipefail
 
@@ -32,9 +31,11 @@ if [ -z "$venv" ]; then
 fi
 
 if [ $# -eq 0 ]; then
-    echo "usage: ./polson_webapp.sh <project-dir> [--prompt \"...\"] [--fresh] [--unattended]" >&2
-    echo "       make a project with:  dotnet bin/cli/Polson.CLI.dll create-project <parent> <id> agy --standalone" >&2
+    echo "usage: ./polson_webapp.sh <projects-dir> [--host HOST] [--port PORT]" >&2
+    echo "       the directory holds projects; it is not itself one" >&2
+    echo "       serves http://127.0.0.1:8000 by default" >&2
+    echo "       for one turn in the terminal instead:  ./polson_run.sh <project-dir>" >&2
     exit 1
 fi
 
-exec "$venv" "$root/src/webapp/run_studio.py" "$@"
+exec "$venv" "$root/src/webapp/serve_studio.py" "$@"

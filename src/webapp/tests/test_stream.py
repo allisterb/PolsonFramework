@@ -14,6 +14,7 @@ wedged on an answer that is never coming.
 from __future__ import annotations
 
 import asyncio
+import copy
 import contextlib
 import io
 import json
@@ -27,6 +28,7 @@ from types import SimpleNamespace
 from orchestrator import events
 from orchestrator.broker import Broker
 from orchestrator.director import Reply, WebDirector
+from orchestrator.interject import Interjections
 from orchestrator.tail import Tailer
 from orchestrator.watch import RunStream
 
@@ -464,6 +466,175 @@ class WebDirectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((reply.text, reply.selected, reply.skipped), ("", [], False))
 
 
+class ConfigCopyTests(unittest.IsolatedAsyncioTestCase):
+    """Everything a run hands the SDK must survive being deep-copied.
+
+    `Agent.__init__` does `config.model_copy(deep=True)`, and hooks and triggers are fields on that
+    config — so every object reachable from them is copied at startup. A `threading.Lock` cannot be,
+    and the whole run died before doing anything, with a message naming neither the object nor the
+    line: `TypeError: cannot pickle '_thread.lock' object`.
+
+    `EventLog` already carried a guard for exactly this. The web layer then added three more objects
+    on the same path — a broker behind the director's publish callback, the director itself, and the
+    interjection channel behind the trigger — and every browser-driven run failed at startup while
+    every terminal one kept working, because a terminal director holds only a log.
+    """
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="polson-copy-"))
+        self.log = events.EventLog(self.dir / "director.jsonl", "director")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_every_handle_a_run_hands_the_sdk_copies_to_itself(self):
+        broker = Broker()
+        director = WebDirector(self.log, broker.publish)
+        channel = Interjections(self.log, broker.publish)
+
+        for name, handle in [("EventLog", self.log), ("Broker", broker),
+                             ("WebDirector", director), ("Interjections", channel)]:
+            self.assertIs(copy.deepcopy(handle), handle, f"{name} was copied")
+
+    def test_a_hooks_and_triggers_payload_survives_a_deep_copy(self):
+        """The shape the SDK actually copies, rather than each part on its own."""
+        broker = Broker()
+        channel = Interjections(self.log, broker.publish)
+        payload = {"hooks": [WebDirector(self.log, broker.publish)],
+                   "triggers": [channel.trigger()]}
+
+        copy.deepcopy(payload)   # raised TypeError before the guards existed
+
+    def test_a_run_stream_is_deep_copyable_once_its_director_is_built(self):
+        stream = RunStream(SimpleNamespace(server_events=self.dir / "server.jsonl"), interval=5.0)
+        stream.build_director(self.log)
+
+        copy.deepcopy({"hooks": [stream.director], "triggers": stream.triggers})
+
+    def test_a_copied_handle_is_not_a_second_one(self):
+        """The point is identity, not merely that the copy succeeds.
+
+        A copied broker would have its own subscriber list with nobody attached; a copied channel its
+        own queue that the agent is not reading. Both would fail silently, which is worse than the
+        crash they replaced.
+        """
+        broker = Broker()
+        broker.attach()
+        self.assertEqual(copy.deepcopy(broker).watchers, 1)
+
+        channel = Interjections(self.log)
+        channel.say("something")
+        self.assertEqual(copy.deepcopy(channel).waiting, 1)
+
+
+class InterjectionTests(unittest.IsolatedAsyncioTestCase):
+    """The director interrupting a turn already under way.
+
+    A different act from answering. `Director` is a hook, so it only runs at a moment the agent
+    chose; an interjection is the director speaking when the agent did not ask. Davis's account of
+    the novice has exactly this as a creative catalyst rather than an interruption to be tolerated,
+    which is why it lands in the record as a contribution.
+    """
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="polson-interject-"))
+        self.published: list[dict] = []
+        self.log = events.EventLog(self.dir / "director.jsonl", "director")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def channel(self, *, logged: bool = True) -> Interjections:
+        return Interjections(log=self.log if logged else None, publish=self.published.append)
+
+    async def test_what_is_said_reaches_the_agent(self):
+        channel = self.channel()
+        self.assertTrue(channel.say("make the background red"))
+
+        heard: list[str] = []
+        pump = asyncio.create_task(channel.trigger()(_Context(heard)))
+        for _ in range(100):
+            if heard:
+                break
+            await asyncio.sleep(0.01)
+        pump.cancel()
+
+        self.assertEqual(heard, ["make the background red"])
+
+    async def test_it_is_recorded_as_the_director_speaking(self):
+        self.channel().say("warmer, and lose the globe")
+
+        written = events.read_events(self.dir / "director.jsonl")
+        self.assertEqual(written[0]["type"], "message")
+        self.assertEqual(written[0]["text"], "warmer, and lose the globe")
+        self.assertTrue(written[0]["interjected"])
+
+    async def test_saying_nothing_is_not_an_interjection(self):
+        channel = self.channel()
+
+        self.assertFalse(channel.say("   "))
+        self.assertFalse(channel.say(""))
+        self.assertEqual(events.read_events(self.dir / "director.jsonl"), [])
+
+    async def test_before_the_run_builds_its_director_it_says_so(self):
+        """There is no log yet. The watcher still hears it; only the durable record misses."""
+        self.assertTrue(self.channel(logged=False).say("early"))
+
+        self.assertEqual(self.published[0]["type"], "message")
+        self.assertTrue(self.published[0]["unrecorded"])
+
+    async def test_the_trigger_matches_what_the_sdk_looks_for(self):
+        """An async function of one argument carrying __is_trigger__ — matched without importing it."""
+        pump = self.channel().trigger()
+
+        self.assertTrue(getattr(pump, "__is_trigger__", False))
+        self.assertTrue(asyncio.iscoroutinefunction(pump))
+
+    async def test_a_failed_delivery_does_not_end_the_run(self):
+        channel = self.channel()
+        channel.say("one")
+
+        pump = asyncio.create_task(channel.trigger()(_Broken()))
+        for _ in range(100):
+            if self.published:
+                break
+            await asyncio.sleep(0.01)
+        pump.cancel()
+
+        self.assertFalse(pump.done() and pump.exception())
+        self.assertTrue(self.published[-1].get("failed"))
+
+    async def test_a_run_stream_carries_both_channels(self):
+        stream = RunStream(SimpleNamespace(server_events=self.dir / "server.jsonl"), interval=5.0)
+        watcher = stream.attach()
+
+        # Before run_turn calls the factory there is no director, so an answer has nothing to settle.
+        self.assertFalse(stream.answer("q1", text="hello"))
+        self.assertTrue(stream.say("but this still reaches the agent"))
+
+        stream.build_director(self.log, timeout=0.1)
+        self.assertIsNotNone(stream.director)
+        self.assertEqual(len(stream.triggers), 1)
+
+        kinds = [e["type"] for e in await take(watcher, 1, timeout=2.0)]
+        self.assertEqual(kinds, ["message"])
+
+
+class _Context:
+    """The SDK's TriggerContext, reduced to the one method a trigger uses."""
+
+    def __init__(self, heard: list[str]) -> None:
+        self.heard = heard
+
+    async def send(self, content: str) -> None:
+        self.heard.append(content)
+
+
+class _Broken:
+    async def send(self, content: str) -> None:
+        raise RuntimeError("the connection went away")
+
+
 class RunStreamTests(unittest.IsolatedAsyncioTestCase):
     """Both halves of the record on one broker: ours in-process, the server's by reading its file."""
 
@@ -482,6 +653,7 @@ class RunStreamTests(unittest.IsolatedAsyncioTestCase):
             handle.write(line + "\n")
 
     async def test_both_sides_of_the_record_reach_one_watcher(self):
+        # The order a run happens in: the stream starts, and only then does anything write.
         stream = RunStream(self.project, interval=0.02)
         async with stream:
             watcher = stream.attach()
@@ -504,7 +676,7 @@ class RunStreamTests(unittest.IsolatedAsyncioTestCase):
         stream.start()
         watcher = stream.attach()
 
-        self.server_writes("run.end")
+        self.server_writes("run.end")   # after start(), which is when the offset was fixed
         await stream.stop()
 
         received = [e async for e in watcher]
@@ -517,7 +689,40 @@ class RunStreamTests(unittest.IsolatedAsyncioTestCase):
             self.server_writes("run.start")
             await take(stream.attach(), 1, timeout=3.0)
 
+
         self.assertEqual([e["type"] for e in await take(stream.attach(), 1)], ["run.start"])
+
+    async def test_an_earlier_run_in_the_same_project_is_not_shown_as_this_one(self):
+        """A project's server.jsonl is appended to across runs.
+
+        Following it from byte zero replayed the previous run's whole record into the new one and
+        presented it as its own work — 44 events of somebody else's session on a page that had done
+        nothing. The record is the archive; the stream is this run.
+        """
+        self.server_writes("run.start")
+        self.server_writes("render", artifact="artifacts/from-the-last-run.webp")
+
+        stream = RunStream(self.project, interval=0.02)
+        async with stream:
+            watcher = stream.attach()
+            self.server_writes("note", message="this run")
+
+            received = await take(watcher, 1, timeout=3.0)
+
+        self.assertEqual([e["type"] for e in received], ["note"])
+
+    async def test_a_finished_run_can_still_be_replayed_deliberately(self):
+        """Reading a run back is a different act from following one, and says so at the call."""
+        self.server_writes("run.start")
+        self.server_writes("run.end")
+
+        stream = RunStream(self.project, interval=0.02)
+        stream.start(replay_existing=True)
+        watcher = stream.attach()
+        received = await take(watcher, 2, timeout=3.0)
+        await stream.stop()
+
+        self.assertEqual([e["type"] for e in received], ["run.start", "run.end"])
 
     async def test_stopping_twice_is_harmless(self):
         stream = RunStream(self.project, interval=0.02)
@@ -532,7 +737,7 @@ class RunStreamTests(unittest.IsolatedAsyncioTestCase):
         watcher = stream.attach()
 
         log = events.EventLog(self.dir / "events" / "director.jsonl", "director")
-        director = stream.director(log, timeout=0.1)
+        director = stream.build_director(log, timeout=0.1)
         self.assertTrue(director.attended)
 
         await asyncio.wait_for(director.run(None, SimpleNamespace(questions=[question()])), timeout=3.0)

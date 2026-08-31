@@ -2,21 +2,53 @@
 <meta charset="utf-8">
 <title>{{ run.id }} — Polson Studio</title>
 <link rel="stylesheet" href="/static/studio.css">
+<link rel="stylesheet" href="/code.css">
 
-<main class="run" data-run="{{ run.id }}">
+<main class="run" data-run="{{ run.id }}" data-live="{{ 'yes' if run.live else 'no' }}">
   <header>
     <a class="back" href="/">← projects</a>
     <h1>{{ run.project }}</h1>
     <span class="status {{ run.status }}" id="status">{{ run.status }}</span>
-    <span class="hint">{{ run.workflow }} · started {{ run.started }}</span>
+    <span class="hint">{{ run.workflow }} · started {{ run.started }}{% if run.resumed %} · continuing an earlier session{% endif %}</span>
   </header>
 
   {% if run.error %}<p class="refused">{{ run.error }}</p>{% endif %}
 
+  <section class="curve">
+    <h2>Creative sense-making
+      <span class="hint" id="curveread">rising: regulating &middot; falling: producing &middot; flat: waiting</span>
+      <label class="follow">
+        <select id="reading">
+          <option value="cumulative">by action</option>
+          <option value="integral">by time held</option>
+        </select>
+      </label>
+    </h2>
+    <div id="plot"><p class="empty">Nothing coded yet.</p></div>
+    <p class="hint" id="tally"></p>
+  </section>
+
   <div class="panes">
     <section class="trace">
-      <h2>What is happening <span class="hint" id="count">0 events</span></h2>
+      <h2>What is happening
+        <span class="hint" id="count">0 events</span>
+        <label class="follow"><input type="checkbox" id="follow" checked> follow</label>
+      </h2>
+
+      <div id="asking"></div>
       <ol id="events"></ol>
+
+      <form id="interject" class="{{ '' if run.live else 'gone' }}">
+        <label for="say">Say something to the agent
+          <span class="hint">— it is mid-stride; this is a contribution, not a correction</span>
+        </label>
+        <div class="actions">
+          <input id="say" name="text" maxlength="2000" autocomplete="off"
+                 placeholder="make the background red">
+          <button type="submit">Send</button>
+        </div>
+        <p class="why" id="sayerror" hidden></p>
+      </form>
     </section>
 
     <aside class="latest">
@@ -24,6 +56,9 @@
       <figure id="render">
         <p class="empty">Nothing rendered yet.</p>
       </figure>
+
+      <h2>The script behind it <span class="hint" id="scriptname"></span></h2>
+      <div id="source"><p class="empty">Click a script, or a point on the curve.</p></div>
     </aside>
   </div>
 </main>
@@ -32,42 +67,61 @@
 // Deliberately plain: no framework, no build step. The record is already the model — every event
 // carries what a reader needs, so the page appends rather than reconciles.
 (function () {
-  const runId = document.querySelector('main').dataset.run;
+  const main = document.querySelector('main');
+  const runId = main.dataset.run;
   const list = document.getElementById('events');
   const count = document.getElementById('count');
   const status = document.getElementById('status');
   const render = document.getElementById('render');
+  const asking = document.getElementById('asking');
+  const follow = document.getElementById('follow');
+  const plot = document.getElementById('plot');
+  const tally = document.getElementById('tally');
+  const reading = document.getElementById('reading');
+  const source = document.getElementById('source');
+  const scriptName = document.getElementById('scriptname');
 
-  // Rows a reader cares about. Anything else still arrives and is still shown, just unstyled —
-  // a new event type should appear as soon as the engine emits it, not once this file knows it.
   const LABEL = {
     'run.start': 'run started', 'run.end': 'run ended',
     'stage.begin': 'stage', 'stage.end': 'stage ended', 'stage.continue': 'stage continues',
     'note': 'note', 'script.start': 'executing', 'script.ok': 'executed', 'script.error': 'failed',
     'render': 'rendered', 'inspect': 'looked', 'artifact.read': 'read back',
     'thinking': 'thinking', 'text': 'said', 'tool.call': 'tool',
-    'question.open': 'asking', 'question.closed': 'answered', 'message': 'director'
+    'question.open': 'asking', 'question.closed': 'answered', 'message': 'director',
+    'stream.lag': 'gap', 'stream.truncated': 'earlier events not kept',
+    'run.error': 'run failed'
+  };
+
+  // The five modes of the coding table, in docs/creative-sense-making.md.
+  const MODE = {
+    communicate: '#d9a520', gather: '#7b5ea7', inspect: '#1f6f8b',
+    wait: '#9aa4ae', execute: '#2f7a4f'
   };
 
   let n = 0;
-  const source = new EventSource(`/runs/${runId}/events`);
+  const stream = new EventSource(`/runs/${runId}/events`);
+  stream.onmessage = () => {};
 
-  source.onmessage = () => {};   // typed events only; this keeps the default handler quiet
-
-  for (const kind of Object.keys(LABEL).concat(['stream.lag', 'stream.truncated', 'run.closed'])) {
-    source.addEventListener(kind, (e) => show(kind, JSON.parse(e.data)));
+  for (const kind of Object.keys(LABEL).concat(['run.closed'])) {
+    stream.addEventListener(kind, (e) => show(kind, JSON.parse(e.data)));
   }
 
   function show(kind, event) {
     if (kind === 'run.closed') {
       status.textContent = event.status;
       status.className = 'status ' + event.status;
-      source.close();
+      document.getElementById('interject').classList.add('gone');
+      asking.innerHTML = '';
+      stream.close();
+      drawCurve();
       return;
     }
 
     n += 1;
     count.textContent = n + (n === 1 ? ' event' : ' events');
+
+    if (kind === 'question.open') ask(event);
+    if (kind === 'question.closed') settle(event.id);
 
     const li = document.createElement('li');
     li.className = 'ev ' + kind.replace('.', '-');
@@ -75,27 +129,178 @@
       `<span class="kind">${LABEL[kind] || kind}</span>` +
       (event.stage ? `<span class="stage">${esc(event.stage)}</span>` : '') +
       `<span class="detail">${esc(detail(kind, event))}</span>`;
-    list.appendChild(li);
-    li.scrollIntoView({ block: 'nearest' });
 
-    // Artifacts arrive as paths and are fetched by URL, never embedded in the stream — which is
-    // what lets a refresh rebuild this page from the record alone.
+    // Anything that names a script opens it. The code is the half a render cannot carry.
+    if (event.script) {
+      li.classList.add('opens');
+      li.addEventListener('click', () => openScript(event.script));
+    }
+
+    list.appendChild(li);
+    if (follow.checked) list.scrollTop = list.scrollHeight;
+
     if (kind === 'render' && event.artifact) {
       render.innerHTML =
         `<img src="/runs/${runId}/${event.artifact}?v=${n}" alt="${esc(event.artifact)}">` +
         `<figcaption>${esc(event.artifact)}</figcaption>`;
     }
+
+    // Recoding is a file read plus a pass over a few hundred events, so it is done at the moments
+    // the shape actually changes rather than on every line.
+    if (kind === 'script.ok' || kind === 'script.error' || kind === 'stage.begin') drawCurve();
+  }
+
+  // ── the curve ──────────────────────────────────────────────────────────────────────────────
+  let coded = null;
+
+  async function drawCurve() {
+    try {
+      const response = await fetch(`/runs/${runId}/curve`);
+      if (!response.ok) return;
+      coded = await response.json();
+    } catch (err) { return; }
+    paint();
+  }
+
+  reading.addEventListener('change', paint);
+
+  function paint() {
+    if (!coded || !coded.trace.length) return;
+
+    const key = reading.value;
+    const trace = coded.trace;
+    const w = 1000, h = 150, pad = 8;
+    const values = trace.map(p => p[key]);
+    const lo = Math.min(0, ...values), hi = Math.max(0, ...values);
+    const range = (hi - lo) || 1;
+
+    // Each reading gets the axis that matches it. Counting actions puts actions on the x-axis, so
+    // the rhythm reads evenly; counting time puts elapsed time there, where a long pause is a long
+    // flat stretch and is supposed to be. Plotting the action count against real time gave a run
+    // with two sessions in one project a dead middle that said nothing.
+    const span = key === 'integral' ? Math.max(1, trace[trace.length - 1].t) : Math.max(1, trace.length - 1);
+    const at = (p, i) => key === 'integral' ? p.t : i;
+
+    const x = (p, i) => pad + (at(p, i) / span) * (w - 2 * pad);
+    const y = (v) => pad + (1 - (v - lo) / range) * (h - 2 * pad);
+
+    const line = trace.map((p, i) => `${i ? 'L' : 'M'}${x(p, i).toFixed(1)},${y(p[key]).toFixed(1)}`).join('');
+    const zero = y(0);
+
+    // A transparent stroke widens what is clickable without changing what is drawn: at this density
+    // the visible dot is a few pixels across and was almost impossible to hit.
+    const dots = trace.map((p, i) =>
+      `<circle cx="${x(p, i).toFixed(1)}" cy="${y(p[key]).toFixed(1)}" r="3.5" ` +
+      `fill="${MODE[p.mode] || '#999'}" stroke="transparent" stroke-width="9" ` +
+      `data-i="${i}"><title>${esc(p.mode)} · ` +
+      `${esc(p.stage || '')} ${esc(p.detail).slice(0, 90)}</title></circle>`).join('');
+
+    plot.innerHTML =
+      `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img">` +
+      `<line x1="0" y1="${zero.toFixed(1)}" x2="${w}" y2="${zero.toFixed(1)}" class="zero"/>` +
+      `<path d="${line}" class="curveline"/>${dots}</svg>`;
+
+    plot.querySelectorAll('circle').forEach((dot) => {
+      dot.addEventListener('click', () => {
+        const point = trace[Number(dot.dataset.i)];
+        const named = /scripts\/[\w.-]+\.js/.exec(point.detail || '');
+        if (named) openScript(named[0]);
+      });
+    });
+
+    const s = coded.summary;
+    const held = Object.entries(s.heldMs || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([mode, ms]) => `${mode} ${(ms / 1000).toFixed(0)}s`).join(' · ');
+    const signed = (v) => (v > 0 ? '+' : '') + v.toFixed(1);
+    tally.textContent =
+      `${s.actions} actions · by action ${signed(s.net)} · by time ${signed(s.integral)} · ${held}` +
+      (s.missing && s.missing.length ? ` · no ${s.missing.join(', ')} recorded` : '');
+  }
+
+  // ── the code ───────────────────────────────────────────────────────────────────────────────
+  async function openScript(path) {
+    scriptName.textContent = path;
+    source.innerHTML = '<p class="empty">Loading…</p>';
+    try {
+      const response = await fetch(`/runs/${runId}/${path}`);
+      source.innerHTML = response.ok
+        ? await response.text()
+        : `<p class="why">That script is not on disk (${response.status}).</p>`;
+    } catch (err) {
+      source.innerHTML = '<p class="why">The server could not be reached.</p>';
+    }
+  }
+
+  // ── the director ───────────────────────────────────────────────────────────────────────────
+  function ask(event) {
+    const card = document.createElement('form');
+    card.className = 'question';
+    card.dataset.question = event.id;
+
+    const options = (event.options || []).map((text, i) =>
+      `<button type="submit" name="option" value="opt${i + 1}" class="option">${esc(text)}</button>`
+    ).join('');
+
+    card.innerHTML =
+      `<p class="q">${esc(event.text)}</p>` +
+      (options ? `<div class="options">${options}</div>` : '') +
+      `<div class="actions">` +
+      `  <input name="text" placeholder="or say what you want instead" autocomplete="off">` +
+      `  <button type="submit">Answer</button>` +
+      `  <button type="submit" name="skip" value="1" class="secondary">Let it decide</button>` +
+      `</div><p class="why" hidden></p>`;
+
+    card.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const body = new FormData(card);
+      body.append('question', event.id);
+      if (e.submitter && e.submitter.name) body.append(e.submitter.name, e.submitter.value);
+      post(`/runs/${runId}/answer`, body, card.querySelector('.why'),
+           () => card.classList.add('sent'));
+    });
+
+    asking.appendChild(card);
+  }
+
+  function settle(id) {
+    const card = asking.querySelector(`[data-question="${CSS.escape(id || '')}"]`);
+    if (card) card.remove();
+  }
+
+  const interject = document.getElementById('interject');
+  interject.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const field = document.getElementById('say');
+    if (!field.value.trim()) return;
+    post(`/runs/${runId}/say`, new FormData(interject),
+         document.getElementById('sayerror'), () => { field.value = ''; });
+  });
+
+  async function post(url, body, errorEl, ok) {
+    errorEl.hidden = true;
+    try {
+      const response = await fetch(url, { method: 'POST', body });
+      if (response.ok) { ok(); return; }
+      const data = await response.json().catch(() => ({}));
+      errorEl.textContent = data.detail || `That did not go through (${response.status}).`;
+      errorEl.hidden = false;
+    } catch (err) {
+      errorEl.textContent = 'The server could not be reached.';
+      errorEl.hidden = false;
+    }
   }
 
   function detail(kind, e) {
     if (kind === 'note' || kind === 'message') return e.message || e.text || '';
-    if (kind === 'render') return e.artifact || '';
+    if (kind === 'render' || kind === 'artifact.read') return e.artifact || '';
     if (kind === 'inspect') return Object.entries(e.probes || {}).map(([k, v]) => `${k} ${v}`).join(', ');
-    if (kind === 'artifact.read') return e.artifact || '';
     if (kind === 'tool.call') return e.tool || '';
     if (kind === 'script.error') return e.error || e.script || '';
+    if (kind === 'run.error') return (e.error || '') + (e.traceback ? '\n\n' + e.traceback : '');
     if (kind === 'stage.begin' || kind === 'stage.end') return e.stage || '';
     if (kind === 'question.open') return e.text || '';
+    if (kind === 'stream.lag' || kind === 'stream.truncated') return `${e.dropped} not shown`;
     return (e.text || e.script || e.message || '').toString();
   }
 
@@ -103,5 +308,7 @@
     return String(s).replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
+
+  drawCurve();
 })();
 </script>

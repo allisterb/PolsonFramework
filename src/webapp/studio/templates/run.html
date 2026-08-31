@@ -116,6 +116,14 @@
     'run.error': 'run failed'
   };
 
+  // What the y axis is counting, which is not the same quantity in the two readings — one sums the
+  // coded values, the other sums each value multiplied by the seconds it was held. Saying so on the
+  // axis is what stops the two being compared as though they were the same number.
+  const Y_UNITS = {
+    cumulative: 'sum of coded values',
+    integral: 'coded value × seconds'
+  };
+
   // Which lines carry the "there is a picture behind this" marker. Every line of a pass opens that
   // pass, so marking them all would be truthful — and useless: on a real run it put a marker on 84
   // of 96 rows, which is wallpaper rather than a signpost. These are the lines a reader scans for
@@ -261,12 +269,80 @@
 
   reading.addEventListener('change', paint);
 
+  // The plot is drawn at the pane's real width, so a resize needs a redraw. Coalesced, because a
+  // drag fires this continuously and repainting a few hundred points each time is wasted work.
+  let resized = null;
+  window.addEventListener('resize', () => {
+    if (resized !== null) clearTimeout(resized);
+    resized = setTimeout(() => { resized = null; paint(); }, 150);
+  });
+
+  /**
+   * Round tick values across an interval — steps of 1, 2, 5 or 10 times a power of ten.
+   *
+   * Ported from `ScaleToolkit.NiceStep`, which is what `Scale.ticks` gives a script, so the axis a
+   * viewer reads is stepped by the same rule as an axis an agent draws. The factor rounds *up*: the
+   * count is a target, and honouring it exactly is what forces ugly steps. Rounding down instead —
+   * which this did at first — silently doubles the ticks, and asking for four gave ten.
+   */
+  function niceTicks(min, max, count) {
+    const rough = ((max - min) || 1) / Math.max(1, count);
+    if (!(rough > 0) || !isFinite(rough)) return [];
+
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+    const norm = rough / magnitude;
+    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * magnitude;
+
+    const out = [];
+    for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-4 && out.length < 24; v += step) {
+      // Re-rounded each step: accumulating a float repeatedly turns 0.3 into 0.30000000000000004.
+      const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+      out.push(Number(v.toFixed(decimals)));
+    }
+    return out;
+  }
+
+  /** Axis values stay short: a four-figure integral is unreadable at 11px and says nothing extra. */
+  function axisValue(v) {
+    const magnitude = Math.abs(v);
+    if (magnitude >= 10000) return (v / 1000).toFixed(0) + 'k';
+    if (magnitude >= 100) return v.toFixed(0);
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  }
+
+  /**
+   * Elapsed-time ticks, round in the unit they are labelled in.
+   *
+   * Ticking the raw milliseconds and formatting afterwards produces round *milliseconds* — a step of
+   * 1,000,000 reads as `17m`, and the axis goes 0s, 17m, 33m, 50m. The unit has to be chosen first
+   * and the interval made nice inside it, which is what turns that into 0m, 15m, 30m, 45m.
+   */
+  function timeTicks(spanMs, count) {
+    const unit = spanMs < 90e3 ? { ms: 1e3, suffix: 's' }
+               : spanMs < 90 * 60e3 ? { ms: 60e3, suffix: 'm' }
+               : { ms: 3600e3, suffix: 'h' };
+
+    return niceTicks(0, spanMs / unit.ms, count)
+      .map(v => ({ at: v * unit.ms, label: v + unit.suffix }));
+  }
+
   function paint() {
     if (!coded || !coded.trace.length) return;
 
     const key = reading.value;
     const trace = coded.trace;
-    const w = 1000, h = 150, pad = 8;
+
+    // Drawn at the element's real pixel size rather than a fixed viewBox stretched to fit. The old
+    // `preserveAspectRatio="none"` scaled x and y by different factors, which drew every dot as an
+    // ellipse on any pane narrower than 1000px — and would have squashed axis text the same way.
+    const w = Math.max(320, Math.round(plot.clientWidth) || 1000);
+    const h = 186;
+    // `top` leaves room for the y-axis caption above the plot area rather than beside it, which is
+    // the only place a phrase that long fits without being cut off by the left edge.
+    const pad = { left: 48, right: 12, top: 18, bottom: 26 };
+    const innerW = w - pad.left - pad.right;
+    const innerH = h - pad.top - pad.bottom;
+
     const values = trace.map(p => p[key]);
     const lo = Math.min(0, ...values), hi = Math.max(0, ...values);
     const range = (hi - lo) || 1;
@@ -278,8 +354,9 @@
     const span = key === 'integral' ? Math.max(1, trace[trace.length - 1].t) : Math.max(1, trace.length - 1);
     const at = (p, i) => key === 'integral' ? p.t : i;
 
-    const x = (p, i) => pad + (at(p, i) / span) * (w - 2 * pad);
-    const y = (v) => pad + (1 - (v - lo) / range) * (h - 2 * pad);
+    const x = (p, i) => pad.left + (at(p, i) / span) * innerW;
+    const xAt = (v) => pad.left + (v / span) * innerW;
+    const y = (v) => pad.top + (1 - (v - lo) / range) * innerH;
 
     const line = trace.map((p, i) => `${i ? 'L' : 'M'}${x(p, i).toFixed(1)},${y(p[key]).toFixed(1)}`).join('');
     const zero = y(0);
@@ -303,9 +380,34 @@
         `${esc(p.stage || '')} ${esc(p.detail).slice(0, 90)}</title></circle>`;
     }).join('');
 
+    // A gridline and a value for each round step. The tick rule is the SDK's own — steps of 1, 2 or
+    // 5 times a power of ten — so the axis lands on 0 / 50 / 100 rather than on 0 / 47.5 / 95, which
+    // is the same reason `Scale.ticks` exists for the scripts.
+    const gridY = niceTicks(lo, hi, 4).map(v => {
+      const ty = y(v).toFixed(1);
+      return `<line x1="${pad.left}" y1="${ty}" x2="${w - pad.right}" y2="${ty}" class="grid"/>` +
+             `<text x="${pad.left - 8}" y="${ty}" class="tick ty">${axisValue(v)}</text>`;
+    }).join('');
+
+    // The x-axis carries whichever quantity this reading is against, which is the whole difference
+    // between the two: actions counted evenly, or elapsed time where a long pause is visibly long.
+    const gridX = (key === 'integral' ? timeTicks(span, 5)
+                                      : niceTicks(0, span, 5).map(v => ({ at: v, label: String(Math.round(v)) })))
+      .filter(t => t.at >= 0 && t.at <= span)
+      .map(t => `<text x="${xAt(t.at).toFixed(1)}" y="${h - pad.bottom + 16}" class="tick tx">${t.label}</text>`)
+      .join('');
+
     plot.innerHTML =
-      `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img">` +
-      `<line x1="0" y1="${zero.toFixed(1)}" x2="${w}" y2="${zero.toFixed(1)}" class="zero"/>` +
+      `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img">` +
+      `<g class="axes">${gridY}${gridX}` +
+      `<line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${h - pad.bottom}" class="axis"/>` +
+
+      // Anchored at the left edge rather than at the axis: right-anchored on a 48px gutter, a word
+      // this long began at a negative x and had its first letter cut off by the viewport.
+      `<text x="2" y="${pad.top - 6}" class="tick caption">${esc(Y_UNITS[key])}</text>` +
+      `<text x="${w - pad.right}" y="${h - 4}" class="tick caption ax">` +
+      `${key === 'integral' ? 'elapsed' : 'actions'}</text></g>` +
+      `<line x1="${pad.left}" y1="${zero.toFixed(1)}" x2="${w - pad.right}" y2="${zero.toFixed(1)}" class="zero"/>` +
       `<path d="${line}" class="curveline"/>${dots}</svg>`;
 
     plot.querySelectorAll('circle').forEach((dot) => {

@@ -182,7 +182,18 @@ form#interject button, .question .actions button { margin-top: 0; white-space: n
 .curve h2 select { width: auto; display: inline-block; padding: .1rem .3rem; font-size: .8rem; }
 #plot { border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
         padding: .3rem; }
-#plot svg { width: 100%; height: 150px; display: block; overflow: visible; }
+
+/* Sized in real pixels by paint(), not stretched to fit: a viewBox scaled non-uniformly draws round
+   dots as ellipses and would do the same to the axis text. */
+#plot svg { display: block; max-width: 100%; }
+
+#plot .grid { stroke: var(--line); stroke-width: 1; }
+#plot .axis { stroke: var(--line); stroke-width: 1; }
+#plot .tick { fill: var(--dim); font-size: 10px; font-family: var(--mono); }
+#plot .ty { text-anchor: end; dominant-baseline: middle; }
+#plot .tx { text-anchor: middle; }
+#plot .ax { text-anchor: end; }
+#plot .caption { font-family: inherit; font-style: italic; }
 #plot .curveline { fill: none; stroke: var(--ink); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
 #plot .zero { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 #plot circle { cursor: pointer; }

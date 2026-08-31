@@ -150,6 +150,7 @@ internal static class RunReport
             ["hasEventLog"] = hasLog,
             ["events"] = events.Count,
             ["runStarts"] = Count("run.start"),
+            ["sessions"] = new JsonArray([.. Sessions(events)]),
             ["scriptsExecuted"] = scriptsRun.Length,
             ["scriptsFailed"] = Count("script.error"),
             ["renders"] = Count("render"),
@@ -171,6 +172,117 @@ internal static class RunReport
                 scriptFiles.Length, scriptsNeverRun.Length, unexplainedArtifacts.Length)
                 .Select(w => (JsonNode)w!)])
         };
+    }
+
+    /// <summary>
+    /// The log split at each <c>run.start</c>, because a project's log is appended to across runs.
+    /// </summary>
+    /// <remarks>
+    /// Everything else here is a total for the <em>project</em>, which is the right scope for the
+    /// reconciliation — an artifact with no render is unaccounted for whenever it was written. The
+    /// shape of the work is not: a project run four times reports its stages as
+    /// <c>Data -&gt; … -&gt; Encode -&gt; Data -&gt; … -&gt; Encode</c>, which reads as one long confused run
+    /// rather than as four ordinary ones.
+    /// <para>
+    /// A session is opened by <c>run.start</c> and runs until the next one. <c>run.end</c> is
+    /// deliberately <em>not</em> the terminator: it is written from <c>ApplicationStopping</c> and is
+    /// only reached when the host closes the server's stdin, so a session whose host killed the
+    /// process instead has no closing event — and is not thereby incomplete or still running.
+    /// </para>
+    /// <para>
+    /// Anything before the first <c>run.start</c> becomes a leading session with no start time,
+    /// rather than being folded into the first real one or silently dropped. A log with no
+    /// <c>run.start</c> at all is therefore one session rather than none.
+    /// </para>
+    /// </remarks>
+    private static List<JsonObject> Sessions(List<JsonNode> events)
+    {
+        var sessions = new List<JsonObject>();
+        var current = new List<JsonNode>();
+        string? started = null;
+
+        foreach (var e in events)
+        {
+            if (TypeOf(e) == "run.start")
+            {
+                // What has been collected belongs to the session before this one — or, at the head of
+                // a log, to a stretch that never had a run.start of its own.
+                if (current.Count > 0 || started is not null)
+                {
+                    sessions.Add(Session(sessions.Count + 1, started, current));
+                    current = [];
+                }
+                started = Stamp(e);
+            }
+            current.Add(e);
+        }
+
+        if (current.Count > 0 || started is not null)
+        {
+            sessions.Add(Session(sessions.Count + 1, started, current));
+        }
+
+        return sessions;
+    }
+
+    /// <summary>One session's own counts, on the same definitions the project totals use.</summary>
+    /// <remarks>
+    /// Scripts are counted by distinct path exactly as they are project-wide, and the server numbers
+    /// each execution into a new file, so the per-session counts sum back to the total. A breakdown
+    /// that did not add up would be worse than no breakdown.
+    /// </remarks>
+    private static JsonObject Session(int index, string? started, List<JsonNode> events)
+    {
+        var scripts = events.Where(e => TypeOf(e) is "script.ok" or "script.error")
+            .Select(e => e["script"]?.GetValue<string>() ?? "")
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+        var stages = events.Where(e => TypeOf(e) == "stage.begin")
+            .Select(e => e["stage"]?.GetValue<string>() ?? "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+
+        // The last event carrying a timestamp, not the last event: a hand-written or older log may
+        // have lines without one, and the session still ran for as long as its stamped lines say.
+        var ended = events.Select(Stamp).LastOrDefault(t => t is not null);
+
+        return new JsonObject
+        {
+            ["index"] = index,
+            ["started"] = started,
+            ["ended"] = ended,
+            ["ms"] = Elapsed(started, ended),
+            ["events"] = events.Count,
+            ["scriptsExecuted"] = scripts,
+            ["scriptsFailed"] = events.Count(e => TypeOf(e) == "script.error"),
+            ["renders"] = events.Count(e => TypeOf(e) == "render"),
+            ["notes"] = events.Count(e => TypeOf(e) == "note"),
+            ["closed"] = events.Any(e => TypeOf(e) == "run.end"),
+            ["stages"] = new JsonArray([.. stages.Select(s => (JsonNode)s!)])
+        };
+    }
+
+    private static string TypeOf(JsonNode e) => e["type"]?.GetValue<string>() ?? "";
+
+    private static string? Stamp(JsonNode e) => e["ts"]?.GetValue<string>();
+
+    /// <summary>Milliseconds between two record timestamps, or null if either cannot be read.</summary>
+    /// <remarks>
+    /// Null rather than zero, because "we could not tell" and "it took no time" are different
+    /// readings and only one of them is ever true of a session that ran.
+    /// </remarks>
+    private static long? Elapsed(string? from, string? to)
+    {
+        if (from is null || to is null) return null;
+
+        const DateTimeStyles styles = DateTimeStyles.RoundtripKind;
+        if (!DateTimeOffset.TryParse(from, CultureInfo.InvariantCulture, styles, out var start)) return null;
+        if (!DateTimeOffset.TryParse(to, CultureInfo.InvariantCulture, styles, out var end)) return null;
+
+        var ms = (long)(end - start).TotalMilliseconds;
+        return ms < 0 ? null : ms;
     }
 
     /// <summary>
@@ -270,6 +382,68 @@ internal static class RunReport
             : string.Join(", ", read);
     }
 
+    /// <summary>
+    /// Each session on its own, when there is more than one to tell apart.
+    /// </summary>
+    /// <remarks>
+    /// Silent for a single-session project: the summary already says everything, and a table of one
+    /// row is noise. Two lines per session rather than a column layout, because a stage sequence is
+    /// as long as it is and columns would either truncate it or run off the terminal.
+    /// </remarks>
+    private static void PrintSessions(JsonArray sessions)
+    {
+        if (sessions.Count < 2) return;
+
+        Console.WriteLine();
+        Console.WriteLine("  Sessions");
+        Console.WriteLine();
+
+        for (var i = 0; i < sessions.Count; i++)
+        {
+            if (sessions[i] is not JsonObject session) continue;
+
+            int Num(string key) => session[key]?.GetValue<int>() ?? 0;
+
+            var failed = Num("scriptsFailed");
+            var counts = $"{Num("scriptsExecuted")} scripts{(failed > 0 ? $" ({failed} failed)" : "")}, "
+                       + $"{Num("renders")} renders, {Num("notes")} notes";
+
+            Console.WriteLine($"    {Num("index"),-2} {Began(session),-23} {Duration(session),-9} {counts}");
+
+            var stages = session["stages"] as JsonArray ?? [];
+            Console.WriteLine(stages.Count == 0
+                ? "       (no stage declared)"
+                : $"       {string.Join(" -> ", stages.Select(s => s?.ToString() ?? ""))}");
+
+            // No trailing blank on the last: the caller writes one before the warnings, and two
+            // together read as the report having finished early.
+            if (i < sessions.Count - 1) Console.WriteLine();
+        }
+    }
+
+    /// <summary>When a session opened, to the second. UTC, as the record keeps it.</summary>
+    private static string Began(JsonObject session)
+    {
+        var started = session["started"]?.GetValue<string>();
+        if (started is null) return "(before any run.start)";
+
+        return DateTimeOffset.TryParse(started, CultureInfo.InvariantCulture,
+                                       DateTimeStyles.RoundtripKind, out var at)
+            ? at.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss'Z'", CultureInfo.InvariantCulture)
+            : started;
+    }
+
+    /// <summary>How long a session ran, in the largest unit that still says something.</summary>
+    private static string Duration(JsonObject session)
+    {
+        if (session["ms"]?.GetValue<long>() is not { } ms) return "-";
+
+        var span = TimeSpan.FromMilliseconds(ms);
+        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes:00}m";
+        if (span.TotalMinutes >= 1) return $"{(int)span.TotalMinutes}m {span.Seconds:00}s";
+        return $"{span.TotalSeconds:0.0}s";
+    }
+
     private static void Print(string dir, JsonObject report)
     {
         int Num(string key) => report[key]?.GetValue<int>() ?? 0;
@@ -278,7 +452,10 @@ internal static class RunReport
         Console.WriteLine($"  Run report: {dir}");
         Console.WriteLine();
 
-        var rows = new (string Label, string Value)[]
+        var sessions = report["sessions"] as JsonArray ?? [];
+        var stages = report["stages"] as JsonArray ?? [];
+
+        var rows = new List<(string Label, string Value)>
         {
             ("events recorded", Num("events").ToString(CultureInfo.InvariantCulture)),
             ("server sessions", Num("runStarts").ToString(CultureInfo.InvariantCulture)),
@@ -290,7 +467,12 @@ internal static class RunReport
                 ? "never - no script measured, sampled or read anything back"
                 : $"{Num("probes")} probes across {Num("inspections")} of {Num("scriptsExecuted")} scripts"),
             ("artifacts read back", Read(report)),
-            ("stages declared", string.Join(" -> ", (report["stages"] as JsonArray ?? []).Select(s => s?.ToString() ?? ""))),
+
+            // Concatenated across sessions this row is the misleading one, so it says so and hands
+            // the reader to the breakdown instead of printing four runs as one stage sequence.
+            ("stages declared", sessions.Count > 1
+                ? $"{stages.Count} across {sessions.Count} sessions - listed below"
+                : string.Join(" -> ", stages.Select(s => s?.ToString() ?? ""))),
             ("files in scripts/", Num("scriptFilesOnDisk").ToString(CultureInfo.InvariantCulture)),
             ("files in artifacts/", Num("artifactFilesOnDisk").ToString(CultureInfo.InvariantCulture)),
             ("conversation record", report["conversationRecord"]?.ToString() ?? ""),
@@ -300,6 +482,8 @@ internal static class RunReport
         {
             Console.WriteLine($"    {label,-22} {value}");
         }
+
+        PrintSessions(sessions);
 
         var warnings = report["warnings"] as JsonArray ?? [];
         Console.WriteLine();

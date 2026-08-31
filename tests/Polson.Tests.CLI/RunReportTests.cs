@@ -77,6 +77,30 @@ public class RunReportTests : TestsRuntime, IDisposable
 
     private static string[] Warnings(JsonObject report) =>
         [.. (report["warnings"] as JsonArray ?? []).Select(w => w?.ToString() ?? "")];
+
+    private static JsonObject[] Sessions(JsonObject report) =>
+        [.. (report["sessions"] as JsonArray ?? []).Select(s => (JsonObject)s!)];
+
+    /// <summary>The table a director actually reads, as text.</summary>
+    /// <remarks>
+    /// The JSON is the same data, but what is <em>shown</em> is a separate decision — a row that
+    /// concatenates four runs' stages is wrong on the page while the array behind it is correct.
+    /// </remarks>
+    private string Printed()
+    {
+        var writer = new StringWriter();
+        var previous = Console.Out;
+        Console.SetOut(writer);
+        try
+        {
+            Assert.Equal(0, RunReport.Run(new ReportOptions { ProjectDir = root }));
+        }
+        finally
+        {
+            Console.SetOut(previous);
+        }
+        return writer.ToString();
+    }
     #endregion
 
     #region A run that really happened
@@ -316,6 +340,183 @@ public class RunReportTests : TestsRuntime, IDisposable
         {
             Console.SetOut(previous);
         }
+    }
+    #endregion
+
+    #region Sessions within a project
+    /// <summary>
+    /// A project's log is appended to across runs, so the report splits it at each <c>run.start</c>.
+    /// </summary>
+    /// <remarks>
+    /// Read whole, a project run four times reports its stages as one sequence that repeats — which
+    /// reads as a single confused run rather than as four ordinary ones, and hides a session that
+    /// connected and did nothing inside the totals of the ones that worked.
+    /// </remarks>
+    [Fact]
+    public void TestTheLogIsSplitAtEachRunStart()
+    {
+        Events(
+            """{"ts":"2026-08-31T09:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T09:00:01.000Z","type":"stage.begin","stage":"Blocking"}""",
+            """{"ts":"2026-08-31T09:00:02.000Z","type":"script.ok","script":"scripts/0001.js"}""",
+            """{"ts":"2026-08-31T11:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T11:00:01.000Z","type":"stage.begin","stage":"Refine"}""",
+            """{"ts":"2026-08-31T11:00:02.000Z","type":"script.ok","script":"scripts/0002.js"}""");
+
+        var sessions = Sessions(Report());
+
+        Assert.Equal(2, sessions.Length);
+        Assert.Equal("Blocking", (sessions[0]["stages"] as JsonArray)![0]!.ToString());
+        Assert.Equal("Refine", (sessions[1]["stages"] as JsonArray)![0]!.ToString());
+        Assert.Equal(1, sessions[0]["scriptsExecuted"]!.GetValue<int>());
+        Assert.Equal(1, sessions[1]["scriptsExecuted"]!.GetValue<int>());
+    }
+
+    /// <summary>
+    /// The property that makes a breakdown worth reading: the parts sum to the whole.
+    /// </summary>
+    /// <remarks>
+    /// A per-session count on a different definition from the project total would be worse than no
+    /// breakdown, because the disagreement would look like a finding about the run.
+    /// </remarks>
+    [Fact]
+    public void TestTheSessionsSumToTheProjectTotals()
+    {
+        Events(
+            """{"ts":"2026-08-31T09:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T09:00:01.000Z","type":"script.ok","script":"scripts/0001.js"}""",
+            """{"ts":"2026-08-31T09:00:02.000Z","type":"render","artifact":"artifacts/a.webp"}""",
+            """{"ts":"2026-08-31T09:00:03.000Z","type":"note","message":"one"}""",
+            """{"ts":"2026-08-31T11:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T11:00:01.000Z","type":"script.error","script":"scripts/0002.js"}""",
+            """{"ts":"2026-08-31T11:00:02.000Z","type":"note","message":"two"}""",
+            """{"ts":"2026-08-31T11:00:03.000Z","type":"note","message":"three"}""");
+
+        var report = Report();
+        var sessions = Sessions(report);
+
+        Assert.Equal(report["scriptsExecuted"]!.GetValue<int>(), sessions.Sum(s => s["scriptsExecuted"]!.GetValue<int>()));
+        Assert.Equal(report["scriptsFailed"]!.GetValue<int>(), sessions.Sum(s => s["scriptsFailed"]!.GetValue<int>()));
+        Assert.Equal(report["renders"]!.GetValue<int>(), sessions.Sum(s => s["renders"]!.GetValue<int>()));
+        Assert.Equal(report["notes"]!.GetValue<int>(), sessions.Sum(s => s["notes"]!.GetValue<int>()));
+        Assert.Equal(report["events"]!.GetValue<int>(), sessions.Sum(s => s["events"]!.GetValue<int>()));
+    }
+
+    /// <summary>
+    /// A session that connected and did nothing is its own row rather than absorbed into a neighbour.
+    /// </summary>
+    [Fact]
+    public void TestAnEmptySessionIsVisibleRatherThanAbsorbed()
+    {
+        Events(
+            """{"ts":"2026-08-31T09:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T09:00:01.000Z","type":"script.ok","script":"scripts/0001.js"}""",
+            """{"ts":"2026-08-31T10:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T10:00:28.000Z","type":"run.end"}""");
+
+        var sessions = Sessions(Report());
+
+        Assert.Equal(2, sessions.Length);
+        Assert.Equal(0, sessions[1]["scriptsExecuted"]!.GetValue<int>());
+        Assert.Empty((sessions[1]["stages"] as JsonArray)!);
+        Assert.Equal(28_000, sessions[1]["ms"]!.GetValue<long>());
+    }
+
+    /// <summary>
+    /// <c>run.end</c> is a host guarantee rather than ours, so a session without one still ends.
+    /// </summary>
+    /// <remarks>
+    /// It is written from <c>ApplicationStopping</c>, reached only when the host closes the server's
+    /// stdin — and the .NET reference client never does. Terminating a session on <c>run.end</c>
+    /// would report every such run as still going.
+    /// </remarks>
+    [Fact]
+    public void TestASessionWithNoRunEndIsStillClosedByTheNextRunStart()
+    {
+        Events(
+            """{"ts":"2026-08-31T09:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T09:00:05.000Z","type":"script.ok","script":"scripts/0001.js"}""",
+            """{"ts":"2026-08-31T11:00:00.000Z","type":"run.start"}""");
+
+        var sessions = Sessions(Report());
+
+        Assert.Equal(2, sessions.Length);
+        Assert.False(sessions[0]["closed"]!.GetValue<bool>());
+        Assert.Equal(5_000, sessions[0]["ms"]!.GetValue<long>());
+    }
+
+    /// <summary>Events before the first <c>run.start</c> are their own leading session, not dropped.</summary>
+    [Fact]
+    public void TestEventsBeforeAnyRunStartAreKeptAsALeadingSession()
+    {
+        Events(
+            """{"ts":"2026-08-31T09:00:00.000Z","type":"note","message":"orphaned"}""",
+            """{"ts":"2026-08-31T09:00:01.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T09:00:02.000Z","type":"note","message":"in a session"}""");
+
+        var sessions = Sessions(Report());
+
+        Assert.Equal(2, sessions.Length);
+        Assert.Null(sessions[0]["started"]);
+        Assert.Equal(1, sessions[0]["notes"]!.GetValue<int>());
+    }
+
+    /// <summary>A log with no timestamps still splits; only the durations are unknown.</summary>
+    /// <remarks>
+    /// Null rather than zero, because "we could not tell" and "it took no time" are different
+    /// readings of a session and only one of them can be true of one that ran.
+    /// </remarks>
+    [Fact]
+    public void TestAnUntimedLogReportsNoDurationRatherThanZero()
+    {
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"run.start"}""");
+
+        var sessions = Sessions(Report());
+
+        Assert.Equal(2, sessions.Length);
+        Assert.Null(sessions[0]["ms"]);
+    }
+
+    /// <summary>
+    /// One session leaves the stage sequence where it has always been, in the summary.
+    /// </summary>
+    /// <remarks>
+    /// The breakdown answers a question a single-session project does not raise, and a table of one
+    /// row would be noise in the common case.
+    /// </remarks>
+    [Fact]
+    public void TestASingleSessionKeepsTheStagesInTheSummary()
+    {
+        Events(
+            """{"ts":"2026-08-31T09:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T09:00:01.000Z","type":"stage.begin","stage":"Blocking"}""",
+            """{"ts":"2026-08-31T09:00:02.000Z","type":"stage.begin","stage":"Refine"}""");
+
+        var printed = Printed();
+
+        Assert.Single(Sessions(Report()));
+        Assert.Contains("Blocking -> Refine", printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("listed below", printed, StringComparison.Ordinal);
+    }
+
+    /// <summary>Several sessions replace that row with a pointer, and print the breakdown.</summary>
+    [Fact]
+    public void TestSeveralSessionsReplaceTheConcatenatedStageRow()
+    {
+        Events(
+            """{"ts":"2026-08-31T09:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T09:00:01.000Z","type":"stage.begin","stage":"Blocking"}""",
+            """{"ts":"2026-08-31T11:00:00.000Z","type":"run.start"}""",
+            """{"ts":"2026-08-31T11:00:01.000Z","type":"stage.begin","stage":"Blocking"}""");
+
+        var printed = Printed();
+
+        Assert.Contains("2 across 2 sessions", printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("Blocking -> Blocking", printed, StringComparison.Ordinal);
+        Assert.Contains("Sessions", printed, StringComparison.Ordinal);
     }
     #endregion
 

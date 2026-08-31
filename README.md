@@ -44,19 +44,19 @@ Polson hosts the agent itself and you direct it from a browser. Nothing here nee
 
 Run from the repository root. Nothing installs itself — per the project guardrails, package installation is always a deliberate act by a person.
 
+Two steps. Make the environment, then run the install script — it copies pip's settings into the venv itself, under whichever name pip reads on your platform.
+
 On Windows:
 
 ```bash
 python -m venv python
-copy src\webapp\pip.ini python\pip.ini
 src\webapp\install.cmd
 ```
 
-On Linux or macOS the venv puts executables in `bin/` rather than `Scripts/`, and pip reads `pip.conf` rather than `pip.ini`:
+On Linux or macOS the venv puts executables in `bin/` rather than `Scripts/`, which the script handles:
 
 ```bash
 python3 -m venv python
-cp src/webapp/pip.ini python/pip.conf
 src/webapp/install.sh
 ```
 
@@ -138,12 +138,27 @@ Everything a run produces stays in the project directory: renders in `artifacts/
     stage notes            160
     looked before drawing  175 probes across 13 of 33 scripts
     artifacts read back    none - no pass built on an earlier pass's render
-    stages declared        Data -> Forms -> Composition -> Encode -> ...
+    stages declared        32 across 6 sessions - listed below
     files in scripts/      33
     files in artifacts/    17
     conversation record    events/agent.jsonl - 6 turns, 191 steps
 
+  Sessions
+
+    1  2026-08-31 04:18:35Z    2m 28s    4 scripts, 4 renders, 19 notes
+       Data -> Forms -> Composition -> Encode
+
+    2  2026-08-31 04:58:59Z    4m 54s    7 scripts, 7 renders, 40 notes
+       Data -> Forms -> Composition -> Encode -> Palette & Type -> Detail -> Audit
+
+    3  2026-08-31 06:53:56Z    27.8s     0 scripts, 0 renders, 0 notes
+       (no stage declared)
+
+    ...
+
     Nothing unaccounted for: every artifact traces to a render, every script to an execution.
 ```
+
+A project's event log is appended to across runs, so the report splits it at each server session. The totals are the project's — an artifact with no render is unaccounted for whenever it was written — while the shape of the work belongs to the session it happened in. Session 3 above is what the split is for: a server that connected, ran for 28 seconds and did nothing, invisible inside the totals until it had a row of its own.
 
 The report is the machine-checkable half — script paths, durations, artifact paths, byte counts. The stages and notes beside it are the agent's own account of what it was doing, which is what makes a run legible rather than merely logged.

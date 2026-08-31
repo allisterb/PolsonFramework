@@ -96,7 +96,7 @@ checked by actually running one, because a mock of the SDK only ever confirms th
 | :--- | :--- |
 | `src/webapp/requirements.in` | The direct dependencies. **Edit this one.** |
 | `src/webapp/requirements.txt` | Generated. Every package pinned to an exact version and hash, transitive ones included. **Do not hand-edit.** |
-| `src/webapp/pip.ini` | Canonical pip settings — single index, wheels only, venv required. Copied into the venv during setup. |
+| `src/webapp/pip.ini` | Canonical pip settings — single index, wheels only, venv required. **Edit this one.** The install scripts copy it into the venv on every run, under whichever name pip reads there. |
 
 The virtual environment itself is at `python/` and is not committed; it is rebuildable from
 `requirements.txt`, which is why the manifest lives here rather than inside it.
@@ -114,24 +114,23 @@ Run these from the repository root. Activate the environment:
 python\Scripts\activate
 ```
 
-### 0. Install the pip settings
+### 0. The pip settings — nothing to do
 
-Do this first, and again after any venv rebuild — the settings below only apply once this file is
-in place:
+`install.cmd` and `install.sh` copy `pip.ini` into the venv themselves, on **every** run rather than
+once. That is the point: `python -m venv` rewrites the venv root on every rebuild, so settings put
+there by hand disappear at the next one, silently taking the wheels-only and single-index defaults
+with them. Re-copying each install means the settings cannot drift out of the environment.
+
+The scripts also handle the platform difference: pip reads `pip.ini` from the venv root on Windows
+and `pip.conf` on Linux and macOS, from the same source file. `src/webapp/pip.ini` is the canonical
+copy — edit that one; the copy in `python/` is derived and is overwritten each install.
+
+You only need this by hand for the by-hand pip invocation in step 3:
 
 ```bash
 copy src\webapp\pip.ini python\pip.ini
-```
-
-On Linux or macOS the venv layout and the config filename both differ — executables live in `bin/`
-rather than `Scripts/`, and pip reads `pip.conf` rather than `pip.ini`. The contents are identical:
-
-```bash
 cp src/webapp/pip.ini python/pip.conf
 ```
-
-The install scripts (`install.cmd`, `install.sh`) handle the rest of the platform difference and
-will tell you if either the environment or the compiled `requirements.txt` is missing.
 
 ### 1. Install the lock tool
 
@@ -148,10 +147,23 @@ This resolves `requirements.in` into `requirements.txt` with every transitive pa
 exact version and cryptographic hash:
 
 ```bash
-python\Scripts\uv.exe pip compile src\webapp\requirements.in --generate-hashes -o src\webapp\requirements.txt
+python\Scripts\uv.exe pip compile src\webapp\requirements.in --universal --python-version 3.13 --generate-hashes -o src\webapp\requirements.txt
 ```
 
 Commit `requirements.txt`. Review its diff whenever it changes — that diff is the supply chain.
+
+**`--universal` is not optional, and leaving it off fails on a machine you are not sitting at.**
+Without it `uv` resolves for the platform it is run on and emits the pins with their environment
+markers *stripped* — so a lock compiled on Windows carries `pywin32` unconditionally, and installing
+it on Linux or macOS dies with `Could not find a version that satisfies the requirement pywin32`.
+Nothing actually wants `pywin32` there; `mcp` asks for it as `sys_platform == 'win32'` and the
+stripped lock is what loses the condition. `--universal` keeps the markers, so each platform installs
+what applies to it from the one file.
+
+`--python-version 3.13` sets the floor the resolution may assume, matching the requirement at the top
+of this file. Lowering it is a real widening of the dependency graph rather than a formality: at
+3.10 the same input additionally pins `exceptiongroup` and a second, older `rpds-py` for the
+sub-3.11 range.
 
 ### 3. Install
 
@@ -174,8 +186,8 @@ if any differs. A replaced or tampered release stops the install instead of runn
 `--only-binary=:all:` stops pip building any source distribution, which matters because building an
 sdist executes its `setup.py` on this machine at install time, before any code has been reviewed —
 the most direct way a hostile package gets to act. `pip.ini` already sets it, but the flag is passed
-explicitly here and by the scripts as well: `pip.ini` is copied into the venv by hand in step 0, and
-if that was missed the command line is what still holds.
+explicitly here and by the scripts as well: the copy in the venv is one `del` from being gone, and
+this by-hand invocation does not make it — so the command line is what still holds when it is absent.
 
 ## Checking for known vulnerabilities
 
@@ -198,7 +210,8 @@ python\Scripts\pip-audit.exe -r src\webapp\requirements.txt
 ## Upgrading
 
 ```bash
-python\Scripts\uv.exe pip compile src\webapp\requirements.in --generate-hashes --upgrade -o src\webapp\requirements.txt
+python\Scripts\uv.exe pip compile src\webapp\requirements.in --universal --python-version 3.13 --generate-hashes --upgrade -o src\webapp\requirements.txt
 ```
 
-Then reinstall and re-audit. Read the diff.
+Then reinstall and re-audit. Read the diff. Keep `--universal` and the floor the same as step 2 —
+an upgrade that quietly drops either produces a lock that installs here and nowhere else.

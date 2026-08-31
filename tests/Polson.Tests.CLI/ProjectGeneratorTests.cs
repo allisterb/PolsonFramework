@@ -7,7 +7,10 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Reflection;
+using ModelContextProtocol.Server;
 using Polson.CLI;
+using Polson.MCPServer;
 using Xunit;
 
 /// <summary>
@@ -868,9 +871,24 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
             .EnumerateArray().Select(e => e.GetString()!).ToArray();
 
         Assert.Contains("polson:*", approved);
-        Assert.Equal(
-            ["polson.ExecuteScript", "polson.History", "polson.MeasureSvgPath", "polson.RenderSvg", "polson.Search"],
-            approved.Where(a => a.StartsWith("polson.", StringComparison.Ordinal)));
+
+        // Compared against the server's own tools rather than a list written here, because a list
+        // written here is a second thing to remember: adding `Recall` left this test asserting a
+        // four-tool world while the generator had correctly moved on.
+        var served = typeof(DrawingMcpTools).GetMethods()
+            .Select(m => m.GetCustomAttribute<McpServerToolAttribute>()?.Name)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => $"polson.{name}")
+            .OrderBy(name => name, StringComparer.Ordinal);
+
+        Assert.Equal(served, approved.Where(a => a.StartsWith("polson.", StringComparison.Ordinal)));
+
+        // A floor under the comparison above, which would otherwise pass if reflection found nothing
+        // at all and the generator wrote an empty allowlist.
+        foreach (var essential in new[] { "polson.ExecuteScript", "polson.Search", "polson.Recall" })
+        {
+            Assert.Contains(essential, approved);
+        }
     }
 
     /// <summary>
@@ -950,6 +968,30 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
 
         Assert.Contains("ordinary file-writing tool", instructions, StringComparison.Ordinal);
         Assert.Contains("is not a valid artifact path", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// And where the project's own past lives, which is the one that decides whether the feature
+    /// exists at all in practice.
+    /// </summary>
+    /// <remarks>
+    /// <c>artifact.read</c> was instrumented and sat at zero across whole runs, because a single
+    /// agent carries its own context and never looks back unless told to. The fix for that was never
+    /// in the engine — it is here, in the instructions, and a workflow that omits this block has the
+    /// tool available and will not use it.
+    /// </remarks>
+    [Theory]
+    [MemberData(nameof(EveryWorkflow))]
+    public void TestEveryWorkflowSaysWhereItsOwnPastLives(string workflow)
+    {
+        Assert.True(ProjectGenerator.Create(Options($"recall-{workflow}", o => o.Workflow = workflow)));
+
+        var instructions = File.ReadAllText(Path.Combine(root, $"recall-{workflow}", "GEMINI.md"));
+
+        Assert.Contains("What you already know", instructions, StringComparison.Ordinal);
+        Assert.Contains("Recall(", instructions, StringComparison.Ordinal);
+        Assert.Contains("Write for the run that comes after this one", instructions, StringComparison.Ordinal);
         Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
     }
 

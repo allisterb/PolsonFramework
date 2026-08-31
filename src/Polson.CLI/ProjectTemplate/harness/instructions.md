@@ -63,6 +63,10 @@ legitimate brief remains, and record it in `findings.md`.
 
 {{BLANK_BRIEF}}
 
+---
+
+{{RECALL}}
+
 {{TYPE}}
 
 ---

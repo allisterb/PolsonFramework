@@ -282,6 +282,11 @@ internal static class ProjectGenerator
             // How to write the files the workflow asks for. Shared because the trap is the host's,
             // not the workflow's: every one of them asks for plain files in the project directory.
             ["DELIVERABLES"] = Render("_shared", "deliverables.md", []),
+
+            // What earlier runs of this project left behind, and how to write for the next one.
+            // Shared because a tool nobody is told to call is never called: `artifact.read` was
+            // instrumented and stayed at zero across whole runs until the instructions said to look.
+            ["RECALL"] = Render("_shared", "recall.md", []),
         };
 
         // The instructions are always rewritten: they are the project's system prompt, generated

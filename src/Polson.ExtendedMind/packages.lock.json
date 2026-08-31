@@ -14,6 +14,18 @@
           "Google.LongRunning": "[3.5.0, 4.0.0)"
         }
       },
+      "Google.Cloud.AIPlatform.V1Beta1": {
+        "type": "Direct",
+        "requested": "[1.0.0-beta85, )",
+        "resolved": "1.0.0-beta85",
+        "contentHash": "c6P2cZbFaCP5qPWGOv7TZRBGUl+jeG1ffdPxUcLo4WJ0KPZpGNPkFjWDSoVU1IcwPPOt8J/ljq0oA+u2AG73kg==",
+        "dependencies": {
+          "Google.Api.Gax.Grpc": "[4.13.1, 5.0.0)",
+          "Google.Cloud.Iam.V1": "[3.5.0, 4.0.0)",
+          "Google.Cloud.Location": "[2.4.0, 3.0.0)",
+          "Google.LongRunning": "[3.5.0, 4.0.0)"
+        }
+      },
       "Google.GenAI": {
         "type": "Direct",
         "requested": "[1.20.0, )",
@@ -22,7 +34,8 @@
         "dependencies": {
           "Google.Apis.Auth": "1.69.0",
           "Microsoft.Extensions.AI.Abstractions": "10.6.0",
-          "MimeTypes": "2.5.2"
+          "MimeTypes": "2.5.2",
+          "System.Text.Json": "10.0.8"
         }
       },
       "SkiaSharp": {
@@ -55,7 +68,8 @@
         "contentHash": "ujDpZk7O2VqAEIqcSlhH0FKzVpGZWly/qcNjHxpNUrL445Tei9PHnu4V1pwW2WDiMDvo3TpL1Bi4DeU525Afrg==",
         "dependencies": {
           "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
-          "Newtonsoft.Json": "13.0.4"
+          "Newtonsoft.Json": "13.0.4",
+          "System.Diagnostics.DiagnosticSource": "6.0.2"
         }
       },
       "Google.Api.Gax.Grpc": {
@@ -355,6 +369,11 @@
         "resolved": "7.0.0",
         "contentHash": "GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A=="
       },
+      "System.Diagnostics.DiagnosticSource": {
+        "type": "Transitive",
+        "resolved": "6.0.2",
+        "contentHash": "6tQaIexFycaotdGn23lf3XJ/eI1GOjQKIvQDRFN9N4pwoNsKnHuXccQ3lnQO6GX8KAb1ic+6ZofJmPdbUVwZag=="
+      },
       "System.Management": {
         "type": "Transitive",
         "resolved": "7.0.2",
@@ -362,6 +381,11 @@
         "dependencies": {
           "System.CodeDom": "7.0.0"
         }
+      },
+      "System.Text.Json": {
+        "type": "Transitive",
+        "resolved": "10.0.8",
+        "contentHash": "/fysUDkD7oFGaRPoA7IaFs0wRoO3GlwlCNq2P+xWZqxLy1R4cktRSKfMjJDy9ymS4grL7IDVdt8de8L9a0z55Q=="
       },
       "polson.runtime": {
         "type": "Project",

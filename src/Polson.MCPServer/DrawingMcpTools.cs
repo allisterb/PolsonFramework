@@ -457,6 +457,68 @@ public class DrawingMcpTools
         }
     });
 
+    [McpServerTool(Name = "Recall")]
+    [Description("Recalls what THIS PROJECT did in its EARLIER runs — the stages it declared, the reasoning it wrote " +
+        "into Stage.note, what those stages produced, and what failed. This is memory across sessions, not within " +
+        "one: use `History` for scripts you ran a moment ago, and `Search` for design theory and the API. CALL THIS " +
+        "AT THE START of a project that has run before, and again whenever you are about to attempt something the " +
+        "record may already have an answer for ('how did the last run light this', 'did the arcade proportions " +
+        "work'). Read `runs`: **0 means this project has never run before**, which is a definitive answer that there " +
+        "is nothing to remember — not a failed search. A non-zero `runs` with no `results` means those runs happened " +
+        "and none of them matched, which is a different fact and worth acting on differently.")]
+    public JsonObject Recall(
+        [Description("What you are trying to remember, in natural language (e.g. 'how the aqueduct arches were built').")] string query,
+        [Description("Number of episodes to return (1-25; default 5).")] int? k = null)
+    => Recorded(nameof(Recall), () =>
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var episodes = EpisodicMemory.Read(ProjectRoot);
+        var runs = episodes.Count == 0 ? 0 : episodes.Max(e => e.Run);
+        var recalled = EpisodicMemory.Recall(episodes, query, Math.Clamp(k ?? 5, 1, 25));
+
+        var results = new JsonArray();
+        foreach (var r in recalled)
+        {
+            results.Add(new JsonObject
+            {
+                ["uri"] = r.Episode.Uri,
+                ["run"] = r.Episode.Run,
+                ["stage"] = r.Episode.Stage,
+                ["when"] = r.Episode.RunStarted?.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
+                ["score"] = r.Score,
+                ["notes"] = new JsonArray([.. r.Episode.Notes.Select(n => (JsonNode)JsonValue.Create(n)!)]),
+                ["artifacts"] = new JsonArray([.. r.Episode.Artifacts.Select(a => (JsonNode)JsonValue.Create(a)!)]),
+                ["scripts"] = new JsonArray([.. r.Episode.Scripts.Select(s => (JsonNode)JsonValue.Create(s)!)]),
+                ["executions"] = r.Episode.Executions,
+                ["failures"] = r.Episode.Failures
+            });
+        }
+
+        // Three states, and they are not the same answer. An agent told "nothing" cannot tell a
+        // project with no past from one whose past does not mention what it asked about, and the
+        // second is the one where the record is worth reading rather than ignored.
+        var hint = runs == 0
+            ? "This project has no earlier run, so there is nothing to remember yet. Proceed from the brief."
+            : results.Count == 0
+                ? $"{runs} earlier run(s) exist and none of their episodes matched this query. The past is real but "
+                  + "silent on this; try the words the earlier run would have used, or proceed and leave a "
+                  + "Stage.note that makes the next run's recall better."
+                : "Each result is one stage of one earlier run. `notes` is what that pass said it was doing, and "
+                  + "`artifacts` can be opened with Skia.Image.load(...) to see what it actually produced.";
+
+        return new JsonObject
+        {
+            ["query"] = query,
+            ["project"] = ProjectRoot is null ? null : Path.GetFileName(ProjectRoot),
+            ["runs"] = runs,
+            ["episodes"] = episodes.Count,
+            ["count"] = results.Count,
+            ["results"] = results,
+            ["hint"] = hint
+        };
+    });
+
     [McpServerTool(Name = "RenderSvg")]
     [Description("Headlessly renders raw SVG XML markup to a WebP/PNG/JPEG byte array.")]
     public DrawingExecutionResult RenderSvg(

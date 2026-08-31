@@ -27,6 +27,10 @@ legitimate brief remains.
 
 {{BLANK_BRIEF}}
 
+---
+
+{{RECALL}}
+
 {{TYPE}}
 
 ---

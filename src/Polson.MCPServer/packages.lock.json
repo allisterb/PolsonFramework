@@ -153,6 +153,17 @@
           "Google.LongRunning": "[3.5.0, 4.0.0)"
         }
       },
+      "Google.Cloud.AIPlatform.V1Beta1": {
+        "type": "Transitive",
+        "resolved": "1.0.0-beta85",
+        "contentHash": "c6P2cZbFaCP5qPWGOv7TZRBGUl+jeG1ffdPxUcLo4WJ0KPZpGNPkFjWDSoVU1IcwPPOt8J/ljq0oA+u2AG73kg==",
+        "dependencies": {
+          "Google.Api.Gax.Grpc": "[4.13.1, 5.0.0)",
+          "Google.Cloud.Iam.V1": "[3.5.0, 4.0.0)",
+          "Google.Cloud.Location": "[2.4.0, 3.0.0)",
+          "Google.LongRunning": "[3.5.0, 4.0.0)"
+        }
+      },
       "Google.Cloud.Iam.V1": {
         "type": "Transitive",
         "resolved": "3.5.0",
@@ -722,6 +733,7 @@
         "type": "Project",
         "dependencies": {
           "Google.Cloud.AIPlatform.V1": "[3.76.0, )",
+          "Google.Cloud.AIPlatform.V1Beta1": "[1.0.0-beta85, )",
           "Google.GenAI": "[1.20.0, )",
           "Polson.Runtime": "[0.1.0, )",
           "SkiaSharp": "[4.148.0, )",

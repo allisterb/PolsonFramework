@@ -36,7 +36,7 @@ using Google.GenAI.Types;
 /// decision from a stack trace.
 /// </para>
 /// </remarks>
-public class ImageGenerator : Runtime, IDisposable
+public class ImageGenerator : Runtime, IImageGenerator, IDisposable
 {
     #region Constructors
     /// <param name="apiKey">Express-mode API key. Read from <c>ApiKeys:GoogleAgentPlatform</c>.</param>

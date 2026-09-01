@@ -41,7 +41,7 @@ using SkiaSharp;
 public partial class AssetRequisitionToolkit : Runtime
 {
     #region Constructors
-    public AssetRequisitionToolkit(ImageGenerator? generator, IRequisitionCache cache, AssetBudget budget, string requester = "unknown")
+    public AssetRequisitionToolkit(IImageGenerator? generator, IRequisitionCache cache, AssetBudget budget, string requester = "unknown")
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(budget);
@@ -682,7 +682,7 @@ public partial class AssetRequisitionToolkit : Runtime
     [GeneratedRegex(@"[a-z]+", RegexOptions.Compiled)]
     private static partial Regex WordRegex();
 
-    readonly ImageGenerator? generator;
+    readonly IImageGenerator? generator;
     readonly IRequisitionCache cache;
     readonly string requester;
     readonly List<MaterialAsset> library = [];

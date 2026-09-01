@@ -249,9 +249,17 @@ the same argument with the worked table.
 - **A passing check is not backed by a number the way a failing one is.** `painting-4` recorded
   *"Measured 57.1%"* on the failure and *"Dark values dominate frame…"* on the pass. The record cannot
   say whether 57.1% became 61% or 58%. Judgement call whether to push harder.
-- **`ImageGenerator` has no injectable seam**, so the successful-requisition path has no offline test —
-  the record's *shape* for a success is tested against `RequisitionScope` directly. Making it an
-  interface was already on the previous handoff.
+- ~~**`ImageGenerator` has no injectable seam.**~~ **Done 2026-09-01.** `IImageGenerator` carries just
+  the two members the toolkit uses — `Model` and `GenerateImage` — and `AssetRequisitionToolkit` takes
+  it. `HashOf` and `TryReadPngSize` stay static on the concrete type: a substitutable cache key would
+  let two implementations disagree about what "the same request" means.
+  `RequisitionSuccessPathTests` covers everything after a successful generation, offline and for
+  nothing: budget spend and token count, cache write, the *repair* of a non-wrapping swatch (and that
+  `tileable: false` leaves the seam alone), provenance, the library, and — the part that had no
+  producer before — the `asset.requisition` record's **success** shape, including a cached repeat
+  reporting `fromCache: true`. The fake counts its calls, which is what makes the cache assertion mean
+  anything: a second requisition the transport never sees is a cache hit, where a second requisition
+  returning an equal asset proves nothing. **1,141 .NET, 200 Python.**
 - **The devpost stigmergy section is written; the rest of that document is not reviewed.**
 
 ### Carried forward, still open

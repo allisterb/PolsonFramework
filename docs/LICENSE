@@ -1,0 +1,40 @@
+# Licence for `docs/`
+
+The studio manuals and design documents in this directory are licensed under
+**Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)**.
+
+    https://creativecommons.org/licenses/by-sa/4.0/
+
+Copyright © 2026 Allister Beharry.
+
+The code in this repository is under the GNU Affero General Public License v3.0
+(see the `LICENSE` file at the root). These documents are separated from it
+deliberately: the AGPL is a software licence, it expresses none of the
+attribution obligations below, and prose is not what it was written for.
+
+---
+
+## Third-party provenance
+
+The manuals are **distillations written in our own words**, not reproductions.
+Several of them distil sources that are not ours to relicense, and the
+obligations travel with the material regardless of what this file says:
+
+| Manual | Source | Terms |
+| :--- | :--- | :--- |
+| 01–09 | *Imaginative Drawing* | All rights reserved. Principles distilled and chapters cited; nothing reproduced. |
+| 10, 12 | George Bokhua, *Principles of Logo Design* | All rights reserved. Distilled and cited, never quoted at length. |
+| 11 | Robin Williams, *The Non-Designer's Design Book*; Doyald Young, *Fonts and Logos* | All rights reserved. Same handling. |
+| 12 §2.5 | *Graphic Design and Print Production Fundamentals* (BCcampus / Graphic Communications Open Textbook Collective) | **CC BY 4.0** — attributed in the manual. §2.4 of that book is CC BY-NC-ND 3.0 and is **not** adapted here. |
+| 13 | `EpicInfographics` | MIT. Distilled with attribution. |
+
+`docs/creative-sense-making.md` implements a framework from the research
+literature — principally Nicholas Davis's work on creative sense-making and the
+CCSM schema, cited in the document itself. Those papers are third-party and
+mostly all-rights-reserved; the document distils and cites them and reproduces
+none of them. `reference/` is third-party material, is not distributed with this
+repository, and is covered by neither licence.
+
+If you adapt a manual, CC BY-SA 4.0 requires you to share alike and to attribute
+this project — and it does not relieve you of the obligations in the table above
+for whatever those manuals distil.

@@ -148,6 +148,14 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
                      padding-top: .4rem; }
 .latest .empty { padding: .7rem .2rem; margin: 0; }
 #unpin { color: var(--accent); }
+
+/* The source offer. Quiet, present on every page, and never competing with the run for attention —
+   AGPL s13 asks that it be offered, not that it be loud. */
+footer.site { display: flex; flex-wrap: wrap; gap: .25rem 1rem; justify-content: space-between;
+              max-width: 1100px; margin: 3rem auto 0; padding: .9rem 0 0;
+              border-top: 1px solid var(--line); color: var(--dim); font-size: .8rem; }
+footer.site a { color: var(--dim); text-decoration: underline; text-underline-offset: 2px; }
+footer.site a:hover, footer.site a:focus-visible { color: var(--accent); }
 .latest img { cursor: zoom-in; }
 
 /* Full-size render. `hidden` is what opens and closes it, so the display rule has to beat the

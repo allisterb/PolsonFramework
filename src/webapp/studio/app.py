@@ -22,6 +22,7 @@ side — resolve, then verify the result is still inside — and it has tests be
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -43,6 +44,21 @@ from .runs import DEFAULT_PROMPT, Registry, Run, StudioError
 DEFAULT_ROOT = Path.cwd()
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+#: Where a visitor can get the source of what they are using.
+#:
+#: Section 13 of the AGPL asks a modified version offered over a network to give the people using it
+#: an opportunity to receive its corresponding source. That obligation belongs to whoever is running
+#: the fork, not to us — so this is a setting rather than a hardcoded link, and honouring the licence
+#: after a fork is one environment variable instead of an edit to a template nobody thinks to look at.
+#:
+#: Deliberately unlike `ApiKeys:GoogleAgentPlatform`, which has *no* environment override on purpose:
+#: that one is read by both halves of the studio and an override honoured on one side would let them
+#: disagree. This is read here and nowhere else.
+SOURCE_URL = os.environ.get("POLSON_SOURCE_URL") or "https://github.com/allisterb/Polson"
+
+# A global rather than a context entry, so a page added later cannot quietly ship without the offer.
+TEMPLATES.env.globals["source_url"] = SOURCE_URL
 
 #: Line numbers because the record refers to scripts by path and a reader refers to them by line.
 FORMATTER = HtmlFormatter(style="friendly", cssclass="code", linenos="table", lineanchors="L")

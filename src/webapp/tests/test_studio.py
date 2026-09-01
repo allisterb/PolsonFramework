@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import importlib
 import re
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -459,6 +462,42 @@ class BriefRouteTests(unittest.TestCase):
         self.assertIsNone(self.client.app.state.registry.active)
 
 
+class SourceOfferTests(unittest.TestCase):
+    """AGPL s13 asks a networked version to offer its users the corresponding source.
+
+    Asserted on the *rendered* page rather than on the constant, because the obligation is that a
+    visitor can see it — a setting nothing renders honours nothing. The link is configurable so that
+    honouring the licence after a fork is one environment variable rather than an edit to a template
+    nobody thinks to look at.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-licence-"))
+        self.client = TestClient(app_mod.create_app(self.root, Registry()))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_page_offers_the_source_and_names_the_licence(self):
+        page = self.client.get("/").text
+
+        self.assertIn(app_mod.SOURCE_URL, page)
+        self.assertIn("AGPL-3.0", page)
+        self.assertIn("agpl-3.0.html", page)
+
+    def test_the_offer_is_a_template_global_so_a_new_page_cannot_omit_it(self):
+        """A per-view context entry is one a later route forgets; a global is one it cannot."""
+        self.assertEqual(app_mod.SOURCE_URL, app_mod.TEMPLATES.env.globals["source_url"])
+
+    def test_a_fork_can_point_the_offer_at_its_own_source(self):
+        with mock.patch.dict(os.environ, {"POLSON_SOURCE_URL": "https://example.invalid/fork"}):
+            reloaded = importlib.reload(app_mod)
+            try:
+                self.assertEqual("https://example.invalid/fork", reloaded.SOURCE_URL)
+            finally:
+                importlib.reload(reloaded)
+
+
 class QuestionSelectionTests(unittest.IsolatedAsyncioTestCase):
     """A chosen option has to survive the round trip, and it silently did not.
 
@@ -473,15 +512,22 @@ class QuestionSelectionTests(unittest.IsolatedAsyncioTestCase):
     """
 
     class _Entry:
-        """What the SDK hands the hook: options carrying an id and a text."""
+        """What the SDK hands the hook.
+
+        The ids matter and the first version of this fixture left them blank, which is why it passed
+        while the real thing was broken. `AskQuestionOption.id` is a required field the host numbers
+        from 1, and the SDK's event processor resolves a choice with `int(opt_id) - 1` — so an id
+        that will not parse as an integer is silently dropped downstream. A fixture with empty ids
+        models a world where returning the text is harmless. That world does not exist.
+        """
 
         class _Option:
-            def __init__(self, text: str) -> None:
-                self.id, self.text = "", text
+            def __init__(self, index: int, text: str) -> None:
+                self.id, self.text = str(index), text
 
         def __init__(self, question: str, options: list[str]) -> None:
             self.question = question
-            self.options = [self._Option(o) for o in options]
+            self.options = [self._Option(i, o) for i, o in enumerate(options, start=1)]
             self.is_multi_select = False
 
     async def _settled(self, reply_with: dict):
@@ -497,11 +543,31 @@ class QuestionSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(director.reply(opened["id"], **reply_with))
         return await task
 
-    async def test_an_option_chosen_by_its_text_is_a_selection_not_a_skip(self):
-        response = await self._settled({"selected": ["A street scene"]})
+    async def test_an_option_chosen_by_its_text_comes_back_as_that_options_id(self):
+        """The page sends text; the agent needs the id. This is the translation that was missing."""
+        response = await self._settled({"selected": ["A portrait"]})
 
         self.assertFalse(response.skipped)
-        self.assertEqual(["A street scene"], list(response.selected_option_ids))
+        self.assertEqual(["2"], list(response.selected_option_ids))
+
+    async def test_every_returned_id_survives_the_sdks_own_parse(self):
+        """`int(opt_id) - 1` is how the SDK turns an id into a choice; anything else is dropped."""
+        response = await self._settled({"selected": ["A street scene"]})
+
+        indices = []
+        for opt_id in response.selected_option_ids or []:
+            try:
+                indices.append(int(opt_id) - 1)
+            except ValueError:
+                pass
+
+        self.assertEqual([0], indices, "the agent would have received a choice with nothing selected")
+
+    async def test_an_id_sent_directly_is_honoured_too(self):
+        """A client that already knows the id — a future one, or a retry — is not refused."""
+        response = await self._settled({"selected": ["1"]})
+
+        self.assertEqual(["1"], list(response.selected_option_ids))
 
     async def test_an_option_the_client_invented_is_still_refused(self):
         """The narrowing that caused this is correct and stays: a made-up id must not choose."""

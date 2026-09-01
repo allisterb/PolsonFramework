@@ -244,13 +244,30 @@ class WebDirector(Director):
         if reply.skipped:
             return types.QuestionResponse(skipped=True)
 
-        # Ids the agent offered, matched by identity rather than by position, so a client that sends
-        # back an option it invented is treated as free text instead of silently choosing the wrong
-        # one.
+        # A choice comes back as the option's own **id**, never as its text.
+        #
+        # The page only ever sees text — `question.open` publishes `options` as strings — so a reply
+        # names a choice by what it says. The agent identifies one by `AskQuestionOption.id`, which
+        # the host numbers, and the SDK's event processor turns that id into a choice index with
+        # `int(opt_id) - 1`, dropping anything that will not parse. Returning the text therefore
+        # validated here, passed every check, and arrived at the agent as a multiple-choice answer
+        # with **no choice selected** — indistinguishable from silence.
+        #
+        # It was invisible from outside because the agent's fallback is to take the option it marked
+        # recommended, which is usually the one the director clicked. The drawing still moved, the
+        # note said "Director stepped away", and the two outcomes looked identical.
         if reply.selected:
             entries = list(getattr(entry, "options", None) or [])
-            valid = {getattr(o, "id", "") or "" for o in entries} | set(options)
-            chosen = [c for c in reply.selected if c in valid]
+            chosen = []
+            for choice in reply.selected:
+                for option in entries:
+                    if choice in ((getattr(option, "id", "") or ""), (getattr(option, "text", "") or "")):
+                        # Matched by identity rather than by position, so a client sending an option
+                        # it invented still falls through to free text instead of choosing wrongly.
+                        if option_id := getattr(option, "id", "") or "":
+                            chosen.append(option_id)
+                        break
+
             if chosen:
                 return types.QuestionResponse(selected_option_ids=chosen)
 

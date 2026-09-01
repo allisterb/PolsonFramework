@@ -177,3 +177,4 @@ Everything a run produces stays in the project directory: renders in `artifacts/
 A project's event log is appended to across runs, so the report splits it at each server session. The totals are the project's — an artifact with no render is unaccounted for whenever it was written — while the shape of the work belongs to the session it happened in. Session 3 above is what the split is for: a server that connected, ran for 28 seconds and did nothing, invisible inside the totals until it had a row of its own.
 
 The report is the machine-checkable half — script paths, durations, artifact paths, byte counts. The stages and notes beside it are the agent's own account of what it was doing, which is what makes a run legible rather than merely logged.
+

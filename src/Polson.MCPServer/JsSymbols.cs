@@ -437,7 +437,9 @@ public static partial class JsSymbolManifest
         return dot < 0 ? name : name[(dot + 1)..];
     }
 
-    static string JsName(string clr) => clr.Length == 0
+    /// <summary>The JS spelling of a .NET member name. Shared with the engine's error messages, so a
+    /// suggested member is spelled the way the script must type it.</summary>
+    internal static string JsName(string clr) => clr.Length == 0
         ? clr
         : char.ToLowerInvariant(clr[0]) + clr[1..];
 

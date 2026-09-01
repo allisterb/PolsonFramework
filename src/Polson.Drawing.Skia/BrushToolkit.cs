@@ -35,25 +35,35 @@ public class BrushPreset
 
     #region Properties
     /// <summary>The medium this preset imitates, e.g. <c>"pencil"</c>.</summary>
-    public string Name { get; }
+    /// <remarks>
+    /// Settable, like every part below, because <c>CanvasRenderingContext2D.UseBrush</c> reads them at
+    /// the moment it is called — so adjusting one and applying the preset does what it appears to do.
+    /// <para>
+    /// They were get-only, which failed in the worst available way: assigning <c>brush.color</c> from
+    /// a script <i>read back as the new value</i> and drew the old one, so a script could verify its
+    /// own change and be wrong. <c>brush.lineWidth</c> did not even read back. Since the reference
+    /// invites exactly this ("take one and change a single part"), the invitation is now true.
+    /// </para>
+    /// </remarks>
+    public string Name { get; set; }
 
     /// <summary>The mark's colour, used when <see cref="Grain"/> is absent.</summary>
-    public string Color { get; }
+    public string Color { get; set; }
 
     /// <summary>Stroke width the medium is designed around.</summary>
-    public float LineWidth { get; }
+    public float LineWidth { get; set; }
 
     /// <summary>Cap style: <c>"round"</c>, <c>"butt"</c> or <c>"square"</c>.</summary>
-    public string LineCap { get; }
+    public string LineCap { get; set; }
 
     /// <summary>What the mark is made of, when the medium deposits unevenly. Null for a solid medium.</summary>
-    public SKShader? Grain { get; }
+    public SKShader? Grain { get; set; }
 
     /// <summary>What happens to the path itself — jitter, stamping. Null for a clean path.</summary>
-    public SKPathEffect? Texture { get; }
+    public SKPathEffect? Texture { get; set; }
 
     /// <summary>What happens at the mark's edge. Null for a hard edge.</summary>
-    public SKMaskFilter? Edge { get; }
+    public SKMaskFilter? Edge { get; set; }
     #endregion
 }
 

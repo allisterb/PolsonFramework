@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -21,7 +22,26 @@ using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
 public partial class JsDrawingEngine : Runtime
-{    
+{
+    #region Constants
+    /// <summary>
+    /// Members the JS runtime probes on arbitrary values as part of a language protocol rather than
+    /// because a script asked for them. Exempt from <c>Interop.ThrowOnUnresolvedMember</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>then</c> is the thenable check every <c>await</c> performs on the value it resolves;
+    /// <c>toJSON</c> is <c>JSON.stringify</c> looking for a custom serializer. Both are absent on our
+    /// types by design, and undefined is the correct answer. Add to this list only for a name the
+    /// <i>engine</i> reads unprompted — anything a script would plausibly type belongs in the API or
+    /// in an error message.
+    /// </remarks>
+    private static readonly HashSet<string> InteropProtocolMembers = new(StringComparer.Ordinal)
+    {
+        "then",
+        "toJSON",
+    };
+    #endregion
+
     #region Properties
     public static int ScriptTimeoutSeconds { get; set; } = 30;
 
@@ -101,6 +121,27 @@ public partial class JsDrawingEngine : Runtime
                 // A script names an enum with a string, because that is what the SDK reference
                 // documents. See EnumStringTypeConverter.
                 options.SetTypeConverter(e => new EnumStringTypeConverter(e));
+
+                // A misspelled member is an error, not a new property. By default Jint lets a script
+                // invent members on a wrapped .NET object: `ctx.fillStlye = 'red'` silently created a
+                // JS-side property, the fill stayed black, and the script had no way to find out —
+                // the same mechanism let `canvas.width = 999` read back as 999 on a canvas still 16
+                // wide, and let a brush preset report a colour it would never draw. Every one of
+                // those cost a render and a round of guessing about why the picture was unchanged.
+                options.Interop.ThrowOnUnresolvedMember = true;
+
+                // ...except the handful of names the JS runtime itself probes on arbitrary values.
+                // `await x` reads `x.then` to decide whether x is a thenable, and JSON.stringify
+                // reads `toJSON`; with the setting above, those internal probes would throw on every
+                // .NET object — which broke `await Assets.material(...)` outright. Returning
+                // undefined is what the absence of a thenable/serializer hook is supposed to mean.
+                // Keep this list minimal: exempting `toString` here would shadow the real
+                // `paper.toString()`, and the point is to hide protocol, not API.
+                options.SetMemberAccessor((_, _, member) =>
+                    InteropProtocolMembers.Contains(member) ? JsValue.Undefined : null);
+
+                // A typo'd variable is an error too, rather than a new global.
+                options.Strict = true;
             });
 
             // Per-session scratch storage
@@ -493,6 +534,80 @@ public partial class JsDrawingEngine : Runtime
     /// one spending a run the same way.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Turns Jint's bare "cannot access property" into something a script can act on.
+    /// </summary>
+    /// <remarks>
+    /// Reached only when a script has already failed, so the reflection here costs nothing on the
+    /// drawing path. Two cases are worth separating, because the raw message conflates them and one
+    /// of them reads as a lie: a genuine typo, where the useful thing is the nearest real member; and
+    /// an assignment to a member that <i>does</i> exist but is read-only, where "cannot access
+    /// property 'width'" invites the reader to conclude that <c>canvas.width</c> is not a thing.
+    /// </remarks>
+    internal static string ExplainMissingMember(string message)
+    {
+        var m = MissingMemberMessage().Match(message);
+        if (!m.Success) return message;
+
+        var member = m.Groups["member"].Value;
+        var type = AppDomain.CurrentDomain.GetAssemblies()
+            .Select(a => a.GetType(m.Groups["type"].Value, throwOnError: false, ignoreCase: false))
+            .FirstOrDefault(t => t is not null);
+
+        var jsType = type?.Name ?? m.Groups["type"].Value;
+        if (type is null) return $"{message}'. Check the spelling against polson://sdk/index.";
+
+        // Filtered through the same exclusion the manifest uses, so a suggestion is never a call the
+        // reference does not document — proposing `getType` would be worse than proposing nothing.
+        var names = type.GetMembers(BindingFlags.Public | BindingFlags.Instance)
+            .Where(x => x is PropertyInfo or MethodInfo and not { IsSpecialName: true })
+            .Where(x => !JsSurface.NotSurface.Contains(x.Name))
+            .Where(x => !x.Name.StartsWith("op_", StringComparison.Ordinal))
+            .Select(x => JsSymbolManifest.JsName(x.Name))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        // Same name, different casing or already exact: the member exists and the access was a write
+        // to something that has no setter. Jint reports that as unresolved, which is not what it is.
+        var actual = names.FirstOrDefault(n => string.Equals(n, member, StringComparison.OrdinalIgnoreCase));
+        if (actual is not null)
+        {
+            return $"'{jsType}.{actual}' is read-only — it can be read but not assigned to, and " +
+                "Jint reports that as an inaccessible property. Whatever you were trying to change is " +
+                "set another way: a canvas takes its size from createCanvas(w, h), a bitmap from the " +
+                "call that produced it. See polson://sdk/index.";
+        }
+
+        var near = names.Where(n => IsNearMiss(n, member)).OrderBy(n => n, StringComparer.Ordinal).Take(5).ToArray();
+        var suggestion = near.Length > 0
+            ? $" Did you mean {string.Join(", ", near.Select(n => $"'{n}'"))}?"
+            : string.Empty;
+
+        return $"'{jsType}' has no property or method '{member}'.{suggestion} A misspelled member is an " +
+            "error rather than a new property, so nothing was drawn and nothing was silently ignored. " +
+            "Read polson://sdk/index for the exact spelling.";
+    }
+
+    /// <summary>A typo, rather than a different call: one edit away, or a shared prefix.</summary>
+    private static bool IsNearMiss(string candidate, string typed)
+    {
+        if (Math.Abs(candidate.Length - typed.Length) > 2) return false;
+        if (candidate.Length >= 4 && typed.Length >= 4 &&
+            candidate.StartsWith(typed[..3], StringComparison.OrdinalIgnoreCase)) return true;
+
+        // Transposition and single-substitution cover almost every real mistyping.
+        var differences = 0;
+        for (var i = 0; i < Math.Min(candidate.Length, typed.Length); i++)
+        {
+            if (!char.ToLowerInvariant(candidate[i]).Equals(char.ToLowerInvariant(typed[i]))) differences++;
+            if (differences > 2) return false;
+        }
+        return true;
+    }
+
+    [GeneratedRegex(@"Cannot access property '(?<member>[^']+)' on type '(?<type>[^']+)'?")]
+    private static partial Regex MissingMemberMessage();
+
     internal static string Explain(Exception ex)
     {
         var message = ex.Message ?? string.Empty;
@@ -501,6 +616,8 @@ public partial class JsDrawingEngine : Runtime
         {
             return $"JavaScript error: {message}{Where(js)}{ArgumentHelp(message)}";
         }
+
+        if (ex is MissingMemberException) return ExplainMissingMember(message);
 
         // Anywhere in the chain: the load failure is usually two or three levels under whatever the
         // engine surfaced, and which level it sits at is not worth depending on.

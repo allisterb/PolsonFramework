@@ -166,6 +166,8 @@ In this directory:
 - `polson://manual/09` — composition armatures and value hierarchy.
 - `polson://manual/15` — measuring a render, for the critique pass: `bitmap.diff` and its `bounds`,
   `rowProfile` for silhouette drift, `palette` over luminance for the value plan.
+- `polson://manual/17` — the media themselves. Manual 03 says which line is heaviest; this says what
+  the line is made of, and how the pencil pass differs from the pass that commits.
 - `polson://sdk/core/Drawing` — the constructive drawing toolkit.
 
 Query them rather than recalling from memory. The API is large and specific, and a call invented from

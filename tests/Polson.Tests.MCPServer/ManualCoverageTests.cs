@@ -43,7 +43,8 @@ public class ManualCoverageTests : TestsRuntime
     /// Coverage each area must not fall below, as a percentage.
     /// </summary>
     /// <remarks>
-    /// Measured 2026-09-01 against the manual corpus as it then stood, under the <c>.member</c> match
+    /// Measured 2026-09-01 against the manual corpus as it then stood (17 manuals), under the
+    /// <c>.member</c> match
     /// described on <see cref="Measure"/>. They are deliberately set <i>at</i> the measured value
     /// rather than below it: a floor with slack is a floor that lets the first regression through,
     /// which is the one worth catching.
@@ -61,22 +62,22 @@ public class ManualCoverageTests : TestsRuntime
     /// primitive like <c>ctx.miterLimit</c> does not need design theory written about it.
     /// </para>
     /// <para>
-    /// <b>The two real remaining gaps, as of this measurement.</b> <c>Globals</c> (16%) — no manual
-    /// teaches <c>Stage.begin</c>, <c>Stage.note</c>, the <c>console.*</c> levels or <c>mina.*</c>,
-    /// even though the stage declaration is what makes a run legible afterwards. <c>Skia</c>'s residue
-    /// (67%) is almost entirely the <i>drawing media</i>: <c>Skia.Brush.chalk/marker/stipple</c>, the
-    /// procedural shaders, and <c>PathEffect.discrete/compose</c>. That is a manual about mark-making,
-    /// not about measurement, and Manual 15 deliberately does not pretend to cover it.
+    /// <b>The remaining gap is <c>Globals</c> (16%)</b> — no manual teaches <c>Stage.begin</c>,
+    /// <c>Stage.current</c>, the <c>console.*</c> levels or any of <c>mina.*</c>, even though the
+    /// stage declaration is what makes a run legible after the fact. That is the next manual to write.
+    /// The residue elsewhere is thinner and more defensible: <c>Scale</c> (50%) is mostly accessor
+    /// properties a chart reads without a manual naming them, and <c>Canvas2D</c> (74%) is raster
+    /// primitives like <c>ctx.miterLimit</c> that need no design theory written about them.
     /// </para>
     /// </remarks>
     public static readonly IReadOnlyDictionary<string, int> Floors = new Dictionary<string, int>(StringComparer.Ordinal)
     {
+        ["Skia"] = 98,
         ["Drawing"] = 97,
         ["Assets"] = 92,
+        ["Canvas2D"] = 74,
         ["VectorLogo"] = 74,
         ["Snap"] = 70,
-        ["Canvas2D"] = 70,
-        ["Skia"] = 67,
         ["Css"] = 66,
         ["Layout"] = 66,
         ["LogoType"] = 66,
@@ -86,7 +87,7 @@ public class ManualCoverageTests : TestsRuntime
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>
-    private const int OverallFloor = 71;
+    private const int OverallFloor = 76;
     #endregion
 
     #region Properties

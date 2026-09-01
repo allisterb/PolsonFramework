@@ -12,6 +12,11 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 
 - **Async & `await`:** `async`/`await`, Promises and **top-level `await`** are supported. Almost the entire SDK is synchronous — the exceptions are the three `Assets.*` requisition calls, which reach a cloud service and **must be awaited**. An unawaited Promise silently reports every property as `undefined`; see the warning under `polson://sdk/core/Assets`.
 - **Sandbox Security:** `eval` and `new Function` are strictly disabled (`Host.StringCompilationAllowed = false`). Arbitrary external types and reflection are prohibited. Scripts can only interact with the explicit Polson drawing APIs.
+- **A misspelled member is an error, not a new property.** Scripts run in **strict mode**, and reading or writing a member that does not exist on an SDK object **throws**, naming the nearest real member: `ctx.fillStlye = '#f00'` fails with *"Did you mean 'fillStyle'?"* rather than silently doing nothing. Assigning to a real but read-only member (`canvas.width`) says it is read-only. A typo'd **variable** is likewise an error rather than a new global.
+  > [!NOTE]
+  > This applies to SDK objects only. Plain JavaScript objects, arrays, `Map` and the `Session` scratchpad keep ordinary JS semantics, so `Session.neverSet` is still `undefined`.
+  >
+  > One consequence worth knowing: `?.` and `typeof` do **not** make a *missing member* safe on an SDK object — `ctx.someFutureThing?.x` throws, because the failure is the unknown member rather than a null value. Optional chaining still works for values that may legitimately be null, which is what it is for here: `result.bounds?.width` is fine, because `bounds` exists and is documented as sometimes null.
 - **Execution Limits:** Scripts are enforced with statement limits (2,000,000 statements, configurable via `JsDrawingEngine.MaxStatements`), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
   > [!TIP]
   > For heavy pixel-level manipulation (such as procedural textures, blurs, or color grading), use native **`Skia.Shader`** or **`Skia.ImageFilter`** pipelines which execute in native SIMD/C++ in < 1ms, rather than running millions of raw per-pixel loop iterations in interpreted JS.

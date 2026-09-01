@@ -52,6 +52,11 @@ density, exactly as it does on paper. `Skia.Brush.pencil(...)` and `Skia.Brush.i
 media; apply them with `ctx.useBrush(brush)`. A greyscale wash or a coloured ground is out of scope
 here even though the engine will happily draw one.
 
+**Manual 17 (`polson://manual/17`) is where those two media are explained** — what each is made of,
+how to modify one, and why a stroke drawn without a path effect reads as plotted rather than drawn.
+Read it before the first turn: every line here starts as a template line, and putting the hand back
+in is a decision you make, not a default.
+
 This is also **not** an inking workflow. The three-tier weight hierarchy, feathering and spotted
 blacks belong to Manual 03 and to the `comic` workflow. Here a pen line is a drawn line, not a
 finishing pass over someone else's pencils.
@@ -205,6 +210,8 @@ There is no fixed endpoint; the director decides. When they call it, produce:
 - `polson://manual/06` — perspective, if the subject has any.
 - `polson://manual/08` — the figure, if the subject is one.
 - `polson://manual/09` — composition armatures and value hierarchy, for the `Ground` turn.
+- `polson://manual/17` — **your media.** The five brushes, the three layers each decomposes into,
+  and `PathEffect.discrete` for putting the hand back into a plotted line.
 - `polson://manual/15` — measuring a render. `bitmap.diff` is what turns a claim about a turn into
   a fact; §4 explains why `bounds` says more than the similarity score.
 - `polson://sdk/core/Skia` — `Brush`, `PathEffect`, `MaskFilter`, and the bitmap measurement calls.

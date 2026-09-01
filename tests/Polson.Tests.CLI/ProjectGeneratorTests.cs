@@ -306,9 +306,13 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
             Assert.Contains(tool, agent, StringComparison.Ordinal);
         }
 
-        // A subagent that could reach the shell would be a way around the main agent's own denials,
-        // and one that could dispatch would be the peer-to-peer case this workflow is not.
-        Assert.DoesNotContain("Bash", agent, StringComparison.Ordinal);
+        // The shell is named here as a tool; which *commands* it may run is decided by the settings
+        // file, which binds a subagent exactly as it binds the main agent. Naming it here and
+        // constraining it there is the division that lets `sed` through and keeps `node` out.
+        Assert.Contains("Bash", agent, StringComparison.Ordinal);
+
+        // Dispatch stays out: one level of delegation is the design, and a subagent that could spawn
+        // subagents is the peer-to-peer case this workflow is not.
         Assert.DoesNotContain("tools: Agent", agent, StringComparison.Ordinal);
         Assert.DoesNotContain(", Agent", agent, StringComparison.Ordinal);
 
@@ -316,6 +320,45 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         // Claude Code has no indirection, so the source has to be named or the two quietly diverge.
         Assert.Contains("roles/01_penciler.md", agent, StringComparison.Ordinal);
         Assert.Contains(role.Trim()[..200], agent, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The shell allows text work and refuses anything that draws, fetches, or destroys.
+    /// </summary>
+    /// <remarks>
+    /// The denials are the half that matters, and the destructive entries were learned the hard way:
+    /// an allow list only decides what is *auto-approved*, so an unlisted command falls through to a
+    /// prompt — and a prompt in a long run is waved through. A live run deleted its own
+    /// `findings.md` and `critique_log.md` that way, both of which the workflow had told it to write.
+    /// </remarks>
+    [Fact]
+    public void TestTheShellAllowsTextWorkAndRefusesTheRest()
+    {
+        Assert.True(ProjectGenerator.Create(Options("shell", o => o.Sdk = "claude")));
+
+        var settings = File.ReadAllText(Path.Combine(root, "shell", ".claude/settings.local.json"));
+        using var parsed = JsonDocument.Parse(settings);
+        var permissions = parsed.RootElement.GetProperty("permissions");
+
+        string[] Entries(string name) =>
+            [.. permissions.GetProperty(name).EnumerateArray().Select(e => e.GetString()!)];
+
+        var allow = Entries("allow");
+        var deny = Entries("deny");
+
+        // The ordinary tools of maintaining a source file, which is what `artwork.js` is.
+        foreach (var command in new[] { "grep", "sed", "awk", "diff", "cat" })
+        {
+            Assert.Contains($"Bash({command}:*)", allow);
+        }
+
+        // Anything that could draw outside the engine, reach the network, nest a shell, or destroy
+        // the run's own account of itself.
+        foreach (var command in new[] { "node", "dotnet", "magick", "curl", "bash", "rm", "git" })
+        {
+            Assert.Contains($"Bash({command}:*)", deny);
+            Assert.DoesNotContain($"Bash({command}:*)", allow);
+        }
     }
 
     /// <summary>Subagent dispatch is allowed only where there is something to dispatch.</summary>

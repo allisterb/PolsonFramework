@@ -627,6 +627,55 @@ public class DrawingMcpTools
                          format: format, quality: quality, outFile: outFile, outSvg: outSvg,
                          includeBytes: includeBytes);
 
+    [McpServerTool(Name = "InspectScript")]
+    [Description("Answers structural questions about a JavaScript file in the project WITHOUT reading it into your context. " +
+        "Call with just `scriptFile` for an outline: every top-level function and constant it declares, with line spans and sizes. " +
+        "Add `name` to locate one declaration and list every place it is referenced — resolved identifiers, so 'SHAFT' does not " +
+        "match 'SHAFT_TOP' or the word in a comment. Add `includeSource: true` to get that one declaration's text.\n\n" +
+        "USE THIS INSTEAD OF READING A WHOLE SCRIPT when the question is structural: what does this file define, where is a " +
+        "constant set, is a declared thing actually used, which function draws a given layer. Reading a 40 KB script to answer " +
+        "'is SHAFT drawn?' costs your whole window; this costs a few hundred bytes. Read the file when you need to understand " +
+        "how something works, not merely where it is.")]
+    public JsonObject InspectScript(
+        [Description("Path to the JavaScript file, relative to the project directory (e.g. 'artwork.js' or 'scripts/0035.js').")] string scriptFile,
+        [Description("Optional name of a top-level declaration to locate and find references to (e.g. 'ANCHORS', 'drawCelShading').")] string? name = null,
+        [Description("Whether to include the source text of the named declaration (default false). Ignored without `name`.")] bool? includeSource = null)
+    => Recorded(nameof(InspectScript), () =>
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scriptFile);
+
+        var full = ProjectPath.Resolve(ProjectRoot, scriptFile, nameof(scriptFile), "Read");
+
+        if (!File.Exists(full))
+        {
+            throw new FileNotFoundException(
+                $"No such script file: '{scriptFile}'. The path is relative to the project directory.", full);
+        }
+
+        var source = File.ReadAllText(full);
+
+        // Recorded as looking, because it is: this is the agent perceiving something an earlier pass
+        // wrote, which is the act `artifact.read` exists to capture — the only direct evidence the
+        // record carries that one pass coordinated with another through the environment.
+        //
+        // Appended directly rather than through `ProbeScope`. That scope is opened by `ExecuteScript`
+        // around a running script and drained when it finishes; there is no scope open here, so
+        // recording into one would be a silent no-op — and the effect would be perverse, because
+        // making a read cheaper would make the record emptier. The studio would look less
+        // collaborative the better its tools got.
+        Events.Append("artifact.read", Registry.GetOrCreate(GetSessionId(null)).Stage, null,
+            new Dictionary<string, object?>
+            {
+                ["artifact"] = Events.Relativize(full),
+                ["via"] = nameof(InspectScript),
+                ["query"] = string.IsNullOrWhiteSpace(name) ? "outline" : name,
+            });
+
+        return string.IsNullOrWhiteSpace(name)
+            ? ScriptInspector.Outline(source, scriptFile)
+            : ScriptInspector.Find(source, scriptFile, name, includeSource ?? false);
+    });
+
     [McpServerTool(Name = "History")]
     [Description("Returns the last n scripts executed by the agent in this session. If n is null or omitted, returns the last script.")]
     public List<string> History(

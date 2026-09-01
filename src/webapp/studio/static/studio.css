@@ -67,13 +67,33 @@ ul.runs li { padding: .35rem 0; border-bottom: 1px solid var(--line); display: f
 .run header h1 { margin: 0; }
 .back { font-size: .85rem; }
 
-.panes { display: grid; grid-template-columns: 1fr 380px; gap: 2rem; align-items: start; }
-@media (max-width: 820px) { .panes { grid-template-columns: 1fr; } }
+/* The made pass on top — the render beside the script that produced it, which are the two halves of
+   one thing — and the trace beneath at the page's full width.
 
-ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto;
+   The trace was the tall left column and the script a 380px gutter, which had it exactly backwards:
+   the script is code, and a third of a column is the worst place to read code; the trace carries the
+   most variable-width content there is (prose, error messages, paths) and had the least room for it.
+   Both rows are height-bounded and scroll internally, so the trace stays on screen during a live run
+   rather than sitting below the fold behind everything else. */
+.panes { display: grid; gap: 1.4rem; }
+.made { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem;
+        align-items: start; }
+@media (max-width: 900px) { .made { grid-template-columns: 1fr; } }
+
+ol#events { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto;
             border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
-.ev { display: grid; grid-template-columns: 6.5rem 7rem 1fr; gap: .6rem; padding: .35rem .6rem;
+
+/* Time, kind, stage, detail. The clock is what makes a duration readable without one being
+   computed: a tool at 14:02:11 followed by an edit at 14:02:14 is a three-second op, and the gap
+   column says so outright once it is worth noticing. */
+.ev { display: grid; grid-template-columns: 5.2rem 6.5rem 7rem 1fr; gap: .6rem; padding: .35rem .6rem;
       border-bottom: 1px solid #f0f2f4; font-size: .87rem; }
+.ev .at { color: var(--dim); font-family: var(--mono); font-size: .76rem;
+          font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The gap since the previous event, shown only when it is long enough to mean something. Under a
+   second it is noise on every row; past that it is the closest thing to a duration the record has. */
+.ev .gap { color: var(--accent); }
+.ev.slow .gap { color: var(--warn); font-weight: 600; }
 .ev:last-child { border-bottom: 0; }
 .ev .kind { color: var(--dim); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
 .ev .stage { color: var(--accent); font-size: .8rem; }
@@ -139,11 +159,16 @@ ol#events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-
 .legend .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
                   margin-right: .4rem; }
 
-/* Sticky, so the render stays put as the trace grows past it. */
-.latest { position: sticky; top: 1rem; }
+/* The render and the script share a row above the trace, each bounded to the same height so the pair
+   reads as one pass and neither pushes the trace off the screen. The render was sticky when it sat
+   beside a tall trace column; above one there is nothing to stick to. */
+.latest, .script { min-width: 0; }
 .latest figure { margin: 0; border: 1px solid var(--line); border-radius: 3px; padding: .5rem;
-                 background: var(--panel); }
-.latest img { width: 100%; height: auto; display: block; }
+                 background: var(--panel); max-height: 46vh; overflow: auto; }
+/* Fit the pane rather than fill it: a tall portrait panel would otherwise set the row's height and
+   leave the script beside it in a sliver. */
+.latest img { max-height: calc(46vh - 3rem); max-width: 100%; width: auto; height: auto;
+              display: block; margin: 0 auto; }
 .latest figcaption { font-family: var(--mono); font-size: .78rem; color: var(--dim);
                      padding-top: .4rem; }
 .latest .empty { padding: .7rem .2rem; margin: 0; }
@@ -248,7 +273,10 @@ form#interject button, .question .actions button { margin-top: 0; white-space: n
 #source .linenos { text-align: right; padding: 0 .5rem 0 .4rem; user-select: none;
                    color: var(--dim); background: #f7f8f9; vertical-align: top; }
 #source td.code { padding-left: .5rem; vertical-align: top; }
-#source pre { margin: 0; font-family: var(--mono); line-height: 1.45; }
+/* Both axes. A drawing script has long lines by nature — coordinate lists, shader source — and
+   wrapping them destroys the column alignment that makes them readable at all. */
+#source pre { margin: 0; font-family: var(--mono); line-height: 1.45; white-space: pre; }
+#source .codetable { min-width: max-content; }
 #source .empty, #source .why { padding: .7rem; margin: 0; }
 #scriptname { font-family: var(--mono); font-size: .76rem; }
 
@@ -256,3 +284,37 @@ label.inline { display: inline-flex; align-items: center; gap: .35rem; margin: 0
                font-size: .85rem; color: var(--dim); }
 label.inline input { width: auto; }
 #continuing { margin: .6rem 0 0; max-width: 60ch; }
+
+/* Who is working and on what, between events. A stage goes quiet for minutes while a script is
+   composed, and an empty trace reads the same whether the agent is working or has stopped. */
+.atwork { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap;
+          margin: 0 0 .6rem; padding: .35rem .6rem; border-radius: 4px;
+          background: var(--panel, rgba(127,127,127,.08));
+          font-size: .85rem; line-height: 1.4; }
+.atwork .who { font-weight: 600; }
+.atwork .did { color: var(--dim); font-family: var(--mono, ui-monospace, monospace); font-size: .8rem;
+               overflow-wrap: anywhere; }
+.atwork .ago { margin-left: auto; color: var(--dim); font-variant-numeric: tabular-nums;
+               white-space: nowrap; }
+/* Past a minute and a half the silence is worth noticing rather than just reporting. */
+.atwork.quiet .ago { color: var(--warn, #b4442c); }
+
+/* The script at full size, sharing the render's overlay. Scrolls both ways for the same reason the
+   pane does: a drawing script has long lines, and wrapping them destroys the alignment that makes
+   coordinate lists and shader source readable. */
+#lightbox-code { max-width: 100%; max-height: calc(100vh - 7rem); overflow: auto; cursor: auto;
+                 background: var(--panel); border-radius: 3px; padding: .4rem 0;
+                 box-shadow: 0 2px 24px rgba(0,0,0,.35); font-size: .82rem; }
+#lightbox-code[hidden] { display: none; }
+#lightbox-code pre { margin: 0; font-family: var(--mono); line-height: 1.45; white-space: pre; }
+#lightbox-code .codetable { border-collapse: collapse; min-width: max-content; }
+#lightbox-code .linenos { text-align: right; padding: 0 .5rem 0 .6rem; user-select: none;
+                          color: var(--dim); background: #f7f8f9; vertical-align: top; }
+#lightbox-code td.code { padding-left: .5rem; padding-right: .8rem; vertical-align: top; }
+
+/* A control rather than a link: it does something to this page instead of going somewhere. */
+button#expand { margin: 0; padding: .1rem .5rem; font-size: .78rem; background: transparent;
+                color: var(--accent); border: 1px solid var(--line); border-radius: 3px;
+                text-transform: none; letter-spacing: 0; cursor: pointer; }
+button#expand:hover:not([disabled]) { background: #eef5f8; }
+button#expand[disabled] { color: var(--dim); cursor: not-allowed; opacity: .6; }

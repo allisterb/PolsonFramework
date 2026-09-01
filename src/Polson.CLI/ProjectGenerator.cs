@@ -674,8 +674,12 @@ internal static class ProjectGenerator
     /// </remarks>
     static string ClaudeSubagent(Role role)
     {
+        // `Bash` unqualified, because the frontmatter names tools while the settings file names
+        // commands: which invocations are permitted is decided there, by ShellAllows/ShellDenies, and
+        // a subagent is held to that file exactly as the main agent is — measured on a live run where
+        // three of four subagents hit its deny rules.
         var tools = string.Join(", ", ToolNames().Select(t => $"mcp__polson__{t}")
-            .Concat(["Read", "Write", "Edit", "Glob", "Grep"]));
+            .Concat(["Read", "Write", "Edit", "Glob", "Grep", "Bash"]));
 
         // Quoted, because a description is prose from a role file's heading and YAML would otherwise
         // read a colon in it as a key. Embedded quotes are doubled rather than backslash-escaped,
@@ -811,26 +815,79 @@ internal static class ProjectGenerator
         }
     }
 
+    /// <summary>
+    /// Moves the previous run aside into <c>previous/&lt;timestamp&gt;/</c>. Nothing is deleted.
+    /// </summary>
+    /// <remarks>
+    /// This used to delete <c>events/</c>, <c>scripts/</c> and <c>artifacts/</c>, and it cost a real
+    /// baseline: a four-agent run whose measurements were the only evidence for what the next change
+    /// was worth. It came back only because the *host* keeps its own transcripts outside the project,
+    /// which is luck rather than design.
+    /// <para>
+    /// It also left the run behind. The agent-authored files — <c>findings.md</c>,
+    /// <c>critique_log.md</c>, <c>artwork.js</c>, <c>output.*</c> — were not cleared, so a reset
+    /// produced a project holding a report describing a run whose record had just been deleted. The
+    /// next agent read it, correctly judged it stale, and reached for <c>rm</c>. Both halves of that
+    /// were our doing.
+    /// </para>
+    /// <para>
+    /// So: archive, and say where. Renaming aside keeps every property a delete had — the new run
+    /// starts clean, and nothing stale is left to mislead it — while giving up none of the evidence.
+    /// <c>brief.md</c> stays put because it is the one file a person authors, and <c>.polson/</c>
+    /// because a reset of the <i>work</i> should not be a reset of the <i>spend</i>.
+    /// </para>
+    /// </remarks>
     static string[] ClearRun(string dir, HostFiles host)
     {
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var archive = Path.Combine(dir, "previous", stamp);
+        var moved = 0;
+
+        void Aside(string relative)
+        {
+            var from = Path.Combine(dir, relative);
+            if (!File.Exists(from) && !Directory.Exists(from)) return;
+
+            var to = Path.Combine(archive, relative);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                if (Directory.Exists(from)) Directory.Move(from, to);
+                else File.Move(from, to);
+                moved += 1;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A file the host still holds open. Say so rather than failing the reset: a stale
+                // artifact left behind is a nuisance, an aborted reset is a blocker.
+                AnsiConsole.MarkupLine($"[yellow]  kept (in use):[/] {Markup.Escape(relative)}");
+            }
+        }
+
         foreach (var name in new[] { "events", "scripts", "artifacts" })
         {
-            var path = Path.Combine(dir, name);
-            if (!Directory.Exists(path)) continue;
+            Aside(name);
+        }
 
-            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    File.Delete(file);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    // A file the host still holds open — say so rather than failing the reset, since
-                    // a locked stale artifact is a nuisance and an aborted reset is a blocker.
-                    AnsiConsole.MarkupLine($"[yellow]  kept (in use):[/] {Markup.Escape(file)}");
-                }
-            }
+        // The run's own account of itself, which the engine did not write and a reset previously
+        // left in place. Stale, and read as current by whatever runs next.
+        foreach (var name in new[] { "findings.md", "critique_log.md", "artwork.js", "output.webp", "output.svg", "output.png" })
+        {
+            Aside(name);
+        }
+
+        if (moved > 0)
+        {
+            // A note in the archive rather than only on the console, because the console scrolls away
+            // and the question "what is this directory?" is asked months later.
+            File.WriteAllText(Path.Combine(archive, "README.md"),
+                $"# Previous run, archived {DateTime.UtcNow:u}\n\n"
+              + "Moved aside by `polson create-project --reset`, which archives rather than deletes.\n"
+              + "Everything the previous run produced is here: its record, its scripts, its renders,\n"
+              + "and whatever it wrote about itself. Delete this directory yourself if you do not\n"
+              + "want it — nothing else will.\n");
+
+            AnsiConsole.MarkupLine($"[green]  archived:[/] previous/{stamp} [dim]({moved} items — nothing deleted)[/]");
         }
 
         return [.. new[] { "brief.md" }.Where(f => File.Exists(Path.Combine(dir, f)))];
@@ -1008,8 +1065,10 @@ internal static class ProjectGenerator
                     // the file allowed `Task` alone and the run prompted for approval anyway.
                     allow = ToolNames().Select(t => $"mcp__polson__{t}")
                         .Concat(["Read", "Write", "Edit", "Glob", "Grep"])
+                        .Concat(ShellAllows())
                         .Concat(hasSubagents ? ["Agent", "Task"] : Array.Empty<string>()).ToArray(),
-                    deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" }
+                    deny = ShellDenies()
+                        .Concat(["BashOutput", "KillShell", "WebFetch", "WebSearch"])
                         .Concat(IsIsolated(workflow) ? SourceDenies() : []).ToArray(),
                 },
 
@@ -1021,6 +1080,72 @@ internal static class ProjectGenerator
                 hooks = ClaudeHooks(sdk, dir),
             };
     }
+
+    /// <summary>
+    /// The text-handling commands an agent working on a JavaScript file actually needs.
+    /// </summary>
+    /// <remarks>
+    /// The shell was denied wholesale, and that was too blunt. It was denied for one good reason —
+    /// an agent must not produce artwork by running <c>node</c>, <c>dotnet</c> or ImageMagick,
+    /// because a picture made outside the engine has no trace of how it came to exist — but the
+    /// denial also removed <c>grep</c>, <c>sed</c> and <c>diff</c>, which have nothing to do with
+    /// drawing and everything to do with maintaining a large source file. With <c>scriptFile</c>
+    /// making that file the working surface, they are the ordinary tools of the job.
+    /// <para>
+    /// Allowed by command prefix rather than as a blanket <c>Bash</c>, so what is permitted is
+    /// legible in the file rather than resting on a rule elsewhere. <see cref="ShellDenies"/> keeps
+    /// the route-around closed.
+    /// </para>
+    /// </remarks>
+    static string[] ShellAllows() =>
+        [.. new[]
+        {
+            // Finding and reading.
+            "grep", "rg", "find", "ls", "cat", "head", "tail", "wc", "diff", "file", "stat",
+            // Transforming a file in place, which is the point of allowing any of this.
+            "sed", "awk", "sort", "uniq", "cut", "tr",
+            // Moving work about inside the project.
+            "cp", "mv", "mkdir", "touch",
+        }.Select(c => $"Bash({c}:*)")];
+
+    /// <summary>
+    /// The commands that would let an agent produce artwork, or reach the network, outside the engine.
+    /// </summary>
+    /// <remarks>
+    /// This is the half of the shell denial that was always load-bearing. Every mark must be made
+    /// through <c>ExecuteScript</c>: a script the server ran is saved, numbered and recorded against
+    /// a stage, while the identical script handed to a CLI leaves an image and no account of how it
+    /// came to exist. A run can look complete and reconcile to nothing.
+    /// <para>
+    /// <b>What this gives up, stated plainly:</b> a shell that can run <c>grep</c> can read Polson's
+    /// own source, and no deny rule on the <c>Read</c> tool prevents that. On a workflow carrying the
+    /// isolation rule, source isolation therefore becomes a convention the agent keeps rather than
+    /// something the host enforces — the same conclusion Antigravity forced, arrived at here by
+    /// choice. The instructions still ask, and a run that peeks can still say so in its findings.
+    /// </para>
+    /// </remarks>
+    static string[] ShellDenies() =>
+        [.. new[]
+        {
+            // Anything that could draw, encode or post-process outside the engine.
+            "node", "npm", "npx", "deno", "bun", "python", "python3", "dotnet",
+            "magick", "convert", "mogrify", "ffmpeg", "inkscape", "rsvg-convert",
+            // Anything that could reach the network, which WebFetch/WebSearch already deny by tool.
+            "curl", "wget", "ssh", "scp",
+            // Nested shells, which would make every rule above a suggestion.
+            "bash", "sh", "zsh", "cmd", "powershell", "pwsh",
+
+            // Destroying the run's own record. An allow list only decides what is *auto-approved*;
+            // anything unlisted falls through to `defaultMode: "default"`, which asks — and a prompt
+            // arriving in the middle of a long run is waved through. A live run proved it: the agent
+            // ran `rm -v findings.md critique_log.md`, both of which the workflow had told it to
+            // write, and both were gone. Deleting is never part of drawing, and the one thing a
+            // studio must not lose is its account of what it did.
+            "rm", "rmdir", "del", "erase", "shred", "truncate",
+
+            // Rewriting history, which would make the record disagree with the repository it sits in.
+            "git", "gh",
+        }.Select(c => $"Bash({c}:*)")];
 
     /// <summary>
     /// Whether a workflow claims to hide the implementation from the agent.
@@ -1172,6 +1297,10 @@ internal static class ProjectGenerator
           # Renders are reproducible from scripts/ and are noisy in review. Commit deliberately
           # if a particular stage is worth keeping in history.
           artifacts/
+
+          # Earlier runs, moved aside by --reset rather than deleted. Kept so a measurement is never
+          # lost to a re-run; ignored because it is a local archive, not the project's history.
+          previous/
           """;
 
     /// <summary>

@@ -98,6 +98,76 @@ def transcripts(project: Project) -> list[Path]:
     return [chosen[key] for key in sorted(chosen)]
 
 
+def live_parent(project: Project) -> Path | None:
+    """The host's own transcript for this project, still being written.
+
+    The preserved copies only advance when the `preserve-chatlog` hook fires, which is at the end of
+    a turn — and a subagent can work for forty minutes inside one turn. So a page watching the copies
+    shows the spine live and the conversation frozen, which is exactly backwards from what a person
+    wants while a stage is quiet: the renders are already visible, and what is missing is any account
+    of what the agent is doing between them.
+
+    The path is not guessed. `hooks.jsonl` records the transcript each hook firing resolved, so the
+    project's own record says where the host keeps it — and a wrong guess would be worse than none,
+    since a plausible path that does not exist reads as "the agent is idle".
+    """
+    for event in reversed(read_events(project.events_dir / "hooks.jsonl")):
+        named = event.get("transcript")
+        if not named:
+            continue
+
+        path = Path(named)
+        return path if path.is_file() else None
+
+    return None
+
+
+def live_subagents(project: Project) -> list[tuple[Path, str]]:
+    """The subagents' own transcripts in the host's store, with their roles.
+
+    Claude Code keeps them beside the parent, under a directory named for the session:
+    `<session>/subagents/agent-*.jsonl`, each with a `.meta.json` naming its `agentType`.
+    """
+    parent = live_parent(project)
+    if parent is None:
+        return []
+
+    return _roles_in(parent.parent / parent.stem / "subagents")
+
+
+def sources(project: Project) -> list[tuple[Path, str | None]]:
+    """Every transcript worth reading, live where possible and preserved otherwise.
+
+    Live wins for a session that has both, so the same conversation is never parsed twice — the
+    subagent transcripts run to several megabytes and this is re-read every few seconds. Preserved
+    copies still carry every earlier session, and remain the whole record once the host's store is
+    cleaned up or the project is read on another machine.
+    """
+    found: list[tuple[Path, str | None]] = []
+    seen: set[str] = set()
+
+    if (parent := live_parent(project)) is not None:
+        found.append((parent, None))
+        seen.add(parent.stem)
+
+    for path, role in live_subagents(project):
+        found.append((path, role))
+        seen.add(path.stem)
+
+    for path in transcripts(project):
+        # `chat-<session>.jsonl` and `chat-<session>-full.jsonl` both stand for one session, and the
+        # live file is named for the session alone.
+        session = path.stem.removeprefix("chat-").removesuffix("-full")
+        if session not in seen:
+            found.append((path, None))
+
+    for path, role in subagents(project):
+        if path.stem not in seen:
+            found.append((path, role))
+
+    return found
+
+
 def subagents(project: Project) -> list[tuple[Path, str]]:
     """Every preserved subagent transcript, with the role it belongs to.
 
@@ -111,7 +181,11 @@ def subagents(project: Project) -> list[tuple[Path, str]]:
     "attribute the spine" gap the record has carried since it was shaped for multiple agents — and
     the file naming it is already there to be read.
     """
-    directory = project.events_dir / "subagents"
+    return _roles_in(project.events_dir / "subagents")
+
+
+def _roles_in(directory: Path) -> list[tuple[Path, str]]:
+    """Subagent transcripts in one directory, each with the role its sidecar names."""
     if not directory.is_dir():
         return []
 
@@ -281,13 +355,12 @@ class HostTranscript:
         seen = self.written()
         pending: list[tuple[dict[str, Any], str | None]] = []
 
-        # The director's conversation, then each subagent's own. Both are read every pass and both
-        # are deduplicated by uuid, so a subagent that finishes between syncs is picked up whole
-        # without the earlier part arriving twice.
-        for path in transcripts(self.project):
-            pending += [(e, None) for e in entries(path) if e["uuid"] not in seen]
-
-        for path, role in subagents(self.project):
+        # The director's conversation and each subagent's own, live where the host is still writing
+        # them and preserved otherwise. All are read every pass and deduplicated by uuid, so a
+        # subagent that finishes between syncs is picked up whole without the earlier part arriving
+        # twice — and a live file being read mid-append costs nothing, because a half-written last
+        # line fails to parse and is simply picked up on the next pass.
+        for path, role in sources(self.project):
             pending += [(e, role) for e in entries(path) if e["uuid"] not in seen]
 
         # By time across all of them, so a subagent's work lands between the dispatch that asked for

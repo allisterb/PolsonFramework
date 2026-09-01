@@ -25,3 +25,23 @@ to hand-write.
 > with the ordinary editor instead. Do not try to satisfy the message by writing into the path it
 > names — a deliverable in the host's scratch directory is one nobody will find, and it disappears
 > with the session.
+
+### Never delete anything. Rename it aside and say why.
+
+If you find a file that looks stale — a report from an earlier run, a script that no longer matches
+the drawing — **do not remove it.** Move it out of the way and leave a note:
+
+```bash
+mv stale-thing.md stale-thing.previous.md
+```
+
+then a `Stage.note` saying what you moved and why you judged it stale.
+
+Deleting is never part of drawing, and the cost is asymmetric: a stale file that survives costs a
+moment's confusion, while a deleted one may have been the only record of something. A live run
+removed two files this project had asked it to write, because they were left over from a previous
+run. Its judgement was right and the method was not, and nothing it deleted could be recovered from
+inside the project.
+
+This applies to the whole directory, including things you wrote yourself earlier in the run. If a
+file genuinely must go, say so and let the director do it.

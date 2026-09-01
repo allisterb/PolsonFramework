@@ -80,6 +80,63 @@ public class ProjectResetTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// A reset archives the previous run rather than deleting it.
+    /// </summary>
+    /// <remarks>
+    /// Deleting cost a real baseline: a four-agent run whose measurements were the only evidence for
+    /// what the next change was worth, gone to a re-run. It came back only because the host keeps its
+    /// own transcripts outside the project, which is luck rather than design. Renaming aside keeps
+    /// every property the delete had — the new run starts clean, nothing stale is left to mislead it
+    /// — and gives up none of the evidence.
+    /// </remarks>
+    [Fact]
+    public void TestTheRunIsArchivedRatherThanDeleted()
+    {
+        Used("archive");
+        var dir = Project("archive");
+
+        // The files the run authored about itself, which a reset used to leave in place — so the
+        // project held a report describing a record that had just been deleted.
+        File.WriteAllText(Path.Combine(dir, "findings.md"), "PREVIOUS FINDINGS");
+        File.WriteAllText(Path.Combine(dir, "critique_log.md"), "PREVIOUS CRITIQUE");
+        File.WriteAllText(Path.Combine(dir, "artwork.js"), "// previous artwork");
+
+        Assert.True(ProjectGenerator.Create(Options("archive", o => o.Reset = true)));
+
+        // Gone from where the next run will look.
+        Assert.False(File.Exists(Path.Combine(dir, "findings.md")));
+        Assert.False(File.Exists(Path.Combine(dir, "critique_log.md")));
+        Assert.False(File.Exists(Path.Combine(dir, "artwork.js")));
+        Assert.Equal(0, Count(Path.Combine(dir, "scripts")));
+
+        // ...and all of it still on disk, under one timestamped directory that says what it is.
+        var archive = Directory.GetDirectories(Path.Combine(dir, "previous")).Single();
+        var kept = Directory.GetFiles(archive, "*", SearchOption.AllDirectories)
+            .Select(p => Path.GetFileName(p)).ToArray();
+
+        Assert.Contains("findings.md", kept);
+        Assert.Contains("critique_log.md", kept);
+        Assert.Contains("artwork.js", kept);
+        Assert.Contains("server.jsonl", kept);
+        Assert.Contains("0001.js", kept);
+        Assert.Contains("stage1.webp", kept);
+        Assert.Contains("README.md", kept);
+
+        Assert.Equal("PREVIOUS FINDINGS",
+            File.ReadAllText(Path.Combine(archive, "findings.md")));
+    }
+
+    /// <summary>The archive is ignored by git: a local safety net, not the project's history.</summary>
+    [Fact]
+    public void TestTheArchiveIsGitIgnored()
+    {
+        Assert.True(ProjectGenerator.Create(Options("archive-ignored")));
+
+        Assert.Contains("previous/",
+            File.ReadAllText(Path.Combine(Project("archive-ignored"), ".gitignore")), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The instructions file is <b>rewritten</b>, because it is the system prompt rather than the
     /// director's document.
     /// </summary>

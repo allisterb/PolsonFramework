@@ -48,11 +48,45 @@
   </section>
 
   <div class="panes">
+    {#- One pass, both halves: what it looks like, and why. Side by side rather than stacked, so the
+        script gets real width — it is code, and a narrow column is the worst place to read code. -#}
+    <div class="made">
+      <aside class="latest">
+        <h2><span id="renderhead">Latest render</span>
+          <a href="#" class="follow" id="unpin" hidden>follow the latest</a>
+        </h2>
+        <figure id="render">
+          <p class="empty">Nothing rendered yet.</p>
+        </figure>
+      </aside>
+
+      <aside class="script">
+        <h2>Script <span class="hint" id="scriptname"></span>
+          {#- The pane is half a column and a drawing script runs to hundreds of lines, so the same
+              argument that gives the render a lightbox gives the script one. Disabled until there is
+              something to open, rather than hidden: a control that appears and vanishes is harder to
+              find again than one that is simply not yet live. -#}
+          <button type="button" class="follow" id="expand" disabled
+                  title="see the whole script (Esc to close)">expand</button>
+        </h2>
+        <div id="source"><p class="empty">Click any pass in the trace, or a point on the curve.</p></div>
+      </aside>
+    </div>
+
     <section class="trace">
       <h2>What is happening
         <span class="hint" id="count">0 events</span>
         <label class="follow"><input type="checkbox" id="follow" checked> follow</label>
       </h2>
+
+      {#- Who is working, and on what, right now. A stage goes quiet for minutes at a time while a
+          script is composed, and the trace alone cannot tell that from a run that has stopped: both
+          are an absence of new rows. This says which it is. -#}
+      <p class="atwork" id="atwork" hidden>
+        <span class="who" id="atwork-who"></span>
+        <span class="did" id="atwork-did"></span>
+        <span class="ago" id="atwork-ago"></span>
+      </p>
 
       <details class="legend">
         <summary>what these mean</summary>
@@ -89,18 +123,6 @@
         <p class="why" id="sayerror" hidden></p>
       </form>
     </section>
-
-    <aside class="latest">
-      <h2><span id="renderhead">Latest render</span>
-        <a href="#" class="follow" id="unpin" hidden>follow the latest</a>
-      </h2>
-      <figure id="render">
-        <p class="empty">Nothing rendered yet.</p>
-      </figure>
-
-      <h2>Script <span class="hint" id="scriptname"></span></h2>
-      <div id="source"><p class="empty">Click any pass in the trace, or a point on the curve.</p></div>
-    </aside>
   </div>
 </main>
 
@@ -115,6 +137,9 @@
      held in memory behind an invisible overlay. -->
 <div id="lightbox" hidden>
   <img id="lightbox-img" alt="">
+  <!-- The script at full size. Shares the overlay with the render so Esc and click-to-close are one
+       behaviour rather than two that can drift apart; only one of the two is ever shown. -->
+  <div id="lightbox-code" hidden></div>
   <p id="lightbox-caption"></p>
   <p class="hint">click anywhere, or press Esc, to close</p>
 </div>
@@ -192,8 +217,61 @@
     stream.addEventListener(kind, (e) => show(kind, JSON.parse(e.data)));
   }
 
+  // Who is working and on what, kept current between events.
+  //
+  // The gap between rows is the thing this exists to explain. A stage falls silent for minutes while
+  // a large script is composed, and silence in the trace looks identical whether the agent is
+  // working, waiting on the director, or finished. Naming the last thing it did, and how long ago,
+  // is the smallest honest account: it never claims to know what the agent is thinking, only what it
+  // last did and that nothing has happened since.
+  // Local wall-clock, seconds included: the point is correlating a row with another log or with what
+  // the host was doing, and minute resolution is too coarse for a tool call.
+  const clock = (d) => d.toTimeString().slice(0, 8);
+  let lastAt = null;
+
+  const atwork = document.getElementById('atwork');
+  const atworkWho = document.getElementById('atwork-who');
+  const atworkDid = document.getElementById('atwork-did');
+  const atworkAgo = document.getElementById('atwork-ago');
+  let last = null;
+
+  // What a gap means, once it ends. A silence that finishes with a script arriving *was* that script
+  // being written — measured on a real run, where emission time tracked script size at about
+  // 11 KB/min and the twenty largest took three minutes each. So a pause before an execute is
+  // composition, and saying so turns a blank into an explanation.
+  const COMPOSING = { 'script.start': 'composing a script', 'render': 'rendering' };
+
+  function atWork(kind, event) {
+    if (kind === 'question.closed' || kind === 'budget') return;
+
+    last = {
+      at: Date.now(),
+      who: event.agent || (event.src === 'director' ? 'you' : (event.stage || 'the agent')),
+      did: COMPOSING[kind] || detail(kind, event) || (LABEL[kind] || kind),
+    };
+
+    atwork.hidden = false;
+    atworkWho.textContent = last.who;
+    atworkDid.textContent = last.did.length > 90 ? last.did.slice(0, 90) + '…' : last.did;
+    tickAgo();
+  }
+
+  function tickAgo() {
+    if (!last) return;
+    const s = Math.round((Date.now() - last.at) / 1000);
+    // Under ten seconds it is simply happening, and a counter ticking through single digits reads as
+    // agitation rather than information.
+    atworkAgo.textContent = s < 10 ? '' : s < 90 ? s + 's ago'
+      : Math.floor(s / 60) + 'm ' + (s % 60) + 's ago';
+    atwork.classList.toggle('quiet', s >= 90);
+  }
+
+  setInterval(tickAgo, 1000);
+
   function show(kind, event) {
     if (kind === 'run.closed') {
+      if (last) { atworkWho.textContent = 'run ended'; atworkDid.textContent = ''; last = null; }
+      atworkAgo.textContent = '';
       status.textContent = event.status;
       status.className = 'status ' + event.status;
       document.getElementById('interject').classList.add('gone');
@@ -205,6 +283,7 @@
 
     n += 1;
     count.textContent = n + (n === 1 ? ' event' : ' events');
+    atWork(kind, event);
 
     if (kind === 'question.open') ask(event);
     if (kind === 'question.closed') settle(event.id);
@@ -219,7 +298,20 @@
     li.className = 'ev ' + kind.replace('.', '-') + (fromProvider ? ' provider' : '');
     // The marker rides in every row and is shown only once the row is known to have a render, which
     // can be after it was appended — a script.start arrives before the render it produces.
+    // The clock, and the gap since the row before it. Together they are the closest thing to a
+    // duration the record carries: a tool at 14:02:11 followed by an edit at 14:02:14 is a
+    // three-second op, and the gap says so without the reader subtracting. Nothing here claims to be
+    // a measurement — it is the interval between two things being written down, which for a tool call
+    // and its result is very nearly the same thing.
+    const at = event.ts ? new Date(event.ts) : null;
+    const gap = at && lastAt ? (at - lastAt) / 1000 : 0;
+    if (at) lastAt = at;
+    if (gap >= 30) li.classList.add('slow');
+
     li.innerHTML =
+      `<span class="at">${at ? clock(at) : ''}` +
+      // Under a second it is noise on every row; it earns its place only once it means something.
+      `${gap >= 1 ? ` <span class="gap">+${gap < 60 ? gap.toFixed(0) + 's' : Math.floor(gap / 60) + 'm'}</span>` : ''}</span>` +
       `<span class="kind">${fromProvider ? 'provider' : (LABEL[kind] || kind)}` +
       `<span class="art" title="has a render — click to see it"></span></span>` +
       // Always emitted, empty or not. The row is a three-column grid, so omitting this cell moved the
@@ -572,6 +664,7 @@
       request += 1;
       scriptName.textContent = '';
       source.innerHTML = '<p class="empty">No script was recorded for this render.</p>';
+      expand.disabled = true;
     }
   }
 
@@ -581,11 +674,14 @@
     const mine = ++request;
     scriptName.textContent = path;
     source.innerHTML = '<p class="empty">Loading…</p>';
+    expand.disabled = true;
     try {
       const response = await fetch(`/runs/${runId}/${path}`);
       if (mine !== request) return;
       if (response.ok) {
         source.innerHTML = await response.text();
+        // Only now is there something worth enlarging.
+        expand.disabled = false;
         return;
       }
       showing = null;
@@ -684,23 +780,47 @@
   // for judging a drawing. Clicking it shows the artifact at its own size.
   const lightbox = document.getElementById('lightbox');
   const lightboxImg = document.getElementById('lightbox-img');
+  const lightboxCode = document.getElementById('lightbox-code');
   const lightboxCaption = document.getElementById('lightbox-caption');
+  const expand = document.getElementById('expand');
 
   // Delegated, because the render is replaced wholesale every time the pass changes — a listener
   // bound to the image would be discarded with it.
   render.addEventListener('click', (e) => {
     const img = e.target.closest('img');
     if (!img) return;
+    lightboxCode.hidden = true;
+    lightboxImg.hidden = false;
     lightboxImg.src = img.src;
     lightboxImg.alt = img.alt;
     lightboxCaption.textContent = img.alt;
     lightbox.hidden = false;
   });
 
+  // The same for the script, for the same reason: half a column is enough to see which pass is open
+  // and not enough to read three hundred lines of drawing code.
+  expand.addEventListener('click', () => {
+    if (expand.disabled) return;
+    lightboxImg.hidden = true;
+    lightboxImg.removeAttribute('src');
+    lightboxCode.hidden = false;
+    // The highlighted markup as it already stands, rather than re-fetching: it is the same document,
+    // and a second request could return a different one on a file the agent is still editing.
+    lightboxCode.innerHTML = source.innerHTML;
+    lightboxCode.scrollTop = 0;
+    lightboxCaption.textContent = scriptName.textContent;
+    lightbox.hidden = false;
+  });
+
+  // Clicks inside the code must not close the overlay, or selecting a line dismisses what you are
+  // reading. The backdrop still closes it, which is what the cursor promises.
+  lightboxCode.addEventListener('click', (e) => e.stopPropagation());
+
   function closeLightbox() {
     if (lightbox.hidden) return;
     lightbox.hidden = true;
     lightboxImg.removeAttribute('src');
+    lightboxCode.innerHTML = '';
   }
 
   lightbox.addEventListener('click', closeLightbox);

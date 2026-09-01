@@ -501,7 +501,19 @@ Both honour `globalAlpha`, `globalCompositeOperation`, `filter`, `colorFilter`, 
 
 ### Toolkit Shortcuts on the Context
 
-Every `Drawing.*` and `Logo.*` method whose first parameter is a context is also available directly on `ctx`, with that first argument dropped. `Drawing.drawPerspectiveGrid(ctx, grid, options)` and `ctx.drawPerspectiveGrid(grid, options)` are the same call:
+Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with the leading context argument dropped: `Drawing.drawPerspectiveGrid(ctx, grid, options)` and `ctx.drawPerspectiveGrid(grid, options)` are the same call.
+
+> [!IMPORTANT]
+> **This list is exhaustive — taking a context as its first parameter is not enough.** Six toolkit
+> methods that do take one have no shortcut: `drawLoomisWireframe`, `drawMannequinWireframe`,
+> `drawMannequinSolid`, `drawComicEye`, `drawComicNose` and `drawComicMouth`. Call those as
+> `Drawing.drawLoomisWireframe(ctx, head)`.
+>
+> The mannequin pair is the trap worth knowing, because the shortcut exists under a *different name*:
+> **`ctx.drawMannequin(figure, solid)`** covers both, with `solid` choosing between them. A live run
+> lost two scripts guessing `ctx.drawMannequinWireframe` and `ctx.drawLoomisWireframe` from the rule
+> this note replaces — which promised every context-taking method had a shortcut, and was wrong for
+> six of twenty-one.
 
 `ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
 

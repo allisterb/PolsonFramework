@@ -169,6 +169,8 @@ rim light disagrees with its own moon is the single most common way this workflo
 actually left the quiet region you asked `keepQuiet` for; `metrics.quietRegionHonoured` says so
 directly.
 
+{{SCRIPT_FILE}}
+
 ---
 
 ## Critique — audit your own work

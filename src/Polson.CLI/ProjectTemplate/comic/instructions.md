@@ -102,6 +102,8 @@ function drawInks(ctx)       { /* … */ }
 Carry them between executions with `Session['ANCHORS'] = …` so a later stage does not retype
 coordinates it will get subtly wrong.
 
+{{SCRIPT_FILE}}
+
 ---
 
 ## Critique — audit your own work

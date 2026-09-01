@@ -292,6 +292,12 @@ internal static class ProjectGenerator
             // Shared because a tool nobody is told to call is never called: `artifact.read` was
             // instrumented and stayed at zero across whole runs until the instructions said to look.
             ["RECALL"] = Render("_shared", "recall.md", []),
+
+            // Run the artwork from a file rather than re-sending it. Shared because the cost is the
+            // medium's rather than any one workflow's: every workflow that asks for a consolidated
+            // `artwork.js` makes re-sending it the only way to run it, and a measured run spent most
+            // of its time doing exactly that.
+            ["SCRIPT_FILE"] = Render("_shared", "script_file.md", []),
         };
 
         // The instructions are always rewritten: they are the project's system prompt, generated
@@ -645,14 +651,31 @@ internal static class ProjectGenerator
     /// source, so the fix is to edit <c>roles/</c> and regenerate rather than to patch the copy.
     /// </para>
     /// <para>
-    /// The tool list mirrors the Antigravity one: the drawing server and the ability to read, and
-    /// nothing else. A subagent that could reach the shell would be a way around the denials the main
-    /// agent is held to, which is exactly the shape of hole a permissions file is meant to close.
+    /// The tool list is the main agent's own, minus dispatch. A subagent that could reach the shell
+    /// would be a way around the denials the main agent is held to, which is the shape of hole a
+    /// permissions file exists to close — but the file's <c>deny</c> rules apply inside a subagent
+    /// too, measured on a live run where three of four subagents hit a refusal on Polson's source. So
+    /// this list is an additional restriction rather than the only one, and narrowing it further buys
+    /// no isolation while costing the role its job.
+    /// <para>
+    /// <b>Reading alone was too narrow, and a live run showed both ways it failed.</b> The roles are
+    /// asked to write <c>critique_log.md</c> and <c>findings.md</c>; with no writer, all sixteen of
+    /// those edits fell to the coordinator, so the collaboration trace was written second-hand by an
+    /// intermediary rather than by the agents whose work it describes. And <c>scriptFile</c> exists so
+    /// an agent can edit a file instead of re-sending the program — but the subagents made every one
+    /// of the fifty-eight <c>ExecuteScript</c> calls in that run, so without an editor the one
+    /// mechanism that would have saved them the most time was reachable only by the agent that barely
+    /// draws.
+    /// </para>
+    /// <para>
+    /// Dispatch is deliberately absent: one level of delegation is the design, and a subagent that
+    /// could spawn subagents is the peer-to-peer case this workflow is not.
     /// </para>
     /// </remarks>
     static string ClaudeSubagent(Role role)
     {
-        var tools = string.Join(", ", ToolNames().Select(t => $"mcp__polson__{t}").Append("Read"));
+        var tools = string.Join(", ", ToolNames().Select(t => $"mcp__polson__{t}")
+            .Concat(["Read", "Write", "Edit", "Glob", "Grep"]));
 
         // Quoted, because a description is prose from a role file's heading and YAML would otherwise
         // read a colon in it as a key. Embedded quotes are doubled rather than backslash-escaped,
@@ -972,14 +995,20 @@ internal static class ProjectGenerator
                 permissions = new
                 {
                     defaultMode = "default",
-                    // `Task` only where there is something to dispatch. A workflow with roles
-                    // registers them under `.claude/agents/`, and without this every dispatch stops
-                    // to ask — the same shape of gap as approving a server's own tool names and
-                    // still being prompted for everything a subagent called. Allowing it where no
-                    // subagent exists would widen the policy for a capability the project does not use.
+                    // Subagent dispatch, only where there is something to dispatch. Without it every
+                    // dispatch stops to ask — the same shape of gap as approving a server's own tool
+                    // names and still being prompted for everything a subagent called. Allowing it
+                    // where no subagent exists would widen the policy for a capability that project
+                    // never uses.
+                    //
+                    // **Both spellings**, because the tool has been named both and an entry the host
+                    // does not recognise is silently inert rather than an error — so naming only one
+                    // is a rule that looks enforced and is not. A live `comic_studio` run settled
+                    // which is current: it dispatched `Agent` with `subagent_type: "penciler"`, while
+                    // the file allowed `Task` alone and the run prompted for approval anyway.
                     allow = ToolNames().Select(t => $"mcp__polson__{t}")
                         .Concat(["Read", "Write", "Edit", "Glob", "Grep"])
-                        .Concat(hasSubagents ? ["Task"] : Array.Empty<string>()).ToArray(),
+                        .Concat(hasSubagents ? ["Agent", "Task"] : Array.Empty<string>()).ToArray(),
                     deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" }
                         .Concat(IsIsolated(workflow) ? SourceDenies() : []).ToArray(),
                 },

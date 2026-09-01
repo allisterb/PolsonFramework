@@ -121,6 +121,8 @@ internal static class ChatlogPreserver
 
         PreserveUncompacted(source, events, session);
 
+        PreserveSubagents(source, events);
+
         WriteTokenUsage(source, events, session);
     }
 
@@ -196,6 +198,79 @@ internal static class ChatlogPreserver
         catch (Exception ex)
         {
             Runtime.Warn("preserve-chatlog: uncompacted copy skipped: {0}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Copies the subagents' own transcripts, which is where a multi-agent run actually happens.
+    /// </summary>
+    /// <remarks>
+    /// A parent transcript records that a subagent was dispatched and what it returned; it does not
+    /// record what the subagent <i>did</i>. In a real <c>comic_studio</c> run the parent was 578 KB
+    /// and the penciler's own transcript was <b>2.27 MB</b> — every one of the ten scripts the server
+    /// recorded was executed there. Preserving only the parent kept the receipt and lost the work.
+    /// <para>
+    /// Claude Code writes them to <c>&lt;transcript-dir&gt;/&lt;session&gt;/subagents/</c>, beside a
+    /// <c>.meta.json</c> naming the <c>agentType</c> — <c>penciler</c>, <c>inker</c> — which is the
+    /// actor attribution the run record has never had. The meta file is copied with the transcript
+    /// rather than parsed here: this verb's job is to bring the record inside the project, and
+    /// deciding what it means belongs to whatever reads it.
+    /// </para>
+    /// <para>
+    /// The host's own layout is mirrored under <c>events/subagents/</c> rather than flattened into
+    /// the <c>chat-*</c> naming, so a reader can tell a subagent's transcript from the parent's
+    /// without inspecting it — the two are not interchangeable, and one is <c>isSidechain</c>
+    /// throughout.
+    /// </para>
+    /// <para>
+    /// A host that keeps no such directory — Antigravity gives a subagent its own conversation
+    /// entirely — finds nothing and does nothing. Best-effort like the rest of this file: a
+    /// subagent transcript that cannot be copied must not cost the parent's.
+    /// </para>
+    /// </remarks>
+    private static void PreserveSubagents(string source, string events)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(source);
+            if (directory is null) return;
+
+            // "<dir>/<session>.jsonl" -> "<dir>/<session>/subagents". The session's own folder sits
+            // beside its transcript and is named for it without the extension.
+            var from = Path.Combine(directory, Path.GetFileNameWithoutExtension(source), "subagents");
+            if (!Directory.Exists(from)) return;
+
+            var to = Path.Combine(events, "subagents");
+            Directory.CreateDirectory(to);
+
+            var copied = 0;
+            foreach (var file in Directory.EnumerateFiles(from, "agent-*.*"))
+            {
+                var name = Path.GetFileName(file);
+                if (!name.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
+                    && !name.EndsWith(".meta.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    // Overwritten every firing, exactly as the parent transcript is: these grow while
+                    // the subagent works, so the copy is a snapshot that gets better, not an archive.
+                    File.Copy(file, Path.Combine(to, name), overwrite: true);
+                    copied += 1;
+                }
+                catch (Exception ex)
+                {
+                    Runtime.Warn("preserve-chatlog: subagent {0} skipped: {1}", name, ex.Message);
+                }
+            }
+
+            if (copied > 0) Runtime.Info("preserve-chatlog: {0} subagent file(s) -> {1}", copied, to);
+        }
+        catch (Exception ex)
+        {
+            Runtime.Warn("preserve-chatlog: subagent transcripts skipped: {0}", ex.Message);
         }
     }
 

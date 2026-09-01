@@ -124,6 +124,26 @@ class TranscribeTests(HostlogTestCase):
         self.assertEqual("the accent is too loud", out[0][2]["text"])
         self.assertIsNone(out[0][2]["redacted"])
 
+    def test_a_subagents_turn_carries_the_role_it_belongs_to(self):
+        out = hostlog.transcribe(
+            entry("a9", "assistant", [{"type": "text", "text": "blocking the panel"}]), "penciler")
+
+        self.assertEqual("penciler", out[0][2]["agent"])
+        self.assertTrue(out[0][2]["sidechain"])
+
+    def test_the_coordinators_brief_to_a_subagent_is_not_the_director_speaking(self):
+        """Inside a subagent transcript the "user" is the coordinator, in one of two forms: the
+        dispatch brief, or a relay of something the director said while the subagent worked. One is
+        not the human and the other is the human quoted by an agent — recording either as the
+        director would put words in a person's mouth. Both already exist in the parent transcript,
+        correctly attributed, so nothing is lost."""
+        for said in ("You are Stage 1 of the run. Read roles/01_penciler.md.",
+                     "The coordinator sent a message while you were working:\nDirector here."):
+            self.assertEqual([], hostlog.transcribe(entry("u9", "user", said), "penciler"))
+
+        # The same text in the parent's own transcript is the director, and is kept.
+        self.assertEqual(1, len(hostlog.transcribe(entry("u9", "user", "Director here."))))
+
     def test_a_subagents_turn_is_attributed_to_one(self):
         # Claude Code writes a subagent into the same transcript, which is what makes multi-agent
         # attribution reachable here at all.
@@ -186,6 +206,26 @@ class ReadingTests(HostlogTestCase):
 
     def test_a_project_with_no_transcript_reads_as_empty(self):
         self.assertEqual([], hostlog.transcripts(self.project))
+        self.assertEqual([], hostlog.subagents(self.project))
+
+    def test_a_subagent_transcript_is_found_with_the_role_its_meta_names(self):
+        sub = self.project.events_dir / "subagents"
+        sub.mkdir()
+        (sub / "agent-a7e2.jsonl").write_text("", encoding="utf-8")
+        (sub / "agent-a7e2.meta.json").write_text(
+            json.dumps({"agentType": "penciler", "spawnDepth": 1}), encoding="utf-8")
+
+        self.assertEqual([("agent-a7e2.jsonl", "penciler")],
+                         [(p.name, r) for p, r in hostlog.subagents(self.project)])
+
+    def test_a_subagent_with_no_readable_meta_still_gets_read(self):
+        # The attribution degrades to the file's own name; the record does not degrade at all.
+        sub = self.project.events_dir / "subagents"
+        sub.mkdir()
+        (sub / "agent-b1.jsonl").write_text("", encoding="utf-8")
+
+        self.assertEqual([("agent-b1.jsonl", "agent-b1")],
+                         [(p.name, r) for p, r in hostlog.subagents(self.project)])
 
 
 class SyncTests(HostlogTestCase):
@@ -244,6 +284,33 @@ class SyncTests(HostlogTestCase):
         self.assertEqual(1, hostlog.HostTranscript(self.project).sync())
         self.assertEqual(["text"], [e["type"] for e in read_events(self.project.agent_events)])
 
+    def test_a_subagents_work_lands_between_the_dispatch_and_the_reply(self):
+        """A multi-agent run happens mostly inside the subagents. The parent records that one was
+        dispatched and what it returned; ordering by time is what puts the work in between rather
+        than in a block after the whole parent session."""
+        self.write_transcript(
+            entry("p1", "assistant", [{"type": "tool_use", "name": "Agent",
+                                       "input": {"subagent_type": "penciler"}}],
+                  ts="2026-09-01T10:00:00.000Z"),
+            entry("p2", "assistant", [{"type": "text", "text": "the penciler is done"}],
+                  ts="2026-09-01T10:30:00.000Z"))
+
+        sub = self.project.events_dir / "subagents"
+        sub.mkdir()
+        (sub / "agent-x.meta.json").write_text(json.dumps({"agentType": "penciler"}),
+                                               encoding="utf-8")
+        (sub / "agent-x.jsonl").write_text(json.dumps({
+            "uuid": "s1", "type": "assistant", "timestamp": "2026-09-01T10:15:00.000Z",
+            "isSidechain": True,
+            "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "name": "mcp__polson__ExecuteScript", "input": {}}]}}) + "\n",
+            encoding="utf-8", newline="")
+
+        hostlog.HostTranscript(self.project).sync()
+
+        recorded = [(e["type"], e.get("agent")) for e in read_events(self.project.agent_events)]
+        self.assertEqual([("tool.call", None), ("tool.call", "penciler"), ("text", None)], recorded)
+
     def test_several_sessions_read_as_one_history_in_time_order(self):
         self.write_transcript(entry("b1", "user", "second session",
                                     ts="2026-09-01T09:00:00.000Z"), name="chat-s2.jsonl")
@@ -279,12 +346,37 @@ class CodingTests(unittest.TestCase):
             self.assertIsNotNone(coded, tool)
             self.assertEqual("inspect", coded.mode, tool)
 
+    def test_asking_the_director_a_question_is_communication(self):
+        """The strongest `communicate` there is: the run cannot proceed until the other participant
+        answers, which is OCSM's `joint` participation. It fell through uncoded because a host-driven
+        question arrives as a tool call rather than through the director channel."""
+        coded = csm._code_one({"src": "agent", "type": "tool.call", "tool": "AskUserQuestion",
+                               "ts": "2026-09-01T14:27:44.000Z"}, set())
+
+        self.assertIsNotNone(coded)
+        self.assertEqual("communicate", coded.mode)
+
     def test_a_shell_call_is_left_uncoded_rather_than_guessed_at(self):
         # The same call reads a file, runs the tests, or deletes a directory. A gap is visible;
         # a wrong code is not.
         for tool in ("Bash", "PowerShell"):
             self.assertIsNone(csm._code_one({"src": "agent", "type": "tool.call", "tool": tool,
                                              "ts": "2026-09-01T07:00:00.000Z"}, set()), tool)
+
+    def test_a_named_actor_beats_an_inferred_one(self):
+        """`_agent_of` inferred the actor from the SDK's depth/trajectory fields and ignored an
+        explicit name, so a subagent read from a host transcript coded as the anonymous `agent` —
+        discarding the only real attribution the record has. A name is not an inference."""
+        named = csm._code_one({"src": "agent", "type": "thinking", "agent": "penciler",
+                               "ts": "2026-09-01T14:27:49.000Z"}, set())
+        self.assertEqual("penciler", named.agent)
+
+        # With no name, the SDK's own signal still decides, and its absence still means the main agent.
+        self.assertEqual("agent", csm._code_one(
+            {"src": "agent", "type": "thinking", "ts": "2026-09-01T14:27:49.000Z"}, set()).agent)
+        self.assertEqual("agent:abc12345", csm._code_one(
+            {"src": "agent", "type": "thinking", "depth": 1, "trajectory": "abc12345ef",
+             "ts": "2026-09-01T14:27:49.000Z"}, set()).agent)
 
     def test_the_directors_typed_turn_is_a_contribution(self):
         coded = csm._code_one({"src": "director", "type": "message", "text": "make it green",

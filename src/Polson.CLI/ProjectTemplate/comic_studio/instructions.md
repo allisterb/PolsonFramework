@@ -131,6 +131,8 @@ contents.
 Carry palettes and geometry between executions with `Session['key'] = …`, and inspect recent scripts
 with `History()`.
 
+{{SCRIPT_FILE}}
+
 ---
 
 ## Use the whole stack, not flat fills

@@ -296,11 +296,21 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         // Quoted, so a colon or an ampersand in a role's heading cannot break the frontmatter.
         Assert.Contains("description: \"", agent, StringComparison.Ordinal);
 
-        // The drawing server and the ability to read, mirroring the Antigravity subagent list. A
-        // subagent that could reach the shell would be a way around the main agent's own denials.
+        // The main agent's own tools, minus dispatch. Reading alone was too narrow on a live run:
+        // the roles are asked to write `critique_log.md` and `findings.md` and could not, so all
+        // sixteen of those edits fell to the coordinator and the trace was written second-hand —
+        // and `scriptFile` was unreachable by the very agents making every ExecuteScript call.
         Assert.Contains("tools: mcp__polson__ExecuteScript", agent, StringComparison.Ordinal);
-        Assert.Contains("Read", agent, StringComparison.Ordinal);
+        foreach (var tool in new[] { "Read", "Write", "Edit", "Glob", "Grep" })
+        {
+            Assert.Contains(tool, agent, StringComparison.Ordinal);
+        }
+
+        // A subagent that could reach the shell would be a way around the main agent's own denials,
+        // and one that could dispatch would be the peer-to-peer case this workflow is not.
         Assert.DoesNotContain("Bash", agent, StringComparison.Ordinal);
+        Assert.DoesNotContain("tools: Agent", agent, StringComparison.Ordinal);
+        Assert.DoesNotContain(", Agent", agent, StringComparison.Ordinal);
 
         // The spec itself, and a header saying which file it came from — the copy exists because
         // Claude Code has no indirection, so the source has to be named or the two quietly diverge.
@@ -308,11 +318,17 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.Contains(role.Trim()[..200], agent, StringComparison.Ordinal);
     }
 
-    /// <summary>`Task` is allowed only where there is something to dispatch.</summary>
+    /// <summary>Subagent dispatch is allowed only where there is something to dispatch.</summary>
     /// <remarks>
     /// Without it every dispatch stops to ask, which is the same gap as approving a server's own
     /// tool names and still being prompted for everything a subagent calls. Granting it to a
     /// single-agent project would widen the policy for a capability that project never uses.
+    /// <para>
+    /// Both spellings are asserted. The tool has been named both `Agent` and `Task`, and an entry the
+    /// host does not recognise is inert rather than an error — so naming one is a rule that looks
+    /// enforced and is not. A live `comic_studio` run dispatched `Agent` against a file allowing only
+    /// `Task`, and prompted.
+    /// </para>
     /// </remarks>
     [Theory]
     [InlineData("comic_studio", true)]
@@ -323,6 +339,7 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.True(ProjectGenerator.Create(Options(name, o => { o.Workflow = workflow; o.Sdk = "claude"; })));
 
         var settings = File.ReadAllText(Path.Combine(root, name, ".claude/settings.local.json"));
+        Assert.Equal(expected, settings.Contains("\"Agent\"", StringComparison.Ordinal));
         Assert.Equal(expected, settings.Contains("\"Task\"", StringComparison.Ordinal));
     }
 

@@ -98,6 +98,38 @@ def transcripts(project: Project) -> list[Path]:
     return [chosen[key] for key in sorted(chosen)]
 
 
+def subagents(project: Project) -> list[tuple[Path, str]]:
+    """Every preserved subagent transcript, with the role it belongs to.
+
+    A multi-agent run happens mostly *inside* these. The parent transcript records that a subagent
+    was dispatched and what it returned; the subagent's own transcript is where the scripts were
+    written and the renders looked at — in a real `comic_studio` run, 2.27 MB against the parent's
+    578 KB, holding every one of the ten executions the server recorded.
+
+    The role comes from the sidecar `.meta.json` the host writes beside each one (`agentType`:
+    `penciler`, `inker`). Without it every subagent would code as one anonymous actor, which is the
+    "attribute the spine" gap the record has carried since it was shaped for multiple agents — and
+    the file naming it is already there to be read.
+    """
+    directory = project.events_dir / "subagents"
+    if not directory.is_dir():
+        return []
+
+    found: list[tuple[Path, str]] = []
+    for path in sorted(directory.glob("agent-*.jsonl")):
+        role = path.stem
+        meta = path.with_suffix(".meta.json")
+        try:
+            role = json.loads(meta.read_text(encoding="utf-8")).get("agentType") or role
+        except (OSError, ValueError):
+            # A transcript with no readable meta is still worth reading; it is the attribution that
+            # degrades, not the record, so it falls back to the file's own name.
+            pass
+        found.append((path, role))
+
+    return found
+
+
 def entries(path: Path) -> Iterator[dict[str, Any]]:
     """The conversational entries of one transcript, in file order, housekeeping dropped.
 
@@ -127,7 +159,7 @@ def entries(path: Path) -> Iterator[dict[str, Any]]:
         yield entry
 
 
-def transcribe(entry: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
+def transcribe(entry: dict[str, Any], role: str | None = None) -> list[tuple[str, str, dict[str, Any]]]:
     """One transcript entry as `(src, type, fields)` triples in the record's own vocabulary.
 
     Returns a list because one assistant entry routinely carries several: a thinking block, some
@@ -139,11 +171,11 @@ def transcribe(entry: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
     uuid = entry.get("uuid")
 
     common: dict[str, Any] = {"uuid": uuid}
-    if entry.get("isSidechain"):
-        # A subagent's turn. Claude Code writes it into the same transcript, which is what makes
-        # multi-agent attribution possible here at all — Antigravity gives a subagent its own
-        # conversation, so the hook never sees it.
-        common["agent"] = "subagent"
+    if role or entry.get("isSidechain"):
+        # A subagent's turn. `role` names which one, read from the `.meta.json` the host writes
+        # beside the transcript; a sidechain entry with no role known still says it was one, because
+        # "some subagent" is a better reading than attributing its work to the director.
+        common["agent"] = role or "subagent"
         common["sidechain"] = True
 
     if kind == "user":
@@ -151,6 +183,18 @@ def transcribe(entry: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
         # the environment answering the agent rather than a person saying anything.
         if not isinstance(content, str) or not content.strip():
             return []
+
+        # ...except inside a subagent's transcript, where the "user" is the coordinator. Its two
+        # forms are the dispatch brief and a relay of something the director said while the subagent
+        # worked — one is not the human at all, and the other is the human quoted by an agent.
+        # Recording either as the director would put words in a person's mouth.
+        #
+        # Nothing is lost by dropping them: the dispatch is already the parent's `Agent` tool call,
+        # and the interjection is already a real `user` turn in the parent transcript, correctly
+        # attributed. Transcribing them here would double-count the same exchange.
+        if role is not None:
+            return []
+
         text, truncated = clip(content.strip())
         return [("director", "message", {**common, "text": text, "truncated": truncated or None})]
 
@@ -235,19 +279,25 @@ class HostTranscript:
         history rather than as its files happen to be named.
         """
         seen = self.written()
-        pending: list[dict[str, Any]] = []
+        pending: list[tuple[dict[str, Any], str | None]] = []
 
+        # The director's conversation, then each subagent's own. Both are read every pass and both
+        # are deduplicated by uuid, so a subagent that finishes between syncs is picked up whole
+        # without the earlier part arriving twice.
         for path in transcripts(self.project):
-            for entry in entries(path):
-                if entry["uuid"] not in seen:
-                    pending.append(entry)
+            pending += [(e, None) for e in entries(path) if e["uuid"] not in seen]
 
-        pending.sort(key=lambda e: (e.get("timestamp") or "", e.get("uuid") or ""))
+        for path, role in subagents(self.project):
+            pending += [(e, role) for e in entries(path) if e["uuid"] not in seen]
+
+        # By time across all of them, so a subagent's work lands between the dispatch that asked for
+        # it and the reply that reported it, rather than in a block after the parent's whole session.
+        pending.sort(key=lambda p: (p[0].get("timestamp") or "", p[0].get("uuid") or ""))
 
         written = 0
-        for entry in pending:
+        for entry, role in pending:
             at = _stamp(entry.get("timestamp") or "")
-            for src, kind, fields in transcribe(entry):
+            for src, kind, fields in transcribe(entry, role):
                 log = self.agent if src == "agent" else self.director
                 log.append(kind, at=at, **{k: v for k, v in fields.items() if v is not None})
                 written += 1

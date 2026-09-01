@@ -128,6 +128,77 @@ public class DrawingMcpTools
         }
     }
 
+    /// <summary>
+    /// The script to run, from whichever of the two sources was given.
+    /// </summary>
+    /// <remarks>
+    /// <c>scriptFile</c> exists because re-sending the program is what a run actually spends its time
+    /// on. Measured on a four-agent <c>comic_studio</c> run: 850 KB of JavaScript over 55 calls, and
+    /// the twenty largest took a mean of <b>three minutes each to emit</b> against a median engine
+    /// time of 45 ms — while consecutive large scripts shared <b>71%</b> of their lines. The agent was
+    /// retyping the same program to change part of it, and the instructions tell it to keep one
+    /// consolidated <c>artwork.js</c>, so that was the only route available.
+    /// <para>
+    /// Both given is <b>refused rather than resolved</b>. Either could plausibly be meant as the
+    /// override, so picking one would silently run code the caller did not intend — and the failure
+    /// would look like the edit not having taken effect, which is the most expensive kind to diagnose.
+    /// </para>
+    /// <para>
+    /// The file is read here and the text follows the ordinary path from there, so
+    /// <see cref="RunEventLog.SaveScript"/> still writes what actually ran into <c>scripts/</c>. That
+    /// matters more with a file source than without one: the file keeps changing, and a record that
+    /// pointed at it rather than copying it would describe whatever the file says later instead of
+    /// what this execution ran.
+    /// </para>
+    /// </remarks>
+    internal string ReadScriptSource(string? script, string? scriptFile)
+    {
+        var hasScript = !string.IsNullOrWhiteSpace(script);
+        var hasFile = !string.IsNullOrWhiteSpace(scriptFile);
+
+        if (hasScript && hasFile)
+        {
+            throw new ArgumentException(
+                "Give either 'script' or 'scriptFile', not both — which one to run would be a guess. "
+              + "To run the file, drop 'script'; to run the inline code, drop 'scriptFile'.");
+        }
+
+        if (!hasScript && !hasFile)
+        {
+            throw new ArgumentException(
+                "Nothing to execute: pass 'script' with the JavaScript, or 'scriptFile' with a path "
+              + "to a .js file in the project (e.g. 'artwork.js').");
+        }
+
+        if (!hasFile) return script!;
+
+        var full = ProjectPath.Resolve(ProjectRoot, scriptFile!, nameof(scriptFile), "Read");
+
+        if (!File.Exists(full))
+        {
+            // Named as the caller wrote it rather than as it resolved: an agent that passed
+            // 'artwork.js' is looking for that, and an absolute path it never typed reads as a
+            // different failure.
+            throw new FileNotFoundException(
+                $"No such script file: '{scriptFile}'. The path is relative to the project directory. "
+              + "Write the file first, then run it.", full);
+        }
+
+        var text = File.ReadAllText(full);
+
+        // An empty file executes cleanly, returns nothing, and renders nothing — a success that looks
+        // like a drawing failure. Far likelier to be a write that has not landed than a deliberate
+        // no-op, so it is worth an error rather than a puzzling blank.
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException(
+                $"'{scriptFile}' is empty, so there is nothing to execute. If a write to it is still "
+              + "in flight, run it again once the file is saved.");
+        }
+
+        return text;
+    }
+
     internal string ResolveOutputPath(string path, string parameterName)
     {
         var full = ProjectPath.Resolve(ProjectRoot, path, parameterName, "Write to");
@@ -270,7 +341,7 @@ public class DrawingMcpTools
     [McpServerTool(Name = "ExecuteScript")]
     [Description("Executes a JavaScript drawing script inside the sandboxed graphics engine, supporting Snap.svg vector graphics, HTML5 2D Canvas, and Skia procedural shaders, filters, and image processing. Automatically renders returned paper/canvas/bitmap/image-data to WebP/PNG/JPEG bytes and SVG markup.")]
     public async Task<DrawingExecutionResult> ExecuteScript(
-        [Description("The JavaScript code to execute.")] string script,
+        [Description("The JavaScript code to execute. Omit this when passing scriptFile.")] string? script = null,
         [Description("Default canvas / SVG viewport width in pixels (default 800).")] int? width = null,
         [Description("Default canvas / SVG viewport height in pixels (default 600).")] int? height = null,
         [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
@@ -278,11 +349,12 @@ public class DrawingMcpTools
         [Description("Optional file path where the rendered image should be saved, relative to the project directory (e.g. 'artifacts/stage1.webp'). Paths outside the project are refused.")] string? outFile = null,
         [Description("Optional file path where the rendered SVG XML should be saved, relative to the project directory (e.g. 'artifacts/stage1.svg'). Paths outside the project are refused.")] string? outSvg = null,
         [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null,
+        [Description("Optional path to a JavaScript file to execute INSTEAD of `script`, relative to the project directory (e.g. 'artwork.js'). Use this when iterating on a file you maintain: edit the file with your ordinary editor, then run it — rather than re-sending the whole program on every call. Paths outside the project are refused. Give either `script` or `scriptFile`, never both.")] string? scriptFile = null,
         RequestContext<CallToolRequestParams>? context = null,
         IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(script);
+        script = ReadScriptSource(script, scriptFile);
 
         var sessionId = GetSessionId(context?.Server);
         var session = Registry.GetOrCreate(sessionId);
@@ -307,7 +379,17 @@ public class DrawingMcpTools
         // Saved before execution, so a script that hangs or crashes the engine is still on disk to
         // read afterwards — which is exactly the run you most want the source of.
         var scriptPath = Events.SaveScript(script);
-        Events.Append("script.start", session.Stage, executionId, new Dictionary<string, object?> { ["script"] = scriptPath, ["session"] = sessionId });
+        Events.Append("script.start", session.Stage, executionId, new Dictionary<string, object?>
+        {
+            ["script"] = scriptPath,
+            ["session"] = sessionId,
+
+            // Where the source came from, when it was not the call itself. Absent for an inline
+            // script, so the record reads the same as it always has for those. Worth keeping because
+            // a file source is the one case where the same path can run repeatedly with different
+            // contents, and `scripts/` alone cannot say which file a given execution came from.
+            ["source"] = string.IsNullOrWhiteSpace(scriptFile) ? null : scriptFile,
+        });
 
         // What the script looks at, not just what it draws. The scope is opened here rather than
         // inside the engine because this is where the event log is, and it flows into the Task.Run
@@ -537,8 +619,13 @@ public class DrawingMcpTools
         int? quality = null,
         string? outFile = null,
         string? outSvg = null,
-        bool? includeBytes = null)
-        => ExecuteScript(script, width, height, format, quality, outFile, outSvg, includeBytes);
+        bool? includeBytes = null,
+        string? scriptFile = null)
+        // Named rather than positional: this forwards a parameter list that grows, and passing them
+        // by position meant adding one in the middle silently rebound every argument after it.
+        => ExecuteScript(script: script, scriptFile: scriptFile, width: width, height: height,
+                         format: format, quality: quality, outFile: outFile, outSvg: outSvg,
+                         includeBytes: includeBytes);
 
     [McpServerTool(Name = "History")]
     [Description("Returns the last n scripts executed by the agent in this session. If n is null or omitted, returns the last script.")]

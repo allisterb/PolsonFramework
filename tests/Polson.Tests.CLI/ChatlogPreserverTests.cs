@@ -309,6 +309,72 @@ public class ChatlogPreserverTests : TestsRuntime, IDisposable
     }
     #endregion
 
+    #region Subagent transcripts
+    /// <summary>
+    /// A multi-agent run happens inside the subagents, so their transcripts come too.
+    /// </summary>
+    /// <remarks>
+    /// The parent transcript records that a subagent was dispatched and what it returned; it does
+    /// not record what the subagent did. Measured on a real <c>comic_studio</c> run: parent 578 KB,
+    /// penciler 2.27 MB, and every one of the ten script executions the server recorded happened in
+    /// the second file. Preserving only the parent kept the receipt and lost the work.
+    /// </remarks>
+    [Fact]
+    public void TestSubagentTranscriptsArePreservedWithTheirAttribution()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        // The host's layout: a folder named for the session, beside the session's own transcript.
+        var subagents = Path.Combine(root, Path.GetFileNameWithoutExtension(transcript), "subagents");
+        Directory.CreateDirectory(subagents);
+        File.WriteAllText(Path.Combine(subagents, "agent-a7e2.jsonl"),
+            """{"uuid":"s1","type":"assistant","isSidechain":true}""");
+
+        // The sidecar is what names the actor, which the run record has never had.
+        File.WriteAllText(Path.Combine(subagents, "agent-a7e2.meta.json"),
+            """{"agentType":"penciler","spawnDepth":1}""");
+
+        Hook($$"""{"session_id":"multi","transcript_path":"{{Json(transcript)}}"}""");
+
+        var copied = Path.Combine(Events, "subagents");
+        Assert.True(File.Exists(Path.Combine(copied, "agent-a7e2.jsonl")));
+        Assert.Contains("penciler", File.ReadAllText(Path.Combine(copied, "agent-a7e2.meta.json")));
+
+        // The parent is still preserved; this is an addition, not a replacement.
+        Assert.True(File.Exists(Path.Combine(Events, "chat-multi.jsonl")));
+    }
+
+    /// <summary>A single-agent run has no such directory, and that is not a failure.</summary>
+    [Fact]
+    public void TestASoloRunPreservesNoSubagents()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        Hook($$"""{"session_id":"solo","transcript_path":"{{Json(transcript)}}"}""");
+
+        Assert.True(File.Exists(Path.Combine(Events, "chat-solo.jsonl")));
+        Assert.False(Directory.Exists(Path.Combine(Events, "subagents")));
+    }
+
+    /// <summary>Only transcripts and their sidecars, not whatever else the host leaves there.</summary>
+    [Fact]
+    public void TestOnlyTranscriptFilesAreCopiedFromTheSubagentDirectory()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+
+        var subagents = Path.Combine(root, Path.GetFileNameWithoutExtension(transcript), "subagents");
+        Directory.CreateDirectory(subagents);
+        File.WriteAllText(Path.Combine(subagents, "agent-a1.jsonl"), "{}");
+        File.WriteAllText(Path.Combine(subagents, "agent-a1.lock"), "held");
+        File.WriteAllText(Path.Combine(subagents, "scratch.tmp"), "noise");
+
+        Hook($$"""{"session_id":"multi","transcript_path":"{{Json(transcript)}}"}""");
+
+        var copied = Directory.GetFiles(Path.Combine(Events, "subagents")).Select(Path.GetFileName);
+        Assert.Equal(["agent-a1.jsonl"], copied);
+    }
+    #endregion
+
     #region The uncompacted transcript
     /// <summary>
     /// The uncompacted transcript is preserved alongside the active one.

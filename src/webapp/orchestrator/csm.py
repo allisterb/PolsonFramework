@@ -125,6 +125,16 @@ TOOL_MODES: dict[str, str] = {
     "WebFetch": "gather",
     "WebSearch": "gather",
     "Recall": "gather",
+
+    # The agent asking its director a question. Under the orchestrator this reaches `director.jsonl`
+    # and codes as `communicate`; under a host-driven run it arrives as a tool call and fell through
+    # uncoded — the same asymmetry as the agent's prose, arriving by a different route.
+    #
+    # It is the strongest `communicate` in the vocabulary rather than a marginal one: a question is
+    # addressed to the other participant and the run cannot proceed until they answer, which is
+    # OCSM's `joint` participation exactly. A `cs-5` run put a whole ASCII construction sheet inside
+    # one, because the question was spatial and the channel was text — and the curve could not see it.
+    "AskUserQuestion": "communicate",
 }
 
 #: MCP tools whose effect the spine already records. Coding them again from the transcript would
@@ -450,7 +460,19 @@ def _code_agent(event: dict[str, Any], kind: str) -> Coded | None:
 
 
 def _agent_of(event: dict[str, Any]) -> str:
-    """Who acted. A subagent's steps carry depth and trajectory; the main agent's carry neither."""
+    """Who acted.
+
+    An explicit `agent` wins, because it is a name rather than an inference: `hostlog` reads it from
+    the `.meta.json` the host writes beside a subagent's transcript, so the event says `penciler`
+    rather than that *some* subagent at depth 1 acted. Inferring over it would discard the one piece
+    of real attribution the record has.
+
+    Failing that, the Antigravity SDK's own signal — a subagent's steps carry depth and trajectory,
+    the main agent's carry neither.
+    """
+    if named := event.get("agent"):
+        return str(named)
+
     if not event.get("depth"):
         return "agent"
     trajectory = event.get("trajectory") or ""

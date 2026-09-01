@@ -27,6 +27,9 @@ obligations travel with the material regardless of what this file says:
 | 11 | Robin Williams, *The Non-Designer's Design Book*; Doyald Young, *Fonts and Logos* | All rights reserved. Same handling. |
 | 12 §2.5 | *Graphic Design and Print Production Fundamentals* (BCcampus / Graphic Communications Open Textbook Collective) | **CC BY 4.0** — attributed in the manual. §2.4 of that book is CC BY-NC-ND 3.0 and is **not** adapted here. |
 | 13 | `EpicInfographics` | MIT. Distilled with attribution. |
+| 14 | *Graphic Design and Print Production Fundamentals*, ch. 5 **Pre-press** (§5.2 Raster Image Processing, §5.5 Transparency) | **CC BY 4.0** — attributed in the manual. This chapter carries no "otherwise noted" exception, so unlike §2.4 it is adapted here, with the one short §5.5 sentence quoted and credited. |
+| 15 | Deshpande, Trajkova, Knowlton & Magerko, *Observable Creative Sense-Making*, C&C '23 | **CC BY 4.0** — the only adaptable paper in `reference/papers/`. Its newness scale and applicability clause are adapted and attributed. Davis et al., *Creative Sense-Making*, C&C '17 (ACM, all rights reserved) is **cited only**, for the 4:1 coding cost. |
+| 16 | — | No external source. Documents a Polson subsystem and the studio's own form-versus-substance policy. |
 
 `docs/creative-sense-making.md` implements a framework from the research
 literature — principally Nicholas Davis's work on creative sense-making and the

@@ -43,43 +43,50 @@ public class ManualCoverageTests : TestsRuntime
     /// Coverage each area must not fall below, as a percentage.
     /// </summary>
     /// <remarks>
-    /// Measured 2026-08-31 against the manual corpus as it then stood, under the <c>.member</c> match
+    /// Measured 2026-09-01 against the manual corpus as it then stood, under the <c>.member</c> match
     /// described on <see cref="Measure"/>. They are deliberately set <i>at</i> the measured value
     /// rather than below it: a floor with slack is a floor that lets the first regression through,
     /// which is the one worth catching.
     /// <para>
-    /// <b>These are not comparable to the figures recorded before Manual 14.</b> Those were taken with
-    /// a bare-word match, which counted ordinary English: adding a vector manual that never mentions
-    /// requisition moved <c>Assets</c> from 35% to 58% on the words <i>bytes</i>, <i>size</i> and
-    /// <i>success</i> alone. Requiring a leading dot puts <c>Assets</c> at 17% and <c>Globals</c> at
-    /// 5%, which is the truth — no manual teaches <c>Stage.begin</c>, <c>console.warn</c>,
-    /// <c>mina.*</c> or any of the requisition surface — and those two gaps were the ones the old
-    /// instrument was hiding.
+    /// <b>Not comparable to anything recorded before Manual 14.</b> Those figures came from a bare-word
+    /// match, which counted ordinary English: a vector manual that never mentions requisition moved
+    /// <c>Assets</c> from 35% to 58% on the words <i>bytes</i>, <i>size</i> and <i>success</i> alone.
+    /// Under the dot rule the same corpus put <c>Assets</c> at 17% and <c>Globals</c> at 5%, which was
+    /// the truth, and those two gaps were exactly what the old instrument had been hiding. Manuals 15
+    /// and 16 then took <c>Assets</c> to 92% and <c>Skia</c> to 67% for real.
     /// </para>
     /// <para>
     /// <c>Drawing</c> sits near 100 because manuals 01–09 are written on that toolkit. It is the shape
     /// the other areas are being measured against, not an aspiration for all of them — a raster
     /// primitive like <c>ctx.miterLimit</c> does not need design theory written about it.
     /// </para>
+    /// <para>
+    /// <b>The two real remaining gaps, as of this measurement.</b> <c>Globals</c> (16%) — no manual
+    /// teaches <c>Stage.begin</c>, <c>Stage.note</c>, the <c>console.*</c> levels or <c>mina.*</c>,
+    /// even though the stage declaration is what makes a run legible afterwards. <c>Skia</c>'s residue
+    /// (67%) is almost entirely the <i>drawing media</i>: <c>Skia.Brush.chalk/marker/stipple</c>, the
+    /// procedural shaders, and <c>PathEffect.discrete/compose</c>. That is a manual about mark-making,
+    /// not about measurement, and Manual 15 deliberately does not pretend to cover it.
+    /// </para>
     /// </remarks>
     public static readonly IReadOnlyDictionary<string, int> Floors = new Dictionary<string, int>(StringComparer.Ordinal)
     {
         ["Drawing"] = 97,
+        ["Assets"] = 92,
         ["VectorLogo"] = 74,
         ["Snap"] = 70,
-        ["LogoType"] = 66,
+        ["Canvas2D"] = 70,
+        ["Skia"] = 67,
         ["Css"] = 66,
+        ["Layout"] = 66,
+        ["LogoType"] = 66,
         ["Logo"] = 65,
-        ["Canvas2D"] = 64,
-        ["Layout"] = 55,
         ["Scale"] = 50,
-        ["Skia"] = 40,
-        ["Assets"] = 17,
-        ["Globals"] = 5,
+        ["Globals"] = 16,
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>
-    private const int OverallFloor = 58;
+    private const int OverallFloor = 71;
     #endregion
 
     #region Properties

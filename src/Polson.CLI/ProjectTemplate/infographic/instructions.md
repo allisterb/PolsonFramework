@@ -194,6 +194,8 @@ beautiful and overstates its numbers has failed the more important half.
 - `Search` — the studio's design knowledge and API reference, in one query. Start here.
 - `polson://manual/13` — this workflow's manual. `polson://manual/11` for type, `polson://manual/09`
   for compositional armatures and value hierarchy.
+- `polson://manual/15` — measuring a render, for the verification pass: `palette` checks the colour
+  hierarchy you claimed, and `rowProfile` checks that a bar's length matches the value it encodes.
 - `polson://sdk/core/Scale` — value-to-pixel mapping. `polson://sdk/core/Layout` — zones and
   measured stacking. `polson://sdk/core/Css` — reading a design language's tokens and type.
 

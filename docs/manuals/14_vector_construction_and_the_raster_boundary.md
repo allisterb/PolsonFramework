@@ -309,7 +309,7 @@ If a scene needs several of these, it is a raster scene. Decide that in §2 rath
 | `select('#name')` returns `null` on a shape you just drew | Elements have no id until assigned | `el.id = 'name'` first |
 | `paper.children[0]` is not your first shape | `<defs>` is a child | Filter on `type`, or read `paper.defs` explicitly |
 | Two shapes sharing a gradient show a seam between them | Gradient units default to each shape's own bounding box | `gradientUnits: 'userSpaceOnUse'` with absolute coordinates (§6) |
-| `element.children()` throws "not a function" | `children` and `parent` are properties here, not Snap.svg methods | Drop the parentheses |
+| Calling `children` or `parent` as a method throws "not a function" | They are properties here, not the Snap.svg methods of the same name | Drop the parentheses |
 | A hex colour reads back as different text than you set | `attr` normalises and uppercases | Compare case-insensitively, or keep your own value |
 
 ---

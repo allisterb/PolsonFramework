@@ -250,8 +250,34 @@ public class PolsonManuals
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max].TrimEnd() + "…";
 
+    /// <summary>
+    /// Matches an SDK call written as <c>receiver.method(</c>, for both the manual corpus and the core
+    /// reference — so the two are read by one rule and a citation can be checked against a definition.
+    /// </summary>
+    /// <remarks>
+    /// The receiver list holds the <b>instance</b> receivers as well as the namespace ones. Without
+    /// them a manual built on <c>bitmap.diff</c>, <c>element.attr</c> or <c>material.toDataUri</c>
+    /// cited nothing the catalogue could see, and the index announced it as theory that "hand-rolls
+    /// the technique from raw Canvas2D primitives" — which is the opposite of true, and appears at
+    /// exactly the point where an agent is deciding whether the manual is worth opening.
+    /// <para>
+    /// Nested namespaces (<c>Skia.ColorFilter.colorMatrix</c>, <c>Snap.path.getPointAtLength</c>) are
+    /// deliberately <i>not</i> matched. Allowing a second segment would also capture chains that are
+    /// not symbols — <c>Assets.budget.canAfford</c> is real to call and is documented as
+    /// <c>budget.canAfford</c>, so it would read as a citation of something the reference does not
+    /// define. The receiver alone is enough to bind a manual to its area.
+    /// </para>
+    /// <para>
+    /// <c>plate</c> is absent for the opposite reason: the reference spells a backdrop that way, but
+    /// "plate" is also studio vocabulary for a construction board, and Manual 12 uses it as an
+    /// ordinary variable — so including it turned <c>plate.getContext(...)</c> into a citation of a
+    /// call that does not exist. A receiver name shared with common drawing vocabulary costs more
+    /// than it earns; Manual 16 binds through <c>Assets.*</c> instead.
+    /// </para>
+    /// </remarks>
     private static readonly Regex ApiCitation = new(
-        @"\b(Drawing|Logo|LogoType|VectorLogo|Snap|Skia|Layout|Scale|Css|Assets|paper|ctx|sheet)\.([a-zA-Z][A-Za-z0-9]*)\s*\(",
+        @"\b(Drawing|Logo|LogoType|VectorLogo|Snap|Skia|Layout|Scale|Css|Assets|paper|ctx|sheet" +
+        @"|element|bitmap|matrix|gradient|material|matte|budget|imageData)\.([a-zA-Z][A-Za-z0-9]*)\s*\(",
         RegexOptions.Compiled);
 
     private static string? index;

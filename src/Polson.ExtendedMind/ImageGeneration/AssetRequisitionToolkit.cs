@@ -445,7 +445,12 @@ public partial class AssetRequisitionToolkit : Runtime
                 continue;
             }
 
-            var form = FormNouns.FirstOrDefault(n => IsNounMatch(words[i], n));
+            // An exact match is preferred over a suffix one, because the trigger is reported to the
+            // agent and must be a word it can find in its own descriptor. Taking the first match in
+            // list order made "woman" report as "man" — "man" is a suffix of it and sits earlier in
+            // FormNouns — so the remedy named a word the descriptor did not contain.
+            var form = FormNouns.FirstOrDefault(n => words[i] == n || words[i] == n + "s")
+                    ?? FormNouns.FirstOrDefault(n => IsNounMatch(words[i], n));
             if (form is not null)
             {
                 hits.Add(form);

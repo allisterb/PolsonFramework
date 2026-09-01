@@ -172,8 +172,11 @@ directly.
 Declare `Stage.begin('Critique')` and work through this deliberately. **Looking at the render and
 feeling satisfied is not this stage.**
 
-1. **Kill the colour.** Render greyscale — `Skia.ColorFilter.highContrast(true)` — and check the
-   value plan from `Composition` survived. It usually did not; material darkens things unevenly.
+1. **Kill the colour, then read the numbers.** Render greyscale — `Skia.ColorFilter.highContrast(true)`
+   — and check the value plan from `Composition` survived. It usually did not; material darkens
+   things unevenly. **A filter is a way of looking, not a measurement**: collapse to luminance and
+   read the bands back with `palette`, so you can compare them again after the fix and say whether it
+   worked. Manual 15 §6 has the luminance matrix and the protocol.
 2. **Flip it.** `bitmap.flip('horizontal')`. Compositional imbalance is invisible the right way round.
 3. **One light, or several?** Name your light source, then check each form's shadow points away from
    it. Manual 07 §1's six tonal zones is the checklist. Mixed light directions are what make a
@@ -219,8 +222,10 @@ In this directory:
 ## Where to look things up
 
 - `Search(query, scope: 'manual' | 'sdk')` — start here.
-- `polson://sdk/core/Assets` — requisition, budget, failure handling. **Read it before the first
-  requisition**, not after the first failure.
+- `polson://manual/16` and `polson://sdk/core/Assets` — requisition, budget, failure handling.
+  **Read them before the first requisition**, not after the first failure. Manual 16 has the
+  descriptor rules, the `await` trap, and why requisition and drawing belong in separate scripts.
+- `polson://manual/15` — measuring a render. The `Critique` stage runs on this.
 - `polson://manual/09` — composition armatures and value hierarchy. The `Composition` stage.
 - `polson://manual/07` — volumetric lighting, cast shadows, warm/cool. The `Light` stage.
 - `polson://manual/06` — perspective, for anything with a horizon or a hull.

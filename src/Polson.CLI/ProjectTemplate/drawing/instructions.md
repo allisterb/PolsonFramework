@@ -205,6 +205,8 @@ There is no fixed endpoint; the director decides. When they call it, produce:
 - `polson://manual/06` — perspective, if the subject has any.
 - `polson://manual/08` — the figure, if the subject is one.
 - `polson://manual/09` — composition armatures and value hierarchy, for the `Ground` turn.
+- `polson://manual/15` — measuring a render. `bitmap.diff` is what turns a claim about a turn into
+  a fact; §4 explains why `bounds` says more than the similarity score.
 - `polson://sdk/core/Skia` — `Brush`, `PathEffect`, `MaskFilter`, and the bitmap measurement calls.
 
 Query them rather than recalling from memory. A call invented from memory that happens to sound right

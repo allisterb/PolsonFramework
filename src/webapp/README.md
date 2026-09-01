@@ -44,6 +44,38 @@ Useful flags: `--prompt` to say something other than "read your instructions and
 director: the agent's questions are printed and your reply goes back to it, recorded in
 `events/director.jsonl`. Milestone 6 replaces that terminal with a browser and nothing else.
 
+## Watching a project you are driving somewhere else
+
+The studio does not have to be the thing running the agent. Work a project in Claude Code or Claude
+Desktop as you normally would, then press **Watch** on the index — or post its name to `/observe` —
+and the same run page opens over it: the sense-making curve, every render beside the script that made
+it, and the conversation that produced them.
+
+Nothing extra has to be captured for that to work. The MCP server writes `events/server.jsonl`
+whoever is driving it, so the renders, stages, expectations and measurements are already on disk, and
+the `preserve-chatlog` hook that `create-project` installs preserves the host's own transcript beside
+them. `orchestrator/hostlog.py` transcribes that into `agent.jsonl` and `director.jsonl`, so both
+participants appear on one curve.
+
+```bash
+dotnet bin/cli/Polson.CLI.dll create-project projects acme claude --prompt "..."
+python src/webapp/serve_studio.py projects        # then press Watch
+```
+
+No `--standalone`: that flag adds the orchestrator's own tool policy and session directories, and
+`create-project` refuses it for a host it does not drive. A Claude project is managed by definition —
+the host owns the policy — which is why the row on the index offers Watch and not Start.
+
+It is **read-only, by design rather than by limitation.** Direction happens in the host's interface,
+which is what that interface is for; a page offering its own answer box would be offering a way in
+that reaches nothing. What it adds is the reading the host cannot give — and a record that outlives
+the session.
+
+Two things worth knowing. It shows the **current server session**, cut at the last `run.start`,
+because a project's event files are appended to across every session it has ever had. And whether it
+calls a run *live* is an inference from the record still moving, deliberately generous: a finished run
+may show as live for a few minutes, which is the better way to be wrong.
+
 A run is resumable — the conversation id is written into `project.json`, and the next run continues
 where it left off unless you pass `--fresh`.
 
@@ -77,6 +109,8 @@ outliving the replay window, a client that stops reading — is announced in the
 | `orchestrator/broker.py` | In-process fan-out of one run's events, with replay. Milestone 6. |
 | `orchestrator/tail.py` | Follows `server.jsonl`, which the .NET MCP server owns and we can only read. |
 | `orchestrator/watch.py` | `RunStream` — both halves of the record on one broker, for a watcher to attach to. |
+| `orchestrator/hostlog.py` | The host's own conversation, transcribed into the record. For runs driven by Claude Code or Claude Desktop rather than by us. |
+| `studio/observe.py` | Watching a project this process is not driving. Read-only: the host's interface is where direction happens. |
 | `run_studio.py` | Terminal entry point. The same program as `python -m orchestrator`, runnable from the repository root. |
 | `serve_studio.py` | Web entry point. Serves `studio/` over HTTP. Milestone 6. |
 | `studio/` | The browser over `orchestrator`: routes, the run registry, the brief form, templates. |

@@ -562,7 +562,7 @@
     // The version stamp is the one the render arrived under, not the current event count, so a
     // pinned pass keeps a stable URL instead of re-fetching every time the trace moves.
     render.innerHTML = made.artifact
-      ? `<img src="/runs/${runId}/${made.artifact}?v=${made.v}" alt="${esc(made.artifact)}">` +
+      ? `<img src="/runs/${runId}/artifact/${made.artifact}?v=${made.v}" alt="${esc(made.artifact)}">` +
         `<figcaption>${esc(made.artifact)}</figcaption>`
       : '<p class="empty">This pass rendered nothing.</p>';
 

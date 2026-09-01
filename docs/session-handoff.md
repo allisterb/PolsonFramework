@@ -230,6 +230,63 @@ the same argument with the worked table.
 
 ---
 
+## 6a. The studio can now watch a run it is not driving
+
+**1,144 .NET, 240 Python.** The studio stopped requiring that it be the thing running the agent.
+
+Work a project in Claude Code or Claude Desktop, press **Watch** on the index, and the same run page
+opens over it — the curve, every render beside the script that made it, both participants. Nothing
+extra is captured to make that work: the MCP server writes `server.jsonl` whoever drives it, and the
+`preserve-chatlog` hook already preserved the host's transcript beside it. What was missing was the
+join.
+
+- **`orchestrator/hostlog.py`** transcribes a host transcript into `agent.jsonl` / `director.jsonl`.
+  Idempotent by the transcript's own `uuid`, with the resume point read back out of the record rather
+  than kept in a state file that could disagree with it.
+- **`studio/observe.py`** is a `Run` with no task: it replays the merged record, tails `server.jsonl`,
+  and re-syncs the transcript. Read-only by design — the host's interface is where direction happens,
+  and a page offering its own answer box would offer a way in that reaches nothing.
+- **`project.read`** beside `project.load`. Every check in `load` is a *drivability* check, and
+  applying them to a reader refused the feature's whole subject: a Claude project was turned away with
+  "the orchestrator builds Antigravity SDK configurations only", which is true and beside the point.
+
+Three things worth not rediscovering:
+
+- **`mcp__polson__ExecuteScript` had to be normalised before coding.** `SPINE_OWNED` holds bare names,
+  so without stripping the prefix every execution in a host-driven run is coded twice — once from the
+  spine, once from the transcript. That is the exact failure the existing comment warns about, and it
+  would have read as a run twice as productive as it was.
+- **Whether a `thinking` block carries its text is not ours to control.** Measured across 409
+  transcripts: mostly present through August 2026, absent from the 21st (9 of ~3,300 since), tracking
+  server-side client flags. The block is emitted either way, marked `redacted` when empty — `csm`
+  codes `thinking` as `wait` and nothing else does, so dropping the empty ones would take every pause
+  out of the curve and make such a run read as an agent that never stopped to think.
+- **The artifact route resolved project-relative paths under `artifacts/`.** Staged renders worked by
+  coincidence of their prefix matching the route segment; `output.webp` at the project root 404'd, so
+  a finished picture showed as a caption with no image. Now resolved against the project root, with a
+  suffix allowlist keeping the boundary narrow — containment says *inside the project*, the allowlist
+  says *and it is an image*.
+
+**The agent's prose now codes as `communicate`, as the director's does.** One participant speaking
+directly to another is communication whichever is speaking; the asymmetry was an artefact of where the
+two halves of the record came from, and under a host-driven run it produced a two-participant curve on
+which only one participant ever spoke.
+
+### The Claude profile, audited against the agy one
+
+Current on everything that matters — the MCP allowlist is reflection-derived and cannot drift, the
+`preserve-chatlog` hooks are wired on `Stop` and `SessionEnd`, and its path denies over Polson's source
+are *stronger* than agy's, which still has none. Two gaps found and both closed:
+
+- **Multi-agent was agy-only, on a premise that had gone stale.** The code said Claude Code had
+  "nowhere to register" a role; it reads `.claude/agents/*.md`. A `comic_studio` project got four role
+  specs and nothing able to hold one, while its instructions told the director to run them as
+  subagents. Both hosts now register; only the shape differs, and the Claude prompt is inlined because
+  there is no `promptFile` indirection.
+- **`Task` was neither allowed nor denied**, so every dispatch would have prompted — the same shape as
+  approving a server's own tool names and still being prompted for everything a subagent called. Now
+  allowed exactly where roles exist.
+
 ## 7. Where to pick up
 
 **Ordered by what would most improve the next run.**

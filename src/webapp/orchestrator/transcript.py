@@ -36,13 +36,13 @@ MAX_TEXT = 4000
 MAX_ARG = 200
 
 
-def _clip(text: str, limit: int = MAX_TEXT) -> tuple[str, bool]:
+def clip(text: str, limit: int = MAX_TEXT) -> tuple[str, bool]:
     """Returns the text bounded to `limit`, and whether it had to be cut."""
     text = text or ""
     return (text, False) if len(text) <= limit else (text[:limit], True)
 
 
-def _summarize_args(args: dict[str, Any]) -> dict[str, Any]:
+def summarize_args(args: dict[str, Any]) -> dict[str, Any]:
     """Keeps short arguments verbatim and replaces long ones with their size."""
     summary: dict[str, Any] = {}
     for key, value in (args or {}).items():
@@ -141,12 +141,12 @@ class Transcript:
                     call=getattr(call, "id", None),
                     tool=str(getattr(call, "name", "?")),
                     server=getattr(call, "server_name", None),
-                    args=_summarize_args(getattr(call, "args", None) or {}),
+                    args=summarize_args(getattr(call, "args", None) or {}),
                     **state,
                 )
 
         elif kind == "THINKING":
-            text, truncated = _clip(getattr(step, "thinking", "") or getattr(step, "content", ""))
+            text, truncated = clip(getattr(step, "thinking", "") or getattr(step, "content", ""))
             if text:
                 self._emit("thinking", text=text, truncated=truncated or None, **state)
 
@@ -158,7 +158,7 @@ class Transcript:
         else:
             # TEXT_RESPONSE, SYSTEM_MESSAGE, FINISH and UNKNOWN all reduce to text the reader wants;
             # `source` keeps them distinguishable without a second vocabulary.
-            text, truncated = _clip(getattr(step, "content", ""))
+            text, truncated = clip(getattr(step, "content", ""))
             if text:
                 self._emit(
                     "text",

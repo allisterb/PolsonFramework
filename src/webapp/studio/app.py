@@ -38,6 +38,7 @@ from sse_starlette.sse import EventSourceResponse
 from orchestrator import csm
 
 from . import projects
+from . import observe as observe_mod
 from .runs import DEFAULT_PROMPT, Registry, Run, StudioError
 
 #: Where a page looks for projects to run. Overridden by the entry point.
@@ -62,6 +63,13 @@ TEMPLATES.env.globals["source_url"] = SOURCE_URL
 
 #: Line numbers because the record refers to scripts by path and a reader refers to them by line.
 FORMATTER = HtmlFormatter(style="friendly", cssclass="code", linenos="table", lineanchors="L")
+
+#: What a render can produce, and therefore the whole of what the artifact route will serve.
+#:
+#: `outFile` writes webp, png or jpeg; `outSvg` writes svg. Nothing else is an artifact, so nothing
+#: else is reachable by a visitor-supplied name — see `serve_artifact`, which resolves against the
+#: project root rather than a single directory and needs this to keep that boundary narrow.
+ARTIFACT_SUFFIXES = frozenset({".webp", ".png", ".jpg", ".jpeg", ".svg"})
 
 
 def create_app(root: Path | None = None, registry: Registry | None = None) -> FastAPI:
@@ -139,6 +147,22 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
             # The project exists either way; only the run was refused, and saying so is the
             # difference between "try again later" and "your brief is gone".
             return refuse(request, f"Project '{made.name}' was created, but the run was not started: {exc}")
+
+        return RedirectResponse(f"/runs/{run.id}", status_code=303)
+
+    @app.post("/observe")
+    async def watch(request: Request, project: str = Form(...)) -> Any:
+        """Watches a project someone else is driving, in Claude Code or Claude Desktop.
+
+        Not a run: nothing is started and nothing is spent. The record is already being written —
+        the MCP server writes `server.jsonl` whoever drives it, and the `preserve-chatlog` hook
+        preserves the conversation — so this only puts a reader on it. See `studio.observe`.
+        """
+        try:
+            chosen = contain(app.state.root, project)
+            run = await observe_mod.observe(app.state.registry, chosen)
+        except StudioError as exc:
+            return refuse(request, str(exc))
 
         return RedirectResponse(f"/runs/{run.id}", status_code=303)
 
@@ -269,13 +293,33 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
         return Response(FORMATTER.get_style_defs(".code"), media_type="text/css",
                         headers={"Cache-Control": "max-age=3600"})
 
-    @app.get("/runs/{run_id}/artifacts/{name:path}")
+    @app.get("/runs/{run_id}/artifact/{name:path}")
     async def serve_artifact(run_id: str, name: str) -> FileResponse:
-        """A render, by the project-relative path the record names it by."""
+        """A render, by the project-relative path the record names it by.
+
+        **Project-relative, not `artifacts/`-relative**, and the difference is a real bug rather than
+        a tidying. A render event carries whatever `outFile` was given, and a workflow's final
+        delivery is conventionally written to the project root — `output.webp` beside `output.svg`.
+        Resolving every name under `artifacts/` therefore served the staged renders (whose names
+        happen to begin `artifacts/`, matching the old route segment by coincidence) and 404'd the
+        finished picture. The page showed a caption with no image under it, which reads as a broken
+        render rather than as a missing route.
+
+        Widening the root widens what a visitor-supplied name can reach, so the suffix allowlist is
+        what keeps the boundary meaningful: containment says *inside the project*, and the allowlist
+        says *and it is an image*. Without the second, this route would serve `brief.md`,
+        `project.json` and `.agents/settings.json` — a project's whole configuration — to anyone who
+        guessed the name.
+        """
         run = found(app.state.registry, run_id)
 
+        if Path(name).suffix.lower() not in ARTIFACT_SUFFIXES:
+            # Refused on the name alone, before touching the disk: whether the file exists is not
+            # something a visitor should be able to learn about a path we would never serve.
+            raise HTTPException(status_code=404, detail=f"not an artifact: {name}")
+
         try:
-            path = contain(run.artifacts, name)
+            path = contain(run.project.root, name)
         except StudioError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -327,11 +371,19 @@ def discover(root: Path) -> list[dict[str, str]]:
             # what a useful opening prompt is. The form has to say so before the turn is spent.
             entry["session"] = bool(data.get("conversationId"))
 
-            # Runnability is decided by the same thing `project.load` decides it by — the presence of
-            # a tool policy this side can read — and not by the `profile` label, which since every
-            # Antigravity project carries that file records only what the project was generated for.
-            # Two sources of truth for one question is how a page comes to disagree with the runner.
-            if not (manifest.parent / "agent.config.json").is_file():
+            # Runnability is decided by the same things `project.load` decides it by, and not by the
+            # `profile` label, which since every Antigravity project carries a tool policy records
+            # only what the project was generated for. Two sources of truth for one question is how a
+            # page comes to disagree with the runner.
+            #
+            # The host check was missing while `load` had it, so a project generated for Claude Code
+            # offered an enabled Start button that failed on submit. That is now the ordinary kind of
+            # project here rather than an oddity — it is the one Watch exists for — so the row says
+            # what can be done with it instead of finding out after the click.
+            if (data.get("sdk") or "agy").lower() != "agy":
+                entry["why"] = (f"generated for '{data.get('sdk')}' — the orchestrator runs "
+                                f"Antigravity projects only. Work it in that host and Watch it here")
+            elif not (manifest.parent / "agent.config.json").is_file():
                 entry["why"] = ("no agent.config.json — the orchestrator would have no tool policy "
                                 "for it. Regenerate it, or open it with a desktop host")
         except Exception as exc:  # noqa: BLE001

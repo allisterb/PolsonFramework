@@ -254,15 +254,76 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         }
     }
 
-    /// <summary>Claude Code has no registry to write to, so the roles are all it gets — and needs.</summary>
+    /// <summary>
+    /// Claude Code registers subagents too — one Markdown file each rather than one JSON registry.
+    /// </summary>
+    /// <remarks>
+    /// This asserted the opposite while the generator believed Claude Code had nowhere to register a
+    /// role. The instructions tell the director to run the roles as subagents, so an unregistered
+    /// role left that promise unkeepable: four specs on disk and no agent able to hold one.
+    /// </remarks>
     [Fact]
-    public void TestAMultiAgentWorkflowNeedsNoRegistryForClaude()
+    public void TestAMultiAgentWorkflowRegistersItsRolesForClaude()
     {
         Assert.True(ProjectGenerator.Create(Options("studio-claude", o => { o.Workflow = "comic_studio"; o.Sdk = "claude"; })));
 
         var files = FileSet("studio-claude");
         Assert.Equal(4, files.Count(f => f.StartsWith("roles/", StringComparison.Ordinal)));
+
+        // One agent per role, named for the role rather than for the file that orders the pipeline.
+        var agents = files.Where(f => f.StartsWith(".claude/agents/", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(4, agents.Length);
+        foreach (var expected in new[] { "penciler", "inker", "colorist", "critic" })
+        {
+            Assert.Contains($".claude/agents/{expected}.md", agents);
+        }
+
+        // The registry shape is the host's, not ours: Antigravity's JSON file does not appear here.
         Assert.DoesNotContain("agents.json", string.Join(' ', files));
+    }
+
+    /// <summary>A Claude subagent carries its prompt inline, because there is no `promptFile`.</summary>
+    [Fact]
+    public void TestAClaudeSubagentCarriesItsPromptAndItsTools()
+    {
+        Assert.True(ProjectGenerator.Create(Options("studio-inline", o => { o.Workflow = "comic_studio"; o.Sdk = "claude"; })));
+
+        var agent = File.ReadAllText(Path.Combine(root, "studio-inline", ".claude/agents/penciler.md"));
+        var role = File.ReadAllText(Path.Combine(root, "studio-inline", "roles/01_penciler.md"));
+
+        Assert.StartsWith("---\nname: penciler\n", agent.Replace("\r\n", "\n"), StringComparison.Ordinal);
+
+        // Quoted, so a colon or an ampersand in a role's heading cannot break the frontmatter.
+        Assert.Contains("description: \"", agent, StringComparison.Ordinal);
+
+        // The drawing server and the ability to read, mirroring the Antigravity subagent list. A
+        // subagent that could reach the shell would be a way around the main agent's own denials.
+        Assert.Contains("tools: mcp__polson__ExecuteScript", agent, StringComparison.Ordinal);
+        Assert.Contains("Read", agent, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bash", agent, StringComparison.Ordinal);
+
+        // The spec itself, and a header saying which file it came from — the copy exists because
+        // Claude Code has no indirection, so the source has to be named or the two quietly diverge.
+        Assert.Contains("roles/01_penciler.md", agent, StringComparison.Ordinal);
+        Assert.Contains(role.Trim()[..200], agent, StringComparison.Ordinal);
+    }
+
+    /// <summary>`Task` is allowed only where there is something to dispatch.</summary>
+    /// <remarks>
+    /// Without it every dispatch stops to ask, which is the same gap as approving a server's own
+    /// tool names and still being prompted for everything a subagent calls. Granting it to a
+    /// single-agent project would widen the policy for a capability that project never uses.
+    /// </remarks>
+    [Theory]
+    [InlineData("comic_studio", true)]
+    [InlineData("comic", false)]
+    public void TestClaudeAllowsSubagentDispatchOnlyWhenRolesExist(string workflow, bool expected)
+    {
+        var name = $"task-{workflow}";
+        Assert.True(ProjectGenerator.Create(Options(name, o => { o.Workflow = workflow; o.Sdk = "claude"; })));
+
+        var settings = File.ReadAllText(Path.Combine(root, name, ".claude/settings.local.json"));
+        Assert.Equal(expected, settings.Contains("\"Task\"", StringComparison.Ordinal));
     }
 
     /// <summary>Generated JSON is readable: an ampersand in a role name stays an ampersand.</summary>

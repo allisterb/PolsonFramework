@@ -72,6 +72,16 @@ class Run:
 
     # region Properties
     @property
+    def observed(self) -> bool:
+        """Whether this run is being watched rather than driven. See `studio.observe`.
+
+        On the base class because two callers need the answer without knowing the subclass: `active`,
+        which must not let a free observation block a paid run, and the page, which must not offer a
+        direction channel that reaches nothing.
+        """
+        return False
+
+    @property
     def live(self) -> bool:
         return self.task is not None and not self.task.done()
 
@@ -128,7 +138,13 @@ class Registry:
     # region Properties
     @property
     def active(self) -> Run | None:
-        return next((r for r in self._runs.values() if r.live), None)
+        """The one run being driven, if any.
+
+        Observations are excluded deliberately. This is what `start` refuses on, and refusing exists
+        because a second *agent session* would be spending twice — watching a project costs nothing,
+        so an observation left open must not make the studio look busy and lock out every real run.
+        """
+        return next((r for r in self._runs.values() if r.live and not r.observed), None)
 
     @property
     def runs(self) -> list[Run]:
@@ -139,6 +155,16 @@ class Registry:
     # region Methods
     def get(self, run_id: str) -> Run | None:
         return self._runs.get(run_id)
+
+    def register(self, run: Run) -> Run:
+        """Adds a run this registry did not start.
+
+        The one caller is `studio.observe`, which builds a run around a project someone else is
+        driving. Deliberately not counted against the daily cap: that cap bounds what agents cost,
+        and an observation runs none.
+        """
+        self._runs[run.id] = run
+        return run
 
     async def start(self, root: Path, prompt: str, *, resume: bool = True) -> Run:
         """Loads a project, registers a run, and starts it. Raises `StudioError` with a reason.

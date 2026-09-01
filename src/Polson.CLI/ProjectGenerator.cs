@@ -84,7 +84,12 @@ internal static class ProjectGenerator
     /// <c>roles/NN_name.md</c>, the description from its first heading. A workflow gains an agent by
     /// gaining a file, and the registry cannot disagree with the prompt it points at.
     /// </remarks>
-    readonly record struct Role(string Name, string Description, string PromptFile)
+    /// <param name="Body">
+    /// The rendered spec. Carried because the two hosts register a role differently: Antigravity
+    /// points at the file with <c>promptFile</c>, while Claude Code has no such indirection and
+    /// needs the prompt in the agent definition itself.
+    /// </param>
+    readonly record struct Role(string Name, string Description, string PromptFile, string Body)
     {
         public static Role? From(string path, string body)
         {
@@ -101,7 +106,7 @@ internal static class ProjectGenerator
                 description = description["Role:".Length..].Trim();
             }
 
-            return new Role(name, description, path);
+            return new Role(name, description, path, body);
         }
     }
     #endregion
@@ -318,7 +323,7 @@ internal static class ProjectGenerator
         }
 
         WriteJson(dir, host.McpConfig, McpConfig(dir));
-        WriteJson(dir, host.Permissions, Permissions(sdk, standalone, workflow, dir));
+        WriteJson(dir, host.Permissions, Permissions(sdk, standalone, workflow, dir, roles.Count > 0));
 
         // Antigravity keeps hooks in their own file; Claude Code carries them inside the settings
         // file written just above, so only one of these two lines does anything per host.
@@ -328,12 +333,24 @@ internal static class ProjectGenerator
             WriteScript(dir, HookScriptPath, HookScript(sdk, dir));
         }
 
-        // Only Antigravity has a registry to write to. A Claude Code director runs the same roles as
-        // sequential personas, reading the same files, which is what the instructions describe for
-        // both — so nothing is lost where there is nowhere to register them.
-        if (sdk == "agy" && roles.Count > 0)
+        // Both hosts have a registry; they disagree only about its shape. Antigravity takes one JSON
+        // file naming every subagent and pointing at its prompt; Claude Code takes one Markdown file
+        // per agent with the prompt inside it. Registering the roles matters either way, because the
+        // instructions tell the director to run them as subagents — an unregistered role leaves that
+        // promise unkeepable, which is what a Claude project used to get.
+        if (roles.Count > 0)
         {
-            WriteJson(dir, ".agents/agents.json", MultiAgentConfig(id, host.Instructions, roles));
+            if (sdk == "agy")
+            {
+                WriteJson(dir, ".agents/agents.json", MultiAgentConfig(id, host.Instructions, roles));
+            }
+            else
+            {
+                foreach (var role in roles)
+                {
+                    WriteText(dir, $".claude/agents/{role.Name}.md", ClaudeSubagent(role));
+                }
+            }
         }
 
         // Written for every Antigravity project, not only the standalone ones. It is the file
@@ -615,6 +632,49 @@ internal static class ProjectGenerator
     };
 
     /// <summary>
+    /// Registers one workflow role as a Claude Code subagent.
+    /// </summary>
+    /// <remarks>
+    /// Claude Code reads subagent definitions from <c>.claude/agents/*.md</c>: YAML frontmatter
+    /// naming the agent and the tools it may hold, then the system prompt as the body.
+    /// <para>
+    /// <b>The prompt is inlined rather than referenced</b>, which is the one real difference from the
+    /// Antigravity registry. There is no <c>promptFile</c> here, so the spec is copied in — and
+    /// because both files are written in the same pass from the same rendered string they cannot
+    /// disagree when generated, only if one is edited afterwards. The header says which file is the
+    /// source, so the fix is to edit <c>roles/</c> and regenerate rather than to patch the copy.
+    /// </para>
+    /// <para>
+    /// The tool list mirrors the Antigravity one: the drawing server and the ability to read, and
+    /// nothing else. A subagent that could reach the shell would be a way around the denials the main
+    /// agent is held to, which is exactly the shape of hole a permissions file is meant to close.
+    /// </para>
+    /// </remarks>
+    static string ClaudeSubagent(Role role)
+    {
+        var tools = string.Join(", ", ToolNames().Select(t => $"mcp__polson__{t}").Append("Read"));
+
+        // Quoted, because a description is prose from a role file's heading and YAML would otherwise
+        // read a colon in it as a key. Embedded quotes are doubled rather than backslash-escaped,
+        // which is what YAML's double-quoted style would need — simpler to remove them.
+        var description = role.Description.Replace("\"", "'");
+
+        return $"""
+            ---
+            name: {role.Name}
+            description: "{description}"
+            tools: {tools}
+            ---
+
+            <!-- Generated by `polson create-project` from {role.PromptFile}. Edit that file and
+                 regenerate with `--force`; editing this copy leaves the two disagreeing. -->
+
+            {role.Body.TrimEnd()}
+
+            """;
+    }
+
+    /// <summary>
     /// Tool policy and SDK directories for the orchestrator.
     /// </summary>
     /// <remarks>
@@ -865,7 +925,7 @@ internal static class ProjectGenerator
             .Concat(ToolNames().Select(t => $"polson:{t}"))
             .Select(key => new KeyValuePair<string, string>(key, "allow"));
 
-    static object Permissions(string sdk, bool standalone, string workflow, string dir)
+    static object Permissions(string sdk, bool standalone, string workflow, string dir, bool hasSubagents)
     {
         var denied = standalone ? [.. AlwaysDenied, .. StandaloneDenied] : AlwaysDenied;
 
@@ -912,7 +972,14 @@ internal static class ProjectGenerator
                 permissions = new
                 {
                     defaultMode = "default",
-                    allow = ToolNames().Select(t => $"mcp__polson__{t}").Concat(["Read", "Write", "Edit", "Glob", "Grep"]).ToArray(),
+                    // `Task` only where there is something to dispatch. A workflow with roles
+                    // registers them under `.claude/agents/`, and without this every dispatch stops
+                    // to ask — the same shape of gap as approving a server's own tool names and
+                    // still being prompted for everything a subagent called. Allowing it where no
+                    // subagent exists would widen the policy for a capability the project does not use.
+                    allow = ToolNames().Select(t => $"mcp__polson__{t}")
+                        .Concat(["Read", "Write", "Edit", "Glob", "Grep"])
+                        .Concat(hasSubagents ? ["Task"] : Array.Empty<string>()).ToArray(),
                     deny = new[] { "Bash", "BashOutput", "KillShell", "WebFetch", "WebSearch" }
                         .Concat(IsIsolated(workflow) ? SourceDenies() : []).ToArray(),
                 },

@@ -84,10 +84,27 @@ SPINE_MODES: dict[str, str] = {
 #: Orchestrator transcript events, for the enrichment pass.
 AGENT_MODES: dict[str, str] = {
     "thinking": "wait",
+
+    # The agent's prose to the director, coded exactly as the director's prose to the agent is. One
+    # participant speaking directly to another is communication whichever of them is speaking, and
+    # the asymmetry this replaces was not a judgement about the medium — it was an artefact of where
+    # the two halves of the record came from. Under a host-driven run it mattered most: the agent's
+    # `text` is its main utterance to the director, so leaving it uncoded produced a two-participant
+    # curve on which only one participant ever spoke.
+    #
+    # `Stage.note` is coded `communicate` from the spine as well, and the overlap is real but not
+    # double-counting: a note is addressed to the record and survives the session, prose is addressed
+    # to the director and does not. An agent that does both has communicated twice.
+    "text": "communicate",
 }
 
 #: Host tools, by what the agent was doing with them. Anything unlisted is left uncoded rather than
 #: guessed at — a wrong code is worse than a gap, because a gap is visible.
+#:
+#: Two hosts name their tools differently and both appear here: the lowercase names are
+#: Antigravity's, the capitalised ones Claude Code's. Nothing distinguishes them at coding time and
+#: nothing needs to — a name means the same thing whichever host wrote it, and a table that had to
+#: know which host it was reading would be a table that gets it wrong on the first mixed project.
 TOOL_MODES: dict[str, str] = {
     "view_file": "inspect",
     "read_file": "inspect",
@@ -97,11 +114,44 @@ TOOL_MODES: dict[str, str] = {
     "codebase_search": "inspect",
     "Search": "gather",
     "History": "inspect",
+
+    # Claude Code. `Bash` and `PowerShell` are deliberately absent: a shell is whatever was typed
+    # into it, and the same call reads a file, runs the tests or deletes a directory. Guessing would
+    # code the single commonest tool in a session wrongly.
+    "Read": "inspect",
+    "Grep": "inspect",
+    "Glob": "inspect",
+    "NotebookRead": "inspect",
+    "WebFetch": "gather",
+    "WebSearch": "gather",
+    "Recall": "gather",
 }
 
 #: MCP tools whose effect the spine already records. Coding them again from the transcript would
 #: double every execution — the one mistake that makes an enriched curve worse than an unenriched one.
 SPINE_OWNED = frozenset({"ExecuteScript", "ExecuteSvgScript", "RenderSvg", "MeasureSvgPath"})
+
+#: How a host names a tool it reached over MCP: `mcp__<server>__<tool>`.
+#:
+#: Stripped before coding, and this matters more than it looks. Under Claude Code every Polson call
+#: arrives as `mcp__polson__ExecuteScript`, which is in `SPINE_OWNED` only after the prefix is gone —
+#: so without this, every execution in a host-driven run is coded twice, once from the spine and once
+#: from the transcript. That is precisely the failure the note above warns about, and it would have
+#: appeared as a curve that looked twice as productive as the run really was.
+MCP_PREFIX = "mcp__"
+
+
+def tool_name(tool: str) -> str:
+    """The tool as the coder should read it, with any MCP server qualification removed.
+
+    The record keeps the host's own spelling — saying what happened is its job — so the normalising
+    happens here, where the interpreting does.
+    """
+    if not tool.startswith(MCP_PREFIX):
+        return tool
+
+    parts = tool.split("__")
+    return parts[-1] if len(parts) >= 3 else tool
 
 
 @dataclass(frozen=True)
@@ -387,7 +437,7 @@ def _code_agent(event: dict[str, Any], kind: str) -> Coded | None:
     if kind != "tool.call":
         return None
 
-    tool = event.get("tool") or ""
+    tool = tool_name(event.get("tool") or "")
     if tool in SPINE_OWNED:
         # Already on the spine. Coding it again would double every execution, which is the one way an
         # enriched curve can be worse than an unenriched one.

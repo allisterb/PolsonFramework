@@ -122,8 +122,55 @@ def _read_json(path: Path, what: str) -> dict[str, Any]:
         raise ProjectError(f"{what} is not valid JSON ({path}): {exc}") from exc
 
 
+def read(directory: Path) -> Project:
+    """A project as a *reader* needs it, which is far less than a driver does.
+
+    `load` answers "can the orchestrator run an agent here", and every one of its checks is about
+    that: the SDK must be Antigravity, there must be a tool policy, instructions, and an MCP server
+    with a command. A reader starts nothing, so none of those apply to it — and applying them anyway
+    refused exactly the case worth reading. A project generated for Claude Code is the ordinary
+    subject of an observation, and `load` turns it away with "the orchestrator builds Antigravity SDK
+    configurations only", which is true and beside the point.
+
+    What a reader actually needs is the manifest, for the project's identity, and the `events/`
+    directory the record lives in. That is all this requires.
+
+    The safety this gives up is nothing: `Registry.start` calls `load` itself rather than being handed
+    a project, so a project read this way cannot reach the driving path without being re-validated
+    there.
+    """
+    root = Path(directory).resolve()
+
+    if not root.is_dir():
+        raise ProjectError(f"no such project directory: {root}")
+
+    manifest = _read_json(root / "project.json", "the project manifest")
+
+    return Project(
+        root=root,
+        id=manifest.get("id") or root.name,
+        workflow=manifest.get("workflow") or "logo",
+        sdk=(manifest.get("sdk") or "agy").lower(),
+        profile=manifest.get("profile") or "standalone",
+        conversation_id=manifest.get("conversationId"),
+
+        # Defaults, not discoveries. Nothing that reads a record touches any of these, and a project
+        # loaded this way is never given to the agent — see the note above.
+        agent_behavior="interactive",
+        instructions_file="GEMINI.md",
+        denied_tools=(),
+        mcp=McpWiring(name="", command="", args=()),
+        save_dir=root / "session/save",
+        app_data_dir=root / "session/appdata",
+    )
+
+
 def load(directory: Path) -> Project:
-    """Reads a project directory, or explains why it cannot be run."""
+    """Reads a project directory, or explains why it cannot be run.
+
+    For reading a project's record rather than running it, use `read` — this refuses several things
+    that only matter to a run.
+    """
     root = Path(directory).resolve()
 
     if not root.is_dir():

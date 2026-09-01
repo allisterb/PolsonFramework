@@ -77,8 +77,17 @@ class EventLog:
     def enabled(self) -> bool:
         return not self._disabled
 
-    def append(self, kind: str, *, stage: str | None = None, execution: str | None = None, **fields: Any) -> None:
-        """Appends one event. Never raises."""
+    def append(self, kind: str, *, stage: str | None = None, execution: str | None = None,
+               at: str | None = None, **fields: Any) -> None:
+        """Appends one event. Never raises.
+
+        `at` overrides the timestamp, and exists for one caller: a transcriber replaying events that
+        have already happened. `hostlog` reads a conversation the host wrote minutes or hours ago,
+        and stamping those with the time they were *transcribed* would put a whole session at one
+        instant — collapsing the interleaving with `server.jsonl` that makes the record readable, and
+        breaking every `since` cut, which is what scopes a page to one run. Supply the record's own
+        format (`timestamp()`); anything else sorts wrongly against the .NET writer.
+        """
         if self._disabled:
             return
 
@@ -93,7 +102,7 @@ class EventLog:
                 self._seq += 1
 
                 event: dict[str, Any] = {
-                    "ts": timestamp(),
+                    "ts": at or timestamp(),
                     "seq": self._seq,
                     "src": self.src,
                     "type": kind,

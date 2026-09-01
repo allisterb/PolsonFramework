@@ -62,8 +62,12 @@
         <tbody>
           {% for p in projects %}
             <tr class="{{ 'unrunnable' if p.why else '' }}">
+              {# Selectable even when it cannot be run. A project generated for another host is
+                 unrunnable here and is exactly what Watch is for, so the guard belongs on the Start
+                 button rather than on the row. #}
               <td><input type="radio" name="project" value="{{ p.path }}" data-session="{{ 'yes' if p.session else 'no' }}"
-                         {{ 'disabled' if p.why }} {{ 'checked' if loop.first and not p.why }}></td>
+                         data-runnable="{{ 'no' if p.why else 'yes' }}"
+                         {{ 'checked' if loop.first and not p.why }}></td>
               <td><code>{{ p.name }}</code></td>
               <td>{{ p.workflow }}</td>
               <td>{{ 'has a session' if p.session else 'not started' }}</td>
@@ -78,12 +82,21 @@
                 placeholder="Read GEMINI.md, then brief.md, and begin."></textarea>
 
       <div class="actions">
-        <button type="submit" {{ 'disabled' if active }}>Start</button>
+        <button type="submit" id="startbtn" {{ 'disabled' if active }}>Start</button>
+
+        {# Same selection, different verb. Watching starts no agent and spends nothing: it reads the
+           record a host is already writing, which is why it is never blocked by a run in progress. #}
+        <button type="submit" formaction="/observe" formnovalidate id="watchbtn">Watch</button>
+
         <label class="inline" id="freshwrap" hidden>
           <input type="checkbox" name="fresh" value="1" id="fresh"> start a fresh session
         </label>
         {% if active %}<span class="hint">A run is already going.</span>{% endif %}
       </div>
+      <p class="hint" id="watchonly" hidden>
+        This project was generated for another host, so it cannot be started here — but it can be
+        <strong>watched</strong>. Work it in that host; this page reads the record as it is written.
+      </p>
       <p class="hint" id="continuing" hidden>
         This project has run before, so it will <strong>continue</strong> where it left off — the agent
         keeps what it decided and why. Say what you want changed or added; "begin the project" will
@@ -130,13 +143,23 @@
   const freshWrap = document.getElementById('freshwrap');
   const fresh = document.getElementById('fresh');
 
+  const startBtn = document.getElementById('startbtn');
+  const watchOnly = document.getElementById('watchonly');
+  const runsHere = {{ 'false' if active else 'true' }};
+
   function sync() {
     const chosen = form.querySelector('input[name=project]:checked');
     const hasSession = chosen && chosen.dataset.session === 'yes' && !fresh.checked;
 
+    // A project generated for another host cannot be started here and can still be watched, so the
+    // guard is on the verb rather than on the row. Watch stays enabled throughout.
+    const runnable = !chosen || chosen.dataset.runnable !== 'no';
+    startBtn.disabled = !runsHere || !runnable;
+    watchOnly.hidden = runnable;
+
     continuing.hidden = !(chosen && chosen.dataset.session === 'yes');
     freshWrap.hidden = !(chosen && chosen.dataset.session === 'yes');
-    prompt.required = Boolean(hasSession);
+    prompt.required = Boolean(hasSession) && runnable;
     prompt.placeholder = hasSession
       ? 'make the timeline bars thinner, and warm the palette'
       : 'Read GEMINI.md, then brief.md, and begin.';

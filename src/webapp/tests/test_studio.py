@@ -932,6 +932,13 @@ class ArtifactRouteTests(unittest.TestCase):
 
         project = project_dir(self.root, "acme")
         (project / "artifacts" / "01.webp").write_bytes(b"pretend webp")
+
+        # The finished picture, which a workflow writes to the project root beside its SVG rather
+        # than into `artifacts/`. This is the case the route used to miss.
+        (project / "output.webp").write_bytes(b"the delivery")
+        (project / "output.svg").write_text("<svg/>", encoding="utf-8")
+
+        (project / "secret.txt").write_text("never", encoding="utf-8")
         (self.root / "outside.txt").write_text("never", encoding="utf-8")
 
         # A registered run, without starting one: this route reads the filesystem, not the agent.
@@ -942,18 +949,43 @@ class ArtifactRouteTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def test_a_render_is_served_by_the_path_the_record_names(self):
-        page = self.client.get("/runs/acme-1/artifacts/01.webp")
+    def test_a_staged_render_is_served_by_the_path_the_record_names(self):
+        page = self.client.get("/runs/acme-1/artifact/artifacts/01.webp")
 
         self.assertEqual(page.status_code, 200)
         self.assertEqual(page.content, b"pretend webp")
 
-    def test_a_missing_render_is_a_404_not_a_500(self):
-        self.assertEqual(self.client.get("/runs/acme-1/artifacts/nope.webp").status_code, 404)
+    def test_a_render_at_the_project_root_is_served_too(self):
+        """The regression: the finished picture is not under `artifacts/`.
 
-    def test_traversal_out_of_the_artifacts_directory_is_refused(self):
-        for attempt in ("../project.json", "../../outside.txt", "../GEMINI.md"):
-            page = self.client.get(f"/runs/acme-1/artifacts/{attempt}")
+        A render event carries whatever `outFile` was given, and a workflow's final delivery is
+        conventionally `output.webp` at the project root. Resolving every name under `artifacts/`
+        served the staged renders and 404'd the one the whole run was for — which showed on the page
+        as a caption with no image, reading as a broken render rather than a missing route.
+        """
+        for name, expected in (("output.webp", b"the delivery"), ("output.svg", b"<svg/>")):
+            page = self.client.get(f"/runs/acme-1/artifact/{name}")
+            self.assertEqual(page.status_code, 200, name)
+            self.assertEqual(page.content, expected, name)
+
+    def test_a_missing_render_is_a_404_not_a_500(self):
+        self.assertEqual(self.client.get("/runs/acme-1/artifact/nope.webp").status_code, 404)
+
+    def test_traversal_out_of_the_project_is_refused(self):
+        for attempt in ("../outside.webp", "../../outside.webp", "artifacts/../../escape.png"):
+            page = self.client.get(f"/runs/acme-1/artifact/{attempt}")
+            self.assertEqual(page.status_code, 404, attempt)
+
+    def test_a_file_that_is_not_an_image_is_refused_even_inside_the_project(self):
+        """Containment says *inside the project*; the suffix allowlist says *and it is an image*.
+
+        The route resolves against the project root, so without the second rule a visitor-supplied
+        name would reach `project.json`, `brief.md` and `.agents/settings.json` — the project's whole
+        configuration — by guessing. Refused on the name alone, before the disk is touched, so
+        whether such a file exists is not learnable either.
+        """
+        for attempt in ("secret.txt", "project.json", "GEMINI.md", "brief.md"):
+            page = self.client.get(f"/runs/acme-1/artifact/{attempt}")
             self.assertEqual(page.status_code, 404, attempt)
             self.assertNotIn(b"never", page.content)
 

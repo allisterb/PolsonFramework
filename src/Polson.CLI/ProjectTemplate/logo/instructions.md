@@ -47,8 +47,16 @@ form.
 
 **2. Every render is written to disk, not returned as bytes.**
 Pass `outFile: 'artifacts/NN_name.webp'` to `ExecuteScript`. Bytes in the response bloat the
-conversation and vanish; files persist, and are what the director sees. Use `outSvg` alongside it
+conversation and vanish; files persist, and are what the director sees. Pass `outSvg` alongside it
 whenever the work is vector.
+
+> A logo is the archetypal vector deliverable — it will be set at 16px and on a building, and
+> Stage 6's scale ladder is only a *test* of a mark that is genuinely resolution-independent. So
+> build the mark itself on a `SnapPaper` and ship `artifacts/NN_name.svg` beside every render.
+> `outSvg` saves nothing at all from a script drawn on `createCanvas`, and says so only afterwards.
+> Manual 14 (`polson://manual/14`) has the decision and the vector API; the presentation boards —
+> `generateFaviconScaleTest`, `generateMonochromeTest`, `generateBrandPresentationSheet` — are
+> raster by nature and stay on a canvas.
 
 **3. Your scripts are kept for you.**
 Every script you execute is saved to `scripts/`, numbered in order, and referenced from the run
@@ -170,6 +178,7 @@ a mark that has only been seen at one size in one colour. Fix it and re-run the 
 
 - `Search` — the studio's design knowledge and API reference, in one query. Start here.
 - `polson://manual/index` — all studio manuals; `polson://manual/12` is this workflow's.
+  `polson://manual/14` is the vector surface the mark itself should be built on.
 - `polson://sdk/index` — the JS SDK map; `polson://sdk/core/Logo` and `polson://sdk/core/LogoType`
   are the areas you will live in.
 

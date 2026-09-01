@@ -84,6 +84,14 @@ Two configurations are refused with a message instead of nonsense coordinates:
 
 ---
 
+> **Atmosphere is made of noise, not of low-alpha shapes.** The three general shader presets —
+> `Drawing.createAtmosphericCloudShader(fx, fy, octaves, seed)` for air and vapour,
+> `createRopeFiberShader(...)` for fibrous material, and `createHalftoneDotShader(...)` for Ben-Day
+> tone — are documented in **Manual 04 §5**. Only the halftone one is really about comics; the other
+> two are general, and the atmospheric preset is what an aerial-perspective or haze pass wants.
+> Pair it with `Skia.MaskFilter.blur(sigma)`, which softens a shape's coverage rather than blurring
+> the result, so a mist bank has no edge. Reach for both before hand-writing SkSL.
+
 ## 3. Color Temperature & The Warm/Cool Rule
 
 > **Implemented by**: the colour options rather than a call of its own — pass complementary temperatures as `baseColor` / `shadowColor` / `bounceColor` to `Drawing.renderVolumetricSphere(...)`, and as `keyColor` / `fillColor` to `Drawing.createThreePointLighting(...)`. The defaults already obey the rule: warm key `#fff3d6` against cool fill `#8cb5db`.

@@ -45,7 +45,9 @@ record it in `findings.md` and try another documented approach.
 
 1. **The code** — the stage's script. The server saves every execution to `scripts/` automatically,
    numbered in order, so you need not copy it out yourself.
-2. **The render** — `ExecuteScript(script, outFile: 'artifacts/stageN_role.webp')`.
+2. **The render** — `ExecuteScript(script, outFile: 'artifacts/stageN_role.webp')`. Add
+   `outSvg: 'artifacts/stageN_role.svg'` whenever the stage is built on a `SnapPaper`, and check the
+   brief for a named format before deciding which surface to build on at all.
 
 ### Every downstream agent ingests both before it writes anything
 

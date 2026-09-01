@@ -279,6 +279,9 @@ public static partial class SnapAttributes
             "height" => GetHeight(element),
             "d" => (element as SvgPath)?.PathData?.ToString(),
             "text" => (element as SvgText)?.Text,
+            // Settable through attr(), so it must be readable through it. Without this the setter
+            // succeeded and the getter answered null, which reads as "the transform did not take".
+            "transform" => element.Transforms is { Count: > 0 } t ? t.ToString() : null,
             _ => element.CustomAttributes.TryGetValue(name, out var customVal) ? customVal : null
         };
     }

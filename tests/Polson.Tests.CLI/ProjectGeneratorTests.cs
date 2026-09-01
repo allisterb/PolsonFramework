@@ -972,6 +972,50 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// A workflow that produces a single finished picture must say where it goes.
+    /// </summary>
+    /// <remarks>
+    /// A painting run ended with its critique having correctly diagnosed and fixed a value-compression
+    /// problem — and left the corrected render as <c>artifacts/07_critique_1.webp</c> with no
+    /// <c>output.webp</c> at all. The staged renders are the trace; the newest one is not the
+    /// deliverable just because it is newest, and a viewer opening it sees the frame before the fix.
+    /// </remarks>
+    [Theory]
+    [InlineData("painting")]
+    [InlineData("comic")]
+    [InlineData("drawing")]
+    public void TestAPictureWorkflowSaysWhereTheFinishedPictureGoes(string workflow)
+    {
+        Assert.True(ProjectGenerator.Create(Options($"out-{workflow}", o => o.Workflow = workflow)));
+
+        var instructions = File.ReadAllText(Path.Combine(root, $"out-{workflow}", "GEMINI.md"));
+
+        Assert.Contains("outFile: 'output.webp'", instructions, StringComparison.Ordinal);
+        // The shared idea rather than shared prose: each workflow says this in its own words, and
+        // forcing one sentence across three templates is how they start reading as generated.
+        Assert.Contains("last numbered file in `artifacts/`", instructions, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Provenance is written while the facts are in front of you, not recalled at the end.
+    /// </summary>
+    /// <remarks>
+    /// <c>materials.md</c> was in the closing checklist, which is the part a run that ends early never
+    /// reaches — and it is the one file that answers "what did the model make and what did the agent
+    /// draw". It is now written during the requisition stage instead.
+    /// </remarks>
+    [Fact]
+    public void TestThePaintingRecordsItsRequisitionsWhenItMakesThem()
+    {
+        Assert.True(ProjectGenerator.Create(Options("prov", o => o.Workflow = "painting")));
+
+        var instructions = File.ReadAllText(Path.Combine(root, "prov", "GEMINI.md"));
+
+        Assert.Contains("Write `materials.md` as you requisition, not at the end", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// And where the project's own past lives, which is the one that decides whether the feature
     /// exists at all in practice.
     /// </summary>

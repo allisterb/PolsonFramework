@@ -124,9 +124,17 @@ and work through this deliberately. **Looking at the render and feeling satisfie
    and test it with `Drawing.verifyPlumbAlignment` or `getPixel`. "Too dark", "not showing up" and
    "wrong colour" look identical on screen and are three different bugs.
 
-Then **fix at least two things and re-render.** A critique that ends in a list of observations is
-half a stage; the deliverable is the corrected panel. Record what you changed and what you decided to
-live with — the second list is as useful as the first.
+Then **fix at least two things and re-render** — and keep going until the check that failed passes,
+rather than until you have made two changes. A critique that ends in a list of observations is half a
+stage; the deliverable is the corrected panel. Record what you changed and what you decided to live
+with — the second list is as useful as the first.
+
+> [!IMPORTANT]
+> **The corrected render is `output.webp`.** Write it there with `outFile: 'output.webp'` as part of
+> this stage. Do not leave the finished panel as the last numbered file in `artifacts/`: those are
+> the trace, and the last one is not the deliverable just because it is last. A run that stops after
+> a refinement pass leaves a corrected picture nobody will find, and a viewer looking at the newest
+> staged render sees the frame *before* the fix.
 
 ---
 

@@ -36,6 +36,16 @@ public class ManualExampleTests : TestsRuntime
             return data;
         }
     }
+
+    public static TheoryData<string> ManualIds
+    {
+        get
+        {
+            var data = new TheoryData<string>();
+            foreach (var manual in PolsonManuals.All) data.Add(manual.Id);
+            return data;
+        }
+    }
     #endregion
 
     #region Tests
@@ -56,19 +66,13 @@ public class ManualExampleTests : TestsRuntime
     /// Every manual calls the toolkit rather than describing it, and each must ship at least one
     /// end-to-end script an agent can paste into ExecuteScript unchanged.
     /// </summary>
+    /// <remarks>
+    /// Enumerated from the loaded corpus rather than listed by hand. The hand-written list had already
+    /// drifted — it stopped at 12, so Manual 13 shipped unchecked and Manual 14 would have too. A
+    /// mirror of a thing is one more place for that thing to be wrong.
+    /// </remarks>
     [Theory]
-    [InlineData("01")]
-    [InlineData("02")]
-    [InlineData("03")]
-    [InlineData("04")]
-    [InlineData("05")]
-    [InlineData("06")]
-    [InlineData("07")]
-    [InlineData("08")]
-    [InlineData("09")]
-    [InlineData("10")]
-    [InlineData("11")]
-    [InlineData("12")]
+    [MemberData(nameof(ManualIds))]
     public void TestEveryManualPublishesARunnableExample(string manualId)
     {
         var manual = PolsonManuals.Find(manualId);

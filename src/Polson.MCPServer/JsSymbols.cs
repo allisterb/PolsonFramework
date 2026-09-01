@@ -408,9 +408,24 @@ public static partial class JsSymbolManifest
     static (string Area, string Text)[]? slices;
 
     /// <summary>A type and its bases, stopping short of <see cref="object"/>.</summary>
+    /// <summary>
+    /// A receiver's type and the bases a script can actually reach members through.
+    /// </summary>
+    /// <remarks>
+    /// Stops at <see cref="Runtime"/> as well as at <c>object</c>. Several JS-reachable toolkits
+    /// inherit <c>Runtime</c> for logging and configuration, and walking into it published about
+    /// thirty .NET infrastructure members as though they were SDK calls —
+    /// <c>Assets.downloadFile</c>, <c>Assets.entryAssembly</c>, even <c>Assets.camelDir</c>, a name
+    /// left over from another project entirely.
+    /// <para>
+    /// That is worse than clutter. <c>Search</c> promises that a <c>direct</c> verdict means the call
+    /// exists and its signature is authoritative, and for those members the promise was false — an
+    /// agent asking about one would be told to go ahead and use it.
+    /// </para>
+    /// </remarks>
     static IEnumerable<Type> Ancestry(Type type)
     {
-        for (var t = type; t is not null && t != typeof(object); t = t.BaseType)
+        for (var t = type; t is not null && t != typeof(object) && t != typeof(Runtime); t = t.BaseType)
         {
             yield return t;
         }

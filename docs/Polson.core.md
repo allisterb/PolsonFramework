@@ -18,6 +18,8 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 - **Return Value & Visual Rendering:**
   - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to image bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**, with `"png"` and `"jpeg"` options available) and Base64 URI (`result.ImageDataUri`).
   - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. **Both are relative to the project directory, and a path resolving outside it is refused** — an absolute path or a `..` traversal fails with a message naming the project root rather than writing somewhere unexpected. Missing intermediate directories are created for you. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
+    > [!IMPORTANT]
+    > **`outSvg` needs a vector document to write.** It saves `result.SvgXml`, which only exists when the script built a `SnapPaper`. A script that draws entirely on a raster canvas has no markup to save, so `outSvg` writes **no file** and the run still reports success — the response carries a `[WARN] outSvg … wrote nothing` line, but by then the stage is drawn. **If the brief asks for an SVG, build the scene on `Snap(width, height)` from the first script.** Read `polson://manual/14` before choosing the surface.
   - For vector scenes (`SnapPaper` / `SnapElement`), `result.SvgXml` contains the serialized SVG XML markup. For 2D canvas raster scripts, `result.SvgXml` retains the last vector image produced by the agent prior to switching to 2D canvas mode.
   - If a script creates one or more canvases or Snap papers without explicitly returning them, the last created canvas/paper is rendered automatically.
 - **Logging & Output:** Output via `console.log(...)`, `log(...)`, `error(...)`, or `table(...)`.
@@ -158,6 +160,9 @@ Represents the root SVG canvas surface:
 - `paper.toImageBytes(width?: number, height?: number, format?: string, quality?: number)` → `byte[]` — Headlessly renders the SVG to image bytes (default: WebP Q=85).
 - `paper.toDataUri(format?: string, width?: number, height?: number, quality?: number)` → `string` — Renders to a `data:image/...;base64,...` URI (defaults to `format: 'svg'`).
 
+> [!NOTE]
+> **A paper is itself a `SnapElement`**, so everything under [`SnapElement`](#snapelement) works on it — most usefully `paper.select(...)`, `paper.selectAll(...)`, `paper.children`, `paper.attr(...)`, `paper.getBBox()` and the tree-placement calls. `paper.select('#mark')` searching the whole document is the ordinary way to find something a previous stage drew.
+
 ## Paint Servers — Gradients, Masks & Patterns (`SnapPaper`)
 
 Vector fills are not limited to flat colour. A paint server is created on the paper, lands in `<defs>` automatically, and is referenced by id:
@@ -207,11 +212,17 @@ Represents any SVG node in the document hierarchy:
 
 ### Node Properties
 
-- `element.id` → `string` — Gets or sets the element's id.
-- `element.type` → `string` — The SVG tag name.
+- `element.id` → `string` — Gets or sets the element's id. **An element has none until you assign one**, so `select('#name')` finds nothing on a shape you just drew unless you named it first.
+- `element.type` → `string` — The SVG tag name: `rect`, `circle`, `ellipse`, `path`, `g`, `text`, `tspan`, `textPath`, `line`, `polyline`, `polygon`, `image`, `use`, `svg`, `defs`, `mask`, `clipPath`, `pattern`, `linearGradient`, `radialGradient`, `stop`, `symbol`, `marker`.
 - `element.parent` → `SnapElement?` — The containing element.
-- `element.children` → `SnapElement[]` — Direct child elements.
+- `element.children` → `SnapElement[]` — Direct child elements. **A paper's children include its `<defs>`**, so filter on `type` rather than assuming index 0 is the first shape you drew.
 - `element.paper` → `SnapPaper?` — The document this element belongs to.
+
+> [!NOTE]
+> `parent` and `children` are **properties, not methods** — this is the one place the surface departs
+> from Snap.svg, where both are calls. Written as methods they answered `el.children.length` with the
+> delegate's arity, `0`, so a wrong spelling was indistinguishable from an empty tree. `el.children()`
+> now fails loudly instead.
 
 ### Tree Placement & Lifecycle
 
@@ -220,7 +231,7 @@ Represents any SVG node in the document hierarchy:
 - `element.add(...elements: SnapElement[])` → `SnapElement` — Appends children.
 - `element.before(other: SnapElement)` / `element.after(other: SnapElement)` → `SnapElement` — Moves this element immediately before or after `other` in document order, which is how you control z-order after construction.
 - `element.remove()` → `SnapElement` — Detaches the element from its parent container.
-- `element.clone()` → `SnapElement` — Deep-clones the element and its children.
+- `element.clone()` → `SnapElement` — Deep-clones the element and its children. The copy is **detached** — it appears in nothing until `appendTo`/`prependTo` places it, unlike Snap.svg which inserts it after the original — and it carries the original's `id`, so give it a new one before placing it.
 - `element.clear()` → `void` — Removes all child nodes from this container element.
 
 ### Geometry & Measurement

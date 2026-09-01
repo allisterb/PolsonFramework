@@ -185,7 +185,10 @@ a turn is cheap, and the record makes it reversible.
 
 There is no fixed endpoint; the director decides. When they call it, produce:
 
-1. **`output.webp`** — the final state of the shared surface.
+1. **`output.webp`** — the final state of the shared surface, written with
+   `outFile: 'output.webp'`. Not the last numbered file in `artifacts/`: those are the turns, and a
+   reader opening the newest one is looking at whichever turn happened to be last rather than at the
+   drawing.
 2. **`turns.md`** — one line per turn: number, move, what it responded to, what changed. Write it as
    you go rather than reconstructing it, because reconstruction is the thing the record exists to
    make unnecessary.

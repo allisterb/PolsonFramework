@@ -57,7 +57,7 @@ public class DrawingTests : TestsRuntime
         var group = paper.G(rect, circle);
         Assert.NotNull(group);
         Assert.Equal("g", group.Type);
-        Assert.Equal(2, group.Children().Count);
+        Assert.Equal(2, group.Children.Count);
     }
     #endregion
 
@@ -195,8 +195,8 @@ public class DrawingTests : TestsRuntime
 
         g1.Add(c1, c2);
 
-        Assert.Equal(2, g1.Children().Count);
-        Assert.Equal(g1.Node, c1.Parent()?.Node);
+        Assert.Equal(2, g1.Children.Count);
+        Assert.Equal(g1.Node, c1.Parent?.Node);
 
         var foundById = paper.Select("#mainCircle");
         Assert.NotNull(foundById);

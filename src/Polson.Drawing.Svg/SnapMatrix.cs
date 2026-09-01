@@ -157,14 +157,28 @@ public class SnapMatrix
         return this;
     }
 
-    public (float X, float Y) TransformPoint(float x, float y) =>
-        (A * x + C * y + E, B * x + D * y + F);
+    /// <summary>Applies the matrix to a point.</summary>
+    /// <remarks>
+    /// Returns a <see cref="SnapPoint"/> rather than a tuple because this is on the JS surface. Jint
+    /// exposes a <c>ValueTuple</c> as <c>Item1</c>/<c>Item2</c> — element names are compile-time only —
+    /// so the documented <c>point.x</c> read back as <c>undefined</c> with no error. Use
+    /// <see cref="Map"/> for the tuple form inside this assembly.
+    /// </remarks>
+    public SnapPoint TransformPoint(float x, float y)
+    {
+        var (tx, ty) = Map(x, y);
+        return new SnapPoint(tx, ty);
+    }
 
     public SnapPoint TransformPoint(SnapPoint pt)
     {
-        var (x, y) = TransformPoint(pt.X, pt.Y);
+        var (x, y) = Map(pt.X, pt.Y);
         return new SnapPoint(x, y, pt.Alpha, pt.M, pt.N);
     }
+
+    /// <summary>The transform as a tuple, for internal destructuring. Not part of the JS surface.</summary>
+    internal (float X, float Y) Map(float x, float y) =>
+        (A * x + C * y + E, B * x + D * y + F);
 
     public SnapMatrix Clone() => new(this);
 

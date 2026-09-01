@@ -87,10 +87,10 @@ and you cannot condition a backdrop until there is a silhouette to condition it 
 | :--- | :--- |
 | `Composition` | The armature and the value plan. Greyscale, no material, no colour. Manual 09. |
 | `Blocking` | Every form constructed as geometry, in flat placeholder tones. The picture reads. |
-| `Requisition` | Materials and the backdrop plate fetched, logged with size and budget remaining. |
+| `Requisition` | Materials and the backdrop plate fetched, **and `materials.md` written** — see below. |
 | `Materials` | Each material clipped into the form it belongs to. |
 | `Light` | One light, obeyed everywhere: key, shadow, bounce, rim, cast shadows. Manual 07. |
-| `Atmosphere` | Depth: aerial perspective, haze, glow, grade. Manual 07 §3 for warm/cool. |
+| `Atmosphere` | Depth: aerial perspective, haze, glow, grade. Manual 07 §3 for warm/cool, and see below. |
 | `Critique` | The audit, and at least two refinement passes. See below. |
 
 ### The value plan comes first, and it is greyscale
@@ -98,6 +98,16 @@ and you cannot condition a backdrop until there is a silhouette to condition it 
 A painting fails at the value structure long before it fails at the colour, and material hides that
 failure. `Drawing.createNotanPalette('classic3')` and Manual 09 §3 — if the composition does not read
 as two or three masses in grey, no amount of oak planking will save it.
+
+### Write `materials.md` as you requisition, not at the end
+
+Every requisition goes in it the moment it returns: the descriptor, what you intend it for, the
+size, and `Assets.budget.remaining` after it. That is the provenance record — a painting that cannot
+say what was generated and what was drawn is one nobody can assess — and it is the first thing lost
+when a run ends early, because a closing checklist is the part a run never reaches.
+
+Writing it here also means writing it from the result in front of you rather than from memory of six
+requisitions ago. Add a line to it whenever you requisition again later.
 
 ### Applying a material
 
@@ -120,6 +130,29 @@ ctx.fillStyle = Skia.Shader.bitmap(plank, 'repeat', 'repeat');
 ctx.fillRect(0, 0, WIDTH, HEIGHT);
 ctx.restore();
 ```
+
+### Atmosphere is not flat shapes with low opacity
+
+This is where a painting most often reverts to looking procedural, and the failure is always the
+same: haze drawn as ellipses at 15% alpha, which reads as ellipses at 15% alpha. Vapour has no edge.
+
+Three calls, none of them exotic, and none needing hand-written SkSL:
+
+- **`Drawing.createAtmosphericCloudShader(fx, fy, octaves, seed)`** — the isotropic fractal preset
+  for air and vapour, whose defaults are already tuned for it. Fill the haze mass with this instead
+  of a flat colour. Documented in Manual 04 §5 rather than Manual 07, which is a filing accident:
+  the three shader presets there are general, and only the halftone one is really about comics.
+- **`ctx.maskFilter = Skia.MaskFilter.blur(sigma)`** — softens the shape's *coverage* rather than
+  blurring the result, which is the difference between a shape and a veil. `'outer'` gives a halo
+  around a form the mist is passing behind.
+- **`Skia.Shader.perlinNoiseTurbulence(...)`** at low amplitude over the whole frame, composited
+  with `'overlay'` or `'soft-light'`. This is what stops flat vector fills reading as vector, and it
+  costs one script.
+
+> [!NOTE]
+> These run natively, so a full-frame noise field costs about what a flat fill does. The reason to
+> reach for them is not performance — it is that a nocturne assembled from hard-edged shapes at low
+> alpha looks assembled, however good the materials underneath are.
 
 ### Let the plate tell you where the light is
 
@@ -151,8 +184,20 @@ feeling satisfied is not this stage.**
    is guaranteed true on success, but a material *scaled* wrongly still bands — look at a large flat
    area at full size.
 
-Then **fix at least two things and re-render.** Record what you changed and what you decided to live
+Then **fix at least two things and re-render** — and keep going until the check that failed passes,
+rather than until you have made two changes. Record what you changed and what you decided to live
 with.
+
+> [!IMPORTANT]
+> **The corrected render is `output.webp`.** Write it there with `outFile: 'output.webp'` as part of
+> this stage; do not leave the finished painting as the last numbered file in `artifacts/`. A run
+> that stops after a refinement pass has a corrected picture nobody will find — the staged renders
+> are the trace, and the last one is not the deliverable just because it is last.
+>
+> A real run did exactly this: the atmosphere pass compressed the whole painting into 11% of the
+> tonal range, the critique correctly diagnosed it as value compression and fixed it, and then the
+> run ended with the fix sitting in `artifacts/07_critique_1.webp` and no `output.webp` at all. The
+> viewer was left looking at the flattened frame.
 
 ---
 
@@ -165,9 +210,8 @@ In this directory:
 1. **`artifacts/`** — the staged renders, one per stage.
 2. **`artwork.js`** — the consolidated master script.
 3. **`output.webp`** — the finished painting.
-4. **`materials.md`** — every requisition: descriptor, what it was used for, and the budget spent.
-   This is the provenance record, and a painting that cannot say what was generated and what was
-   drawn is a painting nobody can assess.
+4. **`materials.md`** — written during `Requisition` and added to as you go, not composed here.
+   Check it covers every requisition and says what each was used for.
 5. **`findings.md`** — what broke, what you could not find, what misled you.
 
 ---

@@ -15,8 +15,14 @@ public class KnowledgeSearchTests : TestsRuntime
     {
         var manuals = PolsonManuals.All;
 
-        Assert.Equal(13, manuals.Count);
-        Assert.Equal(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13"], manuals.Select(m => m.Id));
+        // Numbering is contiguous from 01 and derived from what loaded, rather than a list to keep in
+        // step. What matters is that every file embedded as a resource parsed and none went missing —
+        // a gap in the sequence means a manual failed to load, which a fixed count would report as a
+        // mismatch without saying which.
+        Assert.NotEmpty(manuals);
+        Assert.Equal(
+            Enumerable.Range(1, manuals.Count).Select(i => i.ToString("00")),
+            manuals.Select(m => m.Id));
         Assert.All(manuals, m =>
         {
             Assert.NotEmpty(m.Title);

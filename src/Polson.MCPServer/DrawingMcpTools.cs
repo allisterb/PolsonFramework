@@ -352,6 +352,23 @@ public class DrawingMcpTools
                     ["format"] = "svg"
                 });
             }
+            else if (!string.IsNullOrWhiteSpace(outSvg) && result.Success)
+            {
+                // Asking for vector output and getting silence is how a run answers a brief that said
+                // "an SVG" with a .webp and never notices. There is no vector document to write
+                // because the script never made one — say so, on the response the agent reads.
+                result.Logs.Add(
+                    $"[WARN] outSvg '{outSvg}' wrote nothing: this script produced no vector document, " +
+                    "so there is no SVG markup to save. A raster canvas (createCanvas / getContext('2d')) " +
+                    "renders to pixels only. Build the scene on a Snap paper — Snap(width, height) — and " +
+                    "return it, or drop outSvg. See polson://manual/14.");
+
+                Events.Append("render.novector", session.Stage, executionId, new Dictionary<string, object?>
+                {
+                    ["script"] = scriptPath,
+                    ["requested"] = outSvg
+                });
+            }
 
             Events.Append(result.Success ? "script.ok" : "script.error", session.Stage, executionId, new Dictionary<string, object?>
             {

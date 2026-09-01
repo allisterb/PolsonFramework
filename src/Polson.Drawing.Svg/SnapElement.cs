@@ -346,12 +346,25 @@ public class SnapElement
         return this;
     }
 
-    public virtual SnapElement? Parent() =>
+    /// <remarks>
+    /// A property, not a method, because that is how the SDK reference spells it and the reference is
+    /// what an agent reads. Snap.svg's own <c>el.parent()</c> is a method, so a script written from
+    /// memory of Snap.svg now fails loudly — which is the point. As a method, <c>el.children.length</c>
+    /// answered with the delegate's arity, <c>0</c>, so a wrong spelling was indistinguishable from an
+    /// empty tree and no script could tell it had asked the wrong question.
+    /// </remarks>
+    public virtual SnapElement? Parent =>
         Node.Parent != null ? Wrap(Node.Parent, Paper) : null;
 
-    public virtual List<SnapElement> Children() =>
+    /// <inheritdoc cref="Parent"/>
+    public virtual List<SnapElement> Children =>
         Node.Children.Select(c => Wrap(c, Paper)).ToList();
 
+    /// <remarks>
+    /// The clone is <b>detached</b>: it has no parent until <c>appendTo</c>/<c>prependTo</c> places it.
+    /// Snap.svg inserts the copy after the original; here the placement is the caller's, so a clone
+    /// made only to measure or to seed a <c>&lt;defs&gt;</c> entry does not silently double the drawing.
+    /// </remarks>
     public virtual SnapElement Clone()
     {
         var clonedNode = Node.DeepCopy();
@@ -488,6 +501,17 @@ public class SnapElement
             SvgClipPath => "clipPath",
             SvgPatternServer => "pattern",
             SvgUse => "use",
+            SvgDefinitionList => "defs",
+            SvgTextSpan => "tspan",
+            SvgTextPath => "textPath",
+            SvgSymbol => "symbol",
+            SvgMarker => "marker",
+            // SvgDocument derives from SvgFragment, so this must stay below it; both are "svg".
+            SvgFragment => "svg",
+            // The fallback lowercases and strips the "Svg" prefix, which is wrong for every tag whose
+            // SVG spelling is not one lowercase word — it produced "definitionlist" for <defs> and
+            // "textspan" for <tspan>. Anything creatable by el(name) is named explicitly above; this
+            // remains only so an element the adapter did not create still reports something.
             _ => node.GetType().Name.ToLowerInvariant().Replace("svg", "")
         };
 
@@ -560,10 +584,10 @@ public class SnapElement
 
         if (matrix != null && !matrix.IsIdentity)
         {
-            var (p1x, p1y) = matrix.TransformPoint(x, y);
-            var (p2x, p2y) = matrix.TransformPoint(x + w, y);
-            var (p3x, p3y) = matrix.TransformPoint(x + w, y + h);
-            var (p4x, p4y) = matrix.TransformPoint(x, y + h);
+            var (p1x, p1y) = matrix.Map(x, y);
+            var (p2x, p2y) = matrix.Map(x + w, y);
+            var (p3x, p3y) = matrix.Map(x + w, y + h);
+            var (p4x, p4y) = matrix.Map(x, y + h);
 
             var minX = MathF.Min(MathF.Min(p1x, p2x), MathF.Min(p3x, p4x));
             var maxX = MathF.Max(MathF.Max(p1x, p2x), MathF.Max(p3x, p4x));

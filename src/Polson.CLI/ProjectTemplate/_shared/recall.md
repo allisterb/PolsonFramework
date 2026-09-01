@@ -36,3 +36,8 @@ on work you did not do, so take it rather than reading the note and moving on.
 
 `Recall` is memory across sessions. `History` is the scripts you ran moments ago in this one, and
 `Search` is design theory and the API. Three different questions; do not reach for the wrong one.
+
+**Manual 18 (`polson://manual/18`) is the other half of this** — how the record you are writing gets
+made: what `Stage.begin` files under what, why a re-declaration is a continuation rather than a
+switch, and the difference between `log(...)`, which reaches only the caller of one tool call, and
+`Stage.note(...)`, which is what any of this recalls later.

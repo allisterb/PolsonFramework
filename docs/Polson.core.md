@@ -59,7 +59,7 @@ The following global functions and objects are injected directly into the script
 ### `console`
 The logging console:
 - `console.log(...args: any[])` — Record an informational line.
-- `console.info(...args: any[])` — Alias for `console.log`.
+- `console.info(...args: any[])` — Record an informational line at `[INFO]`. **Not an alias for `console.log`** — the two are distinguishable in the log, which is `[LOG]` for `log` and `console.log`.
 - `console.warn(...args: any[])` — Record a warning log line.
 - `console.error(...args: any[])` — Record an error log line.
 - `console.debug(...args: any[])` — Record a debug log line.
@@ -98,7 +98,7 @@ Declares which stage of work you are in, so every script, render and note that f
 
 - `Stage.begin(name: string)` → `string` — Declares the stage and returns the name as recorded. Beginning a **different** stage closes the previous one first, so two never overlap. Re-declaring the stage you are already in is an announcement, not a transition: it records a continuation and leaves the stage running, so you can safely restate it at the top of each script. Case is ignored when comparing, and the originally recorded spelling is kept.
 - `Stage.end()` — Ends the current stage. Harmless when none is open.
-- `Stage.current` → `string?` — The stage in effect, or `undefined` if none.
+- `Stage.current` → `string?` — The stage in effect, or **`null`** if none, so `if (!Stage.current)` is the check to write. Outside a project — an ad-hoc engine with no run session — this always reads `null`, even directly after `Stage.begin(...)`, because the stage lives on the session.
 - `Stage.note(message: string)` — Records a note under the current stage.
 
 `log(...)` reaches only the caller of the one tool call that produced it. `Stage.note(...)` persists into the run's record, and is what a reader sees afterwards — use it for the reasoning that would otherwise be lost, such as why a direction was abandoned or what a render was meant to test.

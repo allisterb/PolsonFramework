@@ -31,6 +31,7 @@ obligations travel with the material regardless of what this file says:
 | 15 | Deshpande, Trajkova, Knowlton & Magerko, *Observable Creative Sense-Making*, C&C '23 | **CC BY 4.0** — the only adaptable paper in `reference/papers/`. Its newness scale and applicability clause are adapted and attributed. Davis et al., *Creative Sense-Making*, C&C '17 (ACM, all rights reserved) is **cited only**, for the 4:1 coding cost. |
 | 16 | — | No external source. Documents a Polson subsystem and the studio's own form-versus-substance policy. |
 | 17 | Klaus Janson, *The DC Comics Guide to Pencilling Comics* (Watson-Guptill / DC Comics, 2002), ch. 1 and ch. 13 | All rights reserved. Distilled and cited in our own words, never quoted at length — same handling as the Bokhua row. |
+| 18 | Davis, Hsiao, Singh, Lin & Magerko, *Creative Sense-Making*, C&C '17 | ACM, all rights reserved. Its three stated limitations of video coding are cited and answered, not quoted. The OCSM applicability clause (CC BY 4.0) is attributed as in Manual 15. |
 
 `docs/creative-sense-making.md` implements a framework from the research
 literature — principally Nicholas Davis's work on creative sense-making and the

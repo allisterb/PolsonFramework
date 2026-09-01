@@ -62,32 +62,36 @@ public class ManualCoverageTests : TestsRuntime
     /// primitive like <c>ctx.miterLimit</c> does not need design theory written about it.
     /// </para>
     /// <para>
-    /// <b>The remaining gap is <c>Globals</c> (16%)</b> — no manual teaches <c>Stage.begin</c>,
-    /// <c>Stage.current</c>, the <c>console.*</c> levels or any of <c>mina.*</c>, even though the
-    /// stage declaration is what makes a run legible after the fact. That is the next manual to write.
-    /// The residue elsewhere is thinner and more defensible: <c>Scale</c> (50%) is mostly accessor
-    /// properties a chart reads without a manual naming them, and <c>Canvas2D</c> (74%) is raster
-    /// primitives like <c>ctx.miterLimit</c> that need no design theory written about them.
+    /// <b>What is left is mostly measurement artifact rather than missing manual.</b> <c>Snap</c>'s
+    /// residue is dominated by two of them: the manifest publishes a few members capitalised
+    /// (<c>Snap.Path</c>, <c>element.Paper</c>, <c>paper.Defs</c>) where the reference documents the
+    /// camelCase spelling an agent actually types, and every member <c>SnapGradient</c> inherits from
+    /// <c>SnapElement</c> is counted a second time as <c>gradient.polyline</c>, <c>gradient.image</c>
+    /// and so on. Neither is a passage anyone should write. <c>Scale</c> (54%) is accessor properties
+    /// — <c>band.step</c>, <c>scale.domainStart</c> — that a chart reads without a manual naming them,
+    /// and <c>Canvas2D</c> (75%) is raster primitives like <c>ctx.miterLimit</c> that need no design
+    /// theory. Fixing the manifest's spellings would raise <c>Snap</c> without a word being written,
+    /// which is the honest way to close that particular gap.
     /// </para>
     /// </remarks>
     public static readonly IReadOnlyDictionary<string, int> Floors = new Dictionary<string, int>(StringComparer.Ordinal)
     {
-        ["Skia"] = 98,
+        ["Skia"] = 100,
+        ["Globals"] = 100,
         ["Drawing"] = 97,
         ["Assets"] = 92,
-        ["Canvas2D"] = 74,
+        ["Snap"] = 77,
+        ["Canvas2D"] = 75,
         ["VectorLogo"] = 74,
-        ["Snap"] = 70,
         ["Css"] = 66,
         ["Layout"] = 66,
         ["LogoType"] = 66,
         ["Logo"] = 65,
-        ["Scale"] = 50,
-        ["Globals"] = 16,
+        ["Scale"] = 54,
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>
-    private const int OverallFloor = 76;
+    private const int OverallFloor = 81;
     #endregion
 
     #region Properties

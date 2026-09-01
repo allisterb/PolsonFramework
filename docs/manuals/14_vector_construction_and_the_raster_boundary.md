@@ -182,7 +182,7 @@ const at = m.transformPoint(0, 0);        // { x, y } — where a point lands
 mark.transform(m);                        // matrices are accepted wherever a string is
 ```
 
-`translate`, `rotate`, `scale`, `skewX`, `skewY` each post-multiply and return the matrix, so they chain. `mult(other)` post-multiplies an existing matrix and `multLeft(other)` pre-multiplies — the difference between "then do this" and "do this first". `invert()` returns the inverse, `clone()` a copy, `determinant` the scale factor of the whole transform, and `isIdentity` whether it does anything at all. `toTransformString()` is the `matrix(...)` form.
+`matrix.translate(dx, dy)`, `matrix.rotate(deg, cx, cy)`, `matrix.scale(sx, sy, cx, cy)`, `matrix.skewX(deg)` and `matrix.skewY(deg)` each post-multiply and return the matrix, so they chain. `matrix.mult(other)` post-multiplies an existing matrix and `matrix.multLeft(other)` pre-multiplies — the difference between "then do this" and "do this first". `matrix.invert()` returns the inverse, `matrix.clone()` a copy, `matrix.determinant` the scale factor of the whole transform, and `matrix.isIdentity` whether it does anything at all. `matrix.toTransformString()` is the `matrix(...)` form.
 
 **`transformPoint` is what makes a transform measurable.** A transform moves ink; it does not tell you where the ink went. To place a label at the tip of a rotated arm, or to check that a scaled group still sits inside its clear space, transform the point yourself and read the coordinates:
 

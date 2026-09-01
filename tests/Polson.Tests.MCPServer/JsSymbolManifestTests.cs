@@ -99,6 +99,52 @@ public class JsSymbolManifestTests
         Assert.NotNull(JsSymbolManifest.Resolve("Skia.Shader"));
         Assert.NotNull(JsSymbolManifest.Resolve("Skia.ImageFilter"));
     }
+
+    /// <summary>
+    /// ...and nothing else does. A capital is reserved for a namespace the registry names in its own
+    /// right; every other member takes the ordinary camelCase mapping.
+    /// </summary>
+    /// <remarks>
+    /// The rule used to be "any property whose type is a receiver", which asks a different question
+    /// and answered it wrongly for every property that merely <i>returns</i> one. The manifest
+    /// published <c>element.Paper</c>, <c>paper.Defs</c>, <c>canvas.Bitmap</c>, <c>Snap.Path</c> and
+    /// <c>Assets.Budget</c> — five names the reference does not document and no script would type,
+    /// offered by <c>Search</c> under a promise that a direct hit is authoritative.
+    /// </remarks>
+    [Fact]
+    public void TestOnlyRegisteredNamespacesAreCapitalised()
+    {
+        var capitalised = JsSymbolManifest.Symbols
+            .Where(s => char.IsUpper(s.Name.Split('.').Last()[0]))
+            .Select(s => s.Name)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var registered = JsSurface.Receivers.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        var unexpected = capitalised.Where(n => !registered.Contains(n)).ToArray();
+
+        Assert.True(unexpected.Length == 0,
+            "these are published with a leading capital but are not registered namespaces, so the "
+            + "manifest is offering a spelling the reference does not use: " + string.Join(", ", unexpected));
+    }
+
+    /// <summary>The specific names that were wrong, so the regression is named rather than implied.</summary>
+    [Theory]
+    [InlineData("Snap.path")]
+    [InlineData("paper.defs")]
+    [InlineData("element.paper")]
+    [InlineData("element.parent")]
+    [InlineData("element.children")]
+    [InlineData("canvas.bitmap")]
+    [InlineData("Assets.budget")]
+    public void TestAValueReturningPropertyIsCamelCase(string name)
+    {
+        Assert.NotNull(JsSymbolManifest.Resolve(name));
+
+        var wrongCase = name[..(name.LastIndexOf('.') + 1)]
+            + char.ToUpperInvariant(name.Split('.').Last()[0]) + name.Split('.').Last()[1..];
+        Assert.DoesNotContain(JsSymbolManifest.Symbols, s => string.Equals(s.Name, wrongCase, StringComparison.Ordinal));
+    }
     #endregion
 
     #region Resolution

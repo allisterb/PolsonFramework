@@ -62,16 +62,20 @@ public class ManualCoverageTests : TestsRuntime
     /// primitive like <c>ctx.miterLimit</c> does not need design theory written about it.
     /// </para>
     /// <para>
-    /// <b>What is left is mostly measurement artifact rather than missing manual.</b> <c>Snap</c>'s
-    /// residue is dominated by two of them: the manifest publishes a few members capitalised
-    /// (<c>Snap.Path</c>, <c>element.Paper</c>, <c>paper.Defs</c>) where the reference documents the
-    /// camelCase spelling an agent actually types, and every member <c>SnapGradient</c> inherits from
-    /// <c>SnapElement</c> is counted a second time as <c>gradient.polyline</c>, <c>gradient.image</c>
-    /// and so on. Neither is a passage anyone should write. <c>Scale</c> (54%) is accessor properties
-    /// — <c>band.step</c>, <c>scale.domainStart</c> — that a chart reads without a manual naming them,
-    /// and <c>Canvas2D</c> (75%) is raster primitives like <c>ctx.miterLimit</c> that need no design
-    /// theory. Fixing the manifest's spellings would raise <c>Snap</c> without a word being written,
-    /// which is the honest way to close that particular gap.
+    /// <b>Part of what looked like a manual gap was a manifest defect, and was fixed there instead.</b>
+    /// <c>Snap</c> rose from 70% to 82% without a word being written: the manifest had been publishing
+    /// <c>Snap.Path</c>, <c>element.Paper</c>, <c>paper.Defs</c>, <c>element.Parent</c> and
+    /// <c>Assets.Budget</c> capitalised — spellings the reference does not document — and leaking
+    /// <c>paper.node</c> / <c>gradient.node</c>, raw escape hatches excluded on <c>element</c> but not
+    /// on the receivers that inherit them. A symbol nobody should type is not a gap a manual can close.
+    /// </para>
+    /// <para>
+    /// What remains is thinner and more defensible. <c>Scale</c> (54%) is accessor properties —
+    /// <c>band.step</c>, <c>scale.domainStart</c> — that a chart reads without a manual naming them;
+    /// <c>Canvas2D</c> (75%) is raster primitives like <c>ctx.miterLimit</c> that need no design theory
+    /// written about them; and <c>Snap</c>'s residue is mostly aliases (<c>group</c> for <c>g</c>,
+    /// <c>append</c> for <c>add</c>) plus every member <c>SnapGradient</c> inherits from
+    /// <c>SnapElement</c>, counted a second time as <c>gradient.polyline</c> and friends.
     /// </para>
     /// </remarks>
     public static readonly IReadOnlyDictionary<string, int> Floors = new Dictionary<string, int>(StringComparer.Ordinal)
@@ -79,8 +83,8 @@ public class ManualCoverageTests : TestsRuntime
         ["Skia"] = 100,
         ["Globals"] = 100,
         ["Drawing"] = 97,
-        ["Assets"] = 92,
-        ["Snap"] = 77,
+        ["Assets"] = 94,
+        ["Snap"] = 82,
         ["Canvas2D"] = 75,
         ["VectorLogo"] = 74,
         ["Css"] = 66,
@@ -91,7 +95,7 @@ public class ManualCoverageTests : TestsRuntime
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>
-    private const int OverallFloor = 81;
+    private const int OverallFloor = 82;
     #endregion
 
     #region Properties

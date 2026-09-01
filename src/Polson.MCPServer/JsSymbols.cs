@@ -210,7 +210,13 @@ public static partial class JsSymbolManifest
     public static IReadOnlyList<JsSymbol> Build()
     {
         var symbols = new List<JsSymbol>();
-        var receiverTypes = JsSurface.Receivers.SelectMany(r => r.Types).ToHashSet();
+
+        // Which receiver name a type is registered under, so an exclusion written against the type
+        // that declares a member can be found again from every receiver that inherits it.
+        var receiverOf = JsSurface.Receivers
+            .SelectMany(r => r.Types.Select(t => (Type: t, r.Name)))
+            .GroupBy(x => x.Type)
+            .ToDictionary(g => g.Key, g => g.First().Name);
 
         foreach (var receiver in JsSurface.Receivers)
         {
@@ -229,11 +235,31 @@ public static partial class JsSymbolManifest
                 if (JsSurface.Excluded.ContainsKey($"{receiver.Name}.{JsName(member.Name)}")) continue;
                 if (member.Name.StartsWith("op_", StringComparison.Ordinal)) continue;
 
-                // A property whose type is itself a receiver is a namespace accessor, and the
-                // reference spells those with a leading capital: Skia.Shader, not Skia.shader.
-                var isNamespace = member is PropertyInfo np && receiverTypes.Contains(np.PropertyType);
+                // An exclusion follows the member it was written for down the inheritance chain.
+                // `element.node` is excluded as a raw Svg.NET escape hatch, but a paper and a
+                // gradient are both SnapElements, so paper.node and gradient.node were published as
+                // SDK calls — the same escape hatch under two names nobody had thought to exclude.
+                if (member.DeclaringType is { } declaring
+                    && receiverOf.TryGetValue(declaring, out var declaringReceiver)
+                    && declaringReceiver != receiver.Name
+                    && JsSurface.Excluded.ContainsKey($"{declaringReceiver}.{JsName(member.Name)}")) continue;
 
-                var jsName = isNamespace ? member.Name : JsName(member.Name);
+                // A namespace accessor is one the registry above names as a receiver in its own
+                // right — "Skia.Shader" is an entry, so Skia.Shader keeps its capital. Its
+                // registered spelling is authoritative, which is what makes Snap.path lowercase
+                // while Skia.Shader is not; both are how the reference writes them.
+                //
+                // The previous rule was "any property whose type is a receiver", which is a
+                // different question and gave the wrong answer for every property that merely
+                // *returns* one: element.paper, paper.defs, canvas.bitmap and Assets.budget were
+                // published as element.Paper, paper.Defs, canvas.Bitmap and Assets.Budget —
+                // capitalised names the reference does not document and an agent would not type.
+                var namespaceReceiver = JsSurface.Receivers.FirstOrDefault(r =>
+                    string.Equals(r.Name, $"{receiver.Name}.{member.Name}", StringComparison.OrdinalIgnoreCase));
+
+                var jsName = namespaceReceiver is not null
+                    ? namespaceReceiver.Name[(receiver.Name.Length + 1)..]
+                    : JsName(member.Name);
 
                 // Where a call is documented is not always its receiver's home area: paper.squircle
                 // is declared on SnapPaper but written up under VectorLogo. Pointing an agent at the
@@ -246,7 +272,7 @@ public static partial class JsSymbolManifest
                     member is MethodInfo ? "method" : "property",
                     area,
                     $"polson://sdk/core/{area}",
-                    Signature(member),
+                    Signature(member, jsName),
                     member.DeclaringType?.Name ?? receiver.Types[0].Name,
                     member.Name,
                     !receiver.Types.Contains(member.DeclaringType)));
@@ -443,18 +469,24 @@ public static partial class JsSymbolManifest
         ? clr
         : char.ToLowerInvariant(clr[0]) + clr[1..];
 
-    static string Signature(MemberInfo member)
+    /// <summary>The member's signature, spelled the way the symbol is named.</summary>
+    /// <param name="jsName">
+    /// The resolved JS spelling. Passed in rather than recomputed, so a namespace accessor's
+    /// signature reads <c>Shader: SkiaShaderApi</c> and not <c>shader: SkiaShaderApi</c> under a
+    /// symbol called <c>Skia.Shader</c> — a search result that contradicts its own heading.
+    /// </param>
+    static string Signature(MemberInfo member, string jsName)
     {
         if (member is PropertyInfo p)
         {
-            return $"{JsName(p.Name)}: {JsType(p.PropertyType)}";
+            return $"{jsName}: {JsType(p.PropertyType)}";
         }
 
         var m = (MethodInfo)member;
         var args = m.GetParameters().Select(a =>
             $"{a.Name}{(a.IsOptional ? "?" : "")}: {JsType(a.ParameterType)}");
 
-        return $"{JsName(m.Name)}({string.Join(", ", args)}) -> {JsType(m.ReturnType)}";
+        return $"{jsName}({string.Join(", ", args)}) -> {JsType(m.ReturnType)}";
     }
 
     static string JsType(Type t)

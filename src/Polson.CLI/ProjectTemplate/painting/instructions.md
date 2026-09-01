@@ -101,13 +101,17 @@ as two or three masses in grey, no amount of oak planking will save it.
 
 ### Write `materials.md` as you requisition, not at the end
 
-Every requisition goes in it the moment it returns: the descriptor, what you intend it for, the
-size, and `Assets.budget.remaining` after it. That is the provenance record — a painting that cannot
-say what was generated and what was drawn is one nobody can assess — and it is the first thing lost
-when a run ends early, because a closing checklist is the part a run never reaches.
+Every requisition goes in it the moment it returns: the descriptor, **what you intend it for**, the
+size, and `Assets.budget.remaining` after it.
 
-Writing it here also means writing it from the result in front of you rather than from memory of six
-requisitions ago. Add a line to it whenever you requisition again later.
+The server already records the transaction — each call writes an `asset.requisition` event with the
+descriptor, the model, whether it succeeded and whether it came from cache, and a refused descriptor
+writes `asset.refused` with the reason. So `materials.md` is not there to list what you bought; it is
+there to say **what each surface is for**, which is the half nothing else can capture. Write it as
+the result comes back rather than from memory of six requisitions ago, and it survives a run that
+ends early — a closing checklist is the part a run never reaches.
+
+Add a line to it whenever you requisition again later.
 
 ### Applying a material
 
@@ -187,9 +191,25 @@ feeling satisfied is not this stage.**
    is guaranteed true on success, but a material *scaled* wrongly still bands — look at a large flat
    area at full size.
 
-Then **fix at least two things and re-render** — and keep going until the check that failed passes,
-rather than until you have made two changes. Record what you changed and what you decided to live
+Then **fix at least two things and re-render** — and keep going until the check that failed passes
+**and that pass is recorded with `Stage.check`**, rather than until you have made two changes. A
+re-measurement you only `log(...)` reaches this tool call and nowhere else, so the record still says
+the fault was found and never says it was fixed. Record what you changed and what you decided to live
 with.
+
+> [!IMPORTANT]
+> **State each check as a claim, and settle it.** `Stage.expect('the accent should stay under 15% of
+> the frame')` before the render, `Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)`
+> after it. The measurements record themselves — `diff`, `palette` and `rowProfile` each write what
+> they found — but only you can say what you were aiming at, and without that a critique that found
+> nothing wrong is indistinguishable in the record from one that never looked. A failing check is not
+> a failing stage; it is the stage doing its job. Manual 15 §8 has the protocol.
+>
+> **Two rules, both broken by a real run.** *Settle every claim you state* — an `expect` with no
+> `check` reads as verification and is not, and is worse than saying nothing. *Re-run the failing
+> check after you fix it, so the pass is recorded* — the failure names the fault, the pass is the
+> only evidence the fix landed. Re-measuring in a `log(...)` line does not count: it reaches this
+> tool call and nothing else.
 
 > [!IMPORTANT]
 > **The corrected render is `output.webp`.** Write it there with `outFile: 'output.webp'` as part of

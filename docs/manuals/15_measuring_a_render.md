@@ -196,12 +196,44 @@ Now `bands` is the notan: how much of the frame sits in each value band, and whe
 
 Measurement is worth something only when the expectation is written down *before* the render. Four steps:
 
-1. **State the expectation as a number**, in a `Stage.note` — "the accent should be under 15% of the frame", "the horizon should sit within 4px of y=380".
+1. **State the expectation as a number**, with `Stage.expect(...)` — "the accent should be under 15% of the frame", "the horizon should sit within 4px of y=380". Before the render, so you can be wrong about it.
 2. **Keep the before.** `const before = canvas.toBitmap()`, or load the previous stage's artifact from disk.
 3. **Measure after.** `diff` for *did anything change and where*, `rowProfile` for *is the shape right*, `palette` for *is the tonal balance right*, `getPixel` for *is this specific thing what I said it was*.
-4. **Record the number, not the verdict.** "similarity 0.96, bounds over the lower third" is a fact the next stage can act on. "Looks better" is not.
+4. **Settle every claim with `Stage.check(...)`.** It takes the claim, the verdict and the measured value, returns the verdict so you can branch on it, and puts all three in the record.
+5. **Fix what failed, then check it again — and record that check too.** The failing check identifies the fault. The *passing* check afterwards is the only evidence the fix worked.
 
-A critique stage that ends without a number has not verified anything, however carefully it looked.
+```js
+Stage.expect('the accent should stay under 15% of the frame');
+// …render, then measure…
+const accent = render.palette(4)[1].share;
+if (!Stage.check('accent under 15%', accent < 0.15, 'measured ' + (accent * 100).toFixed(1) + '%')) {
+    // the check is the thing that fails, not the run — now fix it
+}
+```
+
+> [!IMPORTANT]
+> **The measurements record themselves; the expectation is the part only you can supply.** `diff`,
+> `palette` and `rowProfile` each write an `observe` event carrying what they found, so the record
+> holds the outcome whether or not you mention it. What it cannot infer is what you were aiming at —
+> and without that, a run that measured and was satisfied looks identical to one that measured, found
+> the value wrong, and redrew four times.
+>
+> A critique stage that ends without a check has not verified anything, however carefully it looked.
+> A stage that states four checks and passes three has said exactly where it stands.
+
+> [!WARNING]
+> **Two ways to do half of this**, and a live run produced both.
+>
+> **An `expect` with no `check` is worse than no `expect` at all** — it reads as verification and is
+> not. A critique stated three claims (low-key dominance, accent under 15%, palette gamut) and settled
+> one; the record then holds two predictions whose outcome nobody knows, including the run that made
+> them. If you state it, settle it, even when the answer is uninteresting.
+>
+> **A failing check with no passing check after the fix leaves the correction unproven.** The same run
+> measured 57.1% against a stated 60%, marked it failed, made a refinement pass — and stopped. The
+> record shows what was wrong and not that anything was put right, which is one step away from the
+> failure this manual exists for. **Re-run the check after the fix**, and let the record carry the
+> pass. `checksFailed == checks` in the run report means exactly this happened.
 
 ---
 

@@ -124,10 +124,26 @@ and work through this deliberately. **Looking at the render and feeling satisfie
    and test it with `Drawing.verifyPlumbAlignment` or `getPixel`. "Too dark", "not showing up" and
    "wrong colour" look identical on screen and are three different bugs.
 
-Then **fix at least two things and re-render** — and keep going until the check that failed passes,
-rather than until you have made two changes. A critique that ends in a list of observations is half a
+Then **fix at least two things and re-render** — and keep going until the check that failed passes
+**and that pass is recorded with `Stage.check`**, rather than until you have made two changes. A
+re-measurement you only `log(...)` reaches this tool call and nowhere else, so the record still says
+the fault was found and never says it was fixed. A critique that ends in a list of observations is half a
 stage; the deliverable is the corrected panel. Record what you changed and what you decided to live
 with — the second list is as useful as the first.
+
+> [!IMPORTANT]
+> **State each check as a claim, and settle it.** `Stage.expect('the accent should stay under 15% of
+> the frame')` before the render, `Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)`
+> after it. The measurements record themselves — `diff`, `palette` and `rowProfile` each write what
+> they found — but only you can say what you were aiming at, and without that a critique that found
+> nothing wrong is indistinguishable in the record from one that never looked. A failing check is not
+> a failing stage; it is the stage doing its job. Manual 15 §8 has the protocol.
+>
+> **Two rules, both broken by a real run.** *Settle every claim you state* — an `expect` with no
+> `check` reads as verification and is not, and is worse than saying nothing. *Re-run the failing
+> check after you fix it, so the pass is recorded* — the failure names the fault, the pass is the
+> only evidence the fix landed. Re-measuring in a `log(...)` line does not count: it reaches this
+> tool call and nothing else.
 
 > [!IMPORTANT]
 > **The corrected render is `output.webp`.** Write it there with `outFile: 'output.webp'` as part of

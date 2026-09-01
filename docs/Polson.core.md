@@ -100,6 +100,8 @@ Declares which stage of work you are in, so every script, render and note that f
 - `Stage.end()` — Ends the current stage. Harmless when none is open.
 - `Stage.current` → `string?` — The stage in effect, or **`null`** if none, so `if (!Stage.current)` is the check to write. Outside a project — an ad-hoc engine with no run session — this always reads `null`, even directly after `Stage.begin(...)`, because the stage lives on the session.
 - `Stage.note(message: string)` — Records a note under the current stage.
+- `Stage.expect(claim: string)` — Records what you expect the next render to show, **before** you make it.
+- `Stage.check(claim: string, passed: boolean, detail?: string)` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold.
 
 `log(...)` reaches only the caller of the one tool call that produced it. `Stage.note(...)` persists into the run's record, and is what a reader sees afterwards — use it for the reasoning that would otherwise be lost, such as why a direction was abandoned or what a render was meant to test.
 
@@ -110,6 +112,11 @@ Stage.note('synecdoche — the wing, not the bird; rejects the generic globe');
 
 > [!NOTE]
 > A stage is **your account of your own intent**, not something the server verified — that is what makes a run legible rather than merely logged. The machine-recorded fields beside it (script path, duration, artifact path, byte count) remain the checkable half. Name stages for what a reader would want to click on: `Concept`, `Blocking`, `Refine`, `Stress test`.
+
+> [!TIP]
+> **The measurements record themselves.** `bitmap.diff`, `bitmap.palette` and `bitmap.rowProfile` write an `observe` event carrying what they *found* — the similarity and the changed region, the dominant colours and their shares, how many rows matched — so the record shows the outcome of a check without you restating it. A `rowProfile` that matched nothing is recorded as such, which is the case most easily missed by a loop that simply does not run.
+>
+> What the server cannot know is what you were hoping for. That is what `Stage.expect(...)` and `Stage.check(...)` are for, and together with the automatic `observe` events they are what lets a reader tell a run that measured and was satisfied from one that measured, found the value wrong, and redrew four times.
 
 ### `Session`
 Per-session scratchpad dictionary that persists across multiple script executions on the same MCP session:

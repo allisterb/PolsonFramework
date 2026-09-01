@@ -124,6 +124,25 @@ Grain is an `SKShader` assigned to `strokeStyle` or `fillStyle`, so the mark is 
 - **`radial`, `sweep`, `twoPointConical`, `linear`** — gradients as paint. A gradient running **across** a stroke rather than along it is how a mark gets a lit side and a shadow side.
 - **`sksl(code, uniforms)`** — anything else, as a compiled pixel shader. `Skia.Shader.custom` is the same call under a second name; prefer `sksl`, which says what the argument is.
 
+> [!IMPORTANT]
+> **This is not CanvasKit, and the shader names are the place that bites.** There is no
+> `Skia.RuntimeEffect`, no `.make(...)`, no `SkRuntimeEffect` — a live run reached for
+> `Skia.RuntimeEffect.make(sksl)` and got nothing, because that is the browser binding's spelling and
+> not this one. Everything compiled from SkSL enters through one of three calls:
+>
+> | You want | Here it is |
+> | :--- | :--- |
+> | A shader — colour per pixel | `Skia.Shader.sksl(code, uniforms)` → assign to `fillStyle` / `strokeStyle` |
+> | A colour filter — transform an existing colour | `Skia.ColorFilter.runtimeEffect(code, uniforms)` → `ctx.colorFilter` |
+> | An image filter — read neighbouring pixels | `Skia.ImageFilter.runtimeShader(code, uniforms)` → `ctx.filter` |
+>
+> There is no compile step and no effect object to hold: each call takes the SkSL source and returns
+> the thing you assign. A shader's entry point is `half4 main(float2 coord)`; a colour filter's is
+> `half4 main(half4 inColor)`.
+>
+> The noise presets are worth checking by name too — they are `perlinNoiseTurbulence` and
+> `perlinNoiseFractal`, and appending "Noise" to the second one is a mistake a run has already made.
+
 ### The grain is measurable, and it is reproducible
 
 Two pencil strokes differing only in `grain`, compared with `bitmap.diff`:

@@ -74,6 +74,28 @@ an agentic co-creative environment for visual arts and graphics design using a c
 * Code as a stigmergic canvas: Stigmergy requires that actions modify a shared environment in a way that leaves legible, persistent cues for subsequent agents. In a Polson, the script file (`artwork.js`), project directory structure, markdown files, and version control logs (`git`) act as the shared environment. When an agent creates an anchor matrix (`const ANCHORS = { ... }`), writes a self-documenting function (`drawSlateBandanaFold`), or appends a report to `findings.md`, it leaves a permanent, human- and machine-readable trace. A secondary agent entering the workspace reads the code text directly to comprehend the structural and parametric intent of previous passes.
 * Bitmaps as a ephemeral canvas: In image-to-image or inpainting workflows, an action replaces an old pixel matrix with a new one. The historical record of *how* or *why* a shape was rendered is immediately erased. The resulting bitmap is an opaque, un-annotated grid of numbers that hides its own creation logic. A secondary agent inspecting the image cannot examine previous structural choices, vector paths, or math constraints; it must attempt to re-infer the previous agent's intent from scratch based solely on flat visual output.
 
+##### Two directions, and the second one is not in the literature
+
+Stigmergy is normally described *horizontally*: peers coordinating through a shared environment, each reading cues the others left. Polson has that, and in its most common form the peer is the agent's own earlier self — one agent reading back the scripts, renders and stage notes of the pass it made twenty minutes ago rather than trusting its recollection of them. The `artifact.read` event in the run record is the only direct evidence that a stage built on what was actually there instead of on what the agent remembered drawing.
+
+But the traces are also read **vertically**, by the people who can change what the environment affords — and that loop closes differently. A horizontal trace helps the next agent work *within* the environment as it stands. A vertical one changes the environment, so the next agent never needs the trace at all.
+
+That is not a hypothetical. Every one of these began as something an agent did, recorded in `events/server.jsonl`, and ended as a change to the SDK, the manuals or the workflow instructions:
+
+| The trace an agent left | What changed in the environment |
+| :--- | :--- |
+| Seven scripts drawn on a raster canvas, against a brief that said "an SVG" | `outSvg` now reports when there is no vector document to write; a manual on the raster boundary; a rule in every workflow |
+| A script reading `element.children.length` as `0` on a populated tree | The tree accessors became properties, so the wrong spelling now fails loudly |
+| A brush preset reporting a colour it would never draw | Preset parts became settable, so modifying one does what it appears to |
+| `Skia.Shader.perlinNoiseFractalNoise(...)` | The engine now suggests the nearest real call, ranked by longest shared prefix |
+| `Skia.RuntimeEffect.make(...)` — CanvasKit's spelling, not ours | Cross-receiver suggestions, and a manual section naming the three SkSL entry points |
+| A critique stating three expectations and settling one | Two new run-report warnings, and a tightened stopping rule |
+| The same sky plate requisitioned twice | A manual passage on the cache key including the options |
+
+None of these was found by reading the code. Each was found by reading what an agent did with the code, in a record the agent wrote for a different purpose.
+
+**The caution belongs with the claim.** The vertical channel carries wrong signals exactly as readily as right ones, and the agent has no way to tell which it received. When the engine suggested `perlinNoiseTurbulence` for a mistyped `perlinNoiseFractal`, the agent took the suggestion — and the finished painting used the wrong noise family throughout, because a confident correction from the environment is indistinguishable from a correct one. Anything the environment tells an agent is load-bearing, and an improvement loop is also a fast path for a mistake.
+
 
 #### 4. Governance Regime: Formal language constraints vs. ungoverned neural probability
 

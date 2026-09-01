@@ -81,6 +81,18 @@ log(Assets.budget.spent + ' of ' + Assets.budget.total + ' spent, ' +
 
 - `total` / `spent` / `remaining` are requisition counts, and `canAfford(n)` is the check to make **before** planning work that needs `n` of them.
 - `cacheHits` counts requisitions served from the content-addressed cache. Those cost nothing and return instantly — re-running an identical requisition is free, which is what makes a two-script workflow (§5) cheap to repeat.
+
+> [!WARNING]
+> **"Identical" includes the options.** The content address is computed over the *elaborated prompt*,
+> and the options go into that prompt — so `backdrop(sky, { keepQuiet: 'lowerThird', … })` and
+> `backdrop(sky, { … })` are two different requisitions and you are charged for both. A live run did
+> exactly this: the same nocturne sky bought twice, once with the quiet region requested and once
+> without, because the first plate came back with `quietRegionHonoured: false` and the retry dropped
+> the constraint.
+>
+> That retry was a reasonable judgement; paying full price for it was avoidable. **Decide the options
+> before the first call**, and if you do re-requisition, read `fromCache` on the result — it is the
+> only thing that distinguishes a free repeat from a second charge.
 - `tokensSpent` is what the service actually billed, as reported by the service.
 
 **`total` of `0` means requisition is unavailable on this project** — either no credentials are configured, or the workflow denied it. The `drawing` workflow denies `Assets` by design: a drawing has no materials, and every mark on that surface is one you made. Check the budget rather than discovering this from a failure three scripts later.
@@ -221,9 +233,18 @@ const have = Array.from(Assets.library);
 log('already requisitioned: ' + have.map(m => m.provenance.prompt).join(' | '));
 ```
 
-`material.provenance` carries `{ model, hash, blockingHash, requester, generatedUtc, fromCache, prompt }`. **Record it.** A run that cannot say which surfaces were generated, by which model, from which prompt, cannot answer the first question anyone asks of a piece that used generation — and the run record does not currently capture requisitions on its own, so a `Stage.note` naming the descriptor and the model is what makes it answerable later.
+`material.provenance` carries `{ model, hash, blockingHash, requester, generatedUtc, fromCache, prompt }`, and `fromCache` distinguishes a fresh generation from a free cache hit — the honest way to report what a run actually cost.
 
-`fromCache` distinguishes a fresh generation from a free cache hit, which is the honest way to report what a run actually cost.
+> [!NOTE]
+> **The run record captures requisitions on its own.** Every call writes an `asset.requisition` event
+> naming the descriptor *in your words*, the model, whether it succeeded and whether it came from
+> cache; a descriptor the classifier turns away writes `asset.refused` instead, with the reason — a
+> different event, because nothing was reached and nothing was spent. A `budget` snapshot follows,
+> once per execution.
+>
+> So the record can already answer "what did this piece generate, and what did it draw?" without
+> being trusted. What it cannot say is what each surface was *for*, which is why a workflow that asks
+> for a `materials.md` still asks for one: the machine records the transaction, you record the intent.
 
 ---
 
@@ -234,6 +255,7 @@ log('already requisitioned: ' + have.map(m => m.provenance.prompt).join(' | '));
 | Every property is `undefined` and it reads as a failure | The call was not `await`ed — **and it still spent** | `await` every `Assets.*` requisition |
 | `Object.keys(result)` and `JSON.stringify(result)` show `Success`, `Bytes`, `FailureName` | The result is a typed object; the reference documents the camelCase spelling Jint resolves onto it | Read `result.success`; do not iterate the keys |
 | The same descriptor is refused however often it is sent | `RefusedFormRequest` is deterministic and `retryable` is `false` | Reword to name a surface (§2) |
+| The same descriptor is **charged twice** | The **options are part of the content hash**, so dropping `keepQuiet` or changing `size` is a different requisition, not a repeat of one | Settle the options before the first call; check `fromCache` on the second |
 | The script times out with the drawing lost | Requisition and drawing in one script | Split them (§5); the re-run is cached |
 | `budget.total` is `0` | Requisition is unavailable or denied on this project | Draw it; do not retry |
 | A composited subject looks pasted onto its background | The plate's light was never read | `plate.metrics.keyLightX` / `keyLightY` into the lighting calls (§8) |

@@ -123,6 +123,58 @@ public sealed class StageApi
         events?.Append("note", session?.Stage, executionId, new Dictionary<string, object?> { ["message"] = clean });
     }
 
+    /// <summary>
+    /// Records what you expect the next render to show, <em>before</em> you make it.
+    /// </summary>
+    /// <remarks>
+    /// The record carries actions and, since <see cref="ProbeScope"/>, what measurements found. What it
+    /// cannot carry on its own is what anybody wanted — so a run that measured and was satisfied and a
+    /// run that measured, found the value wrong and redrew four times leave almost the same trace.
+    /// <para>
+    /// A claim written down first is the difference. It is worth stating as something checkable — "the
+    /// accent should be under 15% of the frame", "the horizon within 4px of y=380" — because the point
+    /// is to be able to be wrong about it.
+    /// </para>
+    /// </remarks>
+    public void Expect(string claim)
+    {
+        var clean = Clean(claim, MaxNoteLength);
+        if (clean.Length == 0) return;
+
+        events?.Append("expect", session?.Stage, executionId, new Dictionary<string, object?> { ["claim"] = clean });
+    }
+
+    /// <summary>
+    /// Records the verdict on a claim, and returns <paramref name="passed"/> so it can be branched on.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart to <see cref="Expect"/>, and usable without it — most checks are stated and
+    /// settled in the same script. Returning the verdict means the call reads as the test it is:
+    /// <c>if (!Stage.check('accent under 15%', share &lt; 0.15)) { … }</c>.
+    /// <para>
+    /// A failing check is not a failing run. It is the most useful thing a record can contain: a stage
+    /// that states four checks and passes three has said precisely where it stands, which is more than
+    /// a stage full of renders and no claims can say at any length.
+    /// </para>
+    /// </remarks>
+    public bool Check(string claim, bool passed, string? detail = null)
+    {
+        var clean = Clean(claim, MaxNoteLength);
+        if (clean.Length == 0) return passed;
+
+        var fields = new Dictionary<string, object?>
+        {
+            ["claim"] = clean,
+            ["passed"] = passed
+        };
+
+        var cleanDetail = Clean(detail, MaxNoteLength);
+        if (cleanDetail.Length > 0) fields["detail"] = cleanDetail;
+
+        events?.Append("check", session?.Stage, executionId, fields);
+        return passed;
+    }
+
     /// <summary>Strips the characters that would corrupt a one-line JSON record, and caps the length.</summary>
     /// <remarks>
     /// A stage name can be influenced by a client brief the agent read, so it gets the same treatment

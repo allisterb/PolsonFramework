@@ -53,8 +53,32 @@ SPINE_MODES: dict[str, str] = {
     "stage.begin": "communicate",
     "stage.end": "communicate",
     "stage.continue": "communicate",
+
+    # Stating what a render should show, and settling it afterwards. Communication in the CCSM sense:
+    # the agent regulating how it is working rather than producing, exactly as a note is.
+    "expect": "communicate",
+    "check": "communicate",
+
     "inspect": "inspect",
     "artifact.read": "inspect",
+
+    # Acquiring a resource from outside the drawing, which is what `gather` names. A requisition
+    # script renders nothing and succeeds, so until this was coded it contributed nothing to the
+    # curve at all — a run could spend half its budget and leave a flat line.
+    "asset.requisition": "gather",
+
+    # Refused before the network: an attempt that produced nothing, coded as `script.error` is. The
+    # remedy is to reword, and a run of these is a run stuck, which should be visible as one.
+    "asset.refused": "attempt",
+
+    # `observe` is deliberately absent. One is written per measurement *within* an execution that
+    # already emits a single `inspect`, so coding both would count one looking-episode two to thirty
+    # times and drag the curve toward unclamped in proportion to how thorough the checking was —
+    # penalising the behaviour the record exists to encourage. The outcomes are for the report and the
+    # reader; the tally is what the curve is built on.
+    #
+    # `budget` is absent for a different reason: it is a state snapshot rather than anything the agent
+    # did, and it is written alongside the requisitions that are already coded.
 }
 
 #: Orchestrator transcript events, for the enrichment pass.

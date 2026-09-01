@@ -29,6 +29,12 @@ using System.Threading;
 /// is a null check — nothing in the drawing toolkits depends on one existing.
 /// </para>
 /// </remarks>
+/// <summary>One thing a script looked at, and what it found.</summary>
+/// <param name="Kind">A <see cref="ProbeScope.Kinds"/> value.</param>
+/// <param name="Summary">The finding in one readable line.</param>
+/// <param name="Fields">The same finding structured, or null.</param>
+public sealed record ProbeOutcome(string Kind, string Summary, IReadOnlyDictionary<string, object?>? Fields);
+
 public sealed class ProbeScope : IDisposable
 {
     #region Constructors
@@ -56,6 +62,33 @@ public sealed class ProbeScope : IDisposable
     public IReadOnlyList<string> Reads
     {
         get { lock (gate) { return [.. reads]; } }
+    }
+
+    /// <summary>
+    /// What the comparisons actually <em>found</em>, in order, capped at <see cref="MaxOutcomes"/>.
+    /// </summary>
+    /// <remarks>
+    /// The tally above says a script compared two renders; this says what the comparison reported. That
+    /// is the difference between a record which knows an agent looked and one which knows whether what
+    /// it saw was what it wanted — and the values were already being computed and thrown away, because
+    /// the probe fired on the way <i>into</i> the call rather than on the way out.
+    /// <para>
+    /// Only outcomes worth a reader's attention are collected, which in practice means comparisons: a
+    /// <c>getPixel</c> loop runs tens of thousands of times and its tally is the useful reading, while
+    /// a <c>diff</c> is made a handful of times and each one answers a question somebody asked.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<ProbeOutcome> Outcomes
+    {
+        get { lock (gate) { return [.. outcomes]; } }
+    }
+
+    /// <summary>How many outcomes were dropped once the cap was reached. Zero when nothing was lost.</summary>
+    /// <remarks>Reported rather than silently truncated: a capped record that does not say it is capped
+    /// reads as a complete one.</remarks>
+    public int OutcomesDropped
+    {
+        get { lock (gate) { return dropped; } }
     }
 
     /// <summary>Whether anything at all was observed, which is what decides if an event is worth writing.</summary>
@@ -110,15 +143,44 @@ public sealed class ProbeScope : IDisposable
         }
     }
 
+    /// <summary>
+    /// Records both the probe and what it found. Call on the <em>return</em> path, with the result.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="summary"/> is a short line a person can read without decoding the fields;
+    /// <paramref name="fields"/> is the same finding structured, for anything counting or charting it.
+    /// A no-op outside a scope, like every other call here.
+    /// </remarks>
+    public static void RecordOutcome(string kind, string summary, IReadOnlyDictionary<string, object?>? fields = null)
+    {
+        if (current.Value is not { } scope || string.IsNullOrEmpty(kind)) return;
+
+        lock (scope.gate)
+        {
+            scope.counts[kind] = scope.counts.TryGetValue(kind, out var n) ? n + 1 : 1;
+
+            if (scope.outcomes.Count >= MaxOutcomes) scope.dropped += 1;
+            else scope.outcomes.Add(new ProbeOutcome(kind, summary, fields));
+        }
+    }
+
     public void Dispose() => current.Value = parent;
     #endregion
 
     #region Fields
+    /// <summary>
+    /// Ceiling on retained outcomes per execution. High enough that no deliberate verification pass
+    /// reaches it, low enough that a loop cannot turn one event into a megabyte.
+    /// </summary>
+    private const int MaxOutcomes = 32;
+
     private static readonly AsyncLocal<ProbeScope?> current = new();
 
     private readonly ProbeScope? parent;
     private readonly Dictionary<string, int> counts = new(StringComparer.Ordinal);
     private readonly List<string> reads = [];
+    private readonly List<ProbeOutcome> outcomes = [];
+    private int dropped;
     private readonly Lock gate = new();
     #endregion
 

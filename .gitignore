@@ -437,7 +437,6 @@ reference/*
 !src/Polson.Drawing.Svg/*.csproj
 *.webp
 *.jpg
-/*.md
 !/README.md
 /.*/
 **/.polson/*

@@ -145,6 +145,18 @@ internal static class RunReport
             .Where(s => s.Length > 0)
             .ToArray();
 
+        // Claims the run made about its own work, and how they turned out. This is the only part of
+        // the record that can be *wrong* rather than merely absent, which is what makes it worth
+        // reading first: a run with no checks has not verified anything, however much it inspected.
+        var checks = events.Where(e => Type(e) == "check").ToArray();
+        var checksFailed = checks.Count(e => e["passed"]?.GetValue<bool>() == false);
+
+        var failedClaims = checks
+            .Where(e => e["passed"]?.GetValue<bool>() == false)
+            .Select(e => e["claim"]?.GetValue<string>() ?? "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+
         return new JsonObject
         {
             ["hasEventLog"] = hasLog,
@@ -157,6 +169,13 @@ internal static class RunReport
             ["notes"] = Count("note"),
             ["inspections"] = Count("inspect"),
             ["probes"] = probes,
+            ["observations"] = Count("observe"),
+            ["expectations"] = Count("expect"),
+            ["checks"] = checks.Length,
+            ["checksFailed"] = checksFailed,
+            ["claimsNotMet"] = new JsonArray([.. failedClaims.Select(c => (JsonNode)c!)]),
+            ["requisitions"] = Count("asset.requisition"),
+            ["requisitionsRefused"] = Count("asset.refused"),
             ["artifactsRead"] = new JsonArray([.. artifactsRead.Select(a => (JsonNode)a!)]),
             ["stages"] = new JsonArray([.. stages.Select(s => (JsonNode)s!)]),
             ["scriptFilesOnDisk"] = scriptFiles.Length,
@@ -169,7 +188,8 @@ internal static class RunReport
             ["scriptFilesNeverExecuted"] = new JsonArray([.. scriptsNeverRun.Select(s => (JsonNode)s!)]),
             ["artifactsNoRenderProduced"] = new JsonArray([.. unexplainedArtifacts.Select(s => (JsonNode)s!)]),
             ["warnings"] = new JsonArray([.. Warnings(hasLog, scriptsRun.Length, Count("render"),
-                scriptFiles.Length, scriptsNeverRun.Length, unexplainedArtifacts.Length)
+                scriptFiles.Length, scriptsNeverRun.Length, unexplainedArtifacts.Length,
+                Count("expect"), checks.Length, checksFailed)
                 .Select(w => (JsonNode)w!)])
         };
     }
@@ -294,7 +314,7 @@ internal static class RunReport
     /// judgement the reader is better placed to make than this is.
     /// </remarks>
     private static List<string> Warnings(bool hasLog, int executed, int renders,
-        int scriptFiles, int neverRun, int unexplained)
+        int scriptFiles, int neverRun, int unexplained, int expectations, int checks, int checksFailed)
     {
         var warnings = new List<string>();
 
@@ -326,6 +346,26 @@ internal static class RunReport
         if (unexplained > 0)
         {
             warnings.Add($"{unexplained} file(s) in artifacts/ have no render event. They were not written by the engine.");
+        }
+
+        // A claim stated and never settled is worse than one never made: it reads as verification and
+        // is not. Counted rather than matched by text, because the claim in an `expect` and the claim
+        // in its `check` are written independently and rarely agree word for word — a count says
+        // truthfully that something was left open without pretending to know which.
+        if (expectations > checks)
+        {
+            warnings.Add($"{expectations - checks} of {expectations} stated expectation(s) were never settled with a check. "
+                + "An expectation with no verdict looks like verification and is not.");
+        }
+
+        // The check that fails is the one that identifies the fault; the check that passes afterwards
+        // is the only evidence the fix worked. A run whose every check failed has diagnosed and not
+        // demonstrated — which is exactly how a corrected painting came to be indistinguishable from
+        // an uncorrected one.
+        if (checks > 0 && checksFailed == checks)
+        {
+            warnings.Add($"All {checks} check(s) failed and none was re-run after a fix. The record shows what was "
+                + "wrong and not that anything was put right.");
         }
 
         return warnings;
@@ -466,7 +506,20 @@ internal static class RunReport
             ("looked before drawing", Num("inspections") == 0
                 ? "never - no script measured, sampled or read anything back"
                 : $"{Num("probes")} probes across {Num("inspections")} of {Num("scriptsExecuted")} scripts"),
+            ("what it found", Num("observations") == 0
+                ? "nothing recorded - no comparison or palette reached the record"
+                : $"{Num("observations")} measurement outcome(s)"),
+
+            // The one row that can be wrong rather than merely absent, so it reads as a sentence
+            // instead of a count: "3 stated, 1 settled, 1 failed" is the shape of a half-done audit
+            // and should look like one at a glance.
+            ("claims about the work", Num("expectations") == 0 && Num("checks") == 0
+                ? "none - the run asserted nothing about its own output"
+                : $"{Num("expectations")} stated, {Num("checks")} settled, {Num("checksFailed")} failed"),
             ("artifacts read back", Read(report)),
+            ("requisitions", Num("requisitions") == 0 && Num("requisitionsRefused") == 0
+                ? "none"
+                : $"{Num("requisitions")} attempted, {Num("requisitionsRefused")} refused as form"),
 
             // Concatenated across sessions this row is the misleading one, so it says so and hands
             // the reader to the breakdown instead of printing four runs as one stage sequence.

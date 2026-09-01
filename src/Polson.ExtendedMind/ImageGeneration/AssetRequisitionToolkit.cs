@@ -96,6 +96,14 @@ public partial class AssetRequisitionToolkit : Runtime
         var verdict = Classify(descriptor);
         if (!verdict.Allowed)
         {
+            // Recorded separately from a failure, and before anything is attempted: nothing was
+            // spent, nothing was reached, and the remedy is to reword rather than to retry. A run
+            // that spent an hour rewording is a different run from one the service kept refusing.
+            RequisitionScope.Record(new RequisitionRecord(
+                "material", descriptor, Success: false, Failure: nameof(ImageGenerationFailure.RefusedFormRequest),
+                Reason: verdict.Reason, Model: null, FromCache: false, Refused: true));
+            RecordBudgetState();
+
             return new MaterialAsset
             {
                 Success = false,
@@ -107,7 +115,7 @@ public partial class AssetRequisitionToolkit : Runtime
         var prompt = MaterialPrompt(descriptor);
         var model = opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel;
 
-        var generated = await Acquire(prompt, model, "1:1", null);
+        var generated = await Acquire(prompt, model, "1:1", null, "material", descriptor);
         if (!generated.Success)
         {
             return new MaterialAsset
@@ -192,7 +200,7 @@ public partial class AssetRequisitionToolkit : Runtime
         var model = opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel;
         var conditioning = opts.ConditionOn is null ? null : new[] { opts.ConditionOn };
 
-        var generated = await Acquire(prompt, model, AspectFor(opts.Width, opts.Height), conditioning);
+        var generated = await Acquire(prompt, model, AspectFor(opts.Width, opts.Height), conditioning, "backdrop", descriptor);
         if (!generated.Success)
         {
             return new BackdropPlate
@@ -270,7 +278,7 @@ public partial class AssetRequisitionToolkit : Runtime
         var prompt = $"A flat greyscale mask of {descriptor}. Pure white where the feature is, pure black "
                    + "elsewhere, no colour, no lighting, no shadow, no perspective, fill the whole frame.";
 
-        var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel, "1:1", null);
+        var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel, "1:1", null, "matte", descriptor);
         if (!generated.Success)
         {
             return new MatteAsset { Success = false, Failure = generated.Failure, Error = generated.Error };
@@ -301,7 +309,44 @@ public partial class AssetRequisitionToolkit : Runtime
     }
 
     /// <summary>Cache lookup, budget check, then generation. The only path that can spend money.</summary>
-    async Task<ImageGenerationResult> Acquire(string prompt, string model, string? aspect, IReadOnlyList<byte[]>? conditionOn)
+    /// <remarks>
+    /// Also the only place worth recording from. Every requisition passes through here whatever it
+    /// asked for, and here is where the two facts a reader wants are both known: whether an image came
+    /// back, and whether it cost anything. <paramref name="kind"/> and <paramref name="descriptor"/>
+    /// are carried in from the caller purely so the record can name what was asked for in the words
+    /// the script used, rather than in the elaborated prompt this layer built from them.
+    /// </remarks>
+    async Task<ImageGenerationResult> Acquire(string prompt, string model, string? aspect,
+        IReadOnlyList<byte[]>? conditionOn, string kind, string descriptor)
+    {
+        // Read off the budget rather than off the result: a cached result is a *replay* of a charged
+        // one and carries its Charged flag with it, so asking the result whether it cost anything
+        // gets the answer for the generation it came from rather than for this call.
+        var hitsBefore = Budget.CacheHits;
+        var result = await AcquireCore(prompt, model, aspect, conditionOn);
+
+        RequisitionScope.Record(new RequisitionRecord(
+            kind, descriptor, result.Success,
+            Failure: result.Success ? null : result.Failure.ToString(),
+            Reason: result.Success ? null : result.Error,
+            Model: model,
+            FromCache: Budget.CacheHits > hitsBefore,
+            Refused: false));
+        RecordBudgetState();
+
+        return result;
+    }
+
+    /// <summary>Pushes this toolkit's allowance into the ambient scope, if one is collecting.</summary>
+    /// <remarks>
+    /// Pushed rather than read back, because the engine substitutes a disabled toolkit of its own when
+    /// no requisition surface is configured. A caller reading the budget off the statically configured
+    /// toolkit would be describing an object the script never touched.
+    /// </remarks>
+    void RecordBudgetState() => RequisitionScope.RecordBudget(
+        new BudgetSnapshot(Budget.Total, Budget.Spent, Budget.Remaining, Budget.CacheHits, Budget.TokensSpent));
+
+    async Task<ImageGenerationResult> AcquireCore(string prompt, string model, string? aspect, IReadOnlyList<byte[]>? conditionOn)
     {
         if (this.generator is null)
         {

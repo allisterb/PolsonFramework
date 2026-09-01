@@ -68,6 +68,62 @@ public class UnresolvedMemberTests : TestsRuntime
         Assert.DoesNotContain("getType", result.Error);
     }
 
+    /// <summary>
+    /// A name extended at the end is the commonest real mistyping, and a length window rejects it.
+    /// </summary>
+    /// <remarks>
+    /// From a live run: the script asked for <c>perlinNoiseFractalNoise</c>. The correct
+    /// <c>perlinNoiseFractal</c> is five characters shorter, so the window excluded it, while
+    /// <c>perlinNoiseTurbulence</c> — a different function entirely — fell inside and was suggested
+    /// instead. A confidently wrong suggestion is worse than none.
+    /// </remarks>
+    [Fact]
+    public void TestAnExtendedNameSuggestsTheNameItExtends()
+    {
+        var result = Run("Skia.Shader.perlinNoiseFractalNoise(0.4, 0.4, 4, 7);");
+
+        Assert.False(result.Success);
+        Assert.Contains("'perlinNoiseFractal'", result.Error);
+
+        // And it comes first: the correct answer must not be buried behind a plausible wrong one.
+        var suggestions = result.Error[result.Error.IndexOf("Did you mean", StringComparison.Ordinal)..];
+        Assert.True(suggestions.IndexOf("'perlinNoiseFractal'", StringComparison.Ordinal)
+                  < suggestions.IndexOf("perlinNoiseTurbulence", StringComparison.Ordinal),
+            "the name that was extended should be suggested before a different function: " + suggestions);
+    }
+
+    /// <summary>The longest shared prefix wins, so the nearest of several plausible names leads.</summary>
+    [Fact]
+    public void TestTheClosestOfSeveralCandidatesIsSuggestedFirst()
+    {
+        var result = Run("createCanvas(9, 9).getContext('2d').fillStlye = '#f00';");
+
+        Assert.False(result.Success);
+        var suggestions = result.Error[result.Error.IndexOf("Did you mean", StringComparison.Ordinal)..];
+        Assert.True(suggestions.IndexOf("'fillStyle'", StringComparison.Ordinal)
+                  < suggestions.IndexOf("'fillRect'", StringComparison.Ordinal),
+            "fillStyle diverges latest from fillStlye and should lead: " + suggestions);
+    }
+
+    /// <summary>
+    /// A name carried in from another library has no near miss on the receiver it was aimed at, and
+    /// the useful answer is on a different one.
+    /// </summary>
+    /// <remarks>
+    /// <c>Skia.RuntimeEffect.make(...)</c> is CanvasKit's spelling. A live run wrote it, and the
+    /// message said only that it did not exist — true, and no help. The surface does have
+    /// <c>Skia.ColorFilter.runtimeEffect</c>.
+    /// </remarks>
+    [Fact]
+    public void TestAForeignApiNameIsPointedAtTheRealOne()
+    {
+        var result = Run("Skia.RuntimeEffect.make('half4 main(float2 c) { return half4(1); }');");
+
+        Assert.False(result.Success);
+        Assert.Contains("elsewhere on the surface", result.Error);
+        Assert.Contains("Skia.ColorFilter.runtimeEffect", result.Error);
+    }
+
     /// <summary>No near miss is not a reason to say the same thing twice.</summary>
     [Fact]
     public void TestAnUnrecognisableMemberStillExplainsItself()

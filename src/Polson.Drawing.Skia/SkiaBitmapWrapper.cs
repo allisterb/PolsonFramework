@@ -205,7 +205,8 @@ public class SkiaBitmapWrapper : IDisposable
     /// </remarks>
     public Dictionary<string, object> Diff(SkiaBitmapWrapper other, object? options = null)
     {
-        ProbeScope.Record(ProbeScope.Kinds.Compare);
+        // Recorded on the way out, not the way in — see the RecordOutcome call at the end. A probe
+        // fired here would say a comparison happened and lose what it found.
         ArgumentNullException.ThrowIfNull(other);
         RequireSameSize(other, "diff");
 
@@ -234,18 +235,36 @@ public class SkiaBitmapWrapper : IDisposable
         }
 
         var total = (long)Bitmap.Width * Bitmap.Height;
+        var similarity = total == 0 ? 1d : 1d - (double)differing / total;
+        var bounds = maxX < 0 ? null : Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+
+        ProbeScope.RecordOutcome(ProbeScope.Kinds.Compare,
+            differing == 0
+                ? "diff: identical"
+                : $"diff: {similarity:P1} similar, {differing:N0} of {total:N0} px differ" +
+                  $", within {maxX - minX + 1}x{maxY - minY + 1} at {minX},{minY}",
+            new Dictionary<string, object?>
+            {
+                ["call"] = "bitmap.diff",
+                ["similarity"] = Math.Round(similarity, 6),
+                ["differingPixels"] = differing,
+                ["totalPixels"] = total,
+                ["identical"] = differing == 0,
+                ["bounds"] = bounds
+            });
+
         return new Dictionary<string, object>
         {
             ["width"] = Bitmap.Width,
             ["height"] = Bitmap.Height,
             ["totalPixels"] = total,
             ["differingPixels"] = differing,
-            ["similarity"] = total == 0 ? 1d : 1d - (double)differing / total,
+            ["similarity"] = similarity,
             ["meanDelta"] = total == 0 ? 0d : (double)deltaSum / total,
             ["maxDelta"] = maxDelta,
             ["identical"] = differing == 0,
             // Where the difference actually is, which is the part a score cannot tell you.
-            ["bounds"] = maxX < 0 ? null! : Rect(minX, minY, maxX - minX + 1, maxY - minY + 1)
+            ["bounds"] = bounds!
         };
     }
 
@@ -299,7 +318,6 @@ public class SkiaBitmapWrapper : IDisposable
     /// </remarks>
     public Dictionary<string, object>[] RowProfile(string color, object? options = null)
     {
-        ProbeScope.Record(ProbeScope.Kinds.Sample);
         var target = SkiaColorParser.Parse(color);
         var tolerance = OptionInt(options, "tolerance", 24);
         var minCount = OptionInt(options, "minCount", 1);
@@ -333,6 +351,23 @@ public class SkiaBitmapWrapper : IDisposable
                 ["count"] = count
             });
         }
+
+        // A profile that found nothing is the interesting case and the easy one to miss: the colour
+        // was never drawn, or was drawn in a shade outside the tolerance, and the loop over the
+        // result simply does not run.
+        ProbeScope.RecordOutcome(ProbeScope.Kinds.Sample,
+            rows.Count == 0
+                ? $"rowProfile {color}: no {(byColumn ? "column" : "row")} matched"
+                : $"rowProfile {color}: {rows.Count} {(byColumn ? "columns" : "rows")}, " +
+                  $"extent {rows[0]["extent"]}..{rows[^1]["extent"]}",
+            new Dictionary<string, object?>
+            {
+                ["call"] = "bitmap.rowProfile",
+                ["color"] = color,
+                ["axis"] = byColumn ? "column" : "row",
+                ["matched"] = rows.Count
+            });
+
         return [.. rows];
     }
 
@@ -346,7 +381,6 @@ public class SkiaBitmapWrapper : IDisposable
     /// </remarks>
     public Dictionary<string, object>[] Palette(int count = 8, object? options = null)
     {
-        ProbeScope.Record(ProbeScope.Kinds.Sample);
         var buckets = Math.Clamp(OptionInt(options, "buckets", 16), 2, 64);
         var size = 256 / buckets;
         var tally = new Dictionary<int, (long Count, long R, long G, long B)>();
@@ -366,7 +400,7 @@ public class SkiaBitmapWrapper : IDisposable
             }
         }
 
-        return [.. tally
+        var palette = tally
             .OrderByDescending(e => e.Value.Count)
             .Take(Math.Max(1, count))
             // The reported colour is the bucket's mean, not its corner, so it is a colour that is
@@ -376,7 +410,23 @@ public class SkiaBitmapWrapper : IDisposable
                 ["color"] = $"#{(byte)(e.Value.R / e.Value.Count):X2}{(byte)(e.Value.G / e.Value.Count):X2}{(byte)(e.Value.B / e.Value.Count):X2}",
                 ["share"] = counted == 0 ? 0d : (double)e.Value.Count / counted,
                 ["pixels"] = e.Value.Count
-            })];
+            })
+            .ToArray();
+
+        // The tonal balance a run claimed and the one it produced are the same question asked twice;
+        // recording the answer is what lets the second be checked against the first afterwards.
+        ProbeScope.RecordOutcome(ProbeScope.Kinds.Sample,
+            "palette: " + string.Join(", ", palette.Take(3)
+                .Select(p => $"{p["color"]} {(double)p["share"]:P1}")),
+            new Dictionary<string, object?>
+            {
+                ["call"] = "bitmap.palette",
+                ["colours"] = palette.Length,
+                ["top"] = palette.Length == 0 ? null : palette[0]["color"],
+                ["topShare"] = palette.Length == 0 ? null : Math.Round((double)palette[0]["share"], 4)
+            });
+
+        return palette;
     }
 
     public void Dispose()

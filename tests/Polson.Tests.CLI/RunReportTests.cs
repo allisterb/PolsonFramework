@@ -128,6 +128,97 @@ public class RunReportTests : TestsRuntime, IDisposable
     }
     #endregion
 
+    #region Claims a run made about itself
+    /// <summary>
+    /// A claim stated and never settled reads as verification and is not.
+    /// </summary>
+    /// <remarks>
+    /// Taken from a live critique that stated three expectations — low-key dominance, accent share,
+    /// palette gamut — and settled one. Counted rather than matched by text: an <c>expect</c> and its
+    /// <c>check</c> are written independently and rarely agree word for word, so a count says
+    /// truthfully that something was left open without pretending to know which.
+    /// </remarks>
+    [Fact]
+    public void TestUnsettledExpectationsAreReported()
+    {
+        Script("0001.js");
+        Artifact("critique.webp");
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"expect","claim":"low-key dominance over 60%"}""",
+            """{"type":"expect","claim":"accent under 15%"}""",
+            """{"type":"expect","claim":"palette matches the gamut"}""",
+            """{"type":"check","claim":"low-key dominance over 60%","passed":false,"detail":"57.1%"}""",
+            """{"type":"check","claim":"low-key dominance over 60%","passed":true,"detail":"62.4%"}""",
+            """{"type":"render","script":"scripts/0001.js","artifact":"artifacts/critique.webp"}""");
+
+        var report = Report();
+
+        Assert.Equal(3, report["expectations"]!.GetValue<int>());
+        Assert.Equal(2, report["checks"]!.GetValue<int>());
+        Assert.Equal(1, report["checksFailed"]!.GetValue<int>());
+        Assert.Contains(Warnings(report), w => w.Contains("never settled with a check"));
+    }
+
+    /// <summary>
+    /// Every check failing means the run diagnosed without demonstrating — one step from the failure
+    /// the whole mechanism exists to catch.
+    /// </summary>
+    [Fact]
+    public void TestACritiqueThatOnlyEverFailedIsReported()
+    {
+        Script("0001.js");
+        Artifact("critique.webp");
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"expect","claim":"low-key dominance over 60%"}""",
+            """{"type":"check","claim":"low-key dominance over 60%","passed":false,"detail":"57.1%"}""",
+            """{"type":"render","script":"scripts/0001.js","artifact":"artifacts/critique.webp"}""");
+
+        var report = Report();
+
+        Assert.Contains(Warnings(report), w => w.Contains("none was re-run after a fix"));
+        Assert.Contains((JsonArray)report["claimsNotMet"]!,
+            c => c!.ToString().Contains("low-key dominance"));
+    }
+
+    /// <summary>A critique that stated claims, settled them all, and ended on a pass says nothing.</summary>
+    [Fact]
+    public void TestASettledCritiqueWarnsAboutNothing()
+    {
+        Script("0001.js");
+        Artifact("critique.webp");
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"expect","claim":"low-key dominance over 60%"}""",
+            """{"type":"check","claim":"low-key dominance over 60%","passed":false,"detail":"57.1%"}""",
+            """{"type":"check","claim":"low-key dominance over 60%","passed":true,"detail":"62.4%"}""",
+            """{"type":"render","script":"scripts/0001.js","artifact":"artifacts/critique.webp"}""");
+
+        Assert.Empty(Warnings(Report()));
+    }
+
+    /// <summary>A run that made no claims is not nagged about claims it did not make.</summary>
+    [Fact]
+    public void TestARunWithNoClaimsIsNotWarnedAboutThem()
+    {
+        Script("0001.js");
+        Artifact("stage1.webp");
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"render","script":"scripts/0001.js","artifact":"artifacts/stage1.webp"}""");
+
+        var report = Report();
+
+        Assert.Equal(0, report["expectations"]!.GetValue<int>());
+        Assert.Empty(Warnings(report));
+    }
+    #endregion
+
     #region A run that did not
     /// <summary>
     /// The case this exists for: a full-looking directory and an empty log.

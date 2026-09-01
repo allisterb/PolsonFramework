@@ -578,19 +578,73 @@ public partial class JsDrawingEngine : Runtime
                 "call that produced it. See polson://sdk/index.";
         }
 
-        var near = names.Where(n => IsNearMiss(n, member)).OrderBy(n => n, StringComparer.Ordinal).Take(5).ToArray();
-        var suggestion = near.Length > 0
-            ? $" Did you mean {string.Join(", ", near.Select(n => $"'{n}'"))}?"
+        // Prefix matches first: a name the caller extended or truncated is a likelier fix than one a
+        // character or two away, and it must not be crowded out by alphabetical order.
+        var near = names.Where(n => IsNearMiss(n, member))
+            .OrderByDescending(n => CommonPrefix(n, member))
+            .ThenBy(n => Math.Abs(n.Length - member.Length))
+            .ThenBy(n => n, StringComparer.Ordinal)
+            .Take(5)
+            .ToArray();
+
+        if (near.Length > 0)
+        {
+            return $"'{jsType}' has no property or method '{member}'. Did you mean " +
+                string.Join(", ", near.Select(n => $"'{n}'")) + "? A misspelled member is an error " +
+                "rather than a new property, so nothing was drawn and nothing was silently ignored.";
+        }
+
+        // Nothing close on this receiver, so look across the whole surface. This is the case where a
+        // name has been carried in from another library — Skia.RuntimeEffect is CanvasKit's spelling
+        // — and the useful answer is not on the type the script reached for.
+        var elsewhere = JsSymbolManifest.Symbols
+            .Where(s => string.Equals(s.Member, member, StringComparison.OrdinalIgnoreCase) || IsNearMiss(s.Member, member))
+            .Select(s => s.Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .Take(4)
+            .ToArray();
+
+        var pointer = elsewhere.Length > 0
+            ? " There is no such member here, but " + string.Join(", ", elsewhere.Select(n => $"'{n}'"))
+                + " exists elsewhere on the surface."
             : string.Empty;
 
-        return $"'{jsType}' has no property or method '{member}'.{suggestion} A misspelled member is an " +
+        return $"'{jsType}' has no property or method '{member}'.{pointer} A misspelled member is an " +
             "error rather than a new property, so nothing was drawn and nothing was silently ignored. " +
             "Read polson://sdk/index for the exact spelling.";
     }
 
-    /// <summary>A typo, rather than a different call: one edit away, or a shared prefix.</summary>
+    /// <summary>How many leading characters two names share, ignoring case. The ranking key.</summary>
+    /// <remarks>
+    /// Longest shared prefix first, so <c>fillStyle</c> beats <c>fill</c> for a mistyped
+    /// <c>fillStlye</c> — both are plausible, and the one that diverges latest is the one meant.
+    /// </remarks>
+    private static int CommonPrefix(string a, string b)
+    {
+        var n = 0;
+        while (n < a.Length && n < b.Length &&
+               char.ToLowerInvariant(a[n]) == char.ToLowerInvariant(b[n])) n++;
+        return n;
+    }
+
+    /// <summary>Whether one name is the other with something added or removed at the end.</summary>
+    /// <remarks>
+    /// The commonest way a real call is mistyped, and the one a length window rejects. A live run
+    /// asked for <c>perlinNoiseFractalNoise</c>: the correct <c>perlinNoiseFractal</c> is five
+    /// characters shorter and was excluded, while <c>perlinNoiseTurbulence</c> — a different function
+    /// — fell inside the window and was suggested instead.
+    /// </remarks>
+    private static bool SharesAffix(string candidate, string typed) =>
+        candidate.Length >= 4 && typed.Length >= 4 &&
+        (candidate.StartsWith(typed, StringComparison.OrdinalIgnoreCase) ||
+         typed.StartsWith(candidate, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A typo, rather than a different call: extended, truncated, or one edit away.</summary>
     private static bool IsNearMiss(string candidate, string typed)
     {
+        if (SharesAffix(candidate, typed)) return true;
+
         if (Math.Abs(candidate.Length - typed.Length) > 2) return false;
         if (candidate.Length >= 4 && typed.Length >= 4 &&
             candidate.StartsWith(typed[..3], StringComparison.OrdinalIgnoreCase)) return true;

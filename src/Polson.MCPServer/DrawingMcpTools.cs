@@ -314,6 +314,7 @@ public class DrawingMcpTools
         // below with the execution context — the toolkits mutate the same instance, so the tallies
         // are readable again on this side once the run returns.
         using var probes = ProbeScope.Begin();
+        using var requisitions = RequisitionScope.Begin();
 
         try
         {
@@ -405,6 +406,7 @@ public class DrawingMcpTools
             // — an agent that measured, disliked what it found and then failed has told the record
             // something, and losing that would make the failure look like it came from nowhere.
             RecordProbes(session.Stage, executionId, scriptPath, probes);
+            RecordRequisitions(session.Stage, executionId, scriptPath, requisitions);
             session.LeaveCall();
         }
     }
@@ -424,6 +426,67 @@ public class DrawingMcpTools
     /// worth being able to see.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Writes what this execution requisitioned, and where the budget stands afterwards.
+    /// </summary>
+    /// <remarks>
+    /// Requisition was the only thing an agent could do that left no trace at all. Asking what a
+    /// painting generated and what it drew meant reading the cache directory and the scripts — which
+    /// is the first question anyone asks of a piece that used generation, and precisely the one a
+    /// provenance file written by the agent is not sufficient to answer.
+    /// <para>
+    /// A refusal is its own event rather than a failed requisition. Nothing was reached and nothing
+    /// was spent; the remedy is to reword. A run that spent its time rewording descriptors is a very
+    /// different run from one the service kept turning away, and they should not read alike.
+    /// </para>
+    /// <para>
+    /// The budget snapshot is written once per execution that touched the surface, not once per
+    /// requisition: it is a running total, and repeating it after every call would say the same thing
+    /// several times while making the interesting transition harder to find.
+    /// </para>
+    /// </remarks>
+    private void RecordRequisitions(string? stage, string executionId, string? scriptPath, RequisitionScope requisitions)
+    {
+        if (!requisitions.Any) return;
+
+        foreach (var r in requisitions.Records)
+        {
+            var fields = new Dictionary<string, object?>
+            {
+                ["script"] = scriptPath,
+                ["kind"] = r.Kind,
+                ["descriptor"] = r.Descriptor,
+                ["model"] = r.Model,
+                ["reason"] = r.Reason
+            };
+
+            if (r.Refused)
+            {
+                Events.Append("asset.refused", stage, executionId, fields);
+                continue;
+            }
+
+            fields["success"] = r.Success;
+            fields["fromCache"] = r.FromCache;
+            if (!r.Success) fields["failure"] = r.Failure;
+
+            Events.Append("asset.requisition", stage, executionId, fields);
+        }
+
+        if (requisitions.Budget is { } budget)
+        {
+            Events.Append("budget", stage, executionId, new Dictionary<string, object?>
+            {
+                ["total"] = budget.Total,
+                ["spent"] = budget.Spent,
+                ["remaining"] = budget.Remaining,
+                ["cacheHits"] = budget.CacheHits,
+                ["tokensSpent"] = budget.TokensSpent,
+                ["recordsDropped"] = requisitions.Dropped == 0 ? null : requisitions.Dropped
+            });
+        }
+    }
+
     private void RecordProbes(string? stage, string executionId, string? scriptPath, ProbeScope probes)
     {
         if (!probes.Any) return;
@@ -437,11 +500,32 @@ public class DrawingMcpTools
             });
         }
 
+        // What the looking found, not just that it happened. One event per finding, because each
+        // answers a question somebody asked and a tally of answers is not an answer.
+        foreach (var outcome in probes.Outcomes)
+        {
+            var fields = new Dictionary<string, object?>
+            {
+                ["script"] = scriptPath,
+                ["kind"] = outcome.Kind,
+                ["found"] = outcome.Summary
+            };
+            if (outcome.Fields is not null)
+            {
+                foreach (var (key, value) in outcome.Fields) fields[key] = value;
+            }
+
+            Events.Append("observe", stage, executionId, fields);
+        }
+
         Events.Append("inspect", stage, executionId, new Dictionary<string, object?>
         {
             ["script"] = scriptPath,
             ["probes"] = probes.Counts,
-            ["total"] = probes.Total
+            ["total"] = probes.Total,
+            // Say so rather than truncating quietly: a capped record that does not admit the cap
+            // reads as a complete one.
+            ["outcomesDropped"] = probes.OutcomesDropped == 0 ? null : probes.OutcomesDropped
         });
     }
 

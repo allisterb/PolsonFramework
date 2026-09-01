@@ -189,25 +189,7 @@ public sealed class RunEventLog : Runtime
                 if (value is null) continue;
 
                 writer.WritePropertyName(key);
-                switch (value)
-                {
-                    case string s: writer.WriteStringValue(s); break;
-                    case bool b: writer.WriteBooleanValue(b); break;
-                    case int i: writer.WriteNumberValue(i); break;
-                    case long l: writer.WriteNumberValue(l); break;
-                    case double d: writer.WriteNumberValue(d); break;
-
-                    // A probe tally is the one field with structure. Written as a nested object so
-                    // `"probes":{"measure":12}` stays greppable and parseable; the default case would
-                    // stringify the dictionary's type name.
-                    case IReadOnlyDictionary<string, int> tally:
-                        writer.WriteStartObject();
-                        foreach (var (k, n) in tally) writer.WriteNumber(k, n);
-                        writer.WriteEndObject();
-                        break;
-
-                    default: writer.WriteStringValue(value.ToString()); break;
-                }
+                WriteValue(writer, value);
             }
 
             writer.WriteEndObject();
@@ -215,6 +197,51 @@ public sealed class RunEventLog : Runtime
 
         // One event is one line, so a reader can tail the file and parse each line independently.
         return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    /// <summary>Writes one field value, recursing into nested objects.</summary>
+    /// <remarks>
+    /// Structured fields are written as JSON objects rather than stringified, so
+    /// <c>"probes":{"measure":12}</c> and <c>"bounds":{"x":20,…}</c> stay greppable and parseable. The
+    /// nested case is not decoration: a <c>compare</c> observation carries the rectangle the change
+    /// landed in, and falling through to <c>ToString()</c> put the dictionary's <i>type name</i> in the
+    /// record — a field that looked present and said nothing.
+    /// <para>
+    /// Anything not matched is stringified, deliberately. A record that drops an unrecognised value is
+    /// worse than one that renders it imperfectly.
+    /// </para>
+    /// </remarks>
+    private static void WriteValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null: writer.WriteNullValue(); break;
+            case string s: writer.WriteStringValue(s); break;
+            case bool b: writer.WriteBooleanValue(b); break;
+            case int i: writer.WriteNumberValue(i); break;
+            case long l: writer.WriteNumberValue(l); break;
+            case double d: writer.WriteNumberValue(d); break;
+
+            case IReadOnlyDictionary<string, int> tally:
+                writer.WriteStartObject();
+                foreach (var (k, n) in tally) writer.WriteNumber(k, n);
+                writer.WriteEndObject();
+                break;
+
+            // Both nullable and non-nullable value dictionaries reach here as the same runtime type,
+            // so one case covers `Dictionary<string, object>` and `Dictionary<string, object?>`.
+            case IEnumerable<KeyValuePair<string, object?>> nested:
+                writer.WriteStartObject();
+                foreach (var (k, v) in nested)
+                {
+                    writer.WritePropertyName(k);
+                    WriteValue(writer, v);
+                }
+                writer.WriteEndObject();
+                break;
+
+            default: writer.WriteStringValue(value.ToString()); break;
+        }
     }
 
     private static long CountLines(string file)

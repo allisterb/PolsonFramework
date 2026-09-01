@@ -117,8 +117,10 @@ without a lock, and it means a crashed writer truncates its own file and nobody 
 
 | `src` | `type` | Status |
 | :--- | :--- | :--- |
-| `server` | `run.start` `run.end` `script.start` `script.ok` `script.error` `render` `stage.begin` `stage.continue` `stage.end` `note` `tool.error` | **written** by `RunEventLog` |
-| `server` | `asset.requisition` `asset.refused` `budget` | specified; requisition lives in `Polson.ExtendedMind` and is not yet wired |
+| `server` | `run.start` `run.end` `script.start` `script.ok` `script.error` `render` `render.novector` `stage.begin` `stage.continue` `stage.end` `note` `tool.error` | **written** by `RunEventLog` |
+| `server` | `expect` `check` | **written** — the agent's claim about a render, and how it turned out |
+| `server` | `observe` `inspect` `artifact.read` | **written** — what a script measured, what it found, and which earlier artifact it opened |
+| `server` | `asset.requisition` `asset.refused` `budget` | **written** — collected by `RequisitionScope` in `Polson.ExtendedMind` and drained by `DrawingMcpTools` |
 | `agent` | `run.start` `run.end` `turn.start` `thinking` `tool.call` `text` `compaction` `turn.end` `usage` | **written** by the orchestrator's `Transcript` |
 | `director` | `message` `question` `answer` | **written** by the orchestrator's `Director` |
 | `director` | `brief` `cancel` | specified; needs the webapp |

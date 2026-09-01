@@ -89,6 +89,62 @@ Write it for someone who cannot see your context — because that is exactly who
 
 ---
 
+## 3a. `Stage.expect` and `Stage.check` — Being Able to Be Wrong
+
+> **Implemented by**: `Stage.expect(claim)`, `Stage.check(claim, passed, detail?)` → `boolean`.
+
+A note says what you thought. A **check** says what you predicted and whether it held — and that is the one thing in the record that can be *wrong* rather than merely absent.
+
+```js
+Stage.expect('the accent should stay under 15% of the frame');
+// …render, then measure…
+const accent = render.palette(4)[1].share;
+Stage.check('accent under 15%', accent < 0.15, 'measured ' + (accent * 100).toFixed(1) + '%');
+```
+
+`expect` records the claim before the render, so you are committed to it before you know the answer. `check` records the verdict and **returns it**, so the call reads as the test it is:
+
+```js
+if (!Stage.check('the horizon sits within 4px of y=380', Math.abs(y - 380) <= 4)) {
+    // fix it, then check again
+}
+```
+
+**A failing check is not a failing run.** It is the most useful thing the record can contain. A stage that states four checks and passes three has said precisely where it stands; a stage full of renders and no claims cannot say that at any length.
+
+Two rules follow from that, and both have been broken in a live run:
+
+- **Every `expect` gets a `check`.** An unsettled expectation reads as verification and is not, which makes it worse than saying nothing. The run report warns when they do not balance.
+- **A failing check gets re-run after the fix.** The failure identifies the fault; the pass is the only evidence the correction landed. A stage where every check failed has diagnosed without demonstrating, and the report warns about that too.
+
+### Why this exists
+
+Everything else in the record is an action: a script ran, an artifact was written, a stage began. Actions cannot distinguish a run that measured and was satisfied from a run that measured, found the value wrong, and redrew four times — both leave a stage with several renders in it. The `check` is what separates them, and the reason it has to come from you is that nothing else knows what you wanted.
+
+---
+
+## 3b. `observe` — the Measurements Record Themselves
+
+The other half needs nothing from you. `bitmap.diff`, `bitmap.palette` and `bitmap.rowProfile` each write an **`observe`** event carrying what they found:
+
+```
+observe  kind=compare  found="diff: 96.0% similar, 960 of 24,000 px differ, within 98x60 at 20,30"
+observe  kind=sample   found="palette: #FAF8F4 77.5%, #1F6F8B 22.5%"
+observe  kind=sample   found="rowProfile #ff00ff: no row matched"
+```
+
+That last line is the one worth having. A `rowProfile` that matches nothing returns an empty array, the loop over it never runs, and a script can sail past a colour that was never drawn without noticing — and now the record says so even when the script did not.
+
+The tally you get alongside it, `inspect`, still counts *how much* looking happened by kind. The two answer different questions: `inspect` says an agent looked, `observe` says what it saw. Outcomes are capped at 32 per execution, and the `inspect` event reports `outcomesDropped` when the cap bit, rather than truncating quietly.
+
+> [!NOTE]
+> This is the division from §1 made concrete. `observe` is machine-recorded and cannot be overstated;
+> `expect` and `check` are yours and can be. That is not a weakness in the second — it is the only way
+> a record can hold an intention at all — but it is why the two are separate event types rather than
+> one.
+
+---
+
 ## 4. Logging — Where It Goes and What It Is For
 
 > **Implemented by**: `log(...)`, `error(...)`, `console.log/info/warn/error/debug/trace(...)`, `console.clear()`.
@@ -205,6 +261,8 @@ Use them for perspective-like recession (marks crowding toward the horizon), a g
 | `Stage.current === undefined` is false when no stage is open | It is `null` | `if (!Stage.current)` |
 | `Stage.current` is null right after `begin` | No project: `Stage` is a no-op outside a run | Expected in an ad-hoc engine |
 | The reasoning is gone after the run | It was in `log(...)`, which is per-call | `Stage.note(...)` persists |
+| A critique stage looks identical to one that found nothing wrong | It made no claims, only renders | `Stage.expect(...)` then `Stage.check(...)` |
+| A colour check silently passes over a colour never drawn | `rowProfile` returned an empty array and the loop did not run | The `observe` event says `no row matched`; assert on `.length` |
 | A decision cannot be found anywhere | It was in `Session` | `Session` is invisible in the record |
 | A script "succeeded" but drew nothing | `exit(...)` ran before the render | Exit on failed preconditions only |
 | A textured mark changes every run | Seeded from `mina.time()` | Pass a fixed seed |
@@ -220,6 +278,8 @@ Use them for perspective-like recession (marks crowding toward the horizon), a g
 | Which phase am I in? | `Stage.current` — `null` when none |
 | Close a phase | `Stage.end()` — harmless if none is open |
 | Say why, for the record | `Stage.note(message)` |
+| Predict, before the render | `Stage.expect(claim)` |
+| Settle the prediction | `Stage.check(claim, passed, detail)` — returns `passed` |
 | Say something for this call only | `log(msg)`, `error(msg)` |
 | Levelled logging | `console.log / info / warn / error / debug / trace` |
 | Discard the log so far | `console.clear()` |

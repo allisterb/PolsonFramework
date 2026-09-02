@@ -12,9 +12,52 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 
 - **Async & `await`:** `async`/`await`, Promises and **top-level `await`** are supported. Almost the entire SDK is synchronous — the exceptions are the three `Assets.*` requisition calls, which reach a cloud service and **must be awaited**. An unawaited Promise silently reports every property as `undefined`; see the warning under `polson://sdk/core/Assets`.
 - **Sandbox Security:** `eval` and `new Function` are strictly disabled (`Host.StringCompilationAllowed = false`). Arbitrary external types and reflection are prohibited. Scripts can only interact with the explicit Polson drawing APIs.
-- **A misspelled member is an error, not a new property.** Scripts run in **strict mode**, and reading or writing a member that does not exist on an SDK object **throws**, naming the nearest real member: `ctx.fillStlye = '#f00'` fails with *"Did you mean 'fillStyle'?"* rather than silently doing nothing. Assigning to a real but read-only member (`canvas.width`) says it is read-only. A typo'd **variable** is likewise an error rather than a new global.
+- **A misspelled member fails loudly when you *use* it, and reads as `undefined` when you *ask* about it.** Scripts run in **strict mode**. Writing a member that does not exist **throws**, naming the nearest real one — `ctx.fillStlye = '#f00'` fails with *"Did you mean 'fillStyle'?"* rather than silently doing nothing — and so does **calling** one. Assigning to a real but read-only member (`canvas.width`) says it is read-only. A typo'd **variable** is likewise an error rather than a new global.
+
+  **Reading a member that is not there gives `undefined`**, so the ordinary JavaScript checks work:
+
+  ```javascript
+  if (typeof ctx.drawLoomisWireframe === 'function') { /* … */ }
+  const grid = ctx.drawPerspectiveGrid ?? null;
+  ```
+
+  > [!IMPORTANT]
+  > **When you get `undefined`, ask why before guessing.** `suggest(object, 'name')` returns the same advice a failed call gives, and it searches the whole surface — so a name carried in from another library gets pointed at the real one:
+  >
+  > ```javascript
+  > if (typeof ctx.drawLoomisWireframe === 'undefined') log(suggest(ctx, 'drawLoomisWireframe'));
+  > // → Did you mean 'drawCompositionGrid', 'drawPerspectiveGrid', 'drawTorsoMusculature'? …
+  > ```
+  >
+  > Two consequences follow, and both are worth knowing:
+  >
+  > - **A misspelled read is silent.** `ctx.lineWidht * 2` is `NaN`, not an error. If a value is unexpectedly `NaN`, `undefined` or a blank string, suspect the spelling and run `suggest` on it. Every such read is recorded in the run as an `absent` probe, so `polson report` shows them even when the script did not notice.
+  > - **`'name' in obj` reports every name as present** on an SDK object, and `Object.getOwnPropertyDescriptor` returns a descriptor for every name. Use `typeof`, `=== undefined`, or `has(object, 'name')`.
+
+  <details>
+  <summary>Why <code>in</code> behaves that way</summary>
+
+  Not a defect awaiting a fix. It is the price of `typeof` working at all, and the two cannot both be had.
+
+  **An SDK object is not a plain JavaScript object.** A plain one is open: reading a property that was never set is legal and yields `undefined`, and the language keeps *absent* and *present-but-`undefined`* as different states — `in` and `hasOwnProperty` exist precisely to tell them apart.
+
+  ```javascript
+  const a = { x: undefined };
+  'x' in a;        // true — present, holding undefined
+  typeof a.x;      // "undefined"
+  ```
+
+  An SDK object is a view onto something typed and closed, whose members are fixed when it is built. Asking it for a member it does not have is an error rather than a value, and it has no way to express *"absent, so here is `undefined`"* — that state does not exist on its side of the boundary.
+
+  The boundary offers exactly one hook, and it is a **value provider**: asked "what is this member's value?", it can decline — in which case the strict behaviour applies and an unknown member throws — or it can answer with a value. There is no third answer meaning *absent*.
+
+  So to give JavaScript back its `undefined`, the engine answers `undefined`; and answering with a value asserts that the property **exists** and holds `undefined`. Every SDK object therefore behaves like `a` above for any name you ask about. `typeof` reads the value and is right; `in` asks about existence and is told exactly what the engine now states.
+
+  **No incorrect drawing results from this.** Every route that could change the artifact still refuses and explains itself — calling a member that is not there throws with *"Did you mean…?"*, and so does assigning to one. Acting on `in`'s answer costs an execution and returns a suggestion, which is what the stricter behaviour cost anyway. Only a *read* is quiet, and reads are recorded.
+  </details>
+
   > [!NOTE]
-  > This applies to SDK objects only. Plain JavaScript objects, arrays, `Map` and the `Session` scratchpad keep ordinary JS semantics, so `Session.neverSet` is still `undefined`.
+  > This applies to SDK objects only. Plain JavaScript objects, arrays, `Map` and the `Session` scratchpad keep ordinary JS semantics, so `Session.neverSet` is still `undefined` — and `in` is trustworthy on them.
   >
   > One consequence worth knowing: `?.` and `typeof` do **not** make a *missing member* safe on an SDK object — `ctx.someFutureThing?.x` throws, because the failure is the unknown member rather than a null value. Optional chaining still works for values that may legitimately be null, which is what it is for here: `result.bounds?.width` is fine, because `bounds` exists and is documented as sometimes null.
 - **Execution Limits:** Scripts are enforced with statement limits (2,000,000 statements, configurable via `JsDrawingEngine.MaxStatements`), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
@@ -70,6 +113,30 @@ The logging console:
 - `console.debug(...args: any[])` — Record a debug log line.
 - `console.trace(...args: any[])` — Record a trace message with timestamp.
 - `console.clear()` — Clear the accumulated execution log buffer.
+
+### `has(object: any, name: string)` → `boolean`
+Whether `object` really has a member called `name`, **without touching it**. Use it to check a call exists before writing a script around it.
+
+```javascript
+const draw = has(ctx, 'drawMannequinWireframe') ? 'drawMannequinWireframe'
+           : has(ctx, 'drawMannequin') ? 'drawMannequin' : null;
+```
+
+> [!TIP]
+> `typeof ctx.foo === 'function'` works too and is often more natural. Prefer `has` when you want the *documented* surface rather than whatever reflection finds — `has(ctx, 'getType')` is `false` where `typeof` would say `function` — and when you are about to pair it with `suggest`. **`'foo' in ctx` cannot answer this**: on an SDK object every name reports as present, for the reason set out under the execution model.
+
+It answers for the **documented surface**, so `has(ctx, 'getType')` is `false` even though the CLR method is there. On `Session` it answers for keys, since that is what a scratchpad has. On a list it answers `true` for anything, because array methods are attached rather than declared and a false *no* would be worse than an honest *maybe* — just call it, and a real absence still says so.
+
+### `suggest(object: any, name: string)` → `string`
+What to write instead. Same advice a failed access gives, without having to fail:
+
+```javascript
+if (!has(ctx, 'drawLoomisWireframe')) log(suggest(ctx, 'drawLoomisWireframe'));
+// 'CanvasRenderingContext2D' has no property or method 'drawLoomisWireframe'.
+// Did you mean 'drawCompositionGrid', 'drawPerspectiveGrid', 'drawTorsoMusculature'? …
+```
+
+It searches the **whole surface**, not just the object you asked about, which is what catches a name carried in from another library: `suggest(Skia, 'RuntimeEffect')` answers *"there is no such member here, but `Skia.ColorFilter.runtimeEffect` exists elsewhere on the surface"*. Asking about a name that is already correct says so rather than staying silent — if you are here about a call that exists, the bug is somewhere else.
 
 ### `log(message: string)`
 Writes an informational line to the execution log.

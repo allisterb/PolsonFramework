@@ -1105,7 +1105,15 @@ internal static class ProjectGenerator
             // Transforming a file in place, which is the point of allowing any of this.
             "sed", "awk", "sort", "uniq", "cut", "tr",
             // Moving work about inside the project.
-            "cp", "mv", "mkdir", "touch",
+            "cp", "mv", "mkdir", "touch", "tee",
+
+            // The small change that costs an hour when it is missing. An agent writes
+            // `cat >> log.md << 'EOF' … EOF; echo done`, and one unlisted verb in a compound puts a
+            // permission prompt in front of a person who is watching a dashboard rather than the
+            // session. The subagent stalled, the coordinator blocked behind it, and the run sat for
+            // an hour — over `echo`. None of these can do anything the others cannot.
+            "echo", "printf", "pwd", "cd", "test", "true", "false",
+            "basename", "dirname", "date", "which", "jq", "nl", "column",
         }.Select(c => $"Bash({c}:*)")];
 
     /// <summary>

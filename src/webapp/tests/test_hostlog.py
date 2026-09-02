@@ -96,14 +96,31 @@ class TranscribeTests(HostlogTestCase):
 
         self.assertEqual("mcp__polson__ExecuteScript", out[0][2]["tool"])
 
-    def test_a_long_argument_is_described_rather_than_quoted(self):
-        # A script argument is the whole program, and the server already saved it to scripts/.
+    def test_a_whole_document_argument_is_described_rather_than_quoted(self):
+        # A script or a file's content is already saved somewhere better — `scripts/`, or the file
+        # itself — so an excerpt of it in the record is noise beside the real thing.
         out = hostlog.transcribe(entry("a3", "assistant", [
             {"type": "tool_use", "name": "Write", "input": {"content": "y" * 5000, "path": "a.js"}}]))
 
         args = out[0][2]["args"]
         self.assertEqual("a.js", args["path"])
         self.assertEqual("<5000 chars>", args["content"])
+
+    def test_a_long_command_keeps_its_opening(self):
+        """A shell command reduced to `<453 chars>` says a tool ran and nothing about what it does.
+
+        That is exactly no help when one has been running for twenty minutes — while its first line
+        says everything. A live run stalled on a `cat >> … << 'EOF'` heredoc, which is unreadable as
+        a length and obvious as an excerpt.
+        """
+        command = "cat >> critique_log.md << 'EOF'\n" + ("## Stage 3 — Inker\n" * 60)
+        out = hostlog.transcribe(entry("a4", "assistant", [
+            {"type": "tool_use", "name": "Bash", "input": {"command": command}}]))
+
+        shown = out[0][2]["args"]["command"]
+        self.assertTrue(shown.startswith("cat >> critique_log.md << 'EOF'"), shown[:60])
+        self.assertIn(f"<{len(command)} chars>", shown)
+        self.assertLess(len(shown), len(command))
 
     def test_a_signature_only_thinking_block_is_still_recorded(self):
         # Whether the host stores the reasoning varies with the host's own version — present through

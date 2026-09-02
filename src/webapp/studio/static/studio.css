@@ -242,7 +242,10 @@ form#interject button, .question .actions button { margin-top: 0; white-space: n
 
 /* Sized in real pixels by paint(), not stretched to fit: a viewBox scaled non-uniformly draws round
    dots as ellipses and would do the same to the axis text. */
-#plot svg { display: block; max-width: 100%; }
+/* No `max-width: 100%` here. It was right while the plot always fitted the pane, and it is exactly
+   what defeats scrolling: the SVG is drawn at its own width so the points stay apart, and capping it
+   at the container squashes them back together while reporting success. `#plot` scrolls instead. */
+#plot svg { display: block; }
 
 #plot .grid { stroke: var(--line); stroke-width: 1; }
 #plot .axis { stroke: var(--line); stroke-width: 1; }
@@ -318,3 +321,17 @@ button#expand { margin: 0; padding: .1rem .5rem; font-size: .78rem; background: 
                 text-transform: none; letter-spacing: 0; cursor: pointer; }
 button#expand:hover:not([disabled]) { background: #eef5f8; }
 button#expand[disabled] { color: var(--dim); cursor: not-allowed; opacity: .6; }
+
+/* The curve scrolls rather than compressing. A long run has hundreds of points and a dot is 7px
+   across, so fitting the pane turned the plot into a solid band exactly when it became interesting. */
+#plot { overflow-x: auto; overflow-y: hidden; }
+
+/* Which modes are marked. The line is always the whole run — see the note beside the boxes. */
+.modefilter { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: 0 0 .5rem;
+              font-size: .82rem; }
+.modefilter[hidden] { display: none; }
+#modeboxes { display: flex; gap: .7rem; flex-wrap: wrap; }
+label.modebox { display: inline-flex; align-items: center; gap: .3rem; margin: 0; font-size: .82rem;
+                color: var(--ink); cursor: pointer; text-transform: none; letter-spacing: 0; }
+label.modebox input { width: auto; margin: 0; cursor: pointer; }
+label.modebox .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }

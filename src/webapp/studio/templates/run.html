@@ -24,6 +24,15 @@
         </select>
       </label>
     </h2>
+    {#- Which moments are marked. The line is always the whole run: hiding a mode changes what is
+        pointed at, not what happened, and a curve recomputed from a subset would be a trajectory the
+        run never had. -#}
+    <p class="modefilter" id="modefilter" hidden>
+      <span class="hint">show</span>
+      <span id="modeboxes"></span>
+      <span class="hint">— the line is always the whole run</span>
+    </p>
+
     <div id="plot"><p class="empty">Nothing coded yet.</p></div>
     <p class="hint" id="tally"></p>
 
@@ -209,6 +218,15 @@
     wait: '#9aa4ae', attempt: '#b4442c', execute: '#2f7a4f'
   };
 
+  // Room per point before the plot starts scrolling instead of compressing. A dot is 7px across, so
+  // this is a little over one dot's width — dense enough to still read as a curve, loose enough that
+  // adjacent points are separable, which is the whole complaint.
+  const PX_PER_POINT = 9;
+
+  // Which modes are marked. Everything on by default: the filter is for narrowing a busy plot, so it
+  // must never be the reason something is missing the first time it is looked at.
+  const shown = new Set(Object.keys(MODE));
+
   let n = 0;
   const stream = new EventSource(`/runs/${runId}/events`);
   stream.onmessage = () => {};
@@ -248,6 +266,14 @@
       at: Date.now(),
       who: event.agent || (event.src === 'director' ? 'you' : (event.stage || 'the agent')),
       did: COMPOSING[kind] || detail(kind, event) || (LABEL[kind] || kind),
+
+      // A tool call is the one kind of silence with a likely cause worth naming. Everything else
+      // that goes quiet is the model composing, which resolves on its own; a tool call that has not
+      // come back is usually waiting on a permission decision, which never resolves on its own and
+      // is invisible from here. A live run lost an hour to one: a subagent stalled on an unlisted
+      // verb in a compound command, the coordinator blocked behind it, and the prompt sat unseen in
+      // a terminal while the dashboard showed a run that simply appeared to be thinking.
+      pending: kind === 'tool.call',
     };
 
     atwork.hidden = false;
@@ -261,8 +287,16 @@
     const s = Math.round((Date.now() - last.at) / 1000);
     // Under ten seconds it is simply happening, and a counter ticking through single digits reads as
     // agitation rather than information.
-    atworkAgo.textContent = s < 10 ? '' : s < 90 ? s + 's ago'
+    const ago = s < 10 ? '' : s < 90 ? s + 's ago'
       : Math.floor(s / 60) + 'm ' + (s % 60) + 's ago';
+
+    // Hedged deliberately — the record cannot see a prompt, only that a tool call has not come back.
+    // Saying "may be" and naming where to look is worth more than a confident guess, because the
+    // check costs the reader two seconds and the alternative is waiting for something that will not
+    // arrive.
+    atworkAgo.textContent = last.pending && s >= 120
+      ? ago + ' — may be waiting for your approval in the agent session'
+      : ago;
     atwork.classList.toggle('quiet', s >= 90);
   }
 
@@ -487,20 +521,55 @@
       .map(v => ({ at: v * unit.ms, label: v + unit.suffix }));
   }
 
+  // One box per mode the run actually produced, built once. Offering every mode a run never used
+  // would put four dead controls beside two live ones and make the live ones harder to find.
+  const modeFilter = document.getElementById('modefilter');
+  const modeBoxes = document.getElementById('modeboxes');
+  let boxesFor = '';
+
+  function buildModeFilter(trace) {
+    const present = [...new Set(trace.map(p => p.mode))].filter(m => MODE[m]);
+    const signature = present.join(',');
+    if (signature === boxesFor || !present.length) return;
+
+    boxesFor = signature;
+    modeBoxes.innerHTML = present.map(m =>
+      `<label class="modebox"><input type="checkbox" data-mode="${m}" ${shown.has(m) ? 'checked' : ''}>` +
+      `<span class="swatch" style="background:${MODE[m]}"></span>${m}</label>`).join('');
+
+    modeBoxes.querySelectorAll('input').forEach((box) => {
+      box.addEventListener('change', () => {
+        if (box.checked) shown.add(box.dataset.mode);
+        else shown.delete(box.dataset.mode);
+        paint();
+      });
+    });
+
+    modeFilter.hidden = false;
+  }
+
   function paint() {
     if (!coded || !coded.trace.length) return;
 
     const key = reading.value;
     const trace = coded.trace;
+    buildModeFilter(trace);
 
     // Drawn at the element's real pixel size rather than a fixed viewBox stretched to fit. The old
     // `preserveAspectRatio="none"` scaled x and y by different factors, which drew every dot as an
     // ellipse on any pane narrower than 1000px — and would have squashed axis text the same way.
-    const w = Math.max(320, Math.round(plot.clientWidth) || 1000);
+    // Wide enough that the points stay apart, and scrolled rather than squashed. A dot is 7px across
+    // and a long run has hundreds of them, so fitting the pane meant a solid band in which nothing
+    // could be told from anything else — the plot stopped being readable at exactly the length where
+    // it starts being interesting. `#plot` scrolls horizontally; the pane's width is still the floor,
+    // so a short run looks exactly as it did.
     const h = 186;
     // `top` leaves room for the y-axis caption above the plot area rather than beside it, which is
     // the only place a phrase that long fits without being cut off by the left edge.
     const pad = { left: 48, right: 12, top: 18, bottom: 26 };
+
+    const fits = Math.max(320, Math.round(plot.clientWidth) || 1000);
+    const w = Math.max(fits, trace.length * PX_PER_POINT + pad.left + pad.right);
     const innerW = w - pad.left - pad.right;
     const innerH = h - pad.top - pad.bottom;
 
@@ -530,6 +599,10 @@
     // changed, and at a uniform 3.5px a run's half-dozen creative events sat indistinguishable among
     // its two hundred notes. A stem to the baseline is what makes them findable without reading.
     const dots = trace.map((p, i) => {
+      // Filtered here and nowhere else: the line, the ticks and the tally are all built from the
+      // whole trace, so unchecking a mode hides a marker rather than rewriting the run.
+      if (!shown.has(p.mode)) return '';
+
       const made = p.mode === 'execute';
       const cx = x(p, i).toFixed(1), cy = y(p[key]).toFixed(1);
       const stem = made ? `<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${zero.toFixed(1)}" class="stem"/>` : '';
@@ -761,13 +834,49 @@
     if (kind === 'note' || kind === 'message') return e.message || e.text || '';
     if (kind === 'render' || kind === 'artifact.read') return e.artifact || '';
     if (kind === 'inspect') return Object.entries(e.probes || {}).map(([k, v]) => `${k} ${v}`).join(', ');
-    if (kind === 'tool.call') return e.tool || '';
+    if (kind === 'tool.call') return toolDetail(e);
     if (kind === 'script.error') return e.error || e.script || '';
     if (kind === 'run.error') return (e.error || '') + (e.traceback ? '\n\n' + e.traceback : '');
     if (kind === 'stage.begin' || kind === 'stage.end') return e.stage || '';
     if (kind === 'question.open') return e.text || '';
     if (kind === 'stream.lag' || kind === 'stream.truncated') return `${e.dropped} not shown`;
     return (e.text || e.script || e.message || '').toString();
+  }
+
+  // A tool call, with the argument that says what it was actually doing.
+  //
+  // The name alone was almost no information: a row reading `Bash` is indistinguishable from any
+  // other `Bash`, so a call that has been running for twenty minutes looks like every call that
+  // returned in forty milliseconds. Naming the command turns "a tool is slow" into "this command is
+  // slow", which is the difference between noticing and diagnosing.
+  //
+  // Which argument matters is per tool, and guessing wrongly is worse than showing none: a path for
+  // a file tool, the command for a shell, the pattern for a search. `hostlog` already summarises
+  // long values as `<N chars>`, so a whole script never arrives here to be truncated twice.
+  const TOOL_ARG = {
+    Bash: 'command', PowerShell: 'command',
+    Read: 'file_path', Write: 'file_path', Edit: 'file_path', NotebookRead: 'file_path',
+    Glob: 'pattern', Grep: 'pattern',
+    WebFetch: 'url', WebSearch: 'query',
+    Agent: 'description', Task: 'description',
+  };
+
+  function toolDetail(e) {
+    const tool = (e.tool || '').replace(/^mcp__[^_]+__/, '');
+    const args = e.args || {};
+
+    // Named argument first, then the conventions the Polson tools use, then whatever single short
+    // argument there is — a one-argument call is unambiguous and worth showing.
+    let shown = args[TOOL_ARG[tool]] ?? args.scriptFile ?? args.outFile ?? args.query ?? args.name;
+    if (shown === undefined) {
+      const values = Object.values(args).filter((v) => typeof v === 'string');
+      if (values.length === 1) shown = values[0];
+    }
+    if (shown === undefined || shown === '') return tool;
+
+    // One line. A heredoc is many, and its first line is the part that says what it is doing.
+    const flat = String(shown).replace(/\s+/g, ' ').trim();
+    return tool + '  ' + (flat.length > 160 ? flat.slice(0, 160) + '…' : flat);
   }
 
   function esc(s) {

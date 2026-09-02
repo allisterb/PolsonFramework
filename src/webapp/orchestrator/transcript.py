@@ -42,14 +42,28 @@ def clip(text: str, limit: int = MAX_TEXT) -> tuple[str, bool]:
     return (text, False) if len(text) <= limit else (text[:limit], True)
 
 
+#: Arguments that are whole documents rather than descriptions of an action. For these the length is
+#: the only useful summary: the content is already saved elsewhere — a script into `scripts/`, a file
+#: edit into the file — and an excerpt of it in the record is noise beside the real thing.
+WHOLE_DOCUMENT = frozenset({"script", "content", "new_string", "old_string", "prompt"})
+
+
 def summarize_args(args: dict[str, Any]) -> dict[str, Any]:
-    """Keeps short arguments verbatim and replaces long ones with their size."""
+    """Keeps short arguments verbatim; long ones become a leading excerpt and their size.
+
+    The excerpt is the point. A shell command replaced by `<453 chars>` says a tool ran and nothing
+    about what it was doing, which is exactly no help when one has been running for twenty minutes —
+    while its first line, `cat >> critique_log.md << 'EOF'`, says everything. Only arguments that are
+    *documents* are reduced to a bare length, because for those the content lives somewhere better.
+    """
     summary: dict[str, Any] = {}
     for key, value in (args or {}).items():
-        if isinstance(value, str) and len(value) > MAX_ARG:
+        if not isinstance(value, str) or len(value) <= MAX_ARG:
+            summary[key] = value
+        elif key in WHOLE_DOCUMENT:
             summary[key] = f"<{len(value)} chars>"
         else:
-            summary[key] = value
+            summary[key] = f"{value[:MAX_ARG].rstrip()}… <{len(value)} chars>"
     return summary
 
 

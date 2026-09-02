@@ -185,6 +185,11 @@ public static class JsSurface
     {
         "log", "error", "exit", "table", "createCanvas", "Canvas", "ImageData", "Snap", "Session", "SK",
         "CanvasPath", "Path2D",
+
+        // `has(object, name)` — whether a member exists, without touching it. A function rather than
+        // an idiom because resolution here is strict, so `typeof`, `in`, `Object.hasOwn` and
+        // `Reflect.has` all throw instead of answering. See `MemberIndex`.
+        "has", "suggest",
     };
     #endregion
 }

@@ -35,13 +35,20 @@ public class UnresolvedMemberTests : TestsRuntime
         Assert.Contains("fillStyle", result.Error);   // the suggestion is the point
     }
 
+    /// <summary>
+    /// A misspelled *read* is lenient — it yields `undefined` so `typeof` can answer — but the
+    /// assignment and the call still refuse. See `HasProbeTests`, which holds the whole contract.
+    /// </summary>
     [Fact]
-    public void TestAMisspelledPropertyReadFails()
+    public void TestAMisspelledPropertyReadIsLenientWhileWritesAndCallsAreNot()
     {
-        var result = Run("const x = createCanvas(20,20).getContext('2d'); log('' + x.lineWidht);");
+        var read = Run("const x = createCanvas(20,20).getContext('2d'); log('' + x.lineWidht);");
+        Assert.True(read.Success, read.Error);
+        Assert.Contains("undefined", string.Join(" ", read.Logs), StringComparison.Ordinal);
 
-        Assert.False(result.Success);
-        Assert.Contains("lineWidth", result.Error);
+        var written = Run("const x = createCanvas(20,20).getContext('2d'); x.lineWidht = 3;");
+        Assert.False(written.Success);
+        Assert.Contains("lineWidth", written.Error);
     }
 
     /// <summary>
@@ -117,11 +124,19 @@ public class UnresolvedMemberTests : TestsRuntime
     [Fact]
     public void TestAForeignApiNameIsPointedAtTheRealOne()
     {
-        var result = Run("Skia.RuntimeEffect.make('half4 main(float2 c) { return half4(1); }');");
+        // Called directly on the receiver, which is where the reference still knows its own base.
+        var result = Run("Skia.runtimeEffect('half4 main(float2 c) { return half4(1); }');");
 
         Assert.False(result.Success);
         Assert.Contains("elsewhere on the surface", result.Error);
         Assert.Contains("Skia.ColorFilter.runtimeEffect", result.Error);
+
+        // A *chained* miss cannot be explained: by the time `.make` is called the base is plain
+        // `undefined` and remembers nothing. That is the cost of lenient reads, and it is why the
+        // read is recorded instead — see `HasProbeTests`.
+        var chained = Run("Skia.RuntimeEffect.make('half4 main(float2 c) { return half4(1); }');");
+        Assert.False(chained.Success);
+        Assert.DoesNotContain("elsewhere on the surface", chained.Error ?? "");
     }
 
     /// <summary>No near miss is not a reason to say the same thing twice.</summary>

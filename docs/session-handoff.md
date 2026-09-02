@@ -1,361 +1,268 @@
-# Session Handoff — 2026-09-01 (fourth session)
+# Session Handoff — 2026-09-01 (fifth session)
 
-State after the session that set out to fix the manuals and found that **writing a manual is how you
-find the bugs**. Five manuals were written; each one surfaced a defect in the surface it documented,
-and none of those defects was found by reading code.
+State after the session that gave the studio a **window onto runs it does not drive**. It started as
+"can we watch a Claude Code run in the browser" and turned into the discovery that most of what the
+dashboard needed already existed — and that once you can watch a run, you start finding things.
 
-**Tests: 1,135 .NET, 200 Python — all passing.** 18 manuals. The previous handoff is superseded; its
-open items are carried forward at the end, marked with what changed.
+**Tests: 1,194 .NET, 248 Python — all passing.** The previous handoff is superseded; its open items
+are carried forward at the end.
 
 ---
 
 ## What this session was actually about
 
-It started with one observation — *"I asked for an SVG of a seagull riding a bicycle and got a
-raster webp"* — and the diagnosis generalised. The studio had three overlapping problems, and they
-compound:
+**Observability, and what it costs to have none.** Nearly every change below was found by looking at
+a live run rather than by reading code:
 
-1. **The manuals covered 58% of the SDK**, and the measurement said 41% because the instrument was
-   counting English words.
-2. **The engine let a script invent members on any .NET object.** A typo was not an error; it was a
-   new property, and the drawing came out unchanged with nothing anywhere saying why.
-3. **The run record held only actions.** A run that measured and was satisfied left the same trace as
-   one that measured, found the value wrong, and redrew four times.
+- A finished picture that 404'd in the render panel, found from a screenshot.
+- 850 KB of JavaScript re-sent to change part of a program, found by measuring gaps.
+- A subagent that could not write the files its own role spec told it to write.
+- An agent deleting its own report because `--reset` had left a stale one.
+- An hour lost to a permission prompt nobody could see.
 
-Each was invisible in a different way. The through-line is the one the last handoff already named:
-**everything looked like it worked.**
+None of those is visible from source. All of them were obvious from the record once there was
+somewhere to look at it.
 
 ---
 
-## 1. Five manuals, and a defect from each
-
-| Manual | Source | The defect writing it found |
-| :--- | :--- | :--- |
-| **14** Vector Construction & the Raster Boundary | *Graphic Design and Print Production Fundamentals* ch. 5 (CC BY 4.0) | `element.children` was a method documented as a property, so `.length` answered `0`; `matrix.transformPoint` returned a tuple whose `.x` read `undefined`; `element.type` said `"definitionlist"`; `outSvg` wrote nothing and reported success |
-| **15** Measuring a Render | OCSM C&C '23 (CC BY 4.0) + CSM C&C '17 | The size-mismatch throw in `bitmap.diff` **cannot be caught** — `try`/`catch` does not run and the script ends |
-| **16** Requisitioning Material | none — a Polson subsystem | `classify` reported trigger `"man"` for a descriptor containing `"woman"`, naming a word the caller never typed |
-| **17** Drawing Media & the Made Mark | Klaus Janson, *DC Comics Guide to Pencilling* ch. 1, 13 | `BrushPreset.color` **read back as changed and drew the old value** — a script could verify its own change and be wrong |
-| **18** The Run Record | CSM C&C '17's three stated limitations | `Stage.current` returned `null` where documented `undefined`; `console.info` was not an alias for `log`; `mina.backin/backout/elastic` leave the `0…1` range |
-
-Manual 16's runnable plate **spends nothing by construction** — `material()` classifies before
-touching the network, so a deliberately form-shaped descriptor exercises the whole failure protocol
-for free on any machine. There is a `[!CAUTION]` on it saying exactly why, so nobody pastes it with
-the descriptor changed.
-
-### Coverage, honestly measured
-
-`ManualCoverageTests` was counting a bare word anywhere in the corpus, which counted ordinary English:
-a vector manual that never mentions requisition moved `Assets` from 35% to 58% on the words *bytes*,
-*size* and *success*. It now requires a leading dot — `.getPointAtLength`, not `getPointAtLength` — so
-it counts the call being **used** rather than the word appearing.
-
-| Area | Session start (inflated) | Honest instrument | Now |
-| :--- | ---: | ---: | ---: |
-| Skia | 53 | 40 | **100** |
-| Globals | 44 | 5 | **100** |
-| Drawing | 100 | 97 | 97 |
-| Assets | 35 | 17 | **94** |
-| Snap | 44 | 70 | **82** |
-| Canvas2D | 67 | 64 | 75 |
-| Scale | 63 | 50 | 54 |
-| **Overall** | **58** | **58** | **82** |
-
-Part of the remaining `Snap` gap turned out **not** to be a manual gap at all — see §3.
-
----
-
-## 2. A misspelled member is now an error
-
-Jint's default lets a script invent members on a wrapped .NET object. `ctx.fillStlye = 'red'` created
-a JS-side property, the fill stayed black, and nothing said so. The same mechanism made
-`canvas.width = 999` **read back as 999** on a canvas still 16 wide.
-
-Closed with `Options.Interop.ThrowOnUnresolvedMember` plus `Options.Strict`.
-
-> **The trap, if this ever seems to break `Assets`:** `await x` reads `x.then` to test for a thenable
-> and `JSON.stringify` reads `toJSON`. With the setting on, those *internal* probes throw on every
-> .NET object — it broke requisition outright. The fix is the two-name `InteropProtocolMembers` set fed
-> to `SetMemberAccessor`. **Never add `toString` or `valueOf`** — it would shadow `paper.toString()`.
-
-**The message is most of the value.** `ExplainMissingMember` reflects on failure (zero cost on the
-drawing path) and produces *"Did you mean 'fillStyle'?"*, distinguishes read-only members from missing
-ones, and filters suggestions through `JsSurface.NotSurface` so it never proposes `getType`.
-
-That suggester then got two fixes **from a live run that it had misled**:
-
-- A name **extended at the end** is the commonest real mistyping and a length window rejects it. The
-  script wrote `perlinNoiseFractalNoise`; the correct `perlinNoiseFractal` is five characters shorter
-  and was excluded, while `perlinNoiseTurbulence` fell inside the window and was suggested instead.
-  **The agent took the suggestion** — `perlinNoiseFractal` appears in no script in that run, and the
-  finished painting used the wrong noise family. Ranking is now by longest shared prefix.
-- A name carried in from another library has no near miss on the receiver it was aimed at.
-  `Skia.RuntimeEffect.make()` is CanvasKit's spelling; the message now says *"…but
-  `Skia.ColorFilter.runtimeEffect` exists elsewhere on the surface."*
-
-**Read this as the cautionary half of §6.** A wrong signal travels down the improvement channel as
-readily as a right one, and the agent cannot tell which it received.
-
----
-
-## 3. The manifest was advertising names nobody should type
-
-`Snap` rose 70% → 82% **with no manual text written**. The rule for capitalising a member was "any
-property whose type is a receiver", which asks a different question and answered it wrongly for every
-property that merely *returns* one: `Snap.Path`, `element.Paper`, `paper.Defs`, `canvas.Bitmap`,
-`Assets.Budget`, `element.Parent` were all published capitalised, spellings the reference does not
-document.
-
-A namespace accessor is now one **the registry names in its own right** — `Skia.Shader` is a receiver
-entry, so it keeps its capital; `element.paper` merely returns one, so it does not. Exactly nine
-symbols are capitalised now, all `Skia.*`, and a test asserts nothing else ever is.
-
-Two more found while verifying: exclusions did not follow inheritance (`element.node` was excluded as
-a raw escape hatch but `paper.node` and `gradient.node` leaked through), and `Search` returned
-`Skia.Shader` with the signature `shader: SkiaShaderApi`.
-
----
-
-## 4. The run record can now say whether the result was wanted
-
-Every event was an *action*. Three things changed that.
-
-**`observe` — the measurements record themselves.** `ProbeScope.Record(Kinds.Compare)` was firing on
-the way **into** `bitmap.diff`, so the similarity, bounds and `identical` flag were computed twenty
-lines later and discarded. They are recorded on the return path now, for `diff`, `palette` and
-`rowProfile`. Capped at 32 per execution, with `outcomesDropped` reported rather than truncating
-quietly.
-
-> A `rowProfile` that matches nothing returns an empty array, the loop over it never runs, and a
-> script sails past a colour that was never drawn. The record now says `no row matched` even when the
-> script did not notice.
-
-**`expect` / `check` — the agent's own claims.** `Stage.expect(claim)` before the render;
-`Stage.check(claim, passed, detail)` after, returning the verdict so it reads as the test it is. The
-division is deliberate: `observe` is machine-recorded and cannot be overstated, `expect`/`check` are
-the agent's and can be — which is the only way a record can hold an *intention* at all.
-
-**`asset.requisition` / `asset.refused` / `budget`** — specified in `project-layout.md` and never
-written, so a run could not say what it bought. Collected by `RequisitionScope` (mirroring
-`ProbeScope`, so `Polson.ExtendedMind` still knows nothing about a run event log) and drained by
-`DrawingMcpTools`. Recorded from `Acquire`, which its own comment already called *"the only path that
-can spend money"*.
-
-Three things that would have been wrong:
-
-- A **refusal is a separate event**, not a failed requisition — nothing reached, nothing spent, remedy
-  is to reword. A run that spent its time rewording should not read like one the service kept refusing.
-- `result.Charged` is the wrong source for "was this cached": a cached result is a replay of a charged
-  one and carries the flag with it. It reads `Budget.CacheHits` before and after.
-- The budget snapshot must be **pushed by the toolkit**, not read from `JsDrawingEngine.Assets` — the
-  engine substitutes its own disabled toolkit with `AssetBudget(0)` when none is configured.
-
-**The event serializer only handled `Dictionary<string,int>`.** Everything else fell to `ToString()`,
-so `bounds` would have been written as the dictionary's *type name* — a field that looks present and
-says nothing. It recurses properly now.
-
-**CSM coding** (`src/webapp/orchestrator/csm.py`): `expect`/`check` code as `communicate`;
-`asset.requisition` as `gather` (a requisition-only script renders nothing and succeeds, so it
-contributed nothing to the curve before); `asset.refused` as `attempt`. **`observe` is deliberately
-uncoded** — one per measurement inside an execution that already emits a single `inspect`, so coding
-both would count one looking-episode up to thirty times and drag the curve toward unclamped *in
-proportion to how thorough the checking was*. `budget` is uncoded as a state snapshot.
-
----
-
-## 5. `painting-4`, re-run — what it proved and what it did not
-
-Its old MCP config had Linux paths (`/home/allisterb/...`, `/mnt/c/...`), so the first launch failed
-with `invalid character 'P'` — `dotnet` printing "could not execute" onto stdout where JSON-RPC
-expected the `initialize` reply. **Every other project has `C:/Projects/Polson/...`.** The run was
-`--reset` and re-run natively.
-
-**The critique produced the thing the original run could not:**
-
-```
-expect  Dominant tonal values must remain low-key (>60% in shadows and deep tones)
-check   Dominant tonal values low-key >60%   → false   "Measured 57.1%"
-        … refinement pass …
-check   Low-key tonal hierarchy              → true    "Dark values dominate frame…"
-```
-
-Same fault class as the original incident — value compression — found as a number, fixed, re-checked,
-recorded. `materials.md` was written during `Requisition` rather than as a closing checklist.
-
-**Two gaps it also showed**, both now warned about in `RunReport`:
-
-- **6 expectations stated, 4 settled.** An unsettled `expect` reads as verification and is not.
-- A run whose every check failed has **diagnosed without demonstrating**.
-
-Manual 15 §8, Manual 18 §3a and both picture workflows now require every claim to be settled and the
-passing check after a fix to be **recorded** — the old stopping rule ("keep going until the check that
-failed passes") could be satisfied by a `log(...)` that reaches one tool call and vanishes.
-
-**Two findings from the requisitions**, both now in Manual 16:
-
-- The same backdrop was **charged twice**: `keepQuiet: 'lowerThird'` goes into the prompt, the prompt
-  goes into the content hash, so dropping it is a cache miss. The retry was a reasonable judgement
-  paid for at full price.
-- The cache survives `--reset` (it lives outside the project), so 2 of 5 material calls were free.
-
-**On the speed question, honestly:** the run felt roughly twice as fast, and the surviving brain-step
-files support that (~16.5 min for steps 21→86 previously, 9.1 min for six stages now). But engine-side
-it is *slower* per script, and `scripts/render` is 3.5 against `painting-2`'s 1.7. The likeliest cause
-is not the code: the previous run was under **WSL against `/mnt/c`**, this one native Windows. Cache
-hits and the absence of the missing-native-library failures the old Linux run hit account for more of
-the rest.
-
----
-
-## 6. Stigmergy runs in two directions, and the second is ours
-
-`CLAUDE.md` §2 said all five theoretical frameworks were "derived from Nicholas Davis and 4E Cognition
-research (available in `@reference/papers/`)". Checked against the corpus:
-
-| Concept | Verdict |
-| :--- | :--- |
-| Enactive Cognition | Sound — argued throughout |
-| Five Pillars | Sound — `ICCC24_paper_58.pdf` names and defines them |
-| Creative Sense-Making | Sound — C&C '17 + dissertation |
-| Extended Mind | **Weak** — Clark & Chalmers; the corpus reaches it only via a bibliography entry |
-| Stigmergic Collaboration | **Absent** — *zero* occurrences across all nine papers |
-
-§2 now states provenance per item, credits Grassé (1959) and Elliott (2006), and marks both as **not
-in `reference/`** so nobody hunts for them there.
-
-It also names the second direction, which is not in any cited work. **Horizontally** the trace is read
-by a peer working in the environment as it stands — most often the agent's own earlier pass.
-**Vertically** it is read by whoever can change what the environment affords, so the next agent does
-not need the trace at all. Every defect in §1 arrived that way. `docs/devpost/Polson.md` now carries
-the same argument with the worked table.
-
----
-
-## 6a. The studio can now watch a run it is not driving
-
-**1,144 .NET, 240 Python.** The studio stopped requiring that it be the thing running the agent.
+## 1. The studio watches runs it does not drive
 
 Work a project in Claude Code or Claude Desktop, press **Watch** on the index, and the same run page
-opens over it — the curve, every render beside the script that made it, both participants. Nothing
-extra is captured to make that work: the MCP server writes `server.jsonl` whoever drives it, and the
-`preserve-chatlog` hook already preserved the host's transcript beside it. What was missing was the
-join.
+opens over it. Nothing extra is captured to make that work: the MCP server writes `server.jsonl`
+whoever drives it, and the `preserve-chatlog` hook already preserved the host's transcript.
 
-- **`orchestrator/hostlog.py`** transcribes a host transcript into `agent.jsonl` / `director.jsonl`.
-  Idempotent by the transcript's own `uuid`, with the resume point read back out of the record rather
-  than kept in a state file that could disagree with it.
-- **`studio/observe.py`** is a `Run` with no task: it replays the merged record, tails `server.jsonl`,
-  and re-syncs the transcript. Read-only by design — the host's interface is where direction happens,
-  and a page offering its own answer box would offer a way in that reaches nothing.
-- **`project.read`** beside `project.load`. Every check in `load` is a *drivability* check, and
-  applying them to a reader refused the feature's whole subject: a Claude project was turned away with
-  "the orchestrator builds Antigravity SDK configurations only", which is true and beside the point.
+| Piece | What it does |
+| :--- | :--- |
+| `orchestrator/hostlog.py` | Transcribes a host transcript into `agent.jsonl` / `director.jsonl`. Idempotent by the transcript's own `uuid`, with the resume point read back out of the record rather than kept in a state file that could disagree with it. |
+| `studio/observe.py` | A `Run` with no task: replays the merged record, tails `server.jsonl`, re-syncs the transcript. Read-only by design. |
+| `project.read` | Beside `project.load`. Every check in `load` is a *drivability* check, and applying them to a reader refused the feature's whole subject — a Claude project was turned away with "the orchestrator builds Antigravity SDK configurations only", which is true and beside the point. |
 
-Three things worth not rediscovering:
+**It reads the host's live store, not the hook's copies.** The hook fires at turn end, and a subagent
+can work for forty minutes inside one turn — so a page watching the copies shows the spine live and
+the conversation frozen, which is backwards from what a person wants while a stage is quiet. The path
+is not guessed: `hooks.jsonl` records the transcript each firing resolved.
 
-- **`mcp__polson__ExecuteScript` had to be normalised before coding.** `SPINE_OWNED` holds bare names,
+Three traps worth not rediscovering:
+
+- **`mcp__polson__ExecuteScript` must be normalised before coding.** `SPINE_OWNED` holds bare names,
   so without stripping the prefix every execution in a host-driven run is coded twice — once from the
-  spine, once from the transcript. That is the exact failure the existing comment warns about, and it
-  would have read as a run twice as productive as it was.
-- **Whether a `thinking` block carries its text is not ours to control.** Measured across 409
-  transcripts: mostly present through August 2026, absent from the 21st (9 of ~3,300 since), tracking
-  server-side client flags. The block is emitted either way, marked `redacted` when empty — `csm`
+  spine, once from the transcript. That is the failure the existing comment warns about, and it would
+  have read as a run twice as productive as it was.
+- **Whether a `thinking` block carries text is not ours to control.** Measured across 409 transcripts:
+  present 63–100% per day through August 2026, absent from the 21st (9 of ~3,300 since), tracking
+  cached client feature flags. The block is emitted either way, marked `redacted` when empty — `csm`
   codes `thinking` as `wait` and nothing else does, so dropping the empty ones would take every pause
-  out of the curve and make such a run read as an agent that never stopped to think.
-- **The artifact route resolved project-relative paths under `artifacts/`.** Staged renders worked by
-  coincidence of their prefix matching the route segment; `output.webp` at the project root 404'd, so
-  a finished picture showed as a caption with no image. Now resolved against the project root, with a
-  suffix allowlist keeping the boundary narrow — containment says *inside the project*, the allowlist
-  says *and it is an image*.
+  out of the curve.
+- **Subagent transcripts live outside the parent's.** Claude Code writes them to
+  `<session>/subagents/agent-*.jsonl` with a `.meta.json` naming the `agentType`. `preserve-chatlog`
+  now copies them; earlier I wrongly concluded from an `isSidechain` field that they were inline.
+  They are not — the field is always false in a parent.
 
 **The agent's prose now codes as `communicate`, as the director's does.** One participant speaking
-directly to another is communication whichever is speaking; the asymmetry was an artefact of where the
-two halves of the record came from, and under a host-driven run it produced a two-participant curve on
-which only one participant ever spoke.
+directly to another is communication whichever is speaking; the asymmetry was an artefact of where
+the two halves of the record came from. `AskUserQuestion` codes the same way — under the orchestrator
+a question reaches `director.jsonl`, under a host it arrived as a tool call and fell through uncoded.
 
-### The Claude profile, audited against the agy one
+---
 
-Current on everything that matters — the MCP allowlist is reflection-derived and cannot drift, the
-`preserve-chatlog` hooks are wired on `Stop` and `SessionEnd`, and its path denies over Polson's source
-are *stronger* than agy's, which still has none. Two gaps found and both closed:
+## 2. `scriptFile`, and what re-sending a program costs
 
-- **Multi-agent was agy-only, on a premise that had gone stale.** The code said Claude Code had
-  "nowhere to register" a role; it reads `.claude/agents/*.md`. A `comic_studio` project got four role
-  specs and nothing able to hold one, while its instructions told the director to run them as
-  subagents. Both hosts now register; only the shape differs, and the Claude prompt is inlined because
-  there is no `promptFile` indirection.
-- **`Task` was neither allowed nor denied**, so every dispatch would have prompted — the same shape as
-  approving a server's own tool names and still being prompted for everything a subagent called. Now
-  allowed exactly where roles exist.
+Measured on the first `cs-5` run: **850 KB of JavaScript over 55 calls**, the twenty largest taking a
+mean of **three minutes each to emit**, against a **median engine time of 45 ms**. Consecutive large
+scripts shared **71%** of their lines. Wall clock tracked bytes *emitted*, not bytes read — the
+Critic ingested the most and finished fastest, 11 minutes against the Colorist's 67.
 
-## 7. Where to pick up
+`ExecuteScript(scriptFile: 'artwork.js')` runs a file instead. Both sources given is refused rather
+than resolved; the server still copies **what actually ran** into `scripts/`, so a later edit never
+rewrites an earlier execution's history; `script.start` names the source.
+
+**It worked.** The second `cs-5` run used it for **25 of 48 executions**, and `Edit` became the
+most-used tool at 160 calls.
+
+---
+
+## 3. The Claude profile, audited and repaired
+
+Generated both profiles and diffed them. Current on the things that matter — the MCP allowlist is
+reflection-derived and cannot drift, the hooks are wired, and its path denies are *stronger* than
+agy's, which still has none. Four gaps found, all closed:
+
+- **Multi-agent was agy-only**, on a premise that had gone stale: the code said Claude Code had
+  "nowhere to register" a role, and it reads `.claude/agents/*.md`. A live run then dispatched
+  `subagent_type: "penciler"` from a generated definition.
+- **`Agent` versus `Task`.** The dispatch tool is named `Agent` in this build; the allowlist named
+  `Task`, so the entry was inert and the run prompted. Both spellings now — an unrecognised entry is
+  silently inert, so naming one is a rule that looks enforced and is not.
+- **Subagents could not write.** Their role specs tell them to write `critique_log.md` and
+  `artwork.js`; with `Read` alone, all sixteen of those edits fell to the coordinator and the
+  collaboration trace was written second-hand. They now get the main agent's own tools.
+- **The shell was denied wholesale**, which was too blunt. `grep`, `sed`, `diff` have nothing to do
+  with drawing and everything to do with maintaining a source file. Allowed by command prefix;
+  `node`, `dotnet`, `magick`, `curl`, nested shells and — after a live run deleted its own report —
+  `rm`, `git` and friends stay denied.
+
+> **An allowlist decides what is auto-approved; it prevents nothing.** An unlisted command falls
+> through to a prompt, and a prompt in a long run gets waved through. That is how `rm` ran, and it is
+> why destructive verbs are denied rather than merely unlisted.
+
+---
+
+## 4. `--reset` archives instead of deleting
+
+It cleared `events/`, `scripts/` and `artifacts/` but **left** `findings.md`, `critique_log.md` and
+`artwork.js` — so a project held a 27 KB report describing a record that had just been deleted. The
+next agent read it, correctly judged it stale, and reached for `rm`. Both halves of that were ours.
+
+Everything now moves to `previous/<timestamp>/` with a README saying what it is. Nothing is deleted,
+the next run still starts clean, and `previous/` is gitignored. The shared instructions carry the
+rule for agents too: **never delete — rename aside and say why**, because a stale file that survives
+costs a moment's confusion and a deleted one may have been the only copy.
+
+`projects/cs-5-baseline/` holds the first run, recovered after a reset took it: transcripts, 62
+scripts extracted from `ExecuteScript` payloads, and `findings.md` / `critique_log.md` replayed from
+their `Write` + `Edit` calls (all 14 edits matched, so the replay is exact). That recovery is what
+this change makes unnecessary.
+
+---
+
+## 5. The dashboard
+
+Reorganised on the director's own read of it: **curve → render | script → full-width trace.** The
+trace was the tall left column and the script a 380px gutter, which had it backwards — the script is
+code, and the trace carries the most variable-width content there is. Both top rows are
+height-bounded and scroll internally so the trace stays on screen during a live run.
+
+- **Timestamps and gaps** in the trace: `19:18:14 +6s`, warning-coloured past 30 s. Duration by
+  reading rather than subtracting.
+- **Tool detail** — the argument that says what a call was doing, chosen per tool. A row reading
+  `Bash` is indistinguishable from any other; `Bash cat >> critique_log.md << 'EOF'…` is not. Long
+  *commands* keep their opening; whole documents stay a bare length.
+- **An at-work line**: who is working, what they last did, how long ago. When the last event is a
+  tool call and two minutes pass, it says *"may be waiting for your approval in the agent session"* —
+  hedged, because the record cannot see a prompt, only that a call has not come back.
+- **The curve scrolls** at ~9px per point instead of compressing, and **mode checkboxes** narrow what
+  is marked. The line always stays computed from every event: a curve recomputed from a subset would
+  be a trajectory the run never had.
+- **`expand`** on the script pane, sharing the render's lightbox so Esc and click-to-close are one
+  behaviour.
+
+---
+
+## 6. `typeof` works now, and what that cost
+
+An agent cannot ask whether a call exists. Strict resolution throws on an unresolved member — right,
+because it is what stops `ctx.fillStlye = 'red'` doing nothing silently — but it also defeated
+`typeof`, `in`, `Object.hasOwn` and `Reflect.has`, all of which route through the same accessor. The
+first `cs-5` run spent **18 of its 71 renders** on probe scripts, deleting a candidate name at a time
+to find out whether it existed.
+
+Reads are now lenient, and three things keep that from being the old silent-typo bug:
+
+- **Writes still throw.** Jint consults the accessor on reads only.
+- **Calls still explain.** `MissingCallResolver` uses `IReferenceResolver.TryGetCallable`, which fires
+  with a `Reference` carrying both the name and the base — the only hook that can see enough.
+- **Reads are recorded** as `absent` probes, so an agent thrashing on names that do not exist is a
+  line in the trace rather than something we might notice.
+
+Plus `has(object, name)` and `suggest(object, name)` — the latter returning the same advice a failed
+call gives, searching the whole surface, so a foreign name gets pointed at the real one.
+
+> **`'name' in obj` reports every name as present on an SDK object, and that is not a defect.** The
+> member accessor is a *value provider*: it can decline, or answer with a value. There is no third
+> answer meaning "absent", because .NET has no such state — a type's members are fixed. Answering
+> `undefined` to give JavaScript its semantics back also asserts the property exists. `typeof` reads
+> the value and is right; `in` asks about existence and cannot be. Documented under the execution
+> model with the JS/.NET seam explained, and pinned by a test.
+>
+> Nothing incorrect follows: every route that could change the artifact still refuses and explains.
+
+**Rejected on the way**: relaxing resolution *without* `TryGetCallable` (loses the suggester),
+`TypeResolver` (exposes only `MemberFilter`/`MemberNameComparer`/`MemberNameCreator` — no expression
+context), and subclassing `ObjectWrapper` to fix `in` (constructor is `internal`, and overriding
+`HasProperty` would contradict the descriptors the same object hands out).
+
+---
+
+## 7. What the run itself produced
+
+`cs-5` finished: **111 scripts, 71 renders, 7 stages** including reopened ones —
+Penciler → Colorist → Inker → Critic → Penciler → Colorist → Critic. A late-night noodle stall in the
+rain, and the director judged the faces and arms the weak passages.
+
+**`artifact.read`: 45.** The previous handoff recorded that column as empty — *"a whole 11-script run
+recorded none: a single agent holds its own context, so it never needs to look back"*, and called it
+the one thing the enactive claim most needs to show. Four agents handing over through files is what
+filled it.
+
+Its `findings.md` is 28 KB of developer-experience report, 23 numbered findings plus 5 on
+orchestration. Two are already closed by this session (the `ctx` shortcut rule, the stale-files
+problem). The rest are unread and worth a session of their own — particularly **#3**
+(`drawPerspectiveCylinder` disagrees with its own grid's ground model), **#21** (`pointInHull` returns
+true for every point when its arguments are reversed), and **#9/#10** (the Perlin shaders emit
+per-channel colour noise, and the manuals recommend the use that breaks).
+
+---
+
+## 8. Where to pick up
 
 **Ordered by what would most improve the next run.**
 
-- **Rebuild `bin/cli`.** Everything this session was built with `-p:SkipCopyToBin=true` because a live
-  agent session holds it open. Nothing above reaches an agent until `bin/cli` is current.
-- **`CLAUDE.md` is not in version control.** `.gitignore` has `/*.md` with only `!/README.md`, so a
-  fresh clone gets `GEMINI.md` and `README.md` and **not** the file governing every Claude session —
-  including the §2 correction above. `reference/README.md`, the ingestion ledger, is gitignored for the
-  same reason: the previous handoff flagged it and it is still true.
-- **The OpenPDN raster port.** Full plan in `docs/openpdn-port-plan.md`. Slice 1 is ~800 lines with no
-  dependencies and one decision gate. Short version: take `Surface`/`Selection`/`Effect` and the ~25
-  effects; leave `Compositor` and the pointer-driven tools; the channel order (`ColorBgra` is BGRA,
-  Polson is `Rgba8888`) decides whether the boundary is free.
-- **`Recall` has still never had anything to remember.** `--reset` cleared `painting-4`'s events. Use
-  `--force` next time — it regenerates the instructions and keeps `events/`, `scripts/`, `artifacts/`.
-- **A passing check is not backed by a number the way a failing one is.** `painting-4` recorded
-  *"Measured 57.1%"* on the failure and *"Dark values dominate frame…"* on the pass. The record cannot
-  say whether 57.1% became 61% or 58%. Judgement call whether to push harder.
-- ~~**`ImageGenerator` has no injectable seam.**~~ **Done 2026-09-01.** `IImageGenerator` carries just
-  the two members the toolkit uses — `Model` and `GenerateImage` — and `AssetRequisitionToolkit` takes
-  it. `HashOf` and `TryReadPngSize` stay static on the concrete type: a substitutable cache key would
-  let two implementations disagree about what "the same request" means.
-  `RequisitionSuccessPathTests` covers everything after a successful generation, offline and for
-  nothing: budget spend and token count, cache write, the *repair* of a non-wrapping swatch (and that
-  `tileable: false` leaves the seam alone), provenance, the library, and — the part that had no
-  producer before — the `asset.requisition` record's **success** shape, including a cached repeat
-  reporting `fromCache: true`. The fake counts its calls, which is what makes the cache assertion mean
-  anything: a second requisition the transport never sees is a cache hit, where a second requisition
-  returning an equal asset proves nothing. **1,141 .NET, 200 Python.**
-- **The devpost stigmergy section is written; the rest of that document is not reviewed.**
+- **Rebuild `bin/cli`.** Most of this session was built with `-p:SkipCopyToBin=true` because a live
+  agent session holds it open. `scriptFile`, `InspectScript`, `has`/`suggest`, the shell policy, the
+  `Agent` allow entry and `--reset` archiving reach a project only after a rebuild.
+- **Read `cs-5`'s `findings.md`.** 28 KB written by four agents that had just spent five hours in the
+  API. It is the cheapest source of real defects available.
+- **Watch for `absent` probes.** The leniency in §6 is on probation: if agents thrash on names that
+  do not exist, the record will now say so, and that is the signal to reconsider.
+- **`--comment`/compound shell matching is unverified.** Whether Claude Code matches a compound
+  command against every segment or only the first decides whether the `rm` and `node` denials are as
+  strong as they look. `cd … && sed …` ran unprompted while `cat … ; echo done` prompted, which is
+  consistent with per-segment matching and does not prove it.
+- **The AST edit side**, deliberately not built. `InspectScript` answers structural questions without
+  reading a file — outline, find, references as resolved identifiers, so `SHAFT` does not match
+  `SHAFT_TOP`. The *write* side would compete with `sed`, which has fifty years of understood failure
+  modes, and a patch tool that resolves the wrong node and returns success is the `BrushPreset.color`
+  scar with a bigger blast radius. Revisit only if `sed` demonstrably fails a run.
+- **Two `run.start` events per session**, reproducibly. Two MCP servers briefly exist at startup and
+  one exits; sequence numbers do not collide, but every host-driven record shows a duplicated open
+  and close, and the UI shows `RUN ENDED` twice.
 
 ### Carried forward, still open
 
-- **Multi-agent tracing.** `manage_subagents` gives role → conversationId → transcript path; a hook
-  that parses it is the cheap fix and is not built. Unchanged.
 - **Attribute the spine.** `_code_server` passes no `agent`, so every execute/inspect event codes as
-  one actor. Stage-based is the only mechanism that works under every host. Unchanged.
-- **Name the registered subagents in `GEMINI.md`**, or stop emitting `agents.json`. Unchanged.
-- **A second image provider**; **Agent Memory Bank**; **Claude support** (Agent SDK / plugin).
-  Unchanged.
-- **Magick.NET is in `CLAUDE.md` §3 and in no `.csproj`.** Unchanged.
-- **`painting-4` has no `output.webp`** — was true of the old run; the new run was still going when
-  this was written. Check it.
+  one actor — even now that the transcript half is attributed by role. Stage-based is the only
+  mechanism that works under every host.
+- **Peer-to-peer subagent coordination.** Parked deliberately; the facilitator-directed pipeline in
+  `comic_studio` is a different thing and now works.
+- **Name the registered subagents in `GEMINI.md`**, or stop emitting `agents.json`.
+- **A second image provider**; **Agent Memory Bank**.
+- **Magick.NET is in `CLAUDE.md` §3 and in no `.csproj`.**
+- **`reference/README.md` is gitignored** by `reference/*`, deliberately: a scan verdict describes the
+  bytes on one machine, so shipping it would invite trusting a match nobody checked. A clone starts an
+  empty ledger, which is what the guardrail asks for anyway.
 
 ### The flaky one
 
 `Polson.Tests.Drawing.IrradiationCompensationTests` fails intermittently **only** under a
-full-solution parallel run, a different test in the class each time, and passes standalone every time.
-Not diagnosed; probably contention on a shared Skia font or render resource. Re-run the class alone
-before believing you broke it, and **do not bisect by stashing `src/`** — the tree usually carries
+full-solution parallel run, a different test each time, and passes standalone every time. Not
+diagnosed; probably contention on a shared Skia font or render resource. Re-run the class alone before
+believing you broke it, and **do not bisect by stashing `src/`** — the tree usually carries
 uncommitted work and stashing pulls it out from under the untracked tests that depend on it.
 
 ---
 
 ## What the record now looks like
 
-A two-stage slice of the re-run, which is the shortest way to see what changed:
+A slice of `cs-5` as the dashboard shows it, which is the shortest way to see what changed:
 
 ```
-Requisition  note               wanted oak for the hull; the first descriptor named the ship
-Requisition  asset.refused      a wooden pirate ship
-Requisition  asset.requisition  weathered ship hull planking -> success, fromCache=false
-Requisition  budget             1/120 spent, 1363 tokens
-Critique     expect             the accent should stay under 15% of the frame
-Critique     check              accent under 15%  ->  false   "measured 22.5%"
-Critique     render             artifacts/07_critique_1.webp
-Critique     observe            diff: 96.0% similar, 960 of 24,000 px differ, within 98x60 at 20,30
-Critique     observe            palette: #FAF8F4 77.5%, #1F6F8B 22.5%
+19:11:22  +3s   inker  TOOL      ExecuteScript  artwork.js
+19:11:27  +3s   inker  TOOL      Read  …/artifacts/stage3_inker.webp
+19:11:51  +18s  inker  RENDERED  artifacts/stage3_greyscale_check.webp
+19:12:53  +55s  inker  EXECUTING scripts/0070.js
+19:14:41  +1m   inker  TOOL      Bash  cat >> critique_log.md << 'EOF'…
+                       ↑ 24 minutes, no result — waiting on a permission prompt
 ```
 
-Every line of that was invisible at the start of the session.
+The timestamps, the gaps, the tool arguments, the role attribution and the at-work line were all
+invisible at the start of the session. The last line cost an hour before any of them existed.

@@ -210,6 +210,18 @@ public sealed class ProbeScope : IDisposable
 
         /// <summary>Loading a file back out of the project directory.</summary>
         public const string Read = "read";
+
+        /// <summary>
+        /// A member that is not there, read as <c>undefined</c> rather than refused.
+        /// </summary>
+        /// <remarks>
+        /// Resolution is deliberately lenient on reads so a script can ask <c>typeof ctx.foo</c>
+        /// without being killed for asking. The price is that a misspelling can go by unnoticed —
+        /// <c>ctx.lineWidht * 2</c> is <c>NaN</c>, not an error — and the only defence against that
+        /// is seeing it. So every unresolved read is recorded here, which turns "we would notice an
+        /// agent thrashing on names that do not exist" from a hope into something the record states.
+        /// </remarks>
+        public const string Absent = "absent";
     }
     #endregion
 }

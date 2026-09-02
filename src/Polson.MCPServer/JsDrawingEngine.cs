@@ -137,12 +137,73 @@ public partial class JsDrawingEngine : Runtime
                 // undefined is what the absence of a thenable/serializer hook is supposed to mean.
                 // Keep this list minimal: exempting `toString` here would shadow the real
                 // `paper.toString()`, and the point is to hide protocol, not API.
-                options.SetMemberAccessor((_, _, member) =>
-                    InteropProtocolMembers.Contains(member) ? JsValue.Undefined : null);
+                // ...and except a member that simply is not there, which reads as `undefined` rather
+                // than throwing. `typeof ctx.foo`, `'foo' in ctx` and `?.` are how JavaScript asks
+                // whether something exists, and an engine that kills the script for asking is one
+                // every agent has to learn the hard way — a measured run spent 18 of its 71 renders
+                // discovering it, one deleted candidate name at a time.
+                //
+                // Three things keep this from being the silent-typo bug it looks like:
+                //
+                //   - Writes are unaffected. Jint consults this accessor on *reads* only, so
+                //     `ctx.fillStlye = 'red'` still throws — that is the case that cost real renders.
+                //   - Calls are unaffected. `MissingCallResolver` puts the "did you mean" message
+                //     back on the call path, where the reference still knows its own name and base.
+                //   - Reads are *recorded*. A misspelled read is genuinely silent to the script —
+                //     `ctx.lineWidht * 2` is NaN — so the defence is seeing it rather than
+                //     preventing it, and every one lands in the run record as an `absent` probe.
+                options.SetMemberAccessor((_, target, member) =>
+                {
+                    if (InteropProtocolMembers.Contains(member)) return JsValue.Undefined;
+                    if (MemberIndex.Has(target, member)) return null;
+
+                    // Only the misses, and only ones with a real receiver — cheap because a script
+                    // that spells everything correctly never reaches this line.
+                    if (target is not null)
+                    {
+                        ProbeScope.RecordOutcome(ProbeScope.Kinds.Absent,
+                            $"{target.GetType().Name}.{member}");
+                    }
+
+                    return JsValue.Undefined;
+                });
+
+                options.ReferenceResolver = new MissingCallResolver();
 
                 // A typo'd variable is an error too, rather than a new global.
                 options.Strict = true;
             });
+
+            // Ask whether a call exists before committing to it. Resolution is strict, so every
+            // ordinary idiom for this — `typeof ctx.foo`, `'foo' in ctx`, `Object.hasOwn`,
+            // `Reflect.has` — throws instead of answering. See `MemberIndex` for why that is kept.
+            engine.SetValue("has", new Func<object?, string?, bool>(
+                (target, member) => member is not null && MemberIndex.Has(target, member)));
+
+            // ...and why not, when it is not. `has` answers whether a name exists; on its own that
+            // leaves a script knowing it guessed wrong and not what to write instead — which is the
+            // half of the failed access that was actually useful. The suggester was previously
+            // reachable only by throwing, so the cheap way to get advice was to make a mistake.
+            engine.SetValue("suggest", new Func<object?, string?, string>((target, member) =>
+            {
+                if (target is null || string.IsNullOrWhiteSpace(member))
+                {
+                    return "suggest(object, 'name') needs an object and a member name.";
+                }
+
+                if (MemberIndex.Has(target, member))
+                {
+                    // Worth saying plainly. A caller reaching for advice about a name that is already
+                    // correct is looking in the wrong place for its bug, and silence would let it go
+                    // on looking.
+                    return $"'{member}' exists on {target.GetType().Name} — nothing to correct.";
+                }
+
+                // The message Jint would have produced, so one explainer serves the probe and the
+                // throw rather than two that drift apart.
+                return ExplainMissingMember(
+                    $"Cannot access property '{member}' on type '{target.GetType().FullName}'");
+            }));
 
             // Per-session scratch storage
             engine.SetValue("Session", session?.Storage ?? new Dictionary<string, object?>());

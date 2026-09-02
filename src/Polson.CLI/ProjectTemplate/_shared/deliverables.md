@@ -45,3 +45,20 @@ inside the project.
 
 This applies to the whole directory, including things you wrote yourself earlier in the run. If a
 file genuinely must go, say so and let the director do it.
+
+### Write files with the editor, not with the shell
+
+Use your host's ordinary file tools — the ones that write and edit a file directly. **Do not append
+to a file with a shell heredoc**:
+
+```bash
+cat >> critique_log.md << 'EOF'      # don't
+```
+
+It reads as the natural way to add a section, and it hangs. Measured on a live run: three agents
+reached for it, and two of them stalled — one for twenty-four minutes with no result and no error,
+on a call that had already written its content. An editor write is about **40 ms** and cannot hang
+this way.
+
+The shell is for *reading and finding* — `grep`, `sed -n`, `diff`, `head`. The moment you are
+producing content rather than locating it, use the editor.

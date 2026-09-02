@@ -1,4 +1,4 @@
-# Declarative Semantic Memory — corpus map and retrieval shape
+﻿# Declarative Semantic Memory — corpus map and retrieval shape
 
 Working note for the `Memory.semantic` surface. Covers what is ingestible today, what the
 retrieval contract needs beyond what `KnowledgeCorpus` already provides, and what the agent
@@ -65,11 +65,22 @@ Guide to Pencilling Comics* is in copyright, and a retrieval corpus that serves 
 in a publicly available studio would be redistribution. It stays in `reference/` for local
 evaluation and is excluded from the ingestion order below.
 
-*Imaginative Drawing* (John Guy) is intended to be freely shared and is the corpus to build on
-instead — subject to §1e.
+*Imaginative Drawing* (John Guy) was proposed as the corpus to build on instead, on the strength of
+its "intended to be freely shared" line. **That reading was wrong and the book is now excluded.** The
+same notice continues: share it *only in its entirety*, do not distribute parts or pages separately,
+and — explicitly — no permission is granted for the work or any part of it to be used to train
+machine learning or artificial intelligence. A distilled manual served to agents through
+`polson://manual/*` is against both clauses. We are not "training" in the technical sense, but the
+purpose of the manuals is to let an AI system do what the book teaches, which is plainly what the
+author was declining. Withdrawn from the manuals on 2026-09-02; see §4.
+
+Candidate replacements, none of which carries a comparable restriction: Loomis's *Figure Drawing for
+All It's Worth* and *Creative Illustration*, and Faragasso's *Mastering Drawing the Human Figure*.
+They are in copyright and get the same handling as Bokhua — distil, write it in our own words, cite
+the chapter, never reproduce at length.
 
 The extraction detail is retained here because the chunking problem it exposes applies to any
-scanned book, including the one we can use.
+scanned book, and all three candidates are scanned too.
 
 ### 1d. The Janson chunking problem, which generalises
 
@@ -100,7 +111,7 @@ So Janson needs its own chunk strategy: paragraph groups bounded by page markers
 figure-and-caption kept atomic. Neither the default RAG splitter nor the current heading splitter
 is right for it.
 
-### 1e. *Imaginative Drawing* is not currently ingestible at all
+### 1e. *Imaginative Drawing* is excluded (§1d), and was never ingestible anyway
 
 The source PDFs are **scanned images with zero extractable text** — `mutool draw -F txt` yields 0
 words from all five chapter files. What exists is a **53-page PNG sample** of a ~640-page book:
@@ -120,7 +131,8 @@ retrieval corpus it needs OCR or a full page render, and then a fidelity pass �
 
 1. **SDK core + schema** — already indexed; `SnapElement` subheadings done.
 2. **Studio manuals** — indexed, but see §4: their sourcing is not trustworthy yet.
-3. *Imaginative Drawing* — **blocked** on OCR/extraction; currently image-only.
+3. *Imaginative Drawing* — **excluded** on the author's stated terms (§1d), not merely blocked.
+   Loomis and Faragasso are the replacement candidates; all are image-only and need OCR.
 4. Janson — **excluded** from the public corpus on copyright grounds (§1c).
 5. Remaining `reference/books/*.pdf` — **blocked**: no codepoint-scan verdict in
    `reference/README.md`, extraction quality unverified.
@@ -246,9 +258,16 @@ unresolvable calls written, and no hand-rolled duplication of a documented toolk
 
 ## 4. The manuals are not sourced the way they claim
 
-Manuals 05–09 each open with `> **Source Reference**: *Imaginative Drawing*, Chapter N` and then
-attribute specific claims to specific pages — `> **Core Insight from the Book (Page 350 & 550)**`.
-Four of those citations were checked against the page images. Three do not support the claim.
+Manuals 05–09 each opened with `> **Source Reference**: *Imaginative Drawing*, Chapter N` and then
+attributed specific claims to specific pages — `> **Core Insight from the Book (Page 350 & 550)**`.
+Nine of those citations were eventually checked by OCR. **Four do not support the claim**, including
+the eight-head canon, which is not in the book at all.
+
+**All of them have since been withdrawn** — see §1d — because the book's terms exclude it regardless
+of whether a given citation was accurate. What remains in the manuals is standard studio practice
+carrying no attribution, which is honest but unsourced: every such claim is pending a citation to
+Loomis or Faragasso and should be treated as unverified until it has one. The table below is kept as
+the record of how the citations failed, since the failure mode is the point.
 
 | Manual | Cites | Claim attributed | What the page actually is |
 | :--- | :--- | :--- | :--- |

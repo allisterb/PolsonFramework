@@ -891,7 +891,7 @@ Verification primitives. **"Look again at what you rendered" means comparing it 
 
 # Drawing (Constructive Drawing Toolkit)
 
-Algorithmic drawing and constructive anatomy engine based on classical studio techniques (*Imaginative Drawing* Chapter 1, Loomis method, 3D hair ribbons, and procedural comic shaders).
+Algorithmic drawing and constructive anatomy engine based on classical studio techniques (the Loomis method, 3D hair ribbons, and procedural comic shaders).
 
 Also accessible via `Skia.Drawing`.
 

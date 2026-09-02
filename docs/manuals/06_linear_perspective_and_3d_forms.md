@@ -1,6 +1,10 @@
 ﻿# Studio Manual 06: Linear Perspective & 3D Form Construction
 
-> **Source Reference**: *Imaginative Drawing*, Chapter 2: "Perspective" (`reference/books/chapter2_perspective.pdf`)  
+> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
+> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
+> used for machine learning or AI. Distilling it into a manual that is served to agents is against
+> both, so the citations have been withdrawn. The constructions below are standard studio practice
+> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
 > **Purpose**: Translates linear perspective theory (horizon lines, vanishing points, 3D box projection, cylinder tangent ellipses, diagonal plane subdivision, and convergence testing) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -9,7 +13,7 @@
 
 > **Implemented by**: `Drawing.createPerspectiveGrid(options)` → `PerspectiveGrid`, then `Drawing.drawPerspectiveGrid(ctx, grid, options)`. Signatures: `polson://sdk/core/Drawing`; returned model: `polson://sdk/schema/Drawing`.
 
-> **Core Insight from the Book**:
+> **Principle**:
 > In 2-point perspective, the **Station Point ($SP$)** is the camera position, $d$ is the focal distance, and $\theta$ is the camera rotation angle relative to the primary plane.
 >
 > The Left and Right Vanishing Points are mathematically fixed along the **Horizon Line ($HL_y$)**:
@@ -78,7 +82,7 @@ A 3D perspective box is defined by:
 >
 > This is worth stating because the call used to do neither. It built a `2r × 2r` box, anchored at that box's near corner, and took the width from the footprint's **diagonal** — drawing at a measured **1.9× the requested width**, off centre, with one shared squash for both caps. It never errored; it returned a plausible cylinder of the wrong shape, and a live run lost four iterations to it before anyone looked twice.
 
-> **Core Insight from the Book (Exercise 2.6, Page 246)**:
+> **Principle**:
 > An accurate perspective cylinder is constructed by inscribing perspective circles (ellipses) inside the top and bottom square faces of a bounding perspective box.
 
 1. **Top Ellipse**: Fits inside quad $(V_4, V_5, V_7, V_6)$.
@@ -91,7 +95,7 @@ A 3D perspective box is defined by:
 
 > **Implemented by**: `Drawing.subdividePerspectiveQuad(quad, uCount, vCount)` → `Point[][]` — projective interpolation, so the returned cells are correctly foreshortened rather than evenly spaced.
 
-> **Core Insight from the Book (Page 195)**:
+> **Standard perspective construction** — the page citation has been withdrawn:
 > In perspective, equal spatial increments (e.g. windows along a building, floor tiles, staircase steps) appear progressively compressed.
 > To find the exact perspective center of any 4-corner quad $[P_0, P_1, P_2, P_3]$:
 > $$\text{Center} = \text{Intersection of diagonal } (P_0 \rightarrow P_2) \text{ and diagonal } (P_1 \rightarrow P_3)$$
@@ -246,9 +250,9 @@ canvas;
 
 ## 6. Symbol → SDK Parameter Map
 
-The book's notation maps directly onto the toolkit; nothing here needs to be re-derived by hand.
+The notation below maps directly onto the toolkit; nothing here needs re-deriving by hand.
 
-| Book symbol | SDK parameter or field | Notes |
+| Concept | SDK parameter or field | Notes |
 | --- | --- | --- |
 | $HL_y$ | `options.horizonY` | Eye level. Above it, planes are seen from below. |
 | $CV_x$ | `options.centerOfVisionX` | Principal point of projection. |

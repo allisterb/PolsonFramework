@@ -1,6 +1,10 @@
-# Studio Manual 07: Volumetric Lighting, Cast Shadows & Studio Setups
+﻿# Studio Manual 07: Volumetric Lighting, Cast Shadows & Studio Setups
 
-> **Source Reference**: *Imaginative Drawing*, Chapter 3: "Light" (`reference/books/chapter3_light.pdf`)  
+> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
+> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
+> used for machine learning or AI. Distilling it into a manual that is served to agents is against
+> both, so the citations have been withdrawn. The constructions below are standard studio practice
+> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
 > **Purpose**: Translates volumetric lighting theory (the 6 tonal light zones, Lambertian diffuse falloff, cast shadow geometric projection, contact occlusion, and 3-point studio lighting) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -9,7 +13,7 @@
 
 > **Implemented by**: `Drawing.renderVolumetricSphere(ctx, cx, cy, radius, lightDirection, options)` and `Drawing.renderVolumetricCylinder(ctx, x, y, width, height, lightDirection, options)` render all six zones in one pass; `Drawing.createVolumetricSphereShader(options)` returns the equivalent as an SkSL shader for filling arbitrary paths.
 
-> **Core Insight from the Book (Page 274 & 284)**:
+> **Principle**:
 > Whenever light strikes a curved 3D form, it creates 6 distinct tonal zones:
 >
 > 1. **Center Light / Highlight (Specular Peak)**: The point on the surface where the angle of incidence equals the angle of reflection directly toward the camera ($(\mathbf{N} \cdot \mathbf{H})^\alpha$).
@@ -49,7 +53,7 @@
 >
 > `Drawing.drawCastShadow(...)` throws on a zero-area polygon rather than quietly drawing nothing, so a shadow that fails to appear reports itself.
 
-> **Core Insight from the Book (Page 274 & 289)**:
+> **Principle**:
 > To project a realistic cast shadow on a ground plane $Y = \text{groundY}$:
 >
 > 1. Identify the 2D light source position $L = (L_x, L_y)$ and its ground projection $L_{\text{ground}} = (L_x, \text{groundY})$.
@@ -96,7 +100,7 @@ Two configurations are refused with a message instead of nonsense coordinates:
 
 > **Implemented by**: the colour options rather than a call of its own — pass complementary temperatures as `baseColor` / `shadowColor` / `bounceColor` to `Drawing.renderVolumetricSphere(...)`, and as `keyColor` / `fillColor` to `Drawing.createThreePointLighting(...)`. The defaults already obey the rule: warm key `#fff3d6` against cool fill `#8cb5db`.
 
-> **Core Insight from the Book (Page 300)**:
+> **Principle**:
 > - **Direct Key Light is Warm** (Golden Sun $\approx 5000\text{K}$, `#fff5e0`) $\implies$ **Ambient Shadows are Cool** (Sky Blue $\approx 8500\text{K}$, `#3a4d66`).
 > - **Direct Key Light is Cool** (Moonlight / Fluorescent $\approx 6500\text{K}$, `#d6e8ff`) $\implies$ **Ambient Shadows are Warm** (Earth/Room Bounce $\approx 3200\text{K}$, `#4a382e`).
 >
@@ -115,18 +119,30 @@ Two configurations are refused with a message instead of nonsense coordinates:
 >
 > Both are recorded because the call did neither. It stroked the whole point list at full opacity whatever the angle, and offset every point two pixels *outward* along the light vector; a live run hand-trimmed its lists to the lit arc, then abandoned the call and built every rim as a gradient fill inside a clipped shape. That construction is still the sturdier one when a rim has to follow a form exactly — `ctx.clip(silhouette)` and a gradient running inward from the lit edge. Reach for `drawRimLight` when you already hold the contour as points.
 
-> **Core Insight from the Book (Page 323)**:
-> The standard lighting setup used in portrait painting, cinematography, and comics:
+> **Principle**:
+> The standard three-light setup used in portraiture, cinematography and comics:
 >
-> 1. **Key Light (~70% intensity, primary angle e.g. $-45^\circ$)**: Main illumination defining the primary planar structures and cast shadows.
-> 2. **Fill Light (~30% intensity, opposing angle e.g. $+60^\circ$, cool temperature)**: Soft ambient illumination that opens up deep shadows so details remain readable.
-> 3. **Rim / Kicker Light (~90% intensity, backlight silhouette edge)**: High-contrast grazing edge light that cuts the subject out from the background.
+> 1. **Key light**: the dominant source. Its quality and position determine the overall look more than
+>    anything else in the rig.
+> 2. **Fill light**: opens the shadows the key leaves, so detail stays readable. Softer and weaker,
+>    usually from the opposing side and cooler in temperature.
+> 3. **Kicker / rim light**: a hard source behind the subject, producing a lit edge that separates it
+>    from the background — visible only where it grazes that back edge.
+
+> [!NOTE]
+> **The numbers are the toolkit's defaults, not a cited rule.** `createThreePointLighting` ships
+> `~70/30/90%` intensities and $-45^\circ$ / $+60^\circ$ angles; earlier versions of this manual
+> presented them as sourced. Treat them as a starting position to tune.
+>
+> The kicker's *visible only where it grazes the back edge* is worth holding onto when using
+> `Drawing.drawRimLight`: that is the culling the call performs, and why a rim stroked along a whole
+> contour reads as an outline rather than as light.
 
 ---
 
 ## 5. Symbol → SDK Parameter Map
 
-| Book concept | SDK parameter or field | Notes |
+| Concept | SDK parameter or field | Notes |
 | --- | --- | --- |
 | $\mathbf{L}$ (light vector) | `lightDirection` as `{ x, y }` | Points *from* the surface *toward* the light. |
 | Highlight (zone 1) | `options.highlightColor` | Take the key light's temperature. |
@@ -137,7 +153,7 @@ Two configurations are refused with a message instead of nonsense coordinates:
 | $L = (L_x, L_y)$ | `lightSource` as `{ x, y }` | Argument 1 of `projectCastShadow`. |
 | $Y = \text{groundY}$ | `groundY` | Argument 2; also returned on the shadow object. |
 | $S_i$ footprint | `shadow.shadowPolygon` | Contact edge first, then the projected edge walked back. |
-| (not in the book) | `options.groundDepth` | Apparent ground depth, **model A only**. Defaults to ~20% of the contact width. |
+| (no book symbol) | `options.groundDepth` | Apparent ground depth, **model A only**. Defaults to ~20% of the contact width. |
 | $HL_y$ | `grid.horizonY` | Model B: pass the whole grid as argument 2. |
 | $VP_{\text{shadow}}$ | `shadow.vpShadow` | Model B: on the horizon, directly beneath the light. |
 | Which model ran | `shadow.model` | `'groundLine'` or `'perspective'`. |

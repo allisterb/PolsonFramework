@@ -1,6 +1,10 @@
-# Studio Manual 05: Observation, Measurement & CSI Curves
+﻿# Studio Manual 05: Observation, Measurement & CSI Curves
 
-> **Source Reference**: *Imaginative Drawing*, Chapter 1: "Observation & Measurement" (`reference/books/chapter1_observation.pdf`)  
+> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
+> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
+> used for machine learning or AI. Distilling it into a manual that is served to agents is against
+> both, so the citations have been withdrawn. The constructions below are standard studio practice
+> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
 > **Purpose**: Translates foundational drawing techniques (relative distance measurement, plumb lines, the CSI curve grammar, planar forms, and two/three-value light studies) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -9,7 +13,7 @@
 
 > **Implemented by**: `Drawing.createLoomisHead(...)` returns the unit system as `head.unit`, and `Drawing.computeRelativeDistance(headHeight, pointA, pointB)` measures in head-lengths.
 
-> **Core Insight from the Book**: In drawing, artists do NOT memorize absolute global pixel coordinates. They choose a **single fundamental unit of measure** (the **Head Length**, $H_{\text{head}} = Y_{\text{chin}} - Y_{\text{crown}}$) and derive every other distance as a relative proportion.
+> **Principle**: In drawing, artists do NOT memorize absolute global pixel coordinates. They choose a **single fundamental unit of measure** (the **Head Length**, $H_{\text{head}} = Y_{\text{chin}} - Y_{\text{crown}}$) and derive every other distance as a relative proportion.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -44,7 +48,7 @@ Every landmark on the returned model is already placed against these units, so m
 
 > **Implemented by**: `Drawing.verifyPlumbAlignment(topPoint, bottomPoint, maxTolerance)` → `{ aligned, deltaX, message }`.
 
-> **Core Insight from the Book**: Dropping vertical plumb lines and horizontal level lines allows artists to check anatomical alignment without perspective distortion:
+> **Principle**: Dropping vertical plumb lines and horizontal level lines allows artists to check anatomical alignment without perspective distortion:
 > - *Vertical Plumb Line*: Dropped from the ear crosses the jaw angle and collarbone.
 > - *Horizontal Level Line*: Projected from the chin intersects the far shoulder.
 
@@ -64,7 +68,7 @@ if (!plumb.aligned) log(plumb.message);   // "DRIFT: offset by 18.4px"
 
 > **Implemented by**: raster C/S/I curves are `ctx.quadraticCurveTo` / `ctx.bezierCurveTo` / `ctx.lineTo`, weighted by `Drawing.drawTaperedStroke(...)`. For vector work, `Snap.path.ogeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` returns an S-curve path string directly.
 
-> **Core Insight from the Book**: Complex organic contours must be distilled into three elemental line primitives:
+> **Principle**: Complex organic contours must be distilled into three elemental line primitives:
 > 1. **C-Curves**: Single continuous arc in one direction.
 > 2. **S-Curves**: Reversing dynamic curves with opposing inflection points.
 > 3. **Straights ("I-Lines")**: Stable structural lines.
@@ -107,7 +111,7 @@ const CSI = {
 
 > **Implemented by**: `Drawing.drawCrossContourHatch(ctx, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor, lineWidth)` — the arcs follow the form's curvature, which is what makes a plane read as curved rather than flat.
 
-> **Core Insight from the Book**: Curved organic surfaces should be conceived as **discrete planes** with **cross-contour lines** wrapping around them to define cylindrical depth.
+> **Principle**: Curved organic surfaces should be conceived as **discrete planes** with **cross-contour lines** wrapping around them to define cylindrical depth.
 
 - **Cheek Plane**: Triangular planar facet connecting the cheekbone apex, nose wing, and mouth corner.
 - **Mandible Plane**: Rectangular plane connecting the jaw angle, under-chin, and neck.
@@ -130,7 +134,7 @@ const CSI = {
 
 > **Implemented by**: `Drawing.createNotanPalette(type)` for the value sets, and `Drawing.createCompositionGrid(...)` when the study is about placement as well as value (Manual 09).
 
-> **Core Insight from the Book**:
+> **Principle**:
 > - **Two-Value Study**: Strictly separates the illuminated half of the figure from the shadow half along the **Shadow Terminator**.
 > - **Three-Value Study**: Highlights ($V_1$), Midtones ($V_2$), Core Shadow ($V_3$).
 

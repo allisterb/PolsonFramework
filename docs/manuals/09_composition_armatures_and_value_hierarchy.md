@@ -1,6 +1,10 @@
 ﻿# Studio Manual 09: Compositional Armatures, Value Hierarchy & Visual Emphasis
 
-> **Source Reference**: *Imaginative Drawing*, Chapter 5: "Composition" (`reference/books/chapter5_composition.pdf`)  
+> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
+> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
+> used for machine learning or AI. Distilling it into a manual that is served to agents is against
+> both, so the citations have been withdrawn. The constructions below are standard studio practice
+> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
 > **Purpose**: Translates visual design theory (classical geometric armatures, focal emphasis rules, Notan value structures, cinematic vignetting, and the 70-20-10 proportional design law) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -9,8 +13,14 @@
 
 > **Implemented by**: `Drawing.createCompositionGrid(width, height, type, options)` → `CompositionGrid` with `lines` and `powerPoints`, where `type` is `'ruleOfThirds'`, `'goldenRatio'`, `'dynamicSymmetry'`, or `'triangle'`; render it with `Drawing.drawCompositionGrid(ctx, gridOrType, options)`.
 
-> **Core Insight from the Book (Page 580 & 600)**:
-> Great compositions are anchored on underlying geometric armatures rather than random placement:
+> **Principle**:
+> A compositional armature is a scaffold — a few large lines and shapes, usually *implied* rather than
+> drawn, that organise where everything else sits. Keep the count low: structural lines are
+> individually powerful, and too many of them compete and weaken each other.
+
+> [!NOTE]
+> The four `createCompositionGrid` types are standard studio convention — the photographic rule of
+> thirds, and dynamic symmetry after Hambidge and Bosanquet. Pending a citation to a specific source.
 
 ### A. Rule of Thirds
 Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Points**:
@@ -31,7 +41,7 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 
 > **Implemented by**: `Drawing.drawLeadingLines(ctx, originPoints, focalPoint, options)` for tool 2 and `Drawing.drawVignette(ctx, width, height, options)` for tool 3. Tools 1 and 4 are decisions about value and spacing — drive them through `Drawing.createNotanPalette(...)` and `Drawing.subdivideProportions(...)`.
 
-> **Core Insight from the Book (Page 580–595)**:
+> **Principle**:
 > To guide the viewer's eye through a scene:
 >
 > 1. **Contrast of Value**: The point of highest local contrast (purest dark next to purest light) receives priority.
@@ -45,8 +55,8 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 
 > **Implemented by**: `Drawing.createNotanPalette(type)` → a curated palette for `'binary'`, `'classic3'`, `'highKey'`, or `'lowKey'`. Key names differ per palette (`dominantLight` / `secondaryMid` / `accentDark` for `classic3`; `background` / `formDark` / `formMid` / `rimAccent` for `lowKey`), so read the returned object rather than assuming.
 
-> **Core Insight from the Book (Page 618)**:
-> Before adding detailed color, establish a rock-solid **Notan value hierarchy**:
+> **Principle**:
+> Before adding detailed colour, establish a rock-solid value hierarchy:
 >
 > - **2-Value Binary Notan**: 50% Black, 50% White. Tests whether the graphic silhouette reads at a glance.
 > - **3-Value Classic Notan**:
@@ -55,6 +65,10 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 >   - **10% Accent** (Deepest Dark or Blown Highlight)
 > - **High-Key**: Scene dominated by values 1–4 (soft, ethereal, bright).
 > - **Low-Key**: Scene dominated by values 7–10 (dramatic, moody, noir, mystery).
+
+> [!NOTE]
+> *Notan* is the Japanese light-dark convention; the tier percentages above are the studio's
+> calibration rather than a cited rule.
 
 ### When two adjacent masses have merged in value
 
@@ -80,8 +94,11 @@ It is also honest whenever there is air between the two: three metres of lit rai
 
 > **Implemented by**: `Drawing.subdivideProportions(bounds, direction, ratios)` → `{ big, medium, small }`, each a `Rect` you can hand straight to `ctx.fillRect(...)` or use as a placement region.
 
-> **Core Insight from the Book (Page 627)**:
-> Visual appeal demands varied scale:
+> **Principle**:
+> Give the main idea a large shape or space, secondary ideas medium ones, and details that are
+> *distinctly* smaller than the medium elements — smaller elements may sit inside larger ones. Varied
+> scale is what stops a composition reading as evenly weighted mush. The percentages below are the
+> studio's calibration:
 > - **70% Big / Dominant**: The major backdrop, environment mass, or sky.
 > - **20% Medium / Secondary**: The character figure, vehicle, or architectural structure.
 > - **10% Small / Detail**: Micro-flourishes, specular highlights, textures, and facial features.
@@ -90,7 +107,7 @@ It is also honest whenever there is air between the two: three metres of lit rai
 
 ## 5. Symbol → SDK Parameter Map
 
-| Book concept | SDK parameter or field | Notes |
+| Concept | SDK parameter or field | Notes |
 | --- | --- | --- |
 | Rule of thirds | `type: 'ruleOfThirds'` | Power points: `topLeft`, `topRight`, `bottomLeft`, `bottomRight`. |
 | Golden ratio armature | `type: 'goldenRatio'` | Power points: `goldenEye`, `secondaryEye`. |

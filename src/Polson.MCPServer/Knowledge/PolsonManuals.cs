@@ -74,7 +74,7 @@ public class PolsonManuals
         index.AppendLine();
         index.AppendLine("""
             These manuals are the **bridge between the studio's reference library and the drawing SDK**. Each one
-            distils a source text (Loomis, *How to Draw Comics the Marvel Way*, *Imaginative Drawing*, Bokhua's
+            distils a source text (Loomis, *How to Draw Comics the Marvel Way*, Bokhua's
             *Principles of Logo Design*, Tubik) into formulas, construction procedures, and the **named SDK calls
             that implement them**.
 

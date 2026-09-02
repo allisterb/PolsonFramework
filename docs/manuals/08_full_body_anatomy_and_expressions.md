@@ -1,7 +1,11 @@
-# Studio Manual 08: Full-Body Anatomy, Mannequins & Facial Expressions
+﻿# Studio Manual 08: Full-Body Anatomy, Mannequins & Facial Expressions
 
-> **Source Reference**: *Imaginative Drawing*, Chapter 4: "Anatomy" (`reference/books/chapter4_anatomy.pdf`)  
-> **Purpose**: Translates human anatomical construction (8-head proportional canon, 3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and the 6 universal facial expressions) into algorithmic JavaScript Canvas2D / Skia code.
+> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
+> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
+> used for machine learning or AI. Distilling it into a manual that is served to agents is against
+> both, so the citations have been withdrawn. The constructions below are standard studio practice
+> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
+> **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and the 6 universal facial expressions) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
 
@@ -9,8 +13,8 @@
 
 > **Implemented by**: `Drawing.createMannequinFigure(originX, originY, totalHeight, options)` → `MannequinFigure`, which divides `totalHeight` into eight `headUnit`s and applies `shoulderTiltDeg` / `pelvicTiltDeg` as contrapposto. Verify the weight-bearing line with `Drawing.verifyPlumbAlignment(top, bottom, maxTolerance)` and measure in head units with `Drawing.computeRelativeDistance(headHeight, a, b)`.
 
-> **Core Insight from the Book (Page 350 & 550)**:
-> In classical figure drawing and heroic illustration, the human figure is divided into **8 equal Head Units ($H$)**:
+**The eight-head canon** — the standard heroic-figure convention (Loomis, Hogarth, Richer), and what
+`createMannequinFigure` implements. Pending a citation to a specific source:
 
 ```
  0.0 H ─── Top of Head (Crown)
@@ -25,7 +29,12 @@
 ```
 
 ### The 3 Solid Masses & Dynamic Contrapposto
-The human torso is NOT a rigid monolith. It consists of **3 solid masses** connected by the flexible **Vertebral Column (Spine S-Curve)**:
+
+> **Principle**:
+> The head, ribcage and pelvis are the three major forms of the figure, and establishing them and
+> their orientations in perspective is what makes a figure legible in space.
+
+The human torso is NOT a rigid monolith. It consists of those **3 solid masses**, connected by the flexible **Vertebral Column (Spine S-Curve)**:
 1. **Head (Solid Egg/Box, $1.0 H$)**: Tilts with cervical neck vertebrae.
 2. **Ribcage (Thorax Egg, $1.5 H$)**: Houses heart/lungs, tilts back and laterally.
 3. **Pelvis (Solid Basin/Box, $1.0 H$)**: Tilts in opposition to the ribcage (**Contrapposto**), transferring weight onto the active standing leg.
@@ -36,12 +45,16 @@ The human torso is NOT a rigid monolith. It consists of **3 solid masses** conne
 
 > **Implemented by**: `Drawing.drawMannequinWireframe(ctx, figure, options)` for the non-repro-blue gesture pass, then `Drawing.drawMannequinSolid(ctx, figure, options)` for the cranial sphere, ribcage egg, pelvic basin, tapered limb cylinders, and wedge terminals.
 
-> **Core Insight from the Book (Page 550–551)**:
-> Rather than drawing surface contours directly, professional artists block the figure using **simplified volumetric primitives**:
-> - **Torso**: Cranial sphere, ribcage egg, and pelvic basin.
-> - **Limbs**: Tapered cylinders for upper arms/forearms and thighs/calves.
-> - **Joints**: Spherical mechanical hinges at shoulders, elbows, hips, and knees.
-> - **Terminals**: Wedge boxes for hands and feet.
+> **Principle**:
+> Rather than drawing surface contours directly, block the figure with simplified volumetric
+> primitives and add detail over them.
+
+Blocked with volumetric primitives rather than surface contours:
+
+- **Torso**: cranial sphere, ribcage egg, pelvic basin.
+- **Limbs**: tapered cylinders for upper arms, thighs and calves.
+- **Joints**: spherical hinges at shoulders, elbows, hips and knees.
+- **Terminals**: wedge boxes for hands and feet.
 
 ---
 
@@ -49,7 +62,7 @@ The human torso is NOT a rigid monolith. It consists of **3 solid masses** conne
 
 > **Implemented by**: `Drawing.drawTorsoMusculature(ctx, figure, options)` — draws all five landmarks over an existing `MannequinFigure`, so call it after the solid pass, never instead of it.
 
-> **Core Insight from the Book (Section 4.4, Pages 427–453)**:
+> **Principle**:
 > When detailing the torso over the mannequin foundation, 5 muscle landmarks define the silhouette:
 > 1. **Clavicles (Collarbones)**: S-curved handlebars connecting the sternal notch to the shoulder caps.
 > 2. **Deltoids (Shoulder Caps)**: Inverted teardrop muscles wrapping around the upper arm.
@@ -63,7 +76,7 @@ The human torso is NOT a rigid monolith. It consists of **3 solid masses** conne
 
 > **Implemented by**: `Drawing.applyFacialExpression(head, expressionType, intensity)` → a modified `LoomisHead`. Build the head with `Drawing.createLoomisHead(...)` first, then render the displaced landmarks with `Drawing.drawComicEye(...)` and `Drawing.drawComicMouth(...)`.
 
-> **Core Insight from the Book (Section 4.4, Pages 464–474)**:
+> **Principle**:
 > All complex emotional expressions decompose into 6 universal muscular activation patterns:
 >
 > 1. **`"joy"`**: Zygomaticus major contracts $\implies$ mouth corners pull up & out; Orbicularis oculi contracts $\implies$ lower eyelids push up, crinkling crow's feet.
@@ -77,7 +90,7 @@ The human torso is NOT a rigid monolith. It consists of **3 solid masses** conne
 
 ## 5. Symbol → SDK Parameter Map
 
-| Book concept | SDK parameter or field | Notes |
+| Concept | SDK parameter or field | Notes |
 | --- | --- | --- |
 | $H$ (one head unit) | `figure.headUnit` | `totalHeight / 8`. Measure everything in these. |
 | $8H$ figure height | `totalHeight` | Argument 3; heroic proportion is $8H$, naturalistic $7.5H$. |

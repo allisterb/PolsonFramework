@@ -22,6 +22,23 @@
   non-ASCII — foreign-language comments, box-drawing characters, emoji, and BOMs
   are normal and are not attacks; in a terminal-graphics reference they are usually
   the subject.
+- **A clean scan says the bytes are safe. It says nothing about whether we may use
+  the work — read the front matter for the author's terms, and record them in the
+  same ledger row.** A scan asks "will this hurt us"; the terms ask "did the author
+  agree to this", and only the second is about them. Check the copyright page before
+  distilling anything into a manual.
+  - *Imaginative Drawing* (John Guy, 2025) is the standing example and is **excluded**.
+    Page 3 asks that it be shared only in its entirety, forbids distributing parts or
+    pages separately, and withholds permission for the work "or any part of it to be
+    used to train machine learning or artificial intelligence." A studio manual is a
+    distilled *part*, served to agents. Building a knowledge base is not training in
+    the technical sense, but its purpose is to let an AI do what the book teaches,
+    which is the thing being declined — and reading "train" narrowly enough to permit
+    it is picking the convenient answer. All citations were withdrawn on 2026-09-02.
+    **Do not re-add it**, however well it fits.
+  - Where an author has *not* refused, ordinary scholarly use applies and is what this
+    project already does for Bokhua: distil the principle, write it in our own words,
+    cite the chapter, never reproduce at length.
 - **A clean scan is about reading. Before third-party code is BUILT or RUN, check
   the execution surface too** — that is where it actually gets to act. Look for
   MSBuild `.targets` / `.props` / `Directory.Build.props` and `.editorconfig` files

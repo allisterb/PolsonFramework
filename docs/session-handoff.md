@@ -531,6 +531,95 @@ the scoping is correct either way — but nothing should lean on it until someon
 
 ---
 
+## 11b. *Imaginative Drawing* is excluded, and the audit below is withdrawn with it
+
+**Read §11 as history, not as instructions.** The audit it describes was deleted.
+
+Page 3 of the book carries, under "1st edition / © John Guy 2025":
+
+> This work is intended to be freely shared, including for use as teaching material, but only in its
+> entirety. Do not share or distribute parts, pages, or images from this work separately.
+> Additionally, I do not grant permission for this work or any part of it to be used to train machine
+> learning or artificial intelligence.
+
+Both clauses bear on what the manuals were doing. A manual distils **parts** and serves them to
+agents through `polson://manual/*`, which is distribution of parts. And while a retrieval corpus is
+not *training* in the technical sense, its purpose is to let an AI system do what the book teaches —
+which is what the second clause declines. Reading "train" narrowly enough to permit this arrives at
+the convenient answer rather than the honest one. The author is being generous, and specific about
+the two things he does not want; that deserves to be taken at face value.
+
+**Done on 2026-09-02:**
+
+- `docs/audit-imaginative-drawing-ch4.md` **deleted** — it was a direct distillation including
+  near-quotes.
+- Manuals 05–09: `Source Reference` lines replaced with a *Sources under revision* notice, every
+  `Core Insight from the Book` relabelled `Principle`, and the passages distilling his text removed —
+  the mannequin forms and knee/forearm/malleoli note in 08, the compositional-structure and
+  Exercise 5.8 passages in 09, the three-point lighting distillation in 07, the withdrawn-page notes
+  in 06 and 09. `Book concept`/`Book symbol` map columns became `Concept` in 06–09 only; 10 and 11
+  keep theirs, since Bokhua and Williams are cited legitimately.
+- Removed from `docs/Polson.core.md`, `PolsonManuals.cs` and `docs/memory-design.md` (§1d, §1e, §1f
+  and §4 rewritten — §1d had recommended the book *because of* its "freely shared" line, having
+  stopped reading at the first clause).
+- `reference/README.md` row replaced with a **DO NOT USE** verdict quoting the notice.
+- **`CLAUDE.md` §0 gained a guardrail**: a clean codepoint scan says the bytes are safe and says
+  nothing about whether we may use the work. Read the front matter for the author's terms and record
+  them in the same ledger row. Where an author has *not* refused, ordinary scholarly use applies —
+  distil, own words, cite the chapter, never reproduce at length, as this project already does for
+  Bokhua.
+
+**What the manuals are now:** standard studio practice with no attribution. Honest, but unsourced —
+every claim in 05–09 is pending a citation and should be treated as unverified until it has one.
+
+**Still carrying a copy:** `tests/multi_agent/comic_studio/cs-1/manuals/07_*.md` is a tracked, stale
+copy of the old Guy-citing manual inside a historical run directory. It duplicates `docs/manuals/`
+and is an *input* the run was given rather than anything it produced, so deleting it loses nothing —
+but it sits in a frozen run directory, so it is flagged rather than removed.
+
+**Replacements to source from**, none carrying a comparable restriction: Loomis's *Figure Drawing for
+All It's Worth* (the canonical home of the head canon and the mannequin, and Manual 01 already names
+the Loomis method) and *Creative Illustration* (tone, value, composition), and Faragasso's *Mastering
+Drawing the Human Figure* (Reilly-method construction). All three are image-only and need OCR, and all
+are in copyright — same handling as Bokhua. The gap is perspective for Manual 06, where neither is
+primarily a perspective text.
+
+**The reassuring part:** `ConstructiveDrawingToolkit` barely depended on him, and §11's audit is what
+proves it — the eight-head canon, the armatures and "Notan" are all absent from the book, the Loomis
+head method is Loomis, three-point lighting is standard, and diagonal division is Renaissance. The
+book was the citation stapled to those things, mostly wrongly. The code needs re-sourcing, not
+rewriting.
+
+---
+
+## 11. The *Imaginative Drawing* audit — WITHDRAWN, see §11b — `docs/audit-imaginative-drawing-ch4.md`
+
+Opened before writing #14, #19 and #4, on the grounds that all three are Chapter 4 material and the
+Chapter 4 citations were already known to be bad. Ledger row recorded. The four things that change
+what gets built:
+
+- **The book has no text layer.** 214 pages of `chapter4_anatomy.pdf` are 214 JPEGs with zero fonts;
+  extracting the lot yields 428 bytes of newlines. OCR (`bin/tesseract`, 200 dpi) is the only route,
+  and it is good. This is why every previous citation was unverifiable rather than merely wrong.
+- **The chapter extracts stop one page short of the models.** `chapter4_anatomy.pdf` page *N* is book
+  page *N* + 338; its last page is book p552 and ends mid-sentence, immediately before §4.6. Gesture
+  Lines, Box Forms and Mannequin Form (pp. 553–558) — the material `createMannequinFigure` cites —
+  are in the full PDF only.
+- **The eight-head canon is not in this book.** *Proportion* appears in the TOC only at pp. 583 and
+  624, both composition, and the head model ends by telling the reader to experiment with proportions.
+  Eight heads is fine convention; the citation in Manual 08 is not.
+- **`DrawComicMouth` has the book's model inverted, and the trio's proportional data is computed and
+  then discarded.** `createLoomisHead` hands over `eye.width`, `eye.height`, `mouthGuides.upperLipY`
+  and `mouthGuides.lowerLipY`; `DrawComicEye` reads none of the first two and `DrawComicMouth`
+  references the lip guides **zero times**, using `center.Y + 12/16` instead. **#14 and #19 are one
+  defect**, and smaller than either finding assumed.
+
+Order recommended in the audit: fix the citations first (cheap, and the manuals are what the next
+agent reads), then #14 + #19 as one pass, then #4 — for which the book supplies the poser interface
+directly, as a joint cross-stroke carrying position, **width and angle**.
+
+---
+
 ## 8. Where to pick up
 
 **Ordered by what would most improve the next run.**

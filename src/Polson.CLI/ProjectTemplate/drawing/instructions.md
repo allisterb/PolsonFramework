@@ -1,4 +1,4 @@
-# Drawing Project: {{PROJECT_ID}}
+﻿# Drawing Project: {{PROJECT_ID}}
 
 Workflow `drawing` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
 
@@ -40,7 +40,7 @@ whatever legitimate brief remains.
 
 {{ENGINE_ONLY}}
 
-{{ISOLATION}}
+{{PROJECT_DIR}}
 
 ---
 

@@ -1,4 +1,4 @@
-# Comic Panel: {{PROJECT_ID}}
+﻿# Comic Panel: {{PROJECT_ID}}
 
 Workflow `comic` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
 
@@ -41,7 +41,7 @@ legitimate brief remains.
 
 {{ENGINE_ONLY}}
 
-{{ISOLATION}}
+{{PROJECT_DIR}}
 
 ---
 

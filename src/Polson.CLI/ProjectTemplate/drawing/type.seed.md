@@ -1,6 +1,6 @@
-## The other hand: seed
+﻿## The other hand: seed
 
-**The director has drawn first.** Their sketch is in `seed/` — find it, `view_file` it, and load it
+**The director has drawn first.** Their sketch is in `seed/` — find it, open it and look at it, then load it
 with `Skia.Image.load('seed/<name>')`. It is the opening turn of this session and everything you do
 is a response to it.
 

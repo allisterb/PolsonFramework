@@ -1,4 +1,4 @@
-# Role: Contour & Line Art Agent (Inker)
+﻿# Role: Contour & Line Art Agent (Inker)
 
 ## Objective
 
@@ -34,8 +34,8 @@ are what to search for.
 
 ### 1. Ingest both representations
 
-- `view_file` on the reference image — for where its line weight is heavy and where it disappears.
-- `view_file` on `artifacts/stage2_colorist.webp` — what you are inking over.
+- Open the reference image — for where its line weight is heavy and where it disappears.
+- Open `artifacts/stage2_colorist.webp` — what you are inking over.
 - Read the Colorist's script from `scripts/` for the layer functions and paths.
 
 ### 2. Ink
@@ -62,7 +62,7 @@ against colour.
 
 ### 3. Verify by looking
 
-`view_file` on your render, and check:
+Open your render, and check:
 
 - [ ] Is the weight hierarchy visible — heavy silhouette, lighter interior, finest hatching?
 - [ ] Do tapered strokes actually taper to a point?

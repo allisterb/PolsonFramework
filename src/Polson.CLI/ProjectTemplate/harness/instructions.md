@@ -1,4 +1,4 @@
-# Polson Graphics Agent — SDK Evaluation Harness: {{PROJECT_ID}}
+﻿# Polson Graphics Agent — SDK Evaluation Harness: {{PROJECT_ID}}
 
 Workflow `harness` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
 
@@ -26,6 +26,8 @@ from disk — the manuals reach you through MCP resources and the `Search` tool,
 other way defeats the harness. Do not infer method names or parameters from files on disk. If you
 cannot work out how to use an API from the MCP resources and tool descriptions alone, **that is an
 API or documentation defect** — record it in `findings.md` and try another documented approach.
+
+{{PROJECT_DIR}}
 
 {{ISOLATION}}
 

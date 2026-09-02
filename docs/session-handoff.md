@@ -437,6 +437,100 @@ render is suppressed, which is the honest answer rather than an absent one.
 
 ---
 
+## 10. The templates told the agent to use another host's tool, and lied about the sandbox
+
+### #5 — `view_file` was not a mistake, it was the other host's spelling
+
+Fifteen occurrences across eight shipped templates, and **`view_file` is a real Antigravity builtin**
+(`BuiltinTools.VIEW_FILE`). The same generator emits for both hosts — `AlwaysDenied` and
+`StandaloneDenied` name Antigravity tools, the Claude allowlist names `Read`/`Grep`/`Glob` — so the
+templates were written host-first and naming *either* host's tool is wrong for the other. On a Claude
+run it is the first instruction of every role spec naming a tool that does not exist.
+
+All fifteen were prose; none was a settings entry or a frontmatter `tools:` list, so all became
+capability language — "**Open** the reference image", "**Open** what you just rendered" — with the
+imperative kept, since the point was never the tool name but that looking is mandatory. The emitted
+`CLAUDE.md` now carries one line saying what "open" means and why it is not named: *the tool differs
+by host and an instruction naming the wrong one stalls the loop at its first step.*
+
+The line to hold for anything similar: **prose gets the capability, settings get the exact name.**
+Deny lists and frontmatter are matched literally and must stay host-specific.
+
+### E — the harness claimed an enforcement it did not have
+
+The generated `CLAUDE.md` said `settings.local.json` "denies the shell (`Bash`)". It does not, and
+**the code already knew** — the remark on `ShellDenies()` states plainly that a shell which can run
+`grep` can read Polson's source and no `Read` deny prevents it. The implementation was honest with
+itself and the text it emitted to the agent was not.
+
+Rewritten to describe the three rules as they are: network denied by tool; `Read`/`Grep`/`Glob`
+denied over Polson's source by absolute path; and the shell **shaped rather than denied** — about
+forty reading and file-transforming verbs auto-approved, with interpreters, image tools, network
+clients, nested shells, `rm` and `git` denied, so every mark still goes through `ExecuteScript`. Source
+isolation is therefore named as **a convention the agent keeps**, with the reason it matters put in
+terms the agent can act on: peeking would not fail the run, it would make it worthless.
+
+Two things were added because of what the last run did with the old text:
+
+- The "prove it" instruction is re-pointed at the claim that *is* real and *can* go stale — the path
+  denies, whose absolute paths were fixed at generation time and name nothing if the checkout moved.
+- An explicit standard: *`echo` succeeding proves the shell runs; it proves nothing about which paths
+  are reachable through it.* The Critic filed a breach on exactly that inference. A security finding
+  is held to the same standard as a measurement, and an unearned one is worse than none because
+  somebody will act on it.
+
+`TestHarnessIsolationTellsTheTruthForEachHost` had pinned the old wording, so it was updated rather
+than deleted — its intent was always right. A second test,
+`TestTheClaudeHarnessDoesNotClaimTheShellIsDenied`, pins the correction itself: the text must not say
+"denies the shell", must name the convention, and must carry the `echo` standard.
+
+### …and then the isolation machinery turned out to be in four workflows that did not want it
+
+`IsIsolated` reads the template for `{{ISOLATION}}`, and **five templates carried it** — `harness`,
+but also `comic`, `comic_studio`, `drawing` and `painting`. So four design workflows were emitting an
+evaluation harness's absolute-path deny rules *and* instructing the agent to spend its first action
+proving a sandbox that exists for someone else's benefit. The generator's own comment asserted the
+opposite — *"a client design project has no reason to deny reading anything and does not get these
+rules"* — which is how it went unseen: the code documented the intent and the templates did something
+else.
+
+`{{ISOLATION}}` is now on `harness` alone. The four design workflows carry **`{{PROJECT_DIR}}`**
+instead, a new `_shared` fragment saying where the work lives — positive, general, and phrased as a
+reason rather than a prohibition: the run record accounts for this directory, `polson report`
+reconciles against it, and a project is archived and replayed as a unit, so a file written outside it
+is not part of the run in any sense that survives. It closes with the line that makes it actionable:
+*if you need something that is not in this directory, ask the director rather than going to find it.*
+
+Three judgement calls inside that, worth knowing:
+
+- **`ShellDenies()` stays universal**, because it is not an isolation rule. It is provenance — every
+  mark through `ExecuteScript` so the record can account for it — plus `rm` and `git`, and a live run
+  already proved `rm` necessary by deleting its own `findings.md`.
+- **`comic_studio` keeps its own one-paragraph "no peeking" note.** It does collect findings, so the
+  sentence earns its place; it was the deny rules and the prove-it ritual that did not.
+- **Neither of the narrower rules proposed would help.** Denying execution of `Polson.CLI.dll` is
+  already covered more broadly by `Bash(dotnet:*)`, which catches every invocation; and "deny reading
+  any `Polson.*` directory" is exactly what `SourceDenies()` already emits for `Read`/`Grep`/`Glob`.
+  Neither can be made to cover Bash, because those rules match command strings rather than resolved
+  paths — which is why the harness text now calls it a convention.
+
+The direction this settles: **guardrails in the prompt have outperformed permission syntax on this
+project.** `_shared/engine_only.md` measurably cut permission prompts where rule-wrangling had not,
+and `project_dir.md` is written in the same register deliberately.
+
+**Still open from the harness group:** **A/F** (subagents refused `findings.md` four times for four,
+filename-keyed, while `critique_log.md` wrote fine — needs a design call between routing reports
+through the orchestrator and not instructing subagents to write files), **B** (`reference_images/`
+absent while four of six Critic audit categories compare against it), and **#23** (`Grep` rendering
+some `//` comments as `\`).
+
+**Unresolved and worth measuring:** whether Claude Code applies path denies to `Bash` at all. The
+cs-5 director probed `ls` against a denied tree three times and was refused; the remark on
+`ShellDenies()` asserts the opposite. Both cannot be right. It does not change any decision above —
+the scoping is correct either way — but nothing should lean on it until someone runs the probe.
+
+---
+
 ## 8. Where to pick up
 
 **Ordered by what would most improve the next run.**

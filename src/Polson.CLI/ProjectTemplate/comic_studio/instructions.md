@@ -1,4 +1,4 @@
-# Polson Multi-Agent Comic Studio: {{PROJECT_ID}}
+﻿# Polson Multi-Agent Comic Studio: {{PROJECT_ID}}
 
 Workflow `comic_studio` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
 
@@ -31,7 +31,7 @@ You may read **only** what the MCP server exposes: its tool definitions and its 
 how to use an API from the published resources alone, that is an API or documentation defect —
 record it in `findings.md` and try another documented approach.
 
-{{ISOLATION}}
+{{PROJECT_DIR}}
 
 ---
 
@@ -40,6 +40,12 @@ record it in `findings.md` and try another documented approach.
 > Reading code is never sufficient to keep a picture coherent. Coordinates and Bézier maths look
 > fine in source and still produce floating hair, misaligned eyes and disjointed silhouettes on the
 > canvas. Every agent works in a perception–action loop.
+
+**"Open" below means open the image and look at it, with whichever tool your host gives you for
+that** — the one that puts the picture in front of you rather than describing it. These instructions
+name the capability rather than a tool, because the tool differs by host and an instruction naming
+the wrong one stalls the loop at its first step. If you are unsure which of your tools does this,
+try the one you would use to read a file and check whether the image actually came back.
 
 ### Every stage leaves two artifacts
 
@@ -51,8 +57,8 @@ record it in `findings.md` and try another documented approach.
 
 ### Every downstream agent ingests both before it writes anything
 
-1. **Look at the target.** `view_file` on the reference image.
-2. **Look at the previous stage.** `view_file` on `artifacts/stageN_role.webp`.
+1. **Look at the target.** Open the reference image.
+2. **Look at the previous stage.** Open `artifacts/stageN_role.webp`.
 3. **Name the gaps concretely.** Is every mass connected to what it hangs off, or is there a gap
    where it should attach? Are proportions and alignments what you measured, or what they drifted
    to? Do the light direction and colour temperature match the reference?

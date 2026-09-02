@@ -279,6 +279,12 @@ internal static class ProjectGenerator
             // workflow: it carries no instructions.md, which is the only thing discovery looks for.
             ["ENGINE_ONLY"] = Render("_shared", "engine_only.md", []),
 
+            // Stay in the project directory. Shared because it is true of every workflow, and stated
+            // as a prompt rule because that is what has actually worked: the engine-only guardrail
+            // above dropped permission prompts sharply where wrangling permission syntax had not.
+            // It also replaces `{{ISOLATION}}` in the design workflows — see `Isolation`.
+            ["PROJECT_DIR"] = Render("_shared", "project_dir.md", []),
+
             // How to open when the visitor had nothing to say yet. Shared for the same reason:
             // every workflow can be started from the web form with an empty brief, so every one of
             // them needs the same answer to it.
@@ -1261,18 +1267,35 @@ internal static class ProjectGenerator
           approval eventually happens and quietly ruins the run.
           """
         : """
-          ### This is enforced, and you should confirm it rather than trust it.
+          ### Partly enforced, partly a convention — and the difference matters.
 
-          `.claude/settings.local.json` denies the shell (`Bash`) and the network (`WebFetch`,
-          `WebSearch`), so all code execution goes through `ExecuteScript` — the thing under test. It
-          also denies `Read`, `Grep` and `Glob` over Polson's own source, tests and docs, by absolute
-          path, so the implementation is genuinely out of reach rather than merely off-limits.
+          `.claude/settings.local.json` does three things, and only the first two are enforcement:
 
-          Those paths were written when this project was generated. If the project or the Polson
-          checkout has moved since, they name somewhere that no longer exists and protect nothing —
-          which is why the first thing to do is **prove it**: attempt one read of a Polson source file
-          and confirm it is refused. Report the result in `findings.md` either way. A rule you assumed
-          was holding is worth less than one you watched refuse.
+          1. **The network is denied by tool**: `WebFetch` and `WebSearch`.
+          2. **`Read`, `Grep` and `Glob` are denied over Polson's own source, tests and docs**, by
+             absolute path. Against those tools the implementation is genuinely out of reach.
+          3. **The shell is not denied.** It is *shaped*: an allowlist of ordinary reading and
+             file-transforming verbs is auto-approved, and the interpreters, image tools, network
+             clients, nested shells, `rm` and `git` are denied — so every mark is still made through
+             `ExecuteScript`, which is the property under test. But `grep`, `cat` and `find` are
+             allowed, and a rule that names commands cannot also police the paths they are given.
+
+          So **source isolation is a convention you keep**, not a wall you will bounce off. Do not
+          test it and do not route around it: reading the implementation would not make this run
+          fail, it would make it worthless, because the point is what an agent can do from the
+          published API alone.
+
+          What is worth proving is claim 2, because it is real and it can go stale — those paths were
+          written when this project was generated, and if the project or the Polson checkout has moved
+          since, they name somewhere that no longer exists and protect nothing. **Attempt one `Read`
+          of a Polson source file and confirm it is refused.** Report the result in `findings.md`
+          either way. A rule you assumed was holding is worth less than one you watched refuse.
+
+          Report what you observe, not what this file told you. `echo` succeeding proves the shell
+          runs; it proves nothing about which paths are reachable through it. A previous run reported
+          a sandbox breach on exactly that inference, and was wrong — a security finding is held to
+          the same standard as a measurement, and an unearned one is worse than none, because someone
+          will act on it.
           """;
 
     /// <summary>The MCP server's tool names, read from the server itself so the allowlist cannot go stale.</summary>

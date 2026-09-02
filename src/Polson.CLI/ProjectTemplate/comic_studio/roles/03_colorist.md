@@ -1,4 +1,4 @@
-# Role: Palette & Lighting Agent (Flatter / Colorist)
+﻿# Role: Palette & Lighting Agent (Flatter / Colorist)
 
 ## Objective
 
@@ -36,8 +36,8 @@ are what to search for.
 
 ### 1. Ingest both representations
 
-- `view_file` on the reference image — for hue, value and **where the light is**.
-- `view_file` on `artifacts/stage1_penciler.webp` — for what you are painting into.
+- Open the reference image — for hue, value and **where the light is**.
+- Open `artifacts/stage1_penciler.webp` — for what you are painting into.
 - Read the Penciler's script from `scripts/` for the anchor constants. Use their names; do not
   re-measure and drift.
 
@@ -69,7 +69,7 @@ Write the script and execute it with `outFile: 'artifacts/stage2_colorist.webp'`
 
 ### 3. Verify by looking
 
-`view_file` on your render, and check:
+Open your render, and check:
 
 - [ ] Do the colours match the reference's *hues and values*, or only its general idea?
 - [ ] Does every shadow agree with one light direction? A cast shadow disagreeing with its own key

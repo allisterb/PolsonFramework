@@ -594,10 +594,39 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.DoesNotContain("settings.local.json", agy, StringComparison.Ordinal);
 
         Assert.Contains("settings.local.json", claude, StringComparison.Ordinal);
-        // Claude Code's rules take paths, so its harness says the denies are real — and tells the
-        // agent to prove one rather than trust it, since the paths were fixed at generation time.
-        Assert.Contains("denies `Read`, `Grep` and `Glob`", claude, StringComparison.Ordinal);
-        Assert.Contains("prove it", claude, StringComparison.Ordinal);
+
+        // The path denies are real and are named as such, and the agent is told to prove one rather
+        // than trust it, since the paths were fixed at generation time and the checkout can move.
+        Assert.Contains("`Read`, `Grep` and `Glob` are denied", claude, StringComparison.Ordinal);
+        Assert.Contains("worth proving", claude, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The Claude harness does not claim the shell is denied, because it is not.
+    /// </summary>
+    /// <remarks>
+    /// It said so for several runs while <c>ShellAllows()</c> auto-approved about forty verbs
+    /// including <c>grep</c>, <c>cat</c> and <c>find</c> — a rule naming commands cannot also police
+    /// the paths they are given, which the remark on <c>ShellDenies()</c> already stated. The cost
+    /// was not theoretical: an agent told to "prove it rather than trust it" tested the claim it was
+    /// given, ran <c>echo</c>, and filed a sandbox-breach finding on the inference. Source isolation
+    /// here is a convention the agent keeps, and the instructions have to say which of the three
+    /// rules is which so a later finding can be held to it.
+    /// </remarks>
+    [Fact]
+    public void TestTheClaudeHarnessDoesNotClaimTheShellIsDenied()
+    {
+        Assert.True(ProjectGenerator.Create(Options("iso-shell", o => { o.Workflow = "harness"; o.Sdk = "claude"; })));
+        var claude = File.ReadAllText(Path.Combine(root, "iso-shell", "CLAUDE.md"));
+
+        Assert.DoesNotContain("denies the shell", claude, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("The shell is not denied", claude, StringComparison.Ordinal);
+
+        // Named as a convention, so an agent knows the difference between a wall and an agreement.
+        Assert.Contains("convention you keep", claude, StringComparison.Ordinal);
+
+        // And the standard a security finding is held to, since one was already filed unearned.
+        Assert.Contains("proves nothing about which paths are reachable", claude, StringComparison.Ordinal);
     }
 
     /// <summary>The harness's task section is chosen by <c>--type</c>, and the two are not the same brief.</summary>
@@ -1212,7 +1241,8 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     [Fact]
     public void TestAnEvaluationHarnessDeniesReadingTheImplementation()
     {
-        Assert.True(ProjectGenerator.Create(Options("iso", o => { o.Workflow = "comic_studio"; o.Sdk = "claude"; })));
+        // `harness` is the workflow whose validity depends on this, and now the only one carrying it.
+        Assert.True(ProjectGenerator.Create(Options("iso", o => { o.Workflow = "harness"; o.Sdk = "claude"; })));
 
         var deny = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "iso", ".claude", "settings.local.json")))
             .RootElement.GetProperty("permissions").GetProperty("deny")
@@ -1234,6 +1264,52 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         // tests/ as a whole is never denied — a harness is often generated inside it, and a deny
         // cannot carve an exception out of itself.
         Assert.DoesNotContain(deny, d => d.EndsWith("/tests/**)", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A design workflow gets no source denies, and is told to stay in the project instead.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>IsIsolated</c> reads the template for <c>{{ISOLATION}}</c>, and four design workflows
+    /// carried it — so <c>comic</c>, <c>comic_studio</c>, <c>drawing</c> and <c>painting</c> were all
+    /// emitting an evaluation harness's deny rules and its "prove the sandbox" instruction. The
+    /// generator's own comment said the opposite ("a client design project has no reason to deny
+    /// reading anything and does not get these rules"), which is how it went unnoticed.
+    /// </para>
+    /// <para>
+    /// They now carry <c>{{PROJECT_DIR}}</c>: a positive rule about where the work lives, which is
+    /// true of every workflow and is the form of guardrail that has actually reduced permission
+    /// prompts. <c>comic_studio</c> keeps its own one-paragraph "no peeking" note, because collecting
+    /// findings is worth the sentence — it is the deny rules and the ritual that were not.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("comic")]
+    [InlineData("comic_studio")]
+    [InlineData("drawing")]
+    [InlineData("painting")]
+    public void TestADesignWorkflowIsNotIsolatedButIsContained(string workflow)
+    {
+        var name = "contained-" + workflow;
+        Assert.True(ProjectGenerator.Create(Options(name, o => { o.Workflow = workflow; o.Sdk = "claude"; })));
+
+        var deny = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, name, ".claude", "settings.local.json")))
+            .RootElement.GetProperty("permissions").GetProperty("deny")
+            .EnumerateArray().Select(e => e.GetString()!).ToArray();
+
+        // No path denies at all: those exist to make an evaluation valid, and this is not one.
+        Assert.DoesNotContain(deny, d => d.StartsWith("Read(", StringComparison.Ordinal));
+        Assert.DoesNotContain(deny, d => d.StartsWith("Glob(", StringComparison.Ordinal));
+
+        // The shell shaping stays, because it is provenance rather than isolation: every mark must
+        // go through the engine, and nothing may delete the run's own record.
+        Assert.Contains(deny, d => d == "Bash(dotnet:*)");
+        Assert.Contains(deny, d => d == "Bash(rm:*)");
+
+        var instructions = File.ReadAllText(Path.Combine(root, name, "CLAUDE.md"));
+        Assert.Contains("Work inside the project directory", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("prove it", instructions, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>A client design project is not a harness and gets none of those rules.</summary>

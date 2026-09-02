@@ -1,9 +1,9 @@
-## Where the panel comes from: seed
+﻿## Where the panel comes from: seed
 
 **The director has supplied a reference image, in `reference_images/`.** The job is reproduction: your
 panel should read as the same picture, made from code.
 
-`view_file` it **before you plan anything**, and describe what you actually see rather than what the
+Open it and look at it **before you plan anything**, and describe what you actually see rather than what the
 brief led you to expect. Write that description as a `Stage.note` — it is the measurement everything
 after it is checked against, and a reference misread in the first ten minutes is a whole session
 spent faithfully reproducing something else.

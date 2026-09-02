@@ -1,4 +1,4 @@
-# Painting: {{PROJECT_ID}}
+﻿# Painting: {{PROJECT_ID}}
 
 Workflow `painting` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
 
@@ -37,7 +37,7 @@ legitimate brief remains.
 
 {{ENGINE_ONLY}}
 
-{{ISOLATION}}
+{{PROJECT_DIR}}
 
 ---
 

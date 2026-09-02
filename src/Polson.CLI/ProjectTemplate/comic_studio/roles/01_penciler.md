@@ -1,4 +1,4 @@
-# Role: Composition & Pose Agent (Penciler / Layout)
+﻿# Role: Composition & Pose Agent (Penciler / Layout)
 
 ## Objective
 
@@ -41,7 +41,7 @@ Read the ones your subject actually needs. A landscape needs `06` and `09` and n
 
 ### 1. Look at the reference
 
-Call `view_file` on the image in `reference_images/`. Then **write down measurements, not
+Open the image in `reference_images/` and look at it. Then **write down measurements, not
 impressions**:
 
 - The canvas size you will work at, and why — match the reference's aspect ratio.
@@ -73,7 +73,7 @@ read those names; coordinates buried in call arguments cannot be referred to.
 
 ### 3. Verify by looking
 
-`view_file` on what you just rendered, and check:
+Open what you just rendered, and check:
 
 - [ ] Does it read as a construction sheet — blue and graphite only, zero colour fill?
 - [ ] Is every secondary mass *anchored* to a primary one, with no gap where it should attach?

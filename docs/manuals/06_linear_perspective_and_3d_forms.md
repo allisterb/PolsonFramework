@@ -1,10 +1,10 @@
 ﻿# Studio Manual 06: Linear Perspective & 3D Form Construction
 
-> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
-> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
-> used for machine learning or AI. Distilling it into a manual that is served to agents is against
-> both, so the citations have been withdrawn. The constructions below are standard studio practice
-> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
+> **Source Reference**: Ernest R. Norling, *Perspective Made Easy* (Macmillan 1939; Dover 1999) — §4
+> from Step Twelve, pp. 107–113. Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §5 and
+> §5a from pp. 41–42. **§§1–3 are not yet re-sourced**; treat those as standard perspective practice
+> pending a citation rather than as verified. Norling's Steps One and Five–Six cover §1's horizon and
+> two-point setup, and Step Fourteen "Dividing the Circle" bears on §3's cap ellipses — both unread.  
 > **Purpose**: Translates linear perspective theory (horizon lines, vanishing points, 3D box projection, cylinder tangent ellipses, diagonal plane subdivision, and convergence testing) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -95,16 +95,54 @@ A 3D perspective box is defined by:
 
 > **Implemented by**: `Drawing.subdividePerspectiveQuad(quad, uCount, vCount)` → `Point[][]` — projective interpolation, so the returned cells are correctly foreshortened rather than evenly spaced.
 
-> **Standard perspective construction** — the page citation has been withdrawn:
+> **Source**: Ernest R. Norling, *Perspective Made Easy* (Macmillan 1939; Dover 1999), Step Twelve —
+> "How to Find the Center" p. 107, "The Use of Diagonals" p. 109, "Spacing in Perspective" p. 113.
+
+> **Principle**:
 > In perspective, equal spatial increments (e.g. windows along a building, floor tiles, staircase steps) appear progressively compressed.
 > To find the exact perspective center of any 4-corner quad $[P_0, P_1, P_2, P_3]$:
 > $$\text{Center} = \text{Intersection of diagonal } (P_0 \rightarrow P_2) \text{ and diagonal } (P_1 \rightarrow P_3)$$
+
+Norling's demonstration is worth keeping in mind because of what it establishes: chalk the diagonals
+on the face of a real brick, then sketch that brick from any angle, and the crossing point marks the
+centre of the face **regardless of the brick's position**. The centre is preserved by the projection —
+which is why the construction works at all, and why `subdividePerspectiveQuad` can interpolate
+projectively rather than evenly. Once you have the centre, lines from it to the vanishing points
+divide the plane in perspective; Norling's example is turning the top of the brick into a tennis
+court.
+
+### Spacing equal intervals into depth
+
+The centre construction *measures* a quad you already have. Repeating a spacing — fence posts,
+columns, window bays, floor boards — is the other half, and it has its own construction (p. 113):
+
+1. Draw two posts of the same height, the first two of the run.
+2. Draw three lines through them: one along the **tops**, one through the **centres**, one along the
+   **bases**. All three converge on the same vanishing point.
+3. Draw a line from the **top of the first post through the centre of the second**. Where it meets the
+   base line is exactly where the **third** post stands.
+4. Repeat from the second post to place the fourth, and so on.
+
+Each new interval is produced from the previous two, so the compression comes out of the construction
+rather than being estimated — and it needs no measurement, only the three convergent lines.
+
+> [!NOTE]
+> **The toolkit has no call for this.** `subdividePerspectiveQuad` divides a quad you already have
+> into a fixed grid; it cannot extend a rhythm outward into depth from two examples, which is what a
+> colonnade or a receding fence needs. Building it means returning successive base points until they
+> converge on the horizon. Nothing exists yet — do not write one into a script expecting it to resolve.
 
 ---
 
 ## 5. Convergence Verification (Exercise 2.5)
 
 > **Implemented by**: `Drawing.verifyPerspectiveConvergence(lines, expectedVp, maxToleranceDeg)` → `{ passed, maxAngularErrorDeg, message }`. Run it as a QA gate before committing a perspective scene.
+
+> **Source**: Loomis, *Creative Illustration*, p. 42. His method for checking any picture is exactly
+> this call's: **carry the receding straight lines back until they meet**. The lines must be parallel
+> to the ground plane — two floorboards, two ceiling lines, the top and bottom of a door — which is
+> the one precondition worth remembering, since feeding the call a set of non-parallel edges produces
+> a confident answer about nothing.
 
 To verify that drawn line segments $[(A_1, B_1), (A_2, B_2), \dots]$ correctly obey perspective:
 1. Compute the angular slope of each line: $\theta_i = \text{atan2}(B_{iy} - A_{iy}, B_{ix} - A_{ix})$.
@@ -139,6 +177,13 @@ const grid = Drawing.createPerspectiveGrid({
 Two consequences fall out immediately, and both are worth stating.
 
 **The horizon is eye height, not a compositional line.** `CAM.eyeHeight` and `horizonY` are the same fact in two units. Anything in the scene standing exactly 1.55 m tall has its top *on* the horizon, at any distance — which is the fastest sanity check available on a grid.
+
+> **Source**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947), p. 41 — "Everything You
+> Draw Is Related to an Eye Level", and p. 42 "Eye Level, Camera Level, and Horizon Mean the Same".
+> Loomis puts it flatly: **the horizon *is* the eye level**, and it is impossible to draw correctly
+> without settling a viewpoint and an eye level first. He also distinguishes the viewpoint — the
+> centre of the field of vision, the station point — from the vanishing points, which is the confusion
+> `centerOfVisionX` and `vpL`/`vpR` are named to keep apart.
 
 **A figure's pixel height is a projection, never a choice.** `createMannequinFigure(x, y, totalHeight)` takes the crown as its origin and runs 8 head-lengths down, so:
 

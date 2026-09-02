@@ -1,10 +1,14 @@
 ﻿# Studio Manual 05: Observation, Measurement & CSI Curves
 
-> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
-> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
-> used for machine learning or AI. Distilling it into a manual that is served to agents is against
-> both, so the citations have been withdrawn. The constructions below are standard studio practice
-> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
+> **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) — §2
+> from pp. 34–37. **§§1 and 3–5 are not yet re-sourced**; treat those as standard practice pending a
+> citation rather than as verified.
+>
+> **§3's "CSI line" is not our term and has no source here.** It came from the withdrawn text, where
+> it named a section. The three primitives it describes — curve, straight, inflection — are ordinary
+> observations about contour and stand on their own, but the *name* travelled with a citation that no
+> longer exists. Rename or re-source it before leaning on it; a vocabulary an agent is taught should be
+> traceable to something.
 > **Purpose**: Translates foundational drawing techniques (relative distance measurement, plumb lines, the CSI curve grammar, planar forms, and two/three-value light studies) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -47,6 +51,26 @@ Every landmark on the returned model is already placed against these units, so m
 ## 2. Plumb Lines & Level Lines (Horizontals and Verticals)
 
 > **Implemented by**: `Drawing.verifyPlumbAlignment(topPoint, bottomPoint, maxTolerance)` → `{ aligned, deltaX, message }`.
+
+> **Source**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) — "Proportion in
+> Relation to the Horizon" p. 34, "Finding Proportion at Any Spot in Your Picture" p. 36, and
+> "'Hanging' Figures on the Horizon" p. 37.
+
+> [!IMPORTANT]
+> **The horizon is a level line you already have, and it checks every figure in the scene at once.**
+> Loomis's rule: *hang* the figures on the horizon by making it cut through similar figures **at the
+> same place on each**. That is what keeps them on one ground plane — the horizon crosses standing men
+> at the waist, a seated woman at the chin, and a standing woman placed relative to the men at her own
+> matching point.
+>
+> It is a **verification** as much as a construction, and a cheap one: two standing adults on the same
+> floor whose waists sit at different heights relative to the horizon are not standing on the same
+> floor, whatever the rest of the drawing says. Unlike a plumb line, which checks one figure's internal
+> alignment, this checks the whole cast against each other and against the ground.
+>
+> Combined with Manual 06 §5a: the horizon *is* eye height, so "cuts a standing adult at the waist"
+> also tells you the camera is at waist height — a fact about the scene recoverable from any correct
+> figure in it.
 
 > **Principle**: Dropping vertical plumb lines and horizontal level lines allows artists to check anatomical alignment without perspective distortion:
 > - *Vertical Plumb Line*: Dropped from the ear crosses the jaw angle and collarbone.

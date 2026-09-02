@@ -1,10 +1,8 @@
 ﻿# Studio Manual 07: Volumetric Lighting, Cast Shadows & Studio Setups
 
-> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
-> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
-> used for machine learning or AI. Distilling it into a manual that is served to agents is against
-> both, so the citations have been withdrawn. The constructions below are standard studio practice
-> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
+> **Source Reference**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §1 from
+> pp. 82–86. **§§2–4 are not yet re-sourced**: their previous citations were withdrawn, so treat
+> anything there as standard practice pending a citation rather than as verified.  
 > **Purpose**: Translates volumetric lighting theory (the 6 tonal light zones, Lambertian diffuse falloff, cast shadow geometric projection, contact occlusion, and 3-point studio lighting) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -12,6 +10,34 @@
 ## 1. Anatomy of Light on Form (The 6 Tonal Zones)
 
 > **Implemented by**: `Drawing.renderVolumetricSphere(ctx, cx, cy, radius, lightDirection, options)` and `Drawing.renderVolumetricCylinder(ctx, x, y, width, height, lightDirection, options)` render all six zones in one pass; `Drawing.createVolumetricSphereShader(options)` returns the equivalent as an SkSL shader for filling arbitrary paths.
+
+> **Source**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — "Basic Intensities of
+> Light versus Shadow" p. 82, and "The Four Properties of Tone" pp. 83, 86.
+
+> [!IMPORTANT]
+> **A light's quality *is* the size of the value gap it opens, and Loomis gives that as a number.**
+> His first property of tone is the intensity of light *in relation to* shadow: the stronger the light,
+> the darker the shadow appears and the greater the contrast; the weaker it is, the closer the shadow
+> comes to the value of the light. In a diffused light both go diffuse together, and in a dim hazy
+> light the two are very close in value.
+>
+> He scales it as **tone separation** — how many steps apart the lit and shadow sides sit:
+>
+> | Separation | Lighting |
+> | ---: | :--- |
+> | 1 tone | diffused light |
+> | 2 tones | hazy sunlight |
+> | 3 tones | full sunlight |
+> | 4 tones | strong artificial light |
+> | 5 tones | spotlight |
+> | full | limit of intensity — practically black |
+>
+> This is the missing guidance for the colour pairs the renderers take. `baseColor` and `shadowColor`
+> on `renderVolumetricSphere` are two ends of exactly this gap, and nothing anywhere said how far
+> apart to put them. Overcast exterior: one or two steps. Noon sun: three. A single bare bulb or a
+> hard key: four or five. **Picking the gap first, then the hues, is the order that produces a
+> coherent scene** — the commonest failure is a shadow chosen for its colour and landing at the wrong
+> distance from its own light.
 
 > **Principle**:
 > Whenever light strikes a curved 3D form, it creates 6 distinct tonal zones:

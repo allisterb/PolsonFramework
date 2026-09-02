@@ -1,10 +1,8 @@
 ﻿# Studio Manual 09: Compositional Armatures, Value Hierarchy & Visual Emphasis
 
-> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
-> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
-> used for machine learning or AI. Distilling it into a manual that is served to agents is against
-> both, so the citations have been withdrawn. The constructions below are standard studio practice
-> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
+> **Source Reference**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §1's Informal
+> Subdivision from pp. 36–37, §2 from pp. 48–53. §3 key from p. 85. **§4 is not yet re-sourced**, and neither are
+> §1's four fixed armature types; treat those as standard convention pending a citation.  
 > **Purpose**: Translates visual design theory (classical geometric armatures, focal emphasis rules, Notan value structures, cinematic vignetting, and the 70-20-10 proportional design law) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -21,6 +19,43 @@
 > [!NOTE]
 > The four `createCompositionGrid` types are standard studio convention — the photographic rule of
 > thirds, and dynamic symmetry after Hambidge and Bosanquet. Pending a citation to a specific source.
+
+### Informal Subdivision — a generative armature, not a template
+
+> **Source**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947), p. 36 — "Introducing
+> Informal Subdivision", with the worked demonstration on p. 37. Loomis calls it *"a plan of
+> subdivision of my own"*, offered because it divides space **unequally and interestingly**.
+
+Every armature above is a fixed template: the same lines on every canvas, so every composition built
+on one inherits the same skeleton. Loomis's method is a **procedure** instead, and it produces a
+different scaffold each time:
+
+1. **Divide the whole space with one line**, vertical or horizontal. Deliberately **avoid one-half,
+   one-third and one-quarter** — the whole point is an unequal division.
+2. **Draw one diagonal of the whole space**, corner to opposite corner.
+3. Where that diagonal crosses your first line, **draw a horizontal right across the space**.
+4. In any rectangle now produced, **draw one diagonal — never both.** Two crossing as an X would
+   halve the rectangle equally, which is exactly what is being avoided.
+5. At any intersection, draw a new horizontal or perpendicular. That makes fresh rectangles to
+   divide by a single diagonal again.
+6. Repeat to taste, then **build the subject onto the structural lines you have created**.
+
+The property that makes it worth the trouble: **no two spaces come out duplicates** — bar the two
+halves either side of the first whole-space diagonal. A rule-of-thirds grid gives you nine equal
+cells and four power points and says nothing about anything else; this gives an entire frame of
+unequal, non-repeating spaces, each a candidate placement.
+
+> [!IMPORTANT]
+> **The toolkit has no call for this**, and it is the one compositional method here that is genuinely
+> algorithmic — a recursive subdivision with a rule about what *not* to do at each step, which is far
+> better suited to code than a fixed template is. `createCompositionGrid` offers four templates and no
+> generator. Worth building as a generator alongside them, returning
+> the accumulated lines and their intersections as candidate placements. **No such call exists yet;
+> do not write one into a script expecting it to resolve.**
+>
+> The constraint is the interesting part to implement: one diagonal per rectangle, never two, and a
+> first cut that avoids the simple fractions. A generator that ignored either would produce a grid of
+> duplicate spaces and quietly defeat the method.
 
 ### A. Rule of Thirds
 Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Points**:
@@ -41,6 +76,10 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 
 > **Implemented by**: `Drawing.drawLeadingLines(ctx, originPoints, focalPoint, options)` for tool 2 and `Drawing.drawVignette(ctx, width, height, options)` for tool 3. Tools 1 and 4 are decisions about value and spacing — drive them through `Drawing.createNotanPalette(...)` and `Drawing.subdivideProportions(...)`.
 
+> **Source**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — "Attention Devices" p. 48,
+> "Get Attention by Building Contrast of Line or Shape" p. 49, "Various Types of Vignettes" p. 52 and
+> "A Vignette Is a Design Pure and Simple" p. 53.
+
 > **Principle**:
 > To guide the viewer's eye through a scene:
 >
@@ -48,6 +87,26 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 > 2. **Leading Lines**: Directional diagonals, architecture edges, or cast shadow rays that converge upon the hero subject.
 > 3. **Framing & Vignetting**: Dark peripheral vignetting or foreground silhouettes that lock the viewer inside the visual container.
 > 4. **Isolation / Negative Space**: Surrounding the focal hero with clean breathing room to elevate readability.
+
+**Loomis's own taxonomy of attention devices** (p. 48) splits into two kinds, and the split is the
+useful part. **Subjects that catch the eye by what they are**: any kind of conflict, anything showing
+speed, falling or flight, impending disaster. **Devices that catch it by where they point**:
+
+| Device | What it is, geometrically |
+| :--- | :--- |
+| Radiating curves to a focal point | a convergent pencil of curves |
+| Spot sequence to a focal point | discrete marks in a path, not a line |
+| Flame, explosion, radiation-of-light | a burst — rays from one origin |
+| Wing or "sweep" motif | one long convergent curve |
+| Spider-web motif | radial *and* concentric together |
+| Any spiral motif | a single curve that ends at the point |
+| Pointer, "bull's-eye" | an object that simply aims |
+
+Everything in the right-hand column is `Drawing.drawLeadingLines(ctx, origins, focal, options)` with
+different origin sets — the call is one primitive and this is the list of things to do with it. The
+left-hand column is not a drawing technique at all; it is a reminder that **subject matter does this
+work before composition gets a chance to**, which is worth knowing before adding a third leading line
+to a scene that has no conflict in it.
 
 ---
 
@@ -66,9 +125,25 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 > - **High-Key**: Scene dominated by values 1–4 (soft, ethereal, bright).
 > - **Low-Key**: Scene dominated by values 7–10 (dramatic, moody, noir, mystery).
 
+> **Source for key**: Loomis, *Creative Illustration*, p. 85 — "The Meaning of Key and Value
+> Manipulation". **Key is a move, not a category**: the *same* relationships between light and shadow
+> are raised or lowered bodily on the value scale. Held at the top it is **high key**; dropped a tone
+> or two, **middle key**; dropped to the bottom, **low key**. The relationships do not change — only
+> where on the scale they sit.
+>
+> Two consequences follow, and the second is the one worth acting on:
+>
+> - `createNotanPalette('highKey')` and `('lowKey')` are the same structure at two heights, which is
+>   why their key names differ but their roles do not.
+> - **A high-key scene needs its value distinctions kept small on purpose.** Loomis makes the point
+>   that when the values are all at the top of the scale there is a real reason for making the
+>   differences between them small — widening them to "get contrast" simply drops the scene out of the
+>   key you chose. The counterpart is intentional **forcing of dark against light**, which is a
+>   deliberate departure rather than the default.
+
 > [!NOTE]
-> *Notan* is the Japanese light-dark convention; the tier percentages above are the studio's
-> calibration rather than a cited rule.
+> *Notan* is the Japanese light-dark convention and is our term rather than Loomis's; the tier
+> percentages above are the studio's calibration rather than a cited rule.
 
 ### When two adjacent masses have merged in value
 

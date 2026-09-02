@@ -26,9 +26,14 @@
 > Informal Subdivision", with the worked demonstration on p. 37. Loomis calls it *"a plan of
 > subdivision of my own"*, offered because it divides space **unequally and interestingly**.
 
-Every armature above is a fixed template: the same lines on every canvas, so every composition built
-on one inherits the same skeleton. Loomis's method is a **procedure** instead, and it produces a
-different scaffold each time:
+**Two ways to get an armature, and they suit different work.** The four types above are **templates**:
+the same lines on every canvas, fast, shared, and easy to check a placement against — which is exactly
+what you want for a logo grid, a repeatable layout, or anything a second person has to follow.
+Loomis's method is a **procedure** instead, generating a different scaffold each time, which is what
+you want when the composition should not look like every other composition. Neither is more correct;
+they fail in opposite directions, one toward sameness and one toward unpredictability.
+
+The procedure:
 
 1. **Divide the whole space with one line**, vertical or horizontal. Deliberately **avoid one-half,
    one-third and one-quarter** — the whole point is an unequal division.
@@ -41,9 +46,9 @@ different scaffold each time:
 6. Repeat to taste, then **build the subject onto the structural lines you have created**.
 
 The property that makes it worth the trouble: **no two spaces come out duplicates** — bar the two
-halves either side of the first whole-space diagonal. A rule-of-thirds grid gives you nine equal
-cells and four power points and says nothing about anything else; this gives an entire frame of
-unequal, non-repeating spaces, each a candidate placement.
+halves either side of the first whole-space diagonal. A rule-of-thirds grid gives nine equal cells and
+four power points, which is a small, memorable vocabulary; this gives a whole frame of unequal,
+non-repeating spaces, each a candidate placement. Fewer decisions against more possibilities.
 
 > [!IMPORTANT]
 > **The toolkit has no call for this**, and it is the one compositional method here that is genuinely
@@ -160,6 +165,18 @@ ctx.restore();
 ```
 
 It is also honest whenever there is air between the two: three metres of lit rain genuinely do sit between a figure's coat and the facade behind it. Check the result with `bitmap.palette` (Manual 15) rather than by eye — merged masses are exactly the case where the eye is least reliable, since it is the boundary and not the values that has failed.
+
+> [!IMPORTANT]
+> **First decide whether the merge is a defect at all.** Loomis (*Creative Illustration* pp. 102–103,
+> distilled in Manual 07 §1) treats converged values as an *opportunity*: where two tones are close
+> anyway, it is safe to lose the edge further and spend the sharpness where it does more good. Edges
+> are lost and found, and a contour that is hard the whole way round reads as cut out.
+>
+> The test is what the edge is doing for the picture. **A merge on the subject's silhouette against
+> its background is a defect** — the reading of the whole image depends on it, so separate them. **A
+> merge between two secondary masses is a saving** — a shoulder into shadow, one background plane into
+> another — because every sharp edge spends attention and there is only so much to spend. Reach for
+> the mask filter when the silhouette has failed, not whenever two values are close.
 
 > The four styles are `'normal'` (softens the whole shape — an airbrush), `'solid'` (crisp shape, blur added outside — a glow), `'outer'` (blur only, shape knocked out — a halo, and the one wanted here), and `'inner'` (blur only, inside — an inward vignette). Full definitions in Manual 17 §7 and `polson://sdk/core/Skia`.
 

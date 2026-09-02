@@ -1,8 +1,8 @@
 ﻿# Studio Manual 07: Volumetric Lighting, Cast Shadows & Studio Setups
 
 > **Source Reference**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §1 from
-> pp. 82–86. **§§2–4 are not yet re-sourced**: their previous citations were withdrawn, so treat
-> anything there as standard practice pending a citation rather than as verified.  
+> pp. 82–86 and 102–103. **§§2–4 are not yet re-sourced**: their previous citations were withdrawn, so
+> treat anything there as standard practice pending a citation rather than as verified.  
 > **Purpose**: Translates volumetric lighting theory (the 6 tonal light zones, Lambertian diffuse falloff, cast shadow geometric projection, contact occlusion, and 3-point studio lighting) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -70,6 +70,46 @@
 ```
 
 ---
+
+### The "lost and found" of edges
+
+> **Source**: Loomis, *Creative Illustration*, pp. 102–103 — "The Treatment of Edges".
+
+The six zones above say what happens *across* a form. This says what happens at its **boundary**, and
+Loomis calls it perhaps the most important element in getting a drawing to feel free rather than cut
+out. Edges are **lost and found**: the same contour is sharp in some places and dissolved in others.
+
+His example is the one to hold onto. A polished square table has four edges that are hard *to the
+touch* — and if you draw them hard all the way round, you have drawn what you know rather than what
+you see. Look at the real table and every edge differs along its length: in places it passes tones
+that merge with it, in others it stands out in relief; a reflection running to the edge makes it
+sharp, a dark reflection leaves it undefined.
+
+Three reasons an edge goes soft, and they want different treatment:
+
+1. **Deliberate subordination.** Bring the two tones **closer in value where they meet** — darken a
+   light background as it approaches a dark edge, lighten it as it approaches a light one. Loomis
+   describes it as *extending the one tone a little way into the other*. The edge is still held; it
+   just stops asking for attention. `Skia.MaskFilter.blur(sigma, 'outer')` is the mechanical form of
+   this, lifting a haze strictly outside one contour without moving either mass's own value.
+2. **The material is soft.** A beard, a wisp of hair, fine twigs, lace, transparent fabric, mist,
+   cloud, spray. Here the edge genuinely *is* a mixture of the form with what lies behind it, and
+   `'normal'` blur on the coverage — an airbrushed edge — is what that looks like.
+3. **The values have converged.** Where a contour arrives at a value equal to what it sits against,
+   let it go entirely. Light against light, grey against grey.
+
+> [!IMPORTANT]
+> **This is the counterpoint to Manual 09 §3's "two adjacent masses have merged in value".** That
+> section treats a merge as a defect with a fix, and often it is — a silhouette that stops reading is
+> a real failure. But Loomis's third case is the same situation treated as an **opportunity**: when
+> two values are close anyway, it is safe to lose the edge *further*, and spend the sharpness
+> somewhere it does more good.
+>
+> The two are reconciled by asking what the edge is doing for the picture. A merged edge on the
+> subject's silhouette against its background is a defect. A merged edge on a secondary mass —
+> shoulder into shadow, a background plane into another — is a saving, because **every sharp edge
+> spends attention, and there is a fixed amount to spend.** Decide which edges you are buying before
+> reaching for either remedy.
 
 ## 2. Cast Shadow Geometric Projection
 

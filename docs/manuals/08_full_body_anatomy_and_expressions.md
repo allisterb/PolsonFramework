@@ -6,6 +6,28 @@
 > citation was withdrawn, so treat anything there as pending a citation rather than as verified.  
 > **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and the 6 universal facial expressions) into algorithmic JavaScript Canvas2D / Skia code.
 
+## Two schools, and neither is the answer
+
+There is no single correct way to construct a figure, and this manual does not pretend otherwise. It
+carries **two teaching traditions** that disagree in useful ways, and the SDK is built so you can work
+in either. Choose per drawing; you can also take the proportions from one and the torso construction
+from the other, which is what most working artists actually do.
+
+| | **Loomis** — *Figure Drawing for All It's Worth* (1943) | **Reilly**, via Faragasso — *Mastering Drawing the Human Figure* (1998) |
+| :--- | :--- | :--- |
+| **Starts from** | proportion. Divide the height into eighths, then hang the forms on it. | relationships and structure lines. Establish axes and how landmarks line up, then build forms between them. |
+| **The figure is** | a mannequin of simple naturalistic masses — ribcage egg, pelvic basin, limb cylinders. | an upper and a lower **secondary form** meeting at the waist, each built from the pit of the neck outward. |
+| **Shoulder width** | 2⅓ H at the widest, ~2 H for the "cape" | 2⅔ H, measured from the pit of the neck |
+| **Best for** | getting a whole figure right quickly, and for heroic or idealised proportion. | precision where a pose has to hold up — foreshortening, difficult angles, careful anatomy. |
+| **In the SDK** | `createMannequinFigure` + `drawMannequinWireframe` / `drawMannequinSolid` (§§1–2) | `drawTorsoMusculature` over that foundation, and the landmark order in §3 |
+
+Where they give different numbers, the SDK takes a parameter rather than picking a winner —
+`options.shoulderSpanHeads` is the worked example, and §1 lists what each canon puts there.
+
+Loomis's own caution is worth carrying into either: **"Never draw the limbs straight and stiff and
+without spring."** Faragasso's is the same warning from the other side — proportions *vary greatly in
+real life*, so a canon is a starting position, not a specification.
+
 ---
 
 ## 1. The 8-Head Proportional Canon & 3 Primary Masses
@@ -45,21 +67,27 @@ other end:
 > the same problem Manual 06 §5a solves with a metre-based projector, and the two agree: pick the
 > real-world height first, and let both the figure and the architecture derive from it.
 
-> [!NOTE]
-> **`createMannequinFigure` uses a shoulder span of `1.8 H`, and the sources do not agree on what it
-> should be.** Three figures, each measuring something slightly different:
+> [!TIP]
+> **Shoulder width is a choice between canons, and `options.shoulderSpanHeads` is how you make it.**
+> The number is in head units, so it survives any figure height. The sources disagree, and each is
+> measuring a slightly different thing — none is wrong:
 >
-> | Source | Figure | What it measures |
+> | Canon | `shoulderSpanHeads` | What it measures |
 > | :--- | :--- | :--- |
-> | Loomis, p. 26 | **2⅓ H** | the figure at its widest, arms hanging |
-> | Loomis, p. 40 | **~2 H** | the shoulder "cape" over the ball of the chest |
-> | Faragasso, p. 74 | **2⅔ H** (1⅓ each side of the neck pit) | pit of neck to widest shoulder, male |
+> | **Loomis**, *Figure Drawing* p. 26 | `2.33` | the figure at its widest, arms hanging |
+> | **Loomis**, p. 40 | `2.0` | the shoulder "cape" over the ball of the chest |
+> | **Faragasso / Reilly**, p. 74 | `2.67` | pit of the neck to each shoulder, ×2, male figure |
+> | *toolkit default* | `1.8` | a shoulder-*joint* span, narrower than any of them |
 >
-> Faragasso's is the widest and the most specific, and he immediately adds that **these proportions
-> vary greatly in real life**. So there is no single correct constant to look up — ours is narrow
-> against all three, but the parameter's own definition (a shoulder-*joint* span) is a fourth thing
-> again. Left alone deliberately: this wants a decision about what the parameter means, not a number
-> copied from whichever book was open.
+> ```javascript
+> // A heroic figure on Loomis's full width.
+> const figure = Drawing.createMannequinFigure(350, 60, 640, { shoulderSpanHeads: 2.33 });
+> ```
+>
+> Faragasso's is the widest and most specific, and he immediately adds that **these proportions vary
+> greatly in real life** — which is the honest note to end on. Pick the canon that suits the figure
+> you are drawing; a slight build and a heavyweight boxer are not the same number, and neither is
+> wrong.
 
 ### The 3 Solid Masses & Dynamic Contrapposto
 

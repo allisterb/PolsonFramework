@@ -490,6 +490,42 @@ public class HarnessReportedBugTests : TestsRuntime
     }
     #endregion
 
+    #region Figure Canon Tests
+    /// <summary>
+    /// Shoulder width is selectable, so a figure can follow whichever canon the work calls for.
+    /// </summary>
+    /// <remarks>
+    /// The published canons disagree and none is wrong — Loomis gives 2.33 head units for the figure
+    /// at its widest and about 2.0 for the shoulder "cape", while Faragasso after Reilly gives 2.67
+    /// across. The toolkit's own 1.8 is a shoulder-<i>joint</i> span, narrower than all three. Until
+    /// this option existed an agent reading either book could not act on it, which made the manual
+    /// describe a choice the SDK did not offer.
+    /// </remarks>
+    [Fact]
+    public void TestShoulderSpanFollowsTheChosenCanon()
+    {
+        static float SpanOf(string options)
+        {
+            var result = new JsDrawingEngine().Execute($$"""
+                const f = Drawing.createMannequinFigure(400, 60, 640{{options}});
+                log('SPAN ' + (f.rightArm.shoulder.x - f.leftArm.shoulder.x) + ' UNIT ' + f.headUnit);
+                'measured';
+                """, 800, 800, null, "png", 100);
+
+            Assert.True(result.Success, result.Error);
+            var line = result.Logs.First(l => l.Contains("SPAN ", StringComparison.Ordinal));
+            var parts = line[(line.IndexOf("SPAN ", StringComparison.Ordinal) + 5)..].Split(" UNIT ");
+            var span = float.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture);
+            var unit = float.Parse(parts[1].Trim(), System.Globalization.CultureInfo.InvariantCulture);
+            return span / unit;                       // back into head units
+        }
+
+        Assert.Equal(1.80f, SpanOf(""), 1);                                       // the default
+        Assert.Equal(2.33f, SpanOf(", { shoulderSpanHeads: 2.33 }"), 1);          // Loomis, widest
+        Assert.Equal(2.67f, SpanOf(", { shoulderSpanHeads: 2.67 }"), 1);          // Faragasso / Reilly
+    }
+    #endregion
+
     #region Rim Light Tests
     /// <summary>
     /// Rims a circle of radius 120 at (300,300) and reads the brightness back around it.

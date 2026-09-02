@@ -1979,7 +1979,16 @@ public class ConstructiveDrawingToolkit
 
         // Shoulders / Clavicles (1.4H)
         var shoulderY = originY + H * 1.4f;
-        var shoulderSpan = H * 1.8f;
+        // In head units, so it survives any figure height. The canons disagree and all of them are
+        // usable: Loomis gives 2 1/3 H for the figure at its widest and about 2 H for the shoulder
+        // "cape"; Faragasso, after Reilly, gives 1 1/3 H from the pit of the neck to each shoulder,
+        // so 2 2/3 H across. The default is none of them — it is a shoulder-joint span, which is a
+        // narrower measurement again — so an agent following a particular canon has to be able to
+        // say so rather than being stuck with ours.
+        var shoulderSpanHeads = opt != null && opt.Contains("shoulderSpanHeads")
+            ? Convert.ToSingle(opt["shoulderSpanHeads"], CultureInfo.InvariantCulture)
+            : 1.8f;
+        var shoulderSpan = H * shoulderSpanHeads;
         var leftShoulder = new Point2D(originX - MathF.Cos(radShoulder) * (shoulderSpan * 0.5f), shoulderY - MathF.Sin(radShoulder) * (shoulderSpan * 0.5f));
         var rightShoulder = new Point2D(originX + MathF.Cos(radShoulder) * (shoulderSpan * 0.5f), shoulderY + MathF.Sin(radShoulder) * (shoulderSpan * 0.5f));
         var sternalNotch = new Point2D(originX + spineOffset * 0.3f, shoulderY);

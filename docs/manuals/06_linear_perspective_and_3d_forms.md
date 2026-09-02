@@ -160,6 +160,36 @@ rather than being estimated — and it needs no measurement, only the three conv
 > colonnade or a receding fence needs. Building it means returning successive base points until they
 > converge on the horizon. Nothing exists yet — do not write one into a script expecting it to resolve.
 
+### Equal divisions, by diagonal transfer
+
+> **Source**: Norling, *Perspective Made Easy*, Step Fifteen — "Dividing a Surface" p. 145, "Dividing
+> a Surface in Perspective" p. 146, "Windows or Columns" p. 147.
+
+The construction behind `subdividePerspectiveQuad`, and worth knowing because it explains *why* even
+spacing has to be transferred rather than measured. Flat first, on the face of a brick:
+
+1. Divide the face into **N equal horizontal bands** — easy, because nothing is foreshortened.
+2. Draw one **diagonal, corner to corner**.
+3. Where each horizontal crosses that diagonal, drop an **upright**.
+
+Those uprights divide the face into N equal *vertical* parts. **The same method holds unchanged in
+perspective**, and the uprights come out correctly foreshortened rather than evenly spaced.
+
+For a building — Norling's eight rows of windows:
+
+1. Divide the **corner line** into eight equal parts. This is the move that matters: a vertical corner
+   edge is parallel to the picture plane, so it is **not foreshortened** and can be measured directly
+   with a ruler.
+2. Run lines from those points to the wall's vanishing point.
+3. One corner-to-corner diagonal across the wall divides it into the eight bays.
+
+> [!TIP]
+> **Measure where nothing is foreshortened, then transfer.** That is the whole of perspective
+> measurement, and it is why `subdividePerspectiveQuad` interpolates projectively instead of dividing
+> the quad's edges evenly: evenly-spaced points along a receding edge are the one thing that is
+> definitely wrong. If you ever need to check its output by hand, the diagonal is the check — every
+> division must land where a corner-to-corner line crosses its own row.
+
 ---
 
 ## 5. Convergence Verification (Exercise 2.5)

@@ -222,6 +222,17 @@ ctx.restore();
 
 The two-pass structure matters: the base stroke carries the local colour, the overlay pass carries only texture. A single pass with the shader alone loses the rope's value.
 
+> [!WARNING]
+> **Raw Perlin noise is coloured, and this is exactly the use that exposes it.** `Skia.Shader.perlinNoiseTurbulence` and `perlinNoiseFractal` generate an *independent* noise field per channel — R, G and B each get their own, and so does alpha. Under `overlay` or `soft-light` that tints in random hues instead of modulating value: a measured run turned ~700 × 500 px of brick from brown to olive green.
+>
+> The preset above handles it — `createRopeFiberShader` and `createAtmosphericCloudShader` are luminance-only by default. **If you reach past them to the raw shader, wrap it yourself:**
+>
+> ```js
+> ctx.strokeStyle = Skia.Shader.luminance(Skia.Shader.perlinNoiseTurbulence(0.08, 0.40, 3, 42));
+> ```
+>
+> Do not also flatten the alpha. It varies too, and that is deliberate — greying the noise *and* clamping alpha in one colour matrix produces an opaque sheet where the vapour should be. Luminance on RGB, alpha untouched; `Skia.Shader.luminance` is that transform and nothing else.
+
 ### C. Organic Cloud Volume (`perlinNoiseFractal`)
 Layer fractal turbulence over cloud puffs for atmospheric sea-air depth:
 `Drawing.createAtmosphericCloudShader(frequencyX, frequencyY, octaves, seed)` → `SKShader` is the isotropic fractal preset for air and vapour. Its defaults (`0.015, 0.015, 4, 101`) are the sea-air values.
@@ -235,7 +246,7 @@ ctx.fillRect(0, 0, width, height * 0.45);
 ctx.restore();
 ```
 
-`soft-light` is the operative choice — the noise must modulate the sky already painted underneath, not replace it.
+`soft-light` is the operative choice — the noise must modulate the sky already painted underneath, not replace it. For that to *be* modulation the noise has to carry value rather than colour, which is what the preset's default `luminanceOnly` gives you; see the warning in §5B before substituting the raw shader.
 
 ### D. Layer Blending for High-Impact Comic Lighting
 - **`ctx.globalCompositeOperation = 'multiply'`**: Apply dark amber shadow glazes over skin without obscuring black ink hatching.
@@ -265,6 +276,7 @@ ctx.fillStyle = sky;
 ctx.fillRect(0, 0, 760, 560);
 
 // §5C — Vapour modulates the sky beneath it; 'soft-light' is the operative choice.
+// The preset is a value field by default — raw Perlin here would tint the sky, not shade it.
 const clouds = Drawing.createAtmosphericCloudShader();
 ctx.save();
 ctx.globalCompositeOperation = 'soft-light';

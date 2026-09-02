@@ -1,4 +1,4 @@
-# Polson JavaScript SDK — Core Reference
+﻿# Polson JavaScript SDK — Core Reference
 
 This is the **core** reference for the Polson JavaScript (JS) SDK — the typed drawing, graphics, and vector API exposed to scripts executed inside the Polson MCP server's sandboxed JavaScript engine. It covers the **execution model** (the rules every generated script must follow) and the **method signature index** for all top-level objects: each method's purpose, parameter types, and return values.
 
@@ -63,13 +63,27 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 - **Execution Limits:** Scripts are enforced with statement limits (2,000,000 statements, configurable via `JsDrawingEngine.MaxStatements`), recursion depth limits (100 frames), and execution timeouts ({{SCRIPT_TIMEOUT_SECONDS}} seconds).
   > [!TIP]
   > For heavy pixel-level manipulation (such as procedural textures, blurs, or color grading), use native **`Skia.Shader`** or **`Skia.ImageFilter`** pipelines which execute in native SIMD/C++ in < 1ms, rather than running millions of raw per-pixel loop iterations in interpreted JS.
+  >
+  > **The cap is reached sooner than it sounds, and the commonest way to reach it is *measuring* rather than drawing** — a per-pixel loop asking a question about the render. It dies at a few hundred thousand pixels, which is a fraction of one frame, and it takes the whole script with it. Use **`bitmap.diff`**, **`bitmap.rowProfile`** and **`bitmap.palette`**, which answer in one native call whatever the resolution; see *Measuring an Image* under `polson://sdk/core/Skia` and `polson://manual/15`.
 - **Return Value & Visual Rendering:**
   - Returning a `SnapPaper` (or a `SnapElement`), `CanvasRenderingContext2D`, `SkiaCanvas`, `SkiaBitmapWrapper`, or `ImageData` automatically renders the visual output headlessly to image bytes (`result.ImageBytes`, defaulting to **WebP at quality=85**, with `"png"` and `"jpeg"` options available) and Base64 URI (`result.ImageDataUri`).
+  > [!CAUTION]
+  > **Do not ask for `includeBytes: true`. Use `outFile` and open the file.** Inlined bytes are delivered as **base64 text in your context window** — not as an image. Base64 inflates the image by a third, and a routine 1200 × 760 WebP arrives as **~126,000 characters**, tens of thousands of tokens; the same frame as PNG is ~458,000 characters, which is larger than many context windows on its own.
+  >
+  > It is not an MCP image content block, so it costs the window **without necessarily being viewable at all**. The reliable way to *see* a render is to write it with `outFile` and open that path with your host's file or image reader — which is cheaper and actually shows you the picture. `outFile` already sets `includeBytes` to `false` for you; leave it that way.
+  >
+  > Every inlined render is recorded as a `script.bytesInlined` event carrying the byte and character counts, so a run that spent its context this way says so afterwards.
+
   - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. **Both are relative to the project directory, and a path resolving outside it is refused** — an absolute path or a `..` traversal fails with a message naming the project root rather than writing somewhere unexpected. Missing intermediate directories are created for you. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
     > [!IMPORTANT]
     > **`outSvg` needs a vector document to write.** It saves `result.SvgXml`, which only exists when the script built a `SnapPaper`. A script that draws entirely on a raster canvas has no markup to save, so `outSvg` writes **no file** and the run still reports success — the response carries a `[WARN] outSvg … wrote nothing` line, but by then the stage is drawn. **If the brief asks for an SVG, build the scene on `Snap(width, height)` from the first script.** Read `polson://manual/14` before choosing the surface.
   - For vector scenes (`SnapPaper` / `SnapElement`), `result.SvgXml` contains the serialized SVG XML markup. For 2D canvas raster scripts, `result.SvgXml` retains the last vector image produced by the agent prior to switching to 2D canvas mode.
   - If a script creates one or more canvases or Snap papers without explicitly returning them, the last created canvas/paper is rendered automatically.
+- **Measuring without rendering (`render: false`):** Suppresses the rasterise-and-encode step for a script whose picture nobody will look at — a probe that samples pixels, a pass that diffs against an earlier stage, a script that stashes a canvas in `Session` for the next call. The script runs normally and its logs, measurements and `Session` writes all survive; only the image is not produced.
+  > [!IMPORTANT]
+  > **Without this there is no way to draw and not encode.** A canvas is rendered whenever the script created one, *even when the script returns something else* — so returning `'measured'` from a probe does not avoid it, and neither does `exit(...)`. Every measurement pass was therefore paying a full render for an image nothing read: roughly **150 ms at 1600 × 1200**, on exactly the scripts an agent runs most often.
+  >
+  > `render: false` with `outFile` is **refused** rather than reconciled, since `outFile` asks for the render `render: false` suppresses. `outSvg` is unaffected — vector markup is serialized, not rasterized, so a measurement pass can still save its `d` data.
 - **Running a file instead of re-sending it (`scriptFile`):** Pass `scriptFile: 'artwork.js'` — a path relative to the project directory, contained exactly as `outFile` is — to execute a file you maintain rather than putting the whole program in the call. Give **either** `script` or `scriptFile`; passing both is refused rather than resolved, because guessing which one you meant would silently run code you did not intend.
   > [!TIP]
   > **This is the difference between editing a drawing and retyping it.** On a measured four-agent run, 850 KB of JavaScript went over the wire in 55 calls; the twenty largest took a mean of **three minutes each to emit**, against a median engine time of **45 ms** — and consecutive large scripts shared **71%** of their lines. Nearly all of that was re-sending a program in order to change part of it.
@@ -82,21 +96,42 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 
 ## Image Formats & Encoding Quality Trade-offs
 
-When calling `ExecuteScript` or `RenderSvg`, agents can supply optional `format` (`"webp"`, `"png"`, `"jpeg"`) and `quality` (`1`–`100`, default `85`) parameters to balance visual fidelity against message transfer speed over MCP JSON-RPC:
+`ExecuteScript` and `RenderSvg` take an optional `format` (`"webp"`, `"png"`, `"jpeg"`) and `quality` (`1`–`100`, default `85`).
 
-| Format / Setting | Pure Encode Time | Total Roundtrip | Wire Payload | Compression vs PNG | Best Used For |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`webp` @ Q=85 (Default)** | **~114 ms** | **~200 ms** | **~113 KB** | **3.9× smaller** | **General purpose / balanced.** Pristine lines, gradients, and drop shadows with fast encoding. |
-| **`webp` @ Q=90–95** | ~160 ms | ~195 ms | ~135–180 KB | 2.4×–3.3× smaller | **High-precision vector art.** Ultra-fine strokes, sub-pixel path details, or high-contrast hairline illustrations. |
-| **`webp` @ Q=75–80** | ~114–160 ms | ~160–175 ms | ~83–97 KB | 4.6×–5.3× smaller | **Heavy procedural scenes.** Dense multi-layer canvas bitmaps, Perlin noise fields, or rapid drafting iterations. |
-| **`jpeg` @ Q=85** | **~26 ms** | **~65 ms** | **~200 KB** | 2.2× smaller | **Ultra-fast raster passes.** Opaque photos/textures where transparency (alpha channel) is not required. |
-| **`png` @ Q=100** | ~150 ms | ~220 ms | ~445 KB | 1.0× (Baseline) | **Lossless reference.** Bit-exact verification or debugging raw pixel data. |
+> [!IMPORTANT]
+> **Encoding costs several times what the script does, and that is the number worth acting on.** `result.executionTimeMs` is the **script** alone; `result.encodeTimeMs` is turning what it returned into pixels — rasterising a paper where there is one, then encoding. Measured at 1200 × 760: **3 ms of script against 40 ms of encode** on a flat graphic, 19 against 53 on a gradient, 73 against 317 on a Perlin field. A slow call is almost never a slow script, so reaching for a cheaper algorithm will not help.
+>
+> **The lever is resolution, not format.** Encode time tracks pixel count, and the spread between formats is far smaller than the spread between sizes: a 1600 × 1200 frame costs 124–160 ms whatever you choose, and drafting the same scene at 800 × 600 costs about a quarter of that. Draft small, render the final large.
+>
+> Both timings are recorded per execution as `ms` and `encodeMs`.
+
+### What it actually costs
+
+Measured, one machine, 1200 × 760, median of nine runs. **Read down the column that matches your content, not across the table** — the ranking inverts between rows, which is the whole point.
+
+| | flat graphic<br><sub>line art, logos, guides</sub> | gradient + alpha<br><sub>skies, shading, glazes</sub> | procedural noise<br><sub>grain, vapour, texture</sub> |
+| :--- | :--- | :--- | :--- |
+| *script alone* | *3 ms* | *19 ms* | *73 ms* |
+| **`png`** | **40 ms · 8 KB** | 53 ms · 199 KB | 317 ms · 955 KB |
+| **`webp` @ 85** | 53 ms · 16 KB | 84 ms · **34 KB** | 349 ms · **322 KB** |
+| **`webp` @ 90** | 56 ms · 18 KB | 75 ms · 46 KB | 341 ms · 341 KB |
+| **`jpeg` @ 85** | 10 ms · 60 KB | **12 ms** · 64 KB | **12 ms** · 88 KB |
+| *decode, any format* | *3–5 ms* | *5–7 ms* | *6–16 ms* |
+
+**On flat graphic content PNG is both smaller and faster than WebP** — half the bytes and a third less time. Any blanket claim that WebP compresses better than PNG is false for the kind of work this studio does most.
+
+**On a finished raster panel the ranking flips back.** Re-encoding a real 1600 × 1200 comic panel: PNG 160 ms / 672 KB, **WebP @ 85 124 ms / 53 KB** — faster *and* twelve times smaller. Painterly content is what WebP is built for.
+
+**Decoding is never the problem.** It is 3–16 ms across every format and every scene, roughly a tenth of encoding. Do not choose a format to make reading artifacts back cheaper.
 
 > [!TIP]
-> **Agent Decision Rule**:
-> - Use the default **`webp` @ Q=85** for most collaborative iterations.
-> - Bump to **Q=90–95** if you notice subtle artifacts in thin hairline vectors or subtle gradient ramps.
-> - Drop to **Q=75–80** or switch to **`jpeg`** when generating dense multi-pass textures or complex procedural raster canvases to maximize messaging speed and conserve context window bandwidth.
+> **Which to pick**
+> - **Flat, graphic, few colours** — line art, logos, construction sheets, monochrome tests: **`png`**. Smaller, faster, and lossless, so a hairline stays a hairline.
+> - **Painterly, gradient, atmospheric** — a finished panel or plate: **`webp` @ 85**, the default. Bump to 90 if you can see artifacts in fine strokes or a shallow ramp.
+> - **A rapid draft you will throw away**, and alpha does not matter: **`jpeg`**, which encodes in ~12 ms whatever the scene contains. Never for a deliverable, and never for flat colour, which is what it degrades worst.
+> - **Bit-exact verification** — anything `bitmap.diff` will compare: **`png`**. A lossy round trip changes pixels that a comparison will then report as differences.
+>
+> These are measurements from one machine and three scenes, not constants. If a choice matters, `encodeMs` tells you what your scene actually cost.
 
 ---
 
@@ -195,6 +230,23 @@ Per-session scratchpad dictionary that persists across multiple script execution
 - `Session[key] = value` — Cache an intermediate computation, configuration, or data structure.
 - `Session[key]` — Retrieve a previously cached value (returns `undefined` if key is not set).
 - `delete Session[key]` — Evict a key from session scratchpad.
+
+> [!TIP]
+> **It holds bitmaps and canvases, not just data — and that is the cheapest way to hand work between stages.** Writing a stage to disk and loading it back in the next call costs an encode (~150 ms at 1600 × 1200) and a decode, for a picture only the machine will read. Stashing the bitmap costs neither:
+>
+> ```javascript
+> // Stage 1 — keep it, do not encode it.
+> Session.stage1 = canvas.toBitmap();
+> ```
+> ```javascript
+> // Stage 2 — the previous stage is already a bitmap, ready to draw and to measure against.
+> const prev = Session.stage1;
+> ctx.drawImage(prev, 0, 0);
+> const changed = canvas.bitmap.diff(prev);      // no file, no decode
+> log(`changed region ${changed.bounds.width}×${changed.bounds.height}`);
+> ```
+>
+> Pair it with `render: false` and a measurement pass costs neither an encode nor a decode. **Still write the artifacts a reader will look at** — `outFile` is what makes a run reviewable and replayable, and the scratchpad dies with the session. This is for the machine-only round trips in between.
 
 ---
 
@@ -566,6 +618,11 @@ Both honour `globalAlpha`, `globalCompositeOperation`, `filter`, `colorFilter`, 
 - `ctx.putImageData(imageData: ImageData, dx: number, dy: number)` — Writes raw pixel buffer back to canvas.
 - `ctx.createImageData(width: number, height: number)` → `ImageData` — Allocates blank RGBA pixel buffer.
 
+> [!WARNING]
+> **To *measure* a render, do not loop over this.** `getImageData` is for writing pixels back; a JS loop that reads it to answer a question about the image is the reliable way to hit the 2,000,000-statement cap, which kills the whole script rather than the loop. A QA pass in a live run died at roughly 480k sampled pixels — well short of a single 700 × 700 frame.
+>
+> The questions have native answers that cost one call at any resolution: **`bitmap.diff`** (what changed, and where), **`bitmap.rowProfile`** (where a colour starts and ends on each row), **`bitmap.palette`** (the dominant colours and their shares). See `polson://sdk/core/Skia` under *Measuring an Image*, and `polson://manual/15` for how to use them as checks.
+
 ### Toolkit Shortcuts on the Context
 
 Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with the leading context argument dropped: `Drawing.drawPerspectiveGrid(ctx, grid, options)` and `ctx.drawPerspectiveGrid(grid, options)` are the same call.
@@ -586,6 +643,20 @@ Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with
 
 Parameters and semantics are documented under `polson://sdk/core/Drawing` and `polson://sdk/core/Logo`. Use whichever reads better; the shortcut form suits long chains on one context.
 
+> [!IMPORTANT]
+> **`ctx.clip()` binds the toolkit too, not just the primitive canvas calls — and this is how you stage occlusion.** A `Drawing.*` or `Logo.*` call made inside a clip is constrained by it exactly as `fillRect` would be, so clipping to a region and then drawing a mannequin cuts the figure off at the boundary.
+>
+> The intuitive alternative does not work. Drawing the occluding form *after* the form it hides relies on the near shape painting over the far one, and on a construction sheet it does not: an outline hides nothing behind it. Without clip, there is no way to make a counter cut off a figure's legs — which is the commonest occlusion in any interior scene.
+>
+> ```javascript
+> ctx.save();
+> const counter = new CanvasPath();
+> counter.rect(0, 0, 900, 470);          // everything above the counter edge
+> ctx.clip(counter);
+> Drawing.drawMannequinSolid(ctx, vendor);   // legs stop at the boundary
+> ctx.restore();
+> ```
+
 ### Constructive Drawing & Inking
 - `ctx.drawTaperedStroke(start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` — Subdivides cubic Bézier curve with sine-tapered normal envelope and anti-aliased fill.
 - `ctx.drawFeathering(origin: Point | number, angleDeg: number, count: number, length: number, spacing: number, strokeColor?: string, lineWidth?: number)` — Directional parallel hatching lines along shadow boundaries.
@@ -604,6 +675,20 @@ Skia procedural shaders, image filters, color matrix transforms, path effects, a
 - `Skia.Shader.custom(skslCode: string, uniforms?: object, children?: object)` → `SKShader` — Alias for `sksl`.
 - `Skia.Shader.perlinNoiseTurbulence(baseFreqX: number, baseFreqY: number, octaves: number, seed: number, tileSizeX?: number, tileSizeY?: number)` → `SKShader` — Generates procedural Perlin turbulence noise.
 - `Skia.Shader.perlinNoiseFractal(baseFreqX: number, baseFreqY: number, octaves: number, seed: number, tileSizeX?: number, tileSizeY?: number)` → `SKShader` — Generates procedural fractal noise.
+- `Skia.Shader.luminance(shader: SKShader)` → `SKShader` — The same shader with its RGB collapsed to Rec. 709 luminance and **its alpha left untouched**. This is what turns a noise field into a *value* field.
+
+> [!WARNING]
+> **The two Perlin shaders emit four independent noise fields — one per channel, alpha included — so the output is coloured noise, not a value field.** This is faithful to SVG `feTurbulence`, and it is precisely wrong for the commonest use, which is laying grain or vapour over a surface with `soft-light` or `overlay`: instead of modulating value, it **tints in random hues**. Measured on a 64×64 fill, 22 of 24 sampled pixels were non-grey with channels spread 109 apart out of 255. In a live run it turned roughly 700 × 500 px of brick from brown to olive green and cost a full iteration.
+>
+> Route every noise fill through `Skia.Shader.luminance(...)`:
+>
+> ```javascript
+> ctx.fillStyle = Skia.Shader.luminance(Skia.Shader.perlinNoiseFractal(0.015, 0.015, 4, 101));
+> ```
+>
+> **Do not "fix" the alpha in the same breath.** The natural next thought — clamp alpha to 1 in the colour matrix, since it is varying too — greys the noise correctly and turns atmosphere into an **opaque sheet**: the varying alpha is what makes vapour wispy. The correct transform is luminance on RGB, alpha untouched, which is a narrow path with a failure on either side of it. `luminance` is that path; a hand-written `colorMatrix` is where the second mistake gets made.
+>
+> `Drawing.createRopeFiberShader` and `Drawing.createAtmosphericCloudShader` apply it for you by default.
 - `Skia.Shader.twoPointConical(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number, colors: string[], positions?: number[], tileMode?: string)` → `SKShader` — 2-point conical gradient.
 - `Skia.Shader.sweep(cx: number, cy: number, colors: string[], positions?: number[], startAngle?: number, endAngle?: number)` → `SKShader` — Sweep angular gradient.
 - `Skia.Shader.linear(x0: number, y0: number, x1: number, y1: number, colors: string[], positions?: number[], tileMode?: string)` → `SKShader` — Linear gradient shader.
@@ -825,8 +910,11 @@ Also accessible via `Skia.Drawing`.
 
 ## Material & Shader Presets
 - `Drawing.createHalftoneDotShader(options?: { dotSpacing?: number, shadowColor?: string, resolution?: number[] })` → `SKShader` — SkSL Ben-Day halftone dot shader.
-- `Drawing.createRopeFiberShader(frequencyX?: number, frequencyY?: number, octaves?: number, seed?: number)` → `SKShader` — Hemp rope/cordage texture shader.
-- `Drawing.createAtmosphericCloudShader(frequencyX?: number, frequencyY?: number, octaves?: number, seed?: number)` → `SKShader` — Atmospheric fractal cloud noise shader.
+- `Drawing.createRopeFiberShader(frequencyX?: number, frequencyY?: number, octaves?: number, seed?: number, luminanceOnly?: boolean)` → `SKShader` — Hemp rope/cordage texture shader.
+- `Drawing.createAtmosphericCloudShader(frequencyX?: number, frequencyY?: number, octaves?: number, seed?: number, luminanceOnly?: boolean)` → `SKShader` — Atmospheric fractal cloud noise shader.
+
+> [!NOTE]
+> Both presets are **value fields by default** (`luminanceOnly: true`) — greyed on RGB with their alpha left varying, which is what the two-pass and `soft-light` recipes above assume. Pass `false` for the raw per-channel field; `Skia.Shader.perlinNoise*` is always raw. See the warning under `polson://sdk/core/Skia` for why the default is what it is.
 
 ## Measurement & Plumb Checks
 - `Drawing.verifyPlumbAlignment(topPoint: Point, bottomPoint: Point, maxTolerance?: number)` → `{ aligned: boolean, deltaX: number, message: string }` — Validates vertical alignment between anatomical landmarks.
@@ -837,7 +925,10 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.drawPerspectiveGrid(ctx: CanvasRenderingContext2D, gridObj: object, options?: { lineColor?: string, horizonColor?: string, lineCount?: number, lineWidth?: number })` — Renders horizon and perspective grid fan lines.
 - `Drawing.createPerspectiveBox(gridObj: object, anchorX: number, anchorY: number, width: number, height: number, depth: number)` → `object` — Projects 3D box computing all 8 vertices ($V_0 \dots V_7$) and 6 quadrilateral faces.
 - `Drawing.drawPerspectiveBox(ctx: CanvasRenderingContext2D, boxObj: object, options?: { topFill?: string, leftFill?: string, rightFill?: string, strokeColor?: string, strokeWidth?: number, drawHiddenLines?: boolean })` — Renders solid shaded or wireframe 3D perspective box.
-- `Drawing.drawPerspectiveCylinder(ctx: CanvasRenderingContext2D, gridObj: object, anchorX: number, anchorY: number, radius: number, height: number, options?: { topFill?: string, sideFill?: string, strokeColor?: string, strokeWidth?: number })` — Projects 3D cylinder with top/bottom tangent ellipses.
+- `Drawing.drawPerspectiveCylinder(ctx: CanvasRenderingContext2D, gridObj: object, anchorX: number, anchorY: number, radius: number, height: number, options?: { topFill?: string, sideFill?: string, strokeColor?: string, strokeWidth?: number })` — Draws an upright cylinder. **`anchorX`/`anchorY` is the centre of the base circle** and **`radius` is half the drawn width**, so the silhouette spans `anchorX ± radius` and you can check it with a ruler. Each cap is foreshortened at its own height, so the top ellipse is the flatter of the two.
+
+> [!TIP]
+> **There is no elevation parameter, and none is needed — put the anchor where the base actually is.** A cap's flatness is read from the directions to the vanishing points *at its own centre*, and a point nearer the horizon has shallower rays. So a bowl on a counter is flatter than the same bowl on the floor simply because you anchored it higher up the frame; nothing has to be told how high the counter is.
 - `Drawing.subdividePerspectiveQuad(quadObj: Point[], uCount: number, vCount: number)` → `Point[][][]` — Subdivides a 4-point quadrilateral into foreshortened perspective cells using projective interpolation.
 - `Drawing.verifyPerspectiveConvergence(linesList: Point[][], expectedVp: Point, maxToleranceDeg?: number)` → `{ passed: boolean, maxAngularErrorDeg: number, message: string }` — Tests whether drawn lines correctly converge to the vanishing point.
 
@@ -850,7 +941,12 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.renderVolumetricSphere(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number, lightDirection?: Point, options?: { baseColor?: string, shadowColor?: string, highlightColor?: string, bounceColor?: string, drawGroundShadow?: boolean })` — Renders 6-zone tonal sphere (highlight, halftone, core shadow, ambient bounce, occlusion, and ground shadow).
 - `Drawing.renderVolumetricCylinder(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, lightDirection?: Point, options?: { baseColor?: string, shadowColor?: string, highlightColor?: string, bounceColor?: string })` — Renders cylindrical volume with longitudinal core shadow and ambient bounce.
 - `Drawing.createThreePointLighting(options?: { keyAngleDeg?: number, fillAngleDeg?: number, rimAngleDeg?: number, keyColor?: string, fillColor?: string, rimColor?: string })` → `object` — Three-point studio lighting setup (Key, Fill, Rim/Kicker).
-- `Drawing.drawRimLight(ctx: CanvasRenderingContext2D, boundsOrPts: Rect | Point[], lightAngleDeg: number, rimColor?: string, thickness?: number)` — Renders high-contrast silhouette rim lighting.
+- `Drawing.drawRimLight(ctx: CanvasRenderingContext2D, boundsOrPts: Rect | Point[], lightAngleDeg: number, rimColor?: string, thickness?: number, options?: { spread?: number })` — Renders high-contrast silhouette rim lighting. `lightAngleDeg` points **from the form toward the light**, and the angle does the selecting: each stretch of contour is weighted by `max(0, n · L) ^ spread`, so the side facing away is not drawn and the lit arc fades toward the terminator. `spread` (default `2`) tightens the rim; `1` is a broad falloff across the whole lit half.
+
+> [!IMPORTANT]
+> **The point list must *be* the silhouette, not run near it.** The band is drawn just inside the contour you pass, and nothing here knows the form — a list that sits 10 px outboard of the figure produces a pale wire floating clear of it, which at 100% zoom looks like a rim and at full size is obviously wrong. Take the list from the geometry you actually drew.
+>
+> For a rim that has to follow a form exactly, a gradient fill inside a clipped shape is the sturdier construction: `ctx.clip(silhouette)` then fill a gradient running inward from the lit edge. `drawRimLight` is for the case where you already hold the contour as points.
 - `Drawing.createVolumetricSphereShader(options?: { lightColor?: string, baseColor?: string, shadowColor?: string })` → `SKShader` — SkSL procedural 3D sphere lighting shader.
 
 ## Full-Body Anatomy, Mannequins & Expressions

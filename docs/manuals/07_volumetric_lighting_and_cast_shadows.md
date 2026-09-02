@@ -106,7 +106,14 @@ Two configurations are refused with a message instead of nonsense coordinates:
 
 ## 4. Three-Point Studio Lighting (Key, Fill, Rim/Kicker)
 
-> **Implemented by**: `Drawing.createThreePointLighting(options)` → `{ keyLight, fillLight, rimLight }`, each `{ angleDeg, color, intensity }`. Feed `keyLight.angleDeg` to the volumetric renderers as the light direction, and `rimLight.angleDeg` to `Drawing.drawRimLight(ctx, bounds, angleDeg, color, thickness)`.
+> **Implemented by**: `Drawing.createThreePointLighting(options)` → `{ keyLight, fillLight, rimLight }`, each `{ angleDeg, color, intensity }`. Feed `keyLight.angleDeg` to the volumetric renderers as the light direction, and `rimLight.angleDeg` to `Drawing.drawRimLight(ctx, bounds, angleDeg, color, thickness, options)`.
+
+> [!IMPORTANT]
+> **The angle does the selecting — you do not trim the point list by hand.** Each stretch of contour is weighted by `max(0, n · L) ^ spread`, so the side facing away from the light is not drawn and the lit arc fades toward the terminator. That is the difference between a rim and an outline, and it is why `spread` (default `2`) is the knob worth reaching for: raise it for a tighter kicker, drop it to `1` for a broad falloff across the whole lit half.
+>
+> **The band is drawn just inside the contour**, because a rim is light on the form rather than a wire beside it. So the list you pass has to **be** the silhouette. A list that merely approximates it — say 10 px outboard of the figure — draws a pale wire floating clear of the form, which reads as a rim at 100% zoom and is obviously wrong at full size. Nothing in the call can know the form well enough to correct that for you.
+>
+> Both are recorded because the call did neither. It stroked the whole point list at full opacity whatever the angle, and offset every point two pixels *outward* along the light vector; a live run hand-trimmed its lists to the lit arc, then abandoned the call and built every rim as a gradient fill inside a clipped shape. That construction is still the sturdier one when a rim has to follow a form exactly — `ctx.clip(silhouette)` and a gradient running inward from the lit edge. Reach for `drawRimLight` when you already hold the contour as points.
 
 > **Core Insight from the Book (Page 323)**:
 > The standard lighting setup used in portrait painting, cinematography, and comics:
@@ -196,8 +203,8 @@ Drawing.renderVolumetricSphere(ctx, 450, 380, 90, key, {
 });
 
 // §4 — Drawing.drawRimLight(ctx, boundsOrPts, angleDeg, color, thickness) adds the
-// kicker. Give it a silhouette point list, not a bounds rect: against a rect it can
-// only stroke the rectangle's edge, which reads as a stray line on a curved form.
+// kicker. Give it a silhouette point list, not a bounds rect: a rect rims its own four
+// edges correctly, which is still a rectangle's rim and not a curved form's.
 
 canvas;
 ```

@@ -1,4 +1,4 @@
-namespace Polson.Drawing.Skia;
+﻿namespace Polson.Drawing.Skia;
 
 using System;
 using System.Collections;
@@ -717,16 +717,31 @@ public class ConstructiveDrawingToolkit
         return skiaShaderApi.Sksl(sksl, uniforms);
     }
 
-    public SKShader CreateRopeFiberShader(float frequencyX = 0.08f, float frequencyY = 0.40f, int octaves = 3, int seed = 42)
+    /// <summary>Twisted-cordage fibre: stretched-Y turbulence, as a value field by default.</summary>
+    /// <remarks>
+    /// <paramref name="luminanceOnly"/> defaults true because the documented use is a second pass
+    /// over a coloured base under <c>overlay</c>, and raw Perlin carries a separate noise field per
+    /// channel — which tints the rope in random hues rather than giving it fibre. Pass false for the
+    /// unfiltered field; <c>Skia.Shader.perlinNoiseTurbulence(...)</c> is always unfiltered.
+    /// </remarks>
+    public SKShader CreateRopeFiberShader(float frequencyX = 0.08f, float frequencyY = 0.40f, int octaves = 3, int seed = 42, bool luminanceOnly = true)
     {
         var skiaShaderApi = new SkiaShaderApi();
-        return skiaShaderApi.PerlinNoiseTurbulence(frequencyX, frequencyY, octaves, seed);
+        var noise = skiaShaderApi.PerlinNoiseTurbulence(frequencyX, frequencyY, octaves, seed);
+        return luminanceOnly ? skiaShaderApi.Luminance(noise) : noise;
     }
 
-    public SKShader CreateAtmosphericCloudShader(float frequencyX = 0.015f, float frequencyY = 0.015f, int octaves = 4, int seed = 101)
+    /// <summary>Sea-air vapour: isotropic fractal noise, as a value field by default.</summary>
+    /// <remarks>
+    /// Same reasoning as <c>createRopeFiberShader</c>. The alpha field is left varying, which is what
+    /// makes the vapour wispy — greying the noise and flattening alpha together produces an opaque
+    /// sheet, so the two corrections are not interchangeable.
+    /// </remarks>
+    public SKShader CreateAtmosphericCloudShader(float frequencyX = 0.015f, float frequencyY = 0.015f, int octaves = 4, int seed = 101, bool luminanceOnly = true)
     {
         var skiaShaderApi = new SkiaShaderApi();
-        return skiaShaderApi.PerlinNoiseFractal(frequencyX, frequencyY, octaves, seed);
+        var noise = skiaShaderApi.PerlinNoiseFractal(frequencyX, frequencyY, octaves, seed);
+        return luminanceOnly ? skiaShaderApi.Luminance(noise) : noise;
     }
     #endregion
 
@@ -990,74 +1005,181 @@ public class ConstructiveDrawingToolkit
         ctx.Restore();
     }
 
+    /// <summary>
+    /// Draws an upright cylinder, both caps foreshortened by the grid at their own screen height.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="anchorX"/>/<paramref name="anchorY"/> is the centre of the <em>base circle</em>
+    /// and <paramref name="radius"/> is half the cylinder's drawn width, so the silhouette lands
+    /// where a caller put it and can be checked with a ruler. Both were previously otherwise: the
+    /// call built a <c>2r x 2r</c> perspective box, anchored at that box's near <em>corner</em>, and
+    /// took its width from the footprint's diagonal — which drew at 1.9x the requested width, off
+    /// centre, without erroring.
+    /// </para>
+    /// <para>
+    /// There is deliberately no elevation parameter. A cap's flatness is read from the directions to
+    /// the vanishing points at its own centre, and a point nearer the horizon has shallower rays, so
+    /// a bowl on a counter is flatter than the same bowl on the floor for free. That is also why the
+    /// two caps get separate ellipses rather than one shared squash.
+    /// </para>
+    /// </remarks>
     public void DrawPerspectiveCylinder(CanvasRenderingContext2D ctx, object gridObj, float anchorX, float anchorY, float radius, float height, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
+        if (JsInterop.AsDict(gridObj) is not IDictionary grid)
+            throw new ArgumentException("gridObj must be a valid perspective grid dictionary", nameof(gridObj));
+
         var opt = JsInterop.AsDict(options);
         var sideFill = opt?["sideFill"]?.ToString() ?? "#b8d5f2";
         var topFill = opt?["topFill"]?.ToString() ?? "#e6f0fa";
         var strokeColor = opt?["strokeColor"]?.ToString() ?? "#2d547d";
         var strokeWidth = opt != null && opt.Contains("strokeWidth") ? Convert.ToSingle(opt["strokeWidth"], CultureInfo.InvariantCulture) : 1.8f;
 
-        var box = CreatePerspectiveBox(gridObj, anchorX, anchorY, radius * 2f, height, radius * 2f);
-        var verts = (IList)box["vertices"]!;
+        var (vpL, vpR) = CircleAxisVanishingPoints(grid);
 
-        var v0 = ExtractPoint(verts[0]);
-        var v1 = ExtractPoint(verts[1]);
-        var v2 = ExtractPoint(verts[2]);
-        var v3 = ExtractPoint(verts[3]);
-        var v4 = ExtractPoint(verts[4]);
-        var v5 = ExtractPoint(verts[5]);
-        var v6 = ExtractPoint(verts[6]);
-        var v7 = ExtractPoint(verts[7]);
+        var baseCentre = new Point2D(anchorX, anchorY);
+        var topCentre = new Point2D(anchorX, anchorY - height);
+        var (baseA, baseB) = GroundCircleAxes(vpL, vpR, baseCentre, radius);
+        var (topA, topB) = GroundCircleAxes(vpL, vpR, topCentre, radius);
 
-        // Bottom center & top center
-        var botCenter = new Point2D((v0.X + v3.X) * 0.5f, (v0.Y + v3.Y) * 0.5f);
-        var topCenter = new Point2D((v4.X + v7.X) * 0.5f, (v4.Y + v7.Y) * 0.5f);
-
-        var rx = MathF.Abs(v2.X - v1.X) * 0.5f;
-        var ry = MathF.Abs(v0.Y - v3.Y) * 0.45f;
+        // Where each ellipse turns back on itself: the tangent points the vertical contours meet.
+        var (baseLeft, baseRight) = SilhouetteParameters(baseA, baseB);
+        var (topLeft, topRight) = SilhouetteParameters(topA, topB);
 
         ctx.Save();
 
-        // 1. Cylinder Body
+        // 1. Body — between the near half of each cap, so the far halves stay hidden.
+        var baseRightPoint = EllipsePoint(baseCentre, baseA, baseB, baseRight);
         ctx.FillStyle = sideFill;
         ctx.BeginPath();
-        // Left contour up, across the FRONT of the top ellipse, right contour down, then back
-        // along the front of the bottom ellipse. Both arcs must start at the tangent extreme they
-        // meet (angle PI on the left, 0 on the right) — sweeping either from the far side folds the
-        // body into a bowtie. The contours sit at center +/- rx so they stay tangent to the arcs.
-        ctx.MoveTo(botCenter.X - rx, botCenter.Y);
-        ctx.LineTo(topCenter.X - rx, topCenter.Y);
-        ctx.Ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, MathF.PI, 0f, true);
-        ctx.LineTo(botCenter.X + rx, botCenter.Y);
-        ctx.Ellipse(botCenter.X, botCenter.Y, rx, ry, 0f, 0f, MathF.PI);
+        TraceEllipseArc(ctx, topCentre, topA, topB, topLeft, NearSweepEnd(topCentre, topA, topB, topLeft, topRight), true);
+        ctx.LineTo(baseRightPoint.X, baseRightPoint.Y);
+        TraceEllipseArc(ctx, baseCentre, baseA, baseB, baseRight, NearSweepEnd(baseCentre, baseA, baseB, baseRight, baseLeft), false);
         ctx.ClosePath();
         ctx.Fill();
 
-        // Contour edges
         ctx.StrokeStyle = strokeColor;
         ctx.LineWidth = strokeWidth;
+        ctx.LineJoin = "round";
+
+        // Contour edges, drawn between the tangent points rather than at centre +/- radius.
         ctx.BeginPath();
-        ctx.MoveTo(botCenter.X - rx, botCenter.Y);
-        ctx.LineTo(topCenter.X - rx, topCenter.Y);
-        ctx.MoveTo(botCenter.X + rx, botCenter.Y);
-        ctx.LineTo(topCenter.X + rx, topCenter.Y);
+        foreach (var (bottomT, topT) in new[] { (baseLeft, topLeft), (baseRight, topRight) })
+        {
+            var foot = EllipsePoint(baseCentre, baseA, baseB, bottomT);
+            var head = EllipsePoint(topCentre, topA, topB, topT);
+            ctx.MoveTo(foot.X, foot.Y);
+            ctx.LineTo(head.X, head.Y);
+        }
         ctx.Stroke();
 
-        // Bottom ellipse arc
+        // Base contour: only the near half is visible past the body.
         ctx.BeginPath();
-        ctx.Ellipse(botCenter.X, botCenter.Y, rx, ry, 0f, 0f, MathF.PI);
+        TraceEllipseArc(ctx, baseCentre, baseA, baseB, baseRight, NearSweepEnd(baseCentre, baseA, baseB, baseRight, baseLeft), true);
         ctx.Stroke();
 
-        // 2. Top Elliptical Cap
+        // 2. Top cap, whole — its own ellipse, not the base's.
         ctx.FillStyle = topFill;
         ctx.BeginPath();
-        ctx.Ellipse(topCenter.X, topCenter.Y, rx, ry, 0f, 0f, MathF.PI * 2f);
+        TraceEllipseArc(ctx, topCentre, topA, topB, 0f, MathF.PI * 2f, true);
+        ctx.ClosePath();
         ctx.Fill();
         ctx.Stroke();
 
         ctx.Restore();
+    }
+
+    /// <summary>The two vanishing points to take a horizontal circle's conjugate diameters from.</summary>
+    /// <remarks>
+    /// A circle has equal radii along <em>any</em> perpendicular pair of ground directions, so either
+    /// axis family will do. A one-point grid puts both vanishing points on the centre of vision,
+    /// which leaves the two directions coincident and collapses the ellipse to a line; the 45-degree
+    /// distance points at <c>cv +/- focalLength</c> are a perpendicular pair in the same plane and
+    /// are not degenerate.
+    /// </remarks>
+    private static (Point2D VpL, Point2D VpR) CircleAxisVanishingPoints(IDictionary grid)
+    {
+        var vpL = ExtractPoint(grid["vpL"]);
+        var vpR = ExtractPoint(grid["vpR"]);
+        if (MathF.Abs(vpR.X - vpL.X) > 1f) return (vpL, vpR);
+
+        var horizonY = Convert.ToSingle(grid["horizonY"], CultureInfo.InvariantCulture);
+        var cv = ExtractPoint(grid["cv"]);
+        var focalLength = grid.Contains("focalLength")
+            ? Convert.ToSingle(grid["focalLength"], CultureInfo.InvariantCulture)
+            : 800f;
+        return (new Point2D(cv.X - focalLength, horizonY), new Point2D(cv.X + focalLength, horizonY));
+    }
+
+    /// <summary>
+    /// Conjugate semi-diameters of a horizontal circle centred at <paramref name="centre"/>, scaled so
+    /// the ellipse is exactly <c>2 * radius</c> wide on screen.
+    /// </summary>
+    /// <remarks>
+    /// Normalising each cap to the same drawn width is what keeps the contours vertical, as a
+    /// vertical cylinder's silhouette must be; only the flatness is left to vary with height.
+    /// </remarks>
+    private static (Point2D A, Point2D B) GroundCircleAxes(Point2D vpL, Point2D vpR, Point2D centre, float radius)
+    {
+        static Point2D Unit(Point2D from, Point2D to)
+        {
+            var dx = to.X - from.X;
+            var dy = to.Y - from.Y;
+            var len = MathF.Sqrt(dx * dx + dy * dy);
+            return len < 0.0001f ? new Point2D(1f, 0f) : new Point2D(dx / len, dy / len);
+        }
+
+        var uL = Unit(centre, vpL);
+        var uR = Unit(centre, vpR);
+
+        // Half the drawn width of an ellipse with conjugate semi-diameters a and b is
+        // sqrt(a.x^2 + b.x^2), so this is the scale that makes it come out at exactly radius.
+        var spread = MathF.Sqrt(uL.X * uL.X + uR.X * uR.X);
+        var k = spread < 0.0001f ? radius : radius / spread;
+
+        return (new Point2D(uL.X * k, uL.Y * k), new Point2D(uR.X * k, uR.Y * k));
+    }
+
+    private static Point2D EllipsePoint(Point2D centre, Point2D a, Point2D b, float t) =>
+        new(centre.X + a.X * MathF.Cos(t) + b.X * MathF.Sin(t),
+            centre.Y + a.Y * MathF.Cos(t) + b.Y * MathF.Sin(t));
+
+    /// <summary>The two parameters at which the ellipse reaches its extreme x — its silhouette edges.</summary>
+    /// <remarks>
+    /// dx/dt is zero where <c>tan t = b.x / a.x</c>; the two roots are half a turn apart. Returned
+    /// left-then-right so callers do not have to compare them again.
+    /// </remarks>
+    private static (float Left, float Right) SilhouetteParameters(Point2D a, Point2D b)
+    {
+        var origin = new Point2D(0f, 0f);
+        var t = MathF.Atan2(b.X, a.X);
+        var other = t + MathF.PI;
+        return EllipsePoint(origin, a, b, t).X <= EllipsePoint(origin, a, b, other).X ? (t, other) : (other, t);
+    }
+
+    /// <summary>
+    /// Which way round to sweep from <paramref name="from"/> to <paramref name="to"/> to take the
+    /// near half of the ellipse — the half lower on screen.
+    /// </summary>
+    private static float NearSweepEnd(Point2D centre, Point2D a, Point2D b, float from, float to)
+    {
+        var alternative = to > from ? to - MathF.PI * 2f : to + MathF.PI * 2f;
+        var direct = EllipsePoint(centre, a, b, (from + to) / 2f).Y;
+        var around = EllipsePoint(centre, a, b, (from + alternative) / 2f).Y;
+        return direct >= around ? to : alternative;
+    }
+
+    /// <summary>Appends an elliptical arc as a polyline; the ellipse is rotated, so ctx.Ellipse cannot carry it.</summary>
+    private static void TraceEllipseArc(CanvasRenderingContext2D ctx, Point2D centre, Point2D a, Point2D b, float from, float to, bool moveFirst)
+    {
+        const int segments = 64;
+        for (var i = 0; i <= segments; i++)
+        {
+            var p = EllipsePoint(centre, a, b, from + (to - from) * (i / (float)segments));
+            if (i == 0 && moveFirst) ctx.MoveTo(p.X, p.Y);
+            else ctx.LineTo(p.X, p.Y);
+        }
     }
 
     public List<List<Dictionary<string, object?>>> SubdividePerspectiveQuad(object quadObj, int uCount, int vCount)
@@ -1594,18 +1716,149 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void DrawRimLight(CanvasRenderingContext2D ctx, object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f)
+    /// <summary>
+    /// Renders grazing edge light along a silhouette, culled and faded by the light's angle.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="lightAngleDeg"/> points <em>from</em> the form <em>toward</em> the light, the
+    /// same convention as <c>lightDirection</c> elsewhere in this toolkit. Each stretch of contour is
+    /// weighted by <c>max(0, n · L)^spread</c> with <c>n</c> its outward normal, so only the arc
+    /// facing the light is drawn and it fades where the form turns away. That is what makes it read
+    /// as light rather than as ink: the call used to stroke the entire point list at full opacity
+    /// whatever the angle was, which is an outline, and a live run had to hand-trim its point lists
+    /// down to the arc that should have caught light.
+    /// </para>
+    /// <para>
+    /// The band sits <em>inside</em> the contour, offset inward by half the thickness, because a rim
+    /// is light on the form rather than a wire beside it. The previous version pushed it two pixels
+    /// <em>outward</em> along the light vector — the "pale wire floating clear of the figure" the same
+    /// run reported. A point list that merely approximates the silhouette will still float: the list
+    /// has to <em>be</em> the silhouette, and nothing here can know the form well enough to correct it.
+    /// </para>
+    /// <para>
+    /// <paramref name="options"/> takes <c>{ spread }</c>, the exponent on the cosine — higher is a
+    /// tighter rim, 1 is a broad Lambertian falloff over the whole lit half.
+    /// </para>
+    /// </remarks>
+    public void DrawRimLight(CanvasRenderingContext2D ctx, object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
+
+        var opt = JsInterop.AsDict(options);
+        var spread = opt != null && opt.Contains("spread")
+            ? MathF.Max(0.1f, Convert.ToSingle(opt["spread"], CultureInfo.InvariantCulture))
+            : 2f;
         var color = rimColor?.ToString() ?? "#ffffff";
+
+        var contour = RimContour(boundsOrPts);
+        if (contour.Count < 2) return;
+
         var rad = (lightAngleDeg * MathF.PI) / 180f;
-        var nx = MathF.Cos(rad);
-        var ny = MathF.Sin(rad);
+        var lightX = MathF.Cos(rad);
+        var lightY = MathF.Sin(rad);
+
+        // "Outward" is away from the middle of the contour, which is what a silhouette gives us.
+        var cx = 0f;
+        var cy = 0f;
+        foreach (var p in contour)
+        {
+            cx += p.X;
+            cy += p.Y;
+        }
+        cx /= contour.Count;
+        cy /= contour.Count;
+
+        var weights = new float[contour.Count];
+        var offsets = new Point2D[contour.Count];
+        var inset = thickness * 0.5f;
+
+        for (var i = 0; i < contour.Count; i++)
+        {
+            var before = contour[Math.Max(0, i - 1)];
+            var after = contour[Math.Min(contour.Count - 1, i + 1)];
+            var dx = after.X - before.X;
+            var dy = after.Y - before.Y;
+            var len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 0.0001f)
+            {
+                weights[i] = 0f;
+                offsets[i] = contour[i];
+                continue;
+            }
+
+            var nx = dy / len;
+            var ny = -dx / len;
+            if (nx * (contour[i].X - cx) + ny * (contour[i].Y - cy) < 0f)
+            {
+                nx = -nx;
+                ny = -ny;
+            }
+
+            var facing = nx * lightX + ny * lightY;
+            weights[i] = facing <= 0f ? 0f : MathF.Pow(facing, spread);
+            offsets[i] = new Point2D(contour[i].X - nx * inset, contour[i].Y - ny * inset);
+        }
+
+        var baseAlpha = ctx.GlobalAlpha;
 
         ctx.Save();
         ctx.StrokeStyle = color;
         ctx.LineWidth = thickness;
-        ctx.LineCap = "round";
+        // Butt caps, because runs abut: a round cap would overlap its neighbour and bead the seam.
+        ctx.LineCap = "butt";
+        ctx.LineJoin = "round";
+
+        // Segments are grouped into runs of equal quantised weight and stroked as polylines. Stroking
+        // each segment separately would be simpler and wrong — at any alpha below 1 the caps overlap
+        // and the rim comes out beaded rather than continuous.
+        const int levels = 14;
+        var start = -1;
+        var level = 0;
+
+        for (var i = 0; i <= contour.Count - 1; i++)
+        {
+            var segmentLevel = i < contour.Count - 1
+                ? (int)MathF.Round((weights[i] + weights[i + 1]) * 0.5f * levels)
+                : 0;
+
+            if (start >= 0 && (segmentLevel != level || i == contour.Count - 1))
+            {
+                StrokeRun(ctx, offsets, start, i, baseAlpha * level / levels);
+                start = -1;
+            }
+            if (i < contour.Count - 1 && segmentLevel > 0 && start < 0)
+            {
+                start = i;
+                level = segmentLevel;
+            }
+        }
+
+        ctx.Restore();
+    }
+
+    /// <summary>Strokes <c>offsets[from..to]</c> as one polyline at <paramref name="alpha"/>.</summary>
+    private static void StrokeRun(CanvasRenderingContext2D ctx, Point2D[] offsets, int from, int to, float alpha)
+    {
+        if (to <= from || alpha <= 0f) return;
+
+        ctx.GlobalAlpha = MathF.Min(1f, alpha);
+        ctx.BeginPath();
+        ctx.MoveTo(offsets[from].X, offsets[from].Y);
+        for (var i = from + 1; i <= to; i++) ctx.LineTo(offsets[i].X, offsets[i].Y);
+        ctx.Stroke();
+    }
+
+    /// <summary>The contour to light: a rect's perimeter, or the point list as given.</summary>
+    /// <remarks>
+    /// A rect is closed, so it gets its fourth edge back and all four can catch light — the previous
+    /// version drew a single straight line down either the left or the right edge and could not rim
+    /// the top at all. A point list is left open: a silhouette arc closed with a chord would light
+    /// the chord.
+    /// </remarks>
+    private static List<Point2D> RimContour(object boundsOrPts)
+    {
+        var contour = new List<Point2D>();
 
         if (JsInterop.AsDict(boundsOrPts) is IDictionary b && b.Contains("x") && b.Contains("width"))
         {
@@ -1614,33 +1867,30 @@ public class ConstructiveDrawingToolkit
             var bw = Convert.ToSingle(b["width"], CultureInfo.InvariantCulture);
             var bh = Convert.ToSingle(b["height"], CultureInfo.InvariantCulture);
 
-            ctx.BeginPath();
-            if (nx > 0)
+            // Sampled along each edge so the falloff can vary across it, not just between edges.
+            const int perEdge = 8;
+            Point2D[] corners =
+            [
+                new(bx, by), new(bx + bw, by), new(bx + bw, by + bh), new(bx, by + bh), new(bx, by)
+            ];
+            for (var e = 0; e < 4; e++)
             {
-                ctx.MoveTo(bx + bw, by + 4f);
-                ctx.LineTo(bx + bw, by + bh - 4f);
+                for (var s = 0; s < perEdge; s++)
+                {
+                    var t = s / (float)perEdge;
+                    contour.Add(new Point2D(
+                        corners[e].X + (corners[e + 1].X - corners[e].X) * t,
+                        corners[e].Y + (corners[e + 1].Y - corners[e].Y) * t));
+                }
             }
-            else
-            {
-                ctx.MoveTo(bx, by + 4f);
-                ctx.LineTo(bx, by + bh - 4f);
-            }
-            ctx.Stroke();
+            contour.Add(corners[0]);
         }
-        else if (boundsOrPts is IList pts && pts.Count >= 2)
+        else if (boundsOrPts is IList pts)
         {
-            ctx.BeginPath();
-            var first = ExtractPoint(pts[0]);
-            ctx.MoveTo(first.X + nx * 2f, first.Y + ny * 2f);
-            for (var i = 1; i < pts.Count; i++)
-            {
-                var p = ExtractPoint(pts[i]);
-                ctx.LineTo(p.X + nx * 2f, p.Y + ny * 2f);
-            }
-            ctx.Stroke();
+            foreach (var p in pts) contour.Add(ExtractPoint(p));
         }
 
-        ctx.Restore();
+        return contour;
     }
 
     public SKShader CreateVolumetricSphereShader(object? options = null)

@@ -120,6 +120,14 @@ Grain is an `SKShader` assigned to `strokeStyle` or `fillStyle`, so the mark is 
 
 - **`perlinNoiseTurbulence(fx, fy, octaves, seed)`** — the granular one. Low frequencies give a coarse tooth, high a fine one; more octaves add detail at every scale.
 - **`perlinNoiseFractal(fx, fy, octaves, seed)`** — smoother, cloud-like. Atmosphere rather than grit. (`Drawing.createAtmosphericCloudShader` is a preset over this, with sea-air defaults — see Manual 04.)
+- **`luminance(shader)`** — any of the above as a **value** field: RGB collapsed to luminance, alpha untouched. Read the warning below before using either noise shader as grain.
+
+> [!WARNING]
+> **Both noise shaders are coloured, and grain is the use that exposes it.** Each generates four independent noise fields — one per channel, alpha included — so `perlinNoiseTurbulence` assigned straight to `strokeStyle` is not tooth on a mark, it is confetti. Over a coloured base under `soft-light` or `overlay` it tints in random hues; a measured run turned ~700 × 500 px of brick from brown to olive green and lost an iteration to it.
+>
+> Grain wants **one** field, so wrap it: `Skia.Shader.luminance(Skia.Shader.perlinNoiseTurbulence(0.6, 0.6, 3, 11))`. The `Skia.Brush` presets never hit this, because their internal shader averages the three channels to a scalar and paints the brush's own colour through it — which is why `Skia.Brush.pencil(...)` behaves and a hand-rolled equivalent may not.
+>
+> **The alpha field must be left alone.** It varies as well, and clamping it in the same colour matrix — the obvious second correction — greys the noise and flattens the medium into an opaque sheet. Luminance on RGB, alpha untouched, is a narrow path with a failure on either side; `luminance` is the path.
 - **`bitmap(bmp, tileX, tileY)`** — a real texture as paint. This is where a requisitioned material (Manual 16) becomes a *medium* rather than a fill: clip a shape and stroke it with the surface it is made of.
 - **`radial`, `sweep`, `twoPointConical`, `linear`** — gradients as paint. A gradient running **across** a stroke rather than along it is how a mark gets a lit side and a shadow side.
 - **`sksl(code, uniforms)`** — anything else, as a compiled pixel shader. `Skia.Shader.custom` is the same call under a second name; prefer `sksl`, which says what the argument is.

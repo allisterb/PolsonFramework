@@ -195,11 +195,245 @@ the one thing the enactive claim most needs to show. Four agents handing over th
 filled it.
 
 Its `findings.md` is 28 KB of developer-experience report, 23 numbered findings plus 5 on
-orchestration. Two are already closed by this session (the `ctx` shortcut rule, the stale-files
-problem). The rest are unread and worth a session of their own — particularly **#3**
-(`drawPerspectiveCylinder` disagrees with its own grid's ground model), **#21** (`pointInHull` returns
-true for every point when its arguments are reversed), and **#9/#10** (the Perlin shaders emit
-per-channel colour noise, and the manuals recommend the use that breaks).
+orchestration. Closed so far: the `ctx` shortcut rule, `typeof`, the stale-files problem, **#3**, **#9/#10**, **#11**
+and the documentation batch **#7**, **#8**, **#12**, **#17**. What remains is missing capability
+(**#4** no joint poser, **#14** no closed mouth, **#19** the comic trio below ~100 px, **#13/#18** no
+path recorder) and the harness items (**#5** `view_file` in five shipped templates, **A/F**, **B**,
+**E**).
+
+**#21 is not ours.** The report presents `pointInHull` as a documented call that returns a plausible
+wrong answer and asks for an argument-order guard. It is the agent's own helper, defined in its own
+`artwork.js`; nothing in `src/` or `tests/` has ever had that name. The observation still stands as a
+run-record point — a predicate that always answers "inside" is invisible in a render, and it was
+caught only because a sibling copy culled 260 of 260 rain streaks — but there is nothing to fix here.
+
+### #9/#10 — the Perlin shaders were coloured, and the manuals taught the use that breaks
+
+Confirmed by measurement before anything was written. Over 24 samples of a 64×64 fill:
+`perlinNoiseTurbulence` gave **2 grey pixels of 24**, channels spread **109 of 255** apart, alpha
+ranging `0..171`; `perlinNoiseFractal` gave 1 of 24 and a spread of 95. Four independent noise
+fields, one per channel, faithful to SVG `feTurbulence` and precisely wrong for grain or vapour laid
+over a surface with `soft-light`.
+
+- **`Skia.Shader.luminance(shader)`** is the correction — Rec. 709 on RGB, alpha row identity. The
+  remedy needed to be one call rather than a 20-float `colorMatrix` an agent transcribes by hand,
+  because the hand-written version is where finding #10 gets made: clamping alpha in the same matrix
+  greys the noise perfectly and renders atmosphere as an opaque sheet. Both halves are asserted.
+- **`createRopeFiberShader` and `createAtmosphericCloudShader` now default to `luminanceOnly: true`.**
+  The line drawn is that the raw primitive stays faithful to `feTurbulence` and the opinionated
+  presets do the right thing. This changes their output; pass `false` for the old behaviour.
+  Manual 04's runnable example was the "latent bug" the report named, and it is fixed by this default
+  rather than by an edit to the example.
+- **`Skia.Brush` never had the defect** — its internal grain shader averages the three channels to a
+  scalar and paints the brush's own colour through it. Checked rather than assumed, because Manual 17
+  now says so in print.
+- Warnings in `Polson.core.md`, Manual 04 §5B/§5C and Manual 17 §5, and four tests in
+  `HarnessReportedBugTests`. Two of those **pin the raw behaviour** rather than deplore it: the
+  warnings are built on it, and a manual that warns about something Skia no longer does is its own
+  kind of defect.
+
+### #3 — `drawPerspectiveCylinder` was three defects, and the report named one
+
+Measured before and after, anchor `(400, 450)`, `radius: 60`, i.e. ink expected to span `x 340..460`:
+
+| | width | as a factor | centre drift |
+| :--- | ---: | ---: | ---: |
+| before, `cameraAngleDeg` 30 / 45 / 60 | 225 / 230 / 225 px | **1.88× / 1.92× / 1.88×** | ≤ 3 px |
+| after | 122 px | **1.02×** (the 1.8 px stroke) | 0.5 px |
+
+The report's "roughly 2×" was right. Underneath it were three separate errors, only the second of
+which it identified:
+
+1. **The anchor was a corner, not a centre.** The call built a `2r × 2r` perspective box and
+   `CreatePerspectiveBox` anchors at the near bottom *corner*, so the base circle sat up-frame of
+   where the caller put it by half the footprint depth.
+2. **The width came from the footprint's diagonal.** `rx` was half the horizontal span between the
+   two *side* corners of that square — the diagonal, not the inscribed circle.
+3. **One `ry` served both caps.** Derived from the ground footprint and reused for the top, so a
+   cylinder's two ellipses were identically squashed however tall it was.
+
+**The elevation parameter the report asked for is not the answer, and adding it would have been a
+mistake.** A cap's foreshortening is fully determined by the directions to the vanishing points *at
+its own centre* — nearer the horizon, shallower rays, flatter ellipse. So the rewrite computes each
+cap's ellipse from its own screen position and the elevation case dissolves: a pot on a counter is
+flatter than the same pot on the floor because it was anchored higher, with nothing told how high the
+counter is. `TestCylinderOnARaisedSurfaceIsFlatterThanOnTheGround` is that claim, asserted.
+
+Now built from conjugate semi-diameters along the two ground directions, each pair normalised so the
+drawn half-width is exactly `radius` — which is what keeps the contours vertical, as a vertical
+cylinder's silhouette must be, and leaves only the flatness free to vary. A one-point grid would
+collapse this (both vanishing points coincide), so it falls back to the 45° distance points: a
+perpendicular pair in the same plane, and a circle has equal radii along any such pair.
+
+**Contract change, documented in Manual 06 and `Polson.core.md`:** the anchor is the **base circle's
+centre** and `radius` is **half the drawn width**. `createPerspectiveBox` still takes a corner with
+ray-pixel lengths, so the two calls now differ on purpose — a cylinder has no corner and `radius`
+implies a centre. Manual 06's own runnable column was drawing at 1.9× and is fixed by the change.
+
+### #11 — `drawRimLight` drew an outline, and pushed it off the form
+
+Both halves of the finding held, and the point-list branch was worse than reported: it stroked the
+whole list at full opacity **and** offset every point two pixels *outward* along the light vector.
+The agent measured its rim about 10 px outboard of the figure; two of those were the call's own.
+
+The rect branch was independently broken. It drew one straight line down either the left or the right
+edge, chosen by `cos(angle) > 0` — so a light from directly overhead has cosine zero, falls to the
+`else`, and lights the **left** edge, the one place an overhead light puts no rim at all.
+
+Now each stretch of contour is weighted by `max(0, n · L) ^ spread` with `n` the outward normal, and
+the band is drawn **inside** the contour rather than beside it. Measured on a radius-120 circle at
+three light angles: exactly the lit half drawn, the far half exactly zero, quadrant totals symmetric
+about the light and agreeing within 0.5% across angles. `spread` is a new trailing option, default 2.
+
+Two things worth knowing for the next call site:
+
+- **Segments are grouped into runs of equal quantised weight and stroked as polylines.** Stroking each
+  segment separately is the obvious implementation and is wrong: at any alpha below 1 the round caps
+  overlap and the rim comes out beaded. Runs abut at shared vertices with butt caps instead.
+- **What cannot be fixed here is the caller's point list.** A list that approximates the silhouette
+  still floats clear of the form, because the call never sees the form. Both manuals now say the list
+  must *be* the silhouette, and point at the construction the run actually settled on — a gradient
+  fill inside a clipped shape — as the sturdier option when a rim must follow a form exactly.
+
+A note on method: the first measurement of this looked like a real asymmetry — one light angle
+produced a fifth of the ink of the others. It was the probe sampling the nominal contour radius, which
+reads the antialiased outer edge of a band that now sits inside it. Moving the sample to the middle of
+the band made it symmetric. The test carries that reasoning, because the same probe written the
+obvious way would have failed for a reason that has nothing to do with rim light.
+
+### The documentation batch — #8, #12, #17, #7
+
+- **#8, `ctx.clip` binds toolkit draws.** True, undocumented, now stated in `Polson.core.md` next to
+  the shortcut list and pinned by a test. The test's unclipped control is the load-bearing half: a
+  mannequin that happened not to cross the boundary would satisfy the clipped assertion on its own.
+- **#12, `MaskFilter.blur(σ, 'outer')` was findable only from the API.** It was defined in two places
+  and reachable from neither of the problems it solves. Manual 09 §3 now carries *When two adjacent
+  masses have merged in value* — the failure a Notan pass exists to expose — with the call, the reason
+  it beats moving either mass's value, and a pointer at `bitmap.palette` to check the result.
+- **#7, nothing joined perspective to the figure canon.** Manual 06 §5a, *One Scale for the Figure and
+  the Architecture*: model in metres, hand the grid the same numbers, and let `feet.y − crown.y` size
+  the mannequin rather than choosing a pixel height. Ends with a complete runnable scene, so it is now
+  part of `ManualExampleTests`.
+
+  The section's real content is the trap the agent hit. A counter 0.95 m high at 2.6 m and a 1.78 m
+  vendor at 3.4 m: the canon puts the hip at `1.78 × (1 − 3.6/8) = 0.98 m`, clearing by **2.9 cm** —
+  answerable before a pixel is drawn. On screen the hip is at `y=451` and the counter edge at `y=508`,
+  57 px that *look* like clearance and are mostly depth, because the scale is 346 px/m at the counter
+  and 265 px/m at the figure. **Height questions get answered in metres; screen `y` cannot compare two
+  things at different depths.** Verified end to end: the hand projector's edges converge on the grid's
+  own centre of vision to `0.000004°`.
+
+**#17 was largely wrong, and the correction is the useful part.** It claimed the statement cap is
+"unnumbered in the published resources" and that `bitmap.diff` / `rowProfile` / `palette` are
+undiscoverable through `Search`. Both were checked and both are false: the cap is stated as 2,000,000
+under *Execution Limits*, and all three calls resolve at `confidence: direct` against the symbol index,
+with Manual 15 — an entire manual on measuring a render — as a top prose hit.
+
+What is real is the ranking underneath the complaint. For *"measure the rendered image"* the top two
+hits are `ctx.drawImage` and `ImageData`, and Manual 15 lands fourth — so the retrieval points at the
+raw pixel buffer, which is exactly the route to the cap the finding died on. Fixed where the trap is
+rather than in the index: the *Pixel Buffer Access* section now warns that `getImageData` is for
+writing pixels back and names the three native calls, and the *Execution Limits* tip says the
+commonest way to reach the cap is measuring rather than drawing.
+
+This is the second finding in this file that reported an environment defect it had not tested — after
+the Critic's sandbox breach in **E**. Worth noticing as a pattern: the drawing findings were measured
+and nearly all held, while the findings *about the tooling* were reasoned from a single failed attempt.
+An agent can measure a render; it cannot as easily measure why a search disappointed it.
+
+---
+
+## 9. What a render costs, and the format table that was wrong
+
+Prompted by a suspicion that JSON encoding dominated tool time. It does not — but the shape of the
+suspicion was right, because the record was under-reporting.
+
+**`ExecutionTimeMs` stopped before the render.** `sw.Stop()` fired immediately after
+`EvaluateAsync`, so the one duration in the run record was the script alone and everything after it —
+rasterise, encode — was invisible. On a 1200 × 760 scene that is 24 ms reported against 93 ms hidden.
+Now split: **`EncodeTimeMs`** on the result, timed across all eight encode sites, recorded as
+`encodeMs` beside `ms`. `ExecutionTimeMs` was deliberately *not* widened — it is published in the run
+record and the SDK reference, so redefining it would silently change every number already recorded.
+
+**Base64 is not the expense; context is.** Steady-state `JsonSerializer.Serialize` of a 126 KB payload
+is **0.22 ms**, and `Convert.ToBase64String` 0.1 ms. The first serialize in a process costs ~28 ms of
+metadata warm-up, which is what a naive benchmark reports as "JSON is the bottleneck" — it was the
+first number this session measured, and it was wrong. What is expensive is that the base64 lands in
+the caller's window **as text**: ~126,000 characters for a routine WebP, ~458,000 for the same frame
+as PNG. **There is no MCP image content block anywhere in the server** — the tool returns a typed
+object that gets serialised — so those tokens may not even buy a viewable image, which is consistent
+with cs-5 finding #5, where the agent used `Read` on the artifact path to see its own work.
+
+`includeBytes` is now marked `AVOID THIS` in the tool schema, carries a `[!CAUTION]` in the SDK
+reference, and every inlined render writes a `script.bytesInlined` event with byte and character
+counts. Not refused — there are legitimate uses, and a tool that quietly declined would be worse.
+
+### The format table stated one scene's numbers as universal
+
+It claimed WebP is "3.9× smaller" than PNG, flat. Measured across three scenes at 1200 × 760 and one
+real 1600 × 1200 artifact, **the ranking inverts with content**:
+
+| | flat graphic | gradient | noise | real panel (1600 × 1200) |
+| :--- | :--- | :--- | :--- | :--- |
+| `png` | **40 ms · 8 KB** | 53 ms · 199 KB | 317 ms · 955 KB | 160 ms · 672 KB |
+| `webp` @ 85 | 53 ms · 16 KB | 84 ms · **34 KB** | 349 ms · **322 KB** | **124 ms · 53 KB** |
+| script alone | 3 ms | 19 ms | 73 ms | — |
+
+On flat graphic work — line art, logos, construction sheets — **PNG is half the size and a third
+faster**, so the old claim was backwards for the content the studio produces most. On a finished
+painterly panel WebP is faster *and* twelve times smaller. Neither is a global default, and the table
+now reads by column with a per-content rule instead of pretending there is one answer.
+
+Three things fell out worth keeping:
+
+- **Encode dominates script time in every case measured** — 13× on flat, 3× on gradient, 4× on noise.
+  A slow call is almost never a slow script.
+- **Decode is never the problem**: 3–16 ms across every format and scene, about a tenth of encode. The
+  hypothesis that WebP's decode cost was hurting both sides does not survive measurement.
+- **The lever is resolution, not format.** Encode tracks pixel count and the spread between formats is
+  much smaller than the spread between sizes. Draft small; render the final large.
+
+The default stays `webp` @ 85. The caveat on the real-panel row is that it re-encodes an already-lossy
+WebP, which flatters WebP — the detail PNG would have to store is already gone.
+
+### Uncompressed was the right instinct and the wrong lever
+
+If artifacts move by file, why compress at all? Measured at 1600 × 1200: a hand-written 32-bit BMP
+encodes in **4.8 ms against WebP's 144 ms** and decodes in 2.4 ms, the fastest of anything tried. The
+encode cost really does almost vanish. Three things stop it being usable:
+
+- **Skia will not write BMP.** `Encode(SKEncodedImageFormat.Bmp, 100)` returns `null`.
+- **The agent could not see it.** Tokens scale with the decoded raster rather than the file, so size
+  costs no context — but the *host* still has to decode it, and image input is JPEG/PNG/GIF/WebP. A
+  `.bmp` artifact is invisible to the peek loop, which is the only reason the file exists.
+- **7.68 MB per render.** cs-5 did 71 of them.
+
+**And "PNG with compression off" is not the escape hatch either** — zlib level 0 still costs **68 ms**
+for a 7.69 MB file, because the container's filtering, chunking and CRC run over all 7.7 MB regardless.
+Level 1 is the only mildly interesting point (85 ms / 597 KB against the default's 112 ms / 513 KB).
+
+### `render: false` — the lever that was actually there
+
+Measuring turned up something better than a format change. **A canvas is rendered whenever the script
+created one and returned something else**, so returning `'measured'` from a probe did not avoid it and
+neither did `exit(...)`. There was no way to draw without encoding, and a measurement pass draws in
+order to measure — so every probe paid a full rasterise and encode for an image nothing read, about
+150 ms at 1600 × 1200, on the scripts an agent runs most often. This is the same use case cs-5 finding
+**#17** died on.
+
+`render: false` on `ExecuteScript` gates the encode. The script runs normally; logs, measurements and
+`Session` writes all survive. Refused together with `outFile` — that asks for the render this
+suppresses — and `outSvg` is unaffected, since vector markup is serialized rather than rasterized.
+
+Paired with the scratchpad it removes both halves of a stage handoff: **`Session` holds bitmaps and
+canvases, not just data.** `Session.stage1 = canvas.toBitmap()` in one call and `bitmap.diff(prev)`
+against it in the next needs no encode on the way out and no decode on the way back. Verified across
+executions, and now documented under `Session` with the caveat that artifacts a *reader* will look at
+must still be written — `outFile` is what makes a run reviewable, and the scratchpad dies with the
+session.
+
+`ExecutionTimeMs` was deliberately left meaning what it always meant. `EncodeTimeMs` reads 0 when the
+render is suppressed, which is the honest answer rather than an absent one.
 
 ---
 

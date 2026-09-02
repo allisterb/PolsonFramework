@@ -1198,8 +1198,8 @@ public class CanvasRenderingContext2D
     public void RenderVolumetricCylinder(float x, float y, float width, float height, object? lightDirection = null, object? options = null) =>
         _toolkit.RenderVolumetricCylinder(this, x, y, width, height, lightDirection, options);
 
-    public void DrawRimLight(object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f) =>
-        _toolkit.DrawRimLight(this, boundsOrPts, lightAngleDeg, rimColor, thickness);
+    public void DrawRimLight(object boundsOrPts, float lightAngleDeg, object? rimColor = null, float thickness = 2.5f, object? options = null) =>
+        _toolkit.DrawRimLight(this, boundsOrPts, lightAngleDeg, rimColor, thickness, options);
 
     public void DrawMannequin(object figure, bool solid = false, object? options = null)
     {

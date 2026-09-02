@@ -1,4 +1,4 @@
-namespace Polson.MCPServer;
+﻿namespace Polson.MCPServer;
 
 using System;
 using System.Collections;
@@ -76,8 +76,8 @@ public partial class JsDrawingEngine : Runtime
     
     #region Methods
     /// <summary>Synchronous entry point, for callers with no async context.</summary>
-    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, string? executionId = null) =>
-        ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality, default, executionId).GetAwaiter().GetResult();
+    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, string? executionId = null, bool render = true) =>
+        ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality, default, executionId, render).GetAwaiter().GetResult();
 
     /// <summary>
     /// Executes a script, awaiting any promises it creates.
@@ -89,7 +89,7 @@ public partial class JsDrawingEngine : Runtime
     /// what it wants rendered. Scripts with no `await` are executed unwrapped and keep exactly their
     /// previous semantics, including a bare trailing `paper;`.
     /// </remarks>
-    public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default, string? executionId = null)
+    public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default, string? executionId = null, bool render = true)
     {
         ArgumentNullException.ThrowIfNull(jsScript);
 
@@ -98,6 +98,25 @@ public partial class JsDrawingEngine : Runtime
             ImageFormat = SkiaImageEncoder.NormalizeFormatName(format)
         };
         var sw = Stopwatch.StartNew();
+
+        // Rendering the result to image bytes happens after `sw` has stopped, and on this scene it
+        // costs three to four times what evaluating the script does. Timed separately rather than
+        // folded in: `ExecutionTimeMs` is published in the run record and in the SDK reference, so
+        // widening it would silently change what every recorded number means.
+        var encodeSw = new Stopwatch();
+
+        // The single gate for `render: false`. A script that only measures — sampling pixels,
+        // diffing against an earlier stage, stashing a canvas in Session for the next call — would
+        // otherwise pay a full rasterise and encode for an image nothing ever looks at, because a
+        // canvas is rendered whenever one was created and something else was returned.
+        byte[]? Encode(Func<byte[]> encode)
+        {
+            if (!render) return null;
+            encodeSw.Start();
+            try { return encode(); }
+            finally { encodeSw.Stop(); }
+        }
+
         var papers = new List<SnapPaper>();
         var canvases = new List<SkiaCanvas>();
         var exitRequested = false;
@@ -463,22 +482,22 @@ public partial class JsDrawingEngine : Runtime
             if (evalResult.ToObject() is SkiaCanvas c)
             {
                 result.ReturnValue = c;
-                result.ImageBytes = c.ToImageBytes(format, quality);
+                result.ImageBytes = Encode(() => c.ToImageBytes(format, quality));
             }
             else if (evalResult.ToObject() is CanvasRenderingContext2D ctx)
             {
                 result.ReturnValue = ctx;
-                result.ImageBytes = ctx.Canvas.ToImageBytes(format, quality);
+                result.ImageBytes = Encode(() => ctx.Canvas.ToImageBytes(format, quality));
             }
             else if (evalResult.ToObject() is SkiaBitmapWrapper bw)
             {
                 result.ReturnValue = bw;
-                result.ImageBytes = bw.ToImageBytes(format, quality);
+                result.ImageBytes = Encode(() => bw.ToImageBytes(format, quality));
             }
             else if (evalResult.ToObject() is ImageData imgData)
             {
                 result.ReturnValue = imgData;
-                result.ImageBytes = imgData.ToImageBytes(format, quality);
+                result.ImageBytes = Encode(() => imgData.ToImageBytes(format, quality));
             }
             else if (evalResult.ToObject() is SnapPaper p)
             {
@@ -494,7 +513,7 @@ public partial class JsDrawingEngine : Runtime
             {
                 var lastCanvas = canvases.Last();
                 result.ReturnValue = evalResult.ToObject();
-                result.ImageBytes = lastCanvas.ToImageBytes(format, quality);
+                result.ImageBytes = Encode(() => lastCanvas.ToImageBytes(format, quality));
             }
             else if (papers.Count > 0)
             {
@@ -509,7 +528,7 @@ public partial class JsDrawingEngine : Runtime
             if (finalPaper != null)
             {
                 result.SvgXml = finalPaper.ToString();
-                result.ImageBytes = finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality);
+                result.ImageBytes = Encode(() => finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality));
             }
             else if (papers.Count > 0)
             {
@@ -531,7 +550,7 @@ public partial class JsDrawingEngine : Runtime
 
             if (canvases.Count > 0)
             {
-                result.ImageBytes = canvases.Last().ToImageBytes(format, quality);
+                result.ImageBytes = Encode(() => canvases.Last().ToImageBytes(format, quality));
                 if (papers.Count > 0)
                 {
                     result.SvgXml = papers.Last().ToString();
@@ -541,7 +560,7 @@ public partial class JsDrawingEngine : Runtime
             {
                 var finalPaper = papers.Last();
                 result.SvgXml = finalPaper.ToString();
-                result.ImageBytes = finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality);
+                result.ImageBytes = Encode(() => finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality));
             }
         }
         catch (PromiseRejectedException prex)
@@ -572,6 +591,7 @@ public partial class JsDrawingEngine : Runtime
         }
 
         result.ImageSize = result.ImageBytes?.Length ?? 0;
+        result.EncodeTimeMs = encodeSw.ElapsedMilliseconds;
         return result;
     }
 

@@ -1,4 +1,4 @@
-namespace Polson.MCPServer;
+﻿namespace Polson.MCPServer;
 
 using System;
 using System.Collections.Generic;
@@ -348,13 +348,24 @@ public class DrawingMcpTools
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
         [Description("Optional file path where the rendered image should be saved, relative to the project directory (e.g. 'artifacts/stage1.webp'). Paths outside the project are refused.")] string? outFile = null,
         [Description("Optional file path where the rendered SVG XML should be saved, relative to the project directory (e.g. 'artifacts/stage1.svg'). Paths outside the project are refused.")] string? outSvg = null,
-        [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null,
+        [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default: true if outFile is omitted, false if outFile is specified). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null,
+        [Description("Set false for a script that draws nothing you need to look at — a measurement or probe pass that samples pixels, diffs against an earlier stage, or stashes a canvas in Session for the next call. A canvas is otherwise rasterised and encoded whenever the script created one, even when the script returns something else, which costs roughly 150 ms at 1600x1200 for an image nothing reads. Refused together with outFile, which asks for the render this suppresses.")] bool? render = null,
         [Description("Optional path to a JavaScript file to execute INSTEAD of `script`, relative to the project directory (e.g. 'artwork.js'). Use this when iterating on a file you maintain: edit the file with your ordinary editor, then run it — rather than re-sending the whole program on every call. Paths outside the project are refused. Give either `script` or `scriptFile`, never both.")] string? scriptFile = null,
         RequestContext<CallToolRequestParams>? context = null,
         IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
     {
         script = ReadScriptSource(script, scriptFile);
+
+        // Refused rather than resolved, as script/scriptFile is: one of the two was meant, and
+        // guessing would either write an empty file or silently pay the cost the caller declined.
+        if (render == false && !string.IsNullOrWhiteSpace(outFile))
+        {
+            throw new ArgumentException(
+                "'render: false' and 'outFile' contradict each other — outFile asks for the render that "
+              + "render:false suppresses. Drop outFile for a measurement pass, or drop render:false to save the image. "
+              + "'outSvg' is unaffected: vector markup is serialized, not rasterized.");
+        }
 
         var sessionId = GetSessionId(context?.Server);
         var session = Registry.GetOrCreate(sessionId);
@@ -402,7 +413,7 @@ public class DrawingMcpTools
         {
             var fmt = format ?? "webp";
             var q = quality ?? 85;
-            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q, executionId), cancellationToken);
+            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q, executionId, render ?? true), cancellationToken);
             var result = await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(outFile) && result.ImageBytes != null && result.ImageBytes.Length > 0)
@@ -453,10 +464,15 @@ public class DrawingMcpTools
                 });
             }
 
+            // `ms` is the script; `encodeMs` is turning its result into pixels. They are recorded
+            // apart because the second is usually the larger, and reading only the first makes every
+            // render look cheaper than it was.
             Events.Append(result.Success ? "script.ok" : "script.error", session.Stage, executionId, new Dictionary<string, object?>
             {
                 ["script"] = scriptPath,
                 ["ms"] = result.ExecutionTimeMs,
+                ["encodeMs"] = result.EncodeTimeMs,
+                ["bytes"] = result.ImageBytes?.Length ?? 0,
                 ["error"] = result.Success ? null : result.Error
             });
 
@@ -467,6 +483,17 @@ public class DrawingMcpTools
             if (!shouldIncludeBytes)
             {
                 result.ImageBytes = null;
+            }
+            else if (result.ImageSize > 0)
+            {
+                // Base64 inflates by a third and the whole of it lands in the caller's context as
+                // text. Recorded so a run that spent its window this way says so afterwards.
+                Events.Append("script.bytesInlined", session.Stage, executionId, new Dictionary<string, object?>
+                {
+                    ["bytes"] = result.ImageSize,
+                    ["base64Chars"] = (result.ImageSize + 2) / 3 * 4,
+                    ["outFile"] = outFile
+                });
             }
 
             return result;
@@ -765,7 +792,7 @@ public class DrawingMcpTools
         [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
         [Description("Optional file path where the rendered image should be saved, relative to the project directory. Paths outside the project are refused.")] string? outFile = null,
-        [Description("Whether to include base64 imageBytes in the JSON response (default: true if outFile is omitted, false if outFile is specified).")] bool? includeBytes = null)
+        [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default: true if outFile is omitted, false if outFile is specified). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null)
     => Recorded(nameof(RenderSvg), () =>
     {
         ArgumentNullException.ThrowIfNull(svgXml);
@@ -807,6 +834,16 @@ public class DrawingMcpTools
             if (!shouldIncludeBytes)
             {
                 result.ImageBytes = null;
+            }
+            else if (result.ImageSize > 0)
+            {
+                Events.Append("render.bytesInlined", fields: new Dictionary<string, object?>
+                {
+                    ["tool"] = nameof(RenderSvg),
+                    ["bytes"] = result.ImageSize,
+                    ["base64Chars"] = (result.ImageSize + 2) / 3 * 4,
+                    ["outFile"] = outFile
+                });
             }
         }
         catch (Exception ex)

@@ -1,4 +1,4 @@
-# Studio Manual 09: Compositional Armatures, Value Hierarchy & Visual Emphasis
+﻿# Studio Manual 09: Compositional Armatures, Value Hierarchy & Visual Emphasis
 
 > **Source Reference**: *Imaginative Drawing*, Chapter 5: "Composition" (`reference/books/chapter5_composition.pdf`)  
 > **Purpose**: Translates visual design theory (classical geometric armatures, focal emphasis rules, Notan value structures, cinematic vignetting, and the 70-20-10 proportional design law) into algorithmic JavaScript Canvas2D / Skia code.
@@ -55,6 +55,24 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 >   - **10% Accent** (Deepest Dark or Blown Highlight)
 > - **High-Key**: Scene dominated by values 1–4 (soft, ethereal, bright).
 > - **Low-Key**: Scene dominated by values 7–10 (dramatic, moody, noir, mystery).
+
+### When two adjacent masses have merged in value
+
+The standard failure a value pass exposes, and the one with a standard answer. A figure and the wall behind it land within a step or two of each other, the silhouette stops reading, and the reflex is to lighten one or darken the other — which changes the scene's value structure to fix a problem that is only at the boundary between the two masses.
+
+**Separate them at the edge instead, with `Skia.MaskFilter.blur(sigma, 'outer')`.** It keeps only the blur and knocks the shape itself out, so atmosphere is lifted *strictly outside* one contour and neither mass's own value moves:
+
+```js
+ctx.save();
+ctx.maskFilter = Skia.MaskFilter.blur(14, 'outer');   // haze outside the figure only
+ctx.fillStyle = 'rgba(210, 226, 238, 0.5)';
+ctx.fill(vendorSilhouette);
+ctx.restore();
+```
+
+It is also honest whenever there is air between the two: three metres of lit rain genuinely do sit between a figure's coat and the facade behind it. Check the result with `bitmap.palette` (Manual 15) rather than by eye — merged masses are exactly the case where the eye is least reliable, since it is the boundary and not the values that has failed.
+
+> The four styles are `'normal'` (softens the whole shape — an airbrush), `'solid'` (crisp shape, blur added outside — a glow), `'outer'` (blur only, shape knocked out — a halo, and the one wanted here), and `'inner'` (blur only, inside — an inward vignette). Full definitions in Manual 17 §7 and `polson://sdk/core/Skia`.
 
 ---
 

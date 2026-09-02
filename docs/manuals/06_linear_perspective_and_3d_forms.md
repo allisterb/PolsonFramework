@@ -1,4 +1,4 @@
-# Studio Manual 06: Linear Perspective & 3D Form Construction
+﻿# Studio Manual 06: Linear Perspective & 3D Form Construction
 
 > **Source Reference**: *Imaginative Drawing*, Chapter 2: "Perspective" (`reference/books/chapter2_perspective.pdf`)  
 > **Purpose**: Translates linear perspective theory (horizon lines, vanishing points, 3D box projection, cylinder tangent ellipses, diagonal plane subdivision, and convergence testing) into algorithmic JavaScript Canvas2D / Skia code.
@@ -71,6 +71,13 @@ A 3D perspective box is defined by:
 
 > **Implemented by**: `Drawing.drawPerspectiveCylinder(ctx, grid, anchorX, anchorY, radius, height, options)` — inscribes both tangent ellipses and joins their outer extremes in one call.
 
+> [!IMPORTANT]
+> **The cylinder is anchored differently from the box, and this is the one thing to know before calling it.** `createPerspectiveBox` takes the near bottom **corner** with `width`/`depth` measured along the receding rays. `drawPerspectiveCylinder` takes the **centre of the base circle**, and its `radius` is **half the drawn width** — the silhouette spans `anchorX ± radius`, measurable off the render. A cylinder has no corner to anchor to and `radius` implies a centre, so the two calls differ on purpose.
+>
+> **Height above the ground needs no parameter.** Each cap's flatness is read from the directions to the vanishing points *at that cap's own centre*: nearer the horizon means shallower rays means a flatter ellipse. So a bowl on a counter comes out flatter than the same bowl on the floor because you anchored it higher in the frame, and the top ellipse of any cylinder is automatically flatter than its base. Do not try to compensate by hand.
+>
+> This is worth stating because the call used to do neither. It built a `2r × 2r` box, anchored at that box's near corner, and took the width from the footprint's **diagonal** — drawing at a measured **1.9× the requested width**, off centre, with one shared squash for both caps. It never errored; it returned a plausible cylinder of the wrong shape, and a live run lost four iterations to it before anyone looked twice.
+
 > **Core Insight from the Book (Exercise 2.6, Page 246)**:
 > An accurate perspective cylinder is constructed by inscribing perspective circles (ellipses) inside the top and bottom square faces of a bounding perspective box.
 
@@ -99,6 +106,141 @@ To verify that drawn line segments $[(A_1, B_1), (A_2, B_2), \dots]$ correctly o
 1. Compute the angular slope of each line: $\theta_i = \text{atan2}(B_{iy} - A_{iy}, B_{ix} - A_{ix})$.
 2. Compute the ideal angle from $A_i$ to the true vanishing point $VP$: $\hat{\theta}_i = \text{atan2}(VP_y - A_{iy}, VP_x - A_{ix})$.
 3. Angular Error $= |\theta_i - \hat{\theta}_i|$. If $\text{Error} \le 5^\circ$, the line passes perspective QA.
+
+---
+
+## 5a. One Scale for the Figure and the Architecture
+
+This manual gives the projection and Manual 08 gives the eight-head canon, and until you join them the two work in different units: a grid measured in pixels off the horizon, and a body measured in head-lengths of itself. A comic panel almost always contains both — a person and a thing the person is standing at — so the join is the ordinary case rather than an advanced one.
+
+**Model the scene in metres and give the grid the same numbers.** One function turns metres into pixels; the figure, the architecture and the grid all go through it, so none of them can drift from the others.
+
+```js
+// One camera, in metres. Nothing in the scene invents its own scale.
+const CAM = { eyeHeight: 1.55, focal: 900, horizonY: 300, cvX: 470 };
+
+// x metres right of the view axis, h metres above the ground, z metres away.
+function project(x, h, z) {
+    const s = CAM.focal / z;                       // pixels per metre at this depth
+    return { x: CAM.cvX + x * s, y: CAM.horizonY + (CAM.eyeHeight - h) * s, s: s, z: z, h: h };
+}
+
+// The SDK grid gets the same numbers, so its vanishing points agree with the projector.
+const grid = Drawing.createPerspectiveGrid({
+    type: '2point', horizonY: CAM.horizonY, centerOfVisionX: CAM.cvX,
+    focalLength: CAM.focal, cameraAngleDeg: 45
+});
+```
+
+Two consequences fall out immediately, and both are worth stating.
+
+**The horizon is eye height, not a compositional line.** `CAM.eyeHeight` and `horizonY` are the same fact in two units. Anything in the scene standing exactly 1.55 m tall has its top *on* the horizon, at any distance — which is the fastest sanity check available on a grid.
+
+**A figure's pixel height is a projection, never a choice.** `createMannequinFigure(x, y, totalHeight)` takes the crown as its origin and runs 8 head-lengths down, so:
+
+```js
+const BODY_H = 1.78, BODY_Z = 3.4, BODY_X = 0.35;
+const crown = project(BODY_X, BODY_H, BODY_Z);
+const feet  = project(BODY_X, 0, BODY_Z);
+const figure = Drawing.createMannequinFigure(crown.x, crown.y, feet.y - crown.y);
+```
+
+`feet.y - crown.y` is 1.78 m at that depth and nothing else. Choosing a pixel height by eye and then placing a counter by eye is how a scene ends up with a vendor whose hip does not clear their own counter.
+
+### The check happens in metres, before anything is projected
+
+The counter is 0.95 m high at 2.6 m; the vendor is 1.78 m at 3.4 m. The canon puts the pelvis 3.6 of 8 head-lengths below the crown, so the hip stands at $1.78 \times (1 - 3.6/8) = 0.98\ \text{m}$ — clearing the counter by **2.9 cm**. That is the answer, and it was available before a pixel was drawn.
+
+> [!IMPORTANT]
+> **Screen `y` cannot answer that question when the two things are at different depths.** In the scene above the hip lands at $y = 451$ and the counter's top edge at $y = 508$ — 57 px apart, which looks like a comfortable clearance and is mostly *depth*: the counter is nearer, so it falls further from the horizon. The scale is 346 px/m at the counter and 265 px/m at the figure, and comparing pixel positions across that difference compares two different rulers.
+>
+> Carry `s`, `z` and `h` on every projected point, as `project` above returns them. Then a later pass can foreshorten a puddle and a counter-top bowl correctly without either caller knowing how the other works, and a height question can always be taken back to metres where it has an answer.
+
+Finish by proving the hand projector and the SDK grid actually agree, rather than assuming it — feed the architecture's depth-running edges to §5:
+
+```js
+const check = Drawing.verifyPerspectiveConvergence(
+    [[project(-1.1, 0.95, 2.6), project(-1.1, 0.95, 6.0)],
+     [project(1.1, 0, 2.6), project(1.1, 0, 6.0)]],
+    grid.cv, 5);
+log(check.message);   // PASS, max angular error 0.000 deg - two constructions, one answer
+```
+
+Edges built by the projector converge on the grid's own centre of vision because both were given `CAM.focal`, `CAM.horizonY` and `CAM.cvX`. Change one of the three in one place only and this is the line that tells you.
+
+### The whole scene, end to end
+
+Everything above in one program: the projector, the grid built from the same numbers, the architecture, the figure sized by projection, and the check stated in metres.
+
+```javascript
+// A figure and a piece of architecture in one scene, at one scale.
+const canvas = createCanvas(940, 760);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f4f1ea';
+ctx.fillRect(0, 0, 940, 760);
+
+// One camera, in metres. Nothing in the scene invents its own scale.
+const CAM = { eyeHeight: 1.55, focal: 900, horizonY: 300, cvX: 470 };
+
+// x metres right of the view axis, h metres above the ground, z metres away.
+function project(x, h, z) {
+    const s = CAM.focal / z;                            // pixels per metre at this depth
+    return { x: CAM.cvX + x * s, y: CAM.horizonY + (CAM.eyeHeight - h) * s, s: s, z: z, h: h };
+}
+
+// The SDK grid is given the same numbers, so its vanishing points agree with the projector.
+const grid = Drawing.createPerspectiveGrid({
+    type: '2point', horizonY: CAM.horizonY, centerOfVisionX: CAM.cvX,
+    focalLength: CAM.focal, cameraAngleDeg: 45
+});
+Drawing.drawPerspectiveGrid(ctx, grid, { lineCount: 10, lineWidth: 0.6 });
+
+// --- Architecture: a counter 0.95 m high, 2.2 m wide, at 2.6 m -------------------
+const COUNTER_H = 0.95, COUNTER_Z = 2.6;
+const topL = project(-1.1, COUNTER_H, COUNTER_Z);
+const topR = project(1.1, COUNTER_H, COUNTER_Z);
+const footL = project(-1.1, 0, COUNTER_Z);
+const footR = project(1.1, 0, COUNTER_Z);
+
+// --- Figure: 1.78 m, standing behind the counter at 3.4 m -----------------------
+const BODY_H = 1.78, BODY_Z = 3.4, BODY_X = 0.35;
+const crown = project(BODY_X, BODY_H, BODY_Z);
+const feet = project(BODY_X, 0, BODY_Z);
+const bodyPx = feet.y - crown.y;                        // 1.78 m at this depth
+
+const figure = Drawing.createMannequinFigure(crown.x, crown.y, bodyPx);
+
+// The figure is drawn first, then the counter over it — the counter is nearer.
+Drawing.drawMannequinSolid(ctx, figure, {
+    fillColor: '#c9cfd8', shadowColor: '#98a2b0', strokeColor: '#2f3946', strokeWidth: 1.4
+});
+
+ctx.fillStyle = '#8d7a63';
+ctx.strokeStyle = '#3b3229';
+ctx.lineWidth = 1.6;
+ctx.beginPath();
+ctx.moveTo(footL.x, footL.y);
+ctx.lineTo(topL.x, topL.y);
+ctx.lineTo(topR.x, topR.y);
+ctx.lineTo(footR.x, footR.y);
+ctx.closePath();
+ctx.fill();
+ctx.stroke();
+
+// --- The check happens in metres, before anything is projected ------------------
+// The canon puts the pelvis 3.6 of 8 head-lengths below the crown.
+const hipH = BODY_H * (1 - 3.6 / 8);
+log('counter ' + COUNTER_H.toFixed(2) + ' m, hip ' + hipH.toFixed(2) + ' m, clears by '
+    + ((hipH - COUNTER_H) * 100).toFixed(1) + ' cm');
+
+// Screen y cannot answer this: the two are at different depths.
+const hipScreenY = crown.y + bodyPx * (3.6 / 8);
+log('on screen the hip is at y=' + hipScreenY.toFixed(0) + ' and the counter edge at y='
+    + topL.y.toFixed(0) + ' — ' + (topL.y - hipScreenY).toFixed(0) + ' px apart, which is depth, not height');
+
+log('scale: ' + topL.s.toFixed(0) + ' px/m at the counter, ' + crown.s.toFixed(0) + ' px/m at the figure');
+canvas;
+```
 
 ---
 

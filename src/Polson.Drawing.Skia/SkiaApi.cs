@@ -159,6 +159,21 @@ public class SkiaBitmapFactoryApi
 public class SkiaShaderApi
 {
     #region Methods
+    /// <summary>Collapses a shader's RGB to Rec. 709 luminance, leaving its alpha untouched.</summary>
+    /// <remarks>
+    /// The Perlin shaders below generate an <em>independent</em> noise field per channel, alpha
+    /// included — four fields, not one. That is faithful to SVG <c>feTurbulence</c>, and it is not
+    /// what a grain or vapour pass wants: laid over a surface with <c>soft-light</c> or
+    /// <c>overlay</c> it tints in random hues instead of modulating value. This is the correction,
+    /// and the alpha passthrough is the half that is easy to get wrong — clamping alpha to 1 in the
+    /// same matrix greys the noise correctly and turns atmosphere into an opaque sheet.
+    /// </remarks>
+    public SKShader Luminance(SKShader shader)
+    {
+        ArgumentNullException.ThrowIfNull(shader);
+        return shader.WithColorFilter(SKColorFilter.CreateColorMatrix(LuminanceMatrix));
+    }
+
     public SKShader PerlinNoiseTurbulence(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, float tileSizeX = 0, float tileSizeY = 0)
     {
         if (tileSizeX > 0 && tileSizeY > 0)
@@ -399,6 +414,17 @@ public class SkiaShaderApi
         "decal" => SKShaderTileMode.Decal,
         _ => SKShaderTileMode.Clamp
     };
+    #endregion
+
+    #region Fields
+    /// <summary>Rec. 709 luminance on RGB; the alpha row is identity, deliberately.</summary>
+    private static readonly float[] LuminanceMatrix =
+    [
+        0.2126f, 0.7152f, 0.0722f, 0f, 0f,
+        0.2126f, 0.7152f, 0.0722f, 0f, 0f,
+        0.2126f, 0.7152f, 0.0722f, 0f, 0f,
+        0f,      0f,      0f,      1f, 0f
+    ];
     #endregion
 }
 

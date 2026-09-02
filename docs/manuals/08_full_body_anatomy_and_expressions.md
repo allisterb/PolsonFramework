@@ -1,10 +1,8 @@
 ﻿# Studio Manual 08: Full-Body Anatomy, Mannequins & Facial Expressions
 
-> **Sources under revision.** This manual previously cited *Imaginative Drawing* (John Guy, 2025).
-> That work's terms ask that it be shared only in its entirety, and withhold permission for it to be
-> used for machine learning or AI. Distilling it into a manual that is served to agents is against
-> both, so the citations have been withdrawn. The constructions below are standard studio practice
-> and are being re-sourced; treat any unattributed claim here as pending a citation, not as verified.
+> **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) —
+> §1 from p. 26 and p. 33, §2 from pp. 38–40. §§3–4 are **not yet re-sourced**: their previous
+> citations were withdrawn and anything there should be treated as pending a citation, not verified.  
 > **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and the 6 universal facial expressions) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -13,20 +11,46 @@
 
 > **Implemented by**: `Drawing.createMannequinFigure(originX, originY, totalHeight, options)` → `MannequinFigure`, which divides `totalHeight` into eight `headUnit`s and applies `shoulderTiltDeg` / `pelvicTiltDeg` as contrapposto. Verify the weight-bearing line with `Drawing.verifyPlumbAlignment(top, bottom, maxTolerance)` and measure in head units with `Drawing.computeRelativeDistance(headHeight, a, b)`.
 
-**The eight-head canon** — the standard heroic-figure convention (Loomis, Hogarth, Richer), and what
-`createMannequinFigure` implements. Pending a citation to a specific source:
+> **Source**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943), p. 26 —
+> "Ideal Proportion, Male", with p. 33 "Proportions by Arcs and Head Units".
+
+Take the height you want, mark the crown and the heels, and **divide into eighths**. Loomis counts
+from the heels up; the toolkit measures down from the crown, which is the same canon read from the
+other end:
 
 ```
- 0.0 H ─── Top of Head (Crown)
- 1.0 H ─── Chin & Jaw Base
- 2.0 H ─── Nipples & Mid-Chest
- 3.0 H ─── Navel & Elbows
- 4.0 H ─── Pubic Bone (Crotch) & Wrists ◄── Exact Center of Figure Height!
- 5.0 H ─── Mid-Thigh
- 6.0 H ─── Bottom of Knees (Patella)
- 7.0 H ─── Mid-Calf / Lower Shin
- 8.0 H ─── Soles of Feet (Ground Line)
+ 0.0 H ─── Top of Head (Crown)                        Loomis: 8
+ 1.0 H ─── Chin & Jaw Base                                     7
+ 1⅓ H ─── Shoulders  (one-sixth of the way down)              6⅔
+ 2.0 H ─── Nipples & Mid-Chest                                 6
+ 3.0 H ─── Navel & Elbows                                      5
+ 3⅓ H ─── Hips                                                4⅔
+ 4.0 H ─── Crotch & Wrists ◄── exact centre of the figure      4
+ 4⅓ H ─── Bottom of Buttocks                                  3⅔
+ 6.0 H ─── Bottom of Knees (just above the lower quarter)      2
+ 8.0 H ─── Soles of Feet (Ground Line)                         0
 ```
+
+**Widths, which the table above cannot carry** and which the canon is incomplete without:
+
+- The male figure is **2⅓ head units wide** at its widest.
+- The space **between the nipples is exactly one head unit**.
+- The waist is a little wider than one head unit.
+- The wrist drops *just below* the crotch line; the elbows sit *on* the navel line.
+
+> [!TIP]
+> Loomis gives the same proportions **in feet** as well as head units, expressly so a figure can be
+> related to furniture and interiors — a 6 ft figure has a 9 in head and its shoulders at 5 ft. That is
+> the same problem Manual 06 §5a solves with a metre-based projector, and the two agree: pick the
+> real-world height first, and let both the figure and the architecture derive from it.
+
+> [!NOTE]
+> **`createMannequinFigure` uses a shoulder span of `1.8 H`.** Loomis gives two different widths and
+> they are not in conflict: **2⅓ H** is the figure at its widest with the arms hanging (p. 26), while
+> the shoulder **"cape"** over the ball of the chest is about **2 H** (p. 40, §2). Ours is a little
+> narrow against the cape and clearly narrow against the full width — but it is a shoulder-joint span,
+> which is a third measurement again. Left alone pending a deliberate decision about which of the
+> three the parameter is meant to be.
 
 ### The 3 Solid Masses & Dynamic Contrapposto
 
@@ -45,16 +69,30 @@ The human torso is NOT a rigid monolith. It consists of those **3 solid masses**
 
 > **Implemented by**: `Drawing.drawMannequinWireframe(ctx, figure, options)` for the non-repro-blue gesture pass, then `Drawing.drawMannequinSolid(ctx, figure, options)` for the cranial sphere, ribcage egg, pelvic basin, tapered limb cylinders, and wedge terminals.
 
-> **Principle**:
-> Rather than drawing surface contours directly, block the figure with simplified volumetric
-> primitives and add detail over them.
+> **Source**: Loomis, *Figure Drawing for All It's Worth*, pp. 38–40 — "First the Mannikin Frame",
+> "Movement in the Mannikin Frame", "Details of the Mannikin Frame".
 
-Blocked with volumetric primitives rather than surface contours:
+The frame is built **on the proportion line of §1**, not invented beside it: head, shoulders, nipple,
+navel, crotch, bottom of knees, heels are the same marks. Loomis calls what follows a simplified
+version of the real frame and says it is all you need to start.
 
-- **Torso**: cranial sphere, ribcage egg, pelvic basin.
+- **Torso**: cranial sphere, ribcage egg, pelvic basin. The shoulder girdle is a **"cape"** laid over
+  the ball of the chest, spanning about two head units — it is not a bar between two joints, and
+  drawing it as one is why mechanical mannequins look like coat hangers.
+- **Pelvis**: two discs is enough at this stage.
 - **Limbs**: tapered cylinders for upper arms, thighs and calves.
 - **Joints**: spherical hinges at shoulders, elbows, hips and knees.
 - **Terminals**: wedge boxes for hands and feet.
+
+> [!IMPORTANT]
+> **"Never draw the limbs straight and stiff and without spring."** Loomis's instruction, and it is
+> the single most useful sentence here: the legs are *curved*, and a limb drawn as a straight segment
+> between two joints reads as dead however correct its proportions are. Whatever poses the figure has
+> to bend limbs rather than only rotate them about their joints.
+>
+> He also drills the frame in **five views — front, back, ¾ back, side, ¾ front** — which is the right
+> shape for a construction-sheet test: a figure that only reads from the front has not been built in
+> three dimensions.
 
 ---
 

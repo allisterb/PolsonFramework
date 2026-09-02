@@ -82,6 +82,34 @@ A 3D perspective box is defined by:
 >
 > This is worth stating because the call used to do neither. It built a `2r × 2r` box, anchored at that box's near corner, and took the width from the footprint's **diagonal** — drawing at a measured **1.9× the requested width**, off centre, with one shared squash for both caps. It never errored; it returned a plausible cylinder of the wrong shape, and a live run lost four iterations to it before anyone looked twice.
 
+> **Source**: Ernest R. Norling, *Perspective Made Easy*, Step Fourteen — pp. 135, 137.
+>
+> **Think of an upright cylinder as sitting in a square box** with the vanishing point directly
+> opposite, as with railway tracks. Both sides of the cylinder are upright and parallel, and redrawing
+> the box in two-point perspective does not move the cylinder inside it.
+>
+> **"The long axis always forms a T with the upright line of the cylinder."** For an upright cylinder
+> that makes the cap ellipse's major axis **horizontal** — and the rule generalises to any cylinder:
+> on the wheels and lamps of a car the ellipses' long axes point in quite different directions, each
+> square to its own cylinder's axis. It is the fastest check available on any drawn ellipse.
+
+> [!NOTE]
+> **`drawPerspectiveCylinder` follows that rule, and it took a fix to.** An earlier version built each
+> cap from conjugate semi-diameters toward the two vanishing points, which tilted the cap away from the
+> centre of vision: on a 140 px cap with the centre of vision at *x* = 400, the apex sat **0.5 px** from
+> the anchor on axis but **13.5 px** off at 250 px left and **15.5 px** off at 300 px right — a tenth of
+> the cap's width, reading as a leaning bottle.
+>
+> The caps are now axis-aligned. The foreshortening still comes from the grid — the ground directions
+> give the ellipse, and only its **vertical** extent is kept — so a cap nearer the horizon is still
+> flatter, and the two caps still differ. Only the tilt is discarded.
+>
+> Worth knowing that this is a deliberate departure from strict projection: a genuine wide-angle
+> projection *does* tilt a circle off axis, and Norling's rule is exact only on the central axis. This
+> grid is a screen-space construction rather than a metric camera, so the drawing convention is the
+> right one here — but if the toolkit ever grows a real camera, this is a decision to revisit.
+> Pinned by `TestCylinderCapsKeepAHorizontalMajorAxis`, whose off-axis cases are the whole point.
+
 > **Principle**:
 > An accurate perspective cylinder is constructed by inscribing perspective circles (ellipses) inside the top and bottom square faces of a bounding perspective box.
 

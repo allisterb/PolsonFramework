@@ -1,8 +1,9 @@
 ﻿# Studio Manual 08: Full-Body Anatomy, Mannequins & Facial Expressions
 
 > **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) —
-> §1 from p. 26 and p. 33, §2 from pp. 38–40. §§3–4 are **not yet re-sourced**: their previous
-> citations were withdrawn and anything there should be treated as pending a citation, not verified.  
+> §1 from p. 26 and p. 33, §2 from pp. 38–40. Jack Faragasso, *Mastering Drawing the Human Figure*
+> (Stargarden Press, 1998) — §3 from pp. 74 and 93–94. **§4 is not yet re-sourced**: its previous
+> citation was withdrawn, so treat anything there as pending a citation rather than as verified.  
 > **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and the 6 universal facial expressions) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -45,12 +46,20 @@ other end:
 > real-world height first, and let both the figure and the architecture derive from it.
 
 > [!NOTE]
-> **`createMannequinFigure` uses a shoulder span of `1.8 H`.** Loomis gives two different widths and
-> they are not in conflict: **2⅓ H** is the figure at its widest with the arms hanging (p. 26), while
-> the shoulder **"cape"** over the ball of the chest is about **2 H** (p. 40, §2). Ours is a little
-> narrow against the cape and clearly narrow against the full width — but it is a shoulder-joint span,
-> which is a third measurement again. Left alone pending a deliberate decision about which of the
-> three the parameter is meant to be.
+> **`createMannequinFigure` uses a shoulder span of `1.8 H`, and the sources do not agree on what it
+> should be.** Three figures, each measuring something slightly different:
+>
+> | Source | Figure | What it measures |
+> | :--- | :--- | :--- |
+> | Loomis, p. 26 | **2⅓ H** | the figure at its widest, arms hanging |
+> | Loomis, p. 40 | **~2 H** | the shoulder "cape" over the ball of the chest |
+> | Faragasso, p. 74 | **2⅔ H** (1⅓ each side of the neck pit) | pit of neck to widest shoulder, male |
+>
+> Faragasso's is the widest and the most specific, and he immediately adds that **these proportions
+> vary greatly in real life**. So there is no single correct constant to look up — ours is narrow
+> against all three, but the parameter's own definition (a shoulder-*joint* span) is a fourth thing
+> again. Left alone deliberately: this wants a decision about what the parameter means, not a number
+> copied from whichever book was open.
 
 ### The 3 Solid Masses & Dynamic Contrapposto
 
@@ -99,6 +108,30 @@ version of the real frame and says it is all you need to start.
 ## 3. Upper-Torso Muscle Landmarks
 
 > **Implemented by**: `Drawing.drawTorsoMusculature(ctx, figure, options)` — draws all five landmarks over an existing `MannequinFigure`, so call it after the solid pass, never instead of it.
+
+> **Source**: Jack Faragasso, *Mastering Drawing the Human Figure* (Stargarden Press, 1998) —
+> "Additions and Clarifications of the Structure System: The Head and Shoulders" p. 74, and
+> "Planes of the Torso" pp. 93–94. Faragasso teaches the Frank J. Reilly method.
+
+**The shoulder line is an axis, not the clavicles.** It runs through the **pit of the neck** to the
+widest points of the shoulders. Faragasso is explicit that it only sometimes follows the clavicles,
+because *clavicles are seldom horizontal* — so a construction that draws the shoulder line along the
+collarbones will tilt when it should not, and the two are worth keeping separate.
+
+**Building the torso from the pit of the neck outward**, which is the order that keeps it coherent:
+
+1. The neck hole and the **oval of the rib cage** are drawn inside an **inverted triangle**.
+2. A dot on the centre line at the **pit of the neck** and another at the **bottom of the rib cage**
+   gives the *upper secondary form*.
+3. Connect the hips: a line from the widest point of the hip, through the widest point of the waist,
+   arching over to the opposite waist and hip. That is the *lower secondary form*.
+4. A **semicircle starting at the navel** is the top of the pelvis form; the two ends of it mark the
+   **iliac crest**.
+5. The **nipples** sit on the lines running from the neck to the widest points of the hips.
+6. The first big **side planes** come from connecting the dots at the widest points of the torso.
+
+The two secondary forms are the useful idea for us: the torso is not one mass but an upper and a
+lower one meeting at the waist, which is what lets it bend and twist without the parts sliding apart.
 
 > **Principle**:
 > When detailing the torso over the mannequin foundation, 5 muscle landmarks define the silhouette:

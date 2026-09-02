@@ -1024,6 +1024,34 @@ public class ConstructiveDrawingToolkit
     /// two caps get separate ellipses rather than one shared squash.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Draws an upright cylinder, both caps foreshortened by the grid at their own screen height.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="anchorX"/>/<paramref name="anchorY"/> is the centre of the <em>base circle</em>
+    /// and <paramref name="radius"/> is half the cylinder's drawn width, so the silhouette lands
+    /// where a caller put it and can be checked with a ruler. Both were previously otherwise: the
+    /// call built a <c>2r x 2r</c> perspective box, anchored at that box's near <em>corner</em>, and
+    /// took its width from the footprint's diagonal — which drew at 1.9x the requested width, off
+    /// centre, without erroring.
+    /// </para>
+    /// <para>
+    /// There is deliberately no elevation parameter. A cap's flatness is read from the directions to
+    /// the vanishing points at its own centre, and a point nearer the horizon has shallower rays, so
+    /// a bowl on a counter is flatter than the same bowl on the floor for free. That is also why the
+    /// two caps get separate ellipses rather than one shared squash.
+    /// </para>
+    /// <para>
+    /// <b>Both caps are axis-aligned</b>, after Norling: the long axis of the ellipse forms a T with
+    /// the cylinder's upright line, so on an upright cylinder it is horizontal. An earlier version
+    /// built each cap from conjugate semi-diameters toward the two vanishing points, which tilted the
+    /// cap away from the centre of vision — measured at 13-15 px on a 140 px cap placed 250-300 px
+    /// off axis, which reads as a leaning bottle. A true wide-angle projection does tilt a circle off
+    /// axis, but this grid is a screen-space construction rather than a metric camera, so the drawing
+    /// convention is the one to keep.
+    /// </para>
+    /// </remarks>
     public void DrawPerspectiveCylinder(CanvasRenderingContext2D ctx, object gridObj, float anchorX, float anchorY, float radius, float height, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
@@ -1038,24 +1066,23 @@ public class ConstructiveDrawingToolkit
 
         var (vpL, vpR) = CircleAxisVanishingPoints(grid);
 
-        var baseCentre = new Point2D(anchorX, anchorY);
-        var topCentre = new Point2D(anchorX, anchorY - height);
-        var (baseA, baseB) = GroundCircleAxes(vpL, vpR, baseCentre, radius);
-        var (topA, topB) = GroundCircleAxes(vpL, vpR, topCentre, radius);
-
-        // Where each ellipse turns back on itself: the tangent points the vertical contours meet.
-        var (baseLeft, baseRight) = SilhouetteParameters(baseA, baseB);
-        var (topLeft, topRight) = SilhouetteParameters(topA, topB);
+        var baseY = anchorY;
+        var topY = anchorY - height;
+        var baseRy = GroundCircleSquash(vpL, vpR, new Point2D(anchorX, baseY), radius);
+        var topRy = GroundCircleSquash(vpL, vpR, new Point2D(anchorX, topY), radius);
 
         ctx.Save();
 
-        // 1. Body — between the near half of each cap, so the far halves stay hidden.
-        var baseRightPoint = EllipsePoint(baseCentre, baseA, baseB, baseRight);
+        // 1. Body — the near half of each cap, joined by the two vertical contours. Each arc starts
+        // at the tangent extreme it meets (PI on the left, 0 on the right); sweeping either from the
+        // far side folds the body into a bowtie.
         ctx.FillStyle = sideFill;
         ctx.BeginPath();
-        TraceEllipseArc(ctx, topCentre, topA, topB, topLeft, NearSweepEnd(topCentre, topA, topB, topLeft, topRight), true);
-        ctx.LineTo(baseRightPoint.X, baseRightPoint.Y);
-        TraceEllipseArc(ctx, baseCentre, baseA, baseB, baseRight, NearSweepEnd(baseCentre, baseA, baseB, baseRight, baseLeft), false);
+        ctx.MoveTo(anchorX - radius, baseY);
+        ctx.LineTo(anchorX - radius, topY);
+        ctx.Ellipse(anchorX, topY, radius, topRy, 0f, MathF.PI, 0f, true);
+        ctx.LineTo(anchorX + radius, baseY);
+        ctx.Ellipse(anchorX, baseY, radius, baseRy, 0f, 0f, MathF.PI);
         ctx.ClosePath();
         ctx.Fill();
 
@@ -1063,34 +1090,30 @@ public class ConstructiveDrawingToolkit
         ctx.LineWidth = strokeWidth;
         ctx.LineJoin = "round";
 
-        // Contour edges, drawn between the tangent points rather than at centre +/- radius.
+        // Contours. Vertical by construction now that the caps share a horizontal major axis.
         ctx.BeginPath();
-        foreach (var (bottomT, topT) in new[] { (baseLeft, topLeft), (baseRight, topRight) })
-        {
-            var foot = EllipsePoint(baseCentre, baseA, baseB, bottomT);
-            var head = EllipsePoint(topCentre, topA, topB, topT);
-            ctx.MoveTo(foot.X, foot.Y);
-            ctx.LineTo(head.X, head.Y);
-        }
+        ctx.MoveTo(anchorX - radius, baseY);
+        ctx.LineTo(anchorX - radius, topY);
+        ctx.MoveTo(anchorX + radius, baseY);
+        ctx.LineTo(anchorX + radius, topY);
         ctx.Stroke();
 
         // Base contour: only the near half is visible past the body.
         ctx.BeginPath();
-        TraceEllipseArc(ctx, baseCentre, baseA, baseB, baseRight, NearSweepEnd(baseCentre, baseA, baseB, baseRight, baseLeft), true);
+        ctx.Ellipse(anchorX, baseY, radius, baseRy, 0f, 0f, MathF.PI);
         ctx.Stroke();
 
-        // 2. Top cap, whole — its own ellipse, not the base's.
+        // 2. Top cap, whole — its own squash, not the base's.
         ctx.FillStyle = topFill;
         ctx.BeginPath();
-        TraceEllipseArc(ctx, topCentre, topA, topB, 0f, MathF.PI * 2f, true);
-        ctx.ClosePath();
+        ctx.Ellipse(anchorX, topY, radius, topRy, 0f, 0f, MathF.PI * 2f);
         ctx.Fill();
         ctx.Stroke();
 
         ctx.Restore();
     }
 
-    /// <summary>The two vanishing points to take a horizontal circle's conjugate diameters from.</summary>
+    /// <summary>The two vanishing points to take a horizontal circle's foreshortening from.</summary>
     /// <remarks>
     /// A circle has equal radii along <em>any</em> perpendicular pair of ground directions, so either
     /// axis family will do. A one-point grid puts both vanishing points on the centre of vision,
@@ -1113,14 +1136,16 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>
-    /// Conjugate semi-diameters of a horizontal circle centred at <paramref name="centre"/>, scaled so
-    /// the ellipse is exactly <c>2 * radius</c> wide on screen.
+    /// Half the drawn <em>height</em> of a horizontal circle whose drawn half-width is
+    /// <paramref name="radius"/>, centred at <paramref name="centre"/>.
     /// </summary>
     /// <remarks>
-    /// Normalising each cap to the same drawn width is what keeps the contours vertical, as a
-    /// vertical cylinder's silhouette must be; only the flatness is left to vary with height.
+    /// Taken from the ellipse the two ground directions would describe — semi-diameters along each,
+    /// scaled so the horizontal extent comes out at exactly <paramref name="radius"/> — and then only
+    /// its vertical extent is kept, because the cap is drawn axis-aligned. So the foreshortening still
+    /// comes from the grid while the major axis stays square to the cylinder.
     /// </remarks>
-    private static (Point2D A, Point2D B) GroundCircleAxes(Point2D vpL, Point2D vpR, Point2D centre, float radius)
+    private static float GroundCircleSquash(Point2D vpL, Point2D vpR, Point2D centre, float radius)
     {
         static Point2D Unit(Point2D from, Point2D to)
         {
@@ -1138,50 +1163,35 @@ public class ConstructiveDrawingToolkit
         var spread = MathF.Sqrt(uL.X * uL.X + uR.X * uR.X);
         var k = spread < 0.0001f ? radius : radius / spread;
 
-        return (new Point2D(uL.X * k, uL.Y * k), new Point2D(uR.X * k, uR.Y * k));
+        return k * MathF.Sqrt(uL.Y * uL.Y + uR.Y * uR.Y);
     }
 
-    private static Point2D EllipsePoint(Point2D centre, Point2D a, Point2D b, float t) =>
-        new(centre.X + a.X * MathF.Cos(t) + b.X * MathF.Sin(t),
-            centre.Y + a.Y * MathF.Cos(t) + b.Y * MathF.Sin(t));
-
+    /// <summary>The two vanishing points to take a horizontal circle's conjugate diameters from.</summary>
+    /// <remarks>
+    /// A circle has equal radii along <em>any</em> perpendicular pair of ground directions, so either
+    /// axis family will do. A one-point grid puts both vanishing points on the centre of vision,
+    /// which leaves the two directions coincident and collapses the ellipse to a line; the 45-degree
+    /// distance points at <c>cv +/- focalLength</c> are a perpendicular pair in the same plane and
+    /// are not degenerate.
+    /// </remarks>
+    /// <summary>
+    /// Conjugate semi-diameters of a horizontal circle centred at <paramref name="centre"/>, scaled so
+    /// the ellipse is exactly <c>2 * radius</c> wide on screen.
+    /// </summary>
+    /// <remarks>
+    /// Normalising each cap to the same drawn width is what keeps the contours vertical, as a
+    /// vertical cylinder's silhouette must be; only the flatness is left to vary with height.
+    /// </remarks>
     /// <summary>The two parameters at which the ellipse reaches its extreme x — its silhouette edges.</summary>
     /// <remarks>
     /// dx/dt is zero where <c>tan t = b.x / a.x</c>; the two roots are half a turn apart. Returned
     /// left-then-right so callers do not have to compare them again.
     /// </remarks>
-    private static (float Left, float Right) SilhouetteParameters(Point2D a, Point2D b)
-    {
-        var origin = new Point2D(0f, 0f);
-        var t = MathF.Atan2(b.X, a.X);
-        var other = t + MathF.PI;
-        return EllipsePoint(origin, a, b, t).X <= EllipsePoint(origin, a, b, other).X ? (t, other) : (other, t);
-    }
-
     /// <summary>
     /// Which way round to sweep from <paramref name="from"/> to <paramref name="to"/> to take the
     /// near half of the ellipse — the half lower on screen.
     /// </summary>
-    private static float NearSweepEnd(Point2D centre, Point2D a, Point2D b, float from, float to)
-    {
-        var alternative = to > from ? to - MathF.PI * 2f : to + MathF.PI * 2f;
-        var direct = EllipsePoint(centre, a, b, (from + to) / 2f).Y;
-        var around = EllipsePoint(centre, a, b, (from + alternative) / 2f).Y;
-        return direct >= around ? to : alternative;
-    }
-
     /// <summary>Appends an elliptical arc as a polyline; the ellipse is rotated, so ctx.Ellipse cannot carry it.</summary>
-    private static void TraceEllipseArc(CanvasRenderingContext2D ctx, Point2D centre, Point2D a, Point2D b, float from, float to, bool moveFirst)
-    {
-        const int segments = 64;
-        for (var i = 0; i <= segments; i++)
-        {
-            var p = EllipsePoint(centre, a, b, from + (to - from) * (i / (float)segments));
-            if (i == 0 && moveFirst) ctx.MoveTo(p.X, p.Y);
-            else ctx.LineTo(p.X, p.Y);
-        }
-    }
-
     public List<List<Dictionary<string, object?>>> SubdividePerspectiveQuad(object quadObj, int uCount, int vCount)
     {
         if (quadObj is not IList pts || pts.Count < 4)

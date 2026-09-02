@@ -444,6 +444,50 @@ public class HarnessReportedBugTests : TestsRuntime
         Assert.InRange(ink.MaxX - ink.MinX, 118f, 126f);
         Assert.True(ink.MaxY - 450f > 4f, $"the base cap collapsed to a line: {ink.MaxY - 450f}");
     }
+
+    /// <summary>
+    /// A cap's long axis is horizontal, so its topmost point sits over the cylinder's own centre.
+    /// </summary>
+    /// <remarks>
+    /// Norling, <i>Perspective Made Easy</i>, p. 137: the long axis always forms a T with the upright
+    /// line of the cylinder. An earlier fix built each cap from conjugate semi-diameters toward the
+    /// two vanishing points, which is projectively defensible and tilted the cap away from the centre
+    /// of vision — 13.5 px left and 15.5 px right on a 140 px cap, against 0.5 px on axis. At that
+    /// size it reads as a leaning bottle. A real wide-angle projection does tilt a circle off axis,
+    /// but this grid is a screen-space construction rather than a metric camera, so the drawing
+    /// convention wins. **The off-axis cases are the test** — on-axis passed throughout.
+    /// </remarks>
+    [Theory]
+    [InlineData(400)]   // on the centre of vision
+    [InlineData(150)]   // 250px left of it
+    [InlineData(700)]   // 300px right of it
+    public void TestCylinderCapsKeepAHorizontalMajorAxis(float anchorX)
+    {
+        var result = new JsDrawingEngine().Execute($$"""
+            const c = createCanvas(900, 700);
+            const x = c.getContext('2d');
+            x.fillStyle = '#ffffff';
+            x.fillRect(0, 0, 900, 700);
+
+            const grid = Drawing.createPerspectiveGrid(
+                { type: '2point', horizonY: 180, centerOfVisionX: 400, cameraAngleDeg: 45 });
+            // A very short cylinder, so the topmost ink is the top cap's apex and nothing else.
+            x.drawPerspectiveCylinder(grid, {{anchorX.ToString(System.Globalization.CultureInfo.InvariantCulture)}}, 520, 70, 6,
+                { sideFill: '#ff0000', topFill: '#ff0000', strokeColor: '#ff0000' });
+
+            const rows = c.bitmap.rowProfile('#ff0000', { tolerance: 60 });
+            log('APEX ' + rows[0].start + ' ' + rows[0].end);
+            c;
+            """, 900, 700, null, "png", 100);
+
+        Assert.True(result.Success, result.Error);
+        var line = result.Logs.First(l => l.Contains("APEX ", StringComparison.Ordinal));
+        var n = line[(line.IndexOf("APEX ", StringComparison.Ordinal) + 5)..].Trim()
+            .Split(' ').Select(v => float.Parse(v, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+
+        var apex = (n[0] + n[1]) / 2f;
+        Assert.InRange(apex - anchorX, -3f, 3f);
+    }
     #endregion
 
     #region Rim Light Tests

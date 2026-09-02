@@ -80,6 +80,14 @@ public class PolsonManuals
 
             Use them to decide *what* to draw and *why*; use `polson://sdk/*` for the exact call signatures.
 
+            **They are not prescriptive, and where they carry two schools that is deliberate.** Drawing has more
+            than one tradition for most things — Loomis and Reilly construct a figure differently, a fixed
+            armature and a generative subdivision compose a frame differently — and a manual that carried only
+            one would be hiding a choice from you rather than making one for you. Where the sources disagree,
+            each is named with what it is for and which calls implement it. **Choose per drawing, and mixing
+            schools is normal**: proportions from one and construction from another is what working artists do.
+            A canon is a starting position, not a specification.
+
             - `polson://manual/{NN}` — a manual in full.
             - `Search(query)` — ranked passages across all manuals and the SDK reference. **Prefer this** when you
               know the technique but not which manual covers it.

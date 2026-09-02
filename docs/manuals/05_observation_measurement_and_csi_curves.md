@@ -1,14 +1,13 @@
 ﻿# Studio Manual 05: Observation, Measurement & CSI Curves
 
-> **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) — §2
-> from pp. 34–37. **§§1 and 3–5 are not yet re-sourced**; treat those as standard practice pending a
-> citation rather than as verified.
+> **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) — §1
+> from pp. 35–37, §2 from pp. 34–37, §3's contour vocabulary from p. 24. **§§4 and 5 are not yet re-sourced**; treat
+> those as standard practice pending a citation rather than as verified.
 >
-> **§3's "CSI line" is not our term and has no source here.** It came from the withdrawn text, where
-> it named a section. The three primitives it describes — curve, straight, inflection — are ordinary
-> observations about contour and stand on their own, but the *name* travelled with a citation that no
-> longer exists. Rename or re-source it before leaning on it; a vocabulary an agent is taught should be
-> traceable to something.
+> **"CSI" is house vocabulary, not a school**, and §3 now says so. It arrived with the withdrawn text
+> and is baked into the API as the `sCurveTo` / `cCurveTo` aliases, so it is not going anywhere — but
+> it describes the *mark*, where Loomis describes the *edge*, and §3 carries both because a drawing
+> needs both.
 > **Purpose**: Translates foundational drawing techniques (relative distance measurement, plumb lines, the CSI curve grammar, planar forms, and two/three-value light studies) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -18,6 +17,31 @@
 > **Implemented by**: `Drawing.createLoomisHead(...)` returns the unit system as `head.unit`, and `Drawing.computeRelativeDistance(headHeight, pointA, pointB)` measures in head-lengths.
 
 > **Principle**: In drawing, artists do NOT memorize absolute global pixel coordinates. They choose a **single fundamental unit of measure** (the **Head Length**, $H_{\text{head}} = Y_{\text{chin}} - Y_{\text{crown}}$) and derive every other distance as a relative proportion.
+
+> **Source**: Loomis, *Figure Drawing for All It's Worth*, pp. 35–37 — "The John and Mary Problems",
+> "Finding Proportion at Any Spot in Your Picture", "'Hanging' Figures on the Horizon".
+>
+> **A picture has one horizon and one station point.** The horizon *is* the eye or lens level of the
+> observer, so it rises and falls with them — stand and it rises, lie down and it drops, get beneath
+> the subject and it drops below them. You cannot see over it. On open ground or water it is visible;
+> among hills or indoors it usually is not, but your eye level fixes it just the same.
+
+> [!IMPORTANT]
+> **One horizon per picture is a checkable invariant, and the cheapest structural bug to catch.** Every
+> figure and every piece of architecture in a scene must be measured against the *same* `horizonY`. Two
+> `createPerspectiveGrid` calls with different horizons in one image is not a style choice — it is two
+> observers in one picture, and no amount of redrawing will make it settle.
+>
+> This is the same fact Manual 06 §5a states in metres (`CAM.eyeHeight` and `horizonY` are one fact in
+> two units) and Manual 05 §2 states as a check (the horizon must cut similar figures at the same
+> place). Three views of one constraint, which is why it is worth stating three times.
+
+> [!NOTE]
+> Loomis sends the reader to Norling for the perspective itself — *"If you do not understand
+> perspective, there is a good book on the subject, `Perspective Made Easy`, available at most
+> booksellers"* (p. 36). The two sources this studio draws on cite each other, which is a reassuring
+> sign that the figure and perspective halves of these manuals are not being stitched together from
+> incompatible traditions.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -96,6 +120,28 @@ if (!plumb.aligned) log(plumb.message);   // "DRIFT: offset by 18.4px"
 > 1. **C-Curves**: Single continuous arc in one direction.
 > 2. **S-Curves**: Reversing dynamic curves with opposing inflection points.
 > 3. **Straights ("I-Lines")**: Stable structural lines.
+
+> [!NOTE]
+> **Two vocabularies, answering different questions — you want both.** "CSI" describes the **mark you
+> make**: what the pen does between two points, which is why `sCurveTo` and `cCurveTo` exist as
+> aliases on the path API. It has no citation in this studio's reference library; the shapes are
+> ordinary and the acronym is inherited, so treat it as house vocabulary rather than a school.
+>
+> Loomis describes the **edge you are drawing**, which is a different thing and is cited:
+>
+> > **Source**: Loomis, *Figure Drawing for All It's Worth*, p. 24 — "What Is Line?"
+> >
+> > *A line and a contour are not the same.* A piece of wire presents a **line**; a **contour is an
+> > edge**. That edge is either a **sharp limitation** — the edges of a cube — or a **rounded and
+> > disappearing** one, as on a sphere. And contours **pass in front of one another**, which is what
+> > gives an undulating form its depth. The painter can dispense with outline entirely, defining
+> > contours against adjacent masses or building the form in relief with value instead.
+>
+> The practical join: **Loomis tells you which edges deserve a line at all, CSI tells you what to draw
+> once you have decided.** A rounded, disappearing limitation drawn as a hard even outline is the
+> commonest way a construction reads as a cut-out — see the *lost and found* of edges in
+> `polson://manual/07` §1, and prefer `ctx.strokeToPath(...)` or `drawTaperedStroke` where the weight
+> must vary along the edge. Where an edge should disappear, the answer may be no stroke at all.
 
 ```
        C-Curve                  S-Curve                  Straight (I-Line)

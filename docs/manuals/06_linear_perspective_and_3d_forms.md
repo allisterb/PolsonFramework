@@ -1,10 +1,10 @@
 ﻿# Studio Manual 06: Linear Perspective & 3D Form Construction
 
-> **Source Reference**: Ernest R. Norling, *Perspective Made Easy* (Macmillan 1939; Dover 1999) — §4
-> from Step Twelve, pp. 107–113. Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §5 and
-> §5a from pp. 41–42. **§§1–3 are not yet re-sourced**; treat those as standard perspective practice
-> pending a citation rather than as verified. Norling's Steps One and Five–Six cover §1's horizon and
-> two-point setup, and Step Fourteen "Dividing the Circle" bears on §3's cap ellipses — both unread.  
+> **Source Reference**: Ernest R. Norling, *Perspective Made Easy* (Macmillan 1939; Dover 1999) — §1 from Step One, §3 from Step Fourteen, §4
+> from Steps Twelve and Fifteen, pp. 107–147. Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §5 and
+> §5a from pp. 41–42. **§2 is not yet re-sourced**; treat it as standard perspective practice pending
+> a citation rather than as verified. Norling's Steps Five–Six (two vanishing points) and the
+> "Dividing the Circle" pages of Step Fourteen are still unread and bear on §1 and §3.  
 > **Purpose**: Translates linear perspective theory (horizon lines, vanishing points, 3D box projection, cylinder tangent ellipses, diagonal plane subdivision, and convergence testing) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -12,6 +12,29 @@
 ## 1. Linear Perspective Mathematics & Grid Setup
 
 > **Implemented by**: `Drawing.createPerspectiveGrid(options)` → `PerspectiveGrid`, then `Drawing.drawPerspectiveGrid(ctx, grid, options)`. Signatures: `polson://sdk/core/Drawing`; returned model: `polson://sdk/schema/Drawing`.
+
+> **Source**: Ernest R. Norling, *Perspective Made Easy*, Step One — pp. 5, 8, 10.
+>
+> Four definitions, and the whole of `createPerspectiveGrid` rests on them:
+>
+> - **The horizon** is the distant line where earth and sky seem to meet.
+> - **The vanishing point** is the place *on the horizon* where the rails of a track appear to meet.
+> - **The horizon is the height of your eyes**, no matter where you are above the ground.
+> - **The eye-level is the height of your eyes**, no matter where you are.
+>
+> Sit down on the track and your eye-level drops — and the distant horizon drops with it, to meet the
+> change. That is the whole mechanism, and it is why `horizonY` is the first thing a scene decides.
+
+> [!TIP]
+> **`horizonY` is a camera decision, not a compositional one**, and picking it by where the line looks
+> nice in the frame is the commonest way a scene ends up unplaceable. It says where the viewer's eyes
+> are: high on the canvas means a low viewpoint looking up, low means a raised one looking down. Decide
+> where the viewer is standing, then set it — Manual 06 §5a does this explicitly by giving the camera
+> an eye height in metres, and Manual 05 §1 states the constraint that follows (one horizon per
+> picture, because there is one observer).
+>
+> Norling's own exercise is still the fastest way to feel it: look at the same scene from the ground,
+> from a window, and from the top of a building, and watch what moves.
 
 > **Principle**:
 > In 2-point perspective, the **Station Point ($SP$)** is the camera position, $d$ is the focal distance, and $\theta$ is the camera rotation angle relative to the primary plane.

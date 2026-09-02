@@ -1,11 +1,15 @@
-# Session Handoff — 2026-09-01 (fifth session)
+﻿# Session Handoff — 2026-09-02 (fifth and sixth sessions)
 
 State after the session that gave the studio a **window onto runs it does not drive**. It started as
 "can we watch a Claude Code run in the browser" and turned into the discovery that most of what the
 dashboard needed already existed — and that once you can watch a run, you start finding things.
 
-**Tests: 1,194 .NET, 248 Python — all passing.** The previous handoff is superseded; its open items
-are carried forward at the end.
+**Tests: 1,232 .NET — all passing** (Drawing 406, MCPServer 464, CLI 268, ExtendedMind 94).
+The previous handoff is superseded; its open items are carried forward at the end.
+
+> **§12 is the current state** and where a new session should start. §§1–8 are the fifth session
+> (observability, `scriptFile`, the Claude profile); §§9–12 are the sixth (cs-5 findings, encode
+> cost, the Guy exclusion, and re-sourcing the manuals to Loomis, Norling and Faragasso).
 
 ---
 
@@ -620,9 +624,139 @@ directly, as a joint cross-stroke carrying position, **width and angle**.
 
 ---
 
-## 8. Where to pick up
+## 12. Re-sourcing the manuals — the state to pick up from
 
-**Ordered by what would most improve the next run.**
+**Start here.** This section supersedes §11/§11b for anything about the manuals' sources, and is the
+live picture as of 2026-09-02.
+
+### The intent, because it changes how the manuals get written
+
+Polson exists so an agent can be **creative in ways a diffusion model cannot** — by working in
+procedures it can reason about, adapt and combine, rather than in a prompt. So the manuals are
+**not prescriptive**. Where the field has more than one school, carry both, say what each is for, and
+name the SDK calls that implement each path. The agent chooses; it can also take proportions from one
+school and construction from another, which is what working artists do.
+
+The corollary is a rule with teeth: **a manual must not describe a choice the SDK cannot express.**
+Manual 08 presented Loomis-vs-Reilly shoulder widths while `shoulderSpan` was hardcoded — a manual
+inviting judgement the code forbade. That is worse than a prescriptive manual, and the fix is a
+parameter, not a paragraph.
+
+### Sources now in use
+
+`Imaginative Drawing` is **excluded** (§11b, and `CLAUDE.md` §0 — do not re-add it). Three replacements
+are ledger-scanned and clean; the ledger row for each carries its licence and handling.
+
+| Source | Covers |
+| :--- | :--- |
+| **Loomis**, *Figure Drawing for All It's Worth* (1943) | proportion canon, mannequin frame, contour vs line, horizon measurement |
+| **Loomis**, *Creative Illustration* (1947) | tone intensity, key/value, edges, attention devices, informal subdivision, eye level |
+| **Norling**, *Perspective Made Easy* (Dover 1999 / Macmillan 1939) | horizon and VP definitions, cylinders, diagonal division, spacing into depth |
+| **Faragasso**, *Mastering Drawing the Human Figure* (1998) | Reilly-method structure lines and torso construction |
+
+**Loomis cites Norling by name** (*Figure Drawing* p. 36), which is real evidence the figure and
+perspective halves are not being stitched from incompatible traditions.
+
+**Faragasso's rights clause names "information storage and retrieval system"** — so distil and cite,
+but **do not put its OCR into a retrieval corpus**. Same line already drawn for Janson.
+
+All four books are **image-only, no text layer**. OCR (`bin/tesseract`, 200 dpi) is the only route,
+and it is good on prose pages. **Hand-lettered plates defeat it** — Loomis's diagrams especially — so
+render the page and *look* at it rather than trusting the OCR. Every number in Manual 08 §1 was read
+that way.
+
+### Where each manual stands
+
+| Manual | Sourced | Still pending |
+| :--- | :--- | :--- |
+| 05 Observation | §1, §2 (Loomis), §3 contour (Loomis) | §§4, 5 |
+| 06 Perspective | §1, §3, §4 (Norling), §5, §5a (Loomis) | §2 |
+| 07 Lighting | §1 (Loomis, incl. edges) | §§2–4 |
+| 08 Anatomy | §1, §2 (Loomis), §3 (Faragasso) | §4 expressions |
+| 09 Composition | §1, §2, §3 key (Loomis) | §4 |
+
+Every header states which sections are cited and which are pending, so a partial file cannot be
+mistaken for a finished one.
+
+**Negative result worth keeping:** there is **no cast-shadow construction in any of the four books**.
+Manual 07 §2 has no source and none has been invented. Norling's Steps 18–20 are unusual perspective,
+uphill/downhill and mechanical perspective.
+
+### Code changed by the reading
+
+- **`drawPerspectiveCylinder` caps are axis-aligned.** Norling p. 137 — the long axis forms a T with
+  the cylinder's upright line. The previous conjugate-diameter construction tilted the cap away from
+  the centre of vision: measured 0.5 px on axis, **13.5 px** at 250 px left, **15.5 px** at 300 px
+  right on a 140 px cap, which reads as a leaning bottle. Foreshortening still comes from the grid —
+  only the tilt is discarded — and the fix **deleted five helpers**, because an axis-aligned ellipse is
+  what `ctx.Ellipse` draws natively. Pinned by `TestCylinderCapsKeepAHorizontalMajorAxis`, whose
+  off-axis cases are the whole point; the on-axis case passed throughout and caught nothing.
+  A deliberate departure from strict projection — a real wide-angle projection *does* tilt a circle
+  off axis. Right for a screen-space grid; revisit if the toolkit grows a metric camera.
+- **`createMannequinFigure` takes `options.shoulderSpanHeads`** (head units, default `1.8`
+  unchanged). Loomis `2.33` figure-widest / `2.0` cape; Faragasso `2.67`. Three canons, three
+  different measurements, none wrong — and Faragasso adds that proportions *vary greatly in real
+  life*. `TestShoulderSpanFollowsTheChosenCanon` covers all three.
+
+### Two findings that change advice already written
+
+- **Edges are "lost and found"** (Loomis, *Creative Illustration* pp. 102–103). Manual 09 §3 had
+  treated merged values as a defect with a fix; Loomis treats convergence as an *opportunity* to lose
+  an edge and spend the sharpness elsewhere. Both manuals now cross-reference, with the test being
+  what the edge is doing: a merge on the subject's silhouette is a defect, a merge between secondary
+  masses is a saving. Every sharp edge spends attention and there is a fixed amount to spend.
+- **"CSI" is house vocabulary, not a school**, and it is baked into the API as `sCurveTo` / `cCurveTo`.
+  It describes the **mark**; Loomis p. 24 describes the **edge** — a line is a wire, a contour is an
+  edge, either a sharp limitation or a rounded and disappearing one. Manual 05 §3 now carries both,
+  because Loomis tells you which edges deserve a line at all and CSI tells you what to draw once you
+  have decided.
+
+### Capabilities the reading identified and the SDK lacks
+
+Both are described in the manuals with an explicit **"no such call exists yet — do not write one into
+a script expecting it to resolve"**, because `TestEveryManualBindsToRealSdkCalls` failed when a
+proposal was written in call syntax. That guard works; respect it.
+
+1. **Informal subdivision** (Manual 09 §1, Loomis p. 36). A generative armature: cut the space
+   unequally avoiding ½/⅓/¼, one whole-space diagonal, a horizontal where it crosses, then **one
+   diagonal per rectangle, never two** — two would halve it equally, which is what the method avoids.
+   No two spaces come out duplicates. The only genuinely algorithmic composition method here, and
+   `createCompositionGrid` offers four fixed templates and no generator.
+2. **Spacing equal intervals into depth** (Manual 06 §4, Norling p. 113). From two posts, a line from
+   the top of the first through the centre of the second lands where the third goes. Generates a
+   receding rhythm — colonnades, fences, window bays — where `subdividePerspectiveQuad` can only
+   divide a quad you already have.
+
+### Where to pick up
+
+1. **Manual 07 §§2–4 and Manual 09 §4** — the largest remaining gaps. *Creative Illustration*'s colour
+   part is unread and should cover §3's warm/cool rule.
+2. **Manual 08 §4 (expressions)** — no source identified yet in these four books.
+3. **Norling Steps Five–Six** (two vanishing points) for Manual 06 §1, and the "Dividing the Circle"
+   pages of Step Fourteen for §3's cap ellipses.
+4. **The two missing capabilities above**, if a run wants them.
+5. **cs-5's remaining findings**: #4 (joint poser — Loomis's *"never draw the limbs straight and stiff
+   and without spring"* is the design note), #14 + #19 (closed mouth; the trio's proportional data is
+   computed by `createLoomisHead` and discarded by the draw methods — one defect, smaller than either
+   finding assumed), #13/#18 (path recorder). Harness: **A/F** (subagent `findings.md` refusal — needs
+   a design call), **B** (`reference_images/` absent), **#23** (Grep display artifact).
+
+### Two process notes
+
+- **`tests/multi_agent/comic_studio/cs-1/manuals/07_*.md`** is still a tracked, stale copy of the old
+  Guy-citing manual. It duplicates `docs/manuals/` and is an input rather than a run output, so
+  deleting it loses nothing — flagged rather than removed because it sits in a frozen run directory.
+- **Editing `ConstructiveDrawingToolkit.cs` by line number has bitten twice** this session: once from
+  stale offsets after an earlier edit, once from a brace-walker running past an expression-bodied
+  member into the next method. Both times the script's own guard caught it before writing. Match on
+  the signature and handle `=> …;` members.
+
+---
+
+## 8. Where to pick up — *earlier session; see §12 first*
+
+**Ordered by what would most improve the next run.** Items here predate the manual
+re-sourcing work in §12; where the two disagree, §12 is current.
 
 - **Rebuild `bin/cli`.** Most of this session was built with `-p:SkipCopyToBin=true` because a live
   agent session holds it open. `scriptFile`, `InspectScript`, `has`/`suggest`, the shell policy, the

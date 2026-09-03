@@ -107,8 +107,84 @@ session/memory service URIs. A container means we control what is in it, so a .N
 Python is a packaging problem rather than a blocker.
 
 **The constraint that follows:** the generated template is `python:3.11-slim`, and no `--base-image`
-or bring-your-own-Dockerfile flag was found. So write our own Dockerfile (multi-stage: .NET runtime +
-Python + ADK + `bin/cli`) and deploy the image, rather than driving `adk deploy` end to end.
+or bring-your-own-Dockerfile flag exists on any of the three `adk deploy` commands. So `adk deploy`
+cannot be driven end to end — we supply the image.
+
+### 3c. That is not a workaround. `gcloud run deploy` with our own Dockerfile is the documented path
+
+> **Correction, 2026-09-03.** §3b above framed the bring-your-own-image route as a fallback forced by
+> a missing flag. The director pointed at ADK's own Cloud Run guide, and it is better than that: a
+> user-authored Dockerfile is a **first-class, documented deployment method**, not an escape hatch.
+> The guide's words are that it *"requires more manual setup compared to the `adk` command but offers
+> flexibility, particularly if you want to embed your agent within a custom FastAPI application."*
+> Source: `https://adk.dev/deploy/cloud-run/#python---gcloud-cli`. The deploy guides are **not** in the
+> ledgered source tree — they live on the docs site — so this row is fetched documentation rather than
+> read source, and is marked as such.
+
+The mechanism is `google.adk.cli.fast_api.get_fast_api_app(...)`, **verified present in the ledgered
+2.8.0 tree** (`src/google/adk/cli/fast_api.py:95`). It returns an ordinary `FastAPI` object, which the
+guide's `main.py` then serves under plain `uvicorn`. The layout is a normal container project:
+
+```
+main.py            # calls get_fast_api_app(agents_dir=..., web=True) -> FastAPI
+requirements.txt   # ours: src/adk_agent/requirements.txt
+Dockerfile         # ours: multi-stage, .NET runtime + Python + ADK + bin/cli
+capital_agent/     # -> our agent package
+```
+
+```bash
+gcloud run deploy <service> --source . --region $GOOGLE_CLOUD_LOCATION   --project $GOOGLE_CLOUD_PROJECT --allow-unauthenticated   --set-env-vars="GOOGLE_CLOUD_PROJECT=...,GOOGLE_CLOUD_LOCATION=...,GOOGLE_GENAI_USE_ENTERPRISE=..."
+```
+
+**Three consequences, and the third is the one worth having.**
+
+1. **The image is entirely ours**, so .NET runtime + SkiaSharp natives + `bin/cli` alongside Python is
+   a Dockerfile we write rather than a template we fight. `--source .` builds via Cloud Build, and a
+   `Dockerfile` in the directory takes precedence over buildpacks.
+2. **`get_fast_api_app` takes far more than the guide shows.** The 2.8.0 signature carries
+   `url_prefix`, `lifespan`, `allow_origins`, `session_service_uri`, `logo_text` / `logo_image_url`
+   and `web: bool`. `lifespan` is the hook that starts the MCP server as a co-process if stdio
+   spawning turns out to be constrained in the sandbox — which §5 lists as unverified, and this is its
+   remedy.
+3. **It collapses submission requirement #3 into the same artifact.** `src/webapp` is already FastAPI.
+   *"Embed your agent within a custom FastAPI application"* is exactly that case: one container can
+   serve the Polson studio UI at `/` and the ADK API under `url_prefix`, so the hosted judge URL and
+   the agent runtime stop being two deployments. That feeds criterion 2 (Design, 25%) directly.
+
+### 3d. Cloud Run is explicitly sanctioned. The hosting question is closed
+
+§3c left open whether *"powered by Gemini and Google Cloud Agent Builder"* constrained the hosting
+surface as well as the SDK. **It does not.** Two independent checks, both against the contest's own
+pages rather than inference:
+
+**The resources page lists Cloud Run under deployment, describing our exact case.** Under the heading
+*"🚀 Phase 5: Deployment & Safety"*:
+
+> **Logic Hosting: Cloud Run Quickstart** — Fast, serverless deployment for custom agent backends,
+> APIs, and tool servers.
+
+A custom agent backend with a tool server is a literal description of ADK + `bin/cli`. Agent Engine
+appears too (Phase 4, *"Deploying ADK Agents to Agent Engine"*), so both are sanctioned and the choice
+is ours.
+
+**The rules impose no hosting surface on this track.** The only platform requirement is
+*"A submitted Project must run on at least one of the following platforms: web, Android, or iOS."*
+The rules **do** mandate a hosting surface for exactly one track — Replit, whose projects *"must be
+hosted and deployed directly on Replit … Projects not deployed on Replit's platform will not meet this
+requirement"*. That they named one where they meant one, and named none for Parallel, is the argument:
+the silence is deliberate rather than an omission.
+
+> [!NOTE]
+> **Provenance.** §3c and §3d rest on fetched web pages, not on the ledgered source tree. The
+> `get_fast_api_app` mechanism in §3c *was* verified in source; the deployment guidance and these rules
+> quotations were not, and cannot be. Re-check before the submission if anything hinges on them.
+
+**A credential convergence worth noting.** The resources page's Phase 1 points at the *"Gemini
+Enterprise Agent Platform API"*, and ADK's own Dockerfile template sets `GOOGLE_GENAI_USE_ENTERPRISE=1`.
+The only key on this machine — `ApiKeys:GoogleAgentPlatform` in `bin/cli/appsettings.json`, prefix
+`AQ.A`, not a public `AIza` Gemini key — is an Agent Platform credential, which
+`src/webapp/orchestrator/credentials.py` already documents as requiring the enterprise endpoint. So the
+credential we hold is probably the one this contest expects. **Probably: untested against ADK.**
 
 ---
 

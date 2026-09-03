@@ -1,0 +1,28 @@
+# Direct dependencies for the Polson ADK agent (Agentic Cinema entry, Milestone 5).
+#
+# Separate from src/webapp/requirements.in on purpose. Two reasons, both structural:
+#
+#   1. `adk deploy` reads a requirements.txt from the AGENT FOLDER and bakes it into the container
+#      (cli_deploy.py: `RUN pip install -r "/app/agents/{app_name}/requirements.txt"`). So this file
+#      has to exist here regardless of what the webapp does.
+#   2. The Agentic Cinema rules permit only Google Cloud AI tooling at runtime and name `google-adk`
+#      explicitly. google-antigravity is a Google product but is not obviously on that list, so the
+#      shipped tree must not depend on it. Keeping the manifests apart is what makes that checkable
+#      rather than asserted.
+#
+# As with the webapp list: every name here drags in a transitive tree, and the lock diff is the
+# supply chain. Prefer doing without over adding a package.
+
+# The agent framework. Pinned to the exact version ledgered and codepoint-scanned in
+# reference/README.md, so what runs is what was reviewed.
+#   google-adk   https://github.com/google/adk-python
+#
+# The [mcp] extra is what makes McpToolset importable — without it the whole
+# google.adk.tools.mcp_tool package swallows its ImportError and exports nothing (see that
+# package's __init__.py). It adds only `mcp` and `anyio`, both already in the tree.
+#
+# It pulls a substantial base: aiohttp, aiosqlite, authlib, graphviz, opentelemetry-api/sdk,
+# pyyaml, tzlocal, watchdog, and pyopenssl via google-auth[pyopenssl]. It also caps
+# websockets <16, where google-antigravity has no upper bound and the webapp lock currently sits at
+# 16.1.1 — which is precisely why this resolves in its own environment.
+google-adk[mcp]==2.8.0

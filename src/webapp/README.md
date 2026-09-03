@@ -136,6 +136,12 @@ checked by actually running one, because a mock of the SDK only ever confirms th
 The virtual environment itself is at `python/` and is not committed; it is rebuildable from
 `requirements.txt`, which is why the manifest lives here rather than inside it.
 
+> The studio has a **second agent runtime**, ADK, in its own venv (`python-adk/`) with its own lock at
+> `src/adk_agent/requirements.txt`. It is deliberately separate — ADK caps `websockets<16` where
+> `google-antigravity` does not — and it reuses this directory's `check_python.py` and `pip.ini` as
+> the one canonical copy. See [`src/adk_agent/README.md`](../adk_agent/README.md). You pick one
+> runtime per run; you do not need both.
+
 `pip.ini` is kept here rather than only in the venv for the same reason. pip reads it from the venv
 root, but `python -m venv` writes a `.gitignore` containing `*` into that directory and rewrites it
 on every rebuild — so a copy living only there is both uncommittable and destroyed by the next

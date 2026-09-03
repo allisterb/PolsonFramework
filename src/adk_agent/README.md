@@ -55,6 +55,47 @@ nightmarket: root=facilitator subs=4
   - critic     'Vision Critic Agent (Adversarial Art Director)'
 ```
 
+### Peeking, and the two artifact stores
+
+**ADK artifacts are not a file path — they are versioned entities.** `save_artifact` returns an
+integer version, and successive saves under one filename accumulate rather than overwrite. They are
+scoped to app + user + session by default (a `user:` filename prefix widens that to all of a user's
+sessions), and `LoadArtifactsTool` is what puts one into the model's context as a real `inline_data`
+Part. The store is chosen by URI: `memory://`, `file://` or `gs://`.
+
+So there are **two** artifact stores here and both are needed:
+
+| | `projects/<id>/artifacts/` | ADK artifact service |
+| :--- | :--- | :--- |
+| Written by | the sandbox, via `outFile` | the agent, via `peek` |
+| Read by | people, the web app, replay | the model |
+| Versioned | **no** — same name overwrites | yes, automatically |
+| Lives in | the project directory | `memory://`, `file://`, `gs://` |
+
+`main.py` defaults the second to `file://src/adk_agent/artifact_versions` rather than memory,
+because the versions are the point. Use `gs://` on Cloud Run, whose filesystem does not outlive the
+container.
+
+#### Why `peek` had to exist
+
+The first real run wrote a render to disk and then reported *"Here is what I see"* followed by seven
+numbered headings with **empty bodies**. It had no way to look. The Polson tools return JSON, and
+ADK's MCP bridge ends with `response.model_dump(mode="json")` — so even a proper MCP image content
+block would arrive as base64 inside text, costing the window without being viewable. **The fix could
+not live in the MCP server.** `peek` is an ADK `FunctionTool` that reads a rendered image from the
+project, saves it as an ADK artifact, and lets `LoadArtifactsTool` inject it.
+
+With it, the same brief produced three renders under one filename at versions 0, 1 and 2, and
+observations like *"the overlapping outlines of the pages intersected... a busy, distracting grid"*
+and a measured *"only 32px"* gap — where before there was nothing.
+
+> [!NOTE]
+> **What peeking fixed and what it did not.** It fixed *cannot see at all*. It did not fix the
+> agent's willingness to describe its own output in brochure language — the same run called a small
+> gold squiggle *"an intentional, craftsman's knot"*. And the mark from the earlier, blind run was
+> arguably the better one, on a different prompt. Peeking is necessary for the perception-action
+> loop; it is not by itself a critical faculty, and it should not be sold as one.
+
 ### Shared and sequential
 
 **All agents in an app share one toolset**, so one `Polson.CLI.dll server` process and one `Session`

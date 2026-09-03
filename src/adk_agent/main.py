@@ -58,6 +58,20 @@ def _origins() -> list[str] | None:
 #: swap for `postgresql://` or an Agent Engine URI when there is more than one instance.
 SESSION_SERVICE_URI = os.environ.get("POLSON_SESSION_SERVICE_URI", "").strip() or None
 
+#: Where peeked renders are versioned. ADK recognises three schemes — `memory://`, `file://` and
+#: `gs://` — and the default here is `file://` rather than memory because the versions are the
+#: point: `outFile` overwrites, so a re-render under one filename destroys what came before, and
+#: this store is the only place the progression survives. Use `gs://` on Cloud Run, where a
+#: container's filesystem does not outlive it.
+#:
+#: This is a *second* artifact store, not a replacement for `projects/<id>/artifacts/`. That one
+#: stays the browsable, replayable record a person opens; this one holds versioned blobs the model
+#: is shown. Neither substitutes for the other.
+ARTIFACT_SERVICE_URI = (
+    os.environ.get("POLSON_ARTIFACT_SERVICE_URI", "").strip()
+    or (Path(__file__).resolve().parent / "artifact_versions").as_uri()
+)
+
 #: Serve ADK's bundled console. On by default because it is the fastest way to *watch* a run — it
 #: renders the event stream, the tool calls and their arguments, and the agent graph, which is
 #: exactly the trace `CLAUDE.md` §6 asks a run to leave. Turn it off for a public deployment where
@@ -67,6 +81,7 @@ SERVE_CONSOLE = _flag("POLSON_SERVE_CONSOLE", True)
 app: FastAPI = get_fast_api_app(
     agents_dir=AGENTS_DIR,
     session_service_uri=SESSION_SERVICE_URI,
+    artifact_service_uri=ARTIFACT_SERVICE_URI,
     allow_origins=_origins(),
     web=SERVE_CONSOLE,
 )

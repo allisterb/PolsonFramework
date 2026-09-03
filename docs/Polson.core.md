@@ -977,7 +977,7 @@ Also accessible via `Skia.Drawing`.
 
 - `Drawing.drawMannequinWireframe(ctx: CanvasRenderingContext2D, figureObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders non-repro blue gesture and joint circle hinges.
 - `Drawing.drawMannequinSolid(ctx: CanvasRenderingContext2D, figureObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders shaded volumetric 3D masses (cranial sphere, ribcage egg, pelvic basin, limb cylinders, and box hands/feet).
-- `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders pectorals, deltoids, clavicle handlebars, neck sternocleidomastoid cords, and rectus abdominis six-pack grid.
+- `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders clavicle handlebars, pectorals, deltoids, sternocleidomastoid cords, and the rectus abdominis as **eight** sections whose rows rise toward a peak above a flat row at the navel. The active side is read off the figure's own `shoulderTiltDeg` and compressed, per Hampton's squash/stretch rule — see `polson://manual/08` §3a. Deltoids and sternomastoid were documented here long before they were drawn; both landed 2026-09-02.
 
 ### Hands
 

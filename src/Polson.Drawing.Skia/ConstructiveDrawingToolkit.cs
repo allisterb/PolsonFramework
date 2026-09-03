@@ -2348,9 +2348,22 @@ public class ConstructiveDrawingToolkit
 
         var sternum = ExtractPoint(fig["sternum"]);
         var navel = ExtractPoint(fig["navel"]);
+        var neck = ExtractPoint(fig["neck"]);
         var clavicles = JsInterop.AsDict(fig["clavicles"]);
         var leftClav = ExtractPoint(clavicles?["left"]);
         var rightClav = ExtractPoint(clavicles?["right"]);
+        var leftArm = JsInterop.AsDict(fig["leftArm"]);
+        var rightArm = JsInterop.AsDict(fig["rightArm"]);
+
+        // Hampton's active/passive rule (Figure Drawing: Design and Invention, "Anatomy and Motion"):
+        // an active shape squashes, a passive one stretches, and drawing them symmetrically is what
+        // kills the gesture. The pose already says which side is which - the shoulder line tilts down
+        // toward the closed side - so the compression is read off the figure rather than asked for.
+        var shoulderDrop = rightClav.Y - leftClav.Y;
+        var tiltSpan = MathF.Max(H * 0.5f, MathF.Abs(rightClav.X - leftClav.X));
+        var squash = MathF.Max(-0.35f, MathF.Min(0.35f, shoulderDrop / tiltSpan));
+        var leftScale = 1f - squash;       // shoulder down on the right => right side compresses
+        var rightScale = 1f + squash;
 
         ctx.Save();
         ctx.StrokeStyle = strokeColor;
@@ -2368,21 +2381,20 @@ public class ConstructiveDrawingToolkit
         var pecY = sternum.Y + H * 0.55f;
         var pecW = H * 0.65f;
 
-        // Left Pectoral
-        ctx.BeginPath();
-        ctx.MoveTo(sternum.X, sternum.Y + 8f);
-        ctx.LineTo(sternum.X, pecY);
-        ctx.QuadraticCurveTo(sternum.X - pecW * 0.5f, pecY + 6f, leftClav.X + 8f, pecY - 8f);
-        ctx.LineTo(leftClav.X + 4f, leftClav.Y + 8f);
-        ctx.Stroke();
+        // Hampton's pectoral is a fan whose widest part is low, near the nipple, and whose tail wraps to
+        // the front of the humerus. The active side keeps less of that width; the passive side spreads.
+        void Pectoral(Point2D clav, float dir, float scale)
+        {
+            ctx.BeginPath();
+            ctx.MoveTo(sternum.X, sternum.Y + 8f);
+            ctx.LineTo(sternum.X, pecY);
+            ctx.QuadraticCurveTo(sternum.X + dir * pecW * 0.5f * scale, pecY + 6f, clav.X - dir * 8f, pecY - 8f);
+            ctx.LineTo(clav.X - dir * 4f, clav.Y + 8f);
+            ctx.Stroke();
+        }
 
-        // Right Pectoral
-        ctx.BeginPath();
-        ctx.MoveTo(sternum.X, sternum.Y + 8f);
-        ctx.LineTo(sternum.X, pecY);
-        ctx.QuadraticCurveTo(sternum.X + pecW * 0.5f, pecY + 6f, rightClav.X - 8f, pecY - 8f);
-        ctx.LineTo(rightClav.X - 4f, rightClav.Y + 8f);
-        ctx.Stroke();
+        Pectoral(leftClav, -1f, leftScale);
+        Pectoral(rightClav, 1f, rightScale);
 
         // 3. Linea Alba & Rectus Abdominis Six-Pack
         ctx.BeginPath();
@@ -2390,14 +2402,53 @@ public class ConstructiveDrawingToolkit
         ctx.LineTo(navel.X, navel.Y + H * 0.4f);
         ctx.Stroke();
 
-        for (var i = 1; i <= 2; i++)
+        // Hampton: the abdominal group holds EIGHT sections, and the row at the navel is the straight
+        // one - the rows above it progressively rise to a peak. Two flat tiers used to be drawn here,
+        // which is a six-pack with no gesture in it at all.
+        var abHalf = H * 0.35f;
+        for (var i = 0; i < 4; i++)
         {
-            var tierY = pecY + (navel.Y - pecY) * (i * 0.33f);
+            var tierY = navel.Y - (navel.Y - pecY) * (i * 0.20f);
+            var rise = abHalf * 0.22f * i;                  // the navel row is flat; each row above bows more
             ctx.BeginPath();
-            ctx.MoveTo(sternum.X - H * 0.35f, tierY);
-            ctx.LineTo(sternum.X + H * 0.35f, tierY);
+            ctx.MoveTo(sternum.X - abHalf * leftScale, tierY);
+            ctx.QuadraticCurveTo(sternum.X, tierY - rise * 2f, sternum.X + abHalf * rightScale, tierY);
             ctx.Stroke();
         }
+
+        // 4. Sternocleidomastoid. Hampton's shape is a baseball bat running diagonally from the
+        // manubrium to the base of the skull, behind the ear - and it is never drawn symmetrically,
+        // because one side is always higher.
+        void Sternomastoid(Point2D clav, float dir, float scale)
+        {
+            var top = new Point2D(neck.X + dir * H * 0.16f, neck.Y - H * 0.10f * scale);
+            var foot = new Point2D(sternum.X + dir * H * 0.06f, sternum.Y);
+            ctx.BeginPath();
+            ctx.MoveTo(top.X, top.Y);
+            ctx.QuadraticCurveTo(neck.X + dir * H * 0.10f, (top.Y + foot.Y) * 0.5f, foot.X, foot.Y);
+            ctx.Stroke();
+        }
+
+        Sternomastoid(leftClav, -1f, leftScale);
+        Sternomastoid(rightClav, 1f, rightScale);
+
+        // 5. Deltoid. Hampton's shape is an inverted triangle from the shoulder girdle down to an
+        // insertion about halfway along the upper arm; from the front it is the thin version of it.
+        void Deltoid(Point2D clav, IDictionary? arm, float dir)
+        {
+            var shoulder = ExtractPoint(arm?["shoulder"]);
+            var elbow = ExtractPoint(arm?["elbow"]);
+            var insert = new Point2D(shoulder.X + (elbow.X - shoulder.X) * 0.42f, shoulder.Y + (elbow.Y - shoulder.Y) * 0.42f);
+
+            ctx.BeginPath();
+            ctx.MoveTo(clav.X, clav.Y);
+            ctx.QuadraticCurveTo(shoulder.X + dir * H * 0.40f, shoulder.Y + H * 0.14f, insert.X, insert.Y);
+            ctx.QuadraticCurveTo(shoulder.X + dir * H * 0.03f, (shoulder.Y + insert.Y) * 0.5f, clav.X, clav.Y);
+            ctx.Stroke();
+        }
+
+        Deltoid(leftClav, leftArm, -1f);
+        Deltoid(rightClav, rightArm, 1f);
 
         ctx.Restore();
     }

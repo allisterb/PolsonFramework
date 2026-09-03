@@ -3,7 +3,9 @@
 > **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) —
 > §1 from p. 26 and p. 33, §2 from pp. 38–40. Jack Faragasso, *Mastering Drawing the Human Figure*
 > (Stargarden Press, 1998) — §3 from pp. 74 and 93–94. Andrew Loomis, *Drawing the Head and Hands*
-> (Viking Press, 1956) — §4 from pp. 45–47 and 51, Plates 20–22 and 27–28. **All four sections
+> (Viking Press, 1956) — §4 from pp. 45–47 and 51, Plates 20–22 and 27–28. Michael Hampton,
+> *Figure Drawing: Design and Invention* (2009) — §3a's gesture/shape/volume method and the
+> active/passive rule, from "Anatomy and Motion" and the Anatomy chapter. **All sections
 > are now cited**, and §4's "6 universal patterns" framing is withdrawn — see the section itself.  
 > **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and facial expression built from the muscles that make it) into algorithmic JavaScript Canvas2D / Skia code.
 
@@ -163,12 +165,122 @@ The two secondary forms are the useful idea for us: the torso is not one mass bu
 lower one meeting at the waist, which is what lets it bend and twist without the parts sliding apart.
 
 > **Principle**:
-> When detailing the torso over the mannequin foundation, 5 muscle landmarks define the silhouette:
-> 1. **Clavicles (Collarbones)**: S-curved handlebars connecting the sternal notch to the shoulder caps.
-> 2. **Deltoids (Shoulder Caps)**: Inverted teardrop muscles wrapping around the upper arm.
-> 3. **Pectoralis Major (Chest Plates)**: Square/fan-shaped plates inserting directly into the humerus bone.
-> 4. **Sternocleidomastoid (Neck V-Tendons)**: Prominent diagonal cords running from the mastoid process behind the ear down to the sternum.
-> 5. **Rectus Abdominis (Core 6-Pack Grid)**: Divided into 3 horizontal tiers by tendinous inscriptions.
+> Five landmarks define the torso's silhouette over the mannequin foundation: the **clavicles**, the
+> **deltoids**, the **pectoralis major**, the **sternocleidomastoid**, and the **rectus abdominis**.
+> §3a takes each of them through Hampton's three passes, which is a more useful way to hold them than
+> a list of shapes.
+
+---
+
+---
+
+## 3a. Gesture, Shape, Volume — Three Passes Per Muscle
+
+> **Implemented by**: `Drawing.drawTorsoMusculature(ctx, figure, options)` draws all five, and reads
+> the active side off the figure's own `shoulderTiltDeg` — see the squash rule below. The mannequin it
+> draws over comes from `Drawing.createMannequinFigure(...)`.
+
+> **Source**: Michael Hampton, *Figure Drawing: Design and Invention* (2009) — "Anatomy and Motion"
+> for the governing rule, then one gesture/shape/volume trio per muscle through the Anatomy chapter.
+
+**Hampton studies every muscle three times, in a fixed order, and the order is the method:**
+
+| Pass | The question it answers | What you draw |
+| :--- | :--- | :--- |
+| **Gesture** | What does this muscle *do*? | A single line — a C or an S — plus where it starts and ends |
+| **Shape** | What does it look like, simplified? | One memorable silhouette you could name |
+| **Volume** | How does it sit in space, and how does the action change it? | The form wrapped in perspective |
+
+The sequence matters because each pass constrains the next. **The muscle's action decides whether its
+gesture is a C or an S** — Hampton says outright that the description of what the muscle does is what
+you look for when deciding between them — and the shape is then that gesture given a body, and the
+volume is that shape given depth. Reversed, you get a correctly-shaped muscle doing nothing.
+
+### The rule that governs all of them
+
+> **"S" curve = stretch, or a passive anatomical shape. "C" curve = pinch, or an active one.**
+
+An **active** shape takes its basic design and shows it **squashed** — more extreme action, more
+exaggerated compression. A **passive** shape is **stretched**, elongated. Hampton's argument for it is
+not decorative: it is what keeps the believable **asymmetry** in a drawing, and it is how the mechanics
+of the body get described rather than merely depicted.
+
+> [!IMPORTANT]
+> **This is the same C/S vocabulary as Manual 05 §3, applied to anatomy instead of contour** — one
+> author, one system, used at two scales. The line you choose for a muscle is the same decision as the
+> line you choose for a silhouette, and it is made from the pose either way.
+>
+> **The toolkit reads the active side off the pose rather than asking for it.** The shoulder line tilts
+> down toward the closed side, so `drawTorsoMusculature` derives a compression factor from the
+> figure's own clavicle heights and applies it to the pectorals, the abdominal rows and the
+> sternomastoid. Set `shoulderTiltDeg` on the mannequin and the musculature follows;
+> `TestTorsoMusculatureRespondsToTheShoulderTilt` fails if it stops following.
+
+### The five, through the three passes
+
+**Sternocleidomastoid**
+
+- *Gesture* — pulls the head and neck forward and rotates the head laterally. Runs from the interior
+  of the manubrium and clavicle up to the skull **behind the ear**.
+- *Shape* — a **baseball bat**, set on a diagonal from the manubrium to the base of the skull. Hampton
+  is explicit that it must **not** be drawn symmetrically: *one side of the shape is always higher*.
+- *Volume* — wraps around the **cylinder of the neck** while moving back in space, which is what states
+  the distance from manubrium to skull base.
+
+**Pectoralis major**
+
+- *Gesture* — pulls the arm forward across the chest and rotates it medially. Origin along the medial
+  half of the clavicle, the sternum, and the cartilages of the first six or seven ribs; inserts at the
+  bicipital groove on the front of the humerus.
+- *Shape* — a **fan** of overlapping clavicular, sternocostal and abdominal sections, or as Hampton
+  puts it more usefully, **a goldfish with its head missing**: the flat cut sits along the sternum, the
+  tail wraps forward to the humerus.
+- *Volume* — a **small box sitting on the rib cage**, widest low down near the nipple. **Arm raised:**
+  the volume spreads evenly and the corner softens, the tail unwrapping and elongating. **Flexed:** it
+  peaks, and the width becomes more noticeable.
+
+**Deltoid**
+
+- *Gesture* — three heads doing three jobs: anterior raises the arm forward, acromial pulls it away
+  from the body, posterior pulls it back. Its origin is one continuous line along the last third of the
+  clavicle, the acromion, and the lower edge of the spine of the scapula; it inserts on the outside of
+  the humerus **about halfway down the upper arm**.
+- *Shape* — from the side, an **upside-down triangle**; from front or back, the same triangle much
+  thinner.
+- *Volume* — wrap the **insertion point in the same perspective as the direction of the arm**, and let
+  the origin reflect the perspective of the upper body as it pulls away from the shoulder girdle.
+
+**Rectus abdominis**
+
+- *Gesture* — flexes the trunk at the lumbar vertebrae. From the base of the pubic bone up into the
+  surfaces of the fifth, sixth and seventh ribs.
+- *Shape* — a **bullet**: the curved end fits into the pelvis, the flat end lies along the ribs above
+  the thoracic arch. **Eight sections**, not six — and the row at the navel is the **straight** one,
+  with the rows above it progressively **rising to a peak**. As the trunk moves it pinches, stretches,
+  or aids a twist.
+- *Volume* — a **very thin side plane** is what states its depth; the whole group resolves to a
+  flattened box.
+
+**Clavicles** — Faragasso's warning in §3 still governs: they are *seldom horizontal*, so the shoulder
+axis and the collarbones are two different lines and must stay separate.
+
+> [!NOTE]
+> **Two corrections this section made to the toolkit, both worth knowing:**
+>
+> - **The abdominal grid was six sections in two flat tiers.** Hampton has eight, with the navel row
+>   flat and each row above bowing further. Flat tiers are a six-pack with no gesture in it, and that
+>   is what was being drawn.
+> - **The deltoids and sternomastoid were not drawn at all.** The SDK reference had promised both
+>   since it was written; `drawTorsoMusculature` rendered clavicles, pectorals and the tiers and
+>   stopped. `TestTorsoMusculatureReachesTheShouldersAndTheNeck` now pins the promise, and it fails if
+>   either muscle goes missing again.
+
+> [!TIP]
+> **The three passes are a schedule for a multi-stage run, not just a way of studying.** A gesture pass
+> is one line per muscle and costs almost nothing to render; a shape pass commits to silhouettes; a
+> volume pass is where the drawing gets expensive. Running them as three stages — with
+> `Stage.begin('Gesture')` and a cheap draft render at each — is how a figure gets checked before it
+> gets costly. Manual 18 covers staging; Manual 05 §5 covers drafting small.
 
 ---
 

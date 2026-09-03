@@ -657,7 +657,7 @@ were added on 2026-09-02 and between them closed every gap the table below had r
 | **Loomis**, *Successful Drawing* (1951) | the three laws of light, cast-shadow projection, planes, the five P's, lighting consistency |
 | **Loomis**, *The Eye of the Painter* (1961) | shadow colour as cause and effect, the primaries rule, four-value pattern, concentration of chroma |
 | **Loomis**, *Drawing the Head and Hands* (1956) | the muscles of expression, the sharp/round mouth corner, hand block forms and proportions |
-| **Hampton**, *Figure Drawing: Design and Invention* (2009) | the C/straight/S line set and the wrapping line, head proportions by recursive halving, the 3:2 phalanx ratio |
+| **Hampton**, *Figure Drawing: Design and Invention* (2009) | the C/straight/S line set and the wrapping line, head proportions by recursive halving, the 3:2 phalanx ratio, the gesture/shape/volume method and the active/passive squash rule |
 
 **Loomis cites Norling by name** (*Figure Drawing* p. 36), which is real evidence the figure and
 perspective halves are not being stitched from incompatible traditions.
@@ -924,6 +924,30 @@ the argument for reading across schools rather than deeper into one.
    fifth too long. `CreateHandFigure` now uses his, and Loomis's little-finger *reach* ("just reaches the top
    knuckle of the third finger") became **computable** rather than guessed — the test asserts an
    equality now instead of a tolerance band.
+
+4. **It supplied a method, not just facts.** Hampton studies every muscle three times in a fixed
+   order — **gesture** (what it does, which decides whether its line is a C or an S), **shape** (one
+   nameable silhouette: the sternomastoid is a baseball bat, the pectoral a goldfish with its head
+   missing, the rectus a bullet), **volume** (how it sits in space and how the action displaces it).
+   Manual 08 §3a is that method, applied to the five muscles `drawTorsoMusculature` draws. The order
+   is the point: reversed, you get a correctly-shaped muscle doing nothing.
+
+   Writing it up found two defects in the call it documents:
+
+   - **The deltoids and sternomastoid were never drawn.** `Polson.core.md` had promised both since it
+     was written; the code rendered clavicles, pectorals and two flat abdominal tiers and stopped.
+     Both are now implemented from Hampton's shapes, and
+     `TestTorsoMusculatureReachesTheShouldersAndTheNeck` pins the promise — verified by commenting the
+     two calls out and watching it fail.
+   - **The abdominal grid was a six-pack in two flat tiers.** Hampton has **eight** sections, with the
+     row at the navel flat and each row above bowing progressively toward a peak. Flat tiers are a
+     six-pack with no gesture in them.
+
+   His governing rule is also now expressible rather than only describable: **S curve = stretch or
+   passive, C curve = pinch or active**, with active shapes squashed and passive ones stretched.
+   `drawTorsoMusculature` derives the compression from the figure's own clavicle heights, so setting
+   `shoulderTiltDeg` moves the musculature with the pose — which is the same C/S decision as Manual 05
+   §3, one author, one system, used at two scales.
 
 He also **disagrees** with Loomis on the hand's split (0.50/0.50 against 0.48/0.52) and adds a fourth
 line type, the **wrapping line**, which `Drawing.drawCrossContourHatch(...)` already draws. Manual 19

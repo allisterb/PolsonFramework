@@ -322,6 +322,91 @@ public class DrawingToolkitTests : TestsRuntime
     }
     #endregion
 
+    #region Torso Musculature Tests
+    /// <summary>
+    /// Renders a mannequin, then the same one with musculature over it, and reports where the two
+    /// differ. Used to check that a muscle is drawn where it should be rather than not at all.
+    /// </summary>
+    private static Dictionary<string, object> MusculatureFootprint(float shoulderTiltDeg)
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var figure = toolkit.CreateMannequinFigure(250f, 60f, 340f, new Dictionary<string, object?>
+        {
+            ["shoulderTiltDeg"] = shoulderTiltDeg
+        });
+
+        SkiaBitmapWrapper Render(bool withMuscles)
+        {
+            var canvas = new SkiaCanvas(500, 460);
+            var ctx = canvas.GetContext("2d");
+            ctx.FillStyle = "#ffffff";
+            ctx.FillRect(0, 0, 500, 460);
+            toolkit.DrawMannequinWireframe(ctx, figure, null);
+            if (withMuscles) toolkit.DrawTorsoMusculature(ctx, figure, null);
+            return canvas.ToBitmap();
+        }
+
+        return Render(false).Diff(Render(true), null);
+    }
+
+    /// <summary>
+    /// The SDK reference has always said this call renders deltoids and sternomastoid cords. Until
+    /// 2026-09-02 it drew neither — only clavicles, pectorals and two flat abdominal tiers — so the
+    /// promise is now pinned rather than left to the prose.
+    /// </summary>
+    [Fact]
+    public void TestTorsoMusculatureReachesTheShouldersAndTheNeck()
+    {
+        var diff = MusculatureFootprint(0f);
+        Assert.False((bool)diff["identical"], "the musculature pass drew nothing at all.");
+
+        var bounds = (Dictionary<string, object>)diff["bounds"]!;
+        var left = Convert.ToSingle(bounds["x"]);
+        var width = Convert.ToSingle(bounds["width"]);
+        var top = Convert.ToSingle(bounds["y"]);
+
+        // The deltoids put ink well outside the ribcage on both sides of the centre line at x=250.
+        Assert.True(left < 210f, $"nothing was drawn out at the left shoulder (leftmost ink at {left:F0}).");
+        Assert.True(left + width > 290f, $"nothing was drawn out at the right shoulder (rightmost ink at {left + width:F0}).");
+
+        // The sternomastoid runs up into the neck, above where the clavicles sit.
+        var figure = new ConstructiveDrawingToolkit().CreateMannequinFigure(250f, 60f, 340f, null);
+        var neckY = Convert.ToSingle(((Dictionary<string, object?>)figure["neck"]!)["y"]);
+        Assert.True(top <= neckY + 4f, $"nothing was drawn up at the neck (topmost ink at {top:F0}, neck at {neckY:F0}).");
+    }
+
+    /// <summary>
+    /// Hampton's active/passive rule: an active shape squashes and a passive one stretches, so a tilted
+    /// figure must not get the same musculature as an upright one. Drawing them symmetrically is what
+    /// kills the gesture, and it is invisible in a still image unless something asserts on it.
+    /// </summary>
+    [Fact]
+    public void TestTorsoMusculatureRespondsToTheShoulderTilt()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+
+        SkiaBitmapWrapper Render(float tilt)
+        {
+            var figure = toolkit.CreateMannequinFigure(250f, 60f, 340f, new Dictionary<string, object?>
+            {
+                ["shoulderTiltDeg"] = tilt
+            });
+            var canvas = new SkiaCanvas(500, 460);
+            var ctx = canvas.GetContext("2d");
+            ctx.FillStyle = "#ffffff";
+            ctx.FillRect(0, 0, 500, 460);
+            toolkit.DrawTorsoMusculature(ctx, figure, null);
+            return canvas.ToBitmap();
+        }
+
+        // Opposite tilts are mirror poses, so the musculature must differ between them.
+        var diff = Render(20f).Diff(Render(-20f), null);
+        Assert.False((bool)diff["identical"], "the musculature ignored the pose's tilt entirely.");
+        Assert.True(Convert.ToSingle(diff["similarity"]) < 0.999f,
+            "the musculature barely moved with the tilt; the squash/stretch is not reaching it.");
+    }
+    #endregion
+
     [Fact]
     public void TestLoomisHeadParametricCalculation()
     {

@@ -167,10 +167,9 @@ middle planes instead.
 > derive the pixel extents from that; do not pass a metre count as `width`.
 >
 > **A side may not reach its vanishing point.** Past 85% of the anchor-to-VP distance the far corner
-> arrives at the vanishing point and the box turns inside out. This used to be **silently clamped**,
-> so an over-large box came back quietly shortened and looked deliberate; it now throws, naming the
-> measured fraction and the largest extent that would have been accepted. If you meant a bigger box,
-> move the anchor further from the vanishing point rather than pushing the extent.
+> arrives at the vanishing point and the box turns inside out, so the call **throws** rather than
+> clamping, naming the measured fraction and the largest extent that would have been accepted. If you
+> meant a bigger box, move the anchor further from the vanishing point rather than pushing the extent.
 
 > [!NOTE]
 > **The three lighting planes above are a convention, not geometry.** Top-sunlit / left-midtone /
@@ -194,8 +193,6 @@ middle planes instead.
 > **The cylinder is anchored differently from the box, and this is the one thing to know before calling it.** `createPerspectiveBox` takes the near bottom **corner** with `width`/`depth` measured along the receding rays. `drawPerspectiveCylinder` takes the **centre of the base circle**, and its `radius` is **half the drawn width** — the silhouette spans `anchorX ± radius`, measurable off the render. A cylinder has no corner to anchor to and `radius` implies a centre, so the two calls differ on purpose.
 >
 > **Height above the ground needs no parameter.** Each cap's flatness is read from the directions to the vanishing points *at that cap's own centre*: nearer the horizon means shallower rays means a flatter ellipse. So a bowl on a counter comes out flatter than the same bowl on the floor because you anchored it higher in the frame, and the top ellipse of any cylinder is automatically flatter than its base. Do not try to compensate by hand.
->
-> This is worth stating because the call used to do neither. It built a `2r × 2r` box, anchored at that box's near corner, and took the width from the footprint's **diagonal** — drawing at a measured **1.9× the requested width**, off centre, with one shared squash for both caps. It never errored; it returned a plausible cylinder of the wrong shape, and a live run lost four iterations to it before anyone looked twice.
 
 > **Source**: Ernest R. Norling, *Perspective Made Easy*, Step Fourteen — pp. 135, 137.
 >

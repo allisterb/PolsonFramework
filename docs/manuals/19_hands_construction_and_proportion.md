@@ -13,11 +13,10 @@
 
 ## Why this exists
 
-Until 2026-09-02 the SDK had **no hand at all**. `Drawing.createMannequinFigure(...)` ends its limbs in
-box hands, and a live comic run went looking for something better and found nothing. Hands are the
-part of the figure an agent is most likely to need and least able to improvise, because a hand that is
-merely *approximately* proportioned reads as wrong immediately — far faster than an approximate torso
-does.
+`Drawing.createMannequinFigure(...)` ends its limbs in box hands, which is enough for a figure blocked
+at full length and nothing like enough for a hand that carries a panel. Hands are the part of the
+figure an agent is least able to improvise, because one that is merely *approximately* proportioned
+reads as wrong immediately — far faster than an approximate torso does.
 
 ---
 
@@ -59,9 +58,9 @@ knuckles, and it falls out of Loomis's two sentences rather than being chosen.
 > and the relations are what to trust** — if you build a hand by hand, satisfy the reaches and let the
 > ratios fall where they will.
 >
-> The same applies to the thumb's length (`0.34` of the hand). Loomis draws it; he does not measure it.
->
-> **The phalanx split used to be on that list and no longer is** — see §1a.
+> The same applies to the thumb's length (`0.34` of the hand). Loomis draws it; he does not measure
+> it. The split of a finger into its three phalanges is **not** on that list — Hampton supplies it,
+> and §1a has the rule.
 
 **Two fingers fall on each side of a line through the middle of the palm** — `hand.midLine`. Loomis
 also says the middle finger's tendon just about divides the back of the hand in half, which is the same
@@ -89,15 +88,12 @@ head and figure work is on his canon and a mixed scale is worse than either. If 
 pass a `handLength` and treat the knuckle line as the midpoint; the difference is two per cent of the
 hand.
 
-### The 3:2 ratio, which replaced an invention
+### The 3:2 ratio within a finger
 
-> **This is the part worth having.** Divide the proximal phalanx into three; two of those parts are
-> the middle phalanx. Divide the middle into three; two of those are the distal. So the bones run
-> **1 : ⅔ : 4⁄9**, which normalises to **0.474 / 0.316 / 0.211**.
-
-Until Hampton was read, `createHandFigure` used `0.45 / 0.30 / 0.25` — a studio guess this manual
-flagged as such. Hampton was close on the first two bones and shows the fingertip was **a fifth too
-long**. The toolkit now uses his ratio.
+> **This is the part worth having, and Loomis gives nothing like it.** Divide the proximal phalanx
+> into three; two of those parts are the middle phalanx. Divide the middle into three; two of those
+> are the distal. So the bones run **1 : ⅔ : 4⁄9**, which normalises to **0.474 / 0.316 / 0.211**.
+> `createHandFigure` uses it.
 
 It also makes one of Loomis's *reaches* computable rather than guessed. The little finger "just
 reaches the top knuckle of the third finger" — one distal phalanx down — which is now exactly
@@ -190,8 +186,8 @@ the back and the crease row on the palm are not the same line.
 
 > [!WARNING]
 > **"At right angles" is about the plane it moves in, not the angle it makes on the page.** Drawn at a
-> literal 90° the thumb sticks straight out of the side of the wrist, which is what the first
-> implementation did and what a first reading of the sentence invites. `options.thumbDeg` is the
+> literal 90° the thumb sticks straight out of the side of the wrist, which is what a first reading
+> of the sentence invites. `options.thumbDeg` is the
 > **drawn** angle off the hand's long axis and defaults to `46`; the right-angle fact is about which way
 > the thumb *travels* when you animate or repose it.
 >

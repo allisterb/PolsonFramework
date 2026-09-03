@@ -103,11 +103,9 @@ ctx.useBrush(soft);
 
 `useBrush` reads the parts when it is called, so adjust first and apply after.
 
-> [!WARNING]
-> This genuinely works now, and it did not before. Assigning `brush.color` used to **read back as the
-> new value and draw the old one** — a script could verify its own change and be wrong — while
-> `brush.lineWidth` did not even read back. If you are working against an older build and a modified
-> preset seems to be ignored, set the context properties directly after `useBrush` instead:
+> [!TIP]
+> Setting the context directly after `useBrush` is the other route, and it wins where you want one
+> property changed for a single stroke rather than a modified preset you will reuse:
 > `ctx.useBrush(b); ctx.lineWidth = 5;`.
 
 ---

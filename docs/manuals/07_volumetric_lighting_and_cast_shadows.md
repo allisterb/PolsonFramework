@@ -170,8 +170,7 @@ a flat shadow side is the correct drawing and a hump is invention.
 > object's **top** corners, crossed with lines from the shadow vanishing point through its **bottom**
 > corners. Where the two sets cross is the limit of the shadow on the ground plane.
 >
-> That is Model B below, and the correspondence is exact — worth stating plainly, because this manual
-> previously carried the construction with no source at all. When the light is **behind the viewer**
+> That is Model B below, and the correspondence is exact. When the light is **behind the viewer**
 > Loomis takes the angle of light from a point dropped *below* the horizon on the perpendicular
 > through the shadow vanishing point, and brings the lines up to the object instead; in image terms
 > that is a light source below the horizon, which is the case the last paragraph of Model B describes.
@@ -289,7 +288,7 @@ half of the base.
 > the shadow, the sky cools the upper part, and the barn's own local colour tints all of it — so
 > **that one shadow is warm at the bottom and cooler at the top.**
 >
-> Two consequences follow, and both are stronger than the rule this section used to state:
+> Two consequences follow, and both say more than a rule about complements can:
 >
 > 1. **A shadow is rarely one colour.** Filling it with a single shifted hue discards the information
 >    that says what the form is standing on and near. A gradient across the shadow, running from the

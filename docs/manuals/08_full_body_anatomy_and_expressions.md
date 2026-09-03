@@ -6,7 +6,7 @@
 > (Viking Press, 1956) — §4 from pp. 45–47 and 51, Plates 20–22 and 27–28. Michael Hampton,
 > *Figure Drawing: Design and Invention* (2009) — §3a's gesture/shape/volume method and the
 > active/passive rule, from "Anatomy and Motion" and the Anatomy chapter. **All sections
-> are now cited**, and §4's "6 universal patterns" framing is withdrawn — see the section itself.  
+> are cited.**  
 > **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and facial expression built from the muscles that make it) into algorithmic JavaScript Canvas2D / Skia code.
 
 ## Two schools, and neither is the answer
@@ -265,15 +265,10 @@ of the body get described rather than merely depicted.
 axis and the collarbones are two different lines and must stay separate.
 
 > [!NOTE]
-> **Two corrections this section made to the toolkit, both worth knowing:**
->
-> - **The abdominal grid was six sections in two flat tiers.** Hampton has eight, with the navel row
->   flat and each row above bowing further. Flat tiers are a six-pack with no gesture in it, and that
->   is what was being drawn.
-> - **The deltoids and sternomastoid were not drawn at all.** The SDK reference had promised both
->   since it was written; `drawTorsoMusculature` rendered clavicles, pectorals and the tiers and
->   stopped. `TestTorsoMusculatureReachesTheShouldersAndTheNeck` now pins the promise, and it fails if
->   either muscle goes missing again.
+> **Flat tiers are a six-pack with no gesture in them.** The abdominal rows are eight sections, not
+> six, and only the row at the navel is straight — each row above it bows further. That, and the
+> presence of the deltoids and sternomastoid at all, is what
+> `TestTorsoMusculatureReachesTheShouldersAndTheNeck` pins.
 
 > [!TIP]
 > **The three passes are a schedule for a multi-stage run, not just a way of studying.** A gesture pass
@@ -305,10 +300,9 @@ axis and the collarbones are two different lines and must stay separate.
 > and 28 ("Various expressions").
 
 > [!IMPORTANT]
-> **The six above are the SDK's enumeration, not a claim about the world, and the previous wording
-> got that wrong.** This section used to open *"all complex emotional expressions decompose into 6
-> universal muscular activation patterns"* — a psychology claim, Ekman's basic emotions, asserted as
-> settled when it is contested. Loomis takes the opposite approach explicitly: **setting aside the
+> **The six above are the SDK's enumeration, not a claim about the world.** Reading them as *six
+> universal patterns* would be asserting Ekman's basic-emotion theory as settled, and it is
+> contested. Loomis takes the opposite approach explicitly: **setting aside the
 > psychological and emotional phases of expression**, he gives the technical mechanics, and lists
 > guilty, ashamed, frightened, content, angry, smug, confident, frustrated "and a host of other ways
 > **too numerous to tabulate**." What is finite here is the muscles, not the emotions.

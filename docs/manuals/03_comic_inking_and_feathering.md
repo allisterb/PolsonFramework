@@ -1,5 +1,8 @@
 # Studio Manual 03: Comic Inking & Feathering
 
+> **Source Reference**: Klaus Janson, *The DC Comics Guide to Inking Comics* (Watson-Guptill / DC
+> Comics, 2003) — §1 from ch. 6 (p. 80), §2 from ch. 7 (p. 88), §4 from ch. 9 (pp. 110–113), §5 from
+> ch. 7 (pp. 90, 96–98). Pixel widths are the studio's calibration; no book gives pixels.
 > **Purpose**: Provides line weight hierarchy standards, tapered stroke algorithms, directional cross-hatching recipes, and graphic black ink placement rules for authentic comic book illustration.
 
 ---
@@ -10,6 +13,12 @@
 > argument of `Skia.Brush.ink(color, width)` applied with `ctx.useBrush(...)`. Pick the tier here,
 > then pass it; the tier *is* the parameter.
 
+> **Source**: Klaus Janson, *The DC Comics Guide to Inking Comics*, ch. 6 (p. 80) — and the rule
+> behind the whole hierarchy is one sentence: **it is a general rule of art that the contour of a
+> figure should stand out from the background, and one way to accomplish that is a heavy line on the
+> contour of the body.** Tier 1 exists to separate the figure from what is behind it; the other two
+> exist to not compete with it.
+
 Comic inking derives its punch and depth from **stroke weight contrast**:
 
 | Tier | Line Width | Purpose | Applied To |
@@ -18,17 +27,67 @@ Comic inking derives its punch and depth from **stroke weight contrast**:
 | **Tier 2 (Internal Contours)** | **2.0px – 3.0px** | Defines structural forms and major overlapping planes | Eyelid creases, nose bridge, lip slit, hair lock boundaries, collar seams |
 | **Tier 3 (Details & Hatching)** | **0.8px – 1.5px** | Adds volume, surface texture, and shadow transition | Eyelashes, iris fibers, neck tendon hatching, shirt fold wrinkles, rigging cord texture |
 
+> [!IMPORTANT]
+> **The widths are the studio's; the hierarchy is Janson's.** No book gives pixel values, and these
+> are calibrated for a panel around 1000 px wide — scale them with the artwork rather than treating
+> them as constants.
+>
+> What is his is the *reason* for three tiers rather than one, and he states the failure at each end:
+>
+> - **Too little variety** and "the shapes in the panel become one gray mass — or mess" (p. 74).
+> - **Weight that varies without meaning is worse than none.** On a badly inked sweater neck he asks
+>   why the top carries a heavier line than the bottom: *it serves no purpose and does not give the
+>   reader any useful information.* **Think before you ink.**
+>
+> So a tier is not a decoration to distribute evenly. Every change of weight is a claim about the
+> subject, and a weight change that claims nothing is a defect you can see.
+
+> [!TIP]
+> **Two composition rules from the same chapter that the toolkit cannot check for you** (p. 82), both
+> of which cost a panel its depth:
+>
+> - **Never allow a tangent** — two contours that just touch, rather than clearly overlapping or
+>   clearly separating. Janson extends it to lettering: never let a balloon or caption rub against a
+>   line inside the panel. **Always overlap.**
+> - **Overlap is what creates depth.** His example is a spear crossing the edge of a cliff: drawn
+>   overlapping the edge it puts the spear in front, drawn inside the cliff's shape the illusion
+>   disappears. Two figures in close proximity get the same treatment.
+
 ---
 
 ## 2. Inking Rules of Thumb
 
 > **Implemented by**: `Drawing.drawTaperedStroke(...)` for weighted contours and `Drawing.drawFeathering(...)` for shadow transitions. These are judgement rules — the calls execute them, they do not decide them for you.
 
-1. **The Light vs Gravity Rule**:
-   - Lines facing the **light source** (top/left) should be **thin or broken** ($1.0\text{px} - 1.5\text{px}$).
-   - Lines facing **away from light or affected by gravity** (underside of jaw, bottom of hair curls, coat hem) should be **heavy and thick** ($3.5\text{px} - 5.0\text{px}$).
+1. **The Light Rule** — it is light, not gravity, that sets the weight:
+   - Lines facing the **light source** should be **thin or broken** ($1.0\text{px} - 1.5\text{px}$).
+   - Lines **away from the light** (underside of jaw, bottom of hair curls, coat hem) should be
+     **heavy and thick** ($3.5\text{px} - 5.0\text{px}$).
 2. **Line Tapering**:
    - Comic lines never end in flat, blunt cylindrical cutoffs. Every line starts at a point, swells in the middle, and tapers to a fine point.
+
+> **Source**: Klaus Janson, *The DC Comics Guide to Inking Comics*, ch. 7 (p. 88) — "The Light Source".
+
+> [!IMPORTANT]
+> **A heavy ink line is really the beginning of a shadow.** That one sentence is the whole rule.
+> The underside of a jaw is heavy because it is *in shadow*, not because of gravity — the two agree
+> for a figure lit from above and part company the moment the light comes from below, where a gravity
+> rule keeps weighting the underside and the light rule correctly moves the weight to the top.
+>
+> Janson's example is a man in a room lit from the ceiling: a heavier line than the one on the top of
+> his head represents the bottom of his nose and chin. And the light's *distance* is a second control
+> — **the farther the light, the subtler the line weight; directly overhead and close, the more
+> extreme the facial shadows.**
+>
+> **If the pencils do not state a light source, the inker decides one before inking**, and whatever
+> is decided should be logical. Even an unspectacular scene has a light source of some kind.
+
+> [!NOTE]
+> **The medium is inverted relative to nature, which is worth holding onto when translating a lit
+> render into line.** Nature is black, and light is imposed on it to extract form. An artist works the
+> other way — **introducing darkness onto white**, where the paper is the light and the ink is the
+> dark. A render from Manual 07 gives you a lit surface; inking it means deciding which darks to
+> *add*, not which lights to keep.
 
 ---
 
@@ -83,6 +142,52 @@ survives into `outSvg` as vector rather than only as pixels.
 > Because these are lines rather than pixels, they scale with the artwork and export as vector.
 
 ### Linear Feathering (Shadow Terminator Transitions)
+
+> **Source**: Klaus Janson, *The DC Comics Guide to Inking Comics*, ch. 9 (pp. 110–113) — "Feathering".
+
+> **Principle**:
+> **To feather means to soften.** The word comes from the feather itself: ribs emerging from a spine
+> at an angle, repetitive, all connected to one source. Specifically, feathering is the repetitive
+> lines that emerge at an angle from a heavier line — and where they meet that line they create a
+> **gray** which softens the mass. The point where black meets white is otherwise dramatic and
+> jarring; feathering is what makes it a transition.
+>
+> **It has two duties, and the second is the one that gets skipped:**
+>
+> 1. **Soften the transition** between black and white.
+> 2. **Communicate form and volume.** The small lines must follow the form of the mass they sit on —
+>    feathering across a flexed bicep follows the arm's curve, and the head at a three-quarter angle
+>    divides into planes that are each feathered at their own angle (p. 98). *Feathering should
+>    respond to the organic shape of the subject.*
+>
+> Janson's standard for every mark follows from the second duty: **every line has to mean something.**
+> A line that does not describe a form, a shape or a direction is extraneous.
+
+**Three shapes of feathered line**, and the toolkit draws them differently:
+
+| Shape | What it is | How to draw it |
+| :--- | :--- | :--- |
+| **Weighted** (classic) | Thick where it emerges from the black, tapering to a point | `Drawing.drawTaperedStroke(...)` per line, or `ctx.useBrush(Skia.Brush.ink(...))` |
+| **Triangular** | A series of triangles, letting more white into the fan | Filled paths — and **use sparingly**: Janson warns it doubles the line count and turns busy fast |
+| **Dead** (non-weighted) | Uniform weight throughout, sometimes with no anchoring line at all | `Drawing.drawFeathering(...)` — this is the shape it produces |
+
+> [!IMPORTANT]
+> **Fix the light source before feathering anything.** Janson is unambiguous: *feathering a figure is
+> impossible without establishing a light source*, because the light decides both where the thick and
+> thin go **and which side of the form gets feathered at all**. Light from above puts the feathering
+> on the bottom of the form — on a sphere, the lower half takes the line work.
+>
+> **Never feather where the light strikes directly.** The fan lives on the shadow mass, worked from
+> the edge nearest the light, which is exactly the terminator. `Drawing.drawFeathering(...)` takes an
+> `angleDeg`, and that angle is not a style choice — it comes from the same light vector you passed to
+> `Drawing.renderVolumetricSphere(...)` or `Drawing.createThreePointLighting(...)`.
+
+> [!TIP]
+> **Feathering is also how a body becomes one object.** Janson's fourth tip is *ink the body as an
+> organized single shape* — a figure is a stack of masses of different sizes, and letting a single
+> light source govern every fan is what pulls the most disorganized shapes together. It is the same
+> argument Manual 07 §4 makes for one light rig per scene, applied at the scale of a single figure.
+
 Feathering uses parallel tapered lines extending from solid black shadow masses into the illuminated zones:
 
 `Drawing.drawFeathering(ctx, origin, angleDeg, count, length, spacing, strokeColor, lineWidth)` lays a fan of tapering parallel lines from an origin. `Drawing.drawCrossContourHatch(ctx, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor, lineWidth)` bends them around a cylindrical form instead.
@@ -104,6 +209,34 @@ Both accept a flat-number overload for the origin.
 > a gradient. Where a black must *fade* rather than break up — a shadow dissolving into the ground
 > rather than stopping at an edge — `ctx.maskFilter = Skia.MaskFilter.blur(sigma)` softens the shape's
 > coverage while leaving the fill flat, which a gradient cannot do.
+
+> **Source**: Klaus Janson, *The DC Comics Guide to Inking Comics*, ch. 7 (pp. 90, 96–97).
+
+> **Principle**:
+> **Blacks are placed for composition, not for realism.** Janson: the motivation for where the blacks
+> go *is not about duplicating reality — it's about creating effective and interesting compositions
+> and making them look real*. Comic art is the interpretation of reality, not its recreation.
+>
+> **Simplify the range, and he gives the number:** a panel with **one black, one white and one gray**
+> is more efficient than a panel with a series of grays, because *in a panel of grays, nothing stands
+> out*. That is Manual 09 §3's notan arriving from the inking side, and the same count as the
+> four-value exercise there.
+>
+> Note also where gray comes from in this medium: **an artist creates a tone as soon as two ink lines
+> sit next to each other.** Gray is not a fill, it is a density of black lines against white paper —
+> which is why `Skia.PathEffect.hatch(...)` is a *tone* control and not a texture.
+
+**Two uses of contrast worth naming, because both are placements rather than renderings:**
+
+1. **Framing.** To call attention to part of a panel, surround it with a black shape that isolates it.
+   Janson's examples add blacks that were not in the pencils purely to direct the eye — blast lines
+   forming a frame around the figure, a black behind a gun so it reads as the threat, a shadow on a
+   door that separates a hand from the background so the eye goes to the key.
+2. **Direct black-against-white for clarity.** A thin white line is easily lost on white paper; put
+   black behind it and *no matter how thin the line, it will always be visible and clear*.
+
+Both are `ctx.fill(...)` decisions about a region, not effects — and both are worth reaching for when
+a render measured with `bitmap.palette(...)` shows the accent losing its share (Manual 09 §2).
 
 A hallmark of professional comic art is the confident use of **solid black ink shapes** (`#0a0a0c`):
 - **Inside the mouth cavity** (behind teeth).

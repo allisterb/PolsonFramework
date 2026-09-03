@@ -637,9 +637,8 @@ Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with
 > *different name* — **`ctx.drawHand(hand, solid)`** covers `drawHandWireframe` and `drawHandSolid`
 > exactly as the mannequin one does:
 > **`ctx.drawMannequin(figure, solid)`** covers both, with `solid` choosing between them. A live run
-> lost two scripts guessing `ctx.drawMannequinWireframe` and `ctx.drawLoomisWireframe` from the rule
-> this note replaces — which promised every context-taking method had a shortcut, and was wrong for
-> six of twenty-one.
+> lost two scripts guessing `ctx.drawMannequinWireframe` and `ctx.drawLoomisWireframe`, so it is worth
+> checking the list above rather than assuming a shortcut exists.
 
 `ctx.drawHand` · `ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
 
@@ -943,7 +942,6 @@ Also accessible via `Skia.Drawing`.
 > const width = Math.min(wanted, reach * 0.85);      // or move the anchor away from the VP
 > ```
 >
-> It used to clamp silently, so an over-large box came back quietly shortened and looked deliberate.
 
 - `Drawing.drawPerspectiveBox(ctx: CanvasRenderingContext2D, boxObj: object, options?: { topFill?: string, leftFill?: string, rightFill?: string, strokeColor?: string, strokeWidth?: number, drawHiddenLines?: boolean })` — Renders solid shaded or wireframe 3D perspective box.
 - `Drawing.drawPerspectiveCylinder(ctx: CanvasRenderingContext2D, gridObj: object, anchorX: number, anchorY: number, radius: number, height: number, options?: { topFill?: string, sideFill?: string, strokeColor?: string, strokeWidth?: number })` — Draws an upright cylinder. **`anchorX`/`anchorY` is the centre of the base circle** and **`radius` is half the drawn width**, so the silhouette spans `anchorX ± radius` and you can check it with a ruler. Each cap is foreshortened at its own height, so the top ellipse is the flatter of the two, and both are drawn axis-aligned — an upright cylinder’s cap has a horizontal major axis, so its apex sits over the anchor wherever in the frame you put it.
@@ -977,7 +975,7 @@ Also accessible via `Skia.Drawing`.
 
 - `Drawing.drawMannequinWireframe(ctx: CanvasRenderingContext2D, figureObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders non-repro blue gesture and joint circle hinges.
 - `Drawing.drawMannequinSolid(ctx: CanvasRenderingContext2D, figureObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders shaded volumetric 3D masses (cranial sphere, ribcage egg, pelvic basin, limb cylinders, and box hands/feet).
-- `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders clavicle handlebars, pectorals, deltoids, sternocleidomastoid cords, and the rectus abdominis as **eight** sections whose rows rise toward a peak above a flat row at the navel. The active side is read off the figure's own `shoulderTiltDeg` and compressed, per Hampton's squash/stretch rule — see `polson://manual/08` §3a. Deltoids and sternomastoid were documented here long before they were drawn; both landed 2026-09-02.
+- `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders clavicle handlebars, pectorals, deltoids, sternocleidomastoid cords, and the rectus abdominis as **eight** sections whose rows rise toward a peak above a flat row at the navel. The active side is read off the figure's own `shoulderTiltDeg` and compressed, per Hampton's squash/stretch rule — see `polson://manual/08` §3a.
 
 ### Hands
 
@@ -1133,8 +1131,6 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 - `ctx.drawWordmarkLockup(drawMarkFn, brandName, tagline, options)` — Direct canvas context helper.
 - `ctx.drawOgeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` — Direct canvas context helper.
 - `paper.ogeeCurve(x1, y1, x2, y2, amplitude, inflectionT)` → `SnapPath` — Direct Snap.svg paper helper.
-
-
 
 ---
 

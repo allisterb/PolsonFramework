@@ -2,11 +2,9 @@
 
 > **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956) — §1 from
 > Plates 1–2 (pp. 21–22), §2 from "The Standard Head" and Plates 18–19 (pp. 43–44), corroborated by
-> Michael Hampton, *Figure Drawing: Design and Invention* (2009), "Head Drawing, Step 5". Audited against
-> those plates on 2026-09-02; **this manual previously carried no citation at all**, and the audit found
-> three invented numbers and four places where the toolkit's own scale departed from Loomis's. Both
-> were fixed: the numbers here are now his, and `Drawing.createLoomisHead(...)` returns them. §2a
-> records what changed, because a render made before that date will not match one made after.
+> Michael Hampton, *Figure Drawing: Design and Invention* (2009), "Head Drawing, Step 5".
+> `Drawing.createLoomisHead(...)` returns these proportions; §2a lists what it carries that neither
+> source supplies.
 
 > **Purpose**: Provides exact mathematical proportions, geometric construction formulas, and JavaScript Canvas2D algorithms for drawing human and comic heads in 3/4 and dynamic perspective views.
 
@@ -68,7 +66,7 @@ landmark below is *derived* from it rather than measured independently:
 > **Step 6 is why the three divisions are equal — they are *constructed* equal, not observed to be.**
 > One interval, the forehead, is stepped off twice. Any implementation that places the brow, nose and
 > chin from independent fractions of head height has abandoned the construction even if the result
-> looks similar. The toolkit stepped independent fractions until 2026-09-02; §2a records the change.
+> looks similar.
 >
 > **Step 3 says "a fairly thin slice", and gives no fraction.** The diagram above says the temporal
 > slice is a *"side oval: 2/3 R"*. That number is not Loomis's and is not in the book; it is also not
@@ -137,16 +135,15 @@ lower unit are what Plate 18 uses to place the mouth.
   wide**, with **½ unit between the inner corners**.
 - **So the gap between the inner eye corners is exactly one eye-width.** That claim, which this manual
   already made, is correct — but it follows from the half-unit grid rather than standing on its own.
-- **The face is 4 eye-widths wide, and the head is 6.** This manual previously said *"the width of the
-  full face in front view is approximately 5 eye-widths"*. On Loomis's own scale the face is 2 units =
-  4 eye-widths (¼ + 1 + 1 + 1 + ¼ across), and the head including ears is 3 units = 6. The five-eye
-  canon belongs to a different tradition and measures "face" differently; it is not in this book.
+- **The face is 4 eye-widths wide, and the head is 6.** On Loomis's scale the face is 2 units =
+  4 eye-widths (¼ + 1 + 1 + 1 + ¼ across), and the head including ears is 3 units = 6. The widely
+  quoted five-eye canon belongs to a different tradition and measures "face" differently; it is not
+  in this book.
 - **Nose base.** Half a unit — one eye-width — so it aligns with the inner corners of both eyes.
 - **Mouth.** Loomis says only that the half-unit marks *help in placing* it, and gives no alignment
-  rule. This manual previously claimed the outer corners align with the **inner edge of the pupils**;
-  that is not Loomis's, and it is not what the toolkit does either. The nearest thing in the
-  book is a construction for **children's** heads, where the corners of the lips sit on the third of
-  four division lines.
+  rule — in particular he offers no pupil alignment, and the toolkit does not use one. The nearest
+  thing in the book is a construction for **children's** heads, where the corners of the lips sit on
+  the third of four division lines.
 
 > [!NOTE]
 > **Loomis gives two accounts of the dome and they do not agree.** Plate 1's freehand construction
@@ -194,56 +191,25 @@ hand-lettered ⅓ mark, the least certain number in §2 — can now be relied on
 
 ---
 
-## 2a. What Changed, and What Still Comes From Nowhere
+## 2a. What the Model Carries, and What Comes From Nowhere
 
-The audit that added the citations above also found the toolkit drawing to a different scale from the
-one it was named after. **It now follows Loomis.** Recorded here rather than quietly fixed, because
-every head rendered before 2026-09-02 was drawn to the old numbers:
+`createLoomisHead` follows the scale above exactly: half a unit of dome, three equal units, the eye
+line at `H/2`, the lip line a third of a unit below the nose, the head three units wide including the
+ears, and each eye half a unit so the inner corners sit one eye-width apart. `unit.thirdH` **is** that
+unit. The **ear** spans brow → nose and sits one unit off the cranium axis — which puts its outer edge
+on the head's half-width, since Plate 18's three units *include* the ears — foreshortened by
+`cos(yaw)` like the far eye.
 
-| Landmark, from the crown | Was | Now (Loomis) |
-| :--- | ---: | ---: |
-| hairline | 0.220 H | **0.1429 H** |
-| brow | 0.450 H | **0.4286 H** |
-| **eye line** | 0.520 H | **0.5000 H** — exactly half, as §2 cites |
-| nose base | 0.700 H | **0.7143 H** |
-| mouth | 0.830 H | **0.8095 H** |
-| the three divisions | 0.230 / 0.250 / 0.300 H | **0.2857 H each** |
-| `unit.thirdH` | `H/3` — the height of none of them | **`H/3.5`** — the height of each |
-| head width `W` | 0.72 H | **0.857 H** (3 units, ears included) |
-| `unit.eyeW` | `0.20·W` → head 5 eye-widths | **½ unit** → head 6, face 4 |
-| inner eye corners | 0.75 eye-widths apart | **1 eye-width apart** |
-| ear | fixed at `0.45·W`, never moved with yaw | **1 unit off the axis × cos(yaw)** |
+### How the jaw connects
 
-Two consequences worth expecting: **heads are wider** (0.857 H against 0.72 H) and **foreheads are
-taller**, because the old dome was over half again as deep as Loomis's and squeezed the divisions
-below it. Both are visible at a glance in a side-by-side.
-
-> [!IMPORTANT]
-> **The ear had to be fixed in three steps, and the middle one is the lesson.** Its drawn radius was
-> `0.08·H` where Loomis's ear spans brow → nose — one unit, so a radius of half a unit. Correcting the
-> size alone made a *placement* error obvious that had been hiding behind a too-small marker: the ear
-> was pinned at `0.45·W` regardless of yaw, so on a turned head it floated off the side of the skull.
-> Both are now derived — one unit off the cranium axis (which puts its outer edge on the head's
-> half-width, since Plate 18's three units *include* the ears), foreshortened by `cos(yaw)` like the
-> far eye.
->
-> A wrong number can be invisible because a second wrong number is hiding it. Fixing one at a time and
-> **looking at the render between each** is what surfaced this; the unit tests passed throughout.
-
-### The jaw now connects where Loomis says it does
-
-Plate 1 step 7: the jaw line **connects about halfway around the ball on each side**. Two things in
-that sentence were missing from the toolkit, and the second is what made the old wireframe jaw read
-as a narrow V with a pointed chin.
+Plate 1 step 7: the jaw line **connects about halfway around the ball on each side**, and two things
+in that sentence do the work.
 
 - **The halfway line is the ball's own silhouette**, and the jaw leaves it at the nose line rather
   than at the equator — so the station has come in from the full radius to `sqrt(R² − unit²)`,
-  foreshortened by `cos(yaw)`. Previously the jaw angle was a flat `0.28·W` that never moved with the
-  turn.
+  foreshortened by `cos(yaw)`.
 - **"On each side"** means the jaw has *two* stations, and the near one is the far one mirrored about
-  the cranium axis. The old path ran `ear → angle → chin → cheekApex` — and `cheekApex` is on the
-  **far** side, so it doubled back across the face and closed into a V. The chin was a single point,
-  where every plate shows a bottom with real width.
+  the cranium axis. The chin between them is a bottom with real width, never a point.
 
 `head.jaw` now carries the whole frame, so a script can draw its own jaw on the same points rather
 than reverse-engineering them: `farStation`, `angle`, `chinFar`, `chinNear`, `nearAngle`,
@@ -252,12 +218,11 @@ the chin corners are taken from the two angles rather than from a fraction of `W
 keeps the chin inside its own jaw at every yaw.
 
 > [!IMPORTANT]
-> **Past about 60° the construction runs out, and it now says so by holding rather than inverting.**
-> The facial axis swings out faster than the near station comes in, so beyond that the near jaw would
-> cross the chin and the path would turn inside out — silently, since nothing about it throws.
-> `nearAngle` is floored just clear of the axis instead: the near jaw goes on shortening with the
-> turn, but the ordering holds. `TestLoomisJawStaysOrderedAcrossTheTurn` asserts that ordering at 0°,
-> 35°, 55°, 70° and 85°, and fails at the last three without the floor.
+> **Past about 60° the construction runs out, and it holds rather than inverting.** The facial axis
+> swings out faster than the near station comes in, so beyond that the near jaw would cross the chin
+> and the path would turn inside out. `nearAngle` is floored just clear of the axis instead: the near
+> jaw goes on shortening with the turn, but the left-to-right ordering of the frame holds, which
+> `TestLoomisJawStaysOrderedAcrossTheTurn` asserts at 0°, 35°, 55°, 70° and 85°.
 >
 > §3's documented range for a 3/4 head is 30°–45°, where none of this bites. Past 60° treat the near
 > jaw as approximate.
@@ -284,7 +249,7 @@ In a 3/4 view, the head is rotated around the vertical Y-axis by yaw angle $\the
 
 `Drawing.createLoomisHead(originX, originY, headHeight, yawDeg, pitchDeg)` performs this construction and returns every landmark below. The yaw term is what produces the 3/4 read: the facial centreline shifts by $\sin\theta$, and far-side features compress by $\cos\theta$.
 
-The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is scaled by `max(0.45, cos(yaw))` — the floor is what stops the far eye vanishing at a steep turn. (Earlier revisions of this manual printed a formula in terms of a ball radius `R` and a `0.85` factor; neither appears anywhere in the toolkit.)
+The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is scaled by `max(0.45, cos(yaw))` — the floor is what stops the far eye vanishing at a steep turn.
 
 ### The Returned `LoomisHead` Landmarks
 

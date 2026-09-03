@@ -1,5 +1,8 @@
 # Studio Manual 04: Cel-Shading & Facial Planes
 
+> **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956) — §2 from
+> Plate 9 (p. 29) and Plates 32–33 (p. 61). §1's light vectors are Manual 07's material and
+> cross-reference it rather than repeating it; §3's palettes are a **character brief**, not theory.
 > **Purpose**: Provides lighting vectors, facial shadow plane geometries, color tiering formulas, and atmospheric gradients for high-impact comic book coloring.
 
 ---
@@ -36,6 +39,32 @@ In comic illustration, lighting is typically established by a strong **Key Light
 
 > **Implemented by**: no dedicated call — the planes are polygons you fill, but their corners come from the `LoomisHead` landmarks (`head.jaw.cheekApex`, `head.temporalOval`, `head.noseWedge`), not from eyeballed coordinates.
 
+> **Source**: Andrew Loomis, *Drawing the Head and Hands* — Plate 9, "Basic and secondary planes of
+> the head" (p. 29), and Plate 32, "Modeling the planes" (p. 61).
+
+> **Principle**:
+> **Cel shading is Loomis's plane exercise with the tones held flat, and he describes it in one
+> sentence:** *think in terms of flat areas in varying tones, and forget surface wrinkles entirely.*
+> That is the whole method, written in 1956 — the planes are decided first, each takes one tone, and
+> detail is deferred.
+>
+> Three things follow from his account, and each changes how the five polygons below get used:
+>
+> 1. **The planes are the foundation for lighting, not a lighting effect.** Loomis: *the planes of the
+>    head should be memorized, for through them we have a foundation for rendering the head in light
+>    and shadow.* You do not find the shadow shapes by looking at a lit render; you know the planes,
+>    and the light picks which of them are dark.
+> 2. **Learn them in two sets — basic first, then secondary.** Almost any head can be built from the
+>    two together, with individual character living in the surface rather than in the plane structure.
+>    The five polygons below are secondary planes; §1's terminator divides the basic ones.
+> 3. **One light.** *A single light is always simple to draw, for more than one light cuts up the
+>    shadow tones, making everything more complicated.* Cel shading is the case where that bites
+>    hardest, because every extra source multiplies the number of flat regions you have to cut. This
+>    is the same warning Manual 07 §4 carries from *Successful Drawing*, arriving independently.
+>
+> He also gives the order of work (Plate 33, p. 61): **anatomy and construction → outline → planes →
+> completion.** The planes pass comes after the drawing is right, never instead of getting it right.
+
 When coloring the face, construct these discrete shadow polygon planes:
 
 1. **The Under-Brow Shadow**:
@@ -49,9 +78,32 @@ When coloring the face, construct these discrete shadow polygon planes:
 5. **The Major Neck Cast Shadow**:
    - A bold, dark shadow cast by the entire lower jaw contour across the cylindrical neck surface.
 
+> [!IMPORTANT]
+> **These five are the studio's selection, not Loomis's list.** He gives the planes as a memorised set
+> to be drawn from Plate 9, not as five named shadows — the five here are the ones that carry a
+> three-quarter face at comic scale, which is a narrower claim. Treat them as a starting set and add
+> secondary planes where the light asks for them.
+>
+> **The shadows get darker as the form turns away from the light**, so the five are not one value.
+> A cel palette that gives every plane the same shadow tone has flattened exactly the information the
+> planes exist to carry.
+
+> [!TIP]
+> **Janson gives the inking counterpart, and it agrees.** A head at a three-quarter angle *divides into
+> two planes, each shaded and feathered at its own angle* — the lines under the mouth and chin run
+> differently from those beside the ear (Manual 03 §4). Cel shading fills those planes with flat tone;
+> inking hatches them at their own angles. Same division, two media.
+
 ---
 
 ## 3. Tiered Color Palette Formulations
+
+> [!NOTE]
+> **These palettes are a character brief, not colour theory.** The tiers below were written for one
+> specific figure — a red-haired pirate in a weathered navy coat — and the hex values are that
+> character's, not a general system. Keep the *structure* (a base, a shadow, a highlight, an accent
+> per material) and replace the values. For colour that generalises, Manual 07 §3 has the
+> cause-and-effect account of shadow hue and the rule against three primaries at full strength.
 
 > **Implemented by**: nothing — these are data. Declare them as constants, as below. For value structure rather than hue, `Drawing.createNotanPalette(type)` returns curated tonal sets (Manual 09 §3).
 
@@ -252,7 +304,6 @@ ctx.restore();
 - **`ctx.globalCompositeOperation = 'multiply'`**: Apply dark amber shadow glazes over skin without obscuring black ink hatching.
 - **`ctx.globalCompositeOperation = 'overlay'`**: Paint golden-orange sunlight rim highlights along the windward hair curls and nose ridge.
 - **`ctx.globalCompositeOperation = 'screen'`**: Soften background rigging into atmospheric sky haze.
-
 
 ---
 

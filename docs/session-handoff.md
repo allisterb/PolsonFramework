@@ -7,9 +7,25 @@ dashboard needed already existed — and that once you can watch a run, you star
 **Tests: 1,232 .NET — all passing** (Drawing 406, MCPServer 464, CLI 268, ExtendedMind 94).
 The previous handoff is superseded; its open items are carried forward at the end.
 
-> **§12 is the current state** and where a new session should start. §§1–8 are the fifth session
-> (observability, `scriptFile`, the Claude profile); §§9–12 are the sixth (cs-5 findings, encode
-> cost, the Guy exclusion, and re-sourcing the manuals to Loomis, Norling and Faragasso).
+> **§12 is the current state** for the drawing corpus and where a session continuing that work should
+> start. §§1–8 are the fifth session (observability, `scriptFile`, the Claude profile); §§9–12 are the
+> sixth (cs-5 findings, encode cost, the Guy exclusion, and re-sourcing the manuals to Loomis,
+> Norling, Faragasso, Hampton and Janson).
+
+> [!IMPORTANT]
+> **A different thread is open and is time-boxed: the Agentic Cinema hackathon.**
+> `docs/agentic-cinema-assessment.md` is the cold-start brief — contest rules, the eligibility checks,
+> and what was verified in Google's ADK source. Assessed 2026-09-03, **no work started**, deadline
+> **14:00 PT 2026-09-09**.
+>
+> The short version: Polson is **eligible** (initial commit 2026-08-23 is inside the contest period,
+> and no rule bars a concurrent hackathon entry — both checked, not assumed). ADK plugs `bin/cli` in
+> unchanged through `McpToolset` + `StdioConnectionParams`, and **Agent Engine deploys a container
+> rather than a pickled agent**, so the .NET engine survives deployment. Four things are missing: an
+> ADK entry point and container, Parallel's Search API at runtime, a hosted URL, and a 3-minute video.
+>
+> **The container finding outlives the contest** — it is the unlock for Milestone 5, running the studio
+> outside the Antigravity IDE.
 
 ---
 
@@ -749,29 +765,66 @@ proposal was written in call syntax. That guard works; respect it.
    receding rhythm — colonnades, fences, window bays — where `subdividePerspectiveQuad` can only
    divide a quad you already have.
 
-### Where to pick up
+### Where to pick up — manuals, as of 2026-09-02
 
-1. ~~**Manual 07 §§2–4 and Manual 09 §4**~~ — **closed 2026-09-02** by the two new books, along with
-   Manual 05 §§4–5. *Creative Illustration*'s colour part is still unread, but §3's warm/cool rule is
-   now sourced from *The Eye of the Painter* instead, and its account is better: a shadow's colour is
-   the colour of whatever light reaches it, so one shadow can be warm at the bottom from ground
-   bounce and cool at the top from the sky. The complementary-hue rule the manual used to state was a
-   heuristic standing in for that.
-2. ~~**Manual 08 §4 (expressions)**~~ — **closed 2026-09-02** from *Drawing the Head and Hands*, along
-   with Manual 06 §2 from *Successful Drawing*. **Every section of every manual 05–09 is now cited.**
-   §4's framing was withdrawn with the fix: it asserted that expressions decompose into six universal
-   patterns, which is Ekman's contested basic-emotion claim stated as settled, where Loomis
-   explicitly sets the emotions aside as "too numerous to tabulate" and works from the muscles. The
-   six preset names remain — they are what `applyFacialExpression` ships — but they are now labelled
-   as the SDK's enumeration rather than a basis.
-3. **Norling Steps Five–Six** (two vanishing points) for Manual 06 §1, and the "Dividing the Circle"
-   pages of Step Fourteen for §3's cap ellipses.
-4. **The two missing capabilities above**, if a run wants them.
-5. **cs-5's remaining findings**: #4 (joint poser — Loomis's *"never draw the limbs straight and stiff
+**All nineteen manuals now carry an attribution line**, and manuals 01–09 plus 19 are cited to the
+page. What is left, in the order worth doing it:
+
+1. **The manual index misstates the corpus, and agents read it first.** `PolsonManuals.BuildIndex()`
+   (`Knowledge/PolsonManuals.cs`, the literal string near the top) tells every agent the manuals
+   distil *"Loomis, How to Draw Comics the Marvel Way, Bokhua's Principles of Logo Design, Tubik"*.
+   **No manual cites Marvel Way**, and the list omits Janson (both volumes), Hampton, Norling,
+   Faragasso, Robin Williams and Doyald Young — most of what the manuals actually stand on. Same
+   defect class this whole section has been clearing, in the highest-traffic place. Minutes of work.
+2. **Manuals 10–13: `Credits & Theoretical Foundation` lines with no page citations**, over three
+   books with **no ledger row** — Tubik *Magazine Issue 2*, Robin Williams *The Non-Designer's Design
+   Book*, Doyald Young *Fonts and Logos*. All three are on disk, so this is a scan-and-cite pass, not
+   an acquisition. Bokhua and EpicInfographics are already ledgered, so 10 and 13 are half-covered.
+   This is the last of the pre-audit condition.
+3. **Coverage floors say where the manuals under-serve the SDK** (`ManualCoverageTests.Floors`):
+   Scale **54%**, Logo 65%, LogoType/Layout/Css 66%, VectorLogo 74%. Scale is the numeric spine of
+   every chart and Manual 13 is the infographics manual — the widest gap between what the SDK can do
+   and what a manual tells an agent to reach for.
+4. **Hampton's unread chapters**: the arm, forearm, **leg and foot**, drapery, weight distribution,
+   the back, and light and shadow. **The foot is the hand's mirror** — `createMannequinFigure` still
+   ends legs in box feet exactly as it ended arms in box hands, and Manual 19 is the template for
+   what closing that looks like.
+5. **Two capability gaps left open deliberately**, both carrying the standing "no such call exists
+   yet" disclaimer so `TestEveryManualBindsToRealSdkCalls` stays green: the **expression muscle
+   matrix** (Plate 21's relaxed/contracted table across worry, frown, laugh and anger, which composes
+   where six presets cannot), and **informal subdivision** (Manual 09 §1) with **spacing equal
+   intervals into depth** (Manual 06 §4).
+6. **Still-unread source material**: *Creative Illustration*'s colour part; Norling's Steps Five–Six
+   (two vanishing points) for Manual 06 §1 and the "Dividing the Circle" pages of Step Fourteen for
+   §3's cap ellipses; and Marvel Way ch. 12's **reduction test** — its overworked/underworked panels
+   are judged by whether the art still reads *after reduction to printed size*, which `bitmap.resize`
+   makes directly checkable and which Janson has no equivalent for.
+7. **cs-5's remaining findings**: #4 (joint poser — Loomis's *"never draw the limbs straight and stiff
    and without spring"* is the design note), #14 + #19 (closed mouth; the trio's proportional data is
    computed by `createLoomisHead` and discarded by the draw methods — one defect, smaller than either
    finding assumed), #13/#18 (path recorder). Harness: **A/F** (subagent `findings.md` refusal — needs
    a design call), **B** (`reference_images/` absent), **#23** (Grep display artifact).
+
+### The manuals carry no editorial history — this is a convention, not an oversight
+
+On 2026-09-02 every audit record was stripped from all nineteen manuals and from `Polson.core.md`:
+"audited on <date>", "this manual previously carried no citation", "the previous rule is withdrawn",
+"it used to clamp silently", "earlier revisions printed", and Manual 01 §2a's twelve-row *was → now*
+table. **They are our notes, and they belong here rather than in what agents read.** Everything
+removed is recorded in this section.
+
+**Two categories deliberately survived, and re-adding history should not disturb them:**
+
+- **Provenance labels** — "the pixel widths are the studio's", "Loomis gives no phalanx ratio", "the
+  four-stage ribbon is ours", "§1's four fixed armature types remain unsourced". These read like
+  audit notes but are a *property of the content*: they tell an agent how much weight a number will
+  bear. Stripping them would undo the point of the re-sourcing work.
+- **Runtime measurements** — "a QA pass died at roughly 480k sampled pixels", "the Perlin shaders
+  turned 700 × 500 px of brick olive green and cost a full iteration". These calibrate how fast a
+  trap arrives; they describe the runtime, not the document's past.
+
+The test to apply when adding a note: **does it describe the thing an agent is working with, or what
+a file used to say?** Only the second is a changelog.
 
 ### What the 2026-09-02 reading changed in code
 
@@ -956,6 +1009,97 @@ line type, the **wrapping line**, which `Drawing.drawCrossContourHatch(...)` alr
 **Terms:** ordinary all-rights-reserved — *no part of this book can be reproduced in any form
 without prior written consent* — with no anti-AI clause and no retrieval clause. **Unlike the IA
 Loomis scans this extraction has no reliable page-number lines**, so cite it by section heading.
+
+### Manual 03 sourced — and the wrong book was proposed first
+
+**The proposal was wrong and the correction is the lesson.** Manual 03 (inking) was going to be
+sourced from `books/janson-pencilling/`, on the reasoning that Janson is the comics authority in the
+library. He is — but *The DC Comics Guide to Pencilling* and *The DC Comics Guide to Inking* are two
+books about two crafts. The pencilling volume has **zero** occurrences of line weight, feathering or
+hatching across all 21 chapters, and every "inking" mention in it is production workflow: who inks
+the pencils, how rough to leave them, the DC-versus-Marvel handoff. **Checking that took one grep and
+should have come before the recommendation.**
+
+The director then pointed at `books/jensen-inking.epub`, which is the inking volume. Extracted with
+`epub2md.pl` to `books/janson-inking/` (15 files, 167 KB), scanned clean, ledgered. Page markers
+survive as `<!-- p.N -->`, so every citation is verifiable.
+
+**What the audit found, beyond the missing citations:**
+
+- **§2's "Light vs Gravity Rule" is withdrawn.** Janson: **a heavy ink line is really the beginning of
+  a shadow** (p. 88). The underside of a jaw is heavy because it is in shadow, not because of gravity
+  — the two agree for a figure lit from above and diverge the moment the light comes from below,
+  where a gravity rule keeps weighting the underside and a light rule correctly moves the weight to
+  the top. It is now the Light Rule, with the light's *distance* as a second control.
+- **§1's three tiers have a reason, and two named failure modes.** The hierarchy exists because *the
+  contour of a figure should stand out from the background* (p. 80). Too little variety and the panel
+  becomes "one gray mass — or mess"; weight that varies *without meaning* is worse than none. The
+  pixel widths remain the studio's — no book gives pixels.
+- **§4 gained the three shapes of a feathered line** (weighted, triangular, dead), feathering's two
+  duties, and the rule that decides whether the section can be used at all: **feathering a figure is
+  impossible without establishing a light source**, and you never feather where the light strikes
+  directly. `drawFeathering`'s `angleDeg` is therefore not a style choice — it comes from the same
+  light vector Manual 07 uses.
+- **§5 gained a number and a motive.** Blacks are placed *for composition, not realism*, and **one
+  black, one white, one gray** beats a series of grays because in a panel of grays nothing stands
+  out. That is Manual 09 §3's notan arriving from the inking side.
+- **Two composition rules the manual lacked** (p. 82): never allow a **tangent** — two contours that
+  merely touch, lettering included — and **overlap is what creates depth**.
+
+**Also ledgered: `How to Draw Comics The Marvel Way`** (sampled: front matter and ch. 12 "The Art of
+Inking"). Read while hunting for an inking source, then set aside once the Janson volume appeared.
+Worth returning for one idea Janson does not have: its overworked/underworked panels are judged by
+whether the art still reads **after reduction to printed size**, which `bitmap.resize` makes directly
+checkable. It is also the book `PolsonManuals.cs` has long told agents the manuals distil, while no
+manual cited it and nothing had scanned it — that claim is now at least backed by a ledger row.
+
+### 02 and 04 sourced — every manual now carries an attribution line
+
+Both went to *Drawing the Head and Hands*, which was already ledgered and extracted for Manuals 01
+and 08, so neither needed a new ingestion.
+
+**Manual 04 (cel shading and face planes)** — Plate 9 (p. 29) and Plates 32-33 (p. 61). The find is
+that **cel shading is Loomis's plane exercise with the tones held flat**, and he writes the
+instruction outright in 1956: *think in terms of flat areas in varying tones, and forget surface
+wrinkles entirely.* Three consequences went into §2. The planes are the **foundation for** lighting
+rather than a product of it — you know the planes, and the light picks which are dark, so you do not
+go looking for shadow shapes in a render. They are learned in two sets, **basic then secondary**, and
+the manual's five polygons are all secondary ones. And **one light**: *more than one light cuts up the
+shadow tones*, which bites hardest in cel shading because every extra source multiplies the flat
+regions you have to cut — the same warning Manual 07 §4 carries from *Successful Drawing*, arriving
+independently in a different book. Plate 33 also gives the order of work: anatomy and construction,
+outline, planes, completion.
+
+Two things in Manual 04 are now labelled rather than left to read as theory: the five planes are the
+**studio's selection** (Loomis gives a memorised set, not five named shadows), and **§3's palettes are
+a character brief** — they were written for one red-haired pirate in a navy coat, and the hex values
+are that character's. Keep the structure, replace the values.
+
+**Manual 02 (hair and ribbons)** — pp. 71, 77, 99. Loomis: *simple planes are much more effective than
+the photographic representation of every strand or curl*, and *look for the mass effect of forms in
+the hair rather than the detail*. The general case behind it is the best line in the chapter — **each
+hair in an eyebrow is detail and minor truth, but carries little significance; each blade of grass is
+detail, but we may be more interested in the whole hillside.** Hair is a hillside, and the strand is
+true and insignificant. That is precisely the trade a per-fibre renderer gets wrong and a ribbon gets
+right, so it is the citation the manual most needed.
+
+What is *not* his is now marked: the four-stage ribbon is the studio's construction, and the
+15-35 px cushion is a studio pixel range that should scale with `head.unit.H` rather than being
+treated as a constant. A note was added that ribbons are for locks that actually move — a static hair
+mass is a *plane* in Loomis's sense and wants one filled silhouette with two or three flat tones,
+which is Manual 04 §2 applied to hair.
+
+**All nineteen manuals now carry an attribution line.** What remains is quality rather than presence:
+Manuals 10-13 have `Credits & Theoretical Foundation` lines that name sources without page citations,
+and three of those sources (Tubik, Robin Williams, Doyald Young) still have no ledger row despite
+being on disk.
+
+### A second flaky test
+
+`AssetEventTests.TestTheBudgetSnapshotComesFromTheToolkitThatRan` failed once in a full-suite run and
+passed both standalone and on an immediate re-run of the same suite. Not diagnosed. Alongside
+`IrradiationCompensationTests`, that is two intermittents in the MCP/Drawing suites — re-run before
+believing either.
 
 ### Two process notes
 

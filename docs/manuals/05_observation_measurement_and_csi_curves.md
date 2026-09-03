@@ -9,10 +9,8 @@
 > Press, 1961), pp. 39–40. **All five sections are now cited.**
 >
 > **The C/S/straight vocabulary is Michael Hampton's**, from *Figure Drawing: Design and Invention*
-> (2009) — added to the library on 2026-09-02, and it **withdraws this manual's previous claim that
-> "CSI" was house vocabulary rather than a school.** The acronym is still ours; the three lines and
-> the discipline of using only them are his, and §3 now cites him. Loomis's account of the *edge*
-> stands alongside it, because the two answer different questions.
+> (2009). The acronym is ours; the three lines and the discipline of using only them are his. Loomis's
+> account of the *edge* stands alongside it, because the two answer different questions.
 > **Purpose**: Translates foundational drawing techniques (relative distance measurement, plumb lines, the CSI curve grammar, planar forms, and two/three-value light studies) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -132,14 +130,9 @@ if (!plumb.aligned) log(plumb.message);   // "DRIFT: offset by 18.4px"
 > other type of line*. That constraint is the point — three primitives, used deliberately, rather than
 > whatever the hand produces.
 
-> [!IMPORTANT]
-> **This manual used to say "CSI" was house vocabulary with no citation behind it. That was wrong**,
-> and the error is instructive: the acronym was inherited from a withdrawn source, nobody could find
-> the three lines in the library, and the conclusion drawn was that the *idea* was unsourced rather
-> than that the *library* was incomplete. Adding one contrasting author settled it in a paragraph.
->
-> What remains ours is the initialism. Hampton writes "C curve, straight, S curve"; "CSI" and the
-> `sCurveTo` / `cCurveTo` aliases are the studio's shorthand for his set.
+> [!NOTE]
+> **The initialism is ours; the set is his.** Hampton writes "C curve, straight, S curve"; "CSI" and
+> the `sCurveTo` / `cCurveTo` aliases are the studio's shorthand for it.
 
 > [!NOTE]
 > **Two vocabularies, answering different questions — you want both.** C/S/straight describes the

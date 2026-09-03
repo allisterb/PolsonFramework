@@ -442,3 +442,7 @@ reference/*
 **/.polson/*
 **/archive/*
 projects/
+
+# Generated ADK app packages, one per project, written by src/adk_agent/newproject.py.
+# Nothing committed lives here - the shared factory is src/adk_agent/studio.py, one level up.
+src/adk_agent/apps/

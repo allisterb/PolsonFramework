@@ -27,6 +27,7 @@ nothing. Regenerate after moving the repository.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -44,7 +45,12 @@ RUNTIME_DIR = Path(__file__).resolve().parent
 APPS_DIR = RUNTIME_DIR / "apps"
 
 #: Where generated projects go by default. Their own directory, not inside the runtime.
-PROJECTS_DIR = REPO_ROOT / "projects"
+#:
+#: Environment first, because `REPO_ROOT` is derived from this file's position in a *checkout* and
+#: the container has no checkout: `/app/adk_agent/newproject.py` puts `parents[2]` at `/`, so the
+#: derived default would be `/projects` while the image creates `/app/projects`. The Dockerfile
+#: sets POLSON_PROJECTS_DIR; a developer's machine ignores it and gets the repo-relative answer.
+PROJECTS_DIR = Path(os.environ.get("POLSON_PROJECTS_DIR", "").strip() or (REPO_ROOT / "projects"))
 
 CLI_DLL = REPO_ROOT / "bin" / "cli" / "Polson.CLI.dll"
 

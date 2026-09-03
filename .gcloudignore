@@ -1,0 +1,48 @@
+# What `gcloud run deploy --source .` uploads to Cloud Build.
+#
+# **This file is not optional.** Without it gcloud generates one containing `#!include:.gitignore`,
+# which has two problems here, in opposite directions:
+#
+#   1. It would still upload `reference/` — 1.4 GB of books and third-party source that is tracked
+#      and therefore not gitignored. Every deploy would spend minutes shipping material the image
+#      has no use for.
+#   2. It honours `.gitignore`, which excludes `**/[Bb]in/*` — so `bin/cli` never arrives. That is
+#      fine, because the Dockerfile builds the engine from source rather than copying a Windows
+#      build, but it is worth knowing that copying it was never an option.
+#
+# Written as an explicit exclude list rather than an allowlist, because a missed source directory
+# fails the build loudly while a missed exclude only makes it slow.
+
+.git/
+.gitignore
+.gcloudignore
+
+# Reference material: third-party books and source, read by people and never by the image.
+reference/
+
+# Local environments. Python dependencies come from requirements.txt inside the image.
+python/
+python-adk/
+**/__pycache__/
+*.pyc
+
+# .NET build output. The image builds from source; a Windows build would be useless in it anyway.
+**/[Bb]in/
+**/[Oo]bj/
+
+# Generated at runtime, not baked in. Projects created inside a container are ephemeral — see the
+# note in the Dockerfile about what does not survive an instance.
+projects/
+src/adk_agent/apps/
+src/adk_agent/artifact_versions/
+
+# Secrets. The Agent Platform key reaches the container through Secret Manager and the entrypoint,
+# never through an image layer.
+*.env
+**/appsettings.json
+
+# Documentation and tests: neither is needed to run the service.
+docs/
+tests/
+*.md
+!src/adk_agent/README.md

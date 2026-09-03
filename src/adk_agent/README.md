@@ -4,9 +4,9 @@ A second Google agent runtime for the studio, alongside the Antigravity SDK. Thi
 for the **Agentic Cinema** hackathon (Parallel track); the feasibility brief and the verification
 behind every claim here are in [`docs/agentic-cinema-assessment.md`](../../docs/agentic-cinema-assessment.md).
 
-**Status: runs locally, not containerised.** One app per project, created dynamically, single- and
-multi-agent both working end to end against the real engine. The Dockerfile and the `src/webapp` UI
-mount are not written yet.
+**Status: runs locally; container authored but never built.** One app per project, created dynamically, single- and
+multi-agent both working end to end against the real engine. The Dockerfile exists and is unbuilt;
+the `src/webapp` UI mount is not written.
 
 ## What is here
 
@@ -95,6 +95,41 @@ and a measured *"only 32px"* gap — where before there was nothing.
 > gold squiggle *"an intentional, craftsman's knot"*. And the mark from the earlier, blind run was
 > arguably the better one, on a different prompt. Peeking is necessary for the perception-action
 > loop; it is not by itself a critical faculty, and it should not be sold as one.
+
+#### Scripts are artifacts too
+
+`write_script` and `edit_script` author the drawing, and every save is a version in the same store as
+the renders. `text/javascript` matters: ADK inlines only image, audio, video and PDF, and falls
+through to a UTF-8 text conversion for anything `text/*` — so a loaded script reaches the model as
+source rather than as base64.
+
+**Why they had to exist.** `ExecuteScript` accepts `scriptFile`, `InspectScript`'s own parameter
+docs give `artwork.js` as the example, and the SDK reference recommends keeping anything longer than
+a screenful in a file. None of it was reachable: the sandbox writes only images and SVG, and ADK
+supplies no file-writing tool, so the agent could *run* a file but never *create* one. The same
+shape as the peek gap — a documented workflow that works elsewhere because the *host* supplies the
+missing verb.
+
+**Measured on this runtime, same project and brief, before and after:**
+
+| | inline only | file workflow |
+| :--- | :--- | :--- |
+| `ExecuteScript` median emission | **22.9s** | **2.0s** |
+| executions | 3, costing 80.3s | 15, costing 35.8s |
+| where the time went | 61% typing scripts | 37% edits, 19% initial writes |
+
+The script stops travelling with the call. The cost moves into `write_script` (median 14.4s, once per
+file) and `edit_script` (median 6.6s), and an edit is roughly a third of what a full re-send was.
+
+> [!IMPORTANT]
+> **`write_script` alone would not have delivered this.** It takes whole-file content, so revising
+> still means re-emitting the program. `edit_script`'s exact-match replacement is what captures the
+> saving, and it requires the match to be **unique** rather than replacing the first hit — a repeated
+> fragment edited in the wrong place produces a drawing that is wrong somewhere nobody is looking.
+
+In one run the agent took `master_brand.js` to **version 9** across nine edits, running the file
+between each. Those versions are what the ADK console's artifact history renders, which makes the
+progression of a working file browsable without reading the project directory.
 
 ### Shared and sequential
 
@@ -263,6 +298,85 @@ python-adk/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 -
 `adk web src/adk_agent/apps` serves the same thing through the CLI instead. Either way `/` redirects
 to ADK's console at `/dev-ui/`, and the REST API is under `/apps/{app_name}/...`, with `/list-apps`
 enumerating what is available. Projects created while it runs appear without a restart.
+
+## Deploying
+
+The image is built by **Cloud Build, not locally** — `--source .` uploads the tree and builds
+remotely, so no Docker engine is needed on a developer machine at any point.
+
+```bash
+gcloud run deploy polson-studio --source . \
+  --project <project> --region <region> --allow-unauthenticated \
+  --set-secrets POLSON_AGENT_PLATFORM_KEY=polson-agent-key:latest \
+  --set-env-vars POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>
+```
+
+Three files make that work, and each exists for a reason worth knowing.
+
+**[`Dockerfile`](../../Dockerfile)** at the repository root, because Cloud Build looks for it at the
+root of the context — and the context must be the root anyway, since the .NET build needs
+`nuget.config`, `Directory.Build.props` and all of `src/`.
+
+It **builds the engine from source** rather than copying `bin/cli`. Two reasons, either sufficient:
+`bin/` is gitignored so `--source .` would never upload it, and the local build is **588 MB** of
+which **550 MB is `runtimes/`** — native assets for every RID NuGet knows. Publishing for
+`linux-x64` keeps one platform's. Restore runs with `RestoreLockedMode=true`, matching what
+`CLAUDE.md` §7 asks of CI.
+
+The .NET runtime arrives by `COPY --from=mcr.microsoft.com/dotnet/runtime:10.0`, not by piping
+`dotnet-install.sh` into a shell — same bits from a tagged image, without an unreviewed download
+executing at build time. The base is `python:3.13-slim` rather than a .NET image with Python added,
+because `requirements.txt` was compiled `--python-version 3.13` and Debian's own Python is older.
+
+**[`.gcloudignore`](../../.gcloudignore)** is not optional. Without it gcloud generates one that
+includes `.gitignore` — which would still upload **`reference/`, 1.4 GB** of books and third-party
+source, because those are tracked and therefore not gitignored.
+
+**[`docker-entrypoint.sh`](../../docker-entrypoint.sh)** does the two things the image cannot.
+
+### The credential cannot be baked in
+
+The .NET engine reads its key from `appsettings.json` beside the DLL and **nowhere else** —
+`Runtime.LoadConfigFile` builds its configuration from `AddJsonFile` alone, with no
+`AddEnvironmentVariables`, which `orchestrator/credentials.py` explains is deliberate: two halves of
+one studio must not be able to authenticate as different identities.
+
+So the entrypoint writes that file at start from `POLSON_AGENT_PLATFORM_KEY`, JSON-escaped, mode
+600, and exports the same value under the names google-genai expects. One secret feeds both halves
+and they cannot disagree. A missing key **warns rather than aborts** — the console still serves, and
+the first thing needing a model fails with a message naming the variable, because a misconfigured
+deploy should not look like a broken image.
+
+### What the container will do differently
+
+> [!IMPORTANT]
+> **Fonts.** A slim image ships none, so `Skia.Font.families()` would return empty and every
+> `ctx.font` resolve to nothing. Local runs chose Georgia, and Garamond as *"the highest grade serif
+> available in the environment"* — both Windows faces. The image installs `fonts-dejavu-core`,
+> `fonts-liberation2` (metric-compatible with Arial/Times/Courier) and `fonts-ebgaramond`. **The
+> same brief will therefore be set in different type here than on a developer machine.** That is a
+> consequence of deploying, not a defect.
+>
+> `libfontconfig1` is installed alongside because `SkiaSharp.NativeAssets.Linux` requires it; absent
+> it, the native load fails at startup rather than at the first render.
+
+> [!WARNING]
+> **`/app/projects` and `/app/adk_agent/apps` are ephemeral.** A project created by a visitor dies
+> with the instance. Fine for a demo where one session serves one brief; wrong for anything that
+> must persist. Pass `POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>` so at least the version history
+> outlives the container, and `POLSON_SESSION_SERVICE_URI` for sessions.
+
+`POLSON_SEED_PROJECT` seeds one project at startup so a visitor handed the URL finds something
+rather than an empty app picker. Off by default, since a deployment driven by its own web layer
+should create projects on demand.
+
+### Not yet verified
+
+**Nothing here has been built or deployed.** The Dockerfile is authored against what was checked in
+the source — target framework `net10.0`, `SkiaSharp.NativeAssets.Linux` already referenced, seven
+projects with seven `packages.lock.json`, the entrypoint parsing under `sh -n` with LF endings — but
+a remote build is 5–15 minutes per attempt for an image this size, so expect to iterate rather than
+succeed first time.
 
 ## Dependency changes
 

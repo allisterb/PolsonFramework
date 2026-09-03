@@ -1,8 +1,10 @@
 ﻿# Studio Manual 09: Compositional Armatures, Value Hierarchy & Visual Emphasis
 
 > **Source Reference**: Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §1's Informal
-> Subdivision from pp. 36–37, §2 from pp. 48–53. §3 key from p. 85. **§4 is not yet re-sourced**, and neither are
-> §1's four fixed armature types; treat those as standard convention pending a citation.  
+> Subdivision from pp. 36–37, §2 from pp. 48–53, §3's key from p. 85; and Andrew Loomis, *The Eye
+> of the Painter* (Viking Press, 1961) — §2's fifth device from p. 107, §3's four-value exercise
+> from pp. 39–40 and §4's rule from p. 40, §4's variety list from p. 112. **§1's four fixed armature types
+> remain unsourced**; treat those as standard convention pending a citation.  
 > **Purpose**: Translates visual design theory (classical geometric armatures, focal emphasis rules, Notan value structures, cinematic vignetting, and the 70-20-10 proportional design law) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -77,7 +79,7 @@ Divides canvas into a $3 \times 3$ grid with 4 primary intersection **Power Poin
 
 ---
 
-## 2. Visual Emphasis & The 4 Hierarchical Tools
+## 2. Visual Emphasis & The Hierarchical Tools
 
 > **Implemented by**: `Drawing.drawLeadingLines(ctx, originPoints, focalPoint, options)` for tool 2 and `Drawing.drawVignette(ctx, width, height, options)` for tool 3. Tools 1 and 4 are decisions about value and spacing — drive them through `Drawing.createNotanPalette(...)` and `Drawing.subdivideProportions(...)`.
 
@@ -112,6 +114,68 @@ different origin sets — the call is one primitive and this is the list of thin
 left-hand column is not a drawing technique at all; it is a reminder that **subject matter does this
 work before composition gets a chance to**, which is worth knowing before adding a third leading line
 to a scene that has no conflict in it.
+
+### A fifth device: concentrate the brightest colour, and neutralise around it
+
+> **Source**: Andrew Loomis, *The Eye of the Painter* (Viking Press, 1961) — p. 107.
+
+Loomis's word for it is **concentration**. Brilliant colour belongs in the area of greatest interest
+and should not be scattered: the brightest colour in a picture should be associated with the dominant
+figure or object. Not the whole of it — *some portion* of it in high focus is enough. And the second
+half of the instruction is the half that does the work: **surrounding colours may be greyed or
+neutralised to keep the emphasis where it is wanted.** A vase of flowers commands a room because
+nothing else in the room is that colour.
+
+This is the chroma counterpart to tool 1's contrast of value, and it fails the same way — one
+saturated accent reads as a focal point, five read as noise. Two constructions implement it:
+
+- **Push the accent up**, by painting the focal passage at full chroma.
+- **Pull everything else down**, which is the stronger move and much the easier to apply late:
+  desaturate the surround with a colour filter instead of repainting it.
+
+```javascript
+// Neutralise the surround; the focal passage keeps its chroma.
+const painted = createCanvas(900, 700);
+const p = painted.getContext('2d');
+p.fillStyle = '#4a6b52';
+p.fillRect(0, 0, 900, 700);
+p.fillStyle = '#7d5a3c';
+p.fillRect(0, 430, 900, 270);
+p.fillStyle = '#e03a1f';                        // the accent
+p.beginPath();
+p.arc(600, 300, 70, 0, Math.PI * 2);
+p.fill();
+
+const canvas = createCanvas(900, 700);
+const ctx = canvas.getContext('2d');
+const source = painted.toBitmap();
+
+// Retain 40% of the chroma; luminance is preserved, so no value moves.
+const s = 0.4, lr = 0.213, lg = 0.715, lb = 0.072;
+ctx.colorFilter = Skia.ColorFilter.colorMatrix([
+    lr + s * (1 - lr), lg - s * lg,       lb - s * lb,       0, 0,
+    lr - s * lr,       lg + s * (1 - lg), lb - s * lb,       0, 0,
+    lr - s * lr,       lg - s * lg,       lb + s * (1 - lb), 0, 0,
+    0,                 0,                 0,                 1, 0
+]);
+ctx.drawImage(source, 0, 0);                    // the whole scene, neutralised
+ctx.colorFilter = null;
+
+const focal = new CanvasPath();
+focal.arc(600, 300, 96, 0, Math.PI * 2);
+ctx.save();
+ctx.clip(focal);
+ctx.drawImage(source, 0, 0);                    // the accent, back at full chroma
+ctx.restore();
+
+canvas;
+```
+
+> [!TIP]
+> **`bitmap.palette(...)` measures whether you actually did it.** The accent's `share` is what
+> "concentrated, not scattered" means numerically — a focal colour occupying a large share of the
+> frame has stopped being an accent. Manual 15 covers the call; Manual 07 §3 carries the warm/cool
+> half of the same chapter.
 
 ---
 
@@ -149,6 +213,15 @@ to a scene that has no conflict in it.
 > [!NOTE]
 > *Notan* is the Japanese light-dark convention and is our term rather than Loomis's; the tier
 > percentages above are the studio's calibration rather than a cited rule.
+
+> **A second Loomis source puts a number on the tiers.** In *The Eye of the Painter* (pp. 39-40) he sets
+> an exercise: small abstract pattern sketches, no larger than three by four inches, in **about four
+> values** and nothing else. Two details in it are worth carrying over. First, a "four-value pattern"
+> does not mean four separated areas — one value may be cut into as many patches as you like, jump
+> over another, be surrounded by another, or be simple where another is broken up. The count is of
+> *values*, not of *shapes*, which is what makes it a decision you can hold while drawing anything.
+> Second, the background counts as one of the four, and may be the dominant pattern. So
+> `Drawing.createNotanPalette('classic3')` plus a background *is* the exercise.
 
 ### When two adjacent masses have merged in value
 
@@ -194,6 +267,31 @@ It is also honest whenever there is air between the two: three metres of lit rai
 > - **70% Big / Dominant**: The major backdrop, environment mass, or sky.
 > - **20% Medium / Secondary**: The character figure, vehicle, or architectural structure.
 > - **10% Small / Detail**: Micro-flourishes, specular highlights, textures, and facial features.
+
+> **Source**: Andrew Loomis, *The Eye of the Painter* (Viking Press, 1961) — p. 40 for the rule these
+> percentages are an instance of, p. 112 for what to vary when repetition is unavoidable.
+
+**The rule behind the ratio is a prohibition, and it is more general than 70-20-10:** *try not to
+have any two areas of pattern the same size or shape.* Loomis states it for the abstract pattern
+exercise of §3, but it is the reason a three-tier split works at all — 70/20/10 simply guarantees the
+prohibition holds for the three largest masses. Any three distinctly unequal shares satisfy it;
+70/20/10 is the studio's calibration of *distinctly*.
+
+Two things follow that the ratio alone does not give you:
+
+- **Shape counts as well as size.** Two masses of clearly different area that are the same *shape*
+  still fail the rule. `Drawing.subdivideProportions(...)` returns rectangles, so three rectangular
+  tiers have satisfied only half of it.
+- **Where the subject forces repetition, vary something else.** Loomis's list, from the rhythm
+  chapter: size, grouping, colour, value. Rhythms in nature repeat but never in identical shape —
+  large waves come with small ones, big stones are strewn with small ones of different shapes. A
+  colonnade or a row of windows is the case that tests this, and Manual 06 §4's spacing into depth is
+  what keeps such a row from becoming an even beat.
+
+> [!TIP]
+> **This one is directly measurable.** `bitmap.palette(4)` returns each dominant colour's `share`;
+> two shares within a few points of one another are the failure the rule names, and they show up in
+> the numbers before they show up in the picture.
 
 ---
 

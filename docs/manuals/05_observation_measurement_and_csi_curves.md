@@ -1,8 +1,10 @@
 ﻿# Studio Manual 05: Observation, Measurement & CSI Curves
 
 > **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) — §1
-> from pp. 35–37, §2 from pp. 34–37, §3's contour vocabulary from p. 24. **§§4 and 5 are not yet re-sourced**; treat
-> those as standard practice pending a citation rather than as verified.
+> from pp. 35–37, §2 from pp. 34–37, §3's contour vocabulary from p. 24; and Andrew Loomis,
+> *Successful Drawing* (Viking Press, 1951) — §4's plane sequence and §5's pattern/placement
+> distinction from p. 13, with §5's four-value exercise from *The Eye of the Painter* (Viking
+> Press, 1961), pp. 39–40. **All five sections are now cited.**
 >
 > **"CSI" is house vocabulary, not a school**, and §3 now says so. It arrived with the withdrawn text
 > and is baked into the API as the `sCurveTo` / `cCurveTo` aliases, so it is not going anywhere — but
@@ -198,6 +200,32 @@ const CSI = {
   }
   ```
 
+### The order the planes are found in
+
+> **Source**: Andrew Loomis, *Successful Drawing* (Viking Press, 1951) — p. 13, *planes* being the
+> fourth of his five P's (proportion, placement, perspective, planes, pattern).
+
+Loomis's account of why planes matter is short and worth taking literally: **it is through the effect
+of light on planes that we arrive at the solid appearance of the form.** Having got the perspective
+right, separate the effect into planes, and look for them in this order:
+
+1. **Planes of full light** — found first, because everything after is defined relative to them.
+2. **Halftone planes**, where the form turns away from the light.
+3. **Shadow planes**, beyond the halftone.
+4. **Reflected light *within* the shadow** — which is part of the shadow, and still defines form.
+
+Step 4 is the one most often mishandled. Reflected light is not a fifth value competing with the
+light side; it belongs to the shadow, and once it climbs to the value of a halftone the form goes
+flat. Manual 07 §1 is the same sequence rendered as six zones, with the caveat that a scene with
+nothing to bounce has no step 4 at all.
+
+> [!TIP]
+> **The order is a working order, not just a taxonomy.** Blocking the full-light planes first gives
+> every later decision something to be measured against; starting from the shadow shapes — the
+> tempting order, because they are usually the largest — leaves the halftones with no reference. In
+> practice that means the lit planes get their flat fill *before* any
+> `Drawing.drawCrossContourHatch(...)` pass, not after it.
+
 ---
 
 ## 5. Light, Shadow & Two/Three-Value Studies
@@ -212,6 +240,37 @@ const CSI = {
 1. **Penciler**: Draws the **Shadow Terminator boundary path** (Two-Value division).
 2. **Colorist**: Fills Midtone base ($V_2$), sunlit highlights ($V_1$), and core shadow planes ($V_3$) using `Skia.Shader.sksl` Ben-Day dots.
 3. **Inker**: Adds Ambient Occlusion ink masses ($V_4$, `#0a0a0c`) in deep crevices.
+
+### Pattern is placement in tone, and four values are enough to decide it
+
+> **Source**: Andrew Loomis, *Successful Drawing* (Viking Press, 1951) — p. 13; and *The Eye of the
+> Painter* (Viking Press, 1961) — pp. 39-40.
+
+Loomis separates two things a value study is doing, and the distinction is worth keeping:
+**placement relates to composition in terms of line; pattern relates to it in terms of tonal areas.**
+A two- or three-value study is a *pattern* decision. It answers where the tonal masses go, and it can
+be right or wrong independently of where the drawn lines go — which is why it is worth making before
+there is anything to draw lines on.
+
+*The Eye of the Painter* turns that into an exercise concrete enough to run as a script: abstract
+pattern sketches no larger than three by four inches, in **about four values** and nothing else, made
+without a subject in mind — they will often suggest one. Three details in it change how a value
+study is built:
+
+- **A value is not an area.** One value may be cut into as many separate patches as you like, jump
+  over another, be surrounded by another, or be simple where another is broken up. The count is of
+  *values*, not of shapes.
+- **The background is one of the four**, and may be the dominant one. So
+  `Drawing.createNotanPalette('classic3')` plus a ground *is* the four.
+- **Try not to have any two areas the same size or shape.** Manual 09 §4 carries this as the rule the
+  70-20-10 split is one instance of.
+
+> [!TIP]
+> **Draft the study small, for the reason Loomis gives and one he does not.** His is that a small
+> rectangle forces the decision to be about masses. The other is measured: encode time tracks pixel
+> count, so a study at 320 × 240 costs a fraction of the same study at full size, and a value pass is
+> exactly the kind of render nobody needs at full resolution. Pair it with `render: false` and a
+> stashed bitmap when the study is only feeding the next stage.
 
 ---
 

@@ -644,8 +644,9 @@ parameter, not a paragraph.
 
 ### Sources now in use
 
-`Imaginative Drawing` is **excluded** (§11b, and `CLAUDE.md` §0 — do not re-add it). Three replacements
-are ledger-scanned and clean; the ledger row for each carries its licence and handling.
+`Imaginative Drawing` is **excluded** (§11b, and `CLAUDE.md` §0 — do not re-add it). Five replacements
+are ledger-scanned and clean; the ledger row for each carries its licence and handling. The last two
+were added on 2026-09-02 and closed the two largest gaps between them.
 
 | Source | Covers |
 | :--- | :--- |
@@ -653,6 +654,8 @@ are ledger-scanned and clean; the ledger row for each carries its licence and ha
 | **Loomis**, *Creative Illustration* (1947) | tone intensity, key/value, edges, attention devices, informal subdivision, eye level |
 | **Norling**, *Perspective Made Easy* (Dover 1999 / Macmillan 1939) | horizon and VP definitions, cylinders, diagonal division, spacing into depth |
 | **Faragasso**, *Mastering Drawing the Human Figure* (1998) | Reilly-method structure lines and torso construction |
+| **Loomis**, *Successful Drawing* (1951) | the three laws of light, cast-shadow projection, planes, the five P's, lighting consistency |
+| **Loomis**, *The Eye of the Painter* (1961) | shadow colour as cause and effect, the primaries rule, four-value pattern, concentration of chroma |
 
 **Loomis cites Norling by name** (*Figure Drawing* p. 36), which is real evidence the figure and
 perspective halves are not being stitched from incompatible traditions.
@@ -660,27 +663,44 @@ perspective halves are not being stitched from incompatible traditions.
 **Faragasso's rights clause names "information storage and retrieval system"** — so distil and cite,
 but **do not put its OCR into a retrieval corpus**. Same line already drawn for Janson.
 
-All four books are **image-only, no text layer**. OCR (`bin/tesseract`, 200 dpi) is the only route,
+The first four books are **image-only, no text layer**. OCR (`bin/tesseract`, 200 dpi) is the only route,
 and it is good on prose pages. **Hand-lettered plates defeat it** — Loomis's diagrams especially — so
 render the page and *look* at it rather than trusting the OCR. Every number in Manual 08 §1 was read
 that way.
+
+**The two 2026-09-02 additions are different and much cheaper to work with:** both are Internet
+Archive scans carrying a **text layer**, so `bin/mutool.exe draw -F txt` extracts each whole book in
+one command (262 KB and 135 KB) and the ledger scan covers the entire text rather than a sample.
+Page numbers survive as bare-integer lines in the extraction, so a citation can be *verified* rather
+than estimated — `awk '/^[0-9]{1,3}$/ {print NR": "$0}'` over the extraction gives the page markers,
+and every page number added to a manual this session was checked against the marker either side of
+the passage. Three of the first-draft citations were off by one page and were corrected that way.
 
 ### Where each manual stands
 
 | Manual | Sourced | Still pending |
 | :--- | :--- | :--- |
-| 05 Observation | §1, §2 (Loomis), §3 contour (Loomis) | §§4, 5 |
+| 05 Observation | §1, §2 (Loomis), §3 contour (Loomis), §4 planes + §5 pattern (*Successful Drawing*, *Eye of the Painter*) | — |
 | 06 Perspective | §1, §3, §4 (Norling), §5, §5a (Loomis) | §2 |
-| 07 Lighting | §1 (Loomis, incl. edges) | §§2–4 |
+| 07 Lighting | §1 (Loomis, incl. edges, + three laws), §2 (*Successful Drawing*), §3 (*Eye of the Painter*), §4 (*Successful Drawing*) | — |
 | 08 Anatomy | §1, §2 (Loomis), §3 (Faragasso) | §4 expressions |
-| 09 Composition | §1, §2, §3 key (Loomis) | §4 |
+| 09 Composition | §1, §2 (+ fifth device), §3 key, §4 (*Eye of the Painter*) | §1's four fixed armature types |
 
 Every header states which sections are cited and which are pending, so a partial file cannot be
 mistaken for a finished one.
 
-**Negative result worth keeping:** there is **no cast-shadow construction in any of the four books**.
-Manual 07 §2 has no source and none has been invented. Norling's Steps 18–20 are unusual perspective,
-uphill/downhill and mechanical perspective.
+**~~Negative result worth keeping:~~ overturned on 2026-09-02, and the way it was overturned is the
+point.** This section previously recorded that there is *no cast-shadow construction in any of the
+four books*, so Manual 07 §2 had none and none had been invented. **Successful Drawing pp. 83–88 has
+it**, and it is the construction `Drawing.projectCastShadow` already implements: three things to
+establish — the light source, the angle of light, and the vanishing point of the shadows on the
+horizon directly beneath the source — then lines from the source through the top corners crossed with
+lines from that VP through the bottom corners. It also carries the sphere (central ray through the
+centre, shadow centred where it meets the ground, always an ellipse) and the cone.
+
+A negative result over a four-book corpus was a claim about the corpus, not about the field, and it
+read as the stronger thing. Norling's Steps 18–20 remain unusual perspective, uphill/downhill and
+mechanical perspective.
 
 ### Code changed by the reading
 
@@ -729,9 +749,13 @@ proposal was written in call syntax. That guard works; respect it.
 
 ### Where to pick up
 
-1. **Manual 07 §§2–4 and Manual 09 §4** — the largest remaining gaps. *Creative Illustration*'s colour
-   part is unread and should cover §3's warm/cool rule.
-2. **Manual 08 §4 (expressions)** — no source identified yet in these four books.
+1. ~~**Manual 07 §§2–4 and Manual 09 §4**~~ — **closed 2026-09-02** by the two new books, along with
+   Manual 05 §§4–5. *Creative Illustration*'s colour part is still unread, but §3's warm/cool rule is
+   now sourced from *The Eye of the Painter* instead, and its account is better: a shadow's colour is
+   the colour of whatever light reaches it, so one shadow can be warm at the bottom from ground
+   bounce and cool at the top from the sky. The complementary-hue rule the manual used to state was a
+   heuristic standing in for that.
+2. **Manual 08 §4 (expressions)** — still no source identified, now across six books.
 3. **Norling Steps Five–Six** (two vanishing points) for Manual 06 §1, and the "Dividing the Circle"
    pages of Step Fourteen for §3's cap ellipses.
 4. **The two missing capabilities above**, if a run wants them.

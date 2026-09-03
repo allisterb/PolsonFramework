@@ -1,7 +1,11 @@
 namespace Polson.Tests.Drawing;
 
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
+using Polson.Drawing.Skia;
 using Polson.MCPServer;
 using Xunit;
 
@@ -71,6 +75,41 @@ public class DocResourcesTests : TestsRuntime
         Assert.Contains("Snap", signpost);
         Assert.Contains("Canvas2D", signpost);
         Assert.Contains("Skia", signpost);
+    }
+
+    /// <summary>
+    /// The recession limit is a number an agent reads out of the docs and computes against, so the doc
+    /// and the toolkit have to agree on it. The percentage is parsed from the reference rather than
+    /// written here twice, and then tested against the call itself — change the constant without the
+    /// doc and this fails.
+    /// </summary>
+    [Fact]
+    public void TestDocumentedBoxRecessionLimitMatchesTheToolkit()
+    {
+        var core = PolsonResources.Docs.Core();
+        var stated = Regex.Match(core, @"longer than (\d+)% of the distance from the anchor to its vanishing point");
+        Assert.True(stated.Success, "docs/Polson.core.md no longer states the createPerspectiveBox recession limit.");
+
+        var limit = int.Parse(stated.Groups[1].Value, CultureInfo.InvariantCulture) / 100f;
+        Assert.Contains($"reach * {limit.ToString("0.##", CultureInfo.InvariantCulture)}", core);
+
+        var toolkit = new ConstructiveDrawingToolkit();
+        var grid = toolkit.CreatePerspectiveGrid(new Dictionary<string, object?>
+        {
+            ["horizonY"] = 250f,
+            ["centerOfVisionX"] = 400f,
+            ["focalLength"] = 800f,
+            ["cameraAngleDeg"] = 40f
+        });
+
+        var vpL = (Dictionary<string, object?>)grid["vpL"]!;
+        var reach = MathF.Sqrt(
+            MathF.Pow(Convert.ToSingle(vpL["x"]) - 400f, 2) + MathF.Pow(Convert.ToSingle(vpL["y"]) - 450f, 2));
+
+        // The documented limit is the accepted one, and a hair past it is not.
+        Assert.NotNull(toolkit.CreatePerspectiveBox(grid, 400f, 450f, reach * limit, 120f, 150f));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => toolkit.CreatePerspectiveBox(grid, 400f, 450f, reach * (limit + 0.02f), 120f, 150f));
     }
     #endregion
 

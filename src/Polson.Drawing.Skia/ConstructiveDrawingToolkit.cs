@@ -774,6 +774,12 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Linear Perspective & 3D Forms
+    /// <summary>
+    /// The furthest a box side may recede toward its vanishing point, as a fraction of the anchor-to-VP
+    /// distance. Beyond this the projection degenerates.
+    /// </summary>
+    private const float MaxRecession = 0.85f;
+
     private static Point2D LineIntersection(Point2D p1, Point2D p2, Point2D p3, Point2D p4)
     {
         var denom = (p1.X - p2.X) * (p3.Y - p4.Y) - (p1.Y - p2.Y) * (p3.X - p4.X);
@@ -883,6 +889,30 @@ public class ConstructiveDrawingToolkit
         ctx.Restore();
     }
 
+    /// <summary>
+    /// Steps <paramref name="extent"/> screen pixels from <paramref name="from"/> along the ray to
+    /// <paramref name="vp"/>, refusing any extent that would reach the vanishing point.
+    /// </summary>
+    private static Point2D Recede(Point2D from, Point2D vp, float extent, string name, string vpName)
+    {
+        var dx = vp.X - from.X;
+        var dy = vp.Y - from.Y;
+        var len = MathF.Sqrt(dx * dx + dy * dy);
+        if (len < 0.0001f) len = 1f;
+
+        var t = extent / len;
+        if (t > MaxRecession)
+        {
+            throw new ArgumentOutOfRangeException(name, extent,
+                $"Drawing.createPerspectiveBox(...) was given a {name} of {extent:F1}px, which is {t:P0} of the " +
+                $"{len:F1}px from the anchor to {vpName}. Past {MaxRecession:P0} the far corner reaches the " +
+                $"vanishing point and the box turns inside out. Reduce the {name} to at most " +
+                $"{len * MaxRecession:F1}px, or move the anchor further from {vpName}.");
+        }
+
+        return new Point2D(from.X + dx * t, from.Y + dy * t);
+    }
+
     public Dictionary<string, object?> CreatePerspectiveBox(object gridObj, float anchorX, float anchorY, float width, float height, float depth)
     {
         if (JsInterop.AsDict(gridObj) is not IDictionary grid)
@@ -894,20 +924,12 @@ public class ConstructiveDrawingToolkit
         var v0 = new Point2D(anchorX, anchorY);
         var v4 = new Point2D(anchorX, anchorY - height);
 
-        // Direction vectors to VPs
-        var dxL = vpL.X - v0.X;
-        var dyL = vpL.Y - v0.Y;
-        var lenL = MathF.Sqrt(dxL * dxL + dyL * dyL);
-        if (lenL < 0.0001f) lenL = 1f;
-        var tL = MathF.Min(0.85f, width / lenL);
-        var v1 = new Point2D(v0.X + dxL * tL, v0.Y + dyL * tL);
-
-        var dxR = vpR.X - v0.X;
-        var dyR = vpR.Y - v0.Y;
-        var lenR = MathF.Sqrt(dxR * dxR + dyR * dyR);
-        if (lenR < 0.0001f) lenR = 1f;
-        var tR = MathF.Min(0.85f, depth / lenR);
-        var v2 = new Point2D(v0.X + dxR * tR, v0.Y + dyR * tR);
+        // Width and depth are screen distances stepped along the ray to each vanishing point. Past
+        // MaxRecession the far corner arrives at the vanishing point and the box turns inside out, so the
+        // request is refused rather than clamped: a silently shortened box is a wrong drawing that looks
+        // like the one that was asked for.
+        var v1 = Recede(v0, vpL, width, "width", "the left vanishing point");
+        var v2 = Recede(v0, vpR, depth, "depth", "the right vanishing point");
 
         // Top left & top right points
         var v5 = LineIntersection(v4, vpL, v1, new Point2D(v1.X, v1.Y - height * 2f));

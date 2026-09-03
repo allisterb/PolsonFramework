@@ -2,9 +2,9 @@
 
 > **Source Reference**: Ernest R. Norling, *Perspective Made Easy* (Macmillan 1939; Dover 1999) — §1 from Step One, §3 from Step Fourteen, §4
 > from Steps Twelve and Fifteen, pp. 107–147. Andrew Loomis, *Creative Illustration* (Viking Press, 1947) — §5 and
-> §5a from pp. 41–42. **§2 is not yet re-sourced**; treat it as standard perspective practice pending
-> a citation rather than as verified. Norling's Steps Five–Six (two vanishing points) and the
-> "Dividing the Circle" pages of Step Fourteen are still unread and bear on §1 and §3.  
+> §5a from pp. 41–42; and Andrew Loomis, *Successful Drawing* (Viking Press, 1951) — §2 from
+> pp. 29–35. **All sections are now cited.** Norling's Steps Five–Six (two vanishing points) and
+> the "Dividing the Circle" pages of Step Fourteen are still unread and bear on §1 and §3.  
 > **Purpose**: Translates linear perspective theory (horizon lines, vanishing points, 3D box projection, cylinder tangent ellipses, diagonal plane subdivision, and convergence testing) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -91,6 +91,98 @@ A 3D perspective box is defined by:
 1. **Top Plane ($V_4, V_5, V_7, V_6$)**: Sunlit Highlight.
 2. **Left Plane ($V_0, V_1, V_5, V_4$)**: Midtone Flat.
 3. **Right Plane ($V_0, V_2, V_6, V_4$)**: Core Shadow.
+
+> **Source**: Andrew Loomis, *Successful Drawing* (Viking Press, 1951) — pp. 29–35, *perspective*
+> being the third of his five P's (proportion, placement, perspective, planes, pattern).
+
+### The box is a measuring device, not a subject
+
+This is the part that decides how §2 gets used, and it is easy to miss while reading a vertex
+formula. Loomis's claim is that **anything can be drawn within the cube or block** — and that even
+when you never draw the block, you must *feel* the perspective relationship of the figure or object
+as it would be inside one. The working instruction is blunt: **draw the block to equal the height,
+width and depth of the form**, then build the form inside it.
+
+So a `PerspectiveBox` earns its place in a scene that contains no boxes. A barrel, a head, a parked
+car, a figure — each gets a block first, and the block is what carries the perspective; the form
+inherits it. Loomis's suggested exercise is to draw a thing *first with blocks* and see how much more
+construction arrives with it.
+
+> [!TIP]
+> Two SDK calls exist precisely because the block is a measuring device. `Drawing.createPerspectiveBox(...)`
+> returns the eight vertices whether or not you ever call `Drawing.drawPerspectiveBox(...)`, so a block
+> can be built, measured against, and never rendered. And `Drawing.subdividePerspectiveQuad(...)` takes
+> one of its faces and divides it in true foreshortening — which is how anything laid *on* a face
+> (paving, panelling, a window grid) stays in the same perspective as the block that located it.
+
+### Construction order, and the ground plan first
+
+Loomis builds in a fixed order, and each step is a prerequisite rather than a preference:
+
+1. **Establish a horizon and eye level.** Nothing before this is meaningful, because the ray
+   directions the box is built from are directions *to* vanishing points that do not yet exist.
+   `Drawing.createPerspectiveGrid(...)` is this step.
+2. **Lay a square flat on the ground.** *All ground plans begin with this.* The square is the
+   footprint; opposite sides recede toward their respective vanishing points.
+3. **Build the cube on the square**, raising verticals from its corners.
+
+The order matters for a reason the maths hides: the footprint is a *plan*, and a plan can be checked
+against the scene's other footprints before anything is raised. Two objects standing on the same
+floor share a ground plane, so their plans must agree — which is the same argument §5a makes for
+holding one scale across figure and architecture.
+
+### The rule that checks itself
+
+> **The perspective depth of the top side of the block determines the perspective depth of the bottom
+> side.** (p. 35.)
+
+This is the cheapest correctness test §2 has, and it is a test rather than a construction: the top
+and bottom faces are parallel planes, so their receding edges converge on the *same* vanishing point.
+A box whose top reads at one depth and whose bottom reads at another has an edge going to the wrong
+place. `Drawing.verifyPerspectiveConvergence(...)` takes the line pairs and the expected vanishing
+point and reports the maximum angular error, so this is checkable without eyeballing it.
+
+Loomis pairs it with a second observation that belongs to §3: **ellipses narrow as they near the eye
+level.** That is the same rule `Drawing.drawPerspectiveCylinder(...)` applies per cap, stated from
+the drawing side rather than the projection side.
+
+### Round forms inside the block
+
+A sphere or any rounded form is placed by **first drawing the plans of the block's middle planes** —
+the middle plane lengthwise and the middle plane crosswise. Those two planes give the form its axes
+in perspective, and the round form is then drawn to touch the block's faces. An elongated block
+around an elongated form works the same way.
+
+This is the construction to reach for when `Drawing.drawPerspectiveCylinder(...)` is not the right
+shape — it takes an upright cylinder, and anything tilted, elongated or irregular wants a block plus
+middle planes instead.
+
+> [!IMPORTANT]
+> **Two things about §2's formula that the geometry above does not say, and both matter.**
+>
+> **Width and depth are screen distances, not scene dimensions.** The construction steps $W$ *pixels*
+> along the normalised ray toward $VP_L$. Two boxes at different depths given the same $W$ are
+> therefore **not** the same size in the scene — which is exactly the confusion §5a exists to prevent.
+> Where a box has to be a real size, fix its footprint against the scene's ground plan (§5a) and
+> derive the pixel extents from that; do not pass a metre count as `width`.
+>
+> **A side may not reach its vanishing point.** Past 85% of the anchor-to-VP distance the far corner
+> arrives at the vanishing point and the box turns inside out. This used to be **silently clamped**,
+> so an over-large box came back quietly shortened and looked deliberate; it now throws, naming the
+> measured fraction and the largest extent that would have been accepted. If you meant a bigger box,
+> move the anchor further from the vanishing point rather than pushing the extent.
+
+> [!NOTE]
+> **The three lighting planes above are a convention, not geometry.** Top-sunlit / left-midtone /
+> right-shadow is true for one light position and is stated here as though it followed from the
+> projection. Manual 07 §1's second law is the actual rule — a plane's value follows the angle it
+> presents to the source — so with the key on the left, the *left* face is the lit one. Take the
+> three-plane assignment as a default for a high key light off to the right, and override it whenever
+> the scene's light says otherwise.
+>
+> Loomis notes the connection in passing and it is worth taking seriously: lighting and perspective
+> are more closely related than most artists realise. Manual 07 §2's cast-shadow construction is the
+> other half of that — it needs this grid's horizon to work at all.
 
 ---
 

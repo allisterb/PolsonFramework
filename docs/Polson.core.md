@@ -923,7 +923,26 @@ Also accessible via `Skia.Drawing`.
 ## Linear Perspective & 3D Forms
 - `Drawing.createPerspectiveGrid(options?: { type?: '1point' | '2point' | '3point', horizonY?: number, centerOfVisionX?: number, focalLength?: number, cameraAngleDeg?: number, tiltAngleDeg?: number })` → `object` — Computes vanishing points ($VP_L, VP_R, VP_V$), horizon line, and center of vision.
 - `Drawing.drawPerspectiveGrid(ctx: CanvasRenderingContext2D, gridObj: object, options?: { lineColor?: string, horizonColor?: string, lineCount?: number, lineWidth?: number })` — Renders horizon and perspective grid fan lines.
-- `Drawing.createPerspectiveBox(gridObj: object, anchorX: number, anchorY: number, width: number, height: number, depth: number)` → `object` — Projects 3D box computing all 8 vertices ($V_0 \dots V_7$) and 6 quadrilateral faces.
+- `Drawing.createPerspectiveBox(gridObj: object, anchorX: number, anchorY: number, width: number, height: number, depth: number)` → `object` — Projects 3D box computing all 8 vertices ($V_0 \dots V_7$) and 6 quadrilateral faces. **`width` and `depth` are screen distances stepped along the rays to $VP_L$ and $VP_R$, not scene dimensions** — the same value at two depths is not the same size in the world.
+
+> [!IMPORTANT]
+> **A `width` or `depth` longer than 85% of the distance from the anchor to its vanishing point
+> *throws*.** Past that the far corner reaches the vanishing point and the box turns inside out. This
+> is a thrown error that **ends the script** — not a failure object like the `Assets.*` calls return,
+> so there is no `success` field to check afterwards and nothing downstream runs. The message names
+> the measured fraction, the anchor-to-vanishing-point distance, and the largest extent that would
+> have been accepted.
+>
+> **The limit is computable before you call**, because the grid hands you the vanishing points as
+> `{ x, y }`:
+>
+> ```js
+> const reach = Math.hypot(grid.vpL.x - anchorX, grid.vpL.y - anchorY);
+> const width = Math.min(wanted, reach * 0.85);      // or move the anchor away from the VP
+> ```
+>
+> It used to clamp silently, so an over-large box came back quietly shortened and looked deliberate.
+
 - `Drawing.drawPerspectiveBox(ctx: CanvasRenderingContext2D, boxObj: object, options?: { topFill?: string, leftFill?: string, rightFill?: string, strokeColor?: string, strokeWidth?: number, drawHiddenLines?: boolean })` — Renders solid shaded or wireframe 3D perspective box.
 - `Drawing.drawPerspectiveCylinder(ctx: CanvasRenderingContext2D, gridObj: object, anchorX: number, anchorY: number, radius: number, height: number, options?: { topFill?: string, sideFill?: string, strokeColor?: string, strokeWidth?: number })` — Draws an upright cylinder. **`anchorX`/`anchorY` is the centre of the base circle** and **`radius` is half the drawn width**, so the silhouette spans `anchorX ± radius` and you can check it with a ruler. Each cap is foreshortened at its own height, so the top ellipse is the flatter of the two, and both are drawn axis-aligned — an upright cylinder’s cap has a horizontal major axis, so its apex sits over the anchor wherever in the frame you put it.
 

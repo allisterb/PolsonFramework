@@ -2,9 +2,10 @@
 
 > **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) —
 > §1 from p. 26 and p. 33, §2 from pp. 38–40. Jack Faragasso, *Mastering Drawing the Human Figure*
-> (Stargarden Press, 1998) — §3 from pp. 74 and 93–94. **§4 is not yet re-sourced**: its previous
-> citation was withdrawn, so treat anything there as pending a citation rather than as verified.  
-> **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and the 6 universal facial expressions) into algorithmic JavaScript Canvas2D / Skia code.
+> (Stargarden Press, 1998) — §3 from pp. 74 and 93–94. Andrew Loomis, *Drawing the Head and Hands*
+> (Viking Press, 1956) — §4 from pp. 45–47 and 51, Plates 20–22 and 27–28. **All four sections
+> are now cited**, and §4's "6 universal patterns" framing is withdrawn — see the section itself.  
+> **Purpose**: Translates human anatomical construction (3 primary solid masses, dynamic contrapposto spine curves, volumetric mannequin blocking, upper-torso muscle landmarks, and facial expression built from the muscles that make it) into algorithmic JavaScript Canvas2D / Skia code.
 
 ## Two schools, and neither is the answer
 
@@ -171,12 +172,12 @@ lower one meeting at the waist, which is what lets it bend and twist without the
 
 ---
 
-## 4. The 6 Universal Facial Muscle Expressions
+## 4. Facial Expression — Muscles, Not a Taxonomy of Emotions
 
 > **Implemented by**: `Drawing.applyFacialExpression(head, expressionType, intensity)` → a modified `LoomisHead`. Build the head with `Drawing.createLoomisHead(...)` first, then render the displaced landmarks with `Drawing.drawComicEye(...)` and `Drawing.drawComicMouth(...)`.
 
 > **Principle**:
-> All complex emotional expressions decompose into 6 universal muscular activation patterns:
+> The six presets each displace a set of head landmarks. What each is doing, in muscle terms:
 >
 > 1. **`"joy"`**: Zygomaticus major contracts $\implies$ mouth corners pull up & out; Orbicularis oculi contracts $\implies$ lower eyelids push up, crinkling crow's feet.
 > 2. **`"anger"`**: Corrugator supercilii contracts $\implies$ eyebrows pull sharply down and inward into a fierce V-shape; eyes narrow; mouth squares.
@@ -184,6 +185,73 @@ lower one meeting at the waist, which is what lets it bend and twist without the
 > 4. **`"sadness"`**: Frontalis (medial) contracts while Corrugator relaxes $\implies$ inner eyebrow tips pull up into an inverted peak ($\land$ shape); mouth corners pull down (Depressor anguli oris).
 > 5. **`"surprise"`**: Eyebrows arch high in uniform curves; eyes widen in circles; jaw drops open into a relaxed vertical oval.
 > 6. **`"disgust"`**: Levator labii superioris contracts $\implies$ upper lip curls upward in a sneer, wrinkling the bridge of the nose; eyebrows lower slightly.
+
+### Loomis works from muscles, and declines to tabulate the emotions
+
+> **Source**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956) — pp. 45–47 and 51;
+> Plates 20 ("Anatomy of the head"), 21 ("How the muscles function"), 27 ("Expression — the laugh")
+> and 28 ("Various expressions").
+
+> [!IMPORTANT]
+> **The six above are the SDK's enumeration, not a claim about the world, and the previous wording
+> got that wrong.** This section used to open *"all complex emotional expressions decompose into 6
+> universal muscular activation patterns"* — a psychology claim, Ekman's basic emotions, asserted as
+> settled when it is contested. Loomis takes the opposite approach explicitly: **setting aside the
+> psychological and emotional phases of expression**, he gives the technical mechanics, and lists
+> guilty, ashamed, frightened, content, angry, smug, confident, frustrated "and a host of other ways
+> **too numerous to tabulate**." What is finite here is the muscles, not the emotions.
+>
+> So read `'joy'`, `'anger'`, `'fear'`, `'sadness'`, `'surprise'` and `'disgust'` as the six presets
+> `Drawing.applyFacialExpression(...)` happens to ship, each a named landmark displacement. A useful
+> set; not a basis.
+
+**Two antagonist groups do most of the work**, with a handful of wrinkle muscles for the rest.
+Loomis's instruction is to hold the first two as a pair, because they are the basis of most facial
+expressions:
+
+| Group | Attachment | Action |
+| :--- | :--- | :--- |
+| **"Happy muscles"** | cheekbones, running diagonally down the cheeks to the muscles around the lips | pull the mouth corners **out and diagonally upward**; puff the cheeks by contracting within the flesh |
+| **"Unhappy muscles"** | bone beside the nose at one end, the jaw at the other, passing the mouth corners | pull the lips **up into a snarl or down into a leer**; working from both ends they bare the teeth; also pull the inside corner of the brow down into a frown |
+| **"Wrinkle muscles"** | inside corner of the brows near the nose; two above the brows; two at the point of the chin | lift the inner brow corner (worry, pleading); wrinkle the forehead; buckle the chin into humps, and dimple it |
+
+**The mouth corner is the primary variable, and its *shape* is the distinction.** Loomis separates a
+**sharp-cornered smile** from a **round-cornered laugh**, and names the failure mode plainly: *a round
+corner badly drawn can easily become a leer.* That is a geometric decision an algorithm can hold — the
+corner is either an angular junction pulled out and up, or a curve — and it is the one most worth
+getting right, because **the basis of most expressions is usually in the mouth**. The unhappy muscles
+make round corners; the smile pulls them out and upward.
+
+**Most of the rest is consequence rather than an independent control**, which is what makes it
+implementable as an ordered pass:
+
+1. The happy muscles pull, so the cheeks bulge.
+2. The bulging cheek flesh buckles at the eye corners — **that is what crow's feet are**, not a
+   separate wrinkle to be drawn on its own.
+3. The same bulge raises the fold of flesh under the eye in a smile, more pronounced on some faces.
+4. The nostrils flare a little, which Loomis counts among *the things that help to make a face smile*.
+5. The dimple in the lower part of the smiling cheek is the small open space between the unhappy
+   muscle and the jaw muscle — a young face's dimple and an old face's depression are the same
+   feature at different ages.
+
+A smile is therefore one pull with four consequences, and drawing the consequences without the pull
+is what produces a face that reads as assembled from parts.
+
+> [!NOTE]
+> **Plate 21 is a per-muscle state table, and it is the shape this API should have had.** Loomis
+> captions it with four states — **worry, frown, laugh, anger** — and marks each muscle *relaxed* or
+> *contracted* under each. That is a sparse matrix of muscles against expressions, not six
+> independent landmark recipes, and it composes where the six presets do not: worry and a frown share
+> the brow and differ at its inner corner, so they should be expressible together.
+> `Drawing.applyFacialExpression(...)` takes one name and one intensity, so today they cannot be.
+> **No muscle-level call exists yet — do not write one into a script expecting it to resolve.**
+
+> [!TIP]
+> **Loomis's own method for getting these right is a mirror**, and the studio equivalent is a
+> specimen sheet: render the same head at one size across all six presets and several intensities in
+> a single frame, and compare them side by side rather than one per run. `Layout.grid(...)` lays the
+> cells out, and one `Drawing.createLoomisHead(...)` reused across them keeps everything but the
+> expression constant — which is the only way a difference between two of them means anything.
 
 ---
 

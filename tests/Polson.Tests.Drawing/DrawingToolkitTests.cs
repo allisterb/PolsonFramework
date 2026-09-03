@@ -256,6 +256,42 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.True(bytes.Length > 100);
     }
 
+    /// <summary>
+    /// A side longer than 85% of the anchor-to-VP distance used to be clamped, so an over-large box came
+    /// back silently shortened and looked deliberate. It now refuses, and the message carries the measured
+    /// fraction and the largest extent that would have been accepted.
+    /// </summary>
+    [Fact]
+    public void TestPerspectiveBoxRefusesASideThatReachesItsVanishingPoint()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var grid = toolkit.CreatePerspectiveGrid(new Dictionary<string, object?>
+        {
+            ["horizonY"] = 250f,
+            ["centerOfVisionX"] = 400f,
+            ["focalLength"] = 800f,
+            ["cameraAngleDeg"] = 40f
+        });
+
+        var vpL = (Dictionary<string, object?>)grid["vpL"]!;
+        var reach = MathF.Sqrt(
+            MathF.Pow(Convert.ToSingle(vpL["x"]) - 400f, 2) + MathF.Pow(Convert.ToSingle(vpL["y"]) - 450f, 2));
+
+        // Just inside the limit still projects; just outside it is refused rather than shortened.
+        Assert.NotNull(toolkit.CreatePerspectiveBox(grid, 400f, 450f, reach * 0.84f, 120f, 150f));
+
+        var tooWide = Assert.Throws<ArgumentOutOfRangeException>(
+            () => toolkit.CreatePerspectiveBox(grid, 400f, 450f, reach * 0.95f, 120f, 150f));
+        Assert.Equal("width", tooWide.ParamName);
+        Assert.Contains("createPerspectiveBox", tooWide.Message);
+        Assert.Contains("left vanishing point", tooWide.Message);
+
+        var tooDeep = Assert.Throws<ArgumentOutOfRangeException>(
+            () => toolkit.CreatePerspectiveBox(grid, 400f, 450f, 180f, 120f, 100000f));
+        Assert.Equal("depth", tooDeep.ParamName);
+        Assert.Contains("right vanishing point", tooDeep.Message);
+    }
+
     [Fact]
     public void TestPerspectiveBoxProjection()
     {

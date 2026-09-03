@@ -644,9 +644,9 @@ parameter, not a paragraph.
 
 ### Sources now in use
 
-`Imaginative Drawing` is **excluded** (§11b, and `CLAUDE.md` §0 — do not re-add it). Five replacements
-are ledger-scanned and clean; the ledger row for each carries its licence and handling. The last two
-were added on 2026-09-02 and closed the two largest gaps between them.
+`Imaginative Drawing` is **excluded** (§11b, and `CLAUDE.md` §0 — do not re-add it). Six replacements
+are ledger-scanned and clean; the ledger row for each carries its licence and handling. The last three
+were added on 2026-09-02 and between them closed every gap the table below had recorded.
 
 | Source | Covers |
 | :--- | :--- |
@@ -656,6 +656,7 @@ were added on 2026-09-02 and closed the two largest gaps between them.
 | **Faragasso**, *Mastering Drawing the Human Figure* (1998) | Reilly-method structure lines and torso construction |
 | **Loomis**, *Successful Drawing* (1951) | the three laws of light, cast-shadow projection, planes, the five P's, lighting consistency |
 | **Loomis**, *The Eye of the Painter* (1961) | shadow colour as cause and effect, the primaries rule, four-value pattern, concentration of chroma |
+| **Loomis**, *Drawing the Head and Hands* (1956) | the muscles of expression, the sharp/round mouth corner, hand block forms and proportions |
 
 **Loomis cites Norling by name** (*Figure Drawing* p. 36), which is real evidence the figure and
 perspective halves are not being stitched from incompatible traditions.
@@ -681,9 +682,9 @@ the passage. Three of the first-draft citations were off by one page and were co
 | Manual | Sourced | Still pending |
 | :--- | :--- | :--- |
 | 05 Observation | §1, §2 (Loomis), §3 contour (Loomis), §4 planes + §5 pattern (*Successful Drawing*, *Eye of the Painter*) | — |
-| 06 Perspective | §1, §3, §4 (Norling), §5, §5a (Loomis) | §2 |
+| 06 Perspective | §1, §3, §4 (Norling), §5, §5a (Loomis), §2 (*Successful Drawing*) | — |
 | 07 Lighting | §1 (Loomis, incl. edges, + three laws), §2 (*Successful Drawing*), §3 (*Eye of the Painter*), §4 (*Successful Drawing*) | — |
-| 08 Anatomy | §1, §2 (Loomis), §3 (Faragasso) | §4 expressions |
+| 08 Anatomy | §1, §2 (Loomis), §3 (Faragasso), §4 (*Drawing the Head and Hands*) | — |
 | 09 Composition | §1, §2 (+ fifth device), §3 key, §4 (*Eye of the Painter*) | §1's four fixed armature types |
 
 Every header states which sections are cited and which are pending, so a partial file cannot be
@@ -755,7 +756,13 @@ proposal was written in call syntax. That guard works; respect it.
    the colour of whatever light reaches it, so one shadow can be warm at the bottom from ground
    bounce and cool at the top from the sky. The complementary-hue rule the manual used to state was a
    heuristic standing in for that.
-2. **Manual 08 §4 (expressions)** — still no source identified, now across six books.
+2. ~~**Manual 08 §4 (expressions)**~~ — **closed 2026-09-02** from *Drawing the Head and Hands*, along
+   with Manual 06 §2 from *Successful Drawing*. **Every section of every manual 05–09 is now cited.**
+   §4's framing was withdrawn with the fix: it asserted that expressions decompose into six universal
+   patterns, which is Ekman's contested basic-emotion claim stated as settled, where Loomis
+   explicitly sets the emotions aside as "too numerous to tabulate" and works from the muscles. The
+   six preset names remain — they are what `applyFacialExpression` ships — but they are now labelled
+   as the SDK's enumeration rather than a basis.
 3. **Norling Steps Five–Six** (two vanishing points) for Manual 06 §1, and the "Dividing the Circle"
    pages of Step Fourteen for §3's cap ellipses.
 4. **The two missing capabilities above**, if a run wants them.
@@ -764,6 +771,50 @@ proposal was written in call syntax. That guard works; respect it.
    computed by `createLoomisHead` and discarded by the draw methods — one defect, smaller than either
    finding assumed), #13/#18 (path recorder). Harness: **A/F** (subagent `findings.md` refusal — needs
    a design call), **B** (`reference_images/` absent), **#23** (Grep display artifact).
+
+### What the 2026-09-02 reading changed in code
+
+- **`CreatePerspectiveBox` no longer clamps, it refuses.** `tL = min(0.85, width / lenL)` silently
+  shortened any side longer than 85% of the anchor-to-VP distance, so an over-large box came back
+  smaller than asked for and looked deliberate — doc/code drift too, since Manual 06 §2's formula
+  never mentioned the clamp. It now throws an `ArgumentOutOfRangeException` naming the measured
+  fraction, the anchor-to-VP distance, and the largest extent that would have been accepted. The
+  0.85 is now a named `MaxRecession` constant, and the two per-axis blocks collapsed into one
+  `Recede` helper. Pinned by `TestPerspectiveBoxRefusesASideThatReachesItsVanishingPoint`, which
+  checks both sides and asserts on `ParamName` so a future refactor cannot swap width for depth
+  silently.
+- **The limit is documented and pinned to the doc.** `docs/Polson.core.md` now says a side past 85%
+  *throws* — explicitly a script-ending error rather than an `Assets.*`-style failure object, which
+  is a distinction the SDK gives an agent no other way to learn — and shows the pre-check, since the
+  grid hands back `vpL`/`vpR` as `{ x, y }`. `TestDocumentedBoxRecessionLimitMatchesTheToolkit`
+  **parses the percentage out of the reference** and tests the call against it, so changing
+  `MaxRecession` without the doc fails. Verified by flipping the constant to 0.75 and watching it
+  fail, rather than trusting that it would.
+
+### Two capability gaps the head-and-hands reading opened
+
+Both are described in the manuals with the standing **"no such call exists yet"** disclaimer, so
+`TestEveryManualBindsToRealSdkCalls` stays green.
+
+1. **Expression is a muscle matrix, not six presets.** Loomis's Plate 21 marks each muscle *relaxed*
+   or *contracted* across worry, frown, laugh and anger — a sparse matrix that **composes**, where
+   `applyFacialExpression(head, name, intensity)` takes one name and cannot mix two. Worry and a
+   frown share the brow and differ only at its inner corner, and today that is inexpressible.
+2. **There is no hand construction at all.** `createMannequinFigure` ends limbs in box hands, and
+   nothing in `reference/` covered hands until now. *Drawing the Head and Hands* Part Five has the
+   whole thing — block forms, the hollow of the palm, foreshortening, and a proportional canon keyed
+   on the middle finger (length to the back knuckle slightly over half the hand; palm width slightly
+   more than half; index reaching the middle finger's nail; ring ≈ index; little finger reaching the
+   ring's top knuckle; thumb at right angles to the others, moving in and out from the palm while
+   the fingers close toward it). That is enough to specify a `createHandFigure` without inventing
+   anything. cs-5 lacked heads and hands; this is the hands half.
+
+**Also worth knowing: Manual 01 (Head & Facial Construction) carries no `Source Reference` line at
+all** — it is the one manual that was never audited, because the re-sourcing work started from the
+withdrawn *Imaginative Drawing* citations and Manual 01 had none to withdraw. *Drawing the Head and
+Hands* is obviously its source; Part One's plates run the ball-and-plane construction, the middle
+line, the planes of the head, tilting, and perspective. Verifying what Manual 01 already claims
+against those plates is the next re-sourcing job.
 
 ### Two process notes
 

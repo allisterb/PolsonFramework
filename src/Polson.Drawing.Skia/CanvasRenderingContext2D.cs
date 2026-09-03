@@ -1209,6 +1209,14 @@ public class CanvasRenderingContext2D
             _toolkit.DrawMannequinWireframe(this, figure, options);
     }
 
+    public void DrawHand(object hand, bool solid = false, object? options = null)
+    {
+        if (solid)
+            _toolkit.DrawHandSolid(this, hand, options);
+        else
+            _toolkit.DrawHandWireframe(this, hand, options);
+    }
+
     public void DrawTorsoMusculature(object figure, object? options = null) =>
         _toolkit.DrawTorsoMusculature(this, figure, options);
 

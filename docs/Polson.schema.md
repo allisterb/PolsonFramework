@@ -228,7 +228,7 @@ Parametric 3D cranial structure model returned by `Drawing.createLoomisHead(...)
     "farEye": { "type": "object", "description": "Foreshortened by cos(yaw); pass with isFar = true.", "properties": { "inner": { "type": "object" }, "outer": { "type": "object" }, "center": { "type": "object" }, "width": { "type": "number" }, "height": { "type": "number" } } },
     "noseWedge": { "type": "object", "description": "Accepted directly by Drawing.drawComicNose(...).", "properties": { "bridgeTop": { "type": "object" }, "apex": { "type": "object" }, "underNose": { "type": "object" }, "nearNostril": { "type": "object" } } },
     "mouthGuides": { "type": "object", "description": "Accepted directly by Drawing.drawComicMouth(...).", "properties": { "center": { "type": "object" }, "leftCorner": { "type": "object" }, "rightCorner": { "type": "object" }, "upperLipY": { "type": "number" }, "lowerLipY": { "type": "number" } } },
-    "jaw": { "type": "object", "properties": { "ear": { "type": "object" }, "angle": { "type": "object" }, "chin": { "type": "object" }, "cheekApex": { "type": "object" } } },
+    "jaw": { "type": "object", "properties": { "ear": { "type": "object" }, "angle": { "type": "object" }, "nearAngle": { "type": "object" }, "farStation": { "type": "object" }, "nearStation": { "type": "object" }, "chinFar": { "type": "object" }, "chinNear": { "type": "object" }, "chin": { "type": "object" }, "cheekApex": { "type": "object" } } },
     "temporalOval": { "type": "object", "description": "The flat temple plane sliced off the cranial sphere.", "properties": { "cx": { "type": "number" }, "cy": { "type": "number" }, "rx": { "type": "number" }, "ry": { "type": "number" } } }
   },
   "required": ["unit", "origin", "crown", "hairline", "brow", "eyeLineY", "noseBase", "mouthCenter", "chin", "nearEye", "farEye", "noseWedge", "mouthGuides", "jaw", "temporalOval"]
@@ -501,6 +501,37 @@ Harmonic scale returned by `LogoType.calculateTypographicScale(...)`:
   "required": ["baseSize", "ratioName", "ratioFactor", "steps"]
 }
 ```
+
+
+## HandFigure
+
+Returned by `Drawing.createHandFigure(...)`. Every length is a fraction of `unit.length`, which is the
+hand from the wrist to the middle fingertip.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "unit": { "type": "object", "properties": { "length": { "type": "number" }, "palmLength": { "type": "number" }, "palmWidth": { "type": "number" }, "middleLength": { "type": "number" }, "side": { "type": "string", "enum": ["right", "left"] } } },
+    "wrist": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
+    "palm": { "type": "object", "properties": { "wristInner": { "type": "object" }, "wristOuter": { "type": "object" }, "knuckleInner": { "type": "object" }, "knuckleOuter": { "type": "object" }, "centre": { "type": "object" } } },
+    "midLine": { "type": "object", "properties": { "from": { "type": "object" }, "to": { "type": "object" } } },
+    "thenar": { "type": "object", "properties": { "wrist": { "type": "object" }, "crest": { "type": "object" }, "base": { "type": "object" }, "web": { "type": "object" } } },
+    "fingers": {
+      "type": "array",
+      "items": { "type": "object", "properties": { "name": { "type": "string", "enum": ["index", "middle", "ring", "little"] }, "knuckle": { "type": "object" }, "joints": { "type": "array", "items": { "type": "object" }, "minItems": 3, "maxItems": 3 }, "tip": { "type": "object" }, "length": { "type": "number" }, "width": { "type": "number" } } },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "thumb": { "type": "object", "properties": { "base": { "type": "object" }, "joints": { "type": "array", "items": { "type": "object" }, "minItems": 2, "maxItems": 2 }, "tip": { "type": "object" }, "length": { "type": "number" }, "width": { "type": "number" } } }
+  },
+  "required": ["unit", "wrist", "palm", "midLine", "thenar", "fingers", "thumb"]
+}
+```
+
+`fingers[i].joints` runs `[first, second, tip]`, so `joints[2]` and `tip` are the same point. The thumb
+has two phalanges rather than three, so `thumb.joints` is `[knuckle, tip]`.
+
 
 ## `FontPairingEvaluation`
 

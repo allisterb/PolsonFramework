@@ -68,8 +68,14 @@ public class ConstructiveDrawingToolkit
     /// </remarks>
     public Dictionary<string, object?> CreateLoomisHead(float originX, float originY, float headHeight, float yawDeg = 35f, float pitchDeg = 0f)
     {
+        // Loomis's scale for the standard head (Drawing the Head and Hands, Plate 18): the head is
+        // 3.5 units tall and 3 units wide including the ears. Half a unit of dome sits above the
+        // hairline, then three equal units - forehead, nose, jaw. Plate 1 constructs those three by
+        // stepping the forehead interval off twice down the middle line, which is why they are equal
+        // by construction rather than measured independently.
         var H = headHeight;
-        var W = H * 0.72f;
+        var unit = H / 3.5f;
+        var W = unit * 3f;
         var rad = (yawDeg * MathF.PI) / 180f;
         var pitchRad = (pitchDeg * MathF.PI) / 180f;
 
@@ -78,16 +84,21 @@ public class ConstructiveDrawingToolkit
         var pitchY = MathF.Sin(pitchRad) * (H * 0.15f);
         var centerAxisX = originX + turnX;
 
-        // Vertical Levels (Rule of Thirds)
-        var yCrown = originY - H * 0.50f + pitchY;
-        var yHairline = originY - H * 0.28f + pitchY * 0.8f;
-        var yBrow = originY - H * 0.05f + pitchY * 0.5f;
-        var yEye = originY + H * 0.02f + pitchY * 0.4f;
-        var yNose = originY + H * 0.20f + pitchY * 0.2f;
-        var yMouth = originY + H * 0.33f + pitchY * 0.1f;
-        var yChin = originY + H * 0.50f;
+        // Vertical levels, in units down from the crown. The eye line lands at 1.75 units, which is
+        // exactly half the head - Loomis states that outright and defends it as what averages out
+        // across a large percentage of real faces.
+        var top = originY - H * 0.5f;
+        var yCrown = top + pitchY;
+        var yHairline = top + unit * 0.5f + pitchY * 0.8f;
+        var yBrow = top + unit * 1.5f + pitchY * 0.5f;
+        var yEye = top + unit * 1.75f + pitchY * 0.4f;
+        var yNose = top + unit * 2.5f + pitchY * 0.2f;
+        var yMouth = top + unit * (2.5f + 1f / 3f) + pitchY * 0.1f;   // lip line a third of a unit below the nose
+        var yChin = top + unit * 3.5f;
 
-        var eyeW = W * 0.20f;
+        // Each eye is half a unit wide, so the 2-unit face is 4 eye-widths across and the 3-unit head
+        // is 6 (Plate 19, where the eyes fall at the quarter points of the two units).
+        var eyeW = unit * 0.5f;
         var farScale = MathF.Max(0.45f, MathF.Cos(rad));
         var eyeWFar = eyeW * farScale;
 
@@ -98,26 +109,60 @@ public class ConstructiveDrawingToolkit
         var mouthCenterPt = new Point2D(centerAxisX, yMouth);
         var chinPt = new Point2D(centerAxisX + turnX * 0.1f, yChin);
 
-        // Near eye
-        var nearInner = new Point2D(centerAxisX + eyeW * 0.40f, yEye);
-        var nearOuter = new Point2D(centerAxisX + eyeW * 1.40f, yEye - 3f);
-        var nearCenter = new Point2D(centerAxisX + eyeW * 0.90f, yEye);
+        // Near eye. Inner corner half an eye-width off the facial axis, so the two inner corners sit
+        // one eye-width apart - the half-unit spacing of Plate 19.
+        var nearInner = new Point2D(centerAxisX + eyeW * 0.50f, yEye);
+        var nearOuter = new Point2D(centerAxisX + eyeW * 1.50f, yEye - 3f);
+        var nearCenter = new Point2D(centerAxisX + eyeW * 1.00f, yEye);
 
-        // Far eye
-        var farInner = new Point2D(centerAxisX - eyeW * 0.35f, yEye);
-        var farOuter = new Point2D(centerAxisX - eyeW * 0.35f - eyeWFar, yEye - 2f);
-        var farCenter = new Point2D(centerAxisX - eyeW * 0.35f - eyeWFar * 0.5f, yEye);
+        // Far eye. The far side of the face compresses with the turn, so its inner corner comes in with
+        // it; at yaw 0 the pair is symmetric and the gap is exactly one eye-width.
+        var farInnerX = centerAxisX - eyeW * 0.50f * farScale;
+        var farInner = new Point2D(farInnerX, yEye);
+        var farOuter = new Point2D(farInnerX - eyeWFar, yEye - 2f);
+        var farCenter = new Point2D(farInnerX - eyeWFar * 0.5f, yEye);
 
         // Ear & Jaw
-        var earPt = new Point2D(originX - W * 0.45f, (yBrow + yNose) * 0.5f);
-        var jawAnglePt = new Point2D(originX - W * 0.28f, yNose + H * 0.08f);
+        // The 3-unit width INCLUDES the ears (Plate 18), and an ear is one unit tall - so as a circle it
+        // is half a unit across and its centre sits one unit off the axis, putting its outer edge exactly
+        // on the head's half-width. Vertically it spans brow to nose, which is that same unit.
+        // ...and it swings with the turn: the ear rides the ball, so its offset from the cranium axis
+        // foreshortens by cos(yaw), the same projection the far eye already uses. Without this it stayed
+        // pinned to the front view and drifted off the side of a turned head.
+        var earPt = new Point2D(originX - unit * MathF.Cos(rad), (yBrow + yNose) * 0.5f);
+        // Plate 1: the jaw line connects about halfway around the ball on each side, and the ears attach
+        // along that same halfway line - so the jaw angle hangs directly below the ear rather than at its
+        // own fraction of W, and follows the ear round as the head turns. Its depth below the nose line
+        // is the studio's; Loomis gives no measurement for it.
+        var jawAnglePt = new Point2D(earPt.X + unit * 0.25f, yNose + unit * 0.3f);
+
+        // Plate 1: the jaw line connects about halfway around the ball ON EACH SIDE, so the jaw has two
+        // stations and the near one is the far one mirrored about the cranium axis. That halfway line is
+        // the ball's own silhouette, and at the height the jaw leaves it - the nose line - it has come in
+        // from the full radius to sqrt(R^2 - unit^2); the turn foreshortens both. Shortening them together
+        // is what closes the near side of the jaw as the head turns away.
+        //
+        // Loomis gives the two stations and nothing else. The angle's depth below the nose line and the
+        // chin's share of the span between the angles are the studio's, and are in units so they scale.
+        var ballR = yBrow - yCrown;
+        var stationHalf = MathF.Sqrt(MathF.Max(1f, ballR * ballR - unit * unit)) * MathF.Cos(rad);
+        var farStationPt = new Point2D(originX - stationHalf, yNose);
+
+        // Past about 60 degrees the facial axis has swung further out than the near station has come in,
+        // and unguarded the near jaw crosses the chin and the path turns inside out. Hold it clear of the
+        // axis instead: the near jaw goes on shortening, but the chin stays between its own two angles.
+        var nearAngleX = MathF.Max(originX + stationHalf - unit * 0.25f, chinPt.X + unit * 0.15f);
+        var nearAnglePt = new Point2D(nearAngleX, jawAnglePt.Y);
+        var nearStationPt = new Point2D(MathF.Max(originX + stationHalf, nearAngleX + unit * 0.1f), yNose);
+        var chinFarPt = new Point2D(chinPt.X + (jawAnglePt.X - chinPt.X) * 0.8f, yChin);
+        var chinNearPt = new Point2D(chinPt.X + (nearAngleX - chinPt.X) * 0.8f, yChin);
         var cheekApexPt = new Point2D(centerAxisX - eyeWFar - W * 0.08f, yEye + H * 0.04f);
 
         // Nose Wedge
         var bridgeTopPt = new Point2D(centerAxisX, yBrow + (yEye - yBrow) * 0.5f);
         var noseApexPt = new Point2D(centerAxisX + turnX * 0.35f, yNose);
         var underNosePt = new Point2D(centerAxisX, yNose + H * 0.035f);
-        var nearNostrilPt = new Point2D(centerAxisX + eyeW * 0.45f, yNose + H * 0.02f);
+        var nearNostrilPt = new Point2D(centerAxisX + eyeW * 0.50f, yNose + H * 0.02f);
 
         // Mouth Guides
         var mouthLeft = new Point2D(centerAxisX - eyeW * 0.55f * farScale, yMouth);
@@ -130,7 +175,7 @@ public class ConstructiveDrawingToolkit
                 ["H"] = H,
                 ["W"] = W,
                 ["eyeW"] = eyeW,
-                ["thirdH"] = H / 3f
+                ["thirdH"] = unit
             },
             ["origin"] = new Dictionary<string, object?> { ["x"] = originX, ["y"] = originY },
             ["crown"] = ToDict(crownPt),
@@ -175,6 +220,11 @@ public class ConstructiveDrawingToolkit
             {
                 ["ear"] = ToDict(earPt),
                 ["angle"] = ToDict(jawAnglePt),
+                ["nearAngle"] = ToDict(nearAnglePt),
+                ["farStation"] = ToDict(farStationPt),
+                ["nearStation"] = ToDict(nearStationPt),
+                ["chinFar"] = ToDict(chinFarPt),
+                ["chinNear"] = ToDict(chinNearPt),
                 ["chin"] = ToDict(chinPt),
                 ["cheekApex"] = ToDict(cheekApexPt)
             },
@@ -213,6 +263,11 @@ public class ConstructiveDrawingToolkit
         var jaw = JsInterop.AsDict(head["jaw"]);
         var ear = ExtractPoint(jaw?["ear"]);
         var jawAngle = ExtractPoint(jaw?["angle"]);
+        var nearAngle = ExtractPoint(jaw?["nearAngle"]);
+        var farStation = ExtractPoint(jaw?["farStation"]);
+        var nearStation = ExtractPoint(jaw?["nearStation"]);
+        var chinFar = ExtractPoint(jaw?["chinFar"]);
+        var chinNear = ExtractPoint(jaw?["chinNear"]);
         var cheekApex = ExtractPoint(jaw?["cheekApex"]);
 
         var nearEye = JsInterop.AsDict(head["nearEye"]);
@@ -241,7 +296,9 @@ public class ConstructiveDrawingToolkit
 
         // Cranial Sphere
         ctx.BeginPath();
-        ctx.Arc(origin.X, origin.Y - H * 0.08f, H * 0.42f, 0f, MathF.PI * 2f);
+        // Plate 1: the ball's equator IS the brow line and its top IS the crown, so both come off the
+        // landmarks rather than from fractions of H that only happen to land near them.
+        ctx.Arc(origin.X, brow.Y, brow.Y - crown.Y, 0f, MathF.PI * 2f);
         ctx.Stroke();
 
         // Temporal Slice Oval
@@ -265,21 +322,35 @@ public class ConstructiveDrawingToolkit
             ctx.Stroke();
         }
 
+        var unitLen = noseBase.Y - brow.Y;                     // one Loomis unit, read off the landmarks
+        var chinRise = (chinNear.X - chinFar.X) * 0.15f;      // corners sit above the lowest point
+
         DrawGuide(hairline, W * 0.7f);
         DrawGuide(brow, W * 0.85f);
         DrawGuide(noseBase, W * 0.75f);
-        DrawGuide(chin, W * 0.45f);
+        DrawGuide(chin, chinNear.X - chinFar.X);
 
         // 2. Graphite Pencil Contours (Jawline, Eyes, Nose, Mouth, Ear)
         ctx.StrokeStyle = graphite;
         ctx.LineWidth = 2.0f;
 
-        // Jawline path: ear -> jaw angle -> chin -> cheek apex
+        // Jawline: down from each halfway station to its angle, and round a chin with real width. The
+        // frame comes off the model - see head.jaw - so a script can draw its own jaw on the same points.
         ctx.BeginPath();
-        ctx.MoveTo(ear.X, ear.Y);
+        ctx.MoveTo(farStation.X, farStation.Y);
         ctx.LineTo(jawAngle.X, jawAngle.Y);
-        ctx.QuadraticCurveTo(chin.X - 10f, chin.Y + 4f, chin.X, chin.Y);
-        ctx.QuadraticCurveTo(chin.X + 15f, chin.Y - 5f, cheekApex.X, cheekApex.Y);
+        ctx.QuadraticCurveTo(jawAngle.X, chinFar.Y - chinRise, chinFar.X, chinFar.Y - chinRise);
+        ctx.QuadraticCurveTo(chin.X, chin.Y + chinRise, chinNear.X, chinNear.Y - chinRise);
+        ctx.QuadraticCurveTo(nearAngle.X, chinNear.Y - chinRise, nearAngle.X, nearAngle.Y);
+        ctx.LineTo(nearStation.X, nearStation.Y);
+        ctx.Stroke();
+
+        // Far cheek plane, from the cheekbone down to the jaw angle. Drawn separately: it used to be the
+        // tail of the jaw path, and since cheekApex sits on the FAR side the path doubled back across the
+        // face and closed into a narrow V with a pointed chin.
+        ctx.BeginPath();
+        ctx.MoveTo(cheekApex.X, cheekApex.Y);
+        ctx.QuadraticCurveTo(cheekApex.X, jawAngle.Y - unitLen * 0.35f, jawAngle.X, jawAngle.Y);
         ctx.Stroke();
 
         // Eye Socket Guidelines
@@ -299,7 +370,9 @@ public class ConstructiveDrawingToolkit
 
         // Ear Outline
         ctx.BeginPath();
-        ctx.Arc(ear.X, ear.Y, H * 0.08f, 0f, MathF.PI * 2f);
+        // Plate 1: the ear's height is the brow-to-nose span, so its radius is half that rather than a
+        // fraction of H. The old H * 0.08f drew it at a little over half the size it should be.
+        ctx.Arc(ear.X, ear.Y, (noseBase.Y - brow.Y) * 0.5f, 0f, MathF.PI * 2f);
         ctx.Stroke();
 
         ctx.Restore();
@@ -2723,6 +2796,433 @@ public class ConstructiveDrawingToolkit
             };
         }
     }
+    #region Hands
+    /// <summary>
+    /// Computes hand landmarks on Loomis's scale (<i>Drawing the Head and Hands</i>, Plates 78-79,
+    /// pp. 136-137). <paramref name="originX"/>/<paramref name="originY"/> is the <b>centre of the
+    /// wrist</b>, and the hand runs toward the fingertips along <c>rotationDeg</c> (0 = up the page).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Loomis's proportions, all as fractions of <paramref name="handLength"/> (wrist to middle
+    /// fingertip): the middle finger measured from its knuckle at the back is <b>slightly over half</b>
+    /// the hand, so the palm is the rest; the palm is <b>slightly more than half the hand</b> wide; the
+    /// index reaches the middle finger's fingernail; the ring is about equal to the index; the little
+    /// finger reaches the ring's top knuckle. Two fingers fall on each side of a line through the middle
+    /// of the palm, and the thumb is turned at right angles to the others.
+    /// </para>
+    /// <para>
+    /// What is <i>not</i> his and is the studio's: the split of a finger into its three phalanges, the
+    /// thumb's length, and the exact fractions standing in for "reaches the fingernail" and "reaches the
+    /// top knuckle" - both need a nail or a phalanx length he never gives.
+    /// </para>
+    /// <para>Exposed to scripts, so members are PascalCase here and camelCase in JS.</para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateHandFigure(float originX, float originY, float handLength = 200f, object? options = null)
+    {
+        var opt = JsInterop.AsDict(options);
+        float Opt(string key, float fallback) =>
+            opt != null && opt.Contains(key) ? Convert.ToSingle(opt[key], CultureInfo.InvariantCulture) : fallback;
+
+        var side = opt?["side"]?.ToString()?.Trim().ToLowerInvariant() ?? "right";
+        var mirror = side == "left" ? -1f : 1f;
+        var spreadDeg = Opt("spreadDeg", 7f);
+        var curlDeg = Opt("curlDeg", 0f);
+        var thumbDeg = Opt("thumbDeg", 46f);
+        var rotationDeg = Opt("rotationDeg", 0f);
+
+        var L = handLength;
+        var palmLength = L * 0.48f;          // the rest of the hand once the middle finger has its share
+        var palmWidth = L * 0.55f;           // "slightly more than half the hand", measured inside
+        var middleLen = L * 0.52f;           // "slightly over half", knuckle at the back to the tip
+
+        // Loomis states the finger lengths as reaches rather than numbers. The little finger "just reaches
+        // the top knuckle of the third finger", which is one distal phalanx down - so once Hampton's 3:2
+        // ratio below fixes the distal share, that reach becomes computable rather than guessed. The
+        // index's "reaches the fingernail" still needs a nail length neither of them gives; a nail as
+        // about half the distal phalanx puts it at 0.90.
+        var ratios = new[] { 0.90f, 1.00f, 0.90f, 0.90f * (1f - 4f / 19f) };   // index, middle, ring, little
+        var names = new[] { "index", "middle", "ring", "little" };
+        // Michael Hampton, Figure Drawing: Design and Invention (2009), "Hand Structure and Proportion":
+        // the finger bones run on a 3:2 ratio - divide the proximal phalanx in three and two of those
+        // parts are the middle phalanx; divide the middle in three and two of those are the distal. That
+        // is 1 : 2/3 : 4/9, normalised below. It replaces a studio guess of 0.45 / 0.30 / 0.25, which was
+        // close on the first two bones and had the fingertip a fifth too long.
+        var phalanx = new[] { 9f / 19f, 6f / 19f, 4f / 19f };     // 0.474, 0.316, 0.211
+
+        var rot = rotationDeg * MathF.PI / 180f;
+        var cosR = MathF.Cos(rot);
+        var sinR = MathF.Sin(rot);
+
+        // Hand space runs +y toward the fingertips and +x across the palm toward the thumb; this puts it
+        // on the canvas, where y grows downward.
+        Point2D Place(float across, float along)
+        {
+            var x = across * mirror;
+            return new Point2D(originX + x * cosR + along * sinR, originY + x * sinR - along * cosR);
+        }
+
+        var wristPt = Place(0f, 0f);
+
+        // Knuckle stations across the hand. The knuckle arc is the flat one; the joint arcs beyond it
+        // deepen row by row, which happens on its own because the fingers differ in length.
+        var acrossAt = new[] { -0.34f, -0.10f, 0.14f, 0.36f };    // index..little, in palm widths from centre
+        var knuckleAlong = new[] { 0.99f, 1.00f, 0.96f, 0.88f };  // little sits lowest on the arc
+
+        var fingers = new List<Dictionary<string, object?>>();
+        for (var i = 0; i < 4; i++)
+        {
+            var across = acrossAt[i] * palmWidth;
+            var basePt = Place(across, knuckleAlong[i] * palmLength);
+            var len = middleLen * ratios[i];
+
+            // Fingers fan from the knuckle line, and curl at each joint by the same amount.
+            var fanDeg = (i - 1.5f) * spreadDeg;
+            var dir = (rotationDeg + fanDeg * mirror) * MathF.PI / 180f;
+
+            var joints = new List<Dictionary<string, object?>>();
+            var cursor = basePt;
+            var heading = dir;
+            for (var s = 0; s < 3; s++)
+            {
+                heading += curlDeg * MathF.PI / 180f;
+                var seg = len * phalanx[s];
+                cursor = new Point2D(cursor.X + seg * MathF.Sin(heading), cursor.Y - seg * MathF.Cos(heading));
+                joints.Add(ToDict(cursor));
+            }
+
+            fingers.Add(new Dictionary<string, object?>
+            {
+                ["name"] = names[i],
+                ["knuckle"] = ToDict(basePt),
+                ["joints"] = joints,               // [first, second, tip]
+                ["tip"] = joints[2],
+                ["length"] = len,
+                ["width"] = palmWidth * 0.21f
+            });
+        }
+
+        // Loomis: the thumb is turned at right angles to the other fingers, and operates mostly in and
+        // out from the palm where the fingers open and close toward it. That is a statement about the
+        // PLANE it moves in, not about the angle it makes on the page - drawn at a literal 90 degrees it
+        // sticks straight out of the side of the wrist. thumbDeg is the drawn angle off the hand's long
+        // axis, and its default and length are the studio's; Loomis gives neither.
+        var thumbBase = Place(palmWidth * 0.42f, palmLength * 0.44f);
+        var thumbLen = L * 0.34f;
+        var thumbDir = (rotationDeg + thumbDeg * mirror) * MathF.PI / 180f;
+        var thumbJoints = new List<Dictionary<string, object?>>();
+        var tCursor = thumbBase;
+        var tHeading = thumbDir;
+        foreach (var share in new[] { 0.58f, 0.42f })
+        {
+            tHeading -= curlDeg * 0.5f * MathF.PI / 180f * mirror;
+            var seg = thumbLen * share;
+            tCursor = new Point2D(tCursor.X + seg * MathF.Sin(tHeading), tCursor.Y - seg * MathF.Cos(tHeading));
+            thumbJoints.Add(ToDict(tCursor));
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["unit"] = new Dictionary<string, object?>
+            {
+                ["length"] = L,
+                ["palmLength"] = palmLength,
+                ["palmWidth"] = palmWidth,
+                ["middleLength"] = middleLen,
+                ["side"] = side
+            },
+            ["wrist"] = ToDict(wristPt),
+            ["palm"] = new Dictionary<string, object?>
+            {
+                ["wristInner"] = ToDict(Place(-palmWidth * 0.40f, 0f)),
+                ["wristOuter"] = ToDict(Place(palmWidth * 0.40f, 0f)),
+                ["knuckleInner"] = ToDict(Place(-palmWidth * 0.46f, palmLength * 0.99f)),
+                ["knuckleOuter"] = ToDict(Place(palmWidth * 0.46f, palmLength * 0.92f)),
+                ["centre"] = ToDict(Place(0f, palmLength * 0.5f))
+            },
+            // "Two fingers lie on each side of a line drawn through the middle of the palm."
+            ["midLine"] = new Dictionary<string, object?>
+            {
+                ["from"] = ToDict(wristPt),
+                ["to"] = ToDict(Place(0.02f * palmWidth, palmLength * 1.02f))
+            },
+            // "The big muscle of the thumb is by far the most important one in the hand" - the thenar
+            // mass, which is what joins the thumb to the palm instead of leaving it floating.
+            ["thenar"] = new Dictionary<string, object?>
+            {
+                ["wrist"] = ToDict(Place(palmWidth * 0.34f, palmLength * 0.02f)),
+                ["crest"] = ToDict(Place(palmWidth * 0.60f, palmLength * 0.22f)),
+                ["base"] = ToDict(thumbBase),
+                ["web"] = ToDict(Place(palmWidth * 0.34f, palmLength * 0.80f))
+            },
+            ["fingers"] = fingers,
+            ["thumb"] = new Dictionary<string, object?>
+            {
+                ["base"] = ToDict(thumbBase),
+                ["joints"] = thumbJoints,          // [knuckle, tip]
+                ["tip"] = thumbJoints[1],
+                ["length"] = thumbLen,
+                ["width"] = palmWidth * 0.26f
+            }
+        };
+    }
+
+    /// <summary>
+    /// Renders the hand's construction: the palm plate, the midline, the knuckle and joint arcs, and each
+    /// digit as a jointed line. Non-repro blue for the armature, graphite for the contours.
+    /// </summary>
+    /// <remarks>Exposed to scripts, so members are PascalCase here and camelCase in JS.</remarks>
+    public void DrawHandWireframe(CanvasRenderingContext2D ctx, object handObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (JsInterop.AsDict(handObj) is not IDictionary hand) return;
+
+        var opt = JsInterop.AsDict(options);
+        var blue = opt?["blueLineColor"]?.ToString() ?? "#4a90e2";
+        var graphite = opt?["graphiteColor"]?.ToString() ?? "#444444";
+        var lineWidth = opt != null && opt.Contains("lineWidth") ? Convert.ToSingle(opt["lineWidth"], CultureInfo.InvariantCulture) : 1.4f;
+
+        var palm = JsInterop.AsDict(hand["palm"]);
+        var mid = JsInterop.AsDict(hand["midLine"]);
+        var fingers = hand["fingers"] as IList;
+        var thumb = JsInterop.AsDict(hand["thumb"]);
+        if (palm == null || fingers == null || thumb == null) return;
+
+        var jointR = Convert.ToSingle(JsInterop.AsDict(hand["unit"])?["palmWidth"] ?? 60f, CultureInfo.InvariantCulture) * 0.055f;
+
+        ctx.Save();
+        ctx.StrokeStyle = blue;
+        ctx.LineWidth = lineWidth;
+
+        // Palm plate.
+        var wi = ExtractPoint(palm["wristInner"]);
+        var wo = ExtractPoint(palm["wristOuter"]);
+        var ki = ExtractPoint(palm["knuckleInner"]);
+        var ko = ExtractPoint(palm["knuckleOuter"]);
+        ctx.BeginPath();
+        ctx.MoveTo(wi.X, wi.Y);
+        ctx.LineTo(ki.X, ki.Y);
+        ctx.LineTo(ko.X, ko.Y);
+        ctx.LineTo(wo.X, wo.Y);
+        ctx.ClosePath();
+        ctx.Stroke();
+
+        // The line through the middle of the palm, two fingers each side of it.
+        if (mid != null)
+        {
+            var a = ExtractPoint(mid["from"]);
+            var b = ExtractPoint(mid["to"]);
+            ctx.BeginPath();
+            ctx.MoveTo(a.X, a.Y);
+            ctx.LineTo(b.X, b.Y);
+            ctx.Stroke();
+        }
+
+        // Row arcs: knuckles, then each joint row, then the tips. Loomis has the knuckle curve flat and
+        // the curves deepening as they cross toward the fingertips, which is what these show.
+        void RowArc(Func<IDictionary, Point2D> pick)
+        {
+            var pts = new List<Point2D>();
+            foreach (var f in fingers)
+            {
+                var fd = JsInterop.AsDict(f);
+                if (fd != null) pts.Add(pick(fd));
+            }
+            if (pts.Count < 2) return;
+
+            ctx.BeginPath();
+            ctx.MoveTo(pts[0].X, pts[0].Y);
+            for (var i = 1; i < pts.Count; i++)
+            {
+                var prev = pts[i - 1];
+                ctx.QuadraticCurveTo((prev.X + pts[i].X) * 0.5f, (prev.Y + pts[i].Y) * 0.5f, pts[i].X, pts[i].Y);
+            }
+            ctx.Stroke();
+        }
+
+        RowArc(f => ExtractPoint(f["knuckle"]));
+        for (var s = 0; s < 3; s++)
+        {
+            var step = s;
+            RowArc(f => ExtractPoint((f["joints"] as IList)?[step]));
+        }
+
+        // The thumb muscle, which is what attaches the thumb to the palm.
+        var thenar = JsInterop.AsDict(hand["thenar"]);
+        if (thenar != null)
+        {
+            var tw = ExtractPoint(thenar["wrist"]);
+            var tc = ExtractPoint(thenar["crest"]);
+            var tb = ExtractPoint(thenar["base"]);
+            var tweb = ExtractPoint(thenar["web"]);
+            ctx.BeginPath();
+            ctx.MoveTo(tw.X, tw.Y);
+            ctx.QuadraticCurveTo(tc.X, tc.Y, tb.X, tb.Y);
+            ctx.LineTo(tweb.X, tweb.Y);
+            ctx.Stroke();
+        }
+
+        // Graphite: the digits themselves.
+        ctx.StrokeStyle = graphite;
+        ctx.LineWidth = lineWidth * 1.4f;
+
+        void DrawDigit(Point2D start, IList joints)
+        {
+            ctx.BeginPath();
+            ctx.MoveTo(start.X, start.Y);
+            foreach (var j in joints)
+            {
+                var p = ExtractPoint(j);
+                ctx.LineTo(p.X, p.Y);
+            }
+            ctx.Stroke();
+
+            ctx.BeginPath();
+            ctx.Arc(start.X, start.Y, jointR, 0f, MathF.PI * 2f);
+            ctx.Stroke();
+            foreach (var j in joints)
+            {
+                var p = ExtractPoint(j);
+                ctx.BeginPath();
+                ctx.Arc(p.X, p.Y, jointR * 0.8f, 0f, MathF.PI * 2f);
+                ctx.Stroke();
+            }
+        }
+
+        foreach (var f in fingers)
+        {
+            var fd = JsInterop.AsDict(f);
+            var joints = fd?["joints"] as IList;
+            if (fd != null && joints != null) DrawDigit(ExtractPoint(fd["knuckle"]), joints);
+        }
+
+        var thumbJoints = thumb["joints"] as IList;
+        if (thumbJoints != null) DrawDigit(ExtractPoint(thumb["base"]), thumbJoints);
+
+        ctx.Restore();
+    }
+
+    /// <summary>
+    /// Renders the hand as Loomis's block forms (Plate 78): the palm as a slab, the thumb muscle as a
+    /// wedge off it, and every phalanx as its own tapering box.
+    /// </summary>
+    /// <remarks>Exposed to scripts, so members are PascalCase here and camelCase in JS.</remarks>
+    public void DrawHandSolid(CanvasRenderingContext2D ctx, object handObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (JsInterop.AsDict(handObj) is not IDictionary hand) return;
+
+        var opt = JsInterop.AsDict(options);
+        var fillColor = opt?["fillColor"]?.ToString() ?? "#dbe7f2";
+        var shadowColor = opt?["shadowColor"]?.ToString() ?? "#9bbcd9";
+        var strokeColor = opt?["strokeColor"]?.ToString() ?? "#2d547d";
+        var strokeWidth = opt != null && opt.Contains("strokeWidth") ? Convert.ToSingle(opt["strokeWidth"], CultureInfo.InvariantCulture) : 1.6f;
+
+        var palm = JsInterop.AsDict(hand["palm"]);
+        var fingers = hand["fingers"] as IList;
+        var thumb = JsInterop.AsDict(hand["thumb"]);
+        if (palm == null || fingers == null || thumb == null) return;
+
+        ctx.Save();
+        ctx.StrokeStyle = strokeColor;
+        ctx.LineWidth = strokeWidth;
+
+        // A phalanx is a box: a quad about the segment, narrowing toward the tip.
+        void Box(Point2D a, Point2D b, float wA, float wB, string fill)
+        {
+            var dx = b.X - a.X;
+            var dy = b.Y - a.Y;
+            var len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 0.01f) return;
+            var nx = -dy / len;
+            var ny = dx / len;
+
+            ctx.FillStyle = fill;
+            ctx.BeginPath();
+            ctx.MoveTo(a.X + nx * wA * 0.5f, a.Y + ny * wA * 0.5f);
+            ctx.LineTo(b.X + nx * wB * 0.5f, b.Y + ny * wB * 0.5f);
+            ctx.LineTo(b.X - nx * wB * 0.5f, b.Y - ny * wB * 0.5f);
+            ctx.LineTo(a.X - nx * wA * 0.5f, a.Y - ny * wA * 0.5f);
+            ctx.ClosePath();
+            ctx.Fill();
+            ctx.Stroke();
+        }
+
+        // 1. The palm slab.
+        var wi = ExtractPoint(palm["wristInner"]);
+        var wo = ExtractPoint(palm["wristOuter"]);
+        var ki = ExtractPoint(palm["knuckleInner"]);
+        var ko = ExtractPoint(palm["knuckleOuter"]);
+        ctx.FillStyle = fillColor;
+        ctx.BeginPath();
+        ctx.MoveTo(wi.X, wi.Y);
+        ctx.LineTo(ki.X, ki.Y);
+        ctx.LineTo(ko.X, ko.Y);
+        ctx.LineTo(wo.X, wo.Y);
+        ctx.ClosePath();
+        ctx.Fill();
+        ctx.Stroke();
+
+        // 2. The thumb muscle - the big mass Loomis calls by far the most important in the hand - as a
+        // wedge from the wrist out to the thumb's base.
+        var thumbBase = ExtractPoint(thumb["base"]);
+        var thenar = JsInterop.AsDict(hand["thenar"]);
+        ctx.FillStyle = shadowColor;
+        ctx.BeginPath();
+        if (thenar != null)
+        {
+            var thenarWrist = ExtractPoint(thenar["wrist"]);
+            var thenarCrest = ExtractPoint(thenar["crest"]);
+            var thenarWeb = ExtractPoint(thenar["web"]);
+            ctx.MoveTo(thenarWrist.X, thenarWrist.Y);
+            ctx.QuadraticCurveTo(thenarCrest.X, thenarCrest.Y, thumbBase.X, thumbBase.Y);
+            ctx.LineTo(thenarWeb.X, thenarWeb.Y);
+        }
+        else
+        {
+            ctx.MoveTo(wo.X, wo.Y);
+            ctx.LineTo(thumbBase.X, thumbBase.Y);
+            ctx.LineTo(ko.X, ko.Y);
+        }
+        ctx.ClosePath();
+        ctx.Fill();
+        ctx.Stroke();
+
+        // 3. Three boxes per finger, narrowing toward the tip.
+        foreach (var f in fingers)
+        {
+            var fd = JsInterop.AsDict(f);
+            var joints = fd?["joints"] as IList;
+            if (fd == null || joints == null) continue;
+
+            var w = Convert.ToSingle(fd["width"], CultureInfo.InvariantCulture);
+            var from = ExtractPoint(fd["knuckle"]);
+            for (var s = 0; s < joints.Count; s++)
+            {
+                var to = ExtractPoint(joints[s]);
+                Box(from, to, w * (1f - s * 0.13f), w * (1f - (s + 1) * 0.13f), s % 2 == 0 ? fillColor : shadowColor);
+                from = to;
+            }
+        }
+
+        // 4. Two boxes for the thumb.
+        var tw = Convert.ToSingle(thumb["width"], CultureInfo.InvariantCulture);
+        var tJoints = thumb["joints"] as IList;
+        if (tJoints != null)
+        {
+            var from = thumbBase;
+            for (var s = 0; s < tJoints.Count; s++)
+            {
+                var to = ExtractPoint(tJoints[s]);
+                Box(from, to, tw * (1f - s * 0.15f), tw * (1f - (s + 1) * 0.15f), s % 2 == 0 ? fillColor : shadowColor);
+                from = to;
+            }
+        }
+
+        ctx.Restore();
+    }
+    #endregion
+
     #endregion
 }
 

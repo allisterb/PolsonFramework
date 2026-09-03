@@ -1,15 +1,18 @@
 ﻿# Studio Manual 05: Observation, Measurement & CSI Curves
 
 > **Source Reference**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943) — §1
-> from pp. 35–37, §2 from pp. 34–37, §3's contour vocabulary from p. 24; and Andrew Loomis,
+> from pp. 35–37, §2 from pp. 34–37, §3's account of the *edge* from p. 24; Michael Hampton,
+> *Figure Drawing: Design and Invention* (2009) — §3's C/straight/S vocabulary and the wrapping
+> line, from "Gesture Drawing"; and Andrew Loomis,
 > *Successful Drawing* (Viking Press, 1951) — §4's plane sequence and §5's pattern/placement
 > distinction from p. 13, with §5's four-value exercise from *The Eye of the Painter* (Viking
 > Press, 1961), pp. 39–40. **All five sections are now cited.**
 >
-> **"CSI" is house vocabulary, not a school**, and §3 now says so. It arrived with the withdrawn text
-> and is baked into the API as the `sCurveTo` / `cCurveTo` aliases, so it is not going anywhere — but
-> it describes the *mark*, where Loomis describes the *edge*, and §3 carries both because a drawing
-> needs both.
+> **The C/S/straight vocabulary is Michael Hampton's**, from *Figure Drawing: Design and Invention*
+> (2009) — added to the library on 2026-09-02, and it **withdraws this manual's previous claim that
+> "CSI" was house vocabulary rather than a school.** The acronym is still ours; the three lines and
+> the discipline of using only them are his, and §3 now cites him. Loomis's account of the *edge*
+> stands alongside it, because the two answer different questions.
 > **Purpose**: Translates foundational drawing techniques (relative distance measurement, plumb lines, the CSI curve grammar, planar forms, and two/three-value light studies) into algorithmic JavaScript Canvas2D / Skia code.
 
 ---
@@ -123,11 +126,24 @@ if (!plumb.aligned) log(plumb.message);   // "DRIFT: offset by 18.4px"
 > 2. **S-Curves**: Reversing dynamic curves with opposing inflection points.
 > 3. **Straights ("I-Lines")**: Stable structural lines.
 
+> **Source**: Michael Hampton, *Figure Drawing: Design and Invention* (2009) — "Gesture Drawing".
+> Hampton states it as a closed set and means it: **the lines most crucial to showing a figure are the
+> "C" curve, the straight, and the "S" curve**, and *in this drawing process, you will never use any
+> other type of line*. That constraint is the point — three primitives, used deliberately, rather than
+> whatever the hand produces.
+
+> [!IMPORTANT]
+> **This manual used to say "CSI" was house vocabulary with no citation behind it. That was wrong**,
+> and the error is instructive: the acronym was inherited from a withdrawn source, nobody could find
+> the three lines in the library, and the conclusion drawn was that the *idea* was unsourced rather
+> than that the *library* was incomplete. Adding one contrasting author settled it in a paragraph.
+>
+> What remains ours is the initialism. Hampton writes "C curve, straight, S curve"; "CSI" and the
+> `sCurveTo` / `cCurveTo` aliases are the studio's shorthand for his set.
+
 > [!NOTE]
-> **Two vocabularies, answering different questions — you want both.** "CSI" describes the **mark you
-> make**: what the pen does between two points, which is why `sCurveTo` and `cCurveTo` exist as
-> aliases on the path API. It has no citation in this studio's reference library; the shapes are
-> ordinary and the acronym is inherited, so treat it as house vocabulary rather than a school.
+> **Two vocabularies, answering different questions — you want both.** C/S/straight describes the
+> **mark you make**: what the pen does between two points.
 >
 > Loomis describes the **edge you are drawing**, which is a different thing and is cited:
 >
@@ -153,6 +169,38 @@ if (!plumb.aligned) log(plumb.message);   // "DRIFT: offset by 18.4px"
       ╰────────╯               ╰────────────╯
    (Cranium, Eyelid, Jaw)     (Windblown Hair, Tendons)  (Nose Bridge, Shrouds)
 ```
+
+### Hampton's two additions: asymmetry, and the wrapping line
+
+> **Source**: Michael Hampton, *Figure Drawing: Design and Invention* (2009) — "Gesture Drawing" and
+> the negative-space discussion at p. 91.
+
+**The three lines are chosen by side, not sprinkled evenly.** Hampton's rule is that a figure has a
+*passive* side and a *pinched* (active) side, and they get different lines:
+
+- The **passive side** is drawn with **S curves**, so the negative shape beside it reads fluid and
+  rhythmic.
+- The **pinched side** takes the **C curve or the straight**, exaggerated toward a more jagged shape,
+  to suggest weight or flexion.
+
+That is a decision procedure rather than a taste, and it is the part most easily lost when the three
+lines are treated as a menu: **the curves are used asymmetrically on purpose.** A contour with S
+curves on both sides has no active side and therefore no weight.
+
+> [!TIP]
+> **It is also a claim about the space you are not drawing.** Hampton's point at p. 91 is that the
+> line choice designs the *negative shape* beside the figure as much as the figure itself — which is
+> Manual 09 §4's "no two areas the same size or shape" arriving from the other direction. Choosing an
+> S for one side and a straight for the other is what stops the two negative shapes matching.
+
+**Wrapping lines are a fourth type, and the SDK already draws them.** Hampton adds them after the
+three: curves drawn *across* and around a form to state its perspective, laid on top of the gesture
+rather than replacing it, and the decision they encode is whether the form is coming toward the
+viewer or receding from it.
+
+`Drawing.drawCrossContourHatch(ctx, cx, cy, rx, ry, startAngle, endAngle, count, strokeColor, lineWidth)`
+is exactly this mark — Manual 05 §4 already uses it for planar form, and Manual 03 for inking. What
+Hampton adds is *when*: a wrapping line is how a gesture states depth before any tone exists.
 
 ### The CSI Helper Library in Canvas2D
 ```js

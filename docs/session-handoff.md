@@ -657,6 +657,7 @@ were added on 2026-09-02 and between them closed every gap the table below had r
 | **Loomis**, *Successful Drawing* (1951) | the three laws of light, cast-shadow projection, planes, the five P's, lighting consistency |
 | **Loomis**, *The Eye of the Painter* (1961) | shadow colour as cause and effect, the primaries rule, four-value pattern, concentration of chroma |
 | **Loomis**, *Drawing the Head and Hands* (1956) | the muscles of expression, the sharp/round mouth corner, hand block forms and proportions |
+| **Hampton**, *Figure Drawing: Design and Invention* (2009) | the C/straight/S line set and the wrapping line, head proportions by recursive halving, the 3:2 phalanx ratio |
 
 **Loomis cites Norling by name** (*Figure Drawing* p. 36), which is real evidence the figure and
 perspective halves are not being stitched from incompatible traditions.
@@ -791,30 +792,146 @@ proposal was written in call syntax. That guard works; respect it.
   `MaxRecession` without the doc fails. Verified by flipping the constant to 0.75 and watching it
   fail, rather than trusting that it would.
 
-### Two capability gaps the head-and-hands reading opened
+### Two capability gaps the head-and-hands reading opened — one closed
 
-Both are described in the manuals with the standing **"no such call exists yet"** disclaimer, so
-`TestEveryManualBindsToRealSdkCalls` stays green.
+The first is described in the manuals with the standing **"no such call exists yet"** disclaimer, so
+`TestEveryManualBindsToRealSdkCalls` stays green. The second was built.
 
 1. **Expression is a muscle matrix, not six presets.** Loomis's Plate 21 marks each muscle *relaxed*
    or *contracted* across worry, frown, laugh and anger — a sparse matrix that **composes**, where
    `applyFacialExpression(head, name, intensity)` takes one name and cannot mix two. Worry and a
    frown share the brow and differ only at its inner corner, and today that is inexpressible.
-2. **There is no hand construction at all.** `createMannequinFigure` ends limbs in box hands, and
-   nothing in `reference/` covered hands until now. *Drawing the Head and Hands* Part Five has the
-   whole thing — block forms, the hollow of the palm, foreshortening, and a proportional canon keyed
-   on the middle finger (length to the back knuckle slightly over half the hand; palm width slightly
-   more than half; index reaching the middle finger's nail; ring ≈ index; little finger reaching the
-   ring's top knuckle; thumb at right angles to the others, moving in and out from the palm while
-   the fingers close toward it). That is enough to specify a `createHandFigure` without inventing
-   anything. cs-5 lacked heads and hands; this is the hands half.
+2. ~~**There is no hand construction at all.**~~ **Built 2026-09-02.** `Drawing.createHandFigure(...)`,
+   `drawHandWireframe` and `drawHandSolid`, with `ctx.drawHand(hand, solid)` as the shortcut, plus
+   **Manual 19** — which auto-registered, since the manual corpus is an embedded-resource wildcard.
 
-**Also worth knowing: Manual 01 (Head & Facial Construction) carries no `Source Reference` line at
-all** — it is the one manual that was never audited, because the re-sourcing work started from the
-withdrawn *Imaginative Drawing* citations and Manual 01 had none to withdraw. *Drawing the Head and
-Hands* is obviously its source; Part One's plates run the ball-and-plane construction, the middle
-line, the planes of the head, tilting, and perspective. Verifying what Manual 01 already claims
-against those plates is the next re-sourcing job.
+   The scale is Loomis's and hangs off one measurement: the middle finger from its back knuckle is
+   **slightly over half the hand** (0.52), the palm is the rest (0.48), and the palm is **slightly more
+   than half the hand wide** (0.55) — so it comes out slightly wider than long, which falls out of his
+   two sentences rather than being chosen. The other three fingers he gives as *reaches* rather than
+   lengths, and converting those needs a nail length and a phalanx length he never states; Manual 19
+   says which numbers are his and which are the studio's reading of a sentence.
+
+   **Two things worth carrying:**
+
+   - **"The thumb is turned at right angles to the other fingers" describes the plane it moves in, not
+     the angle on the page.** Drawn at a literal 90 it sticks straight out of the side of the wrist,
+     which is exactly what the first implementation did. `thumbDeg` is the drawn angle and defaults to
+     46; `curlDeg` reaches the thumb at half strength and mirrored, because a curl closes the fingers
+     *toward* the palm and has to swing the thumb *across* it.
+   - **The arcs are a free check.** Loomis: the knuckles make a flat curve across the back, and the
+     curves deepen row by row toward the fingertips. That is a *consequence* of the fingers differing
+     in length, so `TestHandArcsDeepenTowardTheFingertips` doubles as a test that the proportions
+     survived — verified by flattening the ratios to equal and watching it fail alongside the reaches
+     test.
+
+   Both defects were found by rendering rather than by tests, in this order: the thumb sticking out
+   sideways, then the thumb floating clear of the palm once its angle was right. The second is why
+   `hand.thenar` exists — the thumb muscle Loomis calls by far the most important in the hand, and the
+   thing that makes the thumb read as attached rather than stuck on. Both renderers and any script draw
+   the same mass.
+
+**~~Also worth knowing: Manual 01 carries no `Source Reference` line at all~~ — audited 2026-09-02.**
+It now cites *Drawing the Head and Hands* Plates 1-2 and 18-19, and the audit found more than a
+missing citation:
+
+- **Three invented numbers.** The temporal slice as *"2/3 R"* (Loomis says only *"a fairly thin
+  slice"* and gives no fraction), `hairline = crown + 0.35R` (the model carries no `R` at all), and
+  the yaw/far-eye formulas in §3 (the code uses `sin(yaw)·W·0.22` and `max(0.45, cos(yaw))`, with no
+  ball radius and no `0.85`).
+- **"The face is 5 eye-widths wide" is not Loomis.** Plate 19 makes the face **2 units** with the eyes
+  at the quarter points, each eye ½ unit: so the face is **4** eye-widths and the head **6**. The
+  toolkit's `eyeW = 0.20·W` makes the head exactly **5** — a third value. The one horizontal claim the
+  manual had right, ½ unit between the inner corners equalling one eye-width, is now cited properly.
+- **`head.eyeLineY` is not `H/2`**, though §2 quoted Loomis's "exactly halfway" as if it were. It is
+  `H/2 + 0.02H` — 8 px low on a 400 px head.
+- **`head.unit.thirdH` is `H/3` and describes none of the three divisions**, which measure 0.230,
+  0.250 and 0.300 `H`. Loomis constructs them **equal** by stepping the forehead off twice (Plate 1,
+  step 6), so this is a departure from the method, not just from a number.
+- **The stoss was missing entirely** — the point where the brow line crosses the facial middle line,
+  which Loomis calls the key point in the construction of the whole head.
+- **Loomis contradicts himself on the dome** and the manual now says so: Plate 1's freehand
+  construction implies ¾ unit, Plate 18's measured scale gives ½.
+
+**The canon was then fixed** (same day, on the director's call). `CreateLoomisHead` now builds from
+Loomis's unit — `H/3.5` — rather than from independent fractions of `H`: half a unit of dome, three
+equal units, the eye line at exactly `H/2`, the lip line a third of a unit below the nose, the head
+three units wide including the ears, and each eye half a unit so the inner corners sit one eye-width
+apart. `unit.thirdH` is the unit and is now the height of each division. Two tests pin it —
+`TestLoomisHeadFollowsTheThreeAndAHalfUnitScale` and
+`TestLoomisHeadEyeAndNoseSpacingIsOnTheHalfUnitGrid`.
+
+**Expect every head to change.** Heads are wider (0.857 H against 0.72 H) and foreheads taller. The
+frozen-artifact rule applies: a re-render of any pre-2026-09-02 head will not match, and that is the
+fix landing rather than a regression.
+
+**The ear is the story worth carrying.** Its drawn radius was `0.08·H` where Loomis's ear spans
+brow-to-nose — one unit, so half a unit of radius. Correcting the size made a *placement* error
+obvious that a too-small marker had been hiding: the ear was pinned at `0.45·W` and never moved with
+yaw, so on a turned head it floated clear of the skull. Both are now derived from the plates. **The
+unit tests passed at every stage; only rendering the three yaw angles and looking at them surfaced
+it** — the same lesson as `drawPerspectiveCylinder`, which also returned a plausible wrong answer.
+The wireframe's cranial ball and the ear now come off the landmarks (equator = brow line, top =
+crown) instead of fractions that happened to land nearby.
+
+**The jaw was then fixed too, and it was the worst of the three.** Plate 1 step 7 says the jaw line
+connects about halfway around the ball **on each side**; the toolkit had the angle at a flat
+`0.28·W` that never moved with the turn, and the wireframe path ran `ear -> angle -> chin ->
+cheekApex` — where `cheekApex` sits on the **far** side, so it doubled back across the face and
+closed into a narrow V with a single-point chin. Now: both stations are the ball's silhouette at the
+nose line (`sqrt(R^2 - unit^2)`, foreshortened by `cos(yaw)`), the near one is the far one mirrored
+about the cranium axis, and the chin corners come from the two angles rather than a fraction of `W`.
+`head.jaw` carries the whole frame — `farStation`, `angle`, `chinFar`, `chinNear`, `nearAngle`,
+`nearStation` — so a script can draw its own jaw on the same points.
+
+**Past ~60 degrees the construction runs out**, because the facial axis swings out faster than the
+near station comes in; unguarded, the near jaw crosses the chin and the path inverts *silently*.
+`nearAngle` is floored just clear of the axis, and `TestLoomisJawStaysOrderedAcrossTheTurn` asserts
+the left-to-right ordering at 0/35/55/70/85 degrees — verified by removing the floor and watching the
+last three fail. §3's documented 3/4 range is 30-45 degrees, where none of it bites.
+
+Still unsourced and marked as such in §2a: the temporal slice depth (Loomis says only "a fairly thin
+slice"), the jaw angle's depth below the nose line, the chin's share of the span between the angles,
+and the mouth width.
+
+It went unaudited for so long because the re-sourcing work started from the withdrawn *Imaginative
+Drawing* citations, and Manual 01 had none to withdraw — a manual that cited nothing never entered
+the queue. **That is the lesson worth carrying: an absent citation is easier to miss than a wrong
+one.** Part One still has unread material bearing on the manual — the planes of the head, tilting,
+and perspective in the head (Plates 9-11).
+
+### Adding one contrasting author, and what it cost the manuals
+
+*Figure Drawing: Design and Invention* (Michael Hampton, 2009) was added on 2026-09-02 **as a
+deliberate contrast to Loomis**, not to fill a gap. It found three things in an afternoon, which is
+the argument for reading across schools rather than deeper into one.
+
+1. **It withdrew a claim.** Manual 05 said **"CSI is house vocabulary, not a school"** — the acronym
+   came in with the withdrawn Guy text and nobody could find the three lines in the library. Hampton
+   opens his gesture chapter with *the lines most crucial to showing a figure are the "C" curve, the
+   straight (line), and "S" curve… you will never use any other type of line*. The instructive part
+   is the shape of the error: the conclusion drawn from "not in the library" was that the **idea**
+   was unsourced, when what was actually true is that the **library** was incomplete. Only the
+   initialism is ours.
+2. **It corroborated three numbers exactly.** Hampton finds head proportions by **recursive halving
+   between landmarks** (brow, bottom of jaw) rather than by a unit scale, and lands on Loomis's eye
+   line (⅛ of brow→chin below the brow), nose base (½) and mouth (⅓ of nose→chin) precisely. Two
+   methods, fifty years apart, no shared derivation. It also matters practically: halving between
+   landmarks survives extreme perspective where a flat unit scale does not.
+3. **It replaced an invention with a rule.** Manual 19 flagged the phalanx split
+   `0.45 / 0.30 / 0.25` as the studio's guess. Hampton gives the finger bones as a **3:2 ratio** — each two-thirds of the
+   one before, so `0.474 / 0.316 / 0.211`. Close on the first two bones; the fingertip was a
+   fifth too long. `CreateHandFigure` now uses his, and Loomis's little-finger *reach* ("just reaches the top
+   knuckle of the third finger") became **computable** rather than guessed — the test asserts an
+   equality now instead of a tolerance band.
+
+He also **disagrees** with Loomis on the hand's split (0.50/0.50 against 0.48/0.52) and adds a fourth
+line type, the **wrapping line**, which `Drawing.drawCrossContourHatch(...)` already draws. Manual 19
+§1a carries both schools; Manual 05 §3 carries the wrapping line.
+
+**Terms:** ordinary all-rights-reserved — *no part of this book can be reproduced in any form
+without prior written consent* — with no anti-AI clause and no retrieval clause. **Unlike the IA
+Loomis scans this extraction has no reliable page-number lines**, so cite it by section heading.
 
 ### Two process notes
 

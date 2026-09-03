@@ -633,13 +633,15 @@ Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with
 > `drawMannequinSolid`, `drawComicEye`, `drawComicNose` and `drawComicMouth`. Call those as
 > `Drawing.drawLoomisWireframe(ctx, head)`.
 >
-> The mannequin pair is the trap worth knowing, because the shortcut exists under a *different name*:
+> The mannequin and hand pairs are the traps worth knowing, because each shortcut exists under a
+> *different name* — **`ctx.drawHand(hand, solid)`** covers `drawHandWireframe` and `drawHandSolid`
+> exactly as the mannequin one does:
 > **`ctx.drawMannequin(figure, solid)`** covers both, with `solid` choosing between them. A live run
 > lost two scripts guessing `ctx.drawMannequinWireframe` and `ctx.drawLoomisWireframe` from the rule
 > this note replaces — which promised every context-taking method had a shortcut, and was wrong for
 > six of twenty-one.
 
-`ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
+`ctx.drawHand` · `ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
 
 Parameters and semantics are documented under `polson://sdk/core/Drawing` and `polson://sdk/core/Logo`. Use whichever reads better; the shortcut form suits long chains on one context.
 
@@ -976,6 +978,31 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.drawMannequinWireframe(ctx: CanvasRenderingContext2D, figureObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders non-repro blue gesture and joint circle hinges.
 - `Drawing.drawMannequinSolid(ctx: CanvasRenderingContext2D, figureObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders shaded volumetric 3D masses (cranial sphere, ribcage egg, pelvic basin, limb cylinders, and box hands/feet).
 - `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders pectorals, deltoids, clavicle handlebars, neck sternocleidomastoid cords, and rectus abdominis six-pack grid.
+
+### Hands
+
+> **The hand is Loomis's two-unit scale** (*Drawing the Head and Hands*, Plates 78–79): the middle
+> finger from its back knuckle is slightly over half the hand, the palm is the rest, and the palm is
+> slightly more than half the hand wide. Everything derives from `handLength`. Full treatment,
+> including which numbers are his and which are the studio's, in `polson://manual/19`.
+
+- `Drawing.createHandFigure(originX: number, originY: number, handLength?: number, options?: { side?: 'right' | 'left', spreadDeg?: number, curlDeg?: number, thumbDeg?: number, rotationDeg?: number })` → `object` — Computes the whole hand: `unit`, `wrist`, `palm`, `midLine`, `thenar`, `fingers` (index, middle, ring, little — each with `knuckle`, three `joints` and a `tip`) and `thumb` (two joints). **`originX`/`originY` is the centre of the wrist**, and the hand runs toward the fingertips along `rotationDeg` (`0` points them up). `handLength` is wrist to middle fingertip.
+- `Drawing.drawHandWireframe(ctx: CanvasRenderingContext2D, handObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders the construction: palm plate, the line through the middle of the palm, the thenar mass, the knuckle and joint arcs, and each digit jointed.
+- `Drawing.drawHandSolid(ctx: CanvasRenderingContext2D, handObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders Plate 78's block forms: the palm as a slab, the thumb muscle as a wedge, every phalanx as its own tapering box.
+
+> [!IMPORTANT]
+> **`thumbDeg` defaults to `46`, not `90`, and that is deliberate.** Loomis says the thumb is turned at
+> right angles to the other fingers — which describes the **plane it moves in** (in and out from the
+> palm, where the fingers close toward it), not the angle it makes on the page. Drawn at a literal 90°
+> it sticks straight out of the side of the wrist. `curlDeg` is applied to the thumb at half strength
+> and mirrored, for the same reason.
+
+> [!TIP]
+> **The arcs are the check.** Loomis: the knuckles make a flat curve across the back, and the curves
+> deepen row by row toward the fingertips. That falls out of the fingers differing in length, so
+> comparing the sagitta of `fingers[i].knuckle` against `fingers[i].joints[2]` tests whether the
+> proportions survived whatever you did to them. A hand whose rows are equally flat is a rake.
+
 - `Drawing.applyFacialExpression(headObj: object, expressionType: 'joy' | 'anger' | 'fear' | 'sadness' | 'surprise' | 'disgust', intensity?: number)` → `object` — Modifies Loomis head brow, eye, and mouth landmarks according to the 6 universal muscle expressions.
 
 ## Compositional Armatures, Notan & Visual Emphasis

@@ -4,7 +4,7 @@ A second Google agent runtime for the studio, alongside the Antigravity SDK. Thi
 for the **Agentic Cinema** hackathon (Parallel track); the feasibility brief and the verification
 behind every claim here are in [`docs/agentic-cinema-assessment.md`](../../docs/agentic-cinema-assessment.md).
 
-**Status: runs locally; container authored but never built.** One app per project, created dynamically, single- and
+**Status: deployed and drawing on Cloud Run** (private URL), and running locally. One app per project, created dynamically, single- and
 multi-agent both working end to end against the real engine. The Dockerfile exists and is unbuilt;
 the `src/webapp` UI mount is not written.
 
@@ -383,13 +383,30 @@ deploy should not look like a broken image.
 rather than an empty app picker. Off by default, since a deployment driven by its own web layer
 should create projects on demand.
 
-### Not yet verified
+### What it took, and what each failure taught
 
-**Nothing here has been built or deployed.** The Dockerfile is authored against what was checked in
-the source — target framework `net10.0`, `SkiaSharp.NativeAssets.Linux` already referenced, seven
-projects with seven `packages.lock.json`, the entrypoint parsing under `sh -n` with LF endings — but
-a remote build is 5–15 minutes per attempt for an image this size, so expect to iterate rather than
-succeed first time.
+Seven deploys. Every failure is recorded in the Dockerfile beside the line that fixes it, because
+each was invisible until it ran:
+
+| failure | cause |
+| :--- | :--- |
+| `gcloud crashed (PermissionError)` on `.vs/*.vsidx` | `.gcloudignore` did not inherit `.gitignore`; Visual Studio held its index open |
+| `error NU1004: runtime identifiers have changed` | `--runtime linux-x64` against RID-less locks; locked mode correctly refused |
+| `fc-cache: not found` | `libfontconfig1` is the library; the tools ship in `fontconfig` |
+| `No frameworks were found: Microsoft.AspNetCore.App` | copied `dotnet/runtime`; `ModelContextProtocol.AspNetCore` needs `dotnet/aspnet` |
+| `CultureInfo..cctor()` crash | copying `/usr/share/dotnet` brings the runtime but not ICU |
+| `KnowledgeCorpus` type initializer threw | `.gcloudignore` excluded `docs/`, which are **EmbeddedResource inputs**, not documentation |
+| `Permission denied on secret` | the runtime service account needed `roles/secretmanager.secretAccessor` |
+
+Three of those were mine misjudging a file by its extension or its name. The `docs/` one is the
+sharpest: an MSBuild glob that matches nothing is not an error, so the build succeeded, embedded zero
+manuals, and died at startup a long way from the cause. There is now a guard in stage 1 that fails
+the build instead.
+
+**Verified end to end on Cloud Run**: all 13 tools present (so the stdio subprocess spawns in the
+sandbox — the risk flagged in the assessment, now closed), `read_file` used first as instructed, a
+render written, peeked, loaded into context, and described accurately. The agent reported the type
+as **DejaVu Serif**, having checked `Skia.Font.has` first.
 
 ## Dependency changes
 

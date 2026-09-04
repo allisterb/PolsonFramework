@@ -159,24 +159,86 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
 # states what type the studio can set instead of leaving it to be inferred from a
 # disappointing render.
 #
-# The fonts are a design decision, not a dependency:
-#   dejavu-core      a workmanlike sans/serif/mono, and the usual fallback of last resort
-#   liberation2      metric-compatible with Arial / Times / Courier, so layouts that assume those
-#                    widths still measure sensibly
-#   ebgaramond       a real oldstyle serif — the face a local run reached for by name
+# **The fonts are the product, not a dependency.** The studio manuals name 30 typeface
+# references; a slim image serves none of them, and a design tool that can only set DejaVu is
+# crippled in a way a missing library would never be tolerated. Package names were verified
+# against Debian trixie's own index rather than guessed, because a wrong one costs a build.
+#
+#   recommended   Debian's own curated set: an 8 KB metapackage whose entries are Depends, so
+#                 --no-install-recommends does not skip them. Brings Caladea (Cambria metrics),
+#                 Carlito (Calibri metrics), League Spartan (geometric display), Cantarell,
+#                 Courier Prime, and Comic Neue — which the comic and comic_studio workflows
+#                 can actually use — plus Noto Color Emoji, Symbola and FreeFont for the symbol
+#                 and Unicode coverage an infographic needs. Its last entry is
+#                 `fonts-urw-base35 | fonts-texgyre`, and naming TeX Gyre explicitly below is
+#                 what makes apt satisfy that alternation with the OpenType family rather than
+#                 the Type 1 ancestor. Preferring a maintained set to a hand-picked one is also
+#                 one fewer thing to curate.
+#
+#                 It also pulls `fonts-liberation` (v1) where we ask for `fonts-liberation2`,
+#                 so both generations register the same family names. Harmless — fontconfig
+#                 picks one — and visible in the family list the build prints.
+#   texgyre       the find: 14 MB for eight OpenType families covering most classical
+#                 categories — Termes (Times/transitional), Pagella (Palatino/humanist),
+#                 Schola (Century Schoolbook), Bonum (Bookman), Heros (Helvetica — named 3x
+#                 in the manuals), Adventor (Avant Garde — the geometric sans we had none of),
+#                 Chorus (Chancery script), Cursor (Courier).
+#   inter         named 3x in the manuals; the modern screen sans.
+#   ebgaramond    the old-style serif, and the one direct hit against the manuals' list.
+#   liberation2   metric-compatible with Arial / Times / Courier, so a layout that assumes
+#                 those widths still measures sensibly.
+#   dejavu-core   the fallback of last resort.
+#
+# `fonts-urw-base35` was considered and rejected as redundant: it is the Type 1 ancestor of the
+# same URW lineage TeX Gyre extends, so it would add 15 MB of near-duplicates.
+#
+# > **The didone: partly filled, and know what by.** Didot and Bodoni are the manuals'
+# > most-cited category (9 references) and Debian packages no conventional Latin didone —
+# > Playfair Display (4 references) is absent entirely, and the only other hits are
+# > `fonts-gfs-didot` and `fonts-gfs-bodoni-classic`, Greek Font Society revivals whose Latin
+# > coverage is unstated.
+# >
+# > `fonts-solide-mirage` is the one that exists, and its own description is the caveat: a
+# > *libre experimental didone style* **display** face, and **unicase** — caps and lowercase
+# > designed to a single height. It has both cases, so it sets; it simply does not set like a
+# > Didot. A wordmark in it reads as a unicase display face, which is a legitimate choice for a
+# > mark and the wrong answer for anything wanting editorial high-contrast text.
+# >
+# > So the category is represented rather than served. An agent that reaches for it expecting
+# > Didot behaviour will get something it did not intend and may not diagnose. If the manuals'
+# > Didot references start mattering, the fix is a pinned-URL-and-SHA fetch of an OFL face at
+# > build time — a reviewed download, unlike a piped installer.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         libicu-dev \
         libfontconfig1 \
         fontconfig \
+        fonts-recommended \
         fonts-dejavu-core \
         fonts-liberation2 \
         fonts-ebgaramond \
-    && fc-cache --force \
+        fonts-texgyre \
+        fonts-inter \
+        fonts-solide-mirage \
     && echo "ICU: $(dpkg-query -W -f='${Version}' libicu-dev 2>/dev/null || echo MISSING)" \
-    && echo "font families available to the studio:" \
-    && fc-list : family | tr ',' '\n' | sort -u \
     && rm -rf /var/lib/apt/lists/*
+
+# The one face apt cannot supply. Fetched at a pinned commit and verified by SHA-256 — see
+# fetch-fonts.py for why that matters more for a font than for a package: `CLAUDE.md` treats
+# fonts as untrusted *binary* data whose risk is the parser, and SkiaSharp's parser is native
+# FreeType rather than managed code.
+#
+# It runs with the interpreter already in the image and the standard library only, so nothing
+# is added to fetch it — no curl, no wget.
+#
+# `fc-cache` runs here rather than in the step above so one rebuild covers both the packaged
+# fonts and these, and the family list printed afterwards is the complete one.
+COPY fetch-fonts.py /tmp/fetch-fonts.py
+RUN python /tmp/fetch-fonts.py \
+    && rm -f /tmp/fetch-fonts.py \
+    && fc-cache --force \
+    && echo "font families available to the studio:" \
+    && fc-list : family | tr ',' '\n' | sort -u
 
 WORKDIR /app
 
@@ -196,9 +258,23 @@ RUN chmod +x /usr/local/bin/polson-entrypoint
 
 # Non-root, and owning the directories written at runtime. Cloud Run does not require this, but a
 # process that never needs root should not have it.
+# The console writes a runtime-config file into its own package directory at every startup, and
+# as a non-root user that fails:
+#
+#     Failed to write runtime config file .../adk/cli/browser/assets/config/runtime-config.json
+#     [Errno 13] Permission denied
+#
+# The console still loads, so this looks harmless and is not: that file is how ADK hands UI
+# settings to the SPA, so `logo_text` and `logo_image_url` would have been accepted by
+# `get_fast_api_app` and then silently never reached the browser. The directory is located by
+# asking the installed package rather than by hardcoding a `python3.13` path that a base-image
+# bump would invalidate.
 RUN adduser --disabled-password --gecos "" polson \
     && mkdir -p /app/adk_agent/apps /app/adk_agent/artifact_versions /app/projects \
-    && chown -R polson:polson /app
+    && chown -R polson:polson /app \
+    && ADK_BROWSER="$(python -c 'import os, google.adk.cli as c; print(os.path.join(os.path.dirname(c.__file__), "browser"))')" \
+    && echo "adk console assets: $ADK_BROWSER" \
+    && chown -R polson:polson "$ADK_BROWSER"
 USER polson
 
 ENV POLSON_CLI_DLL=/app/bin/cli/Polson.CLI.dll \

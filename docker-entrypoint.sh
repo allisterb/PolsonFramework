@@ -65,6 +65,22 @@ if [ -n "${POLSON_SEED_PROJECT:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------------------------
+# Debugging note: the engine logs to a FILE, not to stderr.
+# ---------------------------------------------------------------------------------------------
+# `Runtime.WithFileLogging` writes `<assembly>/Polson-CLI*.log` with no console sink — despite the
+# comment beside it in Program.cs saying "logs go to file/stderr". So when the MCP server dies
+# during the stdio handshake, the container log shows only the Python side's
+# `McpError: Connection closed` and nothing about the cause.
+#
+# Cloud Run has no `exec` into a running instance. The way to look is a **Cloud Run job** on the
+# same image, which needs no rebuild and does not disturb the service:
+#
+#     gcloud run jobs create polson-debug --region <region> #       --image "$(gcloud run services describe polson-studio --region <region> #                    --format='value(spec.template.spec.containers[0].image)')" #       --command /bin/sh --args="^:^-c:<shell to run>"
+#     gcloud run jobs execute polson-debug --region <region> --wait
+#
+# Then read the job's logs. Delete the job when done.
+
+# ---------------------------------------------------------------------------------------------
 # 3. Serve.
 # ---------------------------------------------------------------------------------------------
 # Cloud Run supplies $PORT and expects the process to listen on it and on 0.0.0.0 — binding

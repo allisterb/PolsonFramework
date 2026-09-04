@@ -28,9 +28,18 @@
 # Third-party books and source, read by people and never by the image. 1.4 GB.
 reference/
 
-# Documentation and tests: neither is needed to run the service.
-docs/
+# Tests are not needed to run the service.
 tests/
+
+# NOT `docs/`, and this cost a deploy. `Polson.MCPServer.csproj` carries
+#     <EmbeddedResource Include="..\..\docs\*.md" />
+#     <EmbeddedResource Include="..\..\docs\manuals\*.md" />
+# so the studio manuals are compiled into the assembly — they are the knowledge base the agent
+# queries, not documentation for people. Excluding them made the glob match nothing, the build
+# succeed (MSBuild globs that match nothing are not an error), and the engine die at startup with
+#     Unhandled exception: The type initializer for 'Polson.MCPServer.KnowledgeCorpus' threw
+# It is 880 KB. The same mistake as `*.md` earlier: judging a file by its extension rather than by
+# what the build does with it.
 
 # NOT `*.md`. An earlier version had it, and it would have broken the image at runtime rather than
 # at build: `Polson.CLI.csproj` carries

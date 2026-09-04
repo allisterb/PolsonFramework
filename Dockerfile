@@ -41,6 +41,17 @@ WORKDIR /src
 COPY nuget.config Directory.Build.props Polson.sln ./
 COPY src/ ./src/
 
+# `docs/` is a build input, not documentation. Polson.MCPServer embeds `docs/*.md` and
+# `docs/manuals/*.md` as resources — the studio manuals the agent queries through
+# `polson://manual/*`. A build without them succeeds (an MSBuild glob matching nothing is not
+# an error) and then dies at startup in `KnowledgeCorpus`'s type initializer, which is a long
+# way from the cause. The guard below turns that into a build failure that names the reason.
+COPY docs/ ./docs/
+RUN test -n "$(ls docs/manuals/*.md 2>/dev/null)" \
+    || { echo 'FATAL: docs/manuals/*.md is empty or missing.' >&2; \
+         echo '       These are EmbeddedResource inputs for Polson.MCPServer, not docs.' >&2; \
+         echo '       Check .gcloudignore is not excluding docs/.' >&2; exit 1; }
+
 # `RestoreLockedMode=true` matches what CLAUDE.md §7 requires of CI: every project carries a
 # committed `packages.lock.json`, and a restore that would have to re-resolve fails here rather
 # than silently producing a different graph than the one reviewed.

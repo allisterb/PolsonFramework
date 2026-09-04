@@ -56,10 +56,19 @@ fi
 if [ -n "${POLSON_SEED_PROJECT:-}" ]; then
     if [ ! -d "/app/adk_agent/apps/${POLSON_SEED_PROJECT}" ]; then
         echo "entrypoint: seeding project '${POLSON_SEED_PROJECT}'"
+        # POLSON_SEED_TEST=1 seeds the workflow as a framework evaluation: the agent reports
+        # friction and gaps in findings.md alongside the artwork. Any non-empty value turns it on,
+        # because Cloud Run environment values are strings and "0" reads as true to a shell test.
+        seed_test=""
+        if [ "${POLSON_SEED_TEST:-0}" != "0" ] && [ -n "${POLSON_SEED_TEST:-}" ]; then
+            seed_test="--test"
+        fi
+
         python /app/adk_agent/newproject.py "${POLSON_SEED_PROJECT}" \
             --workflow "${POLSON_SEED_WORKFLOW:-logo}" \
             --prompt "${POLSON_SEED_PROMPT:-a mark for a small independent studio}" \
             --projects-dir "${POLSON_PROJECTS_DIR:-/app/projects}" \
+            ${seed_test} \
             || echo "entrypoint: WARNING - seeding failed; the service starts without it" >&2
     fi
 fi

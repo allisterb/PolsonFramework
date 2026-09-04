@@ -16,6 +16,8 @@ happens through files rather than through conversation.
 
 {{DEADLINE}}
 
+{{TEST}}
+
 ---
 
 {{BLANK_BRIEF}}
@@ -25,13 +27,6 @@ happens through files rather than through conversation.
 {{RECALL}}
 
 ---
-
-## Ground rule: no peeking at the implementation
-
-You may read **only** what the MCP server exposes: its tool definitions and its `polson://sdk/*` and
-`polson://manual/*` resources. **Do not inspect Polson's C# source or tests.** If you cannot work out
-how to use an API from the published resources alone, that is an API or documentation defect —
-record it in `findings.md` and try another documented approach.
 
 {{PROJECT_DIR}}
 
@@ -168,7 +163,5 @@ In this directory:
 3. **`output.webp`** — the final image.
 4. **`critique_log.md`** — the collaboration trace: what each agent saw when it looked, what drift it
    found, and what it changed. Write it as you go.
-5. **`findings.md`** — the developer-experience report. What broke, what you could not find, what
-   misled you, what you hand-rolled that the SDK already provided, and whether the multi-agent
-   handover through files actually worked — including where a stage received something it could not
-   use.
+5. **`findings.md`** — only on a `--test` run, which says what it wants. A commission does
+   not owe anyone a developer-experience report.

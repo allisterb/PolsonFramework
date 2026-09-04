@@ -97,3 +97,5 @@ Iterate until the construction is sound. A proportion error here costs every sta
 The server has already saved your script to `scripts/`. Leave the render at
 `artifacts/stage1_penciler.webp` and record, in a `Stage.note`, the anchor constants you established
 and anything about the reference you could not resolve.
+
+{{TEST_ROLE}}

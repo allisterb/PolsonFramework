@@ -80,3 +80,5 @@ as noise laid on top?
 Send work back when it warrants it. Reopening `Inker` because the weight hierarchy is wrong is a better
 outcome than inking a mistake more carefully — and reopening a stage is visible in the record, which
 is exactly what makes the studio's judgement legible afterwards.
+
+{{TEST_ROLE}}

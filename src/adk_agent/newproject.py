@@ -93,7 +93,7 @@ class GenerateError(RuntimeError):
 
 def _run_create_project(
     projects_dir: Path, project_id: str, workflow: str,
-    prompt: str | None, type_: str | None, force: bool,
+    prompt: str | None, type_: str | None, force: bool, test: bool = False,
 ) -> Path:
     """Shells out to the one thing that knows how to build a project."""
     if not CLI_DLL.is_file():
@@ -114,6 +114,12 @@ def _run_create_project(
         args += ["--type", type_]
     if force:
         args += ["--force"]
+    # Evaluate the framework as well as producing the artwork. On this runtime the deny rules
+    # `--test` writes are inert — they are a Claude Code artefact — but the agent is contained
+    # anyway: `read_file`, `peek` and every MCP path resolve inside the project and refuse to
+    # escape it, so an ADK test run is isolated by tool design rather than by host policy.
+    if test:
+        args += ["--test"]
 
     done = subprocess.run(args, capture_output=True, text=True)
     if done.returncode != 0:
@@ -151,7 +157,7 @@ def write_app(project_dir: Path, app_name: str, apps_dir: Path = APPS_DIR) -> Pa
 
 def create(
     project_id: str, *, workflow: str = "logo", prompt: str | None = None,
-    type_: str | None = None, force: bool = False,
+    type_: str | None = None, force: bool = False, test: bool = False,
     projects_dir: Path = PROJECTS_DIR, apps_dir: Path = APPS_DIR,
 ) -> tuple[Path, Path]:
     """Generates the project and its app. Returns `(project_dir, app_package)`."""
@@ -160,7 +166,7 @@ def create(
             f"{project_id!r} cannot be an app name — it must start with a letter and hold only "
             "letters, digits, underscores and dashes."
         )
-    project = _run_create_project(projects_dir, project_id, workflow, prompt, type_, force)
+    project = _run_create_project(projects_dir, project_id, workflow, prompt, type_, force, test)
     return project, write_app(project, project_id, apps_dir)
 
 
@@ -172,13 +178,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prompt", help="The subject, in a line. Treated as untrusted data.")
     parser.add_argument("--type", dest="type_", help="Narrows the workflow's direction.")
     parser.add_argument("--force", action="store_true", help="Overwrite an existing project.")
+    parser.add_argument("--test", action="store_true",
+                        help="Run the workflow as an evaluation of the framework as well as a "
+                             "commission: the agent reports friction and gaps in findings.md.")
     parser.add_argument("--projects-dir", type=Path, default=PROJECTS_DIR)
     args = parser.parse_args(argv)
 
     try:
         project, package = create(
             args.project_id, workflow=args.workflow, prompt=args.prompt,
-            type_=args.type_, force=args.force, projects_dir=args.projects_dir)
+            type_=args.type_, force=args.force, test=args.test,
+            projects_dir=args.projects_dir)
     except GenerateError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

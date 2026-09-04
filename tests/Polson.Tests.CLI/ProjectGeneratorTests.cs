@@ -282,6 +282,133 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.DoesNotContain("agents.json", string.Join(' ', files));
     }
 
+    #region Test-Mode Tests
+    /// <summary>
+    /// `--test` turns any workflow into a framework evaluation, prompt *and* permissions.
+    /// </summary>
+    /// <remarks>
+    /// The permissions half is the one that matters. `comic_studio` carried the no-peeking paragraph
+    /// for weeks with no <c>{{ISOLATION}}</c> token, and <c>IsIsolated</c> keys off exactly that — so
+    /// it told the agent not to read Polson's source while nothing denied it. A run where the source
+    /// was readable cannot say whether the published API was sufficient, which is the only thing the
+    /// run measures, so the discipline and its enforcement have to travel together.
+    /// </remarks>
+    [Fact]
+    public void TestTestModeDeniesReadingTheImplementation()
+    {
+        Assert.True(ProjectGenerator.Create(
+            Options("tm-on", o => { o.Workflow = "painting"; o.Sdk = "claude"; o.Test = true; })));
+        Assert.True(ProjectGenerator.Create(
+            Options("tm-off", o => { o.Workflow = "painting"; o.Sdk = "claude"; })));
+
+        var on = File.ReadAllText(Path.Combine(root, "tm-on", ".claude/settings.local.json"));
+        var off = File.ReadAllText(Path.Combine(root, "tm-off", ".claude/settings.local.json"));
+
+        Assert.Contains("/docs/**", on, StringComparison.Ordinal);
+        Assert.DoesNotContain("/docs/**", off, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TestTestModeAddsTheEvaluationBriefAndRecordsItself()
+    {
+        Assert.True(ProjectGenerator.Create(
+            Options("tm-brief", o => { o.Workflow = "logo"; o.Test = true; })));
+
+        var instructions = File.ReadAllText(Path.Combine(root, "tm-brief", "GEMINI.md"));
+        Assert.Contains("This run is a test of the framework", instructions, StringComparison.Ordinal);
+
+        // The per-workflow overlay: each workflow exercises a different part of the stack, so each
+        // ships its own questions. Without this the flag would test seven workflows identically.
+        Assert.Contains("What this workflow tests", instructions, StringComparison.Ordinal);
+        Assert.Contains("VectorLogo", instructions, StringComparison.Ordinal);
+
+        Assert.Contains("\"test\": true",
+            File.ReadAllText(Path.Combine(root, "tm-brief", "project.json")), StringComparison.Ordinal);
+    }
+
+    /// <summary>Without the flag, none of it appears — and `test.md` is not written out either.</summary>
+    [Fact]
+    public void TestWithoutTheFlagAWorkflowIsOnlyACommission()
+    {
+        Assert.True(ProjectGenerator.Create(Options("tm-plain", o => o.Workflow = "logo")));
+
+        var instructions = File.ReadAllText(Path.Combine(root, "tm-plain", "GEMINI.md"));
+        Assert.DoesNotContain("This run is a test of the framework", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{TEST}}", instructions, StringComparison.Ordinal);
+
+        // `test.md` is an overlay selected by the flag, not a file the project carries.
+        Assert.DoesNotContain("test.md", FileSet("tm-plain"));
+
+        Assert.DoesNotContain("\"test\"",
+            File.ReadAllText(Path.Combine(root, "tm-plain", "project.json")), StringComparison.Ordinal);
+    }
+
+    /// <summary>Roles are told too, because in a multi-agent run they do the work.</summary>
+    [Fact]
+    public void TestTestModeReachesTheRolesOfAMultiAgentWorkflow()
+    {
+        Assert.True(ProjectGenerator.Create(
+            Options("tm-roles", o => { o.Workflow = "comic_studio"; o.Sdk = "claude"; o.Test = true; })));
+
+        foreach (var role in Directory.GetFiles(Path.Combine(root, "tm-roles", "roles"), "*.md"))
+        {
+            Assert.Contains("also a test of the framework", File.ReadAllText(role), StringComparison.Ordinal);
+        }
+
+        // And through into the generated subagent, which is the prompt that actually runs.
+        Assert.Contains("also a test of the framework",
+            File.ReadAllText(Path.Combine(root, "tm-roles", ".claude/agents/inker.md")),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>A test run reserves part of its deadline for writing the report.</summary>
+    /// <remarks>
+    /// Reserved out of the deadline rather than added to it, so the clock matches a real run of that
+    /// workflow and the timing findings still transfer — and so that whether the agent plans for the
+    /// report is itself a result.
+    /// </remarks>
+    [Fact]
+    public void TestTestModeReservesTimeForTheReport()
+    {
+        Assert.Equal(0, ProjectGenerator.ReportReserve(60, test: false));
+        Assert.Equal(24, ProjectGenerator.ReportReserve(120, test: true));
+
+        // Never less than five: a report squeezed into two minutes is the outcome this prevents.
+        Assert.Equal(5, ProjectGenerator.ReportReserve(15, test: true));
+
+        // No deadline, nothing to reserve out of.
+        Assert.Equal(0, ProjectGenerator.ReportReserve(0, test: true));
+
+        Assert.True(ProjectGenerator.Create(
+            Options("tm-time", o => { o.Workflow = "logo"; o.Test = true; })));
+        Assert.Contains("plan to spend the last 5",
+            File.ReadAllText(Path.Combine(root, "tm-time", "GEMINI.md")), StringComparison.Ordinal);
+    }
+
+    /// <summary>A previous run's report must not be sitting there when a test run starts.</summary>
+    /// <remarks>
+    /// The agent reads it and reports back what it was told rather than what it found. `--force` is
+    /// deliberately not enough: it overwrites the generated files and leaves findings.md exactly
+    /// where it is, which is the case this guard exists for.
+    /// </remarks>
+    [Fact]
+    public void TestTestModeRefusesToStartOnAPreviousRunsFindings()
+    {
+        Assert.True(ProjectGenerator.Create(Options("tm-leak", o => o.Workflow = "logo")));
+        File.WriteAllText(Path.Combine(root, "tm-leak", "findings.md"), "the previous run's answers");
+
+        Assert.False(ProjectGenerator.Create(
+            Options("tm-leak", o => { o.Workflow = "logo"; o.Test = true; o.Force = true; })));
+
+        // --reset archives it under previous/ and proceeds.
+        Assert.True(ProjectGenerator.Create(
+            Options("tm-leak", o => { o.Workflow = "logo"; o.Test = true; o.Reset = true; })));
+        Assert.False(File.Exists(Path.Combine(root, "tm-leak", "findings.md")));
+        Assert.Contains(Directory.EnumerateFiles(Path.Combine(root, "tm-leak", "previous"),
+            "findings.md", SearchOption.AllDirectories), _ => true);
+    }
+    #endregion
+
     #region Deadline Tests
     /// <summary>
     /// A workflow's own default deadline, and what `--deadline` does to it.

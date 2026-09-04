@@ -94,3 +94,5 @@ Render, `peek(...)` at it, and work the checklist below.
 
 Leave the render at `artifacts/stage2_inker.webp`, and note in `critique_log.md` anything you inked
 around rather than fixed. The Colorist paints over this, and the Critic reads that list.
+
+{{TEST_ROLE}}

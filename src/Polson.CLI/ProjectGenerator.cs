@@ -211,6 +211,21 @@ internal static class ProjectGenerator
                 + "       or --force to overwrite every generated file including brief.md.");
         }
 
+        // A previous run's findings hand the next one its answers. That is fatal to a test run and
+        // merely untidy otherwise, so it is refused only here — and refused rather than archived
+        // silently, because losing a report nobody has read yet is worse than an extra flag.
+        // `--force` deliberately does not satisfy it: force overwrites the *generated* files and
+        // leaves findings.md exactly where it is, which is the case this guard exists for.
+        if (opts.Test && !opts.Reset && File.Exists(Path.Combine(dir, "findings.md")))
+        {
+            return Fail($"findings.md already exists in {dir}\n"
+                + "       A test run must not start with the previous run's report in the working\n"
+                + "       directory: the agent reads it, and reports back what it was told rather\n"
+                + "       than what it found.\n"
+                + "       Use --reset, which archives the previous run under previous/ and deletes\n"
+                + "       nothing, or generate into a fresh directory.");
+        }
+
         // --reset clears the run before anything is written, so the regenerated project is what a
         // fresh one would be. Reported rather than silent: deleting a previous run's work is the
         // one thing here that cannot be undone.
@@ -249,6 +264,7 @@ internal static class ProjectGenerator
         var brief = SanitizeBrief(briefText);
         var createdUtc = DateTime.UtcNow.ToString("O");
         var deadline = DeadlineFor(workflow, opts.Deadline);
+        var reportMinutes = ReportReserve(deadline, opts.Test);
 
         // The orchestrator's session directories. Written for every Antigravity project rather than
         // only the standalone ones, because any of them may now be run from the orchestrator — see
@@ -310,6 +326,25 @@ internal static class ProjectGenerator
             // the same whatever is being drawn, and stated up front because a deadline learned about
             // at three-quarters spent is only bad news — by then it cannot be planned against.
             // Empty for a workflow with no deadline, so nothing claims a limit that is not enforced.
+            // The framework-evaluation overlay. Shared discipline plus, where the workflow ships one,
+            // what that workflow in particular exercises — each covers a different part of the stack,
+            // and `comic_studio` is the only one that reaches the multi-agent path at all.
+            ["TEST"] = opts.Test
+                ? Render("_shared", "test.md", new Dictionary<string, string>
+                {
+                    ["ISOLATION"] = Isolation(sdk),
+                    ["DEADLINE_MINUTES"] = deadline > 0 ? deadline.ToString() : "allotted",
+                    ["TEST_REPORT_MINUTES"] = reportMinutes > 0 ? reportMinutes.ToString() : "final",
+                    ["TEST_WORK_MINUTES"] = deadline > 0 ? (deadline - reportMinutes).ToString() : "the rest",
+                    ["TEST_FOCUS"] = RenderIfPresent(workflow, "test.md", []),
+                })
+                : string.Empty,
+
+            // The same declaration for a sub-agent, kept short. A role needs to know it is being
+            // evaluated and where to write what it finds; it does not need the whole preamble four
+            // times over, and the one-off checks in it belong to whoever starts the run.
+            ["TEST_ROLE"] = opts.Test ? Render("_shared", "test_role.md", []) : string.Empty,
+
             ["DEADLINE"] = deadline > 0
                 ? Render("_shared", "deadline.md",
                     new Dictionary<string, string> { ["DEADLINE_MINUTES"] = deadline.ToString() })
@@ -330,7 +365,7 @@ internal static class ProjectGenerator
         }
 
         WriteText(dir, ".gitignore", GitIgnore(orchestratable));
-        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, orchestratable, deadline));
+        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, orchestratable, deadline, opts.Test));
 
         // Roles, checklists, anything else the workflow ships. Rendered like the rest, so they can
         // carry the same tokens.
@@ -345,7 +380,7 @@ internal static class ProjectGenerator
         }
 
         WriteJson(dir, host.McpConfig, McpConfig(dir));
-        WriteJson(dir, host.Permissions, Permissions(sdk, standalone, workflow, dir, roles.Count > 0));
+        WriteJson(dir, host.Permissions, Permissions(sdk, standalone, workflow, dir, roles.Count > 0, opts.Test));
 
         // Antigravity keeps hooks in their own file; Claude Code carries them inside the settings
         // file written just above, so only one of these two lines does anything per host.
@@ -479,6 +514,19 @@ internal static class ProjectGenerator
         ["harness"] = 0,
     };
 
+    /// <summary>
+    /// Minutes of a test run's deadline set aside for writing <c>findings.md</c>.
+    /// </summary>
+    /// <remarks>
+    /// Reserved out of the deadline rather than added to it, so a test run gets the same clock a real
+    /// run of that workflow gets and the timing findings still transfer. It also makes the deadline
+    /// part of what is under test: whether the agent plans for the report is itself a result. A fifth
+    /// of the time, and never less than five minutes, because a report squeezed into two is the
+    /// outcome this exists to prevent.
+    /// </remarks>
+    internal static int ReportReserve(int deadlineMinutes, bool test) =>
+        test && deadlineMinutes > 0 ? Math.Max(5, (int)Math.Round(deadlineMinutes * 0.2)) : 0;
+
     /// <summary>The deadline for a project, in minutes. Zero means none.</summary>
     internal static int DeadlineFor(string workflow, int? requested) =>
         requested is { } given
@@ -544,6 +592,15 @@ internal static class ProjectGenerator
     /// <remarks>
     /// Discovered, like workflows and types, so a multi-agent workflow gains a role by gaining a file.
     /// </remarks>
+    /// <summary>Whether a workflow ships a given template.</summary>
+    static bool HasTemplate(string workflow, string name) =>
+        typeof(ProjectGenerator).Assembly.GetManifestResourceNames()
+            .Any(n => n.EndsWith($"{ResourcePrefix}{workflow}.{name}", StringComparison.Ordinal));
+
+    /// <summary>That template if it is there, or an empty string.</summary>
+    static string RenderIfPresent(string workflow, string name, Dictionary<string, string> tokens) =>
+        HasTemplate(workflow, name) ? Render(workflow, name, tokens) : string.Empty;
+
     static string[] ExtraTemplates(string workflow)
     {
         var prefix = $"{ResourcePrefix}{workflow}.";
@@ -555,7 +612,9 @@ internal static class ProjectGenerator
             if (start < 0) continue;
 
             var relative = resource[(start + prefix.Length)..];
-            if (relative is "instructions.md" or "brief.md") continue;
+            // `test.md` is an overlay selected by --test, not a file the project carries —
+            // the same reason `type.*` is skipped just below.
+            if (relative is "instructions.md" or "brief.md" or "test.md") continue;
             if (relative.StartsWith("type.", StringComparison.Ordinal)) continue;
             if (!relative.EndsWith(".md", StringComparison.Ordinal)) continue;
 
@@ -600,7 +659,7 @@ internal static class ProjectGenerator
     /// by probing filenames. <c>conversationId</c> is standalone-only state: resume belongs to us,
     /// and a desktop host neither writes nor reads it.
     /// </remarks>
-    static object ProjectManifest(string id, string workflow, string type, string sdk, string profile, string createdUtc, bool orchestratable, int deadlineMinutes)
+    static object ProjectManifest(string id, string workflow, string type, string sdk, string profile, string createdUtc, bool orchestratable, int deadlineMinutes, bool test)
     {
         // An ordered dictionary rather than an anonymous type: the optional fields would otherwise
         // need one shape per combination of them, and the order here is the order on disk.
@@ -616,6 +675,10 @@ internal static class ProjectGenerator
         // so "this project has no deadline" is a stated fact rather than a missing key that a
         // reader has to interpret.
         manifest["deadlineMinutes"] = deadlineMinutes;
+
+        // Only when true. A design project is not a test run and should not carry a
+        // field saying it is not one.
+        if (test) manifest["test"] = true;
 
         // The slot the orchestrator records a resumable session into, so it exists wherever the
         // orchestrator can run — which is now any Antigravity project, not only a standalone one.
@@ -1062,7 +1125,7 @@ internal static class ProjectGenerator
             .Concat(ToolNames().Select(t => $"polson:{t}"))
             .Select(key => new KeyValuePair<string, string>(key, "allow"));
 
-    static object Permissions(string sdk, bool standalone, string workflow, string dir, bool hasSubagents)
+    static object Permissions(string sdk, bool standalone, string workflow, string dir, bool hasSubagents, bool test)
     {
         var denied = standalone ? [.. AlwaysDenied, .. StandaloneDenied] : AlwaysDenied;
 
@@ -1126,7 +1189,7 @@ internal static class ProjectGenerator
                         .Concat(hasSubagents ? ["Agent", "Task"] : Array.Empty<string>()).ToArray(),
                     deny = ShellDenies()
                         .Concat(["BashOutput", "KillShell", "WebFetch", "WebSearch"])
-                        .Concat(IsIsolated(workflow) ? SourceDenies() : []).ToArray(),
+                        .Concat(IsIsolated(workflow, test) ? SourceDenies() : []).ToArray(),
                 },
 
                 // Without this, Claude Code asks a human to approve the project's own MCP server
@@ -1220,8 +1283,14 @@ internal static class ProjectGenerator
     /// isolation paragraph exactly when it is an evaluation harness, so the token is the signal. A
     /// client design project has no reason to deny reading anything and does not get these rules.
     /// </remarks>
-    static bool IsIsolated(string workflow) =>
-        Render(workflow, "instructions.md", []).Contains("{{ISOLATION}}", StringComparison.Ordinal);
+    /// <param name="test">
+    /// Whether <c>--test</c> was given. A test run of <em>any</em> workflow hides the implementation,
+    /// which is the half of the arrangement that cannot be a prompt: `comic_studio` carried the
+    /// no-peeking paragraph for weeks with no <c>{{ISOLATION}}</c> token, so it told the agent not to
+    /// read the source while nothing stopped it. The rule and its enforcement travel together now.
+    /// </param>
+    static bool IsIsolated(string workflow, bool test) =>
+        test || Render(workflow, "instructions.md", []).Contains("{{ISOLATION}}", StringComparison.Ordinal);
 
     /// <summary>
     /// Deny rules hiding Polson's own implementation from an agent evaluating its published API.

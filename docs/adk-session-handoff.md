@@ -278,6 +278,58 @@ it at the start.
 > membership. Worth remembering that the generated subagent tool list is derived from the real MCP
 > surface, so **every new MCP tool reaches Claude Code subagents automatically**.
 
+### 4bd. `--test` on any workflow, and retiring the harness
+
+**Built 2026-09-04. `harness` is still in place, deliberately — see the sequencing note at the end.**
+
+The `harness` workflow tested a **replica**. `harness --type logo` was never the logo workflow; it
+was a separate simplified brief living in the harness folder. So a defect in the *real* workflow's
+instructions was structurally invisible to it — and every genuine defect found lately (the "Open"
+ambiguity that stopped the inker composing, the stage-numbering contradiction, roles that never
+converged) lived in exactly there. Coverage was three replicas out of seven workflows, and
+`comic_studio`, the only multi-agent path, had none.
+
+`create-project --test` applies to **any** workflow: shared discipline from `_shared/test.md`, plus a
+per-workflow `<workflow>/test.md` naming what that workflow in particular exercises — vector and
+optical corrections for `logo`, `Scale`/`Layout`/`Css` for `infographic`, perspective and anatomy for
+`drawing`, line weight for `comic`, shaders and the statement cap for `painting`, and for
+`comic_studio` the handoff, the shared `Session`, `ask_facilitator` and the deadline split.
+
+Four things that were not obvious:
+
+- **`painting.test/` as a folder does not work.** Templates are embedded resources flattened with
+  dots, so it becomes `painting.test.instructions.md` and `TemplateNames` discovers a phantom
+  workflow called `painting.test`. It is `painting/test.md` plus one entry in `ExtraTemplates`' skip
+  list, alongside `brief.md` and `type.*`.
+- **The permissions are the load-bearing half, not the prompt.** `IsIsolated` now takes the flag as
+  well as reading the `{{ISOLATION}}` token. Verified: `--test` emits 18 deny rules hiding `docs/`,
+  `src/` and `tests/`; without it, none.
+- **⚠ A live defect found on the way.** `comic_studio/instructions.md` carried the no-peeking
+  paragraph but **never** the `{{ISOLATION}}` token — which is exactly what `IsIsolated` keys off. So
+  it told the agent not to read Polson's source while nothing denied it. Prompt-only, unenforced, for
+  as long as the workflow has existed. The paragraph is removed; the discipline now arrives with
+  `--test`, which does deny it. Its `findings.md` deliverable is likewise now conditional — a
+  commission does not owe anyone a developer-experience report.
+- **The `findings.md` leak is now a refusal.** `--test` into a directory already holding one fails
+  and names `--reset`. **`--force` deliberately does not satisfy it** — force overwrites the
+  *generated* files and leaves `findings.md` exactly where it is, which is the case the guard is for.
+
+**Deadline:** a test run keeps the workflow's own clock and **reserves** a fifth of it (minimum five
+minutes) for writing the report, stated in the prompt as a number. Added time would have made the
+timing findings stop transferring to real runs; reserving also makes "did the agent plan for the
+report" a result in itself.
+
+Roles get a compact variant, `_shared/test_role.md`, because in `comic_studio` the roles do the work
+and would otherwise not know they were being evaluated. It reaches the generated Claude subagents too.
+
+> **Sequencing, deliberately.** `harness` is untouched and still works. Retire it only after a
+> `logo --test` run has been compared against a `harness --type logo` run and found to surface at
+> least as much — deleting first would mean the only instrument for judging the replacement is the
+> thing that was deleted. Its three `type.*` files carry real task content (`type.infographic.md` is
+> 6 KB, likely a data fixture) that has to land somewhere before the folder goes.
+
+Suites: 278 CLI, 475 MCP server.
+
 ### 4c. Mount `src/webapp` on the ADK FastAPI app
 
 Agreed direction, not started. `get_fast_api_app` returns a plain `FastAPI`, so the studio UI and

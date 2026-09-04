@@ -39,6 +39,8 @@ legitimate brief remains.
 
 {{DEADLINE}}
 
+{{TEST}}
+
 {{PROJECT_DIR}}
 
 ---

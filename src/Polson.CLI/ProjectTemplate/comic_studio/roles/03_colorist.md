@@ -102,3 +102,5 @@ Render, `peek(...)` at it, and work the checklist below.
 
 Leave the render at `artifacts/stage3_colorist.webp`, and record the palette and light direction in a
 `Stage.note` so the Critic can tell an intentional choice from an accident.
+
+{{TEST_ROLE}}

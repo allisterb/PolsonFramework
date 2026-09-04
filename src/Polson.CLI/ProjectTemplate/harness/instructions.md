@@ -16,6 +16,8 @@ surprise and limitation in `findings.md`. Do not smooth over friction or quietly
 
 {{DEADLINE}}
 
+{{TEST}}
+
 ---
 
 ## Ground rule: no peeking at the implementation

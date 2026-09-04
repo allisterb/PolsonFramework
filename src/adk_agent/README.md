@@ -307,9 +307,22 @@ remotely, so no Docker engine is needed on a developer machine at any point.
 ```bash
 gcloud run deploy polson-studio --source . \
   --project <project> --region <region> --allow-unauthenticated \
-  --set-secrets POLSON_AGENT_PLATFORM_KEY=polson-agent-key:latest \
-  --set-env-vars POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>
+  --set-secrets POLSON_AGENT_PLATFORM_KEY=polson-agent-key:latest
 ```
+
+> [!WARNING]
+> **`POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>` does not work yet, and would stop the container
+> starting.** `GcsArtifactService.__init__` does `from google.cloud import storage`, and
+> `google-cloud-storage` is **not** in `requirements.txt` — we install `google-adk[mcp]`, while GCS
+> lives in the `[gcp]` extra. The import is lazy, so the failure arrives at service construction
+> during startup rather than at image build, as `ModuleNotFoundError`.
+>
+> Add `google-cloud-storage` to `requirements.in` and recompile the lock before passing a `gs://`
+> URI. Until then the artifact store falls back to `file://` on the container's ephemeral disk, and
+> version history dies with the instance.
+>
+> Note also that only the **bucket name** is read — `bucket_name = parsed_uri.netloc` — so any path
+> after it (`gs://bucket/prefix`) is silently discarded rather than honoured.
 
 Three files make that work, and each exists for a reason worth knowing.
 

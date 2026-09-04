@@ -45,15 +45,35 @@ COPY src/ ./src/
 # committed `packages.lock.json`, and a restore that would have to re-resolve fails here rather
 # than silently producing a different graph than the one reviewed.
 #
+# **There is deliberately no `--runtime linux-x64`, and that is not an oversight.** A first
+# build had one, and every project failed restore with:
+#
+#     error NU1004: The project's runtime identifiers have changed from. Project's runtime
+#     identifiers: linux-x64, lock file's runtime identifiers . The packages lock file is
+#     inconsistent with the project dependencies so restore can't be run in locked mode.
+#
+# The committed locks declare one target, `net10.0`, with no RID. Asking for `linux-x64` asks
+# NuGet to resolve RID-specific assets the lock does not describe, and locked mode refuses —
+# which is the lock doing its job. Regenerating the locks with a RID would make them
+# platform-specific for everyone to suit one container; publishing portable costs nothing.
+#
+# The portable publish then carries `runtimes/` for **every** RID NuGet knows — 550 MB, of
+# which `linux-x64` is 15 MB. The prune happens in the same layer because a later layer that
+# merely deletes would leave the bytes in the one beneath it. `du` prints the result so the
+# build log carries evidence rather than an assumption.
+#
 # Framework-dependent (`--self-contained false`) because the runtime arrives in stage 2 from
 # Microsoft's own image; bundling a second copy would add ~70 MB for nothing.
 RUN dotnet publish src/Polson.CLI/Polson.CLI.csproj \
         --configuration Release \
-        --runtime linux-x64 \
         --self-contained false \
         -p:RestoreLockedMode=true \
         --output /engine \
-    && rm -f /engine/appsettings.json
+    && rm -f /engine/appsettings.json \
+    && if [ -d /engine/runtimes ]; then \
+           find /engine/runtimes -mindepth 1 -maxdepth 1 -type d ! -name linux-x64 -exec rm -rf {} + ; \
+       fi \
+    && du -sh /engine
 
 
 # ============================================================================================
@@ -78,6 +98,13 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
 # `.NoDependencies`) — without it the native library fails to load at startup rather than at the
 # first render, which is at least a loud failure.
 #
+# **`fontconfig` is a separate package from `libfontconfig1`, and both are needed.** A first
+# build installed only the library and died with `fc-cache: not found` (exit 127) — the tools
+# ship separately. It pays for itself twice: `fc-cache` warms the cache so the first render
+# does not build it, and `fc-list` prints the families actually present, so the build log
+# states what type the studio can set instead of leaving it to be inferred from a
+# disappointing render.
+#
 # The fonts are a design decision, not a dependency:
 #   dejavu-core      a workmanlike sans/serif/mono, and the usual fallback of last resort
 #   liberation2      metric-compatible with Arial / Times / Courier, so layouts that assume those
@@ -86,10 +113,13 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         libfontconfig1 \
+        fontconfig \
         fonts-dejavu-core \
         fonts-liberation2 \
         fonts-ebgaramond \
-    && fc-cache -f \
+    && fc-cache --force \
+    && echo "font families available to the studio:" \
+    && fc-list : family | tr ',' '\n' | sort -u \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -127,10 +157,18 @@ ENV POLSON_CLI_DLL=/app/bin/cli/Polson.CLI.dll \
 # created by a visitor dies with the container. That is acceptable for a demo where one session
 # does one brief, and wrong for anything else.
 #
-# The artifact store is the part worth fixing at deploy time rather than living with. `main.py`
-# defaults it to `file://`, which here means the same ephemeral disk — so pass
-#     --set-env-vars POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>
-# and the version history outlives the instance. Sessions likewise: `POLSON_SESSION_SERVICE_URI`.
+# The artifact store has the same problem: `main.py` defaults it to `file://`, which here is that
+# same ephemeral disk, so version history dies with the instance too.
+#
+# `gs://<bucket>` is the fix and is **not usable yet**: `GcsArtifactService.__init__` does
+# `from google.cloud import storage`, and `google-cloud-storage` is not in `requirements.txt` — we
+# install `google-adk[mcp]`, while GCS lives in ADK's `[gcp]` extra. The import is lazy, so passing
+# a `gs://` URI fails at startup with ModuleNotFoundError rather than at build. Add the package to
+# `requirements.in` and recompile the lock before reaching for it. (Note too that only the bucket
+# name is read — a path after it is silently discarded.)
+#
+# Sessions have the same shape: `POLSON_SESSION_SERVICE_URI`, and `sqlite://` on ephemeral disk buys
+# nothing here.
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/polson-entrypoint"]

@@ -1,48 +1,55 @@
 # What `gcloud run deploy --source .` uploads to Cloud Build.
 #
-# **This file is not optional.** Without it gcloud generates one containing `#!include:.gitignore`,
-# which has two problems here, in opposite directions:
+# **Inherit .gitignore, then exclude the tracked things the image has no use for.** That order
+# matters and the first line is the important one.
 #
-#   1. It would still upload `reference/` — 1.4 GB of books and third-party source that is tracked
-#      and therefore not gitignored. Every deploy would spend minutes shipping material the image
-#      has no use for.
-#   2. It honours `.gitignore`, which excludes `**/[Bb]in/*` — so `bin/cli` never arrives. That is
-#      fine, because the Dockerfile builds the engine from source rather than copying a Windows
-#      build, but it is worth knowing that copying it was never an option.
+# An earlier version of this file was a standalone exclude list, on the reasoning that a missed
+# *source* path fails the build loudly while a missed *exclude* only makes it slow. That was wrong:
+# a missed exclude crashed the upload outright —
 #
-# Written as an explicit exclude list rather than an allowlist, because a missed source directory
-# fails the build loudly while a missed exclude only makes it slow.
+#     ERROR: gcloud crashed (PermissionError): [Errno 13] Permission denied:
+#            '.vs\Polson\FileContentIndex\13c4a26c-....vsidx'
+#
+# — because Visual Studio holds its index open, and gcloud reads every file it is not told to skip.
+# `.vs` was already gitignored; the standalone list simply never asked. Inheriting `.gitignore`
+# covers that whole class: IDE state, build output, virtualenvs, anything a tool writes and git was
+# already told to ignore.
+#
+# It is safe to inherit, because anything tracked in git is by definition not gitignored, and
+# everything the build needs is tracked.
 
-.git/
-.gitignore
-.gcloudignore
+#!include:.gitignore
 
-# Reference material: third-party books and source, read by people and never by the image.
+# ---------------------------------------------------------------------------------------------
+# Tracked, and still not wanted in the image.
+# ---------------------------------------------------------------------------------------------
+# `.gitignore` cannot help with these: they are committed on purpose and would be uploaded.
+
+# Third-party books and source, read by people and never by the image. 1.4 GB.
 reference/
-
-# Local environments. Python dependencies come from requirements.txt inside the image.
-python/
-python-adk/
-**/__pycache__/
-*.pyc
-
-# .NET build output. The image builds from source; a Windows build would be useless in it anyway.
-**/[Bb]in/
-**/[Oo]bj/
-
-# Generated at runtime, not baked in. Projects created inside a container are ephemeral — see the
-# note in the Dockerfile about what does not survive an instance.
-projects/
-src/adk_agent/apps/
-src/adk_agent/artifact_versions/
-
-# Secrets. The Agent Platform key reaches the container through Secret Manager and the entrypoint,
-# never through an image layer.
-*.env
-**/appsettings.json
 
 # Documentation and tests: neither is needed to run the service.
 docs/
 tests/
-*.md
-!src/adk_agent/README.md
+
+# NOT `*.md`. An earlier version had it, and it would have broken the image at runtime rather than
+# at build: `Polson.CLI.csproj` carries
+#     <EmbeddedResource Include="ProjectTemplate\**\*.md" />
+# so the 39 workflow templates — every instructions.md, brief.md and roles/*.md — are *source*.
+# Excluding them would have produced a CLI that builds cleanly and then generates empty projects.
+# Root-level markdown is a few KB; the bulk is `reference/` and `docs/`, both already excluded.
+
+# ---------------------------------------------------------------------------------------------
+# Belt and braces.
+# ---------------------------------------------------------------------------------------------
+# Restated even though `.gitignore` covers them, so that a change there cannot quietly start
+# shipping a secret or an IDE lock file.
+.git/
+.vs/
+.idea/
+.vscode/
+*.env
+**/appsettings.json
+python/
+python-adk/
+**/__pycache__/

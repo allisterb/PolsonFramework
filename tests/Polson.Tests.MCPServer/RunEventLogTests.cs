@@ -1,4 +1,4 @@
-namespace Polson.Tests.MCPServer;
+﻿namespace Polson.Tests.MCPServer;
 
 using System;
 using System.IO;
@@ -188,8 +188,10 @@ public class RunEventLogTests : TestsRuntime, IDisposable
     [Fact]
     public async Task TestRefusedPathStillClosesTheRun()
     {
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            Tools().ExecuteScript(Script, 64, 64, outFile: "../escaped.webp"));
+        // Returned rather than thrown since the refusal became agent-readable; the point of this
+        // test is unchanged — the run must not be left with a script.start that never ends.
+        var result = await Tools().ExecuteScript(Script, 64, 64, outFile: "../escaped.webp");
+        Assert.False(result.Success);
 
         var types = Events().Select(Type).ToArray();
 

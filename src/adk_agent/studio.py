@@ -294,8 +294,18 @@ def _make_peek(project: Path):
     return peek
 
 
-#: What `write_script` will author. Deliberately one extension: this is not a general file-write
-#: tool, and widening it would make it one.
+#: What `write_script` will author. Still not a general file-write tool — a fixed, short list rather
+#: than "any text file".
+#:
+#: `.md` was added because a live `logo --test` run found the runtime could not produce its own
+#: deliverable. The instructions of every workflow ask for `findings.md`, and `comic_studio` also asks
+#: for `critique_log.md`; the agent wrote one, called `write_script`, and was told *"'findings.md'
+#: does not end in .js"*. Its report survived only as chat text, which is not a file anyone can read
+#: afterwards. A named deliverable no tool can write is a gap in the runtime, not a misuse by the
+#: agent.
+AUTHORABLE_SUFFIXES = (".js", ".md")
+
+#: Kept for callers that mean the drawing file specifically.
 SCRIPT_SUFFIX = ".js"
 
 #: A guard against a runaway generation, not a style rule. The largest script in a measured
@@ -425,10 +435,11 @@ def _make_write_script(project: Path):
             return {"ok": False, "error": (
                 f"{path!r} resolves outside the project directory. Write only inside the project.")}
 
-        if candidate.suffix.lower() != SCRIPT_SUFFIX:
+        if candidate.suffix.lower() not in AUTHORABLE_SUFFIXES:
             return {"ok": False, "error": (
-                f"{path!r} does not end in {SCRIPT_SUFFIX}. This tool writes drawing scripts only — "
-                "renders go to disk through ExecuteScript's outFile and outSvg.")}
+                f"{path!r} does not end in {' or '.join(AUTHORABLE_SUFFIXES)}. This tool writes the "
+                "files you author — a drawing script, or a note such as findings.md. Renders go to "
+                "disk through ExecuteScript's outFile and outSvg.")}
 
         # `scripts/` is where the server archives what actually ran, one file per execution. A
         # writable working file in there would make the record disagree with itself.

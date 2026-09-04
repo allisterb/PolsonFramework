@@ -413,6 +413,39 @@ public class DrawingMcpTools
         {
             var fmt = format ?? "webp";
             var q = quality ?? 85;
+
+            // Both output paths are validated **before** the script runs, and whether or not it goes
+            // on to draw anything.
+            //
+            // Two defects lived in checking them later. The containment check sat inside
+            // `if (bytes.Length > 0)`, so a script that drew nothing never had its path examined at
+            // all: `outFile: '../escaped.webp'` came back `success: true`. The instruction telling an
+            // agent to prove the boundary with "any trivial script" therefore proved nothing, and a
+            // live run reported the boundary as untested-and-apparently-open. And the refusal was
+            // thrown, which the MCP layer turns into "An error occurred invoking 'ExecuteScript'" —
+            // so the message naming the project root, which the SDK reference promises, never
+            // reached the agent. Every other failure here returns `success: false` with something
+            // actionable; this one route did not.
+            //
+            // Checking first also means a bad path costs no execution.
+            foreach (var (candidate, parameterName) in new[] { (outFile, nameof(outFile)), (outSvg, nameof(outSvg)) })
+            {
+                if (string.IsNullOrWhiteSpace(candidate)) continue;
+                try
+                {
+                    ResolveOutputPath(candidate, parameterName);
+                }
+                catch (ArgumentException ex)
+                {
+                    Events.Append("script.error", session.Stage, executionId, new Dictionary<string, object?>
+                    {
+                        ["script"] = scriptPath,
+                        ["error"] = ex.Message
+                    });
+                    return new DrawingExecutionResult { Success = false, Error = ex.Message };
+                }
+            }
+
             var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q, executionId, render ?? true), cancellationToken);
             var result = await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
 

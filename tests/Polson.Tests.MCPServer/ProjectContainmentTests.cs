@@ -1,4 +1,4 @@
-namespace Polson.Tests.MCPServer;
+﻿namespace Polson.Tests.MCPServer;
 
 using System;
 using System.IO;
@@ -15,6 +15,16 @@ using Xunit;
 /// Confinement is on whenever a project root is configured, which is every path through the CLI,
 /// and off when the tools are constructed directly as a library so tests and ad-hoc use are
 /// unaffected.
+/// </para>
+/// <para>
+/// <b>A refusal is now <i>returned</i>, not thrown</b>, and these tests were changed to match — the
+/// contract changed deliberately, so the change is recorded here rather than absorbed. A live run
+/// found why: the MCP layer turns a thrown exception into <c>"An error occurred invoking
+/// 'ExecuteScript'"</c>, so the message naming the project root — which the SDK reference promises —
+/// never reached the agent, and a containment refusal was indistinguishable from any other failure.
+/// Every other <c>ExecuteScript</c> failure already returned <c>Success == false</c> with something
+/// actionable; this one route did not. The security property is unchanged and is still what each
+/// test asserts: nothing is written outside the project.
 /// </para>
 /// </summary>
 public class ProjectContainmentTests : TestsRuntime, IDisposable
@@ -63,9 +73,10 @@ public class ProjectContainmentTests : TestsRuntime, IDisposable
     {
         var escape = Path.Combine(Path.GetTempPath(), $"polson_escape_{Guid.NewGuid():N}.svg");
 
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            Contained().ExecuteScript("const p = Snap(64, 64); p.circle(32, 32, 20); p;", 64, 64, outSvg: escape));
+        var result = await Contained().ExecuteScript(
+            "const p = Snap(64, 64); p.circle(32, 32, 20); p;", 64, 64, outSvg: escape);
 
+        Assert.False(result.Success);
         Assert.False(File.Exists(escape));
     }
     #endregion
@@ -78,8 +89,9 @@ public class ProjectContainmentTests : TestsRuntime, IDisposable
     [InlineData("./../../escaped.webp")]
     public async Task TestTraversalOutOfProjectIsRefused(string path)
     {
-        await Assert.ThrowsAsync<ArgumentException>(() => Contained().ExecuteScript(Script, 64, 64, outFile: path));
+        var result = await Contained().ExecuteScript(Script, 64, 64, outFile: path);
 
+        Assert.False(result.Success);
         var escaped = Path.GetFullPath(Path.Combine(root, path));
         Assert.False(File.Exists(escaped), $"wrote outside the project: {escaped}");
     }
@@ -90,7 +102,9 @@ public class ProjectContainmentTests : TestsRuntime, IDisposable
     {
         var escape = Path.Combine(Path.GetTempPath(), $"polson_escape_{Guid.NewGuid():N}.webp");
 
-        await Assert.ThrowsAsync<ArgumentException>(() => Contained().ExecuteScript(Script, 64, 64, outFile: escape));
+        var result = await Contained().ExecuteScript(Script, 64, 64, outFile: escape);
+
+        Assert.False(result.Success);
 
         Assert.False(File.Exists(escape));
     }
@@ -104,9 +118,9 @@ public class ProjectContainmentTests : TestsRuntime, IDisposable
     {
         var sibling = root + "-evil";
 
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            Contained().ExecuteScript(Script, 64, 64, outFile: Path.Combine(sibling, "x.webp")));
+        var result = await Contained().ExecuteScript(Script, 64, 64, outFile: Path.Combine(sibling, "x.webp"));
 
+        Assert.False(result.Success);
         Assert.False(Directory.Exists(sibling), "created a directory outside the project");
     }
 
@@ -114,12 +128,34 @@ public class ProjectContainmentTests : TestsRuntime, IDisposable
     [Fact]
     public async Task TestRefusalMessageIsActionable()
     {
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            Contained().ExecuteScript(Script, 64, 64, outFile: "../escaped.webp"));
+        var result = await Contained().ExecuteScript(Script, 64, 64, outFile: "../escaped.webp");
 
-        Assert.Contains("outside this project's directory", error.Message, StringComparison.Ordinal);
-        Assert.Contains(root, error.Message, StringComparison.Ordinal);
-        Assert.Contains("artifacts/", error.Message, StringComparison.Ordinal);
+        Assert.False(result.Success);
+        Assert.NotNull(result.Error);
+        Assert.Contains("outside this project's directory", result.Error!, StringComparison.Ordinal);
+        Assert.Contains(root, result.Error!, StringComparison.Ordinal);
+        Assert.Contains("artifacts/", result.Error!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A script that draws nothing is refused just the same — and this is the one that was broken.
+    /// </summary>
+    /// <remarks>
+    /// The check used to sit inside <c>if (imageBytes.Length > 0)</c>, so a script producing no image
+    /// never had its path examined: <c>outFile: "../escaped.webp"</c> returned <c>success: true</c>.
+    /// The evaluation instructions tell an agent to prove the boundary with "any trivial script", so
+    /// the prescribed proof could neither pass nor fail, and a live run duly reported the boundary as
+    /// untested and apparently open. Paths are now validated before the script runs at all, which
+    /// also means a bad one costs no execution.
+    /// </remarks>
+    [Fact]
+    public async Task TestRefusedEvenWhenTheScriptDrawsNothing()
+    {
+        var result = await Contained().ExecuteScript("log('drew nothing');", 64, 64, outFile: "../escaped.webp");
+
+        Assert.False(result.Success);
+        Assert.Contains("outside this project's directory", result.Error!, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.GetFullPath(Path.Combine(root, "../escaped.webp"))));
     }
     #endregion
 

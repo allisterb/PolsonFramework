@@ -330,6 +330,55 @@ and would otherwise not know they were being evaluated. It reaches the generated
 
 Suites: 278 CLI, 475 MCP server.
 
+### 4be. First `logo --test` run on Cloud Run — three defects, all fixed
+
+**Revision 17, 2026-09-04. 4.5 minutes, 122 events, 53 tool calls, well inside a 15-minute deadline.**
+The mark was produced; the value was in what the run exposed. All three fixes are **local and
+undeployed** — the container is behind again.
+
+**1. The boundary proof could neither pass nor fail.** The evaluation instructions say *"call
+`ExecuteScript` with any trivial script and `outFile: '../escaped.webp'`. It must be refused."* The
+containment check sat inside `if (imageBytes.Length > 0)`, so a script that drew nothing never had its
+path examined at all and the call returned `success: true`. The agent duly reported the boundary as
+*"success: true, imageSize: 0 ... without writing out of folder (or silently clamped/handled)"* — it
+could not tell whether the boundary held. **Fixed at the source**: both output paths are now resolved
+*before* the script runs and regardless of what it draws, so a bad path is refused whether or not
+there is an image, and costs no execution.
+
+**2. The refusal was swallowed.** It was thrown, and the MCP layer turns a thrown exception into
+`An error occurred invoking 'ExecuteScript'.` — so the message naming the project root, which
+`Polson.core.md` explicitly promises, never reached the agent. Measured asymmetry:
+
+| failure | what the agent saw |
+| :--- | :--- |
+| misspelled member | `success:false` · *"has no property 'fillStlye'. Did you mean 'fillStyle'…"* |
+| syntax error | `success:false` · *"Unexpected token ';' (line 1)"* |
+| **containment refusal** | **`isError:true` · *"An error occurred invoking 'ExecuteScript'."*** |
+
+Now returned as `success:false` with the full message. **This changed a deliberate contract** — seven
+tests asserted `Assert.ThrowsAsync<ArgumentException>` — so the tests were updated rather than the
+change being absorbed, and the reason is recorded in `ProjectContainmentTests`' own summary. Every
+security assertion is unchanged: nothing is written outside the project, still asserted in each test,
+plus a new one for the draws-nothing case.
+
+**3. `findings.md` could not be written at all.** `write_script` accepted `.js` only. The agent wrote
+its report, called the tool, and was told *"'findings.md' does not end in .js"*. Its findings survived
+only as chat text. **Every workflow's instructions name `findings.md` as a deliverable and
+`comic_studio` also names `critique_log.md`** — a named deliverable no tool can write is a gap in the
+runtime, not a misuse by the agent. `AUTHORABLE_SUFFIXES` is now `(".js", ".md")`; `.txt` and anything
+else is still refused, `scripts/` is still not writable, and traversal is still refused.
+
+> **The verdict on `--test` itself.** One 4.5-minute run on a workflow that had never been evaluated
+> found three real defects, one of which was **in the evaluation instructions the old harness has been
+> issuing all along**. The replica-testing problem is not theoretical: `harness --type logo` had been
+> running that same vacuous boundary proof and could not have noticed, because it was testing its own
+> copy rather than the workflow. That is the argument for the flag, made by the flag.
+
+**What was *not* exercised**, and is the obvious next run: the watchdog's thrash triggers,
+`ask_facilitator`, and the role handoff. All three need `comic_studio --test`. This run was
+single-agent, and finished so far inside its deadline that the 75%/90% notices never fired either —
+so the warn path is still unproven against a live model. The breaker correctly stayed out of the way.
+
 ### 4c. Mount `src/webapp` on the ADK FastAPI app
 
 Agreed direction, not started. `get_fast_api_app` returns a plain `FastAPI`, so the studio UI and

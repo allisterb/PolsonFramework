@@ -111,9 +111,16 @@ _logger = logging.getLogger("polson.runtime")
 try:
     from google.adk.cli.service_registry import get_service_registry
     _probe = get_service_registry().create_artifact_service(ARTIFACT_SERVICE_URI, agents_dir=AGENTS_DIR)
+    # The engine path is on the banner because getting it wrong is silent until something tries to
+    # draw. The first Cloud Run deploy skipped project seeding with `no CLI at
+    # /bin/cli/Polson.CLI.dll` — a container-root path derived from a checkout layout — and nothing
+    # said so until the entrypoint happened to attempt it. Now the server states it at startup.
+    from studio import DEFAULT_CLI_DLL
+    _cli = Path(os.environ.get("POLSON_CLI_DLL", "").strip() or DEFAULT_CLI_DLL)
     _logger.warning(
-        "polson runtime: agents=%s | artifacts=%s (%s) | console=%s | logo=%r",
-        AGENTS_DIR, type(_probe).__name__, ARTIFACT_SERVICE_URI, SERVE_CONSOLE, LOGO_TEXT or "adk default")
+        "polson runtime: agents=%s | artifacts=%s (%s) | console=%s | logo=%r | engine=%s (%s)",
+        AGENTS_DIR, type(_probe).__name__, ARTIFACT_SERVICE_URI, SERVE_CONSOLE,
+        LOGO_TEXT or "adk default", _cli, "present" if _cli.is_file() else "MISSING")
 except Exception as _e:  # a banner must never be the reason the server does not start
     _logger.warning("polson runtime: could not identify the artifact service (%s)", _e)
 

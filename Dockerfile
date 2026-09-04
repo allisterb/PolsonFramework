@@ -62,6 +62,9 @@ COPY src/ ./src/
 # merely deletes would leave the bytes in the one beneath it. `du` prints the result so the
 # build log carries evidence rather than an assumption.
 #
+# Measured on the first successful build: **48 MB**, against 588 MB for the same publish on a
+# developer machine. Roughly 33 MB of managed assemblies plus the one platform's natives.
+#
 # Framework-dependent (`--self-contained false`) because the runtime arrives in stage 2 from
 # Microsoft's own image; bundling a second copy would add ~70 MB for nothing.
 RUN dotnet publish src/Polson.CLI/Polson.CLI.csproj \
@@ -88,7 +91,29 @@ FROM python:3.13-slim AS runtime
 # The .NET runtime, copied from Microsoft's published image rather than fetched with
 # `dotnet-install.sh`. A piped install script is an unreviewed download executing at build time;
 # a multi-stage COPY takes the same bits from a tagged image with none of that.
-COPY --from=mcr.microsoft.com/dotnet/runtime:10.0 /usr/share/dotnet /usr/share/dotnet
+#
+# **`aspnet`, not `runtime`, and the difference is not cosmetic.** A first deploy used
+# `dotnet/runtime:10.0` and the engine would not launch:
+#
+#     No frameworks were found.
+#     framework=Microsoft.AspNetCore.App&framework_version=10.0.0&rid=linux-x64&os=debian.13
+#
+# `Polson.CLI.runtimeconfig.json` declares **two** frameworks — `Microsoft.NETCore.App` and
+# `Microsoft.AspNetCore.App` — even though no project uses the Web SDK. It arrives transitively
+# through `ModelContextProtocol.AspNetCore`, the package behind the server's HTTP transport option.
+# The base runtime image carries only the first. `aspnet` carries both.
+#
+# **`aspnet` is a runtime image, not an SDK one** — Microsoft's family runs `sdk` (a full toolchain,
+# ~1 GB, build only) → `aspnet` → `runtime` → `runtime-deps`. The cost over `runtime` is one extra
+# shared framework: measured per version, `Microsoft.AspNetCore.App` is **~29 MB** against ~75 MB
+# for `Microsoft.NETCore.App`. (Measured on a Windows install, so treat it as the right order of
+# magnitude rather than the exact Linux figure.)
+#
+# It is kept rather than trimmed because the HTTP transport is the retained fallback: if a sandbox
+# ever refuses the stdio subprocess spawn, `Options.cs` already has `--http` and `--port`, and
+# `studio.py` would swap to `StreamableHTTPConnectionParams`. Removing ASP.NET would remove the
+# escape hatch.
+COPY --from=mcr.microsoft.com/dotnet/aspnet:10.0 /usr/share/dotnet /usr/share/dotnet
 ENV DOTNET_ROOT=/usr/share/dotnet \
     PATH="/usr/share/dotnet:${PATH}" \
     DOTNET_RUNNING_IN_CONTAINER=true \
@@ -97,6 +122,24 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
 # `libfontconfig1` is required by `SkiaSharp.NativeAssets.Linux` (the plain package, not
 # `.NoDependencies`) — without it the native library fails to load at startup rather than at the
 # first render, which is at least a loud failure.
+#
+# **`libicu-dev` is here because of the COPY above, and its absence is not obvious.** Copying
+# only `/usr/share/dotnet` out of the aspnet image brings the runtime but none of the OS
+# libraries that image would have had around it. .NET needs ICU for globalization, and a
+# deploy crashed before reaching `Main`:
+#
+#     at System.Globalization.CultureInfo..cctor()
+#     at System.Reflection.RuntimeAssembly.GetLocale()
+#     at Polson.Runtime..cctor()
+#
+# The alternative is `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`, which needs no package and is
+# the wrong trade here: this is a typography tool, and invariant mode changes string
+# comparison, casing outside ASCII, and number and date formatting. Correct text is worth more
+# than the megabytes.
+#
+# `libicu-dev` rather than a versioned `libicuNN`: the name is stable across Debian releases,
+# so a base-image bump cannot silently break the build. It costs headers we do not need — the
+# honest price of not pinning a version that would go stale.
 #
 # **`fontconfig` is a separate package from `libfontconfig1`, and both are needed.** A first
 # build installed only the library and died with `fc-cache: not found` (exit 127) — the tools
@@ -112,12 +155,14 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
 #   ebgaramond       a real oldstyle serif — the face a local run reached for by name
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
+        libicu-dev \
         libfontconfig1 \
         fontconfig \
         fonts-dejavu-core \
         fonts-liberation2 \
         fonts-ebgaramond \
     && fc-cache --force \
+    && echo "ICU: $(dpkg-query -W -f='${Version}' libicu-dev 2>/dev/null || echo MISSING)" \
     && echo "font families available to the studio:" \
     && fc-list : family | tr ',' '\n' | sort -u \
     && rm -rf /var/lib/apt/lists/*

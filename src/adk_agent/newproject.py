@@ -52,7 +52,13 @@ APPS_DIR = RUNTIME_DIR / "apps"
 #: sets POLSON_PROJECTS_DIR; a developer's machine ignores it and gets the repo-relative answer.
 PROJECTS_DIR = Path(os.environ.get("POLSON_PROJECTS_DIR", "").strip() or (REPO_ROOT / "projects"))
 
-CLI_DLL = REPO_ROOT / "bin" / "cli" / "Polson.CLI.dll"
+#: The built MCP server. Environment first, for the same reason as PROJECTS_DIR above and missed
+#: for it the first time: in the container `REPO_ROOT` is `/`, so the derived path is
+#: `/bin/cli/Polson.CLI.dll` while the image puts it at `/app/bin/cli/`. The first deploy logged
+#: exactly that — `error: no CLI at /bin/cli/Polson.CLI.dll` — and seeding was skipped.
+#: `studio.py` already honoured POLSON_CLI_DLL; this file did not, and the two must agree.
+CLI_DLL = Path(
+    os.environ.get("POLSON_CLI_DLL", "").strip() or (REPO_ROOT / "bin" / "cli" / "Polson.CLI.dll"))
 
 #: ADK app names become URL segments and Python module names. `create-project` already constrains
 #: its id to letters, digits, dot, underscore and dash; a dot is legal there and not here.

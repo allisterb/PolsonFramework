@@ -37,8 +37,17 @@ are what to search for.
 ### 1. Ingest both representations
 
 - Open the reference image — for hue, value and **where the light is**.
-- Open `artifacts/stage1_penciler.webp` — for what you are painting into.
-- Read the Penciler's script from `scripts/` for the anchor constants. Use their names; do not
+- **Load the inked art onto your canvas.** Looking is not loading:
+
+  ```javascript
+  const ink = Skia.Image.load('artifacts/stage2_inker.webp');
+  ctx.drawImage(ink, 0, 0);            // colour under and around this, never over it
+  ```
+
+  `peek(...)` shows you the ink; it does **not** put it in your image. A script with no
+  `Skia.Image.load` in it discards everything the Penciler and Inker did.
+- Read the Inker's script from `scripts/` for the line hierarchy and anchor constants. Use their
+  names; do not
   re-measure and drift.
 
 Decide the light before you fill anything. Direction, colour temperature, and one sentence of
@@ -47,7 +56,7 @@ before the light is a fill you will redo.
 
 ### 2. Paint
 
-Write the script and execute it with `outFile: 'artifacts/stage2_colorist.webp'`.
+Write the script and execute it with `outFile: 'artifacts/stage3_colorist.webp'`.
 
 1. **Atmosphere and background** first, so everything else sits against a real ground rather than
    white. `Drawing.createAtmosphericCloudShader(...)` for sky and haze;
@@ -69,7 +78,15 @@ Write the script and execute it with `outFile: 'artifacts/stage2_colorist.webp'`
 
 ### 3. Verify by looking
 
-Open your render, and check:
+Render, `peek(...)` at it, and work the checklist below.
+
+> **One corrective pass, then hand off.** Fix what that pass can fix, then stop. Anything still
+> wrong goes in `critique_log.md` and moves on — that list is precisely what the Critic is for, and
+> a stage that polishes to perfection starves the stages after it. A live run lost an entire
+> invocation to a role that rewrote itself sixteen times and never reached the next one.
+>
+> Make the corrective pass with `edit_script`, not `write_script`. Re-emitting a whole program costs
+> about ninety seconds and leaves the old copy in your context for the rest of the run.
 
 - [ ] Do the colours match the reference's *hues and values*, or only its general idea?
 - [ ] Does every shadow agree with one light direction? A cast shadow disagreeing with its own key
@@ -78,9 +95,10 @@ Open your render, and check:
 - [ ] Does the image hold up desaturated? Render a greyscale pass with
       `Skia.ColorFilter.colorMatrix(...)` and look at it. If it turns to mush, the values are wrong
       and no amount of colour will rescue them.
-- [ ] Is it free of black ink linework — is there still a job left for the Inker?
+- [ ] Does the ink still read through the colour — has a `'multiply'` glaze buried the weight
+      hierarchy the Inker built?
 
 ### 4. Hand off
 
-Leave the render at `artifacts/stage2_colorist.webp`, and record the palette and light direction in a
-`Stage.note` so the Inker and Critic can tell an intentional choice from an accident.
+Leave the render at `artifacts/stage3_colorist.webp`, and record the palette and light direction in a
+`Stage.note` so the Critic can tell an intentional choice from an accident.

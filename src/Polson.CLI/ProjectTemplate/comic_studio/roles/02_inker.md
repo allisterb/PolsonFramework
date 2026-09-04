@@ -35,12 +35,23 @@ are what to search for.
 ### 1. Ingest both representations
 
 - Open the reference image — for where its line weight is heavy and where it disappears.
-- Open `artifacts/stage2_colorist.webp` — what you are inking over.
-- Read the Colorist's script from `scripts/` for the layer functions and paths.
+- **Load the pencils onto your canvas.** Looking is not loading, and this is the difference
+  between inking and starting over:
+
+  ```javascript
+  const pencils = Skia.Image.load('artifacts/stage1_penciler.webp');
+  ctx.drawImage(pencils, 0, 0);        // now ink on top of this
+  ```
+
+  `peek(...)` shows you the pencils; it does **not** put them under your ink. A script with no
+  `Skia.Image.load` in it is not an inking pass — it is a second drawing, and the Penciler's work
+  is gone.
+- Read the Penciler's script from `scripts/` for the anchor constants and paths. Use their
+  names; do not re-measure and drift.
 
 ### 2. Ink
 
-Write the script and execute it with `outFile: 'artifacts/stage3_inker.webp'`. Build the ink in
+Write the script and execute it with `outFile: 'artifacts/stage2_inker.webp'`. Build the ink in
 weight order, heaviest first — the hierarchy is what makes ink read as depth rather than as outline.
 
 1. **Tier 1 — outer silhouette (roughly 3.5–5 px).** The contours separating the subject from the
@@ -62,15 +73,24 @@ against colour.
 
 ### 3. Verify by looking
 
-Open your render, and check:
+Render, `peek(...)` at it, and work the checklist below.
+
+> **One corrective pass, then hand off.** Fix what that pass can fix, then stop. Anything still
+> wrong goes in `critique_log.md` and moves on — that list is precisely what the Critic is for, and
+> a stage that polishes to perfection starves the stages after it. A live run lost an entire
+> invocation to a role that rewrote itself sixteen times and never reached the next one.
+>
+> Make the corrective pass with `edit_script`, not `write_script`. Re-emitting a whole program costs
+> about ninety seconds and leaves the old copy in your context for the rest of the run.
 
 - [ ] Is the weight hierarchy visible — heavy silhouette, lighter interior, finest hatching?
 - [ ] Do tapered strokes actually taper to a point?
 - [ ] Does the hatching follow the form's curvature, or does it lie flat across it?
 - [ ] Is there a true solid black somewhere, and does it read as depth?
-- [ ] Did the ink survive the colour underneath — or has a `'multiply'` glaze buried it?
+- [ ] Has the ink *superseded* the pencils rather than traced them — is there a weight
+      hierarchy the construction lines did not already have?
 
 ### 4. Hand off
 
-Leave the render at `artifacts/stage3_inker.webp`, and note in `critique_log.md` anything you inked
-around rather than fixed. That list is where the Critic starts.
+Leave the render at `artifacts/stage2_inker.webp`, and note in `critique_log.md` anything you inked
+around rather than fixed. The Colorist paints over this, and the Critic reads that list.

@@ -28,7 +28,7 @@ If you genuinely cannot find five defects, that is itself a finding — say so e
 
 ## The audit matrix
 
-Compare `artifacts/stage3_inker.webp` against the reference image, region by region. Work the
+Compare `artifacts/stage3_colorist.webp` against the reference image, region by region. Work the
 categories below; which of them apply depends on the subject, and one that does not apply should be
 recorded as not applicable rather than silently skipped.
 
@@ -64,7 +64,7 @@ as noise laid on top?
 ## The refinement loop
 
 1. **Look at both, side by side.** Open the reference, then
-   `artifacts/stage3_inker.webp`. Not from memory — actually open them.
+   `artifacts/stage3_colorist.webp`. Not from memory — actually open them.
 2. **Write the defects into `critique_log.md`** with locations, before changing anything. A defect
    list written after the fix is a justification, not a critique.
 3. **Refinement pass 1.** Surgically change what the list names — control points, strand counts,
@@ -77,6 +77,6 @@ as noise laid on top?
    final script to `artwork.js`, render it to `output.webp`, and write the closing entry in
    `critique_log.md`: what converged, what did not, and what you would have done with another pass.
 
-Send work back when it warrants it. Reopening `Colorist` because the values are wrong is a better
+Send work back when it warrants it. Reopening `Inker` because the weight hierarchy is wrong is a better
 outcome than inking a mistake more carefully — and reopening a stage is visible in the record, which
 is exactly what makes the studio's judgement legible afterwards.

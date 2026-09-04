@@ -73,7 +73,15 @@ read those names; coordinates buried in call arguments cannot be referred to.
 
 ### 3. Verify by looking
 
-Open what you just rendered, and check:
+Render, `peek(...)` at it, and work the checklist below.
+
+> **One corrective pass, then hand off.** Fix what that pass can fix, then stop. Anything still
+> wrong goes in `critique_log.md` and moves on — that list is precisely what the Critic is for, and
+> a stage that polishes to perfection starves the stages after it. A live run lost an entire
+> invocation to a role that rewrote itself sixteen times and never reached the next one.
+>
+> Make the corrective pass with `edit_script`, not `write_script`. Re-emitting a whole program costs
+> about ninety seconds and leaves the old copy in your context for the rest of the run.
 
 - [ ] Does it read as a construction sheet — blue and graphite only, zero colour fill?
 - [ ] Is every secondary mass *anchored* to a primary one, with no gap where it should attach?

@@ -192,22 +192,33 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
 # `fonts-urw-base35` was considered and rejected as redundant: it is the Type 1 ancestor of the
 # same URW lineage TeX Gyre extends, so it would add 15 MB of near-duplicates.
 #
-# > **The didone: partly filled, and know what by.** Didot and Bodoni are the manuals'
-# > most-cited category (9 references) and Debian packages no conventional Latin didone —
-# > Playfair Display (4 references) is absent entirely, and the only other hits are
-# > `fonts-gfs-didot` and `fonts-gfs-bodoni-classic`, Greek Font Society revivals whose Latin
-# > coverage is unstated.
+# > **The didone category is served, and by the face the manual itself nominates.** An earlier
+# > version of this note called it a gap. That was wrong in its premise rather than merely out
+# > of date, and reading manual 11 rather than counting keyword hits is what showed it.
 # >
-# > `fonts-solide-mirage` is the one that exists, and its own description is the caveat: a
-# > *libre experimental didone style* **display** face, and **unicase** — caps and lowercase
-# > designed to a single height. It has both cases, so it sets; it simply does not set like a
-# > Didot. A wordmark in it reads as a unicase display face, which is a legitimate choice for a
-# > mark and the wrong answer for anything wanting editorial high-contrast text.
+# > Of its seven Didot mentions, **one** defines the Modern category (vertical stress, flat thin
+# > serifs, radical contrast, for luxury and fashion). The other six are the manual teaching
+# > *font fallback*, using Didot as its canonical example of an absent face — and every one of
+# > them names Playfair Display as the answer:
 # >
-# > So the category is represented rather than served. An agent that reaches for it expecting
-# > Didot behaviour will get something it did not intend and may not diagnose. If the manuals'
-# > Didot references start mattering, the fix is a pinned-URL-and-SHA fetch of an OFL face at
-# > build time — a reviewed download, unlike a piped installer.
+# >     ctx.font = 'italic 400 46px "Playfair Display", Didot, serif';   // Modern
+# >
+# > So the manual never expected Didot to be installed. It prescribes Playfair Display for that
+# > register, `fetch-fonts.py` installs it, and the variable weight axis is confirmed working —
+# > a specimen at 400 against 700 shows the heavy cut reaching the modern-serif register the
+# > category asks for. `fonts-solide-mirage` remains as a genuine, if experimental and unicase,
+# > didone for display marks.
+# >
+# > **Georgia is handled the same way, and by the same mechanism.** It is named 6 times across
+# > 3 manuals and sits in the same fallback chains, so without it `'40px Didot, Georgia, serif'`
+# > missed both named faces and landed on generic serif. `fetch-fonts.py` now also installs
+# > **Gelasio**, which its foundry states is *metrics compatible with Georgia* in Regular, Bold,
+# > Italic and Bold Italic — so a layout measured against Georgia still measures correctly.
+# >
+# > An earlier version of this note recommended `fonts-gelasio` from apt. **That package does
+# > not exist in Debian** — the page returns "No such package". Checking every name against the
+# > real repository is the rule `requirements.in` states for PyPI, and it earns its keep here
+# > too: this is the second recommendation in this file that verification caught.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         libicu-dev \

@@ -1,7 +1,7 @@
 """Fetches the typefaces Debian does not package, at a pinned commit, verified by hash.
 
-**Why this exists.** The studio manuals name Playfair Display four times, and Debian packages no
-conventional Latin didone at all — `fonts-solide-mirage` is a unicase experimental display face and
+**Why this exists.** The studio manuals name Playfair Display four times and Georgia six, and Debian
+packages neither — nor any conventional Latin didone at all — `fonts-solide-mirage` is a unicase experimental display face and
 `fonts-gfs-*` are Greek revivals. So the one gap left after `fonts-recommended`, `fonts-texgyre` and
 `fonts-inter` cannot be closed with apt.
 
@@ -47,6 +47,24 @@ FONTS = [
         "ofl/playfairdisplay/PlayfairDisplay-Italic%5Bwght%5D.ttf",
         "a5e26dc5e2e77fb2803a0bf02fd4f81ee136ec8dea863ccdb0c59a263b21378b",
         "PlayfairDisplay-Italic[wght].ttf",
+    ),
+    # Gelasio is **metrics compatible with Georgia** — the foundry's own words — so a layout
+    # measured against Georgia still measures correctly. Georgia is named 6 times across 3 manuals
+    # and sits in their fallback chains, and it is a Windows face: without this,
+    # `'40px Didot, Georgia, serif'` misses both named faces here and lands on generic serif.
+    #
+    # It is fetched rather than installed because **`fonts-gelasio` does not exist in Debian** —
+    # checked, not assumed, after an earlier note in the Dockerfile recommended exactly that
+    # package.
+    (
+        "ofl/gelasio/Gelasio%5Bwght%5D.ttf",
+        "4daecea457258c9ebeb8bc99ed3fd24353618bfad3ea4b93fa0b5d0468fc04e4",
+        "Gelasio[wght].ttf",
+    ),
+    (
+        "ofl/gelasio/Gelasio-Italic%5Bwght%5D.ttf",
+        "52559e845a4d33514e5f93bb9ae7dbeae1894a53f2c565a15f18af40cd337c09",
+        "Gelasio-Italic[wght].ttf",
     ),
 ]
 

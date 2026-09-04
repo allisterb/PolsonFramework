@@ -48,11 +48,34 @@ DEFAULT_CLI_DLL = REPO_ROOT / "bin" / "cli" / "Polson.CLI.dll"
 #: Instructions filenames, in the order `ProjectGenerator.HostFiles` can have written them.
 INSTRUCTIONS_FILENAMES = ("GEMINI.md", "CLAUDE.md")
 
-#: `adk create` in ADK 2.8.0 offers this first, and it is confirmed reachable on this project's
-#: Agent Platform key. A demanding brief may want `gemini-2.5-pro`, also confirmed. **Gemini 3
-#: pro is NOT available on it** — `gemini-3-pro` and `gemini-3-pro-preview` both return 404
-#: NOT_FOUND from us-east4, so do not assume a newer name resolves just because it exists.
-DEFAULT_MODEL = "gemini-3.5-flash"
+#: **Measured against this project's key, not taken from `adk create`.** Probed 2026-09-04:
+#:
+#:   gemini-3.7-flash  OK  2.4s   <- the default
+#:   gemini-3.5-flash  OK  2.4s
+#:   gemini-2.5-pro    OK  5.2s
+#:   gemini-2.5-flash  OK 17.6s   <- works, and is seven times slower
+#:   gemini-3-flash / gemini-3-pro / gemini-3.0-pro / gemini-3.1-pro   404 NOT_FOUND
+#:
+#: 3.7 rather than the 3.5 `adk create` offers, for one measured reason and one weaker one.
+#:
+#: **Measured:** it answers as fast as 3.5 through this key, and a `comic_studio` run on 3.5
+#: exhausted its retries on a 429.
+#:
+#: **Weaker, and stated as such:** August billing for this project shows 12.4M uncached input
+#: tokens against 31.4M cached on 3.7 Flash. That looked like evidence of implicit caching helping
+#: exactly this workload's shape — the same large system prompt resent every turn — but the dates
+#: predate the ADK runtime, and `reference/projects/antigravity-sdk-python-0.1.15` names
+#: `gemini-3.7-flash` in its own source. So that traffic was **Antigravity SDK sessions, not ours**.
+#:
+#: It is the *same key and the same quota pool* though — Antigravity Desktop runs on a personal
+#: account, but a standalone agy project uses this project's key, which is what those four days
+#: were. So it is good evidence that this credential sustains volume on this model, and weak
+#: evidence about caching, because the prompts were shaped by a different client. Do not repeat the
+#: caching claim as though it were measured here.
+#:
+#: Note `Gemini 3.0 / 3.1 Pro` appears in billing as a **SKU name**, not a model id — none of those
+#: spellings resolve. Do not infer a model id from an invoice line.
+DEFAULT_MODEL = "gemini-3.7-flash"
 
 #: The .NET server has a runtime to start before it speaks MCP. ADK's default is 5s, which is a cold
 #: start away from being too short, and the failure is an empty toolset rather than a stack trace.
@@ -505,12 +528,23 @@ def _make_edit_script(project: Path):
 # small and render the final large, and under a rate limit that advice earns its keep twice.
 
 #: Attempts *including* the original request, so 5 means four retries.
-RETRY_ATTEMPTS = int(os.environ.get("POLSON_RETRY_ATTEMPTS", "5"))
+RETRY_ATTEMPTS = int(os.environ.get("POLSON_RETRY_ATTEMPTS", "8"))
 
-#: 2s, then doubling — about 30s of total backoff across four retries.
-RETRY_INITIAL_DELAY = 2.0
+#: 4s, then doubling, capped at 60 — 4+8+16+32+60+60+60, about **four minutes** across seven
+#: retries.
+#:
+#: The first version budgeted 30s, which was wrong on its own reasoning: the note beside it said the
+#: backoff should cover "the timescale a per-minute quota actually clears on", and 30s is less than
+#: that window. A `comic_studio` run proved it — five agents, each `transfer_to_agent` opening a
+#: fresh call with a new system prompt on top of growing history and images, exhausted the retries
+#: and surfaced as an HTTP 500. A probe immediately afterwards answered in 2s, so the key was never
+#: exhausted; the burst simply outlasted the patience.
+#:
+#: Four minutes is a long time to wait for one call, and it is the right trade here: a design run is
+#: measured in minutes, and losing the whole turn costs far more than waiting.
+RETRY_INITIAL_DELAY = 4.0
 RETRY_EXP_BASE = 2.0
-RETRY_MAX_DELAY = 30.0
+RETRY_MAX_DELAY = 60.0
 
 #: Named rather than left to the default so it is visible that 429 is covered, which is the whole
 #: point of the setting. 5xx are transient too and cost nothing to include.
@@ -577,13 +611,18 @@ def _after_model(callback_context, llm_response):
     usage = getattr(llm_response, "usage_metadata", None)
     prompt_tokens = getattr(usage, "prompt_token_count", None) if usage else None
     output_tokens = getattr(usage, "candidates_token_count", None) if usage else None
+    # Cached input bills at roughly a tenth of uncached, so without this any cost figure derived
+    # from the log is an upper bound rather than a number. A 23.7M-token run could not be priced
+    # accurately for exactly this reason.
+    cached_tokens = getattr(usage, "cached_content_token_count", None) if usage else None
 
     _TURN_LOG.warning(
-        "turn %s/%s %.1fs in=%s out=%s",
+        "turn %s/%s %.1fs in=%s cached=%s out=%s",
         callback_context.agent_name,
         callback_context.invocation_id,
         elapsed,
         prompt_tokens if prompt_tokens is not None else "?",
+        cached_tokens if cached_tokens is not None else 0,
         output_tokens if output_tokens is not None else "?",
     )
     return None

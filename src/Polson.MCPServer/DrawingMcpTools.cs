@@ -904,6 +904,103 @@ public class DrawingMcpTools
         return response;
     });
 
+    [McpServerTool(Name = "CompareImages")]
+    [Description("Compares two rendered images and reports how similar they are, and where they differ. Use it to check whether an edit actually changed the picture.")]
+    public JsonObject CompareImages(
+        [Description("Path of the first image, relative to the project directory.")] string pathA,
+        [Description("Path of the second image, relative to the project directory.")] string pathB,
+        [Description("Longest side to compare at. Both images are scaled down to this first, so the answer is 'did the picture change' rather than 'did any pixel change'. 0 compares at full size.")] int maxDimension = 256,
+        [Description("Per-channel tolerance, to absorb antialiasing noise.")] int tolerance = 8)
+    => Recorded(nameof(CompareImages), () =>
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pathA);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pathB);
+
+        using var a = LoadForComparison(pathA, nameof(pathA));
+        using var b = LoadForComparison(pathB, nameof(pathB));
+
+        // Differing dimensions are a *result*, not an error. `Diff` throws on them by design — a
+        // similarity score over a partial overlap would look like an answer — but a caller asking
+        // "did this change" has been answered by the size alone, and throwing would turn the most
+        // obvious kind of change into a failed tool call.
+        if (a.Width != b.Width || a.Height != b.Height)
+        {
+            return new JsonObject
+            {
+                ["comparable"] = false,
+                ["identical"] = false,
+                ["similarity"] = 0d,
+                ["reason"] = $"different sizes: {a.Width}x{a.Height} against {b.Width}x{b.Height}"
+            };
+        }
+
+        using var left = Downscale(a, maxDimension);
+        using var right = Downscale(b, maxDimension);
+
+        var diff = left.Diff(right, new Dictionary<string, object> { ["tolerance"] = tolerance });
+        var response = new JsonObject
+        {
+            ["comparable"] = true,
+            ["comparedAt"] = $"{left.Width}x{left.Height}",
+            ["identical"] = (bool)diff["identical"],
+            ["similarity"] = (double)diff["similarity"],
+            ["differingPixels"] = (long)diff["differingPixels"],
+            ["totalPixels"] = (long)diff["totalPixels"],
+            ["meanDelta"] = (double)diff["meanDelta"],
+            ["maxDelta"] = (int)diff["maxDelta"]
+        };
+
+        if (diff.TryGetValue("bounds", out var bounds) && bounds is Dictionary<string, object> box)
+        {
+            response["bounds"] = new JsonObject
+            {
+                ["x"] = Convert.ToDouble(box["x"]),
+                ["y"] = Convert.ToDouble(box["y"]),
+                ["width"] = Convert.ToDouble(box["width"]),
+                ["height"] = Convert.ToDouble(box["height"])
+            };
+        }
+
+        return response;
+    });
+
+    /// <summary>Reads an image for <see cref="CompareImages"/>, contained to the project directory.</summary>
+    private SkiaBitmapWrapper LoadForComparison(string path, string parameterName)
+    {
+        var full = ProjectPath.Resolve(ProjectRoot, path, parameterName, "Read");
+        if (!File.Exists(full))
+        {
+            throw new FileNotFoundException(
+                $"Image file not found: '{path}' resolves to '{full}'. Paths are relative to the project directory.",
+                full);
+        }
+
+        using var stream = File.OpenRead(full);
+        var bitmap = SkiaSharp.SKBitmap.Decode(stream)
+            ?? throw new InvalidOperationException($"Failed to decode image from {path}");
+        return new SkiaBitmapWrapper(bitmap);
+    }
+
+    /// <summary>
+    /// The bitmap reduced so its longest side is at most <paramref name="maxDimension"/>.
+    /// </summary>
+    /// <remarks>
+    /// Comparing small is faster and, more importantly, <i>more useful</i>: at full size a
+    /// re-rendered scene differs along every antialiased edge, so a pixel count answers "is this
+    /// bit-exact" when the question asked was "has the picture moved". Returns a clone when no
+    /// scaling is needed, so the caller can always dispose the result.
+    /// </remarks>
+    private static SkiaBitmapWrapper Downscale(SkiaBitmapWrapper source, int maxDimension)
+    {
+        var longest = Math.Max(source.Width, source.Height);
+        if (maxDimension <= 0 || longest <= maxDimension) return source.Clone();
+
+        var scale = (double)maxDimension / longest;
+        return source.Resize(
+            Math.Max(1, (int)Math.Round(source.Width * scale)),
+            Math.Max(1, (int)Math.Round(source.Height * scale)));
+    }
+
     internal static async Task<T> RunWithHeartbeatAsync<T>(
         Task<T> task,
         IProgress<ProgressNotificationValue>? progress,

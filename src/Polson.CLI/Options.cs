@@ -78,6 +78,9 @@ public class CreateProjectOptions : Options
     [Option("prompt", Required = false, HelpText = "The subject, in a line — a short form of --brief. Treated as untrusted data and quoted into brief.md exactly as --brief is.")]
     public string Prompt { get; set; } = string.Empty;
 
+    [Option("deadline", Required = false, HelpText = "Minutes the commission is allowed to take, written into project.json and stated in the instructions so the agent can plan against it. Omit it for the workflow's own default — a logo is quarter of an hour, a study painting is two. Pass 0 for no deadline.")]
+    public int? Deadline { get; set; }
+
     [Option("standalone", Required = false, HelpText = "Also generate what the Polson orchestrator needs to host the agent itself. Without it the project is managed by a desktop or IDE host.")]
     public bool Standalone { get; set; }
 

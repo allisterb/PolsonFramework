@@ -78,9 +78,12 @@ import sys
 # listed as a broken app. ADK only puts the agents directory on the path, hence this line.
 sys.path.insert(0, r"{runtime_dir}")
 
-from studio import build
+from studio import build_app
 
-root_agent = build(r"{project_dir}")
+# An `App` rather than a bare `root_agent`, so the supervising plugin comes with it. ADK's loader
+# checks a module for `app` first and falls back to `root_agent` (`agent_loader.py:128`), so this is
+# served exactly as the older form was.
+app = build_app(r"{project_dir}", name="{project_id}")
 '''
 
 

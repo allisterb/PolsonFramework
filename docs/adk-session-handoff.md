@@ -41,22 +41,15 @@ second instance would serve an empty app list. Fixing that means projects in GCS
 
 ---
 
-## 2. Uncommitted work
+## 2. Commit state
 
-Nothing in this session was committed. `git status` at handoff:
+The Dockerfile, font and role-file work is committed as `4619bc0 Agent role fixes. Additional
+fonts.`. **The role-file changes are deployed but unverified** — revision 15 carries them, and no run
+has tested whether they work. See §4a.
 
-```
- M Dockerfile
- M fetch-fonts.py
- M src/adk_agent/studio.py
- M src/Polson.CLI/ProjectTemplate/comic_studio/roles/01_penciler.md
- M src/Polson.CLI/ProjectTemplate/comic_studio/roles/02_inker.md
- M src/Polson.CLI/ProjectTemplate/comic_studio/roles/03_colorist.md
- M src/Polson.CLI/ProjectTemplate/comic_studio/roles/04_critic.md
-```
-
-**The role-file changes are deployed but unverified** — revision 15 carries them, and no run has
-tested whether they work. See §4.
+Uncommitted at handoff: the time-budget, circuit-breaker and supervision work (§4b, §4bb), and
+this document. Unit-tested, **not deployed** — revision 15 predates it, so nothing in §4b is live
+until the next `gcloud run deploy`.
 
 ---
 
@@ -103,23 +96,187 @@ Three defects were found and two fixed; **none of the fixes has been run.**
 > whole question in about a minute. A full pipeline run takes an hour and can fail for unrelated
 > reasons.
 
-### 4b. Time budgets — the fix the prompt cannot make
+### 4b. Time budgets — **built: per-role warnings and a circuit breaker**
 
-The inker ignored "one pass" because **a prompt is advice, not a constraint**. The enforcement hook
-exists and is half-wired:
+The inker ignored "one pass" because **a prompt is advice, not a constraint**.
 
-- `before_model_callback` **short-circuits the model call** when it returns an `LlmResponse`
-  (`base_llm_flow.py`: `if callback_response: return callback_response`)
-- `studio.py` already has `_before_model` / `_after_model` for turn timing
-- `mina.time()` and `Date` exist in the JS sandbox
+**Done (2026-09-04, untested against a live run).** `build(project_dir, budget_minutes=90)` splits a
+wall-clock allowance across the roles in `roles_in` order, holds back 15% for the facilitator's
+review, and warns each role at 75% and 90% of its own share — once per threshold, naming the minutes
+left and the agent to `transfer_to_agent` to. `role_weights={...}` skews the split; the default is
+even. Falls back to `POLSON_BUDGET_MINUTES`; with neither set, nothing changes. Unit-tested against
+a fake clock — thresholds, once-only firing, the both-at-once case, the weighted split, the
+unparseable env value — with no model calls.
 
-So `build(project_dir, budget_minutes=...)` splitting an allowance across roles — warn at ~75%,
-hard-stop at 100%, reserve for the facilitator's review — is roughly 60 lines and genuinely binding.
+Three things in it that are not obvious and cost time to work out:
+
+- **The notice goes on `llm_request.contents`, never `append_instructions`.** The latter edits the
+  system instruction, which is the head of the prompt-cache prefix; cached input bills at ~1/10th,
+  so warning that way can cost more than the overrun it prevents.
+- **It works on `run_async` and is silently inert on `run_live`.** The async path hands the callback
+  the real request (`base_llm_flow.py:1735`); the bidi path passes a `model_copy` with `contents`
+  replaced (`:985`), so the append is discarded with no error. We serve `/run_sse`, so this is fine
+  today and would break unannounced if a live transport were added.
+- **`llm_request.contents` entries are shallow copies of session events** (`contents.py:570-615`) —
+  appending a new `Content` is safe, mutating an existing one's nested fields corrupts history.
+
+**Also done: the circuit breaker.** A separate thing from a graceful stop, and the more important
+one. At `budget + 15 min` — or at `POLSON_MAX_MINUTES` on its own — **no agent in that invocation
+makes another model call**, and the run unwinds with a `[studio runtime] HALTED` turn naming the
+numbers. One `ERROR BREAKER …` line in the container log on the first trip, `WARNING` thereafter, so
+a runaway is greppable.
+
+The implementation is not the obvious one, and the two reasons are worth keeping:
+
+- **`end_invocation` alone does not work.** `BaseAgent._create_invocation_context` is a *shallow*
+  `model_copy`, so the flag set inside a sub-agent never reaches the facilitator that transferred to
+  it — which would simply transfer somewhere else. And the public route to the context,
+  `callback_context.get_invocation_context()`, returns a **copy** (its own docstring says so), so
+  setting the flag there changes nothing at all.
+- **What is shared is `invocation_id`.** So the breaker is a module-level set of tripped ids checked
+  at the top of every `before_model_callback`. Every model call in the process passes through there,
+  so once an id is in the set no further call can be issued under it — including by an agent
+  transferred to *after* the halt, which gets stopped on its first turn. `end_invocation` is still
+  set, best-effort through the private attribute, purely so the current agent unwinds this turn
+  rather than next; the trip set is the enforcement.
+
+Verified: the halt event's `is_final_response()` is `True` with no function calls, so the agent loop
+breaks rather than spinning. **What it does not stop** is a tool call already in flight — the breaker
+sits between model calls, so a running `ExecuteScript` finishes first, bounded by the engine's own
+script timeout. It halts one invocation, not the process.
+
+> **It is off unless armed, and arming it is a deploy flag, not a code change.** The generated
+> `apps/*/agent.py` call `build(project_dir)` with no arguments, by design, so one env var covers
+> every app with no regeneration:
+>
+> ```bash
+> gcloud run services update polson-studio --region us-east4 --project polson \
+>   --update-env-vars POLSON_MAX_MINUTES=50
+> ```
+>
+> **Pick a number below the Cloud Run request timeout (3600s).** Above it, the timeout wins and you
+> get a dropped connection with no explanation; below it, you get a clean logged halt that says why.
+
+**Still not done, on purpose: the graceful per-role stop.** Returning an `LlmResponse` short-circuits
+the model call, and `callback_context.actions.transfer_to_agent` forces a handoff — the wrapper gates
+on the action, not on a function call (`workflow/_llm_agent_wrapper.py:504`, and its comment says
+so). Left unwired because a *warned* model can finish well — save the render, say what it shows, hand
+off — where a forced transfer cuts it off mid-pass. The breaker covers the runaway case; this would
+only cover the merely-slow one. Wire it if the warnings are measured and found to be ignored, and if
+you do, set the action *and* return a synthetic `transfer_to_agent` call: ADK 2.8 has a legacy nested
+path (`base_llm_flow.py:1692`) that only fires on function calls, and which path a deployment takes
+could change with a version bump.
 
 **Time is a proxy and a loose one** (a token or turn budget binds more directly to what is spent),
-but it is the right currency anyway: constraint is generative. A storyboard artist with an hour
+but it is the right currency anyway, for a concrete reason as well as the romantic one: the hard
+external constraint is the Cloud Run request timeout, and it is denominated in seconds. A budget in
+the same currency as the wall is the one that stops you hitting it — a token budget would not have
+prevented a 58.8-minute inker. And constraint is generative: a storyboard artist with an hour
 commits early; one with a week makes sixteen versions of panel two. The deadline is part of the
 craft, not overhead on it.
+
+**Still worth adding:** a turn count as a secondary tripwire. A minute-clock is slow to notice a role
+thrashing on many short calls.
+
+### 4bb. Supervision — a watchdog plugin and an advisor the roles can call
+
+**Built 2026-09-04, unit-tested against the real engine, not yet run with a model.** This is the part
+that uses ADK's own agent capabilities rather than working around them.
+
+**The fact that shapes the whole design: the Facilitator cannot watch the Inker.**
+`transfer_to_agent` moves control rather than forking it, so while the Inker works the Facilitator is
+not running at all. There is no agent in a position to observe. A `BasePlugin` is — its sixteen
+callbacks fire for *every* agent in the app, from outside all of them.
+
+- **`src/adk_agent/supervision.py`** — `StudioWatchdog(BasePlugin)`. Three triggers, all chosen and
+  all live: eight working calls with no handoff; three consecutive renders that do not move the
+  picture; past 90% of the role's own time allowance and still editing. Capped at two interventions
+  per role, and re-armed by a handoff or by asking for help.
+- **It compels an ask rather than seizing control.** Forcing `transfer_to_agent` back to the
+  Facilitator is available and works (`tool_context.actions` is live in these callbacks). It is not
+  what this does: `after_tool_callback` may *replace* a tool result, so the plugin appends a
+  directive to the result the role is about to read — *"stop and ask before your next edit"*. The
+  role still decides; it can no longer fail to notice.
+- **`ask_facilitator`** — an `AgentTool` on every role. This is the one genuinely message-shaped
+  thing ADK offers: request in, answer back, control never leaves the caller. It wraps a **separate**
+  advisor agent, not the root, because an `AgentTool` runs in a fresh in-memory session seeded with
+  state but *not* conversation history (`agent_tool.py:264-289`) — so fresh eyes are what it can give,
+  which is the right answer anyway. It holds `peek`, `read_file` and `load_artifacts` and **cannot
+  draw**, so it cannot answer by quietly doing the work itself.
+- **`build_app()` returns an `App`** carrying the plugin, and the generated `agent.py` now exports
+  `app`. The loader checks `app` before `root_agent` (`agent_loader.py:128`), so nothing about
+  serving changes and an older generated file still works. The watchdog is handed the **same**
+  `McpToolset` instance the agents hold — a second one would spawn a second engine process and
+  quietly falsify this module's one-server-per-app argument.
+
+**New MCP tool: `CompareImages(pathA, pathB, maxDimension=256, tolerance=8)`.** The watchdog's first
+version hashed render files, which is the wrong question — an encoder can produce different bytes for
+the same picture, so a hash-based watchdog never fires. This exposes `SkiaBitmapWrapper.Diff` as a
+tool, downscaled first so the question is *did the picture change* rather than *did any pixel*.
+Calibrated on real renders at 256px:
+
+| | similarity |
+| :--- | :--- |
+| re-run of the identical scene | **1.0000** |
+| one element moved 4px | 0.9929 |
+| one element moved 160px | 0.8171 |
+
+Hence `UNCHANGED_SIMILARITY = 0.999`. Hashing survives only as a free fast path: identical bytes are
+certainly the same picture, so the comparison is skipped; differing bytes prove nothing and fall
+through to the real compare. Different canvas sizes return `comparable: false` rather than throwing —
+`Diff` throws by design, but for "did this change", a size change *is* the answer. Six tests in
+`tests/Polson.Tests.MCPServer/CompareImagesTests.cs`; the suite is 475 green.
+
+> **Two traps this cost.** The plugin sees an MCP result as
+> `{"content": [{"type": "text", "text": "<json>"}], "isError": false}` — the payload is a JSON
+> **string one level down**, not a flat dict; found by calling the tool against the live server rather
+> than by reading the wrapper, and guessing it would have produced a watchdog that silently never
+> fired. And the module is `supervision.py`, **not** `watchdog.py`: the PyPI `watchdog` package is
+> installed, and `agent.py` does `sys.path.insert(0, runtime_dir)`, so that name would have shadowed
+> it for uvicorn's reloader.
+
+**Not done.** The roles' own prompts do not mention `ask_facilitator` — the tool's description carries
+it, and the watchdog directive names it explicitly, so voluntary use rests on the model reading its
+tool list. Worth a line in the role templates if voluntary asking turns out to be rare. Also: `bin/cli`
+was republished locally, so **the container needs a rebuild** before any of this is live.
+
+### 4bc. The deadline as a brief, and `create-project --deadline`
+
+**Built 2026-09-04.** The three mechanisms above are all *enforcement*, and enforcement alone teaches
+an agent nothing: it learned about time only when three-quarters of it was gone, which is exactly
+when planning is no longer possible. A deadline is only a constraint you can work to if you are told
+it at the start.
+
+- **`create-project --deadline <minutes>`**, written into `project.json` as `deadlineMinutes` and
+  rendered into the instructions from `_shared/deadline.md`. Omit the flag and the **workflow's own
+  default** applies: logo 15, infographic 30, drawing 45, comic 60, comic_studio 90, painting 120,
+  harness 0. One number could not serve a 15-minute mark and a two-hour study painting, and it would
+  be wrong in the more damaging direction for the painting — a deadline that cannot be met is how an
+  agent learns that stated constraints are decorative. `--deadline 0` means none, and then the
+  instructions say **nothing** about time rather than claiming a limit nothing enforces.
+- **The prompt guardrail** tells the agent to plan backwards, that *scope* is the variable and finish
+  quality is not, to record what it cut in a `Stage.note`, and — the practical half — where the time
+  actually goes: draft small and render the final large, edit `artwork.js` rather than re-sending it,
+  `render: false` for probe passes, one native measurement call instead of a per-pixel loop.
+- **It gives the agent a clock, because the sandbox has none.** `Session.startedAt ??= Date.now()`,
+  then elapsed against it. Verified in the engine: `??=` works on `Session` and is idempotent, so
+  repeating the line in a later script is safe.
+- **Python reads it.** `deadline_in(project)` sits in the precedence as **explicit argument >
+  `project.json` > `POLSON_BUDGET_MINUTES`** — the project beats the environment because a deadline
+  belongs to the commission, not the deployment. `build_app` duplicates that precedence deliberately;
+  if the two disagreed, the watchdog would time roles against a different clock from the one they
+  were told about, and it would look like a flaky model.
+- **Each role is told its own share** in its brief — *"You have about 8 minutes of the project's 40"*
+  — naming the successor to hand to and `ask_facilitator` as the thing to do when stuck. This goes in
+  the **system instruction**, which is safe here precisely because it is constant for the whole run:
+  the same text sent per-turn is what would break the prompt cache.
+
+> **One test needed changing and the reason is worth keeping.** `--deadline` did not break it; the new
+> `CompareImages` tool did. A Claude subagent's frontmatter names its tools in sorted order, and the
+> test asserted `tools: mcp__polson__ExecuteScript` — pinning whichever tool sorts first. Adding a
+> tool beginning with C failed a test about whether a subagent can execute scripts. It now asserts
+> membership. Worth remembering that the generated subagent tool list is derived from the real MCP
+> surface, so **every new MCP tool reaches Claude Code subagents automatically**.
 
 ### 4c. Mount `src/webapp` on the ADK FastAPI app
 

@@ -282,6 +282,84 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.DoesNotContain("agents.json", string.Join(' ', files));
     }
 
+    #region Deadline Tests
+    /// <summary>
+    /// A workflow's own default deadline, and what `--deadline` does to it.
+    /// </summary>
+    /// <remarks>
+    /// Per workflow because the work genuinely differs — a mark is a handful of decisions, a study
+    /// painting is a sequence of passes over one surface. One number for both would be wrong for
+    /// both, and wrong in the more damaging direction for the painting: a deadline that cannot be
+    /// met is how an agent learns to disregard deadlines.
+    /// </remarks>
+    [Fact]
+    public void TestWorkflowsCarryTheirOwnDefaultDeadline()
+    {
+        Assert.Equal(15, ProjectGenerator.DeadlineFor("logo", null));
+        Assert.Equal(120, ProjectGenerator.DeadlineFor("painting", null));
+
+        // A test fixture rather than a commission: it is judged on what it exercises.
+        Assert.Equal(0, ProjectGenerator.DeadlineFor("harness", null));
+
+        // An explicit value wins, including zero, which is how a caller asks for no deadline.
+        Assert.Equal(45, ProjectGenerator.DeadlineFor("logo", 45));
+        Assert.Equal(0, ProjectGenerator.DeadlineFor("painting", 0));
+
+        // Negative is nonsense rather than a reversal, so it clamps rather than throwing: a bad
+        // flag should not stop a project being generated.
+        Assert.Equal(0, ProjectGenerator.DeadlineFor("logo", -5));
+    }
+
+    /// <summary>The deadline reaches both the manifest and the instructions, as one number.</summary>
+    [Fact]
+    public void TestDeadlineIsWrittenToTheManifestAndTheInstructions()
+    {
+        Assert.True(ProjectGenerator.Create(Options("dl-default", o => o.Workflow = "logo")));
+
+        var manifest = File.ReadAllText(Path.Combine(root, "dl-default", "project.json"));
+        Assert.Contains("\"deadlineMinutes\": 15", manifest, StringComparison.Ordinal);
+
+        // The runtime reads the manifest and the agent reads the instructions; they are generated
+        // from one value so the two cannot tell the agent different things.
+        var instructions = File.ReadAllText(Path.Combine(root, "dl-default", "GEMINI.md"));
+        Assert.Contains("## The deadline", instructions, StringComparison.Ordinal);
+        Assert.Contains("You have 15 minutes", instructions, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TestDeadlineFlagOverridesTheWorkflowDefault()
+    {
+        Assert.True(ProjectGenerator.Create(
+            Options("dl-flag", o => { o.Workflow = "painting"; o.Deadline = 30; })));
+
+        Assert.Contains("\"deadlineMinutes\": 30",
+            File.ReadAllText(Path.Combine(root, "dl-flag", "project.json")), StringComparison.Ordinal);
+        Assert.Contains("You have 30 minutes",
+            File.ReadAllText(Path.Combine(root, "dl-flag", "GEMINI.md")), StringComparison.Ordinal);
+    }
+
+    /// <summary>No deadline means the section is absent, not a section claiming no limit.</summary>
+    /// <remarks>
+    /// The instructions are the agent's system prompt. Text stating a constraint nothing enforces
+    /// teaches it that stated constraints are decorative, which is worse than saying nothing.
+    /// </remarks>
+    [Fact]
+    public void TestNoDeadlineLeavesTheInstructionsSilentAboutTime()
+    {
+        Assert.True(ProjectGenerator.Create(
+            Options("dl-none", o => { o.Workflow = "logo"; o.Deadline = 0; })));
+
+        var instructions = File.ReadAllText(Path.Combine(root, "dl-none", "GEMINI.md"));
+        Assert.DoesNotContain("## The deadline", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{DEADLINE}}", instructions, StringComparison.Ordinal);
+
+        // Recorded as zero rather than omitted, so "no deadline" is a stated fact in the manifest
+        // rather than a missing key a reader has to interpret.
+        Assert.Contains("\"deadlineMinutes\": 0",
+            File.ReadAllText(Path.Combine(root, "dl-none", "project.json")), StringComparison.Ordinal);
+    }
+    #endregion
+
     /// <summary>A Claude subagent carries its prompt inline, because there is no `promptFile`.</summary>
     [Fact]
     public void TestAClaudeSubagentCarriesItsPromptAndItsTools()
@@ -300,7 +378,11 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
         // the roles are asked to write `critique_log.md` and `findings.md` and could not, so all
         // sixteen of those edits fell to the coordinator and the trace was written second-hand —
         // and `scriptFile` was unreachable by the very agents making every ExecuteScript call.
-        Assert.Contains("tools: mcp__polson__ExecuteScript", agent, StringComparison.Ordinal);
+        // Asserted as membership rather than as the head of the list: the tools are named in sorted
+        // order, so pinning the first one made this test fail the day a tool sorting ahead of
+        // `ExecuteScript` was added — which says nothing about whether a subagent can execute.
+        Assert.Contains("tools: mcp__polson__", agent, StringComparison.Ordinal);
+        Assert.Contains("mcp__polson__ExecuteScript", agent, StringComparison.Ordinal);
         foreach (var tool in new[] { "Read", "Write", "Edit", "Glob", "Grep" })
         {
             Assert.Contains(tool, agent, StringComparison.Ordinal);

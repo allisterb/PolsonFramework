@@ -25,19 +25,25 @@ moves control rather than forking it, so one agent runs at a time and nothing ra
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from google.adk.agents.llm_agent import Agent
+from google.adk.apps import App
 from google.adk.tools import FunctionTool
+from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool import StdioConnectionParams
 from google.genai import types
 from mcp import StdioServerParameters
+
+from supervision import StudioWatchdog
 
 #: Repository root, from `src/adk_agent/studio.py`.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -115,6 +121,26 @@ def instructions_for(project: Path) -> str:
         f"{project} has no {tried}, so it is not a generated Polson project "
         "(or was generated without instructions). Regenerate it with create-project."
     )
+
+
+def deadline_in(project: Path) -> float | None:
+    """The project's own deadline in minutes, from `project.json`, or None.
+
+    Written by `create-project --deadline`, which defaults it per workflow — a logo is a quarter of
+    an hour and a study painting is two. This is the right place for it to live: a deadline is a
+    property of the commission, not of the deployment, and the instructions the agent reads were
+    generated from the same number, so the two cannot disagree.
+
+    Zero means the project deliberately has none, and is returned as None so it reads that way.
+    """
+    manifest = project / "project.json"
+    if not manifest.is_file():
+        return None
+    try:
+        value = json.loads(_read(manifest)).get("deadlineMinutes")
+    except (ValueError, OSError, AttributeError):
+        return None
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
 
 
 def roles_in(project: Path) -> list[tuple[str, str, str]]:
@@ -590,10 +616,371 @@ _turn_started: dict[str, float] = {}
 _TURN_LOG = logging.getLogger("polson.turn")
 
 
-def _before_model(callback_context, llm_request):
-    """Starts the clock for one model call. Returns None so the call proceeds normally."""
-    _turn_started[callback_context.invocation_id] = time.monotonic()
-    return None
+# --------------------------------------------------------------------------------------------
+# Time budgets.
+# --------------------------------------------------------------------------------------------
+#
+# **Why the role files were not enough.** They now say "One corrective pass, then hand off." A
+# prompt is advice, and the run that motivated this declined it: the Inker took 91 turns, 20 script
+# versions, 16 renders and 58.8 minutes, and never reached the Colorist. Nothing in the loop counted
+# anything, so the only thing that would eventually have stopped it was Cloud Run's 3600s request
+# timeout — which is a wall, not a budget.
+#
+# **What this does and does not do.** It tells a role, in the turn it is about to take, how much of
+# its allowance is gone. It does not stop the role. That is deliberate: the warning keeps the model
+# in charge, and a model told it has four minutes left can choose to finish *well* — save the render,
+# say what it shows, hand off — where a hard stop would cut it off mid-pass and lose the work. The
+# short-circuiting hard stop is a separate lever (return an `LlmResponse` from this callback and set
+# `callback_context.actions.transfer_to_agent`); it is not wired, on purpose.
+#
+# **Where the notice goes, and why not the obvious place.** `llm_request.append_instructions(...)`
+# exists and is wrong here: it changes the system instruction, which is the head of the prompt cache
+# prefix, and cached input bills at roughly a tenth of uncached. On a run of this size, warning that
+# way could cost more than the overrun it prevents. Appending to `contents` puts the notice where
+# new turns already go, so the cached prefix is untouched.
+#
+# **The notice evaporates, and that is correct.** `contents` is rebuilt from session events on every
+# step, and this is injected into the request rather than recorded as an event — so the model sees
+# each warning for exactly one turn. That is what a nudge should be. It also means the record of the
+# warning lives only in the log line below, which is why that line exists.
+#
+# Time rather than tokens or turns, for one reason: the hard external constraint is the Cloud Run
+# request timeout and it is denominated in seconds. A budget in the same currency as the wall is the
+# one that stops you hitting it. A token budget would not have prevented a 58.8-minute Inker.
+#
+# > **This works on `run_async` and is silently inert on `run_live`.** Verified in ADK 2.8.0: the
+# > async path hands the callback the real `LlmRequest` and calls the model with that same object
+# > (`base_llm_flow.py:1735`), so appending to `contents` reaches the model. The bidi path first does
+# > `llm_request.model_copy(update={'contents': [content]})` (`base_llm_flow.py:985`) and passes the
+# > **copy**, so the notice is appended to a throwaway and discarded with no error. We serve over
+# > `/run_sse`, which is the async path; if a live/bidi transport is ever added, this lever has to be
+# > re-done against `actions` or a plugin rather than against `contents`.
+
+#: Fractions of a role's allowance at which it is told what is left. Each fires at most once per
+#: role per invocation — a warning repeated every turn stops being read and costs tokens to send.
+#: Two rather than one because a single notice at 75% is forgotten by 95%; the second is sharper.
+BUDGET_WARN_AT = (0.75, 0.90)
+
+#: Share of the total allowance held back for the root agent's own review once the last role hands
+#: back. Without it the facilitator inherits a spent clock and is warned on its first turn.
+FACILITATOR_RESERVE = 0.15
+
+#: How long past the *whole* allowance the circuit breaker waits before halting the invocation
+#: outright. Grace, not budget: the warnings above have already asked twice by this point, and this
+#: is what is left when they were ignored.
+BREAKER_GRACE_MINUTES = 15.0
+
+#: Entries are dropped after this long. The callback has no invocation-end hook to clean up on, so
+#: an abandoned run would otherwise leave its clock behind forever.
+_ROLE_CLOCK_TTL = 6 * 3600.0
+
+
+@dataclass
+class _RoleClock:
+    """When a role first took a turn in one invocation, and which warnings it has already had."""
+
+    started: float
+    warned: set[float]
+
+
+@dataclass(frozen=True)
+class _RoleBudget:
+    """One role's allowance, in seconds, and the agent it is expected to hand to when spent."""
+
+    seconds: float
+    hand_off_to: str | None
+
+
+_role_clock: dict[tuple[str, str], _RoleClock] = {}
+
+#: First model call of each invocation, and the invocations the breaker has already halted. Keyed on
+#: `invocation_id`, which is what makes the breaker work at all — see the section below.
+_invocation_started: dict[str, float] = {}
+_tripped: set[str] = set()
+
+
+# --------------------------------------------------------------------------------------------
+# The circuit breaker.
+# --------------------------------------------------------------------------------------------
+#
+# The warnings above are advice with a clock attached; a model may still decline them. This is the
+# thing that does not ask. At `budget + BREAKER_GRACE_MINUTES` from the invocation's first model
+# call, **no agent in that invocation makes another model call**, and the run unwinds.
+#
+# **Why it is a module-level set and not `end_invocation`.** The obvious implementation is to set
+# `invocation_context.end_invocation = True`, which every agent loop checks
+# (`base_llm_flow.py:1300`, `:1422`, `llm_agent.py:610`). It does not work on its own, for two
+# reasons found by reading ADK 2.8.0 rather than by guessing:
+#
+#   1. `BaseAgent._create_invocation_context` does `parent_context.model_copy(...)`, a **shallow**
+#      copy, so `end_invocation` set inside a sub-agent never reaches the facilitator that
+#      transferred to it. The facilitator would simply transfer somewhere else.
+#   2. The public route to the context, `callback_context.get_invocation_context()`, returns a
+#      **copy** — its own docstring says so — so setting the flag on it changes nothing at all.
+#
+# What *is* shared is `invocation_id`: the copy keeps it. So the breaker is a set of tripped
+# invocation ids, consulted at the top of every `before_model_callback`. Every model call in the
+# process passes through there, whichever agent makes it, so once an id is in the set no further
+# call can be issued under it. That is the enforcement; `end_invocation` is set too, best-effort,
+# only so the current agent unwinds this turn instead of next.
+#
+# **What it does not stop.** A tool call already in flight. The breaker sits between model calls, so
+# a running `ExecuteScript` finishes first — bounded by the engine's own script timeout, which is
+# why that is survivable rather than a hole. It also does not stop the *process*; it halts one
+# invocation, which is the runaway unit that costs money.
+
+
+def _make_halt_response(elapsed: float, cap: float):
+    """The turn a halted agent gets instead of a model call.
+
+    Phrased as the runtime speaking and naming the numbers, because this text lands in the
+    transcript: a halt that reads like the agent deciding it had finished would be worse than no
+    message, and someone reading the run later has to be able to tell the two apart.
+    """
+    from google.adk.models.llm_response import LlmResponse
+
+    return LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    text=(
+                        f"[studio runtime] HALTED. This run passed its hard limit of "
+                        f"{cap / 60:.0f} minutes ({elapsed / 60:.0f} used) and was stopped by the "
+                        f"circuit breaker. No further model calls will be made under this "
+                        f"invocation. Work already written to the project directory is intact; "
+                        f"anything in progress at the moment of the halt is not."
+                    )
+                )
+            ],
+        )
+    )
+
+
+def _env_minutes(name: str) -> float | None:
+    """A minutes-valued environment variable, or None. A value that will not parse is ignored.
+
+    Ignored rather than raised: an unreadable budget should not stop a studio from starting, and a
+    deployment that mistypes it would otherwise fail at import with nothing drawn. Logged, though —
+    a silently ignored cap is how a runaway run gets blamed on the breaker not working.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        _TURN_LOG.warning("%s=%r is not a number, ignored.", name, raw)
+        return None
+
+
+def breaker_seconds(
+    budget_minutes: float | None,
+    breaker_minutes: float | None = None,
+    grace_minutes: float | None = None,
+) -> float | None:
+    """The hard cap for one invocation, in seconds, or None for no breaker.
+
+    An explicit `breaker_minutes` wins; then `POLSON_MAX_MINUTES`, which arms the breaker on its own
+    so a deployment can be protected without adopting per-role budgets; then the budget plus its
+    grace. A budget with no cap of its own is always covered, because the case this exists for —
+    a role that will not stop — is exactly the case where the budget was ignored.
+    """
+    explicit = breaker_minutes if breaker_minutes is not None else _env_minutes("POLSON_MAX_MINUTES")
+    if explicit is not None:
+        return explicit * 60.0 if explicit > 0 else None
+    if not budget_minutes or budget_minutes <= 0:
+        return None
+    grace = grace_minutes if grace_minutes is not None else _env_minutes(
+        "POLSON_BREAKER_GRACE_MINUTES"
+    )
+    return (budget_minutes + (BREAKER_GRACE_MINUTES if grace is None else grace)) * 60.0
+
+
+def budget_plan(
+    role_names: list[str],
+    budget_minutes: float | None,
+    weights: dict[str, float] | None = None,
+    root_name: str = "facilitator",
+    reserve: float = FACILITATOR_RESERVE,
+) -> dict[str, _RoleBudget]:
+    """Splits an allowance across a pipeline, keyed by agent name.
+
+    Roles arrive in `roles_in` order — the leading number on the filename — so the successor of each
+    is simply the next one, and the last hands back to the root. An empty or non-positive budget
+    returns an empty plan, which is how "no budgeting" is spelled.
+
+    The default split is **even**, not weighted toward the early stages. A decaying weight is a
+    plausible prior for a pipeline — construction usually costs more than critique — but it is a
+    guess about workflows this function has never seen, and a guess that silently starves the Critic
+    is worse than an even split anyone can override with `weights`.
+    """
+    if not budget_minutes or budget_minutes <= 0:
+        return {}
+
+    total = budget_minutes * 60.0
+    if not role_names:
+        # Single-agent: the whole allowance, and nobody to hand to.
+        return {root_name: _RoleBudget(total, None)}
+
+    share = total * (1.0 - reserve)
+    weighted = {n: max(0.0, float((weights or {}).get(n, 1.0))) for n in role_names}
+    divisor = sum(weighted.values()) or float(len(role_names))
+
+    plan = {
+        name: _RoleBudget(
+            share * (weighted[name] or 1.0) / divisor,
+            role_names[i + 1] if i + 1 < len(role_names) else root_name,
+        )
+        for i, name in enumerate(role_names)
+    }
+    # Not `plan[root_name] = ...`: a workflow whose role file is named `facilitator` would otherwise
+    # have its own allowance silently replaced by the reserve.
+    plan.setdefault(root_name, _RoleBudget(total * reserve, None))
+    return plan
+
+
+def _budget_notice(elapsed: float, allowance: float, hand_off_to: str | None, urgent: bool) -> str:
+    """What the role is told. Marked as the runtime speaking, so it is not read as the client."""
+    # Floored, not rounded: a role told it has "4 minutes" when it has 3.5 will spend four. Erring
+    # short is the safe direction, and it is why this reads `int()` rather than `:.0f`.
+    left_min = int(max(0.0, allowance - elapsed) // 60)
+    left = "under a minute" if left_min < 1 else f"about {left_min} minute{'s' if left_min > 1 else ''}"
+    total_min = max(1, int(allowance // 60))
+    head = (
+        f"[studio runtime] Your time for this role is almost gone — {left} left of {total_min}."
+        if urgent
+        else f"[studio runtime] Time check: {left} left of your {total_min} minute allowance "
+        f"for this role."
+    )
+    close = (
+        f"Finish the pass you are on — save the render with `outFile`, `peek` at it, say what it "
+        f"shows — then `transfer_to_agent` to '{hand_off_to}'. Do not begin another corrective pass "
+        f"or a new exploration."
+        if hand_off_to
+        else "Finish the pass you are on, save the render with `outFile`, and bring the work to a "
+        "close. Do not begin another corrective pass or a new exploration."
+    )
+    return f"{head} {close}"
+
+
+def _prune_role_clocks(now: float) -> None:
+    """Drops clocks from runs that ended, or died, long ago."""
+    if len(_role_clock) < 64:
+        return
+    stale = {
+        key for key, clock in _role_clock.items() if now - clock.started > _ROLE_CLOCK_TTL
+    }
+    for key in stale:
+        del _role_clock[key]
+    for invocation, started in list(_invocation_started.items()):
+        if now - started > _ROLE_CLOCK_TTL:
+            del _invocation_started[invocation]
+            _tripped.discard(invocation)
+
+
+def _trip_breaker(callback_context, elapsed: float, cap: float):
+    """Halts this invocation and returns the response the agent gets instead of a model call."""
+    invocation = callback_context.invocation_id
+    first = invocation not in _tripped
+    _tripped.add(invocation)
+    # A tripped invocation has passed the cap by definition. Clamping keeps the message honest in
+    # the one case where it would not be: a start time already dropped by the pruner reads as zero
+    # elapsed, and "passed its limit of 105 minutes (0 used)" is worse than saying nothing.
+    elapsed = max(elapsed, cap)
+    # `_after_model` never runs for a short-circuited turn, so its entry would otherwise be left.
+    _turn_started.pop(invocation, None)
+
+    # Best-effort only, and allowed to fail: this reaches a private attribute, and its sole benefit
+    # is that the current agent unwinds on this turn rather than on its next one. The trip set above
+    # is what actually enforces the halt, so a future ADK that renames this changes nothing.
+    try:
+        callback_context._invocation_context.end_invocation = True
+    except AttributeError:  # pragma: no cover - depends on ADK internals
+        pass
+
+    _TURN_LOG.log(
+        logging.ERROR if first else logging.WARNING,
+        "BREAKER %s/%s halted at %.1f min (cap %.1f min)%s",
+        callback_context.agent_name,
+        invocation,
+        elapsed / 60,
+        cap / 60,
+        "" if first else " [already tripped]",
+    )
+    return _make_halt_response(elapsed, cap)
+
+
+def _make_before_model(budget: _RoleBudget | None, cap: float | None = None):
+    """The per-turn clock, the budget warning, and the circuit breaker.
+
+    A closure per agent rather than one shared function: the allowance and the successor differ by
+    role, and `callback_context` carries the agent's name but not its budget. `cap` is the same for
+    every agent — the breaker is a property of the invocation, not of a role.
+    """
+
+    def before_model(callback_context, llm_request):
+        now = time.monotonic()
+        invocation = callback_context.invocation_id
+
+        # The breaker comes first, and returns before anything else can happen. Once an invocation
+        # is tripped it stays tripped, so an agent transferred to after the halt is stopped on its
+        # first turn rather than getting one free model call.
+        if cap:
+            if invocation in _tripped:
+                return _trip_breaker(callback_context, now - _invocation_started.get(invocation, now), cap)
+            started = _invocation_started.setdefault(invocation, now)
+            if now - started >= cap:
+                return _trip_breaker(callback_context, now - started, cap)
+
+        _turn_started[invocation] = now
+        if budget is None or budget.seconds <= 0:
+            return None
+
+        key = (invocation, callback_context.agent_name)
+        clock = _role_clock.get(key)
+        if clock is None:
+            # The clock starts at a role's *first* turn, not at the invocation's start — a role
+            # three handoffs down the pipeline has not spent any of its own allowance waiting.
+            _prune_role_clocks(now)
+            _role_clock[key] = _RoleClock(now, set())
+            return None
+
+        elapsed = now - clock.started
+        share = elapsed / budget.seconds
+        crossed = [t for t in BUDGET_WARN_AT if share >= t and t not in clock.warned]
+        if not crossed:
+            return None
+
+        # Going straight past both thresholds in one turn consumes both, so the gentler notice is
+        # not delivered after the sharper one.
+        clock.warned.update(crossed)
+        highest = max(crossed)
+        _TURN_LOG.warning(
+            # ASCII only: this line is a grep target in a container log, not prose.
+            "budget %s/%s %.0f%% used (%.1f of %.1f min) warned, next=%s",
+            callback_context.agent_name,
+            callback_context.invocation_id,
+            share * 100,
+            elapsed / 60,
+            budget.seconds / 60,
+            budget.hand_off_to or "nobody",
+        )
+        llm_request.contents.append(
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(
+                        text=_budget_notice(
+                            elapsed, budget.seconds, budget.hand_off_to, highest >= 0.90
+                        )
+                    )
+                ],
+            )
+        )
+        return None
+
+    return before_model
 
 
 def _after_model(callback_context, llm_response):
@@ -661,12 +1048,116 @@ Both keep numbered versions, so nothing you overwrite is lost.
 """
 
 
+# --------------------------------------------------------------------------------------------
+# The advisor — a role's way of asking for a second opinion.
+# --------------------------------------------------------------------------------------------
+#
+# Wrapped as an `AgentTool`, so a stuck role can *call* it and get an answer back without control
+# ever leaving that role. This is the one place ADK offers something genuinely message-shaped:
+# `transfer_to_agent` moves control, whereas this is request and response.
+#
+# **It is a separate agent, not the Facilitator herself.** Two reasons, and the second is the real
+# one. An `AgentTool` runs its agent in a **fresh in-memory session** seeded with state but not with
+# conversation history (`agent_tool.py:264-289`), so passing the root in would not give it the
+# Facilitator's memory anyway — and passing an agent that owns sub-agents invites a transfer inside
+# what is supposed to be a single question. More importantly, fresh eyes are the point: the advice
+# should come from looking at the *artifact*, not from having sat through the ninety turns that
+# produced it. That is what an art director does when asked to come and look.
+#
+# It has `peek` and `read_file` and nothing else. It cannot draw, so it cannot answer a question by
+# quietly doing the work itself — which is the failure mode that would make the whole mechanism
+# worthless, because the role would learn to delegate rather than to think.
+
+#: The tool's name as the roles call it. `AgentTool` takes its name from the agent, so this is both.
+ADVISOR_NAME = "ask_facilitator"
+
+#: This becomes the tool's description, which is what the roles actually read when deciding whether
+#: to call it. Written for that audience rather than as a summary of the code.
+ADVISOR_DESCRIPTION = (
+    "Ask the art director for a second opinion when you are stuck or going in circles. Send what "
+    "you are trying to achieve, what you have already tried, and the path of your latest render. "
+    "They will look at it with fresh eyes and answer with a direction to take."
+)
+
+ADVISOR_INSTRUCTION = """# Role: Art director, consulted
+
+A member of the studio has stopped making progress and has been told to ask you. You are being
+called for one answer, not for a conversation: what you say goes straight back to them and then you
+are gone.
+
+1. **Read `brief.md`** with `read_file`. Their problem is usually that they have drifted from it.
+2. **Look at the render they name**, with `peek`, then `load_artifacts`. Do not answer without
+   looking. If they gave you no path, say so and ask for one — that is a complete answer.
+3. **Say what to do next**, in three sentences or fewer.
+
+What makes this useful is that you have not been in their head for the last hour. Say the obvious
+thing. If the work is further along than they think, tell them to stop and hand off — that is the
+most valuable answer you can give and the one they are least able to reach on their own.
+
+You cannot draw and must not try. No script, no code, no markup: a direction, in words.
+"""
+
+
+def role_deadline_note(budget: _RoleBudget | None, total_minutes: float | None) -> str:
+    """A role's own share of the deadline, appended to its brief. Empty when there is no budget.
+
+    Appended to the **instruction**, which is the system prompt and constant for the whole run — so
+    unlike the running `[studio runtime]` notices it costs the prompt cache nothing, and unlike them
+    it arrives before the first decision rather than after three-quarters of the time is gone. The
+    project's instructions state the whole deadline; only this can state the split, because only the
+    runtime knows it.
+    """
+    if budget is None or budget.seconds <= 0:
+        return ""
+
+    whole = f" of the project's {total_minutes:.0f}" if total_minutes else ""
+    onward = (
+        f"hand off to `{budget.hand_off_to}`"
+        if budget.hand_off_to
+        else "bring the work to a close"
+    )
+    return f"""
+
+---
+
+## Your share of the deadline
+
+**You have about {budget.seconds / 60:.0f} minutes{whole}, and the stage after yours depends on you
+leaving it.** Decide before you start how many passes that buys, and plan for the last one to be a
+check rather than a rescue.
+
+When the time is nearly gone, save what you have with `outFile`, say what it shows, and {onward} —
+a finished stage handed on late is worth less than a plainer one handed on in time, because everyone
+after you inherits the overrun.
+
+If you are going round in circles, call `ask_facilitator` rather than trying again harder. Describe
+what you are after, what you have tried, and the path of your latest render. Going again on something
+that is not working is the usual way a deadline is missed.
+"""
+
+
+def advisor_for(project: Path, model: str, perception: list) -> Agent:
+    """The agent behind `ask_facilitator`. Looking tools only — deliberately no drawing."""
+    return Agent(
+        model=model,
+        name=ADVISOR_NAME,
+        description=ADVISOR_DESCRIPTION,
+        instruction=ADVISOR_INSTRUCTION,
+        tools=perception,
+        generate_content_config=_retry_config(),
+    )
+
+
 def build(
     project_dir: str | Path,
     *,
     model: str | None = None,
     cli_dll: str | Path | None = None,
     transfer_between_roles: bool = True,
+    budget_minutes: float | None = None,
+    role_weights: dict[str, float] | None = None,
+    breaker_minutes: float | None = None,
+    breaker_grace_minutes: float | None = None,
 ) -> Agent:
     """The studio for one generated project, as a single agent or a role tree.
 
@@ -677,6 +1168,16 @@ def build(
     `transfer_between_roles` leaves ADK's default topology, where a role may hand off directly to a
     peer — a penciler to an inker, which is how a pipeline actually runs. Set it False to force
     every handoff back through the root, closer to the Facilitator-mediated model of §3C.
+
+    `budget_minutes` splits a wall-clock allowance across the roles, warning each as its share runs
+    down; `role_weights` skews that split. Falls back to `POLSON_BUDGET_MINUTES`, and to no
+    budgeting at all when neither is set.
+
+    `breaker_minutes` is the hard cap on the whole invocation, after which no agent makes another
+    model call. It defaults to the budget plus `breaker_grace_minutes` (15), and can be set on its
+    own — via the argument or `POLSON_MAX_MINUTES` — to arm the breaker without adopting per-role
+    budgets. The warnings are craft; the breaker is a cost control, and they are separable on
+    purpose.
     """
     project = Path(project_dir).expanduser().resolve()
     if not project.is_dir():
@@ -692,32 +1193,63 @@ def build(
     toolset = toolset_for(project, Path(chosen_dll) if chosen_dll else None)
     # Perception. Every agent gets these: a role that cannot see its own work is the failure
     # this pair exists to prevent, and it fails silently.
-    perception = [
+    # Split so the advisor can be given the looking half without the writing half.
+    looking = [
         FunctionTool(_make_peek(project)),
         FunctionTool(_make_read_file(project)),
-        FunctionTool(_make_write_script(project)),
-        FunctionTool(_make_edit_script(project)),
         LoadArtifactsTool(),
     ]
+    perception = [
+        *looking,
+        FunctionTool(_make_write_script(project)),
+        FunctionTool(_make_edit_script(project)),
+    ]
+
+    roles = roles_in(project)
+    root_name = "facilitator" if roles else "polson"
+    # Environment is the fallback here for the same reason it is for the model: an allowance is a
+    # deployment fact, and the container is where a run's deadline is actually known.
+    # Explicit argument, then the project's own deadline, then the deployment-wide default.
+    # The project beats the environment because a deadline belongs to the commission: a
+    # 15-minute logo and a two-hour study painting cannot share one number, and the project is
+    # the only place that distinction is recorded.
+    allowance = budget_minutes
+    if allowance is None:
+        allowance = deadline_in(project) or _env_minutes("POLSON_BUDGET_MINUTES")
+    plan = budget_plan([name for name, _, _ in roles], allowance, role_weights, root_name)
+    cap = breaker_seconds(allowance, breaker_minutes, breaker_grace_minutes)
+    if cap:
+        _TURN_LOG.warning("breaker armed at %.1f min per invocation", cap / 60)
+
+    # Only in the multi-agent case: a single agent carrying the whole brief has no art director to
+    # ask, and giving it one would be asking itself.
+    #
+    # `include_plugins=False` keeps the watchdog out of the advisor's own sub-run, so a supervisor
+    # cannot end up supervising the consultation it caused.
+    advice = (
+        [AgentTool(agent=advisor_for(project, chosen_model, looking), include_plugins=False)]
+        if roles
+        else []
+    )
 
     sub_agents = [
         Agent(
             model=chosen_model,
             name=name,
             description=description,
-            instruction=prompt,
-            tools=[toolset, *perception],
+            instruction=prompt + role_deadline_note(plan.get(name), allowance),
+            tools=[toolset, *perception, *advice],
             generate_content_config=_retry_config(),
-            before_model_callback=_before_model,
+            before_model_callback=_make_before_model(plan.get(name), cap),
             after_model_callback=_after_model,
             disallow_transfer_to_peers=not transfer_between_roles,
         )
-        for name, description, prompt in roles_in(project)
+        for name, description, prompt in roles
     ]
 
     return Agent(
         model=chosen_model,
-        name="facilitator" if sub_agents else "polson",
+        name=root_name,
         description=(
             "Coordinates a multi-agent design studio." if sub_agents else
             "An enactive co-creative design studio. Writes JavaScript that draws, renders it, "
@@ -728,7 +1260,47 @@ def build(
         # multi-agent case the Facilitator still needs to look at what the roles produced.
         tools=[toolset, *perception],
         generate_content_config=_retry_config(),
-        before_model_callback=_before_model,
+        before_model_callback=_make_before_model(plan.get(root_name), cap),
         after_model_callback=_after_model,
         sub_agents=sub_agents,
+    )
+
+
+def build_app(project_dir: str | Path, *, name: str | None = None, **kwargs) -> App:
+    """The same studio, wrapped as an `App` so a supervising plugin can be attached.
+
+    ADK's loader checks a module for `app` before `root_agent` (`agent_loader.py:128`), so a
+    generated `agent.py` exporting this is served exactly as one exporting a bare agent — no change
+    to how the studio is deployed, and an older generated file keeps working.
+
+    The watchdog is given the **same** toolset instance the agents hold, found by type rather than by
+    position. A second `McpToolset` would spawn a second `Polson.CLI server` process, and the module
+    docstring's whole argument for one server per app would quietly stop being true.
+    """
+    project = Path(project_dir).expanduser().resolve()
+    root = build(project, **kwargs)
+
+    # The same precedence `build` uses. Duplicated deliberately rather than guessed at: if these two
+    # ever disagreed, the watchdog would be timing the roles against a different clock from the one
+    # they were told about, which is the sort of fault that looks like a flaky model.
+    allowance = kwargs.get("budget_minutes")
+    if allowance is None:
+        allowance = deadline_in(project) or _env_minutes("POLSON_BUDGET_MINUTES")
+    plan = budget_plan(
+        [role for role, _, _ in roles_in(project)],
+        allowance,
+        kwargs.get("role_weights"),
+        root.name,
+    )
+
+    return App(
+        name=name or project.name,
+        root_agent=root,
+        plugins=[
+            StudioWatchdog(
+                role_seconds={agent: budget.seconds for agent, budget in plan.items()},
+                toolset=next((t for t in root.tools if isinstance(t, McpToolset)), None),
+                advisor_tool=ADVISOR_NAME,
+            )
+        ],
     )

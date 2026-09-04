@@ -1,4 +1,4 @@
-namespace Polson.CLI;
+﻿namespace Polson.CLI;
 
 using System;
 using System.Collections.Generic;
@@ -248,6 +248,7 @@ internal static class ProjectGenerator
 
         var brief = SanitizeBrief(briefText);
         var createdUtc = DateTime.UtcNow.ToString("O");
+        var deadline = DeadlineFor(workflow, opts.Deadline);
 
         // The orchestrator's session directories. Written for every Antigravity project rather than
         // only the standalone ones, because any of them may now be run from the orchestrator — see
@@ -304,6 +305,15 @@ internal static class ProjectGenerator
             // `artwork.js` makes re-sending it the only way to run it, and a measured run spent most
             // of its time doing exactly that.
             ["SCRIPT_FILE"] = Render("_shared", "script_file.md", []),
+
+            // How long the commission has, and how to work to it. Shared because the discipline is
+            // the same whatever is being drawn, and stated up front because a deadline learned about
+            // at three-quarters spent is only bad news — by then it cannot be planned against.
+            // Empty for a workflow with no deadline, so nothing claims a limit that is not enforced.
+            ["DEADLINE"] = deadline > 0
+                ? Render("_shared", "deadline.md",
+                    new Dictionary<string, string> { ["DEADLINE_MINUTES"] = deadline.ToString() })
+                : string.Empty,
         };
 
         // The instructions are always rewritten: they are the project's system prompt, generated
@@ -320,7 +330,7 @@ internal static class ProjectGenerator
         }
 
         WriteText(dir, ".gitignore", GitIgnore(orchestratable));
-        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, orchestratable));
+        WriteJson(dir, "project.json", ProjectManifest(id, workflow, type, sdk, profile, createdUtc, orchestratable, deadline));
 
         // Roles, checklists, anything else the workflow ships. Rendered like the rest, so they can
         // carry the same tokens.
@@ -440,6 +450,42 @@ internal static class ProjectGenerator
     internal static string[] KnownWorkflows => TemplateNames("instructions.md");
 
     /// <summary>
+    /// Minutes a workflow is expected to take, used when <c>--deadline</c> is not given.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Per workflow rather than one number, because the work genuinely differs: a mark is a handful
+    /// of decisions and a study painting is a sequence of passes over the same surface. A single
+    /// default would be wrong for both, and wrong in the more damaging direction for the painting —
+    /// a deadline that cannot be met teaches an agent to ignore deadlines.
+    /// </para>
+    /// <para>
+    /// These are starting points, not measurements. The only figure behind them is that a
+    /// single-agent logo brief has run end to end in about three minutes, and one Inker alone has
+    /// spent 58.8 on a pass it never finished. Tune them as real runs accumulate, and pass
+    /// <c>--deadline</c> for anything unusual.
+    /// </para>
+    /// </remarks>
+    static readonly Dictionary<string, int> WorkflowDeadlines = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["logo"] = 15,
+        ["infographic"] = 30,
+        ["drawing"] = 45,
+        ["comic"] = 60,
+        ["painting"] = 120,
+        ["comic_studio"] = 90,
+        // A test fixture rather than a commission: it is measured on what it exercises, not on
+        // whether it finished in time, and a deadline would only add a failure mode to the harness.
+        ["harness"] = 0,
+    };
+
+    /// <summary>The deadline for a project, in minutes. Zero means none.</summary>
+    internal static int DeadlineFor(string workflow, int? requested) =>
+        requested is { } given
+            ? Math.Max(0, given)
+            : WorkflowDeadlines.TryGetValue(workflow, out var value) ? value : 0;
+
+    /// <summary>
     /// The types a workflow offers. What a type <em>means</em> is the workflow's business.
     /// </summary>
     /// <remarks>
@@ -554,7 +600,7 @@ internal static class ProjectGenerator
     /// by probing filenames. <c>conversationId</c> is standalone-only state: resume belongs to us,
     /// and a desktop host neither writes nor reads it.
     /// </remarks>
-    static object ProjectManifest(string id, string workflow, string type, string sdk, string profile, string createdUtc, bool orchestratable)
+    static object ProjectManifest(string id, string workflow, string type, string sdk, string profile, string createdUtc, bool orchestratable, int deadlineMinutes)
     {
         // An ordered dictionary rather than an anonymous type: the optional fields would otherwise
         // need one shape per combination of them, and the order here is the order on disk.
@@ -565,6 +611,11 @@ internal static class ProjectGenerator
         manifest["sdk"] = sdk;
         manifest["profile"] = profile;
         manifest["createdUtc"] = createdUtc;
+
+        // Read by the ADK runtime to size each role's share of the run. Written even when zero,
+        // so "this project has no deadline" is a stated fact rather than a missing key that a
+        // reader has to interpret.
+        manifest["deadlineMinutes"] = deadlineMinutes;
 
         // The slot the orchestrator records a resumable session into, so it exists wherever the
         // orchestrator can run — which is now any Antigravity project, not only a standalone one.

@@ -376,10 +376,11 @@ Each step leaves the tree green and useful.
    the spike file is gone (§2), so this is "build a score, render it, assert determinism" rather
    than a regression check. The documented example in `Polson.core.md` has been run through the real
    engine by hand and produces a contact sheet; **it is not yet a test**, see below.
-6. **Docs**: ~~`Polson.core.md` Motion section~~ **done** — a Score section with the position
-   grammar, the purity note and a runnable example. **Still to do:** a manual passage, and raise the
-   `Motion` floor in `ManualCoverageTests` (still 0, and its stated reason — "the authoring model
-   above it is still an open question" — has now expired).
+6. ~~**Docs**: `Polson.core.md` Motion section, and a manual passage; raise the `Motion` floor.~~ —
+   **done 2026-09-05.** A Score section in the reference with the position grammar, the purity note
+   and a runnable example; **Manual 25 — Scoring Motion**, whose own example runs as a test; and the
+   `Motion` floor raised **0 → 100** (its "the authoring model is still an open question" reason had
+   expired), taking the overall floor 82 → 84.
 7. **`Motion.saveFrames(dir, options?)`** — trivial (the existing encoder writing N files), no new
    dependencies, and it is the seam to ffmpeg for anything longer than ~20 s.
 

@@ -93,16 +93,21 @@ public class ManualCoverageTests : TestsRuntime
         ["Logo"] = 65,
         ["Scale"] = 54,
 
-        // A spike, and deliberately at zero rather than given a manual it has not earned. The
-        // authoring model above it is still an open question — whether a timeline lives in
-        // JavaScript or in the engine, and whether easings are baked to SMIL for export — so a
-        // manual written now would document a decision nobody has made. It is in
-        // `docs/Polson.core.md` so it is discoverable, and this floor rises when the shape settles.
-        ["Motion"] = 0,
+        // Was 0 while Motion was a spike, on the stated grounds that "the authoring model above it
+        // is still an open question — whether a timeline lives in JavaScript or in the engine, and
+        // whether easings are baked to SMIL for export — so a manual written now would document a
+        // decision nobody has made". That reason expired on 2026-09-05, when `Motion.timeline(...)`
+        // settled all three: the score lives in the engine, is seekable rather than played, and is
+        // not baked to SMIL. Manual 25 is written against that shape and names every member.
+        ["Motion"] = 100,
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>
-    private const int OverallFloor = 82;
+    /// <remarks>
+    /// 82 → 84 on 2026-09-05: Manual 25 took <c>Motion</c> from 0 to 100, and the timeline added
+    /// countable surface of its own. Measured at 475/564.
+    /// </remarks>
+    private const int OverallFloor = 84;
     #endregion
 
     #region Properties

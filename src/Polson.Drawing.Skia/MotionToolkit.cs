@@ -83,11 +83,14 @@ public class MotionToolkit : IDisposable
 
         if (frames.Count > 0 && (frames[0].Width != bitmap.Width || frames[0].Height != bitmap.Height))
         {
-            var first = frames[0];
+            // Both sizes are read *before* the bitmap is released. Composing the message afterwards
+            // reads width and height off freed native memory, which does not throw — it takes the
+            // whole process down, and an agent loses the run rather than the frame.
+            var message =
+                $"Every frame must be the same size. Frame 1 is {frames[0].Width}x{frames[0].Height}, this one is "
+                + $"{bitmap.Width}x{bitmap.Height}. Pass the same width and height each time, or clear and start again.";
             bitmap.Dispose();
-            throw new InvalidOperationException(
-                $"Every frame must be the same size. Frame 1 is {first.Width}x{first.Height}, this one is "
-                + $"{bitmap.Width}x{bitmap.Height}. Pass the same width and height each time, or clear and start again.");
+            throw new InvalidOperationException(message);
         }
 
         frames.Add(bitmap);
@@ -166,6 +169,122 @@ public class MotionToolkit : IDisposable
             ["durationMs"] = frameMs * frames.Count,
             ["bytes"] = (long)bytes.Length
         };
+    }
+
+    /// <summary>
+    /// Tiles a selection of the held frames into one labelled image — the artifact to *look* at.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>An agent cannot watch a video.</b> It reads images, so a moving artifact is close to the
+    /// worst possible thing to hand it for inspection: it can produce the file and still not perceive
+    /// the motion. A contact sheet puts several instants in one image, which is a single read and,
+    /// unlike a video, supports comparison — the eye and <c>bitmap.diff</c> both work across cells.
+    /// </para>
+    /// <para>
+    /// Frames are chosen by <c>indices</c>, or evenly spaced when it is omitted. The first and last
+    /// held frames are always included in the even spacing, because the ends of a movement are what
+    /// a reader checks first — Studio Manual 24's extremes, arriving from a different direction.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> Sheet(string filePath, object? options = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+        if (frames.Count == 0)
+            throw new InvalidOperationException("Motion.sheet(...) has no frames. Call Motion.frame(...) first.");
+
+        var opt = JsInterop.AsDict(options);
+        var picked = SelectIndices(opt);
+        var cols = Math.Max(1, (int)Num(opt, "cols", picked.Count <= 6 ? picked.Count : (int)MathF.Ceiling(MathF.Sqrt(picked.Count))));
+        var rows = (int)MathF.Ceiling(picked.Count / (float)cols);
+        var scale = Math.Clamp(Num(opt, "scale", 1f), 0.05f, 4f);
+        var gap = Num(opt, "gap", 10f);
+        var pad = Num(opt, "padding", 12f);
+        var labels = opt == null || !opt.Contains("labels") || Convert.ToBoolean(opt["labels"]);
+        var fps = Num(opt, "fps", 25f);
+        var labelH = labels ? Num(opt, "labelHeight", 22f) : 0f;
+
+        var cellW = MathF.Max(1f, frames[0].Width * scale);
+        var cellH = MathF.Max(1f, frames[0].Height * scale);
+        var sheetW = (int)MathF.Ceiling(cols * cellW + (cols + 1) * gap + pad * 2);
+        var sheetH = (int)MathF.Ceiling(rows * (cellH + labelH) + (rows + 1) * gap + pad * 2);
+
+        using var sheet = new SKBitmap(sheetW, sheetH, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using var canvas = new SKCanvas(sheet);
+        canvas.Clear(SkiaColorParser.Parse(opt?["background"]?.ToString() ?? "#e4e0d4"));
+
+        using var font = new SKFont(SKTypeface.FromFamilyName(opt?["fontFamily"]?.ToString() ?? "Georgia"),
+            Math.Max(7f, labelH * 0.62f));
+        using var ink = new SKPaint { Color = SkiaColorParser.Parse(opt?["labelColor"]?.ToString() ?? "#15151a"), IsAntialias = true };
+        using var border = new SKPaint { Color = ink.Color, IsStroke = true, StrokeWidth = 1.5f, IsAntialias = true };
+
+        for (var i = 0; i < picked.Count; i++)
+        {
+            var frame = frames[picked[i]];
+            var x = pad + (i % cols) * (cellW + gap) + gap;
+            var y = pad + (i / cols) * (cellH + labelH + gap) + gap;
+
+            canvas.DrawBitmap(frame,
+                SKRect.Create(0, 0, frame.Width, frame.Height),
+                SKRect.Create(x, y, cellW, cellH));
+            canvas.DrawRect(SKRect.Create(x, y, cellW, cellH), border);
+
+            if (!labels) continue;
+            var ms = fps > 0 ? picked[i] * 1000f / fps : picked[i];
+            canvas.DrawText(
+                $"{picked[i]}  ·  {ms / 1000f:0.00}s",
+                x, y + cellH + labelH * 0.72f, SKTextAlign.Left, font, ink);
+        }
+
+        var format = opt?["format"]?.ToString() ?? "png";
+        var quality = (int)Num(opt, "quality", 92f);
+        var full = ProjectPath.Resolve(projectRoot, filePath, nameof(filePath), "Write to");
+        var directory = Path.GetDirectoryName(full);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
+        var bytes = SkiaImageEncoder.Encode(sheet, format, quality);
+        File.WriteAllBytes(full, bytes);
+
+        return new Dictionary<string, object?>
+        {
+            ["path"] = filePath,
+            ["cells"] = picked.Count,
+            ["indices"] = picked.ConvertAll(i => (object?)i),
+            ["cols"] = cols,
+            ["rows"] = rows,
+            ["width"] = sheetW,
+            ["height"] = sheetH,
+            ["bytes"] = (long)bytes.Length
+        };
+    }
+
+    /// <summary>Which frames the sheet shows: named outright, or spread across what is held.</summary>
+    private List<int> SelectIndices(IDictionary? opt)
+    {
+        var picked = new List<int>();
+
+        if (opt != null && opt.Contains("indices") && opt["indices"] is IEnumerable given and not string)
+        {
+            foreach (var value in given)
+            {
+                var i = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+                if (i < 0 || i >= frames.Count)
+                    throw new ArgumentOutOfRangeException(nameof(opt),
+                        $"Frame {i} was asked for but only 0..{frames.Count - 1} are held.");
+                picked.Add(i);
+            }
+            if (picked.Count > 0) return picked;
+        }
+
+        var count = Math.Clamp((int)Num(opt, "count", 6f), 1, frames.Count);
+        if (count == 1) { picked.Add(0); return picked; }
+
+        // Inclusive of both ends: the extremes of a movement are what a reader checks first.
+        for (var i = 0; i < count; i++)
+            picked.Add((int)MathF.Round(i * (frames.Count - 1) / (float)(count - 1)));
+
+        return picked;
     }
 
     public void Dispose()

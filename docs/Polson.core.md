@@ -1561,8 +1561,20 @@ canvas;
 
 - `Motion.frame(source: SnapPaper | SkiaCanvas | SkiaBitmapWrapper, width?: number, height?: number)` → `number` — Rasterises the **current state** of a paper, canvas or bitmap and keeps it as the next frame. Returns the frame count so far. A **copy** is taken, so a caller may keep drawing on the same paper.
 - `Motion.save(filePath: string, options?: { fps?: number, frameMs?: number, quality?: number, lossless?: boolean })` → `{ path, frames, storedFrames, merged, width, height, frameMs, durationMs, bytes }` — Encodes the held frames as one animated WebP. `filePath` is contained exactly as `outFile` is. Frames are **kept** afterwards, so the same sequence can be saved twice at different qualities without redrawing it.
+- `Motion.sheet(filePath: string, options?: { indices?: number[], count?: number, cols?: number, scale?: number, labels?: boolean, fps?: number, background?: string, labelColor?: string, fontFamily?: string, gap?: number, padding?: number, format?: string, quality?: number })` → `{ path, cells, indices, cols, rows, width, height, bytes }` — Tiles a selection of the held frames into one labelled image. Frames are named by `indices`, or spread evenly across what is held — **always including the first and last**, because the ends of a movement are what a reader checks first.
 - `Motion.count` → `number` — How many frames are held.
 - `Motion.clear()` — Discards them.
+
+> [!IMPORTANT]
+> **`sheet` is the artifact to look at; `save` is the artifact to ship.** An agent cannot watch a video — it reads images — so a moving file is close to the worst thing to hand it for inspection: it can produce one and still not perceive the motion. A contact sheet is a **single read**, and unlike a video it supports comparison: the eye works across cells, and so does `bitmap.diff`.
+>
+> ```javascript
+> for (let i = 0; i < frames; i++) { seek(i * 40); Motion.frame(paper); }
+> Motion.sheet('artifacts/stage3-sheet.png', { count: 6, cols: 6, scale: 0.6, fps: 25 });
+> Motion.save('artifacts/stage3.webp', { fps: 25 });
+> ```
+>
+> **This is also why an animated file is the wrong thing to hand the *next stage*.** Animated WebP is frame-differenced: measured on a 47-frame file, exactly **one** frame was independently decodable and the rest chained, so reaching frame 36 cost 13 ms against 1 ms for frame 0 — random access is O(n) and gets worse with length. Transfer the script and a stage SVG instead, and re-evaluate the timeline to reach a time; that is O(1) at any `t`.
 
 > [!IMPORTANT]
 > **`frames` is what you handed in; `storedFrames` is what the file holds, and they differ legitimately.** The WebP encoder merges consecutive **pixel-identical** frames and sums their durations — a real size win, and lossless — so a sequence that holds still for half a second stores one long frame rather than twelve short ones. `durationMs` is unaffected. A 57-frame capture whose opening is motionless stored 47 frames and played for exactly the same 2280 ms.

@@ -1398,6 +1398,17 @@ canvas;
 
 Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one call returns a **model** you can read, measure, restyle and animate. `Scale` maps values to pixels and `Layout` divides a page; this is the layer above them, and it exists because writing that loop by hand was sixty lines every time.
 
+> [!IMPORTANT]
+> **These are armatures, not pictures — a rectangle is the dullest thing you can put in a bar's box.** Every model carries **`slots`**: one entry per mark, saying where it stands, how big it is, which way it grows, and how far up the scale it got. Draw whatever you like there — skyscrapers for a height record, bottles filling, coins stacking, a rocket climbing — and the result is still a chart underneath, with its baseline and its lie factor intact.
+>
+> ```javascript
+> for (const slot of chart.slots) {
+>     drawTower(ctx, slot.baseX, slot.baseY, slot.thickness, slot.length, slot.fraction);
+> }
+> ```
+>
+> **`slots` means the same thing in every form**, so a mark routine written for a column chart works unchanged on a bar chart — `angleDeg` is 0 for up and 90 for right, and `baseX`/`baseY`/`length` carry the rest. That is what lets a house style survive a change of chart form. `drawChart(...)` fills plain rectangles and is there for a draft, not for the deliverable.
+
 - `Chart.createColumnChart(rect, data, options?)` → `object` — Categories across, values up.
 - `Chart.createBarChart(rect, data, options?)` → `object` — Categories down, values across. Usually the better of the two: horizontal bars give category labels room to be words.
 - `Chart.createDotChart(rect, data, options?)` → `object` — Value as **position on one shared axis**, categories down. The most accurately decoded form there is, and the one Cleveland & McGill offer in place of a bar chart. Adds `radius` and `sort` (`'none'`, `'asc'`, `'desc'`) to the options.
@@ -1420,6 +1431,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `type` | `'column'` or `'bar'` |
 | `plot` · `bounds` | the rectangle the marks occupy |
 | `scale` · `band` | the `LinearScale` and `BandScale` used, so you can place anything else against them |
+| **`slots`** | **the armature — one per mark, in every form.** The box (`x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`), where it stands (`baseX`, `baseY`), where it reaches (`tipX`, `tipY`), `length`, `thickness`, `angleDeg` (0 up, 90 right), and `fraction` — its position on the scale, 0 to 1 |
 | `bars` | *(bar/column)* one rectangle per datum, each with `x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`, plus `index`, `value` and `label` |
 | `dots` | *(dot)* one per datum with `cx`, `cy`, `radius`, `value`, `label`, `index`, `sourceIndex`, and `leaderX1/Y1/X2/Y2` for the line from the axis; grouped charts add `group` and `groupIndex` |
 | `groups` | *(grouped dot)* `{ name, index, count, y, y2, height, headingX, headingY, min, max, mean }` — the block each group occupies, and its own summary |
@@ -1489,6 +1501,11 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 > **A waffle reports itself as `area`, rank 4, deliberately.** A reader who counts cells gets an exact answer — that is why it beats a donut, whose angle is rank 3 but uncountable — but you cannot assume anyone will count. Rank 4 is what the graphic is worth if nobody does, and claiming the exactness of counting would be the flattering assumption rather than the safe one.
 >
 > **Cells are whole, so shares are apportioned by largest remainder.** Rounding each share on its own is the obvious approach and does not add up: three parts at a third each floor to 33 cells apiece and leave one of a hundred unassigned. Every cell is assigned and the counts sum to exactly the grid.
+
+> [!TIP]
+> **`fraction` is a position on the scale, not a rank.** It is how many floors a tower gets or how full a bottle is, so it tracks the scale rather than the ordering — and with a niced maximum sitting above the data, the largest value does **not** reach 1. A mark that treats `fraction === 1` as "this is the biggest" will be wrong; compare values for that, or pass an explicit `max`.
+>
+> A waffle's `slots` are its **cells**, one per cell rather than one per part, because a cell is where an icon goes. That is the isotype idiom: a hundred little figures instead of a hundred squares.
 
 > [!TIP]
 > **Each call accepts only its own options.** A single shared list would let `frameWidth` through on a bar chart and `compact` through on a waffle — names that mean nothing there — and the misspelling this check exists to catch would slip past whenever it happened to be another call's option. The error names what was passed and lists what is accepted **here**.

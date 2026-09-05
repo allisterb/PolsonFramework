@@ -1057,4 +1057,134 @@ public class ChartToolkitTests : TestsRuntime
             new[] { 1d, 2d }, new Dictionary<string, object?> { ["sort"] = "desc" }));
     }
     #endregion
+
+    #region Tests — the slot armature
+    static IDictionary[] Slots(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["slots"]!).Cast<object>().Select(s => (IDictionary)s!).ToArray();
+
+    /// <summary>
+    /// One loop draws towers on a column chart and, unchanged, on a bar chart.
+    /// </summary>
+    /// <remarks>
+    /// This is what the armature is for. `baseX/baseY`, `angleDeg` and `length` mean the same thing in
+    /// both forms, so a house style survives a change of chart form without the drawing code knowing
+    /// which one it is looking at.
+    /// </remarks>
+    [Fact]
+    public void TestSlotsMeanTheSameThingInBothOrientations()
+    {
+        var values = new[] { 25d, 100d };
+
+        var column = Slots(Chart.CreateColumnChart(Rect(0, 0, 400, 200), values));
+        var bar = Slots(Chart.CreateBarChart(Rect(0, 0, 400, 200), values));
+
+        Assert.All(column, s => Assert.Equal(0d, Num(s, "angleDeg"), 3));    // grows up
+        Assert.All(bar, s => Assert.Equal(90d, Num(s, "angleDeg"), 3));      // grows right
+
+        // In both, the taller value has the longer mark, in the same ratio.
+        Assert.Equal(4d, Num(column[1], "length") / Num(column[0], "length"), 3);
+        Assert.Equal(4d, Num(bar[1], "length") / Num(bar[0], "length"), 3);
+    }
+
+    /// <summary>The base is on the baseline and the tip is at the value — that is the whole contract.</summary>
+    [Fact]
+    public void TestASlotStandsOnTheBaselineAndReachesTheValue()
+    {
+        var model = Chart.CreateColumnChart(Rect(0, 0, 400, 200), new[] { 40d, 90d });
+        var zero = Num(model, "baselinePosition");
+
+        foreach (var slot in Slots(model))
+        {
+            Assert.Equal(zero, Num(slot, "baseY"), 3);
+            Assert.Equal(Num(slot, "baseX"), Num(slot, "tipX"), 3);          // straight up
+            Assert.True(Num(slot, "tipY") < Num(slot, "baseY"));
+            Assert.Equal(Math.Abs(Num(slot, "baseY") - Num(slot, "tipY")), Num(slot, "length"), 3);
+        }
+    }
+
+    /// <summary>
+    /// `fraction` is a position on the scale, not a rank.
+    /// </summary>
+    /// <remarks>
+    /// It is how many floors a tower gets or how full a bottle is, so it must track the scale rather
+    /// than the ordering. The largest value reaches 1 only when the scale ends exactly there — with a
+    /// niced maximum above the data it does not, and a drawing that treats <c>fraction == 1</c> as
+    /// "this is the biggest" would be wrong. Compare values for that.
+    /// </remarks>
+    [Fact]
+    public void TestFractionIsScalePositionNotRank()
+    {
+        var exact = Slots(Chart.CreateColumnChart(Rect(0, 0, 400, 200), new[] { 25d, 50d, 100d },
+            new Dictionary<string, object?> { ["max"] = 100d }));
+        Assert.Equal(0.25d, Num(exact[0], "fraction"), 6);
+        Assert.Equal(1d, Num(exact[2], "fraction"), 6);
+
+        var niced = Slots(Chart.CreateColumnChart(Rect(0, 0, 400, 200), new[] { 828d }));
+        Assert.True(Num(niced[0], "fraction") < 1d, "a niced maximum sits above the data");
+        Assert.InRange(Num(niced[0], "fraction"), 0d, 1d);
+    }
+
+    /// <summary>Every form carries the armature, so a mark routine is not tied to one chart.</summary>
+    [Theory]
+    [InlineData("column")]
+    [InlineData("bar")]
+    [InlineData("dot")]
+    [InlineData("framed")]
+    public void TestEveryFormCarriesSlots(string form)
+    {
+        var values = new[] { 10d, 40d, 25d };
+        var model = form switch
+        {
+            "column" => Chart.CreateColumnChart(Rect(0, 0, 400, 200), values),
+            "bar" => Chart.CreateBarChart(Rect(0, 0, 400, 200), values),
+            "dot" => Chart.CreateDotChart(Rect(0, 0, 400, 200), values),
+            _ => Chart.CreateFramedRectangleChart(Rect(0, 0, 400, 200), values)
+        };
+
+        var slots = Slots(model);
+        Assert.Equal(3, slots.Length);
+
+        foreach (var slot in slots)
+        {
+            Assert.InRange(Num(slot, "fraction"), 0d, 1d);
+            Assert.True(Num(slot, "thickness") > 0d);
+            Assert.NotNull(slot["label"]);
+            Assert.True(Num(slot, "length") >= 0d);
+        }
+    }
+
+    /// <summary>A waffle's slots are its cells, because a cell is where an icon goes.</summary>
+    [Fact]
+    public void TestAWafflesSlotsAreItsCells()
+    {
+        var model = Chart.CreateWaffle(Rect(0, 0, 200, 200), new[] { 60d, 40d });
+        Assert.Equal(100, Slots(model).Length);
+        Assert.Equal(Cells(model).Length, Slots(model).Length);
+    }
+
+    /// <summary>A slot's box is the bar's box, so the two agree and neither has to be recomputed.</summary>
+    [Fact]
+    public void TestASlotsBoxMatchesTheMarkItStandsFor()
+    {
+        var model = Chart.CreateColumnChart(Rect(20, 10, 400, 200), new[] { 15d, 60d, 33d });
+        var bars = Bars(model);
+        var slots = Slots(model);
+
+        for (var i = 0; i < bars.Length; i++)
+        {
+            Assert.Equal(Num(bars[i], "x"), Num(slots[i], "x"), 3);
+            Assert.Equal(Num(bars[i], "y"), Num(slots[i], "y"), 3);
+            Assert.Equal(Num(bars[i], "width"), Num(slots[i], "width"), 3);
+            Assert.Equal(Num(bars[i], "height"), Num(slots[i], "height"), 3);
+        }
+    }
+
+    /// <summary>Slots survive into a small-multiples panel, so a house style works there too.</summary>
+    [Fact]
+    public void TestPanelsCarrySlotsAsWell()
+    {
+        var grid = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries());
+        foreach (var panel in Panels(grid)) Assert.Equal(3, Slots(PanelChart(panel)).Length);
+    }
+    #endregion
 }

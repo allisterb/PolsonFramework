@@ -176,6 +176,7 @@ public class ChartToolkit
         var radius = Opt(opt, "radius", Math.Clamp(band.Bandwidth * 0.32d, 2d, 9d));
 
         var dots = new List<Dictionary<string, object>>(order.Length);
+        var slots = new List<Dictionary<string, object>>(order.Length);
         var labelList = new List<Dictionary<string, object>>(order.Length);
 
         for (var row = 0; row < order.Length; row++)
@@ -201,6 +202,12 @@ public class ChartToolkit
                 ["leaderX2"] = cx,
                 ["leaderY2"] = cy
             });
+
+            // A dot's mark grows rightward from the axis, so a custom mark can be a rocket, a runner,
+            // an arrow — anything that reads as "reached this far".
+            slots.Add(Slot(row, labels[source], values[source], Fraction(values[source], min, max),
+                px, cy - band.Bandwidth / 2d, cx - px, band.Bandwidth,
+                px, cy, cx, cy, band.Bandwidth, 90d));
 
             labelList.Add(new Dictionary<string, object>
             {
@@ -230,6 +237,7 @@ public class ChartToolkit
             ["scale"] = scale,
             ["band"] = band,
             ["dots"] = dots.ToArray(),
+            ["slots"] = slots.ToArray(),
             ["ticks"] = ticks,
             ["labels"] = labelList.ToArray(),
             ["min"] = min,
@@ -502,6 +510,7 @@ public class ChartToolkit
         var gap = Opt(opt, "gap", 12d);
 
         var items = new List<Dictionary<string, object>>(values.Length);
+        var slots = new List<Dictionary<string, object>>(values.Length);
         var labelList = new List<Dictionary<string, object>>(values.Length);
 
         for (var i = 0; i < values.Length; i++)
@@ -539,6 +548,7 @@ public class ChartToolkit
 
                 // The data-bearing part: filled from the foot of the frame up to the value's level.
                 ["fill"] = Rect(fx, top, frameWidth, fy + frameHeight - top),
+                ["slotIndex"] = i,
 
                 // How full the frame is, 0 to 1. Reported instead of the fill's absolute y because
                 // frames sit at different places — on a map, at different latitudes — so an absolute
@@ -546,6 +556,12 @@ public class ChartToolkit
                 // trap. The fraction is what the reader actually judges, and it *is* comparable.
                 ["fraction"] = (fy + frameHeight - top) / frameHeight
             });
+
+            // The mark stands at the frame's foot and grows to the level, so a custom mark fills the
+            // frame the way a thermometer's mercury does.
+            slots.Add(Slot(i, labels[i], values[i], Fraction(values[i], min, max),
+                fx, top, frameWidth, fy + frameHeight - top,
+                anchorX, fy + frameHeight, anchorX, top, frameWidth, 0d));
 
             labelList.Add(new Dictionary<string, object>
             {
@@ -573,6 +589,7 @@ public class ChartToolkit
             ["bounds"] = Rect(px, py, pw, ph),
             ["scale"] = level,
             ["items"] = items.ToArray(),
+            ["slots"] = slots.ToArray(),
             ["ticks"] = ticks,
             ["labels"] = labelList.ToArray(),
             ["min"] = min,
@@ -922,6 +939,7 @@ public class ChartToolkit
             ["plot"] = Rect(x, y, Num(area, "width"), Num(area, "height")),
             ["bounds"] = Rect(x, y, Num(area, "width"), Num(area, "height")),
             ["cells"] = cells.ToArray(),
+            ["slots"] = cells.ToArray(),
             ["parts"] = partList.ToArray(),
             ["columns"] = columns,
             ["rows"] = rows,
@@ -1077,6 +1095,7 @@ public class ChartToolkit
 
         var zero = scale.Map(baseline);
         var bars = new List<Dictionary<string, object>>(values.Length);
+        var slots = new List<Dictionary<string, object>>(values.Length);
         var labelList = new List<Dictionary<string, object>>(values.Length);
 
         for (var i = 0; i < values.Length; i++)
@@ -1096,6 +1115,17 @@ public class ChartToolkit
             bar["value"] = values[i];
             bar["label"] = labels[i];
             bars.Add(bar);
+
+            // The same box, said in the form-agnostic way: a mark stands at the baseline and grows
+            // toward the value. `angleDeg` is 0 for up and 90 for right, so one drawing routine
+            // serves a column chart and a bar chart without knowing which it is looking at.
+            slots.Add(horizontal
+                ? Slot(i, labels[i], values[i], Fraction(values[i], min, max),
+                    Num(bar, "x"), at, length, thickness,
+                    zero, at + thickness / 2d, tip, at + thickness / 2d, thickness, 90d)
+                : Slot(i, labels[i], values[i], Fraction(values[i], min, max),
+                    at, Num(bar, "y"), thickness, length,
+                    at + thickness / 2d, zero, at + thickness / 2d, tip, thickness, 0d));
 
             labelList.Add(new Dictionary<string, object>
             {
@@ -1125,6 +1155,7 @@ public class ChartToolkit
             ["scale"] = scale,
             ["band"] = band,
             ["bars"] = bars.ToArray(),
+            ["slots"] = slots.ToArray(),
             ["ticks"] = ticks,
             ["labels"] = labelList.ToArray(),
             ["baseline"] = baseline,
@@ -1430,6 +1461,48 @@ public class ChartToolkit
         path.Rect((float)Num(rect, "x"), (float)Num(rect, "y"),
             (float)Num(rect, "width"), (float)Num(rect, "height"));
     }
+
+    /// <summary>
+    /// One place to draw a mark, in a shape that does not care what the mark is.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the armature the whole toolkit is really for.</b> A rectangle is the dullest thing
+    /// you can put in a bar's box — the interesting ones are a skyscraper, a bottle filling, a stack of
+    /// coins, a tree growing, a rocket climbing — and every one of those needs the same four facts:
+    /// where it stands, how big it is, which way it grows, and how far up the scale it got.
+    /// <para>
+    /// Uniform across forms on purpose. A loop written against <c>slots</c> draws towers on a column
+    /// chart and, unchanged, draws them lying down on a bar chart, because <c>baseX/baseY</c>,
+    /// <c>angleDeg</c> and <c>length</c> mean the same thing in both. That is what lets a house style
+    /// survive a change of chart form.
+    /// </para>
+    /// </remarks>
+    static Dictionary<string, object> Slot(
+        int index, string label, double value, double fraction,
+        double x, double y, double width, double height,
+        double baseX, double baseY, double tipX, double tipY, double thickness, double angleDeg)
+    {
+        var slot = Rect(x, y, width, height);
+        slot["index"] = index;
+        slot["label"] = label;
+        slot["value"] = value;
+
+        // How far up the scale this datum reached, 0 to 1 — how many floors the tower gets, how full
+        // the bottle is, how many icons to repeat. Comparable across forms and across charts.
+        slot["fraction"] = double.IsFinite(fraction) ? Math.Clamp(fraction, 0d, 1d) : 0d;
+
+        slot["baseX"] = baseX;
+        slot["baseY"] = baseY;
+        slot["tipX"] = tipX;
+        slot["tipY"] = tipY;
+        slot["length"] = Math.Sqrt((tipX - baseX) * (tipX - baseX) + (tipY - baseY) * (tipY - baseY));
+        slot["thickness"] = thickness;
+        slot["angleDeg"] = angleDeg;
+        return slot;
+    }
+
+    static double Fraction(double value, double min, double max) =>
+        Math.Abs(max - min) < double.Epsilon ? 0d : (value - min) / (max - min);
 
     static Dictionary<string, object> Rect(double x, double y, double width, double height) =>
         new()

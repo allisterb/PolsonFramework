@@ -424,6 +424,42 @@ What separates a crafted piece from a flat one:
 - **Diegetic data**: charts drawn as instruments *of* the scene — a dial on the sheet, a constellation,
   a measuring cup — rather than panels floating over it.
 
+### 6a. Diegetic data, in practice: the slot armature
+
+> **Implemented by**: `model.slots` on every `Chart.*` construction.
+
+This is the bullet above made buildable, and for advertising and brand work it is the most useful
+thing in the toolkit. **A chart model is an armature, not a picture.** Every one carries `slots` — one
+per mark, saying where it stands (`baseX`, `baseY`), how big it is (`thickness`, `length`), which way
+it grows (`angleDeg`), and how far up the scale it reached (`fraction`, 0 to 1).
+
+A rectangle is the dullest thing you can put in that box. Put a skyscraper there and a column chart of
+record heights becomes a skyline; put a filling bottle, a stack of coins, a tree, a rocket. The
+graphic still has a zero baseline and a lie factor of 1 underneath, which is the point — **the
+audience gets the picture and the client gets a defensible chart, from the same construction.**
+
+```js
+for (const slot of chart.slots) {
+    const floors = Math.round(4 + slot.fraction * 22);       // taller value, more storeys
+    drawTower(ctx, slot.baseX, slot.baseY, slot.thickness, slot.length, floors);
+}
+```
+
+Three things make it worth using rather than positioning marks by hand:
+
+- **It is the same in every form.** `angleDeg` is 0 for up and 90 for right, so a mark routine written
+  for a column chart runs unchanged on a bar chart or a dot chart. A house style survives a change of
+  form.
+- **`fraction` is a scale position, not a rank.** It answers *how full*, which is what a custom mark
+  needs. Note that with a niced maximum above the data, the largest value does not reach 1 — compare
+  values if you need "the biggest", or pass an explicit `max`.
+- **A waffle's slots are its cells**, which is the isotype idiom: a hundred little figures rather than
+  a hundred squares.
+
+> [!TIP]
+> `Chart.drawChart(...)` fills plain rectangles. It is for a draft, to see the numbers land. It is not
+> what a finished piece should be using.
+
 ### Pick one named pattern, and say which
 
 ```

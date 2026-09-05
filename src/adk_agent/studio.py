@@ -1311,7 +1311,10 @@ def build_app(project_dir: str | Path, *, name: str | None = None, **kwargs) -> 
             StudioWatchdog(
                 role_seconds={agent: budget.seconds for agent, budget in plan.items()},
                 toolset=next((t for t in root.tools if isinstance(t, McpToolset)), None),
-                advisor_tool=ADVISOR_NAME,
+                # None in a single-agent app: `build` only attaches the advisor where there are
+                # roles, so naming it there would direct an agent at a tool it does not have. A live
+                # logo run was told to call `ask_facilitator` and had no such tool.
+                advisor_tool=ADVISOR_NAME if roles_in(project) else None,
             )
         ],
     )

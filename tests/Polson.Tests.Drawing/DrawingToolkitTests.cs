@@ -1,4 +1,4 @@
-namespace Polson.Tests.Drawing;
+﻿namespace Polson.Tests.Drawing;
 
 using System;
 using System.Collections;
@@ -1165,6 +1165,133 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.NotNull(result);
         Assert.NotNull(result.ImageBytes);
         Assert.True(result.ImageBytes.Length > 1000);
+    }
+    #endregion
+
+    #region Mannequin Posing Tests
+    /// <summary>
+    /// A pose re-places limbs from joint angles without disturbing the canon's proportions.
+    /// </summary>
+    /// <remarks>
+    /// The property that matters is that posing is <b>additive</b>: a figure with no pose, or with an
+    /// empty one, must be the figure the proportional construction always produced. Otherwise every
+    /// drawing made before posing existed would quietly change, and the two constructions would have
+    /// to be kept in step forever.
+    /// </remarks>
+    [Fact]
+    public void TestAnEmptyPoseLeavesTheFigureExactlyAsItWas()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var plain = toolkit.CreateMannequinFigure(300, 100, 320);
+        var empty = toolkit.CreateMannequinFigure(300, 100, 320,
+            new Dictionary<string, object?> { ["pose"] = new Dictionary<string, object?>() });
+
+        foreach (var joint in new[] { "head", "neck", "sternum", "clavicles", "ribcage", "navel",
+                                      "pelvis", "crotch", "leftArm", "rightArm", "leftLeg", "rightLeg" })
+        {
+            Assert.Equal(Json(plain[joint]), Json(empty[joint]));
+        }
+    }
+
+    [Fact]
+    public void TestPosingOneLimbLeavesTheOthersAlone()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var plain = toolkit.CreateMannequinFigure(300, 100, 320);
+        var posed = toolkit.CreateMannequinFigure(300, 100, 320, new Dictionary<string, object?>
+        {
+            ["pose"] = new Dictionary<string, object?>
+            {
+                ["leftArm"] = new Dictionary<string, object?> { ["shoulderDeg"] = 0f }
+            }
+        });
+
+        Assert.NotEqual(Json(plain["leftArm"]), Json(posed["leftArm"]));
+        Assert.Equal(Json(plain["rightArm"]), Json(posed["rightArm"]));
+        Assert.Equal(Json(plain["leftLeg"]), Json(posed["leftLeg"]));
+    }
+
+    /// <summary>An omitted angle keeps the standing figure's own value for that joint.</summary>
+    [Fact]
+    public void TestAnOmittedAngleFallsBackToTheStandingFigure()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var plain = toolkit.CreateMannequinFigure(300, 100, 320);
+        var posed = toolkit.CreateMannequinFigure(300, 100, 320, new Dictionary<string, object?>
+        {
+            ["pose"] = new Dictionary<string, object?>
+            {
+                ["leftArm"] = new Dictionary<string, object?> { ["elbowDeg"] = 70f }
+            }
+        });
+
+        var before = Arm(plain, "leftArm");
+        var after = Arm(posed, "leftArm");
+
+        // Only the elbow was named, so the upper arm is untouched and the forearm has swung.
+        Assert.Equal(Json(before["shoulder"]), Json(after["shoulder"]));
+        Assert.Equal(Json(before["elbow"]), Json(after["elbow"]));
+        Assert.NotEqual(Json(before["wrist"]), Json(after["wrist"]));
+    }
+
+    /// <summary>Posing rotates segments; it never stretches them.</summary>
+    [Fact]
+    public void TestSegmentLengthsSurviveAPose()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var plain = toolkit.CreateMannequinFigure(300, 100, 320);
+        var posed = toolkit.CreateMannequinFigure(300, 100, 320, new Dictionary<string, object?>
+        {
+            ["pose"] = new Dictionary<string, object?>
+            {
+                ["spineDeg"] = 18f,
+                ["leftArm"] = new Dictionary<string, object?> { ["shoulderDeg"] = -40f, ["elbowDeg"] = 55f },
+                ["leftLeg"] = new Dictionary<string, object?> { ["hipDeg"] = 40f, ["kneeDeg"] = 60f }
+            }
+        });
+
+        foreach (var (limb, a, b) in new[] { ("leftArm", "shoulder", "elbow"), ("leftArm", "elbow", "wrist"),
+                                             ("leftLeg", "hip", "knee"), ("leftLeg", "knee", "ankle") })
+        {
+            Assert.Equal(Distance(Arm(plain, limb), a, b), Distance(Arm(posed, limb), a, b), 3);
+        }
+    }
+
+    /// <summary>The spine leans the upper body over the pelvis, and takes the arms with it.</summary>
+    /// <remarks>
+    /// The arms have to follow: an arm hangs from a shoulder, and a shoulder that has moved leaves the
+    /// arm behind unless the whole chain rotates. The pelvis is the pivot, so it must not move at all.
+    /// </remarks>
+    [Fact]
+    public void TestSpineLeanMovesTheUpperBodyAndNotThePelvis()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var plain = toolkit.CreateMannequinFigure(300, 100, 320);
+        var leaned = toolkit.CreateMannequinFigure(300, 100, 320, new Dictionary<string, object?>
+        {
+            ["pose"] = new Dictionary<string, object?> { ["spineDeg"] = 18f }
+        });
+
+        Assert.NotEqual(Json(plain["head"]), Json(leaned["head"]));
+        Assert.NotEqual(Json(plain["ribcage"]), Json(leaned["ribcage"]));
+        Assert.NotEqual(Json(plain["leftArm"]), Json(leaned["leftArm"]));
+        Assert.Equal(Json(plain["pelvis"]), Json(leaned["pelvis"]));
+        Assert.Equal(Json(plain["leftLeg"]), Json(leaned["leftLeg"]));
+    }
+
+    private static string Json(object? value) =>
+        System.Text.Json.JsonSerializer.Serialize(value);
+
+    private static IDictionary<string, object?> Arm(Dictionary<string, object?> figure, string limb) =>
+        (IDictionary<string, object?>)figure[limb]!;
+
+    private static double Distance(IDictionary<string, object?> limb, string a, string b)
+    {
+        var pa = (IDictionary<string, object?>)limb[a]!;
+        var pb = (IDictionary<string, object?>)limb[b]!;
+        double dx = Convert.ToDouble(pb["x"]) - Convert.ToDouble(pa["x"]);
+        double dy = Convert.ToDouble(pb["y"]) - Convert.ToDouble(pa["y"]);
+        return Math.Sqrt(dx * dx + dy * dy);
     }
     #endregion
 }

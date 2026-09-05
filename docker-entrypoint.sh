@@ -64,11 +64,21 @@ if [ -n "${POLSON_SEED_PROJECT:-}" ]; then
             seed_test="--test"
         fi
 
+        # Minutes for the whole commission, overriding the workflow's own default. Worth setting on
+        # Cloud Run: a workflow default plus its breaker grace can exceed the **3600s request
+        # timeout**, and then the wall kills the run before the breaker halts it cleanly — the exact
+        # failure the breaker exists to replace. `comic_studio` defaults to 90, putting its breaker
+        # at 105 against a 60-minute ceiling.
+        seed_deadline=""
+        if [ -n "${POLSON_SEED_DEADLINE:-}" ]; then
+            seed_deadline="--deadline ${POLSON_SEED_DEADLINE}"
+        fi
+
         python /app/adk_agent/newproject.py "${POLSON_SEED_PROJECT}" \
             --workflow "${POLSON_SEED_WORKFLOW:-logo}" \
             --prompt "${POLSON_SEED_PROMPT:-a mark for a small independent studio}" \
             --projects-dir "${POLSON_PROJECTS_DIR:-/app/projects}" \
-            ${seed_test} \
+            ${seed_test} ${seed_deadline} \
             || echo "entrypoint: WARNING - seeding failed; the service starts without it" >&2
     fi
 fi

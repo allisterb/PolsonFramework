@@ -1,4 +1,4 @@
-namespace Polson.MCPServer;
+﻿namespace Polson.MCPServer;
 
 using System;
 using System.Collections.Generic;
@@ -74,9 +74,16 @@ public class PolsonManuals
         index.AppendLine();
         index.AppendLine("""
             These manuals are the **bridge between the studio's reference library and the drawing SDK**. Each one
-            distils a source text (Loomis, *How to Draw Comics the Marvel Way*, Bokhua's
-            *Principles of Logo Design*, Tubik) into formulas, construction procedures, and the **named SDK calls
-            that implement them**.
+            distils a source text — Loomis for construction and light, Janson for inking and for staging a
+            page, Glebas for depth and screen continuity, Hampton, Faragasso and Norling, Bokhua and Tubik
+            for logo work — into formulas, construction procedures, and the **named SDK calls that
+            implement them**. Every manual names its own sources in its header; that list is the
+            authority, and this sentence is only a summary of it.
+
+            *How to Draw Comics the Marvel Way* was named here for a long time and is cited by **no
+            manual at all** — only its inking chapter was ever read, and `janson-inking` supplanted it.
+            An agent told a book is a source will trust an answer drawn from it, so the claim is
+            removed rather than left standing.
 
             Use them to decide *what* to draw and *why*; use `polson://sdk/*` for the exact call signatures.
 

@@ -2054,6 +2054,83 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Full-Body Anatomy, Mannequins & Expressions
+    #region Posing
+    /// <summary>Length of a limb segment, so a pose keeps the proportions the canon gave it.</summary>
+    static float SegmentLength(Point2D from, Point2D to) =>
+        MathF.Sqrt((to.X - from.X) * (to.X - from.X) + (to.Y - from.Y) * (to.Y - from.Y));
+
+    /// <summary>Screen angle of a segment in degrees, measured the way <see cref="AlongSegment"/> reads them.</summary>
+    static float SegmentAngle(Point2D from, Point2D to) =>
+        MathF.Atan2(to.Y - from.Y, to.X - from.X) * 180f / MathF.PI;
+
+    /// <summary>The point <paramref name="length"/> away from <paramref name="from"/> at a screen angle.</summary>
+    /// <remarks>
+    /// Screen degrees, so <b>90 is straight down</b> — the direction gravity and a hanging arm both
+    /// go. Chosen over the mathematical convention because every default in this toolkit is a
+    /// standing figure, and an author reasoning about a pose is reasoning about the drawing.
+    /// </remarks>
+    static Point2D AlongSegment(Point2D from, float length, float degrees)
+    {
+        var r = degrees * MathF.PI / 180f;
+        return new Point2D(from.X + MathF.Cos(r) * length, from.Y + MathF.Sin(r) * length);
+    }
+
+    /// <summary>Rotates a point about a pivot, for leaning the upper body over the pelvis.</summary>
+    static Point2D RotateAbout(Point2D point, Point2D pivot, float degrees)
+    {
+        if (degrees == 0f) return point;
+        var r = degrees * MathF.PI / 180f;
+        float cos = MathF.Cos(r), sin = MathF.Sin(r), dx = point.X - pivot.X, dy = point.Y - pivot.Y;
+        return new Point2D(pivot.X + dx * cos - dy * sin, pivot.Y + dx * sin + dy * cos);
+    }
+
+    static float? PoseAngle(IDictionary? pose, string key) =>
+        pose != null && pose.Contains(key) && pose[key] != null
+            ? Convert.ToSingle(pose[key], CultureInfo.InvariantCulture)
+            : null;
+
+    /// <summary>
+    /// Re-places one three-segment limb from joint angles, keeping the segment lengths the
+    /// proportional construction produced.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Forward kinematics, and deliberately the simplest kind: the <paramref name="rootKey"/> angle is
+    /// <b>absolute</b> on screen, the <paramref name="bendKey"/> angle is <b>relative</b> to the segment
+    /// above it — which is what a joint actually is. An elbow does not have an opinion about the
+    /// horizon; it has an opinion about the upper arm.
+    /// </para>
+    /// <para>
+    /// <b>Every omitted angle falls back to the default figure's own value</b>, recovered from the
+    /// points the canon already computed. So a limb with no pose is bit-identical to the unposed
+    /// figure, and a limb given only <c>elbowDeg</c> keeps the standing shoulder. That is what makes
+    /// this additive rather than a second construction to keep in step with the first.
+    /// </para>
+    /// <para>
+    /// The hand and foot keep their own offset from the segment before them, so they swing with the
+    /// forearm and shin rather than staying pinned downward.
+    /// </para>
+    /// </remarks>
+    static (Point2D Mid, Point2D End, Point2D Tip) PoseLimb(
+        IDictionary? pose, string rootKey, string bendKey,
+        Point2D anchor, Point2D defaultMid, Point2D defaultEnd, Point2D defaultTip)
+    {
+        if (pose == null) return (defaultMid, defaultEnd, defaultTip);
+
+        var upper = SegmentAngle(anchor, defaultMid);
+        var lower = SegmentAngle(defaultMid, defaultEnd);
+        var tipOffset = SegmentAngle(defaultEnd, defaultTip) - lower;
+
+        var rootDeg = PoseAngle(pose, rootKey) ?? upper;
+        var bendDeg = PoseAngle(pose, bendKey) ?? lower - upper;
+
+        var mid = AlongSegment(anchor, SegmentLength(anchor, defaultMid), rootDeg);
+        var end = AlongSegment(mid, SegmentLength(defaultMid, defaultEnd), rootDeg + bendDeg);
+        var tip = AlongSegment(end, SegmentLength(defaultEnd, defaultTip), rootDeg + bendDeg + tipOffset);
+        return (mid, end, tip);
+    }
+    #endregion
+
     public Dictionary<string, object?> CreateMannequinFigure(float originX, float originY, float totalHeight = 560f, object? options = null)
     {
         var opt = JsInterop.AsDict(options);
@@ -2124,10 +2201,62 @@ public class ConstructiveDrawingToolkit
         var rightAnkle = new Point2D(rightKnee.X + H * 0.05f, originY + H * 7.8f);
         var rightFoot = new Point2D(rightAnkle.X + H * 0.15f, originY + H * 8.0f);
 
+        // A pose re-places the limbs from joint angles. Applied *after* the canon has laid the figure
+        // out, so the segment lengths are the canon's and only the directions change — and a limb the
+        // pose does not mention is left exactly where the standing figure put it.
+        var pose = JsInterop.AsDict(opt != null && opt.Contains("pose") ? opt["pose"] : null);
+        var leftArmPose = JsInterop.AsDict(pose != null && pose.Contains("leftArm") ? pose["leftArm"] : null);
+        var rightArmPose = JsInterop.AsDict(pose != null && pose.Contains("rightArm") ? pose["rightArm"] : null);
+        var leftLegPose = JsInterop.AsDict(pose != null && pose.Contains("leftLeg") ? pose["leftLeg"] : null);
+        var rightLegPose = JsInterop.AsDict(pose != null && pose.Contains("rightLeg") ? pose["rightLeg"] : null);
+
+        // The spine leans the whole upper body over the pelvis — ribcage, shoulders, neck and head,
+        // and the arms with them, because an arm hangs from a shoulder that has moved. Applied before
+        // the limbs so an arm the pose does not mention still swings with the lean instead of being
+        // left behind in the standing position.
+        //
+        // Positive leans the figure's own left (screen right, toward increasing x at the shoulders).
+        // A separate `neckDeg` counter-rotates the head, which is what keeps a leaning figure looking
+        // where it was looking rather than tipping its gaze with its chest.
+        var spineDeg = PoseAngle(pose, "spineDeg") ?? 0f;
+        var neckDeg = PoseAngle(pose, "neckDeg") ?? 0f;
+        if (spineDeg != 0f || neckDeg != 0f)
+        {
+            var pivot = pelvisCenter;
+            headCenter = RotateAbout(headCenter, pivot, spineDeg);
+            neckCenter = RotateAbout(neckCenter, pivot, spineDeg);
+            sternalNotch = RotateAbout(sternalNotch, pivot, spineDeg);
+            ribcageCenter = RotateAbout(ribcageCenter, pivot, spineDeg);
+            navel = RotateAbout(navel, pivot, spineDeg);
+            leftShoulder = RotateAbout(leftShoulder, pivot, spineDeg);
+            rightShoulder = RotateAbout(rightShoulder, pivot, spineDeg);
+            leftElbow = RotateAbout(leftElbow, pivot, spineDeg);
+            leftWrist = RotateAbout(leftWrist, pivot, spineDeg);
+            leftHand = RotateAbout(leftHand, pivot, spineDeg);
+            rightElbow = RotateAbout(rightElbow, pivot, spineDeg);
+            rightWrist = RotateAbout(rightWrist, pivot, spineDeg);
+            rightHand = RotateAbout(rightHand, pivot, spineDeg);
+
+            // The head turns about the neck, on top of whatever the spine did.
+            headCenter = RotateAbout(headCenter, neckCenter, neckDeg);
+        }
+
+        (leftElbow, leftWrist, leftHand) = PoseLimb(leftArmPose, "shoulderDeg", "elbowDeg",
+            leftShoulder, leftElbow, leftWrist, leftHand);
+        (rightElbow, rightWrist, rightHand) = PoseLimb(rightArmPose, "shoulderDeg", "elbowDeg",
+            rightShoulder, rightElbow, rightWrist, rightHand);
+        (leftKnee, leftAnkle, leftFoot) = PoseLimb(leftLegPose, "hipDeg", "kneeDeg",
+            leftHip, leftKnee, leftAnkle, leftFoot);
+        (rightKnee, rightAnkle, rightFoot) = PoseLimb(rightLegPose, "hipDeg", "kneeDeg",
+            rightHip, rightKnee, rightAnkle, rightFoot);
+
         return new Dictionary<string, object?>
         {
             ["headUnit"] = H,
             ["totalHeight"] = totalHeight,
+            // Echoed so a caller can read back what the figure is doing — and so a later pass can
+            // reproduce or nudge a pose without having kept the arguments that made it.
+            ["posed"] = pose != null,
             ["head"] = new Dictionary<string, object?> { ["center"] = ToDict(headCenter), ["rx"] = H * 0.36f, ["ry"] = H * 0.50f },
             ["neck"] = ToDict(neckCenter),
             ["sternum"] = ToDict(sternalNotch),

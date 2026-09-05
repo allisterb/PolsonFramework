@@ -150,7 +150,7 @@ class StudioWatchdog(BasePlugin):
         self,
         role_seconds: dict[str, float] | None = None,
         toolset=None,
-        advisor_tool: str = "ask_facilitator",
+        advisor_tool: str | None = "ask_facilitator",
         name: str = "studio_watchdog",
     ):
         super().__init__(name=name)
@@ -308,18 +308,37 @@ class StudioWatchdog(BasePlugin):
 
         Appended rather than substituted: the role still needs the render path and the logs it
         called for. Taking those away to deliver advice would strand it.
+
+        **Two result shapes, and getting this wrong made the whole mechanism inert.** An MCP tool
+        returns `{"content": [{"type": "text", ...}], "isError": bool}`; a `FunctionTool` — which is
+        what `write_script`, `edit_script`, `peek` and `read_file` are — returns a plain dict of its
+        own fields. The first version only knew the MCP shape, so it logged *"could not attach a
+        directive to a dict result"* and delivered nothing. Both live runs tripped exactly that:
+        the trigger fired on a `write_script` result, the advice was dropped, and `ask_facilitator`
+        was consequently never called by anybody.
         """
-        text = (
-            f"[studio runtime] Stop and ask before your next edit — {reason}. "
+        advice = (
             f"Call `{self._advisor}` with what you are trying to achieve, what you have tried, and "
             f"the path of your latest render. You will get a direction back from someone who has "
             f"looked at it with fresh eyes. Do not make another edit first."
+            if self._advisor
+            # No advisor to call — a single-agent run has nobody to ask, and naming a tool that is
+            # not on the agent's list would be worse than saying nothing.
+            else "Stop, and say in a `Stage.note` what you are stuck on and what you will do "
+                 "differently. Repeating the last edit is not it."
         )
-        try:
-            amended = dict(result)
-            amended["content"] = [*result["content"], {"type": "text", "text": text}]
-            return amended
-        except (KeyError, TypeError):
-            # An unexpected result shape is not worth failing the tool call over.
+        text = f"[studio runtime] Stop before your next edit — {reason}. {advice}"
+
+        if not isinstance(result, dict):
             _LOG.warning("watchdog could not attach a directive to a %s result", type(result).__name__)
             return None
+
+        amended = dict(result)
+        content = amended.get("content")
+        if isinstance(content, list):
+            amended["content"] = [*content, {"type": "text", "text": text}]
+        else:
+            # A FunctionTool's own dict. The model reads the whole thing, so a field is enough — and
+            # a distinctive key is easier to find in a transcript than prose merged into another.
+            amended["studio_directive"] = text
+        return amended

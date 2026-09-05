@@ -94,6 +94,7 @@ class GenerateError(RuntimeError):
 def _run_create_project(
     projects_dir: Path, project_id: str, workflow: str,
     prompt: str | None, type_: str | None, force: bool, test: bool = False,
+    deadline: int | None = None,
 ) -> Path:
     """Shells out to the one thing that knows how to build a project."""
     if not CLI_DLL.is_file():
@@ -120,6 +121,13 @@ def _run_create_project(
     # escape it, so an ADK test run is isolated by tool design rather than by host policy.
     if test:
         args += ["--test"]
+    # Minutes for the whole commission. Worth setting explicitly on this runtime: a
+    # workflow default plus its breaker grace can exceed **Cloud Run's 3600s request
+    # timeout**, and then the wall kills the run before the breaker can halt it cleanly —
+    # which is the exact failure the breaker exists to replace. `comic_studio` defaults to
+    # 90, so its breaker sits at 105 against a 60-minute ceiling.
+    if deadline is not None:
+        args += ["--deadline", str(deadline)]
 
     done = subprocess.run(args, capture_output=True, text=True)
     if done.returncode != 0:
@@ -158,6 +166,7 @@ def write_app(project_dir: Path, app_name: str, apps_dir: Path = APPS_DIR) -> Pa
 def create(
     project_id: str, *, workflow: str = "logo", prompt: str | None = None,
     type_: str | None = None, force: bool = False, test: bool = False,
+    deadline: int | None = None,
     projects_dir: Path = PROJECTS_DIR, apps_dir: Path = APPS_DIR,
 ) -> tuple[Path, Path]:
     """Generates the project and its app. Returns `(project_dir, app_package)`."""
@@ -166,7 +175,8 @@ def create(
             f"{project_id!r} cannot be an app name — it must start with a letter and hold only "
             "letters, digits, underscores and dashes."
         )
-    project = _run_create_project(projects_dir, project_id, workflow, prompt, type_, force, test)
+    project = _run_create_project(
+        projects_dir, project_id, workflow, prompt, type_, force, test, deadline)
     return project, write_app(project, project_id, apps_dir)
 
 
@@ -181,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--test", action="store_true",
                         help="Run the workflow as an evaluation of the framework as well as a "
                              "commission: the agent reports friction and gaps in findings.md.")
+    parser.add_argument("--deadline", type=int,
+                        help="Minutes for the whole commission. Omit for the workflow default.")
     parser.add_argument("--projects-dir", type=Path, default=PROJECTS_DIR)
     args = parser.parse_args(argv)
 
@@ -188,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
         project, package = create(
             args.project_id, workflow=args.workflow, prompt=args.prompt,
             type_=args.type_, force=args.force, test=args.test,
-            projects_dir=args.projects_dir)
+            deadline=args.deadline, projects_dir=args.projects_dir)
     except GenerateError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

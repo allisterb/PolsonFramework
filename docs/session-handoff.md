@@ -7,8 +7,8 @@ dashboard needed already existed — and that once you can watch a run, you star
 **Tests: 1,232 .NET — all passing** (Drawing 406, MCPServer 464, CLI 268, ExtendedMind 94).
 The previous handoff is superseded; its open items are carried forward at the end.
 
-> **§12 is the current state** for the drawing corpus and where a session continuing that work should
-> start. §§1–8 are the fifth session (observability, `scriptFile`, the Claude profile); §§9–12 are the
+> **§13 is the current state** for the drawing corpus and where a session continuing that work should
+> start; §12 is the session before it and remains accurate as history. §§1–8 are the fifth session (observability, `scriptFile`, the Claude profile); §§9–12 are the
 > sixth (cs-5 findings, encode cost, the Guy exclusion, and re-sourcing the manuals to Loomis,
 > Norling, Faragasso, Hampton and Janson).
 
@@ -1110,6 +1110,113 @@ believing either.
   stale offsets after an earlier edit, once from a brace-walker running past an expression-bodied
   member into the next method. Both times the script's own guard caught it before writing. Match on
   the signature and handle `=> …;` members.
+
+---
+
+## 13. The comics corpus — staging, drapery, the comic head, action, and a posable figure
+
+**Session of 2026-09-04/05. Tests: 1,292 .NET — Drawing 434, MCPServer 486, CLI 278, ExtendedMind 94.**
+This is the state to pick up from for drawing work; §12 remains accurate as the session before it.
+
+### What changed
+
+| | |
+| :--- | :--- |
+| **Manual 20** | Staging, shots and page layout — Janson, *Pencilling* chs. 8-11 |
+| **Manual 21** | Depth, proximity, screen continuity — Glebas, *Directing the Story* chs. 8-10 |
+| **Manual 22** | Drapery as geometry — Cliff Young, *Drawing Drapery from Head to Toe* |
+| **Manual 23** | The comic head — Lee & Buscema, *Marvel Way* ch. 8 |
+| **Manual 24** | Action: the centre line and the extremes — *Marvel Way* ch. 6 |
+| **`createMannequinFigure`** | now takes a `pose` — joint angles for four limbs, plus `spineDeg` / `neckDeg` |
+
+### The diagnosis this started from, because it shapes everything after it
+
+The toolkit could not draw a storyboard panel in the idiom of a real one, and the reason was **not**
+missing marks — tapered ink, hatching, halftone and tonal modelling were all present. Two things
+were missing, and both were found by *trying* rather than by reading:
+
+1. **No composition layer for the head.** `createLoomisHead` gives landmarks and `drawComicEye` and
+   its siblings draw features, but **nothing unions them** into a head with a silhouette, an ear and
+   a neck. Two attempts at a face failed in different ways. That gap is unchanged and is now named
+   in Manual 23 §6.
+2. **A corpus skewed to the portrait idiom.** Every figure and head source was naturalistic
+   illustration. `janson-pencilling` — the comics *staging* book — had been scanned, ledgered, and
+   then cited in exactly **one** manual, not for staging. Across all 19 manuals at the time, "page
+   layout", "storyboard" and "thumbnail" appeared **zero** times.
+
+The five manuals close the second gap. The first is still open.
+
+### The measurable findings, which are the useful part
+
+- **Loomis makes a head 6.0 eye-widths wide; Lee & Buscema make it 5.** Our own construction's
+  comment cites Plate 19 for six, so this is a documented disagreement between schools rather than a
+  bug. The comic head is narrower relative to its eye (*the eye is bigger*) and carries a mouth
+  **about twice as wide**. Manual 23 §1.
+- **The extremes rule is computable.** Across five stages of a punch, departure from the standing
+  figure runs `37, 22, 8, 22, 53` — the first and last *are* the extremes, exactly as *Marvel Way*
+  says. Manual 24 §4 asserts it with a `Stage.check`.
+- **Glebas's horizon rule is an assertion, not a principle.** The horizon cuts every equal-height
+  figure at the same point on the body; fix the fraction, derive each height from its ground
+  position, and four figures at 182/291/418/527 px all cut at exactly 0.550. Manual 21 §1.
+- **Young's drapery is a cylinder model**, and the cylinder is already the mannequin's unit. Crushed
+  gives ring folds; twisted gives folds that *describe action*; bent radiates from the joint, four
+  distinct ring folds at the elbow. Manual 22.
+
+### Posing — what it does, and the one thing it does not
+
+`createMannequinFigure(x, y, h, { pose: { spineDeg, neckDeg, leftArm: { shoulderDeg, elbowDeg }, ... } })`.
+Screen degrees, **90 is straight down**; root angles absolute, bends relative to the segment above.
+
+**Additive by construction, and tested** (5 tests in `DrawingToolkitTests`). Every omitted angle falls
+back to the standing figure's own value, recovered from the points the canon already computed — so an
+unposed limb is bit-identical to before, and segment lengths are the canon's, never stretched.
+`spineDeg` takes the arms with it, because an arm hangs from a shoulder that moved. The drawers needed
+no change: they read joints from the dictionary.
+
+> **The gap, and the next thing worth building.** *Marvel Way* ch. 6 says the **centre line is drawn
+> first** and the figure built around it. Our API is the reverse — joints first, no line of action.
+> Measured: centre-line swing across five very different poses is `1.1, 1.1, 1.1, 1.1, 5.2`,
+> essentially flat, because **`spineDeg` rotates the torso rigidly and a rigid rotation moves a line
+> without curving it**. The figure has a hinge where the book asks for a swing. A `lineOfAction`
+> option — a C or an S with an amplitude, distributing curvature through pelvis, sternum and head —
+> is the highest-value addition the figure toolkit could take. Hampton's C/S/I (Manual 05) and
+> Buscema's centre line are the same idea from two traditions, which is unusually strong support.
+
+### Defects found on the way
+
+- **`PolsonManuals.cs` claimed the manuals distil *How to Draw Comics the Marvel Way*** — and no
+  manual cited it; it was the only such name in the list. **Fixed:** the index now points at each
+  manual's own source line as the authority.
+- **`drawFeathering` is *parallel* hatching, not a fan.** It reads as though it radiates from its
+  `origin` and does not. Used for drapery folds it silently draws plausible parallel verticals that
+  state nothing. **There is no fan primitive** — build one from `drawTaperedStroke`. Manual 22 §2,
+  and the ledger row carries the correction because an earlier draft of it was wrong.
+- **A malformed colour is silently accepted.** `ctx.strokeStyle = '#6e6counts'` becomes `#000000`
+  with no error — hit twice in three scripts by someone who already knew about it. A misspelled
+  *member* throws with "did you mean"; a malformed *colour value* does not. **Not fixed.**
+- **`head.unit` is an object** `{H, W, eyeW, thirdH}`, not a number. Reading it as one gives `NaN` in
+  silence — exactly the trap the execution model warns about.
+
+### Reference ledger — three rows added or settled
+
+`drawing-drapery.pdf` (clean; Dover, no copyright statement, treat as the Bokhua row) ·
+`DirectingTheStory.pdf` (clean, but **names retrieval systems explicitly** — Faragasso class, so
+distil and cite and **never put its text in the corpus**) · `Marvel Way` (terms settled as far as the
+artifact allows — **the copyright page is absent from the scan**; contents now read and recorded,
+with the five duplicate chapters marked as not worth re-distilling).
+
+**`reference/` is gitignored including its README**, so the ledger lives only on this machine. The
+user is aware and prefers `reference/` excluded by default.
+
+### Where to pick up
+
+1. **`lineOfAction` on the mannequin** — see the box above. The rest of the figure work waits on it.
+2. **A composed head** — `drawHeadSolid(ctx, head, options)` unioning cranium and jaw into one
+   silhouette, placing the ear on the construction's own ear point, adding a neck, shading from a
+   light direction. Specified almost line by line across Loomis and Janson.
+3. ***Marvel Way* ch. 7, Foreshortening** — the last of the three non-duplicate chapters, and the
+   only figure-in-perspective source in the corpus.
+4. **The two silent-failure fixes** — the colour parse, and `drawFeathering`'s misleading `origin`.
 
 ---
 

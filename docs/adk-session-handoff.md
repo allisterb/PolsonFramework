@@ -1,9 +1,10 @@
 # ADK runtime — session handoff, 2026-09-04
 
-> **Status: the ADK studio is deployed on Cloud Run and has produced real design work there.**
-> A single-agent logo brief ran end to end in the container — 24 tool calls, 166 seconds, a finished
-> mark. The multi-agent `comic_studio` pipeline reaches all four roles but does not yet compose;
-> that is the open work, and the fixes are written but unverified.
+> **Status: the ADK studio is deployed on Cloud Run, and the multi-agent pipeline now composes.**
+> A single-agent logo brief ran end to end in the container. `comic_studio` has since run three times
+> under `--test`: all four roles, with the **inker and colorist loading the previous stage** rather
+> than drawing afresh — the defect this document opened with, closed and confirmed on two runs (§4bf).
+> Time budgets, a circuit breaker and a supervising watchdog are built, deployed and exercised.
 >
 > Read `src/adk_agent/README.md` first for what the runtime *is*. This document is what a session
 > picking it up needs to know that the code does not say.
@@ -16,10 +17,10 @@
 | :--- | :--- |
 | Service | `polson-studio`, project `polson`, region `us-east4` |
 | URL | `https://polson-studio-yhijv6wbxq-uk.a.run.app` |
-| Revision | `polson-studio-00015-fm6` |
+| Revision | `polson-studio-00019-rql` — deployed and **dormant** (scales to zero, no idle cost) |
 | Access | **Private.** `-H "Authorization: Bearer $(gcloud auth print-identity-token)"` |
 | Config | `--timeout=3600 --memory=2Gi --cpu=2 --concurrency=4 --max-instances=1` |
-| Env | `ADK_MAX_LLM_CALLS=200`, `POLSON_SEED_PROJECT=lanternrun`, `POLSON_SEED_WORKFLOW=comic_studio` |
+| Env | `ADK_MAX_LLM_CALLS=500`, `POLSON_SEED_PROJECT=cstest`, `POLSON_SEED_WORKFLOW=comic_studio`, `POLSON_SEED_TEST=1`, `POLSON_SEED_DEADLINE=40`, `POLSON_SEED_PROMPT=<a night-market chase>` |
 
 **`gcloud` does not work on this machine without `CLOUDSDK_PYTHON`.** The Windows Store `python`
 alias intercepts it and every command dies with *"Python was not found"*:
@@ -47,9 +48,9 @@ The Dockerfile, font and role-file work is committed as `4619bc0 Agent role fixe
 fonts.`. **The role-file changes are deployed but unverified** — revision 15 carries them, and no run
 has tested whether they work. See §4a.
 
-Uncommitted at handoff: the time-budget, circuit-breaker and supervision work (§4b, §4bb), and
-this document. Unit-tested, **not deployed** — revision 15 predates it, so nothing in §4b is live
-until the next `gcloud run deploy`.
+**All of §4b through §4bf is committed and deployed** as revision `polson-studio-00019-rql`, which
+is dormant (`maxScale=1`, no `minScale`, so it scales to zero and costs nothing idle). Verified at
+handoff: no builds in progress, no Cloud Run jobs, container shut down cleanly at 22:59.
 
 ---
 
@@ -77,9 +78,11 @@ fallback chains now land on real faces.
 
 ## 4. Open work, in the order I would take it
 
-### 4a. Verify the `comic_studio` role fixes — cheap test first
+### 4a. Verify the `comic_studio` role fixes — **done, see §4bf**
 
-Three defects were found and two fixed; **none of the fixes has been run.**
+Three defects were found and two fixed. **Both fixes are now confirmed by two live runs**
+(§4bf): the inker and colorist load the previous stage, and the pipeline reaches the critic
+inside its deadline. Kept below as the record of what was wrong and why.
 
 1. **Ordering (fixed).** Filenames contradicted stage numbering, so the inker was told to open a
    file the colorist had not made yet. Now `stage1_penciler → stage2_inker → stage3_colorist`.
@@ -378,6 +381,80 @@ else is still refused, `scripts/` is still not writable, and traversal is still 
 `ask_facilitator`, and the role handoff. All three need `comic_studio --test`. This run was
 single-agent, and finished so far inside its deadline that the 75%/90% notices never fired either —
 so the warn path is still unproven against a live model. The breaker correctly stayed out of the way.
+
+### 4bf. `comic_studio --test` on Cloud Run — the pipeline composes, and the watchdog was broken
+
+**Three runs on revisions 18 and 19, 2026-09-04. Revision 19 is deployed and dormant** (no
+`minScale`, so it scales to zero and costs nothing idle).
+
+**The defect this whole session opened with is closed.** The roles now compose — the inker and
+colorist both call `Skia.Image.load` + `drawImage` on the previous stage, across **two** runs:
+
+| role | run 2 | run 3 |
+| :--- | :--- | :--- |
+| penciler | draws first (correct) | draws first |
+| **inker** | **composes** | **composes** |
+| **colorist** | **composes** | **composes** |
+| critic | drew afresh | drew afresh |
+
+Before the role-file fixes the inker had zero `Image.load` and zero `drawImage`. Two data points, so
+this is a pattern rather than a lucky run.
+
+**The watchdog fired correctly and its remedy was silently dropped.** Run 2 logged
+`watchdog critic ... you are 11 minutes into a 8 minute allowance` immediately followed by
+`watchdog could not attach a directive to a dict result`. Cause: `_with_directive` only understood
+MCP's `{"content": [...]}` shape, while `write_script` and `edit_script` are `FunctionTool`s
+returning **plain dicts** — and those are exactly the tools that trip the call counter. So the most
+likely trigger was the one whose advice could never be delivered, which is why `ask_facilitator` had
+never been called by anybody.
+
+**Fixed and verified by rerun with everything else held constant** — same deadline, same brief, same
+project, only the code changed:
+
+| | run 2 (before) | run 3 (after) |
+| :--- | :--- | :--- |
+| watchdog fired | 1x | 2x (critic, facilitator) |
+| directive delivered | **dropped** | **delivered, both times** |
+| `ask_facilitator` called | 0 | **1** |
+| wall clock | 28.5 min | 15.1 min |
+| model calls | 80 | 68 |
+| input tokens | 11.25M | 4.91M |
+| cost (list rates) | ~$2.17 | ~$0.98 |
+
+Run 3's watchdog lines are at 22:42:50 and 22:43:47 and there is **no** `could not attach` line after
+22:07, which is the verification. **Do not claim the fix caused the halving** — one run each, a
+nondeterministic model, and the same brief can vary this much on its own. Three or four runs a side
+would be needed to say anything causal.
+
+**Also fixed:** the watchdog was naming `ask_facilitator` to **single-agent** apps, which do not have
+it — `build` only attaches the advisor where there are roles. A live `logo --test` run was told to
+call a tool that was not on its list.
+
+### Open, and both are live questions rather than speculation
+
+- **Warnings do not change behaviour on their own.** Run 2's critic was warned at 130% of its share
+  and continued to 205%. Run 3's was caught earlier, at 77%. That is the first real evidence for the
+  graceful per-role stop that was deliberately left unwired in §4b — wire it only if further runs
+  show the directive being ignored.
+- **The critic redraws instead of annotating.** Zero `Image.load` in both runs, and the most
+  expensive role in both (33 then 22 model calls). Read its role file before calling it a defect — a
+  critic that renders its own comparison sheets may be behaving correctly.
+- **The facilitator's 15% reserve is too small.** It ran to 244% of its 6-minute share and was itself
+  the second watchdog trip. A role that reviews four stages needs more than a fifth of what one stage
+  gets.
+
+### Operational notes worth not rediscovering
+
+- **`--update-env-vars` splits on punctuation.** A value containing a comma or an ampersand needs the
+  alternate delimiter: `--update-env-vars "^@^KEY=value with, punctuation"`. This bit once live.
+- **Seed the run deliberately.** `POLSON_SEED_TEST=1` and `POLSON_SEED_DEADLINE=<minutes>` are wired
+  through `docker-entrypoint.sh` and `newproject.py`. **Check `POLSON_SEED_PROMPT` before every run**
+  — a stale one from a previous deploy silently gives the new workflow the wrong brief, which
+  happened.
+- **Pick a deadline whose breaker lands under Cloud Run's 3600s request timeout.** `comic_studio`
+  defaults to 90 minutes, putting its breaker at 105 against a 60-minute ceiling — the wall would
+  kill the run before the breaker could halt it cleanly, which is the exact failure the breaker
+  exists to replace. Runs 2 and 3 used `--deadline 40`, breaker at 55.
 
 ### 4c. Mount `src/webapp` on the ADK FastAPI app
 

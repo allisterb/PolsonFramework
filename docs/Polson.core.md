@@ -1565,6 +1565,76 @@ canvas;
 - `Motion.count` → `number` — How many frames are held.
 - `Motion.clear()` — Discards them.
 
+## The Score — `Motion.timeline()`
+
+A **seekable score**. Entries are placed on a timeline and every one is a pure function of the time you ask for, so `tl.seek(t)` states the whole scene at `t` without having played anything before it.
+
+- `Motion.timeline(options?)` → `tl` — A new score. `options` is `{ defaults?: { dur?: number, easing?: fn } }`; `dur` defaults to 500 ms and `easing` to linear.
+
+### Adding to the score
+
+- `tl.tween(from: number, to: number, setter: (v: number) => void, opts?)` → `tl` — A scalar tween: `setter` is called with the eased value on every seek. **This is the case an animated SVG cannot express** — procedural geometry recomputed per frame rather than an attribute a renderer knows how to interpolate.
+- `tl.to(element: SnapElement, attrs: object, opts?)` → `tl` — Tweens attributes from their current values to the ones given. Numbers and colours interpolate; anything else throws, naming the attribute.
+- `tl.set(element: SnapElement, attrs: object, opts?)` → `tl` — A step: the base value before `at`, the given value at and after it. Takes values no tween could interpolate — a font, a dash pattern, a gradient reference.
+- `tl.show(element: SnapElement, opts?)` → `tl` — A visibility window, `{ from, to }`. Omit `to` and it stays visible.
+- `tl.stagger(elements: SnapElement[], attrs: object, opts?)` → `tl` — One `to` per element, each offset by `each` milliseconds (default 100).
+- `tl.label(name: string, at?)` → `tl` — Names a position, defaulting to the current end.
+
+`opts` is `{ at?: number | string, dur?: number, easing?: (n: number) => number, each?: number, from?: number, to?: number }`. All times are **milliseconds**.
+
+### Reading and seeking
+
+- `tl.seek(ms: number)` → `tl` — Applies every entry at `ms`. Chainable.
+- `tl.at(ms: number)` → `tl` — Alias for `seek`; reads better in a render loop.
+- `tl.duration` → `number` — The end of the last entry to finish: the **max** of every `at + dur`, not their sum.
+- `tl.count` → `number` — How many entries.
+- `tl.labels` → `object` — Every label and the millisecond it names.
+
+### The position grammar (`at`)
+
+**Omitted means "at the end of the timeline"** — sequential append, which is what you want most of the time. This is what makes a long score editable: cutting 400 ms from one beat moves everything after it, where absolute numbers would each need hand-editing.
+
+| Form | Meaning |
+| :--- | :--- |
+| `1200` | absolute, 1200 ms |
+| `'+=200'` | 200 ms after the timeline's current end |
+| `'-=200'` | 200 ms before it — an overlap |
+| `'<'` / `'>'` | at the **start** / **end** of the previous entry |
+| `'<+=100'` / `'>-=50'` | offset from the previous start / end |
+| `'chartIn'` | at that label |
+| `'chartIn+=200'` | offset from a label |
+
+`'<'` and `'>'` on an empty timeline are `0`. **An unknown label throws and names itself**, listing the labels that do exist — resolving it to 0 would place the beat at the start of the film and animate happily.
+
+```javascript
+const paper = Snap(480, 270);
+const disc = paper.circle(90, 135, 30).attr({ fill: '#1f6f8b' });
+const bar = paper.rect(60, 200, 0, 14).attr({ fill: '#c9553d' });
+
+const tl = Motion.timeline({ defaults: { dur: 400, easing: mina.easeinout } });
+tl.label('open');
+tl.to(disc, { cx: 240, r: 55 }, { at: 'open' });
+tl.to(disc, { fill: '#c9553d' }, { at: '<+=150', dur: 250 });
+tl.to(bar, { width: 360 }, { at: '>', dur: 500, easing: mina.backout });
+
+for (let i = 0; i * 40 <= tl.duration; i++) { tl.seek(i * 40); Motion.frame(paper); }
+Motion.sheet('artifacts/score-sheet.png', { count: 6, cols: 6, scale: 0.5, fps: 25 });
+paper;
+```
+
+> [!IMPORTANT]
+> **Every entry answers for any `t`, including outside its own window** — before it starts it applies its *from* value, after it ends it holds its *to*. That is what makes seeking absolute: frames can be rendered in any order, a visited time reproduces exactly, and a run can be resumed. Two consequences follow, and both bite in practice:
+>
+> - **Anything you mutate outside the score does not revert on a backwards seek.** Put every state change in the score, or rebuild the scene per frame.
+> - **`to(...)` captures its base value when it is *added*, not when it first runs.** Change the attribute afterwards and the tween still starts from what it captured. This is the only deterministic choice a seekable score has — there is no "first run" to capture at.
+>
+> **Later entries win** where two touch the same property at the same time; they apply in the order you added them.
+
+> [!TIP]
+> **A tween needs somewhere to start from, and it will tell you when it has none.** `tl.to(circle, { r: 40 })` on an element with no `r` throws rather than guessing — SVG's defaults differ per attribute (`opacity` starts at 1, `cx` at 0), so a single guess would be wrong half the time and would start the move at the wrong end. Give the element the attribute first, or use `tl.set(...)`.
+>
+> An **unknown option is ignored silently** — `{ durr: 400 }` binds and does nothing — because the binding cannot report a name it was never told about. If an entry runs for the default 500 ms when you asked for something else, check the spelling of `dur`.
+
 > [!IMPORTANT]
 > **`sheet` is the artifact to look at; `save` is the artifact to ship.** An agent cannot watch a video — it reads images — so a moving file is close to the worst thing to hand it for inspection: it can produce one and still not perceive the motion. A contact sheet is a **single read**, and unlike a video it supports comparison: the eye works across cells, and so does `bitmap.diff`.
 >
@@ -1587,7 +1657,7 @@ canvas;
 > ```javascript
 > const tweens = [];
 > function tween(from, to, set, at, dur, easing) {
->     const ease = easing || mina.linear;          // captured into a local — see the warning below
+>     const ease = easing || mina.linear;          // a local, so the default reads plainly
 >     tweens.push({ from, to, set, at, dur, ease: n => ease(n) });
 > }
 > function seek(ms) {
@@ -1604,7 +1674,7 @@ canvas;
 >
 > Because every tween is a pure function of its own status, **seeking is order-independent**: frames can be rendered in any order, and re-seeking a time already visited reproduces it exactly.
 
-> [!CAUTION]
-> **An easing cannot be stored directly on an object and called through it.** `{ ease: mina.elastic }` followed by `t.ease(0.5)` **throws** — JavaScript binds `this` to the containing object, and the interop layer then refuses the receiver with *"Object type Polson.Drawing.Svg.Mina does not match target type System.Dynamic.ExpandoObject"*, a message naming neither easings nor the line responsible.
+> [!NOTE]
+> **An easing may be stored on an object and called through it.** `{ ease: mina.elastic }` followed by `t.ease(0.5)` works, as does every other position — called directly, from a local, from an array element, and passed into a function that did not create it.
 >
-> Every other position works: `mina.elastic(0.5)` directly, `const f = mina.elastic; f(0.5)`, and `n => mina.elastic(n)`. So capture the easing into a local and call it through a closure, as above.
+> This is worth stating because it used to **throw**: *"Object type Polson.Drawing.Svg.Mina does not match target type System.Dynamic.ExpandoObject"*, a message naming neither easings nor the line responsible. JavaScript binds `this` to the containing object, and the interop layer then took that object for the CLR receiver. Every easing is now a delegate, which carries its own target, so `this` never enters into it. The `ease: n => ease(n)` wrapper in the example above is therefore no longer necessary — it is left as written because capturing into a local is still the clearer way to apply a default.

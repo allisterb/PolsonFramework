@@ -59,6 +59,21 @@ public class MotionToolkit : IDisposable
 
     #region Methods
     /// <summary>
+    /// A new seekable score.
+    /// </summary>
+    /// <remarks>
+    /// Independent of the frame buffer above: a timeline decides what the scene looks like at a
+    /// time, <see cref="Frame"/> keeps what it looked like. The usual loop seeks and captures.
+    /// <para>
+    /// <c>options</c> is <c>{ defaults?: { dur?: number, easing?: fn } }</c>. Read as a typed
+    /// options object rather than a dictionary, for the reason given on
+    /// <see cref="MotionEntryOptions"/>.
+    /// </para>
+    /// </remarks>
+    public MotionTimeline Timeline(MotionTimelineOptions? options = null) =>
+        new(options?.Defaults?.Dur ?? 500d, options?.Defaults?.Easing);
+
+    /// <summary>
     /// Rasterises the current state of a paper, canvas or bitmap and keeps it as the next frame.
     /// </summary>
     /// <remarks>

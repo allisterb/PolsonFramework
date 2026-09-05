@@ -282,6 +282,16 @@ public static partial class SnapAttributes
             // Settable through attr(), so it must be readable through it. Without this the setter
             // succeeded and the getter answered null, which reads as "the transform did not take".
             "transform" => element.Transforms is { Count: > 0 } t ? t.ToString() : null,
+
+            // The same rule, applied to three more that were settable and unreadable. `display` is
+            // what a timeline's visibility window writes, and a window that cannot read back the
+            // value it is restoring has nothing to restore. The remaining gaps — font-size,
+            // font-weight, text-anchor, the stroke-dash and line-cap family, points, viewBox, href
+            // and a line's x1/y1/x2/y2 — are still write-only; they need an enum or collection
+            // formatted back to its SVG spelling, which is a larger job than this one.
+            "display" => string.IsNullOrEmpty(element.Display) ? null : element.Display,
+            "visibility" => string.IsNullOrEmpty(element.Visibility) ? null : element.Visibility,
+            "fontfamily" or "font-family" => string.IsNullOrEmpty(element.FontFamily) ? null : element.FontFamily,
             _ => element.CustomAttributes.TryGetValue(name, out var customVal) ? customVal : null
         };
     }

@@ -9,17 +9,37 @@ using SkiaSharp;
 public static class SkiaColorParser
 {
     #region Methods
-    public static SKColor Parse(string? colorStr, float globalAlpha = 1f)
+    /// <summary>The colour a string names, or black when it names none.</summary>
+    /// <remarks>
+    /// Black is indistinguishable from a genuine <c>#000000</c>, so a caller that needs to know
+    /// whether the string was a colour at all must use <see cref="TryParse"/>. Kept as it is because
+    /// the drawing calls want a colour unconditionally — a fill cannot be "no answer".
+    /// </remarks>
+    public static SKColor Parse(string? colorStr, float globalAlpha = 1f) =>
+        TryParse(colorStr, out var color) ? ApplyAlpha(color, globalAlpha) : SKColors.Black;
+
+    /// <summary>
+    /// The colour a string names, and whether it named one at all.
+    /// </summary>
+    /// <remarks>
+    /// Added for interpolation, which has to tell a colour from any other string: asked to tween an
+    /// attribute between two values, answering black for both would silently animate nothing while
+    /// reporting success. <see cref="Parse"/> is this method with the answer thrown away.
+    /// </remarks>
+    public static bool TryParse(string? colorStr, out SKColor color)
     {
+        color = SKColors.Black;
+
         if (string.IsNullOrWhiteSpace(colorStr))
-            return SKColors.Black;
+            return false;
 
         var s = colorStr.Trim();
 
         // Check named colors first
         if (NamedColors.TryGetValue(s.ToLowerInvariant(), out var named))
         {
-            return ApplyAlpha(named, globalAlpha);
+            color = named;
+            return true;
         }
 
         // Hex colors (#rgb, #rgba, #rrggbb, #rrggbbaa)
@@ -31,7 +51,8 @@ public static class SkiaColorParser
                 var r = byte.Parse(new string(hex[0], 2), NumberStyles.HexNumber);
                 var g = byte.Parse(new string(hex[1], 2), NumberStyles.HexNumber);
                 var b = byte.Parse(new string(hex[2], 2), NumberStyles.HexNumber);
-                return ApplyAlpha(new SKColor(r, g, b, 255), globalAlpha);
+                color = new SKColor(r, g, b, 255);
+                return true;
             }
             if (hex.Length == 4) // #rgba
             {
@@ -39,14 +60,16 @@ public static class SkiaColorParser
                 var g = byte.Parse(new string(hex[1], 2), NumberStyles.HexNumber);
                 var b = byte.Parse(new string(hex[2], 2), NumberStyles.HexNumber);
                 var a = byte.Parse(new string(hex[3], 2), NumberStyles.HexNumber);
-                return ApplyAlpha(new SKColor(r, g, b, a), globalAlpha);
+                color = new SKColor(r, g, b, a);
+                return true;
             }
             if (hex.Length == 6) // #rrggbb
             {
                 var r = byte.Parse(hex[0..2], NumberStyles.HexNumber);
                 var g = byte.Parse(hex[2..4], NumberStyles.HexNumber);
                 var b = byte.Parse(hex[4..6], NumberStyles.HexNumber);
-                return ApplyAlpha(new SKColor(r, g, b, 255), globalAlpha);
+                color = new SKColor(r, g, b, 255);
+                return true;
             }
             if (hex.Length == 8) // #rrggbbaa
             {
@@ -54,7 +77,8 @@ public static class SkiaColorParser
                 var g = byte.Parse(hex[2..4], NumberStyles.HexNumber);
                 var b = byte.Parse(hex[4..6], NumberStyles.HexNumber);
                 var a = byte.Parse(hex[6..8], NumberStyles.HexNumber);
-                return ApplyAlpha(new SKColor(r, g, b, a), globalAlpha);
+                color = new SKColor(r, g, b, a);
+                return true;
             }
         }
 
@@ -68,7 +92,8 @@ public static class SkiaColorParser
                 var g = (byte)Math.Clamp(ParseColorComponent(m.Groups[2].Value, 255), 0, 255);
                 var b = (byte)Math.Clamp(ParseColorComponent(m.Groups[3].Value, 255), 0, 255);
                 var a = m.Groups[4].Success ? ParseAlphaComponent(m.Groups[4].Value) : 1f;
-                return ApplyAlpha(new SKColor(r, g, b, (byte)(a * 255f)), globalAlpha);
+                color = new SKColor(r, g, b, (byte)(a * 255f));
+                return true;
             }
         }
 
@@ -82,15 +107,18 @@ public static class SkiaColorParser
                 var sat = float.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) / 100f;
                 var lit = float.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture) / 100f;
                 var a = m.Groups[4].Success ? ParseAlphaComponent(m.Groups[4].Value) : 1f;
-                var color = HslToRgb(h, sat, lit, a);
-                return ApplyAlpha(color, globalAlpha);
+                color = HslToRgb(h, sat, lit, a);
+                return true;
             }
         }
 
         if (SKColor.TryParse(s, out var parsed))
-            return ApplyAlpha(parsed, globalAlpha);
+        {
+            color = parsed;
+            return true;
+        }
 
-        return SKColors.Black;
+        return false;
     }
 
     public static SKColor ApplyAlpha(SKColor color, float alpha)

@@ -112,6 +112,7 @@ public static class JsSurface
         // SPIKE: frame capture and animated encoding. Declared here so the manifest stays honest
         // about what a script can reach, not because the surface is settled.
         new("Motion", typeof(MotionToolkit), "Motion", false),
+        new("tl", typeof(MotionTimeline), "Motion", true),
     ];
 
     /// <summary>

@@ -144,6 +144,34 @@ the first two anti-patterns below — a one-bar bar chart and a two-slice pie bo
 reader could simply have read and convert it into a judgment. `compact: true` handles the formatting
 that makes a big number legible (`1234567` → `1.2M`).
 
+**`Chart.createProportionalShapes(...)` — a value as the area of a mark.** The form where the mark can
+be the subject itself: droplets for water, coins for money, a footprint for emissions. §2's
+area-goes-as-the-square-root rule is not advice here, it is the construction — every linear dimension
+runs through `Scale.radiusFor(...)`, and the model's `lieFactor` is **measured from the drawn areas**
+rather than asserted, so a sizing error would report itself.
+
+It is **rank 4**, the lowest of anything in this toolkit, so a bar or a dot beats it whenever the
+picture will tolerate one. Prefer `layout: 'nested'` where you can — sharing a foot turns the
+comparison into one about a common line, and separated shapes are genuinely hard to judge. Always draw
+the size `legend`; a proportional-symbol graphic without one is close to unreadable.
+
+**`Chart.createProgressMeter(...)` — one value against a target.** A track with a filled part, as a
+straight bar, a ring, a gauge sweep, or a row of segments. It is the form a campaign dashboard or a
+fundraising page is made of, and it has two things worth knowing.
+
+**It is never a needle.** The anti-pattern list below rules out needle dials, and the reason is worth
+keeping: on a needle gauge the *face* is the picture and the angle carries the value, so the reader
+judges a hand against decoration. Here the ink that grows **is** the value.
+
+**Raising `min` changes what the meter claims.** With `min: 50, target: 100`, a value of 60 fills a
+fifth of the track rather than three fifths — progress *within a range* rather than a share of the
+target. Both are legitimate; they are not the same statement, so say which in the label. The model
+reports `isZeroBased` so a reader of the run can tell.
+
+Passing the target is kept rather than hidden: the ink stops at the end of the track, and
+`rawFraction` and `overflow` carry the real number, because *142% of goal* is usually the reason the
+graphic exists.
+
 **`Chart.createPictogram(...)` — a value as repeated icons.** The isotype idiom, and the one that
 carries a subject as well as a number: forty-seven thousand cyclists as figures on bicycles says both
 at once. It is the form most worth reaching for in promotional work, and it has exactly one rule.

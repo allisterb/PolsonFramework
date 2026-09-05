@@ -1343,4 +1343,378 @@ public class ChartToolkitTests : TestsRuntime
     public void TestAPictogramRefusesNegativeValues() =>
         Assert.Throws<ArgumentException>(() => Chart.CreatePictogram(Rect(0, 0, 500, 200), new[] { 10d, -4d }));
     #endregion
+
+    #region Tests — the progress meter
+    static IDictionary Part(Dictionary<string, object?> model, string name) => (IDictionary)model[name]!;
+
+    [Theory]
+    [InlineData(0d, 0d)]
+    [InlineData(25d, 0.25d)]
+    [InlineData(62d, 0.62d)]
+    [InlineData(100d, 1d)]
+    public void TestTheFillIsTheFractionOfTheTrack(double value, double expected)
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 400, 20), value);
+
+        Assert.Equal(expected, Num(model, "fraction"), 6);
+        Assert.Equal(400d * expected, Num(Part(model, "fill"), "width"), 3);
+        Assert.Equal(400d, Num(Part(model, "track"), "width"), 3);
+    }
+
+    /// <summary>
+    /// Exceeding the target is kept, not hidden.
+    /// </summary>
+    /// <remarks>
+    /// The ink stays inside the track because a fill spilling past its own frame reads as a drawing
+    /// bug rather than as good news, but the real number survives — "142% of goal" is usually the
+    /// whole reason the graphic exists.
+    /// </remarks>
+    [Fact]
+    public void TestOverflowIsReportedRatherThanClipped()
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 142d);
+
+        Assert.True((bool)model["overflow"]!);
+        Assert.Equal(1d, Num(model, "fraction"), 6);            // ink stays in the track
+        Assert.Equal(1.42d, Num(model, "rawFraction"), 6);      // the truth survives
+        Assert.Equal("142%", model["percentDisplay"]);
+        Assert.Equal(400d, Num(Part(model, "fill"), "width"), 3);
+    }
+
+    [Fact]
+    public void TestAShortfallIsReportedToo()
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 62d,
+            new Dictionary<string, object?> { ["target"] = 80d });
+
+        Assert.False((bool)model["overflow"]!);
+        Assert.Equal(18d, Num(model, "shortfall"), 6);
+    }
+
+    /// <summary>
+    /// A raised minimum changes what the meter means, and the model says which was chosen.
+    /// </summary>
+    /// <remarks>
+    /// With min 50 and target 100, a value of 60 fills a fifth of the track rather than three fifths:
+    /// the meter is showing progress within a range, not a share of the target. Both are legitimate
+    /// and they are not the same claim, so <c>isZeroBased</c> records which one was drawn.
+    /// </remarks>
+    [Fact]
+    public void TestARaisedMinimumChangesTheClaim()
+    {
+        var fromZero = Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 60d);
+        var fromFifty = Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 60d,
+            new Dictionary<string, object?> { ["min"] = 50d });
+
+        Assert.True((bool)fromZero["isZeroBased"]!);
+        Assert.Equal(0.6d, Num(fromZero, "fraction"), 6);
+
+        Assert.False((bool)fromFifty["isZeroBased"]!);
+        Assert.Equal(0.2d, Num(fromFifty, "fraction"), 6);
+    }
+
+    /// <summary>The head of the fill is reported, for a marker or a travelling label.</summary>
+    [Fact]
+    public void TestTheTipFollowsTheFill()
+    {
+        var model = Chart.CreateProgressMeter(Rect(20, 0, 400, 30), 25d);
+        Assert.Equal(20d + 100d, Num(model, "tipX"), 3);
+        Assert.Equal(Num(Part(model, "fill"), "x2"), Num(model, "tipX"), 3);
+    }
+
+    #region Segments
+    [Fact]
+    public void TestSegmentsDivideTheTrackAndLightUpInOrder()
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 62d,
+            new Dictionary<string, object?> { ["segments"] = 10, ["gap"] = 4d });
+        var slots = Slots(model);
+
+        Assert.Equal(10, slots.Length);
+        Assert.Equal(6, slots.Count(s => (bool)s["filled"]!));
+        Assert.Single(slots.Where(s => (bool)s["partial"]!));
+
+        // Cells advance left to right and none overlaps its neighbour.
+        for (var i = 1; i < slots.Length; i++)
+        {
+            Assert.True(Num(slots[i], "x") >= Num(slots[i - 1], "x2"));
+        }
+    }
+
+    [Fact]
+    public void TestThePartialSegmentCarriesItsOwnFraction()
+    {
+        var slots = Slots(Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 62d,
+            new Dictionary<string, object?> { ["segments"] = 10 }));
+
+        var partial = slots.First(s => (bool)s["partial"]!);
+        Assert.Equal(0.2d, Num(partial, "fraction"), 6);   // 62% of ten cells: six lit, one a fifth
+    }
+
+    [Fact]
+    public void TestSegmentsThatCannotFitAreRefused() =>
+        Assert.Throws<ArgumentException>(() => Chart.CreateProgressMeter(Rect(0, 0, 40, 20), 50d,
+            new Dictionary<string, object?> { ["segments"] = 20, ["gap"] = 6d }));
+
+    /// <summary>With no segments there is still one slot — the fill itself.</summary>
+    [Fact]
+    public void TestAContinuousMeterHasOneSlot()
+    {
+        var slots = Slots(Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 40d));
+        Assert.Single(slots);
+        Assert.Equal(0.4d, Num(slots[0], "fraction"), 6);
+        Assert.Equal(160d, Num(slots[0], "width"), 3);
+    }
+    #endregion
+
+    #region Arc
+    [Fact]
+    public void TestAnArcSweepsTheFractionOfItsTrack()
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 200, 200), 25d,
+            new Dictionary<string, object?> { ["shape"] = "arc" });
+
+        Assert.Equal("arc", model["shape"]);
+        Assert.Equal(360d, Num(Part(model, "track"), "sweepDeg"), 3);
+        Assert.Equal(90d, Num(Part(model, "fill"), "sweepDeg"), 3);      // a quarter turn
+        Assert.Equal(-90d, Num(Part(model, "fill"), "startAngleDeg"), 3); // starting at the top
+    }
+
+    /// <summary>Both angle units are given, and they agree.</summary>
+    [Fact]
+    public void TestArcsCarryDegreesAndRadiansTogether()
+    {
+        var fill = Part(Chart.CreateProgressMeter(Rect(0, 0, 200, 200), 50d,
+            new Dictionary<string, object?> { ["shape"] = "arc" }), "fill");
+
+        Assert.Equal(Num(fill, "startAngleDeg") * Math.PI / 180d, Num(fill, "startAngle"), 9);
+        Assert.Equal(Num(fill, "endAngleDeg") * Math.PI / 180d, Num(fill, "endAngle"), 9);
+    }
+
+    /// <summary>A gauge is the same construction with a sweep short of a full turn.</summary>
+    [Fact]
+    public void TestAGaugeIsAnArcWithAShorterSweep()
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 200, 200), 50d, new Dictionary<string, object?>
+        {
+            ["shape"] = "arc", ["startAngleDeg"] = 135d, ["sweepDeg"] = 270d
+        });
+
+        Assert.Equal(270d, Num(Part(model, "track"), "sweepDeg"), 3);
+        Assert.Equal(135d, Num(Part(model, "fill"), "startAngleDeg"), 3);
+        Assert.Equal(270d, Num(Part(model, "fill"), "endAngleDeg"), 3);   // 135 + half of 270
+    }
+
+    [Fact]
+    public void TestTheArcTipSitsOnTheArc()
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 200, 200), 25d,
+            new Dictionary<string, object?> { ["shape"] = "arc" });
+
+        var dx = Num(model, "tipX") - Num(model, "cx");
+        var dy = Num(model, "tipY") - Num(model, "cy");
+        Assert.Equal(Num(model, "radius"), Math.Sqrt(dx * dx + dy * dy), 6);
+    }
+
+    [Fact]
+    public void TestARingTooThickForItsBoxIsRefused() =>
+        Assert.Throws<ArgumentException>(() => Chart.CreateProgressMeter(Rect(0, 0, 40, 40), 50d,
+            new Dictionary<string, object?> { ["shape"] = "arc", ["thickness"] = 60d }));
+    #endregion
+
+    /// <summary>Both shapes are rank 3; nothing in the evidence separates them.</summary>
+    [Theory]
+    [InlineData("bar")]
+    [InlineData("arc")]
+    public void TestBothShapesAreLengthJudgments(string shape)
+    {
+        var model = Chart.CreateProgressMeter(Rect(0, 0, 200, 200), 50d,
+            new Dictionary<string, object?> { ["shape"] = shape });
+
+        Assert.Equal("length", model["encoding"]);
+        Assert.Equal(3, Convert.ToInt32(model["encodingRank"]));
+    }
+
+    [Fact]
+    public void TestAnUnknownShapeIsRefusedByName()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => Chart.CreateProgressMeter(
+            Rect(0, 0, 200, 200), 50d, new Dictionary<string, object?> { ["shape"] = "needle" }));
+        Assert.Contains("needle", ex.Message);
+    }
+
+    [Fact]
+    public void TestATargetEqualToTheMinimumIsRefused() =>
+        Assert.Throws<ArgumentException>(() => Chart.CreateProgressMeter(Rect(0, 0, 400, 20), 5d,
+            new Dictionary<string, object?> { ["min"] = 10d, ["target"] = 10d }));
+    #endregion
+
+    #region Tests — proportional shapes
+    static IDictionary[] Shapes(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["shapes"]!).Cast<object>().Select(s => (IDictionary)s!).ToArray();
+
+    /// <summary>
+    /// Area carries the value, so a linear dimension goes as the square root.
+    /// </summary>
+    /// <remarks>
+    /// The failure this construction exists to prevent: size a circle by its radius and four times the
+    /// number shows as sixteen times the ink. Four times the value must be twice the radius.
+    /// </remarks>
+    [Fact]
+    public void TestLinearSizeGoesAsTheSquareRootOfTheValue()
+    {
+        var shapes = Shapes(Chart.CreateProportionalShapes(Rect(0, 0, 600, 200),
+            new[] { 25d, 100d }, new Dictionary<string, object?> { ["maxSize"] = 100d }));
+
+        // 4x the value is 2x the radius, never 4x.
+        Assert.Equal(2d, Num(shapes[1], "radius") / Num(shapes[0], "radius"), 6);
+        Assert.Equal(50d, Num(shapes[1], "radius"), 6);
+        Assert.Equal(25d, Num(shapes[0], "radius"), 6);
+    }
+
+    /// <summary>And the drawn areas are in the ratio of the values, which is the actual claim.</summary>
+    [Theory]
+    [InlineData("circle")]
+    [InlineData("square")]
+    public void TestDrawnAreasAreInTheRatioOfTheValues(string shape)
+    {
+        var model = Chart.CreateProportionalShapes(Rect(0, 0, 600, 200), new[] { 20d, 60d, 100d },
+            new Dictionary<string, object?> { ["shape"] = shape, ["maxSize"] = 100d });
+        var shapes = Shapes(model);
+
+        Assert.Equal(5d, Num(shapes[2], "area") / Num(shapes[0], "area"), 6);      // 100 : 20
+        Assert.Equal(3d, Num(shapes[1], "area") / Num(shapes[0], "area"), 6);      // 60 : 20
+        Assert.Equal(100d / 60d, Num(shapes[2], "area") / Num(shapes[1], "area"), 6);
+    }
+
+    /// <summary>
+    /// The lie factor is measured from the drawn geometry, not asserted.
+    /// </summary>
+    /// <remarks>
+    /// It is computed by comparing the ratio of the drawn areas with the ratio of the values, so if
+    /// the sizing were ever wrong this would report it rather than quietly saying 1.
+    /// </remarks>
+    [Fact]
+    public void TestTheLieFactorIsMeasuredFromTheGeometry()
+    {
+        var model = Chart.CreateProportionalShapes(Rect(0, 0, 600, 200), new[] { 7d, 43d, 91d });
+        Assert.Equal(1d, Num(model, "lieFactor"), 9);
+        Assert.Equal("area", model["encoding"]);
+        Assert.Equal(4, Convert.ToInt32(model["encodingRank"]));
+    }
+
+    #region Layouts
+    [Fact]
+    public void TestARowAdvancesAndShapesDoNotOverlap()
+    {
+        var shapes = Shapes(Chart.CreateProportionalShapes(Rect(0, 0, 600, 120),
+            new[] { 100d, 50d, 25d }, new Dictionary<string, object?> { ["gap"] = 10d }));
+
+        for (var i = 1; i < shapes.Length; i++)
+        {
+            var previous = (IDictionary)shapes[i - 1]["bounds"]!;
+            var current = (IDictionary)shapes[i]["bounds"]!;
+            Assert.True(Num(current, "x") >= Num(previous, "x2") - 0.001d);
+        }
+    }
+
+    /// <summary>A row sits on a shared foot, so the comparison is against one line.</summary>
+    [Fact]
+    public void TestARowIsBottomAlignedByDefault()
+    {
+        var model = Chart.CreateProportionalShapes(Rect(0, 40, 600, 120), new[] { 100d, 25d });
+        foreach (var shape in Shapes(model))
+        {
+            Assert.Equal(160d, Num((IDictionary)shape["bounds"]!, "y2"), 3);
+        }
+    }
+
+    [Fact]
+    public void TestCentreAlignmentPutsThemOnOneMidline()
+    {
+        var shapes = Shapes(Chart.CreateProportionalShapes(Rect(0, 40, 600, 120),
+            new[] { 100d, 25d }, new Dictionary<string, object?> { ["align"] = "center" }));
+
+        Assert.Equal(Num(shapes[0], "cy"), Num(shapes[1], "cy"), 3);
+        Assert.Equal(100d, Num(shapes[0], "cy"), 3);
+    }
+
+    /// <summary>Nested shapes are concentric on a shared foot, which compares far better.</summary>
+    [Fact]
+    public void TestNestedShapesShareACentreLineAndAFoot()
+    {
+        var shapes = Shapes(Chart.CreateProportionalShapes(Rect(0, 0, 200, 200),
+            new[] { 100d, 50d, 10d }, new Dictionary<string, object?> { ["layout"] = "nested" }));
+
+        foreach (var shape in shapes)
+        {
+            Assert.Equal(100d, Num(shape, "cx"), 3);                              // one axis
+            Assert.Equal(200d, Num((IDictionary)shape["bounds"]!, "y2"), 3);      // one foot
+        }
+    }
+
+    [Fact]
+    public void TestFreeLayoutIsTakenFromPositionsAutomatically()
+    {
+        object[] located =
+        [
+            new Dictionary<string, object?> { ["label"] = "a", ["value"] = 40d, ["x"] = 120d, ["y"] = 80d },
+            new Dictionary<string, object?> { ["label"] = "b", ["value"] = 90d, ["x"] = 300d, ["y"] = 150d }
+        ];
+
+        var model = Chart.CreateProportionalShapes(Rect(0, 0, 400, 300), located);
+        Assert.Equal("free", model["layout"]);
+        Assert.Equal(120d, Num(Shapes(model)[0], "cx"), 3);
+        Assert.Equal(150d, Num(Shapes(model)[1], "cy"), 3);
+    }
+
+    [Fact]
+    public void TestAFreeLayoutWithoutPositionsIsRefused() =>
+        Assert.Throws<ArgumentException>(() => Chart.CreateProportionalShapes(Rect(0, 0, 400, 300),
+            new[] { 1d, 2d }, new Dictionary<string, object?> { ["layout"] = "free" }));
+    #endregion
+
+    /// <summary>A size legend of round reference values, so a reader can calibrate the areas.</summary>
+    [Fact]
+    public void TestTheLegendCarriesRoundReferenceSizes()
+    {
+        var model = Chart.CreateProportionalShapes(Rect(0, 0, 600, 200), new[] { 18d, 64d, 97d },
+            new Dictionary<string, object?> { ["maxSize"] = 100d });
+        var legend = ((IEnumerable)model["legend"]!).Cast<object>().Select(l => (IDictionary)l!).ToArray();
+
+        Assert.NotEmpty(legend);
+        for (var i = 1; i < legend.Length; i++)
+        {
+            Assert.True(Num(legend[i], "value") < Num(legend[i - 1], "value"), "largest first");
+            Assert.True(Num(legend[i], "radius") < Num(legend[i - 1], "radius"));
+        }
+
+        // Legend sizes follow the same square-root rule as the shapes themselves.
+        var biggest = legend[0];
+        Assert.Equal(Math.Sqrt(Num(biggest, "value") / 97d) * 50d, Num(biggest, "radius"), 6);
+    }
+
+    [Fact]
+    public void TestShapesAreSlots()
+    {
+        var model = Chart.CreateProportionalShapes(Rect(0, 0, 600, 200), new[] { 30d, 70d });
+        Assert.Equal(2, Slots(model).Length);
+        foreach (var slot in Slots(model))
+        {
+            Assert.Equal(Num(slot, "width"), Num(slot, "height"), 6);   // square box, whatever the mark
+            Assert.InRange(Num(slot, "fraction"), 0d, 1d);
+        }
+    }
+
+    [Fact]
+    public void TestBadInputIsRefused()
+    {
+        Assert.Throws<ArgumentException>(() => Chart.CreateProportionalShapes(
+            Rect(0, 0, 600, 200), new[] { 10d, -5d }));
+
+        var ex = Assert.Throws<ArgumentException>(() => Chart.CreateProportionalShapes(
+            Rect(0, 0, 600, 200), new[] { 1d, 2d }, new Dictionary<string, object?> { ["shape"] = "hexagon" }));
+        Assert.Contains("hexagon", ex.Message);
+    }
+    #endregion
 }

@@ -1416,6 +1416,8 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 - `Chart.createFramedRectangleChart(rect, data, options?)` → `object` — A value as a **level inside an identical box**, placed anywhere. What Cleveland & McGill offer in place of a **shaded map**. Rows carry `x` and `y` in the plot's own coordinate space; rows without them are laid out on a grid. Adds `frameWidth`, `frameHeight`, `columns` and `gap`.
 - `Chart.createCallout(rect, value, options?)` → `object` — One number, made big, with an optional `label` and `caption`. The right answer when there is only one value — a reader *reads* it rather than judging it. `compact: true` turns 1,234,567 into `1.2M`. Options: `label`, `caption`, `unit`/`suffix`, `prefix`, `decimals`, `compact`, `valueSize`, `labelSize`, `captionSize`, `align`.
 - `Chart.createWaffle(rect, parts, options?)` → `object` — A grid of cells divided between parts. More honest than a donut, because a waffle can be *counted*. Options: `columns` (10), `rows` (10), `gap`, `total`, `labels`.
+- `Chart.createProportionalShapes(rect, data, options?)` → `object` — A value as the **area** of a mark. `layout` is `'row'`, `'nested'`, or `'free'` (taken automatically when rows carry `x` and `y`). Options: `shape` (`'circle'`/`'square'`), `layout`, `maxSize`, `max`, `gap`, `labels`, `labelGap`, `align`, `legendCount`.
+- `Chart.createProgressMeter(rect, value, options?)` → `object` — One value against a target, as a track with a filled part. `shape: 'bar'` (default) or `'arc'` for a ring or gauge; `segments` divides the track into blocks. Options: `min`, `target`/`max`, `shape`, `thickness`, `segments`, `gap`, `startAngleDeg`, `sweepDeg`, `decimals`, `compact`, `prefix`, `suffix`/`unit`.
 - `Chart.createPictogram(rect, data, options?)` → `object` — A value as a row of **repeated identical icons**, one per `unit`. The isotype idiom: 47,000 people as five little figures at 10,000 each. Options: `unit`, `iconSize`, `gap`, `rowGap`, `labels`, `labelGap`, `partial` (`'clip'` or `'whole'`), `max`.
 - `Chart.createSmallMultiples(rect, series, options?)` → `object` — A grid of panels **sharing one scale**, computed across every series before any panel is built. `series` is `[{ label, data }]` or an array of arrays; `form` picks what each panel is (`'column'`, `'bar'`, `'dot'`, `'groupedDot'`, `'framedRectangle'`). Adds `columns`, `gap`, `rowGap`, `titleHeight`.
 - `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], frames: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry. `frames` is populated for framed rectangles and empty otherwise.
@@ -1440,6 +1442,8 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `display` | *(callout)* the formatted number, plus `valueX/Y/Size`, `labelX/Y/Size`, `captionX/Y/Size` as anchors to draw at |
 | `cells` · `parts` | *(waffle)* every cell with its `partIndex` and `filled`, and each part's `share`, `cells` and `firstCell` |
 | `icons` · `rows` | *(pictogram)* every icon with its `rowIndex`, `fraction`, `partial` flag and `clip` rectangle, and each row's `fullIcons`, `partialFraction` and drawn `width` |
+| `shapes` · `legend` | *(proportional shapes)* each mark's `cx`, `cy`, `radius`, `size`, `area`, `fraction` and `bounds`, plus round reference sizes for a size key |
+| `track` · `fill` | *(meter)* the whole extent and the filled part — rectangles for a bar, arc bands for a ring — plus `fraction`, `rawFraction`, `overflow`, `shortfall`, `percentDisplay` and `tipX`/`tipY` |
 | `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
 | `labels` | `{ text, x, y, align, baseline, index }` for the categories |
 | `baseline` · `baselinePosition` | the value, and the pixel it maps to |
@@ -1503,6 +1507,36 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 > **A waffle reports itself as `area`, rank 4, deliberately.** A reader who counts cells gets an exact answer — that is why it beats a donut, whose angle is rank 3 but uncountable — but you cannot assume anyone will count. Rank 4 is what the graphic is worth if nobody does, and claiming the exactness of counting would be the flattering assumption rather than the safe one.
 >
 > **Cells are whole, so shares are apportioned by largest remainder.** Rounding each share on its own is the obvious approach and does not add up: three parts at a third each floor to 33 cells apiece and leave one of a hundred unassigned. Every cell is assigned and the counts sum to exactly the grid.
+
+> [!IMPORTANT]
+> **Proportional shapes carry the value in their AREA, and every linear dimension goes as the square root.** Size a circle by its radius and four times the number shows as **sixteen** times the ink. The rule is the same whatever the mark — a circle's radius, a square's side, a droplet, a coin — because a uniformly scaled shape's area goes as the square of its size. This routes through `Scale.radiusFor(...)`, so there is one implementation of it in the SDK rather than two that could disagree.
+>
+> **`lieFactor` here is measured, not asserted**: it compares the ratio of the *drawn areas* with the ratio of the values, so a sizing error would report itself instead of quietly reading 1.
+>
+> **Rank 4 is the price.** A bar or a dot is decoded more accurately, and beats this whenever the picture will tolerate one. What proportional shapes buy is that the mark can be *the thing itself* — a droplet, a coin, a footprint — placed anywhere including on a map. `layout: 'nested'` compares much better than a row, because sharing a foot turns the judgment into one about a common line.
+>
+> **`legend` gives round reference values** with their sizes, so a reader can calibrate the areas — a proportional-symbol graphic without a size key is close to unreadable.
+>
+> One thing deliberately absent: the cartographic literature has **perceptual-scaling corrections**, since readers underestimate large circles. **We do not hold that source**, so nothing here applies one — the areas are true, and inflating them would be a distortion this toolkit could not justify from anything it has read.
+
+> [!IMPORTANT]
+> **A meter is a track and a fill, never a needle.** On a needle gauge the *face* is the picture and the angle carries the value, so the reader judges a hand against decoration — `polson://manual/13` §1 rules those out. Here the ink that grows **is** the value in both shapes.
+>
+> An arc band reports **both angle units**: `startAngleDeg`/`endAngleDeg` for the toolkit's convention and `startAngle`/`endAngle` in radians, ready for `ctx.arc(...)` without converting. They are computed together, so they cannot drift.
+>
+> ```javascript
+> const ring = Chart.createProgressMeter(box, 78, { shape: 'arc', thickness: 16 });
+> ctx.lineWidth = ring.fill.thickness;
+> ctx.beginPath();
+> ctx.arc(ring.fill.cx, ring.fill.cy, ring.fill.radius, ring.fill.startAngle, ring.fill.endAngle);
+> ctx.stroke();
+> ```
+>
+> **Both shapes are rank 3 and the arc is still the harder read.** Cleveland & McGill tie length, direction and angle, so nothing in the evidence separates them — but a quantity laid along a curve is compared less easily than one along a straight edge, and the paper does not cover that. Choose the arc for the picture, knowing it costs a little.
+>
+> **Passing the target is kept, not hidden.** `fraction` clamps to 1 so the ink stays inside its track — a fill spilling past its own frame reads as a bug rather than as good news — while `rawFraction` and `overflow` carry the truth, because "142% of goal" is usually why the graphic exists.
+>
+> **`min` defaults to 0, and raising it changes the claim.** With `min: 50, target: 100`, a value of 60 fills a *fifth* of the track rather than three fifths: that meter shows progress within a range, not a share of the target. `isZeroBased` records which was drawn, and a label should say so.
 
 > [!IMPORTANT]
 > **A pictogram repeats the icon and never scales it, and the construction makes that impossible to get wrong.** Doubling an icon's height to mean double **quadruples its area**, so the reader sees four times the quantity — the same failure `Scale.radiusFor` exists to prevent, and the commonest way a pictogram lies. Every icon box here is identical, and a part-unit is shown by **clipping** one:

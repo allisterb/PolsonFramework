@@ -94,6 +94,13 @@ public class ChartToolkit
 
     private static readonly string[] PictogramOptions =
         ["unit", "iconSize", "gap", "rowGap", "labels", "labelGap", "partial", "max"];
+
+    private static readonly string[] ShapeOptions =
+        ["shape", "layout", "maxSize", "max", "gap", "labels", "labelGap", "align", "legendCount"];
+
+    private static readonly string[] MeterOptions =
+        ["min", "target", "max", "shape", "thickness", "segments", "gap",
+         "startAngleDeg", "sweepDeg", "decimals", "compact", "prefix", "suffix", "unit"];
     #endregion
 
     #region Methods
@@ -1135,6 +1142,420 @@ public class ChartToolkit
     }
 
     /// <summary>
+    /// A progress meter: one value against a target, as a track with a filled part.
+    /// </summary>
+    /// <remarks>
+    /// <c>shape: 'bar'</c> is a straight track; <c>'arc'</c> is a ring or a gauge sweep. <b>Not a
+    /// needle dial</b> — <c>polson://manual/13</c> §1 rules those out, and for a reason worth keeping:
+    /// on a needle gauge the *face* is the picture and the angle carries the value, so the reader
+    /// judges a hand against decoration. Here the ink that grows *is* the value in both shapes.
+    /// <para>
+    /// <b>Both shapes are rank 3, and the arc is still the harder read.</b> Cleveland and McGill tie
+    /// length, direction and angle at rank 3, so nothing in the evidence separates them — but a
+    /// quantity laid along a curve is compared less easily than one laid along a straight edge, and
+    /// nothing in the paper covers that. Choose the arc for the picture, knowing it costs a little,
+    /// and say so if it matters.
+    /// </para>
+    /// <para>
+    /// <b><c>min</c> defaults to 0 and moving it changes what the meter means.</b> With
+    /// <c>min: 50, target: 100</c> a value of 60 fills a fifth of the track, not three fifths — the
+    /// meter then shows progress *within a range* rather than a share of the target. The model reports
+    /// <c>isZeroBased</c> so a reader of the run can see which was meant, and a label should say so.
+    /// </para>
+    /// <para>
+    /// <c>segments</c> divides the track into blocks — battery cells, chevrons, a row of lamps — and
+    /// those become the <c>slots</c>. Left out, the fill is continuous and there is one slot for it.
+    /// Exceeding the target is kept rather than hidden: <c>fraction</c> clamps to 1 so the ink stays
+    /// inside the track, while <c>rawFraction</c> and <c>overflow</c> carry the real number, because
+    /// "142% of goal" is the whole point of the graphic when it happens.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateProgressMeter(object rect, double value, object? options = null)
+    {
+        var area = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A meter needs a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt, MeterOptions);
+
+        var min = Opt(opt, "min", 0d);
+        var target = Opt(opt, "target", Opt(opt, "max", 100d));
+        if (Math.Abs(target - min) < double.Epsilon)
+        {
+            throw new ArgumentException("A meter needs a target different from its minimum.", nameof(options));
+        }
+
+        var raw = (value - min) / (target - min);
+        var fraction = Math.Clamp(raw, 0d, 1d);
+
+        var shape = (opt?["shape"]?.ToString() ?? "bar").ToLowerInvariant();
+        if (shape is not ("bar" or "arc" or "ring"))
+        {
+            throw new ArgumentException($"shape must be 'bar' or 'arc'; got '{shape}'.", nameof(options));
+        }
+
+        var segments = Math.Max(0, (int)Opt(opt, "segments", 0d));
+        var gap = Opt(opt, "gap", 3d);
+        var compact = opt is not null && opt.Contains("compact") && Convert.ToBoolean(opt["compact"]);
+        var decimals = (int)Opt(opt, "decimals", compact ? 1d : 0d);
+        var prefix = opt?["prefix"]?.ToString() ?? string.Empty;
+        var suffix = opt?["suffix"]?.ToString() ?? opt?["unit"]?.ToString() ?? string.Empty;
+
+        var x = Num(area, "x");
+        var y = Num(area, "y");
+        var w = Num(area, "width");
+        var h = Num(area, "height");
+
+        var model = new Dictionary<string, object?>
+        {
+            ["type"] = "progressMeter",
+            ["shape"] = shape == "ring" ? "arc" : shape,
+            ["plot"] = Rect(x, y, w, h),
+            ["bounds"] = Rect(x, y, w, h),
+            ["value"] = value,
+            ["min"] = min,
+            ["target"] = target,
+            ["fraction"] = fraction,
+
+            // Kept rather than hidden: exceeding a goal is usually the reason the graphic exists.
+            ["rawFraction"] = raw,
+            ["overflow"] = raw > 1d,
+            ["shortfall"] = raw < 1d ? target - value : 0d,
+
+            ["display"] = prefix + FormatValue(value, compact, decimals) + suffix,
+            ["percent"] = raw * 100d,
+            ["percentDisplay"] = FormatValue(raw * 100d, false, 0) + "%",
+
+            ["encoding"] = "length",
+            ["encodingRank"] = 3,
+
+            // Not "is the scale zero-based" but "does the track start at nothing": with a raised min
+            // the fill is progress within a range, not a share of the target.
+            ["isZeroBased"] = Math.Abs(min) < double.Epsilon,
+            ["lieFactor"] = 1d
+        };
+
+        var slots = new List<Dictionary<string, object>>();
+
+        if (shape == "bar")
+        {
+            var thickness = Opt(opt, "thickness", h);
+            var top = y + (h - thickness) / 2d;
+
+            model["track"] = Rect(x, top, w, thickness);
+            model["fill"] = Rect(x, top, w * fraction, thickness);
+            model["tipX"] = x + w * fraction;
+            model["tipY"] = top + thickness / 2d;
+            model["thickness"] = thickness;
+
+            if (segments > 0)
+            {
+                var cell = (w - gap * (segments - 1)) / segments;
+                if (cell <= 0d)
+                {
+                    throw new ArgumentException(
+                        $"{segments} segments with {gap:0.#} px gaps do not fit in {w:0} px.", nameof(options));
+                }
+
+                for (var i = 0; i < segments; i++)
+                {
+                    var lit = (i + 1) / (double)segments <= fraction + 1e-9;
+                    var partial = !lit && i / (double)segments < fraction;
+                    var cellFraction = lit ? 1d : partial ? fraction * segments - i : 0d;
+
+                    var slot = Slot(i, string.Empty, value, cellFraction,
+                        x + i * (cell + gap), top, cell, thickness,
+                        x + i * (cell + gap), top + thickness, x + i * (cell + gap), top, thickness, 0d);
+                    slot["filled"] = lit;
+                    slot["partial"] = partial;
+                    slots.Add(slot);
+                }
+            }
+            else
+            {
+                slots.Add(Slot(0, string.Empty, value, fraction, x, top, w * fraction, thickness,
+                    x, top + thickness / 2d, x + w * fraction, top + thickness / 2d, thickness, 90d));
+            }
+        }
+        else
+        {
+            // A ring by default, starting at the top. A gauge is the same construction with a sweep
+            // short of a full turn.
+            var startDeg = Opt(opt, "startAngleDeg", -90d);
+            var sweepDeg = Opt(opt, "sweepDeg", 360d);
+            var thickness = Opt(opt, "thickness", Math.Min(w, h) * 0.14d);
+            var cx = x + w / 2d;
+            var cy = y + h / 2d;
+            var radius = Math.Min(w, h) / 2d - thickness / 2d;
+
+            if (radius <= 0d)
+            {
+                throw new ArgumentException(
+                    $"A ring of thickness {thickness:0.#} does not fit in {w:0}x{h:0} px.", nameof(rect));
+            }
+
+            var endDeg = startDeg + sweepDeg * fraction;
+            model["track"] = Arc(cx, cy, radius, thickness, startDeg, startDeg + sweepDeg);
+            model["fill"] = Arc(cx, cy, radius, thickness, startDeg, endDeg);
+            model["cx"] = cx;
+            model["cy"] = cy;
+            model["radius"] = radius;
+            model["thickness"] = thickness;
+            model["tipX"] = cx + radius * Math.Cos(endDeg * Math.PI / 180d);
+            model["tipY"] = cy + radius * Math.Sin(endDeg * Math.PI / 180d);
+
+            var count = segments > 0 ? segments : 1;
+            for (var i = 0; i < count; i++)
+            {
+                var from = startDeg + sweepDeg * i / count;
+                var to = startDeg + sweepDeg * (i + 1) / count;
+                var lit = (i + 1) / (double)count <= fraction + 1e-9;
+                var partial = !lit && i / (double)count < fraction;
+                var cellFraction = segments > 0
+                    ? (lit ? 1d : partial ? fraction * count - i : 0d)
+                    : fraction;
+
+                var mid = (from + to) / 2d * Math.PI / 180d;
+                var slot = Slot(i, string.Empty, value, cellFraction,
+                    cx - radius, cy - radius, radius * 2d, radius * 2d,
+                    cx, cy, cx + radius * Math.Cos(mid), cy + radius * Math.Sin(mid), thickness,
+                    (from + to) / 2d);
+                slot["arc"] = Arc(cx, cy, radius, thickness, from, segments > 0 ? to : endDeg);
+                slot["filled"] = segments > 0 ? lit : fraction > 0d;
+                slot["partial"] = partial;
+                slots.Add(slot);
+            }
+        }
+
+        model["segments"] = segments;
+        model["slots"] = slots.ToArray();
+        return model;
+    }
+
+    /// <summary>
+    /// Proportional shapes: a value as the <b>area</b> of a mark, never as its width.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the form with the sharpest failure mode in the whole toolkit, and the construction
+    /// exists mostly to make that failure impossible.</b> Size a circle by its radius and four times
+    /// the number shows as sixteen times the ink; the eye reads area, not radius. Every linear
+    /// dimension here goes as the <b>square root</b> of the value, which is the same rule whatever the
+    /// shape — a circle's radius, a square's side, any mark scaled uniformly.
+    /// <para>
+    /// <b>Rank 4, and that is the price.</b> Area is decoded less accurately than length or position,
+    /// so a bar or a dot beats this whenever the picture will tolerate one. What proportional shapes
+    /// buy is that a mark can be *the thing itself* — a coin, a drop, a footprint — placed anywhere,
+    /// including on a map. Spend the accuracy knowingly.
+    /// </para>
+    /// <para>
+    /// <c>layout</c> is <c>'row'</c> (side by side), <c>'nested'</c> (concentric on a shared foot,
+    /// which compares far better than separated shapes) or <c>'free'</c> — taken automatically when
+    /// every row carries <c>x</c> and <c>y</c>, as for a map.
+    /// </para>
+    /// <para>
+    /// <b>The cartographic literature has perceptual-scaling corrections</b> — readers underestimate
+    /// large circles, so some practitioners inflate them by a fixed exponent. **We do not hold that
+    /// source**, so nothing here applies one: the areas are true, and a correction would be a
+    /// distortion this toolkit could not justify from anything it has read.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateProportionalShapes(object rect, object data, object? options = null)
+    {
+        var area = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "Proportional shapes need a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt, ShapeOptions);
+
+        var (values, labels) = ReadData(data, opt);
+        if (values.Length == 0) throw new ArgumentException("This needs at least one value.", nameof(data));
+        if (values.Any(v => v < 0d))
+        {
+            throw new ArgumentException(
+                "An area cannot be negative, so no value may be.", nameof(data));
+        }
+
+        var shape = (opt?["shape"]?.ToString() ?? "circle").ToLowerInvariant();
+        if (shape is not ("circle" or "square"))
+        {
+            throw new ArgumentException($"shape must be 'circle' or 'square'; got '{shape}'.", nameof(options));
+        }
+
+        var positions = ReadPositions(data, values.Length);
+        var layout = (opt?["layout"]?.ToString() ?? (positions is not null ? "free" : "row")).ToLowerInvariant();
+        if (layout is not ("row" or "nested" or "free"))
+        {
+            throw new ArgumentException(
+                $"layout must be 'row', 'nested' or 'free'; got '{layout}'.", nameof(options));
+        }
+
+        if (layout == "free" && positions is null)
+        {
+            throw new ArgumentException(
+                "A 'free' layout needs an x and a y on every row; some are missing.", nameof(data));
+        }
+
+        var px = Num(area, "x");
+        var py = Num(area, "y");
+        var pw = Num(area, "width");
+        var ph = Num(area, "height");
+
+        var biggest = Opt(opt, "max", values.Max());
+        if (biggest <= 0d) throw new ArgumentException("This needs a positive value.", nameof(data));
+
+        var gap = Opt(opt, "gap", 10d);
+        var labelGap = Opt(opt, "labelGap", 6d);
+        var bottomAligned = !string.Equals(opt?["align"]?.ToString(), "center", StringComparison.OrdinalIgnoreCase);
+
+        // The largest mark's linear size. Everything else follows by square root, so the biggest
+        // shape sets the scale and no other shape can exceed it.
+        var maxSize = Opt(opt, "maxSize", layout switch
+        {
+            "row" => Math.Min(ph, (pw - gap * (values.Length - 1)) / values.Length),
+            _ => Math.Min(pw, ph)
+        });
+
+        if (maxSize <= 0d)
+        {
+            throw new ArgumentException(
+                $"{values.Length} shapes with {gap:0.#} px gaps leave no room in {pw:0}x{ph:0} px.",
+                nameof(rect));
+        }
+
+        // The one line that matters: linear size goes as the square root of the value, so AREA is
+        // what carries the number. Written through Scale.radiusFor so there is one implementation of
+        // this rule in the SDK rather than two that could disagree.
+        var scaleTk = new ScaleToolkit();
+        var sizes = values.Select(v => 2d * scaleTk.RadiusFor(v, biggest, maxSize / 2d)).ToArray();
+
+        var shapes = new List<Dictionary<string, object>>(values.Length);
+        var labelList = new List<Dictionary<string, object>>(values.Length);
+        var slots = new List<Dictionary<string, object>>(values.Length);
+
+        var baseline = py + ph;
+        var cursor = px;
+
+        for (var i = 0; i < values.Length; i++)
+        {
+            var size = sizes[i];
+            double cx, cy;
+
+            switch (layout)
+            {
+                case "free":
+                    cx = positions![i].X;
+                    cy = positions[i].Y;
+                    break;
+
+                case "nested":
+                    // Concentric on a shared foot. Separated shapes are hard to compare; sharing an
+                    // edge turns the comparison into one about a common line.
+                    cx = px + pw / 2d;
+                    cy = bottomAligned ? baseline - size / 2d : py + ph / 2d;
+                    break;
+
+                default:
+                    cx = cursor + size / 2d;
+                    cy = bottomAligned ? baseline - size / 2d : py + ph / 2d;
+                    cursor += size + gap;
+                    break;
+            }
+
+            var box = Rect(cx - size / 2d, cy - size / 2d, size, size);
+            var drawn = shape == "circle" ? Math.PI * size * size / 4d : size * size;
+
+            var item = new Dictionary<string, object>
+            {
+                ["index"] = i,
+                ["label"] = labels[i],
+                ["value"] = values[i],
+                ["cx"] = cx,
+                ["cy"] = cy,
+                ["size"] = size,
+                ["radius"] = size / 2d,
+                ["area"] = drawn,
+                ["fraction"] = Fraction(values[i], 0d, biggest),
+                ["bounds"] = box
+            };
+            shapes.Add(item);
+
+            labelList.Add(new Dictionary<string, object>
+            {
+                ["text"] = labels[i],
+                ["x"] = cx,
+                ["y"] = (bottomAligned && layout != "free" ? baseline : cy + size / 2d) + labelGap,
+                ["align"] = "center",
+                ["baseline"] = "top",
+                ["index"] = i
+            });
+
+            slots.Add(Slot(i, labels[i], values[i], Fraction(values[i], 0d, biggest),
+                Num(box, "x"), Num(box, "y"), size, size,
+                cx, cy + size / 2d, cx, cy - size / 2d, size, 0d));
+        }
+
+        // A size legend: round reference values, nested, so a reader can calibrate the areas.
+        var legendCount = Math.Max(0, (int)Opt(opt, "legendCount", 3d));
+        var legend = new List<Dictionary<string, object>>(legendCount);
+
+        if (legendCount > 0)
+        {
+            var ticks = scaleTk.Ticks(0d, biggest, legendCount + 1)
+                .Where(t => t > 0d && t <= biggest)
+                .ToArray();
+
+            foreach (var reference in ticks.Reverse().Take(legendCount).OrderByDescending(t => t))
+            {
+                var size = 2d * scaleTk.RadiusFor(reference, biggest, maxSize / 2d);
+                legend.Add(new Dictionary<string, object>
+                {
+                    ["value"] = reference,
+                    ["label"] = Format(reference),
+                    ["size"] = size,
+                    ["radius"] = size / 2d
+                });
+            }
+        }
+
+        // Computed from the drawn geometry rather than asserted: if the sizing were ever wrong, this
+        // would say so instead of quietly reporting 1.
+        var positive = Enumerable.Range(0, values.Length).Where(i => values[i] > 0d).ToArray();
+        var lieFactor = 1d;
+        if (positive.Length >= 2)
+        {
+            var hi = positive.OrderByDescending(i => values[i]).First();
+            var lo = positive.OrderBy(i => values[i]).First();
+            if (values[hi] > values[lo])
+            {
+                var areaRatio = Convert.ToDouble(shapes[hi]["area"]) / Convert.ToDouble(shapes[lo]["area"]);
+                lieFactor = areaRatio / (values[hi] / values[lo]);
+            }
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "proportionalShapes",
+            ["shape"] = shape,
+            ["layout"] = layout,
+            ["plot"] = Rect(px, py, pw, ph),
+            ["bounds"] = Rect(px, py, pw, ph),
+            ["shapes"] = shapes.ToArray(),
+            ["slots"] = slots.ToArray(),
+            ["labels"] = labelList.ToArray(),
+            ["legend"] = legend.ToArray(),
+            ["max"] = biggest,
+            ["maxSize"] = maxSize,
+
+            ["encoding"] = "area",
+            ["encodingRank"] = 4,
+            ["isZeroBased"] = true,
+            ["lieFactor"] = lieFactor
+        };
+    }
+
+    /// <summary>
     /// The marks of a chart model as geometry: one path per bar, plus the whole set unioned.
     /// </summary>
     /// <remarks>
@@ -1689,6 +2110,29 @@ public class ChartToolkit
         slot["angleDeg"] = angleDeg;
         return slot;
     }
+
+    /// <summary>An arc band, in both angle units.</summary>
+    /// <remarks>
+    /// Degrees are the toolkit's convention — <c>angleDeg</c>, <c>rotationDeg</c>, <c>lightAngleDeg</c>
+    /// — and radians are what <c>ctx.arc(...)</c> takes. Both are given rather than making every caller
+    /// convert, and they are computed together here so the pair cannot drift apart.
+    /// </remarks>
+    static Dictionary<string, object> Arc(
+        double cx, double cy, double radius, double thickness, double startDeg, double endDeg) =>
+        new()
+        {
+            ["cx"] = cx,
+            ["cy"] = cy,
+            ["radius"] = radius,
+            ["thickness"] = thickness,
+            ["innerRadius"] = radius - thickness / 2d,
+            ["outerRadius"] = radius + thickness / 2d,
+            ["startAngleDeg"] = startDeg,
+            ["endAngleDeg"] = endDeg,
+            ["sweepDeg"] = endDeg - startDeg,
+            ["startAngle"] = startDeg * Math.PI / 180d,
+            ["endAngle"] = endDeg * Math.PI / 180d
+        };
 
     static double Fraction(double value, double min, double max) =>
         Math.Abs(max - min) < double.Epsilon ? 0d : (value - min) / (max - min);

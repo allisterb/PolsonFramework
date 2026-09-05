@@ -670,4 +670,192 @@ public class ChartToolkitTests : TestsRuntime
         Assert.Empty((CanvasPath[])geometry["frames"]!);
     }
     #endregion
+
+    #region Tests — small multiples
+    static Dictionary<string, object?>[] Panels(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["panels"]!).Cast<object>().Select(p => (Dictionary<string, object?>)p!).ToArray();
+
+    static Dictionary<string, object?> PanelChart(Dictionary<string, object?> panel) =>
+        (Dictionary<string, object?>)panel["chart"]!;
+
+    static object[] ThreeSeries() =>
+    [
+        new Dictionary<string, object?> { ["label"] = "North", ["data"] = new[] { 20d, 90d, 55d } },
+        new Dictionary<string, object?> { ["label"] = "South", ["data"] = new[] { 5d, 12d, 9d } },
+        new Dictionary<string, object?> { ["label"] = "West",  ["data"] = new[] { 30d, 44d, 38d } }
+    ];
+
+    /// <summary>
+    /// The rule this construction exists to make unbreakable.
+    /// </summary>
+    /// <remarks>
+    /// Built by hand it takes one forgotten argument to get wrong, and no individual panel can detect
+    /// the mistake because each is correct on its own terms. Here there is no argument to forget.
+    /// </remarks>
+    [Fact]
+    public void TestEveryPanelSharesOneScale()
+    {
+        var model = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries());
+        var panels = Panels(model);
+
+        Assert.True((bool)model["sharedScale"]!);
+        foreach (var panel in panels)
+        {
+            var chart = PanelChart(panel);
+            Assert.Equal(Num(model, "min"), Num(chart, "min"), 6);
+            Assert.Equal(Num(model, "max"), Num(chart, "max"), 6);
+        }
+
+        // 90 against 12 across two panels: the bars must be in the ratio of the values, which is
+        // exactly what per-panel extents would destroy.
+        var tallest = Bars(PanelChart(panels[0])).Max(b => Num(b, "height"));
+        var shortest = Bars(PanelChart(panels[1])).Max(b => Num(b, "height"));
+        Assert.Equal(90d / 12d, tallest / shortest, 3);
+    }
+
+    /// <summary>A shared scale does not excuse truncating it: a length encoding keeps its zero.</summary>
+    [Fact]
+    public void TestALengthFormKeepsItsZeroBaselineAcrossPanels()
+    {
+        var model = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries());
+        Assert.True((bool)model["isZeroBased"]!);
+        Assert.Equal(0d, Num(model, "min"), 6);
+
+        foreach (var panel in Panels(model))
+        {
+            Assert.True((bool)PanelChart(panel)["isZeroBased"]!);
+            Assert.Equal(1d, Num(PanelChart(panel), "lieFactor"), 9);
+        }
+    }
+
+    /// <summary>
+    /// A position form crops to the data; a length form does not. Same values, two answers.
+    /// </summary>
+    /// <remarks>
+    /// Data well away from zero, because that is the case where the difference shows — near zero
+    /// <c>Scale.nice</c> rounds the lower bound down to it anyway and the two forms agree by accident.
+    /// </remarks>
+    [Fact]
+    public void TestOnlyALengthFormForcesZeroIntoTheDomain()
+    {
+        object[] highSeries =
+        [
+            new Dictionary<string, object?> { ["label"] = "a", ["data"] = new[] { 71d, 78d } },
+            new Dictionary<string, object?> { ["label"] = "b", ["data"] = new[] { 83d, 91d } }
+        ];
+
+        var dots = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), highSeries,
+            new Dictionary<string, object?> { ["form"] = "dot" });
+        var columns = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), highSeries);
+
+        Assert.Equal("dot", PanelChart(Panels(dots)[0])["type"]);
+        Assert.Equal(1, Convert.ToInt32(dots["encodingRank"]));
+
+        Assert.True(Num(dots, "min") > 0d, "a dot form crops to the union of the data");
+        Assert.Equal(0d, Num(columns, "min"), 6);   // a length form keeps its zero
+        Assert.True((bool)columns["isZeroBased"]!);
+    }
+
+    /// <summary>Each panel is a whole chart, so everything that works on one works on a panel.</summary>
+    [Fact]
+    public void TestEachPanelIsACompleteChartModel()
+    {
+        var model = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries());
+
+        foreach (var panel in Panels(model))
+        {
+            var chart = PanelChart(panel);
+            Assert.Equal("column", chart["type"]);
+            Assert.Equal(3, Bars(chart).Length);
+            Assert.NotNull(chart["ticks"]);
+
+            // And the geometry call takes it unchanged.
+            Assert.Equal(3, ((CanvasPath[])Chart.CreateChartGeometry(chart)["marks"]!).Length);
+        }
+    }
+
+    [Fact]
+    public void TestPanelsAreLaidOutOnAGridWithRoomForTitles()
+    {
+        var model = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries(),
+            new Dictionary<string, object?> { ["columns"] = 2, ["titleHeight"] = 20d });
+
+        Assert.Equal(2, Convert.ToInt32(model["columns"]));
+        Assert.Equal(2, Convert.ToInt32(model["rows"]));
+
+        var panels = Panels(model);
+        Assert.Equal(Num(panels[0], "titleY"), Num(panels[1], "titleY"), 3);      // same row
+        Assert.True(Num(panels[2], "titleY") > Num(panels[0], "titleY"));         // next row
+
+        // The plot starts below the title, not on top of it.
+        var plot = (IDictionary)PanelChart(panels[0])["plot"]!;
+        Assert.Equal(Num(panels[0], "titleY") + 20d, Num(plot, "y"), 3);
+    }
+
+    [Fact]
+    public void TestLabelsComeFromTheSeries()
+    {
+        var panels = Panels(Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries()));
+        Assert.Equal(["North", "South", "West"], panels.Select(p => p["label"]?.ToString()));
+    }
+
+    /// <summary>Bare arrays work too, for the case where the panels need no titles.</summary>
+    [Fact]
+    public void TestBareArraysAreAcceptedAsSeries()
+    {
+        var model = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400),
+            new object[] { new[] { 1d, 2d }, new[] { 3d, 4d } });
+        Assert.Equal(2, Panels(model).Length);
+    }
+
+    /// <summary>Grid options are the construction's own and are not handed down to be refused.</summary>
+    [Fact]
+    public void TestGridOptionsAreNotPassedToThePanels()
+    {
+        var model = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries(),
+            new Dictionary<string, object?>
+            {
+                ["columns"] = 3, ["gap"] = 10d, ["rowGap"] = 12d, ["titleHeight"] = 16d,
+                ["padding"] = 0.5d          // this one *is* a panel option and must arrive
+            });
+
+        Assert.Equal(0.5d, Convert.ToDouble(((BandScale)PanelChart(Panels(model)[0])["band"]!).Padding), 6);
+    }
+
+    /// <summary>
+    /// One set of category labels serves every panel, which is the usual case.
+    /// </summary>
+    /// <remarks>
+    /// <c>labels</c> was missing from the pass-through list at first. Being valid at the grid level
+    /// and unknown at the panel level, it was accepted and then silently discarded — no error, no
+    /// labels. Only drawing one revealed it.
+    /// </remarks>
+    [Fact]
+    public void TestOneSetOfLabelsReachesEveryPanel()
+    {
+        var model = Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), ThreeSeries(),
+            new Dictionary<string, object?> { ["labels"] = new[] { "Jan", "Feb", "Mar" } });
+
+        foreach (var panel in Panels(model))
+        {
+            Assert.Equal(["Jan", "Feb", "Mar"], Bars(PanelChart(panel)).Select(b => b["label"]?.ToString()));
+        }
+    }
+
+    [Fact]
+    public void TestAnUnknownFormIsRefusedByName()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => Chart.CreateSmallMultiples(
+            Rect(0, 0, 600, 400), ThreeSeries(), new Dictionary<string, object?> { ["form"] = "sunburst" }));
+        Assert.Contains("sunburst", ex.Message);
+        Assert.Contains("framedRectangle", ex.Message);
+    }
+
+    [Fact]
+    public void TestEmptySeriesAreRefused()
+    {
+        Assert.Throws<ArgumentException>(() => Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), Array.Empty<object>()));
+        Assert.Throws<ArgumentException>(() => Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), "not a series"));
+    }
+    #endregion
 }

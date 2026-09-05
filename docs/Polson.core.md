@@ -1403,7 +1403,8 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 - `Chart.createDotChart(rect, data, options?)` → `object` — Value as **position on one shared axis**, categories down. The most accurately decoded form there is, and the one Cleveland & McGill offer in place of a bar chart. Adds `radius` and `sort` (`'none'`, `'asc'`, `'desc'`) to the options.
 - `Chart.createGroupedDotChart(rect, data, options?)` → `object` — The same, with rows gathered into labelled groups from a `group` field, **still against one axis**. Adds `groupGap` and `headingHeight`.
 - `Chart.createFramedRectangleChart(rect, data, options?)` → `object` — A value as a **level inside an identical box**, placed anywhere. What Cleveland & McGill offer in place of a **shaded map**. Rows carry `x` and `y` in the plot's own coordinate space; rows without them are laid out on a grid. Adds `frameWidth`, `frameHeight`, `columns` and `gap`.
-- `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry.
+- `Chart.createSmallMultiples(rect, series, options?)` → `object` — A grid of panels **sharing one scale**, computed across every series before any panel is built. `series` is `[{ label, data }]` or an array of arrays; `form` picks what each panel is (`'column'`, `'bar'`, `'dot'`, `'groupedDot'`, `'framedRectangle'`). Adds `columns`, `gap`, `rowGap`, `titleHeight`.
+- `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], frames: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry. `frames` is populated for framed rectangles and empty otherwise.
 - `Chart.drawChart(ctx, chartModel)` → the same geometry — Fills the marks with the context's current `fillStyle` and returns what it drew.
 
 `rect` is any `{ x, y, width, height }`, so a `Layout` rectangle fits. `data` is an array of numbers, or of objects carrying `value` and optionally `label`.
@@ -1457,16 +1458,26 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 >
 > **Positions are all-or-nothing.** If any row lacks `x`/`y`, the whole set is laid out on a grid — half a set on a map with the rest gridded over the top of it is a picture nobody wants and a mistake nothing downstream could report.
 
-> [!TIP]
-> **Small multiples share one scale by passing `max`.** This is the one rule in `polson://manual/13` §2 that no single panel can detect, because each panel is individually correct:
+> [!IMPORTANT]
+> **`createSmallMultiples(...)` exists to make one rule unbreakable rather than merely stated.** Panels drawn to their own extents look comparable and are not — the lie is told by the layout rather than by any single chart, and it is the one failure in `polson://manual/13` §2 that **no individual panel can detect**, because each is correct on its own terms. Assembled by hand it takes one forgotten `max` to get wrong:
 >
 > ```javascript
-> const bounds = Scale.extent(seriesA.concat(seriesB, seriesC));
-> const panels = Layout.grid(page, 3, 1, 16);
-> const charts = [seriesA, seriesB, seriesC].map((s, i) =>
->     Chart.createColumnChart(panels[i], s, { max: bounds.max }));
+> const grid = Chart.createSmallMultiples(page, [
+>     { label: 'North', data: north }, { label: 'South', data: south }, { label: 'West', data: west }
+> ], { columns: 3, form: 'column' });
+>
+> for (const panel of grid.panels) {
+>     ctx.fillStyle = '#1f6f8b';
+>     Chart.drawChart(ctx, panel.chart);          // each panel is a whole chart model
+>     ctx.fillText(panel.label, panel.titleX, panel.titleY);
+> }
 > ```
 >
+> **It returns charts, not pictures.** Every panel carries a complete model of the form you asked for, so `drawChart`, `createChartGeometry`, the ticks, the labels and the integrity fields all work on a panel exactly as on a standalone chart.
+>
+> **A shared scale does not excuse truncating it.** For `'column'` and `'bar'` the zero is forced into the shared domain, because sharing one scale across panels that each individually lie is not an improvement. For `'dot'` the domain crops to the union of the data, which is the whole advantage of the form.
+
+> [!TIP]
 > **The model is closed-form and allocates no paths**, so measuring twenty-four panels is arithmetic. `createChartGeometry(...)` is the one that builds native geometry — the same split as `createMannequinFigure` and `createFigureGeometry`, and for the same reason.
 
 ```javascript

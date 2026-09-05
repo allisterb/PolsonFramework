@@ -49,8 +49,21 @@ public class ChartToolkit
     private static readonly string[] KnownOptions =
     [
         "baseline", "max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap",
-        "radius", "sort", "groupGap", "headingHeight", "frameWidth", "frameHeight", "columns", "gap"
+        "radius", "sort", "groupGap", "headingHeight", "frameWidth", "frameHeight", "columns", "gap",
+        "form", "rowGap", "titleHeight"
     ];
+
+    /// <summary>Options a per-panel chart understands, so the rest are not handed down to be refused.</summary>
+    /// <remarks>
+    /// <c>labels</c> belongs here: small multiples usually repeat one set of categories across every
+    /// panel — the same months, the same products — so one array serves them all. It was left out of
+    /// the first version and, being valid at the grid level and unknown at the panel level, was
+    /// accepted and then silently discarded. Found by drawing one and noticing the months were
+    /// missing, which is the only way it could have been found.
+    /// </remarks>
+    private static readonly string[] PanelOptions =
+        ["baseline", "padding", "tickCount", "labelGap", "tickGap", "radius", "sort",
+         "groupGap", "headingHeight", "frameWidth", "frameHeight", "labels"];
     #endregion
 
     #region Methods
@@ -554,6 +567,123 @@ public class ChartToolkit
     }
 
     /// <summary>
+    /// A grid of panels sharing <b>one scale</b>, computed across every series at once.
+    /// </summary>
+    /// <remarks>
+    /// <b>This exists to make a rule unbreakable rather than merely stated.</b> Small multiples must
+    /// share a scale — panels drawn to their own extents look comparable and are not, which is a lie
+    /// told by the layout rather than by any single chart, and the one failure in
+    /// <c>polson://manual/13</c> §2 that no individual panel can detect because each is correct on its
+    /// own terms. Built by hand it takes one forgotten argument to get wrong. Here the extent is taken
+    /// across every series before any panel is built, and there is no argument to forget.
+    /// <para>
+    /// <b>It returns charts, not pictures.</b> Each panel carries a complete model of whichever form
+    /// you asked for, so everything that works on a chart works on a panel — <c>drawChart</c>,
+    /// <c>createChartGeometry</c>, the ticks, the labels, the integrity fields. A construction whose
+    /// output is more constructions.
+    /// </para>
+    /// <para>
+    /// <c>series</c> is an array of <c>{ label, data }</c>, or of bare arrays. <c>form</c> chooses what
+    /// each panel is: <c>'column'</c> (default), <c>'bar'</c>, <c>'dot'</c>, <c>'groupedDot'</c> or
+    /// <c>'framedRectangle'</c>. Panel-level options are passed through; grid options
+    /// (<c>columns</c>, <c>gap</c>, <c>rowGap</c>, <c>titleHeight</c>) are not handed down.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateSmallMultiples(object rect, object series, object? options = null)
+    {
+        var area = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "Small multiples need a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt);
+
+        var panelsIn = ReadSeries(series);
+        if (panelsIn.Count == 0)
+        {
+            throw new ArgumentException("Small multiples need at least one series.", nameof(series));
+        }
+
+        var form = (opt?["form"]?.ToString() ?? "column").ToLowerInvariant();
+        var columns = Math.Max(1, (int)Opt(opt, "columns", Math.Ceiling(Math.Sqrt(panelsIn.Count))));
+        var rows = (int)Math.Ceiling(panelsIn.Count / (double)columns);
+        var gap = Opt(opt, "gap", 18d);
+        var rowGap = Opt(opt, "rowGap", gap);
+        var titleHeight = Opt(opt, "titleHeight", 18d);
+
+        // The whole point, and it happens before a single panel is built: one extent over everything.
+        var everyValue = panelsIn.SelectMany(p => ReadData(p.Data, null).Values).ToArray();
+        if (everyValue.Length == 0)
+        {
+            throw new ArgumentException("Small multiples need at least one value.", nameof(series));
+        }
+
+        var scaleTk = new ScaleToolkit();
+        var lo = everyValue.Min();
+        var hi = everyValue.Max();
+
+        // A length encoding still needs its zero inside the domain, or every panel would share one
+        // scale and each would individually lie. Sharing a scale does not excuse truncating it.
+        var lengthForm = form is "column" or "bar";
+        var niced = scaleTk.Nice(lengthForm ? Math.Min(0d, lo) : lo, hi);
+        var min = Opt(opt, "min", Convert.ToDouble(niced["min"], CultureInfo.InvariantCulture));
+        var max = Opt(opt, "max", Convert.ToDouble(niced["max"], CultureInfo.InvariantCulture));
+
+        var cells = new LayoutToolkit().Grid(area, columns, rows, (float)gap, (float)rowGap);
+        var panels = new List<Dictionary<string, object?>>(panelsIn.Count);
+
+        for (var i = 0; i < panelsIn.Count; i++)
+        {
+            var cell = cells[i];
+            var plot = new Dictionary<string, object>
+            {
+                ["x"] = Convert.ToDouble(cell["x"], CultureInfo.InvariantCulture),
+                ["y"] = Convert.ToDouble(cell["y"], CultureInfo.InvariantCulture) + titleHeight,
+                ["width"] = Convert.ToDouble(cell["width"], CultureInfo.InvariantCulture),
+                ["height"] = Convert.ToDouble(cell["height"], CultureInfo.InvariantCulture) - titleHeight
+            };
+
+            var panelOpt = PanelOptionsFrom(opt);
+            panelOpt["min"] = min;
+            panelOpt["max"] = max;
+
+            panels.Add(new Dictionary<string, object?>
+            {
+                ["index"] = i,
+                ["label"] = panelsIn[i].Label,
+                ["cell"] = cell,
+                ["titleX"] = Convert.ToDouble(cell["x"], CultureInfo.InvariantCulture),
+                ["titleY"] = Convert.ToDouble(cell["y"], CultureInfo.InvariantCulture),
+                ["chart"] = BuildPanel(form, plot, panelsIn[i].Data, panelOpt)
+            });
+        }
+
+        var first = (Dictionary<string, object?>)panels[0]["chart"]!;
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "smallMultiples",
+            ["form"] = form,
+            ["plot"] = Rect(Num(area, "x"), Num(area, "y"), Num(area, "width"), Num(area, "height")),
+            ["bounds"] = Rect(Num(area, "x"), Num(area, "y"), Num(area, "width"), Num(area, "height")),
+            ["panels"] = panels.ToArray(),
+            ["columns"] = columns,
+            ["rows"] = rows,
+            ["min"] = min,
+            ["max"] = max,
+
+            // Every panel was built from these, so the claim is a fact about the construction rather
+            // than something a caller has to keep true.
+            ["sharedScale"] = true,
+            ["scale"] = first["scale"],
+            ["encoding"] = first["encoding"],
+            ["encodingRank"] = first["encodingRank"],
+            ["isZeroBased"] = first["isZeroBased"],
+            ["lieFactor"] = first["lieFactor"]
+        };
+    }
+
+    /// <summary>
     /// The marks of a chart model as geometry: one path per bar, plus the whole set unioned.
     /// </summary>
     /// <remarks>
@@ -824,6 +954,79 @@ public class ChartToolkit
                 + $"{string.Join(", ", unknown)}. Accepted: {string.Join(", ", KnownOptions)}.", nameof(opt));
         }
     }
+
+    /// <summary>One panel's worth of input: its title and the data behind it.</summary>
+    private readonly record struct SeriesInput(string Label, object Data);
+
+    /// <summary>Reads <c>[{ label, data }]</c> or an array of bare arrays.</summary>
+    static List<SeriesInput> ReadSeries(object series)
+    {
+        var found = new List<SeriesInput>();
+        if (series is not IEnumerable items || series is string)
+        {
+            throw new ArgumentException(
+                "Small multiples take an array of series — [{ label, data }] or an array of arrays.",
+                nameof(series));
+        }
+
+        var i = 0;
+        foreach (var item in items)
+        {
+            var row = JsInterop.AsDict(item);
+            var payload = row?["data"] ?? row?["values"];
+
+            if (payload is not null)
+            {
+                found.Add(new SeriesInput(
+                    row!["label"]?.ToString() ?? (i + 1).ToString(CultureInfo.InvariantCulture), payload));
+            }
+            else if (item is IEnumerable and not string)
+            {
+                found.Add(new SeriesInput((i + 1).ToString(CultureInfo.InvariantCulture), item));
+            }
+            else if (item is not null)
+            {
+                throw new ArgumentException(
+                    $"Series {i + 1} is neither {{ label, data }} nor an array; got a {item.GetType().Name}.",
+                    nameof(series));
+            }
+
+            i++;
+        }
+
+        return found;
+    }
+
+    /// <summary>Only the options a panel chart understands, so the grid's own are not passed down.</summary>
+    static Dictionary<string, object?> PanelOptionsFrom(IDictionary? opt)
+    {
+        var panel = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (opt is null) return panel;
+
+        foreach (DictionaryEntry entry in opt)
+        {
+            var name = entry.Key?.ToString();
+            if (name is not null && PanelOptions.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                panel[name] = entry.Value;
+            }
+        }
+
+        return panel;
+    }
+
+    Dictionary<string, object?> BuildPanel(string form, object plot, object data, object options) =>
+        form switch
+        {
+            "column" => CreateColumnChart(plot, data, options),
+            "bar" => CreateBarChart(plot, data, options),
+            "dot" => CreateDotChart(plot, data, options),
+            "groupeddot" => CreateGroupedDotChart(plot, data, options),
+            "framedrectangle" => CreateFramedRectangleChart(plot, data, options),
+            _ => throw new ArgumentException(
+                $"form must be 'column', 'bar', 'dot', 'groupedDot' or 'framedRectangle'; got '{form}'.",
+                nameof(form))
+        };
 
     /// <summary>
     /// Each row's position, or null when the data carries none for every row.

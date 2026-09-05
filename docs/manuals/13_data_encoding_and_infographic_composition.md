@@ -179,7 +179,17 @@ const r = Scale.radiusFor(value, maxValue, 60);   // maxRadius 60
 ```
 
 **Small multiples share one scale.** Panels drawn to their own extents look comparable and are not —
-a lie told by the layout rather than by any single chart. Take the extent once, over everything:
+a lie told by the layout rather than by any single chart, and **the one rule here that no individual
+panel can detect**, because each is correct on its own terms. `Chart.createSmallMultiples(...)` takes
+the extent across every series before it builds a single panel, so there is no argument to forget:
+
+```js
+const grid = Chart.createSmallMultiples(page, [
+    { label: 'North', data: north }, { label: 'South', data: south }
+], { columns: 2 });
+```
+
+Assembling the panels yourself is still fine — take the extent once, over everything, and pass it in:
 
 ```js
 const shared = Scale.extent(seriesA.concat(seriesB, seriesC));

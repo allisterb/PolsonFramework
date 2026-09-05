@@ -183,6 +183,40 @@ middle planes instead.
 > are more closely related than most artists realise. Manual 07 §2's cast-shadow construction is the
 > other half of that — it needs this grid's horizon to work at all.
 
+### 2a. The faces come back, and a face is what you clip a texture to
+
+`drawPerspectiveBox` returns `{ faces, silhouette }` — a `CanvasPath` per face plus the three visible
+ones unioned. That matters because most of what a box in a scene is *for* is carrying a surface: a
+crate's planking, a wall's brick, a floor's tiling. Each wants the quad the projection produced, and
+clipping to it puts the texture in the box's own perspective without any further construction:
+
+```javascript
+const canvas = createCanvas(520, 420);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, 520, 420);
+
+const grid = Drawing.createPerspectiveGrid({ type: '2point', horizonY: 90, centerOfVisionX: 260 });
+const box = ctx.drawPerspectiveBox(grid, 240, 340, 120, 130, 110, {
+    topFill: '#d9cfb8', leftFill: '#b8ab90', rightFill: '#8d806a',
+    strokeColor: '#15151a', strokeWidth: 2 });
+
+ctx.save();
+ctx.clip(box.faces.right);                 // planking on one face only, in the box's own perspective
+ctx.strokeStyle = 'rgba(20,16,10,0.5)';
+ctx.lineWidth = 2;
+for (let y = -40; y < 460; y += 9) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(520, y + 26); ctx.stroke();
+}
+ctx.restore();
+
+log('faces returned: ' + Object.keys(box.faces).join(', '));
+canvas;
+```
+
+**The hidden faces come back whether or not `drawHiddenLines` drew them.** Building a path is not
+drawing it, and a caller staging occlusion needs the back of the box precisely when it is invisible.
+Use `silhouette` rather than a single face for a cast shadow, a rim light, or an occluding clip.
+
 ---
 
 ## 3. Perspective Cylinders & Tangent Ellipses

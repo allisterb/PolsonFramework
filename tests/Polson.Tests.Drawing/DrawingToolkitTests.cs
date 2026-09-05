@@ -478,6 +478,85 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.True(bytes.Length > 100);
     }
 
+    /// <summary>The mark is handed back, and it is the mark that was drawn.</summary>
+    /// <remarks>
+    /// A stroke that is only painted is finished; a stroke you hold is geometry you can cut, clip
+    /// inside, fill across, or union into a silhouette. The envelope is a twenty-five-sample sweep
+    /// with normals, so rebuilding it by hand to get at the shape is exactly the duplication this
+    /// return value exists to prevent.
+    /// </remarks>
+    [Fact]
+    public void TestTaperedStrokeReturnsTheMarkItFilled()
+    {
+        var canvas = new SkiaCanvas(400, 400);
+        var ctx = canvas.GetContext("2d");
+
+        var mark = ctx.DrawTaperedStroke(50, 50, 150, 20, 250, 180, 350, 350, 8f, "#0a0a0c");
+
+        Assert.NotNull(mark);
+        var box = mark.Path.Bounds;
+        Assert.True(box.Width > 250f && box.Height > 250f, $"the envelope should span the curve; got {box}");
+
+        // Thickness is only partly visible in the bounding box, which is worth pinning down rather
+        // than guessing at: the taper closes to nothing at both ends, so the endpoints fix the
+        // horizontal extent whatever `maxThickness` is, while the mid-curve bulge does move the
+        // vertical one. The unambiguous statement is a point 12px along the normal at the curve's
+        // midpoint — outside a mark 8px at its widest, inside one 40px at its widest.
+        var fatter = ctx.DrawTaperedStroke(50, 50, 150, 20, 250, 180, 350, 350, 40f, "#0a0a0c");
+        Assert.Equal(box.Width, fatter.Path.Bounds.Width, 2);
+        Assert.True(fatter.Path.Bounds.Height > box.Height);
+        Assert.False(mark.Path.Contains(190.9f, 132.9f), "an 8px mark should not reach 12px off the curve");
+        Assert.True(fatter.Path.Contains(190.9f, 132.9f), "a 40px mark should");
+    }
+
+    /// <summary>Building the envelope and drawing it are the same geometry.</summary>
+    [Fact]
+    public void TestCreateTaperedStrokePathMatchesTheDrawnMark()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var canvas = new SkiaCanvas(400, 400);
+        var ctx = canvas.GetContext("2d");
+
+        var drawn = ctx.DrawTaperedStroke(50, 50, 150, 20, 250, 180, 350, 350, 12f, "#0a0a0c");
+        var built = toolkit.CreateTaperedStrokePath(
+            new Dictionary<string, object?> { ["x"] = 50f, ["y"] = 50f },
+            new Dictionary<string, object?> { ["x"] = 150f, ["y"] = 20f },
+            new Dictionary<string, object?> { ["x"] = 250f, ["y"] = 180f },
+            new Dictionary<string, object?> { ["x"] = 350f, ["y"] = 350f }, 12f);
+
+        Assert.Equal(drawn.Path.PointCount, built.Path.PointCount);
+        Assert.Equal(drawn.Path.Bounds, built.Path.Bounds);
+    }
+
+    /// <summary>
+    /// Drawing a tapered mark no longer clobbers the caller's current path.
+    /// </summary>
+    /// <remarks>
+    /// It used to build the envelope on the context, so an inking call silently replaced whatever
+    /// path the caller had under construction — the kind of cross-talk that shows up three calls
+    /// later as a fill of the wrong shape. Building it on its own path removes the hazard, and this
+    /// pins that down rather than leaving it as an incidental consequence of the refactor.
+    /// </remarks>
+    [Fact]
+    public void TestTaperedStrokeLeavesTheCurrentPathAlone()
+    {
+        var canvas = new SkiaCanvas(200, 200);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = "#ffffff";
+        ctx.FillRect(0, 0, 200, 200);
+
+        ctx.BeginPath();
+        ctx.Rect(20, 20, 60, 60);
+        ctx.DrawTaperedStroke(120, 120, 140, 130, 160, 150, 180, 180, 6f, "#ff0000");
+
+        ctx.FillStyle = "#0000ff";
+        ctx.Fill();                                  // must still be the rect
+
+        var bitmap = canvas.Bitmap;
+        Assert.StartsWith("#0000FF", bitmap.GetPixel(50, 50), StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith("#FFFFFF", bitmap.GetPixel(110, 60), StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void TestFeatheringAndCrossContour()
     {
@@ -1284,6 +1363,352 @@ public class DrawingToolkitTests : TestsRuntime
 
     private static IDictionary<string, object?> Arm(Dictionary<string, object?> figure, string limb) =>
         (IDictionary<string, object?>)figure[limb]!;
+
+    #endregion
+
+    #region Figure Geometry Tests
+    private static readonly Dictionary<string, object?> Lunge = new()
+    {
+        ["pose"] = new Dictionary<string, object?>
+        {
+            ["spineDeg"] = 18f,
+            ["neckDeg"] = -10f,
+            ["rightArm"] = new Dictionary<string, object?> { ["shoulderDeg"] = -46f, ["elbowDeg"] = 40f },
+            ["leftArm"] = new Dictionary<string, object?> { ["shoulderDeg"] = 158f, ["elbowDeg"] = -62f },
+            ["rightLeg"] = new Dictionary<string, object?> { ["hipDeg"] = 58f, ["kneeDeg"] = 36f },
+            ["leftLeg"] = new Dictionary<string, object?> { ["hipDeg"] = 122f, ["kneeDeg"] = -14f }
+        }
+    };
+
+    private static (float X, float Y, float W, float H) Rect(object? bounds)
+    {
+        var b = (IDictionary<string, object?>)bounds!;
+        return (Convert.ToSingle(b["x"]), Convert.ToSingle(b["y"]),
+                Convert.ToSingle(b["width"]), Convert.ToSingle(b["height"]));
+    }
+
+    /// <summary>
+    /// A posed figure's extent is not its height, which is the trap <c>bounds</c> exists to close.
+    /// </summary>
+    /// <remarks>
+    /// A thrown arm reaches far wider than the proportional canon ever does, so a caller sizing a
+    /// figure to a panel by <c>totalHeight</c> runs a limb straight off the edge. Measured on this
+    /// lunge: 345 x 1013 standing against 938 x 954 posed.
+    /// </remarks>
+    [Fact]
+    public void TestAPosedFigureIsFarWiderThanTheStandingCanon()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var standing = Rect(toolkit.CreateMannequinFigure(0, 0, 1000)["bounds"]);
+        var posed = Rect(toolkit.CreateMannequinFigure(0, 0, 1000, Lunge)["bounds"]);
+
+        Assert.True(standing.W < standing.H, "the standing canon is taller than it is wide");
+        Assert.True(posed.W > standing.W * 2f,
+            $"the lunge should be more than twice as wide as the canon; got {posed.W:F0} against {standing.W:F0}");
+    }
+
+    /// <summary>The closed-form bounds agree with the geometry they claim to describe.</summary>
+    /// <remarks>
+    /// <c>bounds</c> is computed without building a single path so it is cheap enough to be
+    /// unconditional. That is only safe while it agrees with the paths — two ways of measuring one
+    /// figure that drift apart is worse than having only the slow one.
+    /// </remarks>
+    [Fact]
+    public void TestBoundsAgreeWithTheSilhouetteTheyDescribe()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var figure = toolkit.CreateMannequinFigure(200, 80, 640, Lunge);
+        var claimed = Rect(figure["bounds"]);
+
+        var geometry = toolkit.CreateFigureGeometry(figure);
+        var actual = ((CanvasPath)geometry["silhouette"]!).Path.Bounds;
+
+        Assert.InRange(actual.Left, claimed.X - 1.5f, claimed.X + 1.5f);
+        Assert.InRange(actual.Top, claimed.Y - 1.5f, claimed.Y + 1.5f);
+        Assert.InRange(actual.Width, claimed.W - 3f, claimed.W + 3f);
+        Assert.InRange(actual.Height, claimed.H - 3f, claimed.H + 3f);
+    }
+
+    /// <summary>Padding inflates every mass by the gap asked for, on both axes.</summary>
+    /// <remarks>
+    /// This is the drapery premise from Studio Manual 22 made arithmetic: cloth covers the figure
+    /// without fitting it, and the gap is where every fold comes from.
+    /// <para>
+    /// The tolerance is not slack for its own sake. Growing both radii of a <i>rotated</i> ellipse
+    /// is not a uniform outward offset of its bounding box, so a tilted mass contributes marginally
+    /// less than the padding at the extremes — about a hundredth of a pixel at this size. Asserting
+    /// exact addition would be asserting something that is not true of ellipses.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestPaddingInflatesTheFigureByTheGapAsked()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var figure = toolkit.CreateMannequinFigure(200, 80, 640, Lunge);
+
+        var bare = Rect(toolkit.CreateFigureGeometry(figure)["bounds"]);
+        var clothed = Rect(toolkit.CreateFigureGeometry(figure,
+            new Dictionary<string, object?> { ["padding"] = 24f })["bounds"]);
+
+        Assert.InRange(clothed.W, bare.W + 47.5f, bare.W + 48.5f);
+        Assert.InRange(clothed.H, bare.H + 47.5f, bare.H + 48.5f);
+        Assert.InRange(clothed.X, bare.X - 24.5f, bare.X - 23.5f);
+    }
+
+    /// <summary>
+    /// The silhouette is one solid region, with no hole punched at a joint.
+    /// </summary>
+    /// <remarks>
+    /// The failure this guards is specific and silent: a capsule whose end caps are hand-swept arcs
+    /// has to choose which half of the circle it sweeps, and choosing wrong <i>subtracts</i> a bite
+    /// instead of adding one — producing a white disc at every joint that renders cleanly and looks
+    /// like a design. Sampling the elbow catches it; a bounds check never would.
+    /// </remarks>
+    [Fact]
+    public void TestTheSilhouetteHasNoHolesAtTheJoints()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var figure = toolkit.CreateMannequinFigure(300, 60, 460, Lunge);
+        var silhouette = (CanvasPath)toolkit.CreateFigureGeometry(figure)["silhouette"]!;
+
+        var canvas = new SkiaCanvas(640, 640);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = "#ffffff";
+        ctx.FillRect(0, 0, 640, 640);
+        ctx.FillStyle = "#000000";
+        ctx.Fill(silhouette);
+
+        var bitmap = canvas.Bitmap;
+        foreach (var (limb, joint) in new[]
+                 {
+                     ("leftArm", "elbow"), ("rightArm", "elbow"),
+                     ("leftLeg", "knee"), ("rightLeg", "knee"),
+                     ("leftArm", "shoulder"), ("rightArm", "shoulder")
+                 })
+        {
+            var point = (IDictionary<string, object?>)((IDictionary<string, object?>)figure[limb]!)[joint]!;
+            var x = (int)Convert.ToSingle(point["x"]);
+            var y = (int)Convert.ToSingle(point["y"]);
+            Assert.StartsWith("#000000", bitmap.GetPixel(x, y), StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>The lean orients the masses, not only their centres, and says by how much.</summary>
+    /// <remarks>
+    /// These three angles were computed and read by nothing: both drawers passed a hardcoded zero
+    /// rotation, so a figure leaning eighteen degrees kept a perfectly upright head and an untilted
+    /// ribcage. The pelvis is the pivot the spine leans over, so it is the one that must not move.
+    /// </remarks>
+    [Fact]
+    public void TestTheLeanOrientsTheMassesItMoves()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var figure = toolkit.CreateMannequinFigure(300, 100, 320, new Dictionary<string, object?>
+        {
+            ["shoulderTiltDeg"] = -6f,
+            ["pelvicTiltDeg"] = 6f,
+            ["pose"] = new Dictionary<string, object?> { ["spineDeg"] = 18f, ["neckDeg"] = -10f }
+        });
+
+        var head = (IDictionary<string, object?>)figure["head"]!;
+        var ribcage = (IDictionary<string, object?>)figure["ribcage"]!;
+        var pelvis = (IDictionary<string, object?>)figure["pelvis"]!;
+
+        Assert.Equal(8f, Convert.ToSingle(head["angleDeg"]), 3);        // spineDeg + neckDeg
+        Assert.Equal(12f, Convert.ToSingle(ribcage["tiltDeg"]), 3);     // shoulderTiltDeg + spineDeg
+        Assert.Equal(6f, Convert.ToSingle(pelvis["tiltDeg"]), 3);       // the pivot, unmoved
+    }
+
+    /// <summary>A rotated head mass really is rotated, not merely labelled with an angle.</summary>
+    /// <remarks>
+    /// The head is taller than it is wide, so turning it a quarter turn has to swap the extents of
+    /// its own path. Comparing the part's box rather than the figure's isolates the rotation from
+    /// the translation the lean also applies.
+    /// </remarks>
+    [Fact]
+    public void TestTheHeadMassIsActuallyTurnedByTheAngleItReports()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+
+        var upright = toolkit.CreateMannequinFigure(300, 100, 320);
+        var turned = toolkit.CreateMannequinFigure(300, 100, 320, new Dictionary<string, object?>
+        {
+            ["pose"] = new Dictionary<string, object?> { ["neckDeg"] = 90f }
+        });
+
+        var a = ((CanvasPath)((IDictionary<string, object?>)toolkit.CreateFigureGeometry(upright)["parts"]!)["head"]!).Path.Bounds;
+        var b = ((CanvasPath)((IDictionary<string, object?>)toolkit.CreateFigureGeometry(turned)["parts"]!)["head"]!).Path.Bounds;
+
+        Assert.True(a.Height > a.Width, "the head mass is taller than it is wide standing");
+        Assert.InRange(b.Width, a.Height - 2f, a.Height + 2f);
+        Assert.InRange(b.Height, a.Width - 2f, a.Width + 2f);
+    }
+
+    /// <summary>The comic feature drawers hand back the parts they built.</summary>
+    /// <remarks>
+    /// <c>aperture</c> is the one that earns the change: it is both the sclera fill and the clip the
+    /// interior is drawn inside, so it is what a caller clips a brow shadow or a reflected highlight
+    /// into. Rebuilding it means re-deriving the eyelid curve from <c>inner</c>, <c>outer</c> and the
+    /// eye's own width — the duplication these returns exist to prevent.
+    /// </remarks>
+    [Fact]
+    public void TestComicFeatureDrawersReturnTheirParts()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(300f, 250f, 300f, 12f, 0f);
+        var canvas = new SkiaCanvas(600, 600);
+        var ctx = canvas.GetContext("2d");
+
+        var eye = toolkit.DrawComicEye(ctx, head["nearEye"]!, false, null);
+        var nose = toolkit.DrawComicNose(ctx, head["noseWedge"]!, null);
+        var mouth = toolkit.DrawComicMouth(ctx, head["mouthGuides"]!, null);
+
+        Assert.Equal(new[] { "aperture", "catchlight", "iris", "lowerLid", "pupil", "upperLid" },
+            eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+        Assert.Equal(new[] { "bridge", "nostril", "underPlane" },
+            nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+        Assert.Equal(new[] { "cavity", "lipLine", "lowerLip", "teeth" },
+            mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+
+        // The iris sits inside the aperture it is clipped to, which is the relationship that makes
+        // the aperture worth returning at all.
+        var aperture = ((CanvasPath)eye["aperture"]!).Path.Bounds;
+        var iris = ((CanvasPath)eye["iris"]!).Path.Bounds;
+        Assert.True(aperture.Width > 0 && aperture.Height > 0);
+        Assert.True(aperture.IntersectsWith(iris), "the iris should fall inside the eye aperture");
+
+        // Two shadow shapes on one face, combined — a thing that needs both to be geometry.
+        var mass = ((CanvasPath)nose["underPlane"]!).Union((CanvasPath)mouth["cavity"]!).Simplify();
+        Assert.True(mass.Path.Bounds.Height > ((CanvasPath)nose["underPlane"]!).Path.Bounds.Height);
+    }
+
+    /// <summary>The hand comes back as one silhouette plus its named block forms.</summary>
+    /// <remarks>
+    /// The same gap the mannequin had, at a tenth the size: eleven boxes with their own outlines are
+    /// a construction sheet, and at the fifteen pixels a hand actually occupies in a panel the
+    /// interior lines are noise while the silhouette is the whole drawing.
+    /// </remarks>
+    [Fact]
+    public void TestHandSolidReturnsASilhouetteAndNamedBlockForms()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var hand = toolkit.CreateHandFigure(200f, 300f, 260f,
+            new Dictionary<string, object?> { ["side"] = "right", ["spreadDeg"] = 14f, ["curlDeg"] = 18f });
+        var canvas = new SkiaCanvas(600, 600);
+        var ctx = canvas.GetContext("2d");
+
+        var geometry = toolkit.DrawHandSolid(ctx, hand, null);
+        var parts = (IDictionary<string, object?>)geometry["parts"]!;
+
+        // Palm, thenar, three phalanges on each of four fingers, two on the thumb.
+        Assert.Equal(16, parts.Count);
+        foreach (var expected in new[] { "palm", "thenar", "indexProximal", "indexMiddle", "indexDistal",
+                                         "thumbProximal", "thumbDistal" })
+        {
+            Assert.True(parts.ContainsKey(expected), $"expected a part named '{expected}'");
+        }
+        // The thumb has two phalanges, so naming its second one "Middle" would be wrong.
+        Assert.False(parts.ContainsKey("thumbMiddle"));
+
+        var silhouette = (CanvasPath)geometry["silhouette"]!;
+        Assert.True(silhouette.Path.Bounds.Contains(((CanvasPath)parts["palm"]!).Path.Bounds));
+        Assert.True(silhouette.Path.Bounds.Contains(((CanvasPath)parts["indexDistal"]!).Path.Bounds));
+    }
+
+    /// <summary>
+    /// The box returns every face it projected, including the ones it did not draw.
+    /// </summary>
+    /// <remarks>
+    /// Building a path is not drawing it, and a caller staging occlusion needs the back of the box
+    /// precisely when it is hidden — so the hidden faces come back whether or not
+    /// <c>drawHiddenLines</c> asked for them.
+    /// </remarks>
+    [Fact]
+    public void TestPerspectiveBoxReturnsEveryFaceIncludingHiddenOnes()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var grid = toolkit.CreatePerspectiveGrid(new Dictionary<string, object?>
+        {
+            ["type"] = "2point", ["horizonY"] = 120f, ["centerOfVisionX"] = 300f
+        });
+        var box = toolkit.CreatePerspectiveBox(grid, 300f, 400f, 120f, 110f, 100f);
+        var canvas = new SkiaCanvas(600, 600);
+        var ctx = canvas.GetContext("2d");
+
+        var drawn = toolkit.DrawPerspectiveBox(ctx, box, null);   // drawHiddenLines defaults to false
+        var faces = (IDictionary<string, object?>)drawn["faces"]!;
+
+        Assert.Equal(new[] { "backLeft", "backRight", "bottom", "left", "right", "top" },
+            faces.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+
+        // The silhouette is the three visible faces unioned. It is not *wider* than the top face —
+        // in two-point the top spans the box's full width and the sides hang directly below it — but
+        // it is taller, and it contains the top.
+        var outline = (CanvasPath)drawn["silhouette"]!;
+        var top = ((CanvasPath)faces["top"]!).Path.Bounds;
+        Assert.True(outline.Path.Bounds.Height > top.Height);
+        Assert.True(outline.Path.Bounds.Contains(top));
+    }
+
+    /// <summary>None of the converted drawers clobbers the caller's current path.</summary>
+    /// <remarks>
+    /// Each used to build its shapes on the context, so an unrelated call silently replaced whatever
+    /// path the caller had under construction — cross-talk that surfaces later as a fill of the wrong
+    /// shape. Building on their own paths removes it, and this pins that down for all four at once
+    /// rather than leaving it as an incidental consequence of the refactor.
+    /// </remarks>
+    [Fact]
+    public void TestConvertedDrawersLeaveTheCurrentPathAlone()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(300f, 250f, 300f, 12f, 0f);
+        var hand = toolkit.CreateHandFigure(420f, 420f, 120f, null);
+        var grid = toolkit.CreatePerspectiveGrid(new Dictionary<string, object?>
+        {
+            ["type"] = "2point", ["horizonY"] = 120f, ["centerOfVisionX"] = 300f
+        });
+        var box = toolkit.CreatePerspectiveBox(grid, 480f, 520f, 60f, 60f, 60f);
+
+        var canvas = new SkiaCanvas(600, 600);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = "#ffffff";
+        ctx.FillRect(0, 0, 600, 600);
+
+        ctx.BeginPath();
+        ctx.Rect(20, 20, 60, 60);
+
+        toolkit.DrawComicEye(ctx, head["nearEye"]!, false, null);
+        toolkit.DrawComicNose(ctx, head["noseWedge"]!, null);
+        toolkit.DrawComicMouth(ctx, head["mouthGuides"]!, null);
+        toolkit.DrawHandSolid(ctx, hand, null);
+        toolkit.DrawPerspectiveBox(ctx, box, null);
+
+        ctx.FillStyle = "#0000ff";
+        ctx.Fill();                                  // must still be the rect built above
+
+        Assert.StartsWith("#0000FF", canvas.Bitmap.GetPixel(50, 50), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Every fine part belongs to exactly one coarse group, and the groups cover the whole.</summary>
+    [Fact]
+    public void TestGroupsCoverEveryPart()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var geometry = toolkit.CreateFigureGeometry(
+            toolkit.CreateMannequinFigure(300, 100, 320, Lunge));
+
+        var parts = (IDictionary<string, object?>)geometry["parts"]!;
+        var groups = (IDictionary<string, object?>)geometry["groups"]!;
+
+        Assert.Equal(18, parts.Count);
+        Assert.Equal(new[] { "head", "leftArm", "leftLeg", "rightArm", "rightLeg", "torso" },
+            groups.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+
+        // The arm group has to contain the forearm it is made of.
+        var forearm = ((CanvasPath)parts["leftForearm"]!).Path.Bounds;
+        var arm = ((CanvasPath)groups["leftArm"]!).Path.Bounds;
+        Assert.True(arm.Contains(forearm), "the leftArm group should contain leftForearm");
+    }
 
     private static double Distance(IDictionary<string, object?> limb, string a, string b)
     {

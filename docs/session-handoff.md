@@ -7,10 +7,12 @@ dashboard needed already existed — and that once you can watch a run, you star
 **Tests: 1,232 .NET — all passing** (Drawing 406, MCPServer 464, CLI 268, ExtendedMind 94).
 The previous handoff is superseded; its open items are carried forward at the end.
 
-> **§13 is the current state** for the drawing corpus and where a session continuing that work should
-> start; §12 is the session before it and remains accurate as history. §§1–8 are the fifth session (observability, `scriptFile`, the Claude profile); §§9–12 are the
-> sixth (cs-5 findings, encode cost, the Guy exclusion, and re-sourcing the manuals to Loomis,
-> Norling, Faragasso, Hampton and Janson).
+> **§14 is the current state** for the drawing corpus and where a session continuing that work should
+> start — it supersedes §13's pick-up list, though §13 remains accurate on everything else and is
+> where the manuals and the `pose` parameter are described. §12 is the session before that and
+> remains accurate as history. §§1–8 are the fifth session (observability, `scriptFile`, the Claude
+> profile); §§9–12 are the sixth (cs-5 findings, encode cost, the Guy exclusion, and re-sourcing the
+> manuals to Loomis, Norling, Faragasso, Hampton and Janson).
 
 > [!IMPORTANT]
 > **A different thread is open and is time-boxed: the Agentic Cinema hackathon.**
@@ -1217,6 +1219,224 @@ user is aware and prefers `reference/` excluded by default.
 3. ***Marvel Way* ch. 7, Foreshortening** — the last of the three non-duplicate chapters, and the
    only figure-in-perspective source in the corpus.
 4. **The two silent-failure fixes** — the colour parse, and `drawFeathering`'s misleading `origin`.
+
+---
+
+## 14. Drawing a comic page from the manuals — what held, and what the toolkit still makes you build
+
+**Session of 2026-09-05.** A single exercise: draw a comic figure using Manuals 03, 20, 22, 23 and
+24, and record where the manuals carried the work and where the API did not. Deliverable was a
+four-panel page — two extremes of one action, a close-up head, and the strip that chose the
+extremes. No source changes; this section is the finding list.
+
+### The manuals held. All five were usable as written.
+
+- **M24's extremes rule reproduced on a fresh action.** Departure from the standing figure across
+  five stages of a lunge ran **25, 13, 7, 12, 62** — first and last are the extremes by a wide
+  margin, as the chapter says, and it is what chose the two figure panels. The manual's own numbers
+  were `37, 22, 8, 22, 53` on a different action, so this is a second independent confirmation
+  rather than a re-run.
+- **M23's two numbers reproduced exactly**: the head is **6.0** eye-widths where Lee & Buscema say
+  5, and the triangle mouth is **×2.04** the Loomis landmark width.
+- **M22 transfers as claimed.** The hand-built fan from `drawTaperedStroke` reads as radiating
+  folds; `drawCrossContourHatch` genuinely is a ring fold; Young's four elbow folds land.
+- **M03's tier hierarchy scales.** Widths taken as `4.6 / 2.4 / 1.1` at 1000px and multiplied by
+  `panelWidth / 1000` held across a 645px panel and a 390px one.
+
+### A number Manual 23 describes but never measured
+
+M23 §2 gives **two** equilateral-triangle constructions and the manual's example only implements the
+first. The second — apex under the nose, sides at 60° through the lower lip, meeting the bottom of
+the head — gives the **chin**:
+
+> **The Marvel chin is ×0.89 the Loomis station width** — 11% narrower. Same class of finding as the
+> mouth's ×2.04 and the eye's 6-vs-5, and it completes the set. The close-up's jaw contour is built
+> to the derived width rather than to `jaw.chinNear`/`jaw.chinFar`.
+
+Worth adding to Manual 23 §1's comparison table, which currently carries two rows.
+
+### Defects found
+
+- **The head never rotates, and neither do the torso masses.** `spineDeg` *translates* head, ribcage
+  and pelvis; both `DrawMannequinSolid` and `DrawMannequinWireframe` then call
+  `ctx.Ellipse(..., 0f, ...)` with the rotation hardcoded. A figure leaning 18° keeps a perfectly
+  upright head, which reads as a bobblehead. **`ribcage.tiltDeg` and `pelvis.tiltDeg` are computed
+  at `ConstructiveDrawingToolkit.cs:2264` and `:2266` and read by nothing** — grep finds no consumer.
+  Dead output, and the fix for the mass tilt is already sitting in the dictionary.
+  This is *separate from* §13's "no line of action": that one is the spine failing to curve, this is
+  the masses failing to turn at all.
+- **`temporalOval` is not the cranium, and nothing says so.** At a 300px head its top sits **91px
+  below `crown`** — it is the side-plane ball. Building a head silhouette on it produces a head that
+  begins below its own hairline. Cost two failed attempts before the relationship was worked out:
+  the cranium has to be **derived** — `crown` for the top, the two jaw stations for the width,
+  `jaw.angle` for the bottom. This is the concrete reason M23 §6's "no composed head" gap is hard,
+  and it belongs in the docs whatever else is built.
+- **A posed figure's extent is not its height.** A thrown arm reaches further sideways than the
+  canon ever does, so sizing by height alone ran an arm and a leg straight off the first panel.
+  A `figureExtent`/`fitFigure` pair had to be written; `createMannequinFigure` returning bounds
+  would delete that from every caller.
+- **Confirmed as documented:** `drawFeathering` is parallel hatching whatever its `origin` suggests.
+
+### What the exercise cost, and why it is a toolkit problem
+
+Roughly **7 of 13 renders were spent fixing things a better base model would have prevented** — four
+on the head alone, two on page fitting, one on a silhouette union whose hand-built arc caps punched
+white discs at every joint. None of that was creative work.
+
+The through-line: **the toolkit exposes landmarks and finished drawings, and nothing in between.**
+A landmark composes with nothing; a draw call composes with nothing. What the work actually needs is
+**geometry** — `CanvasPath` — because a path fills, clips, strokes, booleans, converts through
+`strokeToPath`, and survives into `outSvg`. Every gap above is an instance of that one shape.
+
+> **Adding a more complex figure model without changing that interface would make it worse, not
+> better** — more landmarks to hand-assemble, and more ways to get the assembly wrong.
+
+### Built in this session — items 1 and 2
+
+**Tests: 1,300 .NET — all passing** (Drawing 441, MCPServer 487, CLI 278, ExtendedMind 94).
+
+| | |
+| :--- | :--- |
+| **`Drawing.createFigureGeometry(figure, { padding })`** | The figure as geometry: `silhouette` (one `CanvasPath`), `parts` (18 named masses), `groups` (the coarse six that occlusion clips to), `bounds`, `order`. |
+| **`figure.bounds`** | On the figure itself, unconditional. Closed-form over the same mass table the geometry uses, so it builds no paths and is safe in a loop. |
+| **`figure.head.angleDeg`** | `spineDeg + neckDeg`, and **both drawers now honour it**. |
+| **`figure.ribcage.tiltDeg`** | now `shoulderTiltDeg + spineDeg` rather than the static tilt, and **read** rather than ignored. `pelvis.tiltDeg` is unchanged, because the pelvis is the pivot. |
+
+**`padding` is the drapery premise made arithmetic** — cloth covers the figure without fitting it, so
+a sleeve is the padded arm *group* rather than a second construction to keep in step with the pose.
+
+**Measured against the exercise that motivated it.** The same page redrawn on the new surface:
+**514 → 454 lines**, identical output, with the hand-built capsule union, the extent walk and the
+head-tilt workaround all deleted. `figure.bounds` alone replaced 35 lines that existed only because
+a posed figure's extent is not its height — **345 × 1013 standing against 938 × 954 in a lunge**.
+
+Six tests added, and two are worth keeping in mind because they guard *silent* failures: the
+silhouette is sampled **at each joint** for holes (a capsule with hand-swept arc caps subtracts a
+bite instead of adding one, and renders cleanly as a white disc that looks like a design), and the
+closed-form `bounds` is asserted against the path bounds it claims to describe, because two ways of
+measuring one figure that drift apart is worse than having only the slow one.
+
+> **One honest limit found while testing.** Growing both radii of a *rotated* ellipse is not a
+> uniform outward offset of its box, so a tilted mass contributes marginally less than the padding at
+> the extremes — about a hundredth of a pixel at figure scale. The test asserts a tolerance rather
+> than exact addition, because exact addition is not true of ellipses.
+
+**Also noted:** the canon's `foot` landmark is a short stub, so the silhouette ends at the ankle
+rather than on a foot. Faithful to the canon, and documented — the canon has no foot to give.
+
+### The general form of the defect, which is worth stating on its own
+
+> **The toolkit's drawing functions paint and return nothing.** `drawMannequinSolid`,
+> `drawHandSolid`, `drawLoomisWireframe`, `drawComicEye`/`Nose`/`Mouth`, `drawPerspectiveBox`,
+> `drawTaperedStroke`, `drawCastShadow` all build real geometry internally and then throw it away.
+> Every one of them forces a caller who wants to *build on* the result to reconstruct it by hand.
+
+`createFigureGeometry` is one instance of the fix, not the fix. The same move applies wherever a
+drawer already computes a shape: return the `CanvasPath` alongside painting it. Adding a return value
+to a currently-void call is backward compatible in JS — a script that ignores it is unaffected — so
+this can be done drawer by drawer as each one is needed.
+
+Ranked by what would have saved the most work in the page exercise: **`drawTaperedStroke`** (the mark
+becomes a shape you can cut, fill with a cross-gradient, or export as vector), **the comic feature
+drawers** (an eye you can clip a highlight into), **`drawHandSolid`** (which has the identical
+boxes-not-form problem at 15px), and **`drawPerspectiveBox`** (a face you can texture).
+
+### The first drawer converted: `drawTaperedStroke`
+
+**Tests: 1,304 .NET — all passing** (Drawing 444, MCPServer 488, CLI 278, ExtendedMind 94).
+(Superseded by the 1,311 figure below, once the rest of the drawer list landed.)
+
+`Drawing.drawTaperedStroke(...)` and `ctx.drawTaperedStroke(...)` now **return the `CanvasPath` they
+filled**, and `Drawing.createTaperedStrokePath(start, cp1, cp2, end, maxThickness)` builds the same
+envelope with no context to paint it on — for laying marks out, measuring them, or combining a run of
+them before anything is drawn.
+
+The envelope build was factored out of the drawing path, so both routes are provably the same
+geometry (asserted on point count and bounds) and neither duplicates the twenty-five-sample sweep.
+
+**A free fix came with it.** The call used to build its envelope *on the context*, so an inking call
+silently replaced whatever path the caller had under construction — cross-talk that surfaces three
+calls later as a fill of the wrong shape. It now builds on its own path and leaves the current one
+alone. There is a test for that specifically, because it is the kind of thing that gets refactored
+back in by accident.
+
+> **The compatibility property is what makes this cheap to repeat.** Adding a return value to a
+> `void` call changes nothing for a script that ignores it, so the remaining drawers can be converted
+> one at a time as each is needed, with no coordinated migration.
+
+Two things learned while testing, both recorded in the test's own remarks:
+
+- **A tapered mark's bounding box is a bad proxy for its thickness in one axis and a fine one in the
+  other.** The taper closes to nothing at both ends, so the endpoints pin the horizontal extent
+  whatever `maxThickness` is; the mid-curve bulge does move the vertical one. The unambiguous
+  assertion is a point 12px along the normal at the curve's midpoint — outside an 8px mark, inside a
+  40px one.
+- Growing both radii of a **rotated** ellipse is not a uniform outward offset of its box, so
+  `padding` adds fractionally less than asked at the extremes (~0.01px at figure scale).
+
+### The rest of the drawer list, converted
+
+**Tests: 1,311 .NET — all passing** (Drawing 448, MCPServer 491, CLI 278, ExtendedMind 94).
+
+| Call | Now returns |
+| :--- | :--- |
+| `drawComicEye` | `aperture`, `iris`, `pupil`, `catchlight`, `upperLid`, `lowerLid` |
+| `drawComicNose` | `underPlane`, `bridge`, `nostril` |
+| `drawComicMouth` | `cavity`, `teeth`, `lipLine`, `lowerLip` |
+| `drawHandSolid` / `ctx.drawHand(h, true)` | `silhouette`, `parts` (16, named by bone), `bounds` |
+| `drawPerspectiveBox` | `faces` (all six), `silhouette` (the three visible, unioned) |
+
+The choices worth recording, because they are the pattern for the next conversion:
+
+- **Several shapes means named paths, not one path.** A single return only fits a call that draws one
+  mark. `createFigureGeometry`'s `parts`/`groups` shape was already the precedent; these follow it.
+- **Fill shapes come back closed; stroked ones come back as open centre-lines.** A lid or a `lipLine`
+  is a line whose *weight* is a decision (Manual 03's tiers), so handing back a filled mark would
+  freeze the decision. An open path can be re-stroked or run through `ctx.strokeToPath(...)`.
+- **The box returns its hidden faces even when it did not draw them.** Building a path is not drawing
+  it, and a caller staging occlusion needs the back of the box precisely when it is invisible.
+- **The hand's wireframe pass returns an empty object** rather than something hollow: it draws guides,
+  not masses, so it has no silhouette to give.
+- **The thumb has two phalanges**, so its parts are `thumbProximal`/`thumbDistal` and never `Middle`.
+
+### The regression check that made this safe to do quickly
+
+Every one of these was a mechanical refactor of live drawing code, so the question was whether the
+pixels moved. They did not, and it was cheap to prove: **`bitmap.diff` at `tolerance: 0` against
+renders made by the previous binary** — the head close-up (all three feature drawers) came back
+**0 of 384,000 pixels differing**, and a hand-plus-box scene **0 of 432,000**.
+
+> Worth keeping as the method for the remaining conversions: render a reference with the binary in
+> `bin/cli` *before* rebuilding it, convert, rebuild, diff at zero tolerance. It is the one check that
+> distinguishes "the same drawing" from "a drawing that still looks fine".
+
+**The current-path fix applies to all of them.** Each used to build its shapes on the context, so an
+unrelated call silently replaced whatever path the caller had under construction. One test now pins
+that down for all four at once.
+
+### Where to pick up — revised, and this supersedes §13's list
+
+1. ~~Geometry-returning figure~~, ~~orientation on the masses~~, ~~`drawTaperedStroke`~~ and
+   ~~the comic feature / hand / perspective-box drawers~~ — **done, above.**
+2. **Still painting and returning nothing**, in rough order of value: `drawMannequinSolid` and
+   `drawMannequinWireframe` (superseded in practice by `createFigureGeometry`, but the drawers
+   themselves still hand nothing back), `drawLoomisWireframe`, `drawCastShadow`, `drawRimLight`,
+   `renderVolumetricSphere` / `renderVolumetricCylinder`, `drawPerspectiveCylinder`,
+   `drawCrossContourHatch`, `drawHairRibbon`, and the `Logo.*` drawers. None is urgent; convert each
+   when a piece of work actually wants its geometry, which is how the value stays demonstrable.
+3. **`lineOfAction` on the mannequin** — unchanged from §13, still the item that changes *how a pose
+   is chosen* rather than how it is drawn.
+4. **A composed head**, now specified rather than merely wanted: `createComicHead(...)` returning
+   cranium, jaw, hair and neck as paths, with M23's corrections baked in — 5-eye width, triangle
+   mouth, triangle chin — and the derived-cranium relationship above applied internally.
+5. **Garment derived from the figure.** `padding` gives the cloth *volume*; what is still hand-built
+   is the coat body itself and its **fold anchors** — points of pull, belt line, elbow ring centres.
+   `createGarment(figure, { type, hemHeads })` returning those alongside the path is M22 made
+   executable, and it remains the largest single block of hand-work left in the exercise.
+6. ~~Put the bone-capsule boilerplate in a manual~~ — **overtaken.** Manual 08 §2a now documents
+   `createFigureGeometry` instead, which is the same need answered properly rather than by a snippet
+   every caller has to copy and can get wrong.
+
 
 ---
 

@@ -134,6 +134,72 @@ version of the real frame and says it is all you need to start.
 > shape for a construction-sheet test: a figure that only reads from the front has not been built in
 > three dimensions.
 
+### 2a. The mannequin drawn, and the mannequin as geometry
+
+The two drawers above render a **construction sheet**: separate masses with their own outlines, which
+is what a mannequin is for. A *figure* is one shape, and that is a different thing —
+`Drawing.createFigureGeometry(figure, options)` hands the same masses back as paths instead of
+painting them.
+
+```javascript
+const canvas = createCanvas(520, 520);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, 520, 520);
+
+const pose = { spineDeg: 22, neckDeg: -8,
+    rightArm: { shoulderDeg: -42, elbowDeg: 36 }, leftArm: { shoulderDeg: 154, elbowDeg: -58 },
+    rightLeg: { hipDeg: 56, kneeDeg: 38 }, leftLeg: { hipDeg: 124, kneeDeg: -16 } };
+const panel = Layout.inset(Layout.rect(0, 0, 520, 520), 30);
+
+// Size to the extent, never to the height. This lunge measures 938 x 954 where the same figure
+// standing measures 345 x 1013 — a thrown arm reaches far wider than the canon ever does. One
+// trial build at a nominal height gives the answer exactly, because scaling is linear about the
+// origin.
+const e = Drawing.createMannequinFigure(0, 0, 1000, { pose: pose }).bounds;
+const s = Math.min(panel.width / e.width, panel.height / e.height);
+const fig = Drawing.createMannequinFigure(
+    panel.x - e.x * s, panel.y - e.y * s, 1000 * s, { pose: pose });
+log('standing ' + Drawing.createMannequinFigure(0, 0, 1000).bounds.width.toFixed(0)
+  + 'px wide; this pose ' + e.width.toFixed(0) + 'px');
+
+const geo = Drawing.createFigureGeometry(fig);
+ctx.fillStyle = '#e9dcc4';
+ctx.fill(geo.silhouette);          // one contour: no seams, no holes at the joints
+ctx.strokeStyle = '#15151a'; ctx.lineWidth = 2;
+ctx.stroke(geo.silhouette);        // and one contour to ink, which is what Manual 03 §1 weights
+
+// The coarse groups are what occlusion clips to.
+ctx.save();
+ctx.clip(geo.groups.rightArm);
+ctx.fillStyle = 'rgba(190,70,50,0.5)';
+ctx.fillRect(0, 0, 520, 520);
+ctx.restore();
+canvas;
+```
+
+> [!TIP]
+> **`padding` inflates every mass, which is the whole of §1 of Manual 22**: cloth covers the figure
+> without fitting it, and that gap is where every fold comes from. A sleeve is therefore the padded
+> arm group — derived from the arm rather than built beside it, so it cannot drift out of step with
+> the pose.
+>
+> ```javascript
+> const cloth = Drawing.createFigureGeometry(fig, { padding: fig.headUnit * 0.08 });
+> ctx.fill(cloth.groups.leftArm);                        // a sleeve, already in the right place
+> ctx.fill(cloth.silhouette.subtract(geo.silhouette));   // just the cloth, as its own shape
+> ```
+
+> [!IMPORTANT]
+> **The pose orients the masses, and the figure says by how much.** `figure.head.angleDeg` is
+> `spineDeg + neckDeg` and `figure.ribcage.tiltDeg` is `shoulderTiltDeg + spineDeg`;
+> `figure.pelvis.tiltDeg` is the pelvic tilt alone, because the pelvis is the pivot the spine leans
+> over. Read those rather than recomputing them from a pose object you may no longer hold — features
+> drawn onto the head by hand need exactly this angle, or a leaning figure keeps an upright face.
+>
+> Two limits worth knowing: the canon's `foot` landmark is a short stub, so the silhouette ends at
+> the ankle rather than on a foot; and `geo.order` is the order `drawMannequinSolid` paints in,
+> **not depth** — the toolkit has no z, so an arm passing behind the torso is still yours to stage.
+
 ---
 
 ## 3. Upper-Torso Muscle Landmarks

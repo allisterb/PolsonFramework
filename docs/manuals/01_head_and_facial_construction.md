@@ -298,6 +298,48 @@ In 3/4 view, the nose projects out from the far cheek silhouette:
 2. **Mouth Opening**: Angled wedge revealing white teeth shelf and dark mouth cavity (`#2c0d0d`).
 3. **Lower Lip**: Defined by a **subtle shadow crescent** underneath rather than an outline around the whole lip!
 
+### D. The three drawers hand their parts back
+
+Each returns the shapes it built, so a feature can be worked on after it is drawn rather than only
+looked at:
+
+| Call | Returns |
+| :--- | :--- |
+| `drawComicEye` | `aperture`, `iris`, `pupil`, `catchlight`, `upperLid`, `lowerLid` |
+| `drawComicNose` | `underPlane`, `bridge`, `nostril` |
+| `drawComicMouth` | `cavity`, `teeth`, `lipLine`, `lowerLip` |
+
+**`aperture` is the one that changes what you can do.** It is both the sclera fill and the clip the
+interior is drawn inside — so it is what a highlight, a reflected window, or a hard-edged shadow from
+the brow gets clipped to, and it stops exactly at the lid without anyone re-deriving the eyelid curve
+from `inner`, `outer` and the eye's width:
+
+```javascript
+const canvas = createCanvas(520, 300);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, 520, 300);
+
+const head = Drawing.createLoomisHead(150, 150, 620, 10, 0);
+
+const eye = Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: '#15151a', irisColor: '#3d5763' });
+ctx.save();
+ctx.clip(eye.aperture);
+ctx.fillStyle = 'rgba(18,14,8,0.5)';
+ctx.fillRect(0, 0, 520, head.nearEye.center.y - 4);   // a shadow that ends at the lid, not near it
+ctx.restore();
+
+log('eye parts: ' + Object.keys(eye).join(', '));
+canvas;
+```
+
+`underPlane` and `cavity` are the two shadow shapes on a face, so `nose.underPlane.union(mouth.cavity)`
+is a single mass to re-fill when the light moves — which is Manual 03's rule that *a heavy ink line is
+the beginning of a shadow*, made actionable by the shadow being a shape you hold.
+
+The lids and `lipLine` come back as **open centre-lines** rather than filled marks, so they can be
+re-stroked at a different tier's weight — an eye at panel size wants a different weight from an eye in
+close-up — or run through `ctx.strokeToPath(...)` to be tapered.
+
 ---
 
 ## 5. Constructing It: A Runnable Head

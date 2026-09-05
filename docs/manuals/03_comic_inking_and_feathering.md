@@ -102,6 +102,52 @@ Comic inking derives its punch and depth from **stroke weight contrast**:
 
 Choose `maxThickness` from the tier table in §1 — contour silhouette at the heavy end, interior detail at the light end. A constant-width stroke reads as a technical drawing, not as inking.
 
+### The mark is a shape, and it is handed back
+
+`drawTaperedStroke` **returns the path it filled**, and `Drawing.createTaperedStrokePath(start, cp1,
+cp2, end, maxThickness)` builds the same envelope with no context to paint it on. That is the
+difference between a mark that is finished and a mark you can still work on:
+
+```javascript
+const canvas = createCanvas(560, 320);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, 560, 320);
+
+const a = { x: 60, y: 250 }, c1 = { x: 90, y: 70 }, c2 = { x: 420, y: 60 }, b = { x: 500, y: 230 };
+
+// Painted and held. A gradient across the stroke rather than along the path — which a stroke with a
+// width cannot do at all, because it has no interior to run a ramp through.
+const across = ctx.createLinearGradient(60, 60, 500, 250);
+across.addColorStop(0, '#1b3a4b'); across.addColorStop(0.55, '#c2553d'); across.addColorStop(1, '#e6c46a');
+const mark = ctx.drawTaperedStroke(a, c1, c2, b, 26, across);
+
+// Now cut it. The bite is real geometry taken out of the mark, not a shape laid on top — so it
+// survives a knockout and exports as one path.
+const bite = new CanvasPath();
+bite.arc(300, 96, 44, 0, Math.PI * 2);
+ctx.fillStyle = '#15151a';
+ctx.fill(mark.subtract(bite));
+
+// Or build a run of marks first and ink the silhouette once — which is how a set of feathering
+// strokes becomes one shape with one contour rather than twelve separate lines.
+let run = null;
+for (let i = 0; i < 5; i++) {
+    const o = i * 12 - 24;
+    const q = Drawing.createTaperedStrokePath(
+        { x: a.x + o, y: a.y }, { x: c1.x + o, y: c1.y },
+        { x: c2.x + o, y: c2.y }, { x: b.x + o, y: b.y }, 9);
+    run = run === null ? q : run.union(q);
+}
+ctx.strokeStyle = '#15151a'; ctx.lineWidth = 2;
+ctx.stroke(run.simplify());
+canvas;
+```
+
+> [!NOTE]
+> A script that ignores the return value behaves exactly as it did before. One change worth knowing:
+> the call no longer leaves the tapered outline as the context's **current** path, so a `beginPath()`
+> you built before calling it survives.
+
 ### When the line is not a single cubic
 
 `drawTaperedStroke` tapers one Bézier. For a contour built from many segments, or one whose width

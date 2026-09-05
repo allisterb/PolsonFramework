@@ -145,6 +145,46 @@ finger, combining into one pad across the top of the palm; the thumb muscle and 
 fingertip. There are **no pads on the back of the hand**. Nothing in the toolkit models the pads; if you
 are drawing a palm, they are the difference between a hand and a glove.
 
+### 2a. The blocks are a construction sheet; the silhouette is the drawing
+
+Eleven boxes each carrying its own outline is the right picture for *studying* a hand and the wrong one
+for *drawing* one. At the size a hand actually occupies in a panel — often fifteen pixels — every
+interior line is noise and the silhouette is the entire drawing.
+
+`drawHandSolid` (and `ctx.drawHand(hand, true, …)`) returns what it built: `silhouette`, the whole hand
+as one contour; `parts`, a `CanvasPath` per mass named by bone; and `bounds`.
+
+```javascript
+const canvas = createCanvas(420, 460);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, 420, 460);
+
+const hand = Drawing.createHandFigure(210, 420, 250,
+    { side: 'right', spreadDeg: 16, curlDeg: 20 });
+
+// Draw the blocks in the faintest possible ink, purely to obtain the geometry…
+const geo = ctx.drawHand(hand, true, {
+    fillColor: 'rgba(0,0,0,0)', shadowColor: 'rgba(0,0,0,0)',
+    strokeColor: 'rgba(21,21,26,0.18)', strokeWidth: 1 });
+
+// …then draw the hand, which is one shape with no interior seams.
+ctx.fillStyle = '#15151a';
+ctx.fill(geo.silhouette);
+
+log('parts: ' + Object.keys(geo.parts).length
+  + ', bounds ' + geo.bounds.width.toFixed(0) + ' x ' + geo.bounds.height.toFixed(0));
+canvas;
+```
+
+`parts` is named for the bones — `palm`, `thenar`, then `indexProximal` / `indexMiddle` / `indexDistal`
+and the same for `middle`, `ring` and `little`, plus `thumbProximal` and `thumbDistal`. The thumb has
+two phalanges, so it never gets a `Middle`; §4's point about the thumb moving in a different plane is
+the reason its naming differs from the fingers'.
+
+> [!NOTE]
+> **The wireframe pass returns an empty object.** It draws guides rather than masses, so there is no
+> silhouette to hand back and it says so rather than returning something hollow.
+
 ---
 
 ## 3. The Arcs, and the Rule That Checks Them

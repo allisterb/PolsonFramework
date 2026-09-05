@@ -644,6 +644,9 @@ Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with
 
 Parameters and semantics are documented under `polson://sdk/core/Drawing` and `polson://sdk/core/Logo`. Use whichever reads better; the shortcut form suits long chains on one context.
 
+> [!TIP]
+> **Several of these hand geometry back, and the shortcut passes it through.** `ctx.drawTaperedStroke(...)` returns the mark it filled; `ctx.drawHand(hand, true, ...)` returns `{ silhouette, parts, bounds }`; `ctx.drawPerspectiveBox(...)` returns `{ faces, silhouette }`. Ignoring the return value behaves exactly as before, so nothing written against the old signatures changes.
+
 > [!IMPORTANT]
 > **`ctx.clip()` binds the toolkit too, not just the primitive canvas calls — and this is how you stage occlusion.** A `Drawing.*` or `Logo.*` call made inside a clip is constrained by it exactly as `fillRect` would be, so clipping to a region and then drawing a mannequin cuts the figure off at the boundary.
 >
@@ -659,7 +662,7 @@ Parameters and semantics are documented under `polson://sdk/core/Drawing` and `p
 > ```
 
 ### Constructive Drawing & Inking
-- `ctx.drawTaperedStroke(start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` — Subdivides cubic Bézier curve with sine-tapered normal envelope and anti-aliased fill.
+- `ctx.drawTaperedStroke(start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` → `CanvasPath` — Subdivides cubic Bézier curve with sine-tapered normal envelope and anti-aliased fill, **returning the mark it filled**.
 - `ctx.drawFeathering(origin: Point | number, angleDeg: number, count: number, length: number, spacing: number, strokeColor?: string, lineWidth?: number)` — Directional parallel hatching lines along shadow boundaries.
 - `ctx.drawCrossContourHatch(cx: number, cy: number, rx: number, ry: number, startAngle: number, endAngle: number, count?: number, strokeColor?: string, lineWidth?: number)` — Elliptical cross-contour hatching arcs for cylindrical anatomical volumes.
 - `ctx.drawHairRibbon(root: Point | number, tip: Point | number, bendFactor: number, width: number, fillTop: string | SKShader, fillUnderside: string | SKShader, strokeColor?: string, strokeWidth?: number)` — Twisting 3D hair ribbon with highlight facet, shaded underside streak, and contour outline.
@@ -899,12 +902,49 @@ Also accessible via `Skia.Drawing`.
 ## Loomis Head & Feature Construction
 - `Drawing.createLoomisHead(originX: number, originY: number, headHeight: number, yawDeg?: number, pitchDeg?: number)` → `object` — Computes all 3D head landmarks, proportional ratios (Rule of Thirds, 1/5th eye width), temporal ovals, eye sockets, nose wedge, mouth guides, and jaw angles.
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
-- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight.
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` — Renders nose bridge, apex, nostril, and under-plane shadow.
-- `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string })` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow.
+- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**.
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` → `{ underPlane, bridge, nostril }` — Renders nose bridge, apex, nostril, and under-plane shadow, **returning each as a `CanvasPath`**.
+- `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string })` → `{ cavity, teeth, lipLine, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow, **returning each as a `CanvasPath`**.
+
+> [!TIP]
+> **`aperture` is the one to reach for.** It is both the sclera fill and the clip the interior is drawn inside, so it is what a highlight, a reflected window, or a hard-edged shadow from the brow gets clipped to — and rebuilding it means re-deriving the eyelid curve from `inner`, `outer` and the eye's own width.
+>
+> ```javascript
+> const eye = Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: '#15151a' });
+> ctx.save();
+> ctx.clip(eye.aperture);
+> ctx.fillStyle = 'rgba(18,14,8,0.5)';
+> ctx.fillRect(0, 0, W, head.brow.y);        // a brow shadow that stops exactly at the lid
+> ctx.restore();
+> ```
+>
+> `underPlane` and `cavity` are the face's two shadow shapes, so `nose.underPlane.union(mouth.cavity)` is one mass to re-fill when the light moves. The lids and `lipLine` come back as **open centre-lines** rather than filled marks, so they can be re-stroked at another tier's weight or run through `ctx.strokeToPath(...)` to be tapered.
 
 ## Inking, Feathering & Ribbons
-- `Drawing.drawTaperedStroke(ctx: CanvasRenderingContext2D, start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` — Smooth tapered Bézier inking stroke.
+- `Drawing.drawTaperedStroke(ctx: CanvasRenderingContext2D, start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` → `CanvasPath` — Smooth tapered Bézier inking stroke. Fills the mark **and returns it**.
+- `Drawing.createTaperedStrokePath(start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number)` → `CanvasPath` — The same envelope with no context to paint it on, for laying marks out, measuring them, or combining a run of them before anything is drawn.
+
+> [!TIP]
+> **A mark you hold is geometry; a mark that was only painted is finished.** The returned path is what
+> makes a stroke something to build on — `subtract` a bite out of it, fill it with a gradient running
+> *across* the stroke rather than along the path, clip inside it, union a run of them into one
+> silhouette and ink that once, or let it reach `outSvg` as vector rather than only as pixels.
+>
+> ```javascript
+> const mark = ctx.drawTaperedStroke(a, c1, c2, b, 26, '#15151a');
+> ctx.fill(mark.subtract(bite));            // the mark, cut
+>
+> let run = null;                            // or build first, draw once
+> for (const s of strokes) {
+>     const q = Drawing.createTaperedStrokePath(s.a, s.c1, s.c2, s.b, 14);
+>     run = run === null ? q : run.union(q);
+> }
+> ctx.fill(run.simplify());
+> ```
+>
+> **A script that ignores the return value behaves exactly as before.** One change worth knowing: the
+> call no longer leaves the tapered outline as the context's *current* path, so a `beginPath()` you
+> built before calling it survives.
 - `Drawing.drawFeathering(ctx: CanvasRenderingContext2D, origin: Point | number, angleDeg: number, count: number, length: number, spacing: number, strokeColor?: string, lineWidth?: number)` — Directional feathering hatch lines.
 - `Drawing.drawCrossContourHatch(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, startAngle: number, endAngle: number, count?: number, strokeColor?: string, lineWidth?: number)` — Cross-contour cylindrical arcs.
 - `Drawing.drawHairRibbon(ctx: CanvasRenderingContext2D, root: Point | number, tip: Point | number, bendFactor: number, width: number, fillTop: string | SKShader, fillUnderside: string | SKShader, strokeColor?: string, strokeWidth?: number)` — 3D twisting hair ribbon.
@@ -943,7 +983,20 @@ Also accessible via `Skia.Drawing`.
 > ```
 >
 
-- `Drawing.drawPerspectiveBox(ctx: CanvasRenderingContext2D, boxObj: object, options?: { topFill?: string, leftFill?: string, rightFill?: string, strokeColor?: string, strokeWidth?: number, drawHiddenLines?: boolean })` — Renders solid shaded or wireframe 3D perspective box.
+- `Drawing.drawPerspectiveBox(ctx: CanvasRenderingContext2D, boxObj: object, options?: { topFill?: string, leftFill?: string, rightFill?: string, strokeColor?: string, strokeWidth?: number, drawHiddenLines?: boolean })` → `{ faces: { top, left, right, bottom, backLeft, backRight }, silhouette }` — Renders solid shaded or wireframe 3D perspective box, **returning every face as a `CanvasPath`** plus the three visible ones unioned.
+
+> [!TIP]
+> **A face is what you clip a texture to**, which is most of what a box in a scene is for — a crate's planking, a wall's brick, a floor's tiling all want the quad the projection produced:
+>
+> ```javascript
+> const box = ctx.drawPerspectiveBox(grid, x, y, w, h, d, { strokeColor: '#15151a' });
+> ctx.save();
+> ctx.clip(box.faces.right);                 // planking on one face only, in its own perspective
+> for (let i = 0; i < 20; i++) { /* … */ }
+> ctx.restore();
+> ```
+>
+> The **hidden faces come back whether or not `drawHiddenLines` drew them** — building a path is not drawing it, and a caller staging occlusion needs the back of the box precisely when it is not visible. `silhouette` is what a cast shadow, a rim light or an occluding clip wants instead of a single face.
 - `Drawing.drawPerspectiveCylinder(ctx: CanvasRenderingContext2D, gridObj: object, anchorX: number, anchorY: number, radius: number, height: number, options?: { topFill?: string, sideFill?: string, strokeColor?: string, strokeWidth?: number })` — Draws an upright cylinder. **`anchorX`/`anchorY` is the centre of the base circle** and **`radius` is half the drawn width**, so the silhouette spans `anchorX ± radius` and you can check it with a ruler. Each cap is foreshortened at its own height, so the top ellipse is the flatter of the two, and both are drawn axis-aligned — an upright cylinder’s cap has a horizontal major axis, so its apex sits over the anchor wherever in the frame you put it.
 
 > [!TIP]
@@ -973,6 +1026,42 @@ Also accessible via `Skia.Drawing`.
 > [!TIP]
 > **`shoulderSpanHeads` is in head units and defaults to `1.8`, which is narrower than any published canon** — it is a shoulder-*joint* span. The figure canons measure different things and all are usable: Loomis gives `2.33` for the figure at its widest and about `2.0` for the shoulder "cape"; Faragasso, after Reilly, gives `2.67` across. Pick one to suit the build you are drawing. See `polson://manual/08` §1.
 
+The figure also reports what the pose did to it, which is what a later pass reads instead of keeping the pose object around:
+
+- `figure.bounds` → `Rect` — the extent of every mass, as `{ x, y, width, height, x2, y2, cx, cy }`. Closed-form, so it costs no paths and is safe in a loop.
+- `figure.head.angleDeg` → `number` — how far the head turned, `spineDeg + neckDeg`.
+- `figure.ribcage.tiltDeg` → `number` — `shoulderTiltDeg + spineDeg`. `figure.pelvis.tiltDeg` is the pelvic tilt alone, because the pelvis is the pivot the spine leans over.
+
+> [!IMPORTANT]
+> **A posed figure's extent is not its height, and this is the commonest way a figure runs off a panel.** A thrown arm reaches far wider than the canon ever does: the same pose measured 345 × 1013 standing and **938 × 954** in a lunge. Size to `bounds`, never to `totalHeight`.
+>
+> ```javascript
+> const e = Drawing.createMannequinFigure(0, 0, 1000, { pose }).bounds;   // one trial at a nominal height
+> const s = Math.min(panel.width / e.width, panel.height / e.height);     // scaling is linear about the origin
+> const fig = Drawing.createMannequinFigure(panel.x - e.x * s, panel.y - e.y * s, 1000 * s, { pose });
+> ```
+
+- `Drawing.createFigureGeometry(figureObj: object, options?: { padding?: number })` → `{ silhouette: CanvasPath, parts: object, groups: object, bounds: Rect, padding: number, order: string[] }` — The figure as **geometry** rather than as a drawing.
+  - `silhouette` — every mass unioned into one contour. This is what you fill, clip to, stroke, or subtract from.
+  - `parts` — a `CanvasPath` per mass: `neck`, `spine`, `shoulders`, `head`, `ribcage`, `pelvis`, and `leftUpperArm` / `leftForearm` / `leftHand` / `leftThigh` / `leftShin` / `leftFoot` and their `right` counterparts.
+  - `groups` — the coarse six those masses belong to: `head`, `torso`, `leftArm`, `rightArm`, `leftLeg`, `rightLeg`. **These are what occlusion clips to.**
+  - `order` — the order `drawMannequinSolid` paints in. **Construction order, not depth** — the toolkit has no z, so a pose where an arm passes behind the torso still needs you to say so.
+
+> [!TIP]
+> **`padding` is how a garment is derived.** Manual 22's premise is that cloth covers the figure *without fitting it*, and that gap is where every fold comes from — so a sleeve is the padded arm group rather than a second construction to keep in step with the pose:
+>
+> ```javascript
+> const skin = Drawing.createFigureGeometry(fig);
+> const cloth = Drawing.createFigureGeometry(fig, { padding: fig.headUnit * 0.08 });
+> ctx.fill(skin.silhouette);
+> ctx.fill(cloth.groups.leftArm);                       // a sleeve, already in the right place
+> ctx.fill(cloth.silhouette.subtract(skin.silhouette)); // just the cloth, as its own shape
+> ```
+>
+> Separate from `createMannequinFigure` because paths are not free: this builds about twenty native paths and some fifty boolean operations. A loop that only measures poses should call `createMannequinFigure` and read `bounds`, which costs neither.
+>
+> **Two known limits.** The `foot` landmark is a short stub in the canon, so the silhouette ends at the ankle rather than on a foot — add one if the shot shows it. And `order` is not depth, as above.
+
 - `Drawing.drawMannequinWireframe(ctx: CanvasRenderingContext2D, figureObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders non-repro blue gesture and joint circle hinges.
 - `Drawing.drawMannequinSolid(ctx: CanvasRenderingContext2D, figureObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders shaded volumetric 3D masses (cranial sphere, ribcage egg, pelvic basin, limb cylinders, and box hands/feet).
 - `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders clavicle handlebars, pectorals, deltoids, sternocleidomastoid cords, and the rectus abdominis as **eight** sections whose rows rise toward a peak above a flat row at the navel. The active side is read off the figure's own `shoulderTiltDeg` and compressed, per Hampton's squash/stretch rule — see `polson://manual/08` §3a.
@@ -986,7 +1075,21 @@ Also accessible via `Skia.Drawing`.
 
 - `Drawing.createHandFigure(originX: number, originY: number, handLength?: number, options?: { side?: 'right' | 'left', spreadDeg?: number, curlDeg?: number, thumbDeg?: number, rotationDeg?: number })` → `object` — Computes the whole hand: `unit`, `wrist`, `palm`, `midLine`, `thenar`, `fingers` (index, middle, ring, little — each with `knuckle`, three `joints` and a `tip`) and `thumb` (two joints). **`originX`/`originY` is the centre of the wrist**, and the hand runs toward the fingertips along `rotationDeg` (`0` points them up). `handLength` is wrist to middle fingertip.
 - `Drawing.drawHandWireframe(ctx: CanvasRenderingContext2D, handObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders the construction: palm plate, the line through the middle of the palm, the thenar mass, the knuckle and joint arcs, and each digit jointed.
-- `Drawing.drawHandSolid(ctx: CanvasRenderingContext2D, handObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders Plate 78's block forms: the palm as a slab, the thumb muscle as a wedge, every phalanx as its own tapering box.
+- `Drawing.drawHandSolid(ctx: CanvasRenderingContext2D, handObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` → `{ silhouette, parts, bounds }` — Renders Plate 78's block forms: the palm as a slab, the thumb muscle as a wedge, every phalanx as its own tapering box. **Returns the hand as one contour** plus a `CanvasPath` per mass.
+
+> [!IMPORTANT]
+> **What it draws is a construction sheet; what you usually want is the silhouette.** Eleven boxes each with their own outline is the right picture for studying a hand and the wrong one for drawing it — at the fifteen pixels a hand occupies in a panel the interior lines are noise and the silhouette is the whole drawing.
+>
+> ```javascript
+> const hand = Drawing.createHandFigure(x, y, 250, { side: 'right', curlDeg: 20 });
+> const geo = ctx.drawHand(hand, true, { fillColor: 'rgba(0,0,0,0)', strokeColor: 'rgba(0,0,0,0)' });
+> ctx.fillStyle = '#15151a';
+> ctx.fill(geo.silhouette);                  // one shape, no interior seams
+> ```
+>
+> `parts` is named by bone: `palm`, `thenar`, then `indexProximal` / `indexMiddle` / `indexDistal` and the same for `middle`, `ring` and `little`, plus `thumbProximal` and `thumbDistal` — the thumb has two phalanges, so it never gets a `Middle`.
+>
+> **The wireframe pass returns an empty object**, since it draws guides rather than masses; only `solid` has geometry worth building on.
 
 > [!IMPORTANT]
 > **`thumbDeg` defaults to `46`, not `90`, and that is deliberate.** Loomis says the thumb is turned at

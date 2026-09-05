@@ -380,10 +380,30 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Comic Feature Drawing Helpers
-    public void DrawComicEye(CanvasRenderingContext2D ctx, object eyeObj, bool isFar = false, object? options = null)
+    /// <summary>
+    /// Draws the eye and <b>returns the parts it built</b>, each as a <see cref="CanvasPath"/>:
+    /// <c>aperture</c>, <c>iris</c>, <c>pupil</c>, <c>catchlight</c>, <c>upperLid</c>, <c>lowerLid</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>aperture</c> is the one worth having: it is the shape the sclera fills and the shape the
+    /// interior is clipped to, so it is what a caller clips a highlight, a cast shadow from the brow,
+    /// or a reflected window into. Reconstructing it by hand means re-deriving the eyelid curve from
+    /// <c>inner</c>, <c>outer</c> and the eye's own width, which is exactly the duplication these
+    /// return values exist to prevent.
+    /// </para>
+    /// <para>
+    /// The two lids are open centre-lines rather than filled shapes, so they can be re-stroked at a
+    /// different weight — Studio Manual 03's tier hierarchy is a decision about weight, and an eye
+    /// drawn at panel size wants a different one from an eye in close-up. Pass either through
+    /// <c>ctx.strokeToPath(...)</c> to turn it into a fillable mark.
+    /// </para>
+    /// <para>A script that ignores the return value behaves exactly as before.</para>
+    /// </remarks>
+    public Dictionary<string, object?> DrawComicEye(CanvasRenderingContext2D ctx, object eyeObj, bool isFar = false, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (JsInterop.AsDict(eyeObj) is not IDictionary eye) return;
+        if (JsInterop.AsDict(eyeObj) is not IDictionary eye) return [];
 
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
@@ -398,46 +418,47 @@ public class ConstructiveDrawingToolkit
         if (w <= 0.1f) w = 24f;
         var dir = outer.X > inner.X ? 1f : -1f;
 
-        ctx.Save();
-
-        // 1. Sclera fill inside eyelid bounds
-        ctx.Save();
-        ctx.BeginPath();
-        ctx.MoveTo(inner.X, inner.Y);
-        ctx.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
-        ctx.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, inner.X, inner.Y);
-        ctx.ClosePath();
-        ctx.FillStyle = scleraColor;
-        ctx.Fill();
-        ctx.Clip();
-
-        // 2. Iris & Pupil
         var irisR = w * 0.32f;
         var irisX = center.X + dir * w * 0.08f;
         var irisY = center.Y - 1f;
 
-        // Iris
-        ctx.BeginPath();
-        ctx.Arc(irisX, irisY, irisR, 0f, MathF.PI * 2f);
-        ctx.FillStyle = irisColor;
-        ctx.Fill();
+        // The eyelid curve is used three times — filled as the sclera, as the clip for the interior,
+        // and stroked as the upper lid — so it is built once.
+        var upperLid = new CanvasPath();
+        upperLid.MoveTo(inner.X, inner.Y);
+        upperLid.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
 
-        // Dark iris rim
+        var aperture = new CanvasPath(upperLid);
+        aperture.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, inner.X, inner.Y);
+        aperture.ClosePath();
+
+        var iris = Disc(new Point2D(irisX, irisY), irisR);
+        var pupil = Disc(new Point2D(irisX, irisY), irisR * 0.45f);
+        var catchlight = Disc(new Point2D(irisX - irisR * 0.25f, irisY - irisR * 0.25f), irisR * 0.22f);
+
+        var lowerLid = new CanvasPath();
+        lowerLid.MoveTo(inner.X + dir * w * 0.2f, inner.Y + w * 0.15f);
+        lowerLid.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, outer.X - dir * w * 0.1f, outer.Y);
+
+        ctx.Save();
+
+        // 1. Sclera fill inside eyelid bounds
+        ctx.Save();
+        ctx.FillStyle = scleraColor;
+        ctx.Fill(aperture);
+        ctx.Clip(aperture);
+
+        // 2. Iris & Pupil
+        ctx.FillStyle = irisColor;
+        ctx.Fill(iris);
         ctx.StrokeStyle = inkColor;
         ctx.LineWidth = 1.2f;
-        ctx.Stroke();
+        ctx.Stroke(iris);                 // dark iris rim
 
-        // Pupil
-        ctx.BeginPath();
-        ctx.Arc(irisX, irisY, irisR * 0.45f, 0f, MathF.PI * 2f);
         ctx.FillStyle = inkColor;
-        ctx.Fill();
-
-        // White catchlight
-        ctx.BeginPath();
-        ctx.Arc(irisX - irisR * 0.25f, irisY - irisR * 0.25f, irisR * 0.22f, 0f, MathF.PI * 2f);
+        ctx.Fill(pupil);
         ctx.FillStyle = "#ffffff";
-        ctx.Fill();
+        ctx.Fill(catchlight);
 
         ctx.Restore();
 
@@ -445,25 +466,39 @@ public class ConstructiveDrawingToolkit
         ctx.StrokeStyle = inkColor;
         ctx.LineWidth = isFar ? 2.6f : 3.8f;
         ctx.LineCap = "round";
-        ctx.BeginPath();
-        ctx.MoveTo(inner.X, inner.Y);
-        ctx.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
-        ctx.Stroke();
+        ctx.Stroke(upperLid);
 
         // 4. Delicate Lower Eyelid
         ctx.LineWidth = 1.6f;
-        ctx.BeginPath();
-        ctx.MoveTo(inner.X + dir * w * 0.2f, inner.Y + w * 0.15f);
-        ctx.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, outer.X - dir * w * 0.1f, outer.Y);
-        ctx.Stroke();
+        ctx.Stroke(lowerLid);
 
         ctx.Restore();
+
+        return new Dictionary<string, object?>
+        {
+            ["aperture"] = aperture,
+            ["iris"] = iris,
+            ["pupil"] = pupil,
+            ["catchlight"] = catchlight,
+            ["upperLid"] = upperLid,
+            ["lowerLid"] = lowerLid
+        };
     }
 
-    public void DrawComicNose(CanvasRenderingContext2D ctx, object noseObj, object? options = null)
+    /// <summary>
+    /// Draws the nose and <b>returns the parts it built</b>: <c>underPlane</c> (the shaded plane
+    /// beneath), <c>bridge</c> (the inked centre-line) and <c>nostril</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>underPlane</c> is the one that composes: it is the plane turned away from the key, so it is
+    /// what a caller re-fills when the light moves, or unions with the other shadow shapes on a face
+    /// to make one cast-shadow mass. Studio Manual 03's rule is that a heavy line is the beginning of
+    /// a shadow — that only becomes actionable when the shadow is a shape you hold.
+    /// </remarks>
+    public Dictionary<string, object?> DrawComicNose(CanvasRenderingContext2D ctx, object noseObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (JsInterop.AsDict(noseObj) is not IDictionary nose) return;
+        if (JsInterop.AsDict(noseObj) is not IDictionary nose) return [];
 
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
@@ -474,40 +509,57 @@ public class ConstructiveDrawingToolkit
         var underNose = ExtractPoint(nose["underNose"]);
         var nearNostril = ExtractPoint(nose["nearNostril"]);
 
+        var underPlane = new CanvasPath();
+        underPlane.MoveTo(apex.X, apex.Y);
+        underPlane.LineTo(nearNostril.X, nearNostril.Y);
+        underPlane.LineTo(underNose.X, underNose.Y);
+        underPlane.ClosePath();
+
+        var bridge = new CanvasPath();
+        bridge.MoveTo(bridgeTop.X, bridgeTop.Y);
+        bridge.LineTo(apex.X, apex.Y);
+        bridge.LineTo(underNose.X, underNose.Y);
+
+        var nostril = new CanvasPath();
+        nostril.Arc(nearNostril.X, nearNostril.Y, 3.5f, 0.2f, MathF.PI * 1.5f);
+
         ctx.Save();
 
-        // Shaded Under-Nose Plane
         ctx.FillStyle = shadowColor;
-        ctx.BeginPath();
-        ctx.MoveTo(apex.X, apex.Y);
-        ctx.LineTo(nearNostril.X, nearNostril.Y);
-        ctx.LineTo(underNose.X, underNose.Y);
-        ctx.ClosePath();
-        ctx.Fill();
+        ctx.Fill(underPlane);
 
-        // Inked Nose Bridge
         ctx.StrokeStyle = inkColor;
         ctx.LineWidth = 2.4f;
         ctx.LineCap = "round";
-        ctx.BeginPath();
-        ctx.MoveTo(bridgeTop.X, bridgeTop.Y);
-        ctx.LineTo(apex.X, apex.Y);
-        ctx.LineTo(underNose.X, underNose.Y);
-        ctx.Stroke();
+        ctx.Stroke(bridge);
 
-        // Nostril Teardrop
         ctx.LineWidth = 2.0f;
-        ctx.BeginPath();
-        ctx.Arc(nearNostril.X, nearNostril.Y, 3.5f, 0.2f, MathF.PI * 1.5f);
-        ctx.Stroke();
+        ctx.Stroke(nostril);
 
         ctx.Restore();
+
+        return new Dictionary<string, object?>
+        {
+            ["underPlane"] = underPlane,
+            ["bridge"] = bridge,
+            ["nostril"] = nostril
+        };
     }
 
-    public void DrawComicMouth(CanvasRenderingContext2D ctx, object mouthObj, object? options = null)
+    /// <summary>
+    /// Draws the mouth and <b>returns the parts it built</b>: <c>cavity</c>, <c>teeth</c>,
+    /// <c>lipLine</c> (the inked upper lip, as an open centre-line) and <c>lowerLip</c>.
+    /// </summary>
+    /// <remarks>
+    /// The mouth is the feature Studio Manual 23 §4 says carries expression along with the brows and
+    /// the eyes, so it is the one most often redrawn — and <c>lipLine</c> being a centre-line rather
+    /// than a filled mark is what lets it be re-stroked heavier, run through
+    /// <c>ctx.strokeToPath(...)</c> to be tapered, or clipped against the head's own silhouette.
+    /// </remarks>
+    public Dictionary<string, object?> DrawComicMouth(CanvasRenderingContext2D ctx, object mouthObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (JsInterop.AsDict(mouthObj) is not IDictionary mouth) return;
+        if (JsInterop.AsDict(mouthObj) is not IDictionary mouth) return [];
 
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
@@ -519,59 +571,109 @@ public class ConstructiveDrawingToolkit
         var left = ExtractPoint(mouth["leftCorner"]);
         var right = ExtractPoint(mouth["rightCorner"]);
 
+        // The upper lip curve bounds the cavity and is also the inked line, so it is built once.
+        var lipLine = new CanvasPath();
+        lipLine.MoveTo(left.X, left.Y);
+        lipLine.QuadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
+
+        var cavity = new CanvasPath(lipLine);
+        cavity.QuadraticCurveTo(center.X, center.Y + 12f, left.X, left.Y);
+        cavity.ClosePath();
+
+        var teeth = new CanvasPath();
+        teeth.MoveTo(left.X + 3f, left.Y);
+        teeth.QuadraticCurveTo(center.X, center.Y - 2f, right.X - 3f, right.Y);
+        teeth.LineTo(right.X - 4f, right.Y + 4f);
+        teeth.QuadraticCurveTo(center.X, center.Y + 3f, left.X + 4f, left.Y + 3f);
+        teeth.ClosePath();
+
+        var lowerLip = new CanvasPath();
+        lowerLip.Arc(center.X, center.Y + 16f, 6f, 0.2f, MathF.PI - 0.2f);
+
         ctx.Save();
 
-        // 1. Mouth Opening / Cavity
         ctx.FillStyle = cavityColor;
-        ctx.BeginPath();
-        ctx.MoveTo(left.X, left.Y);
-        ctx.QuadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
-        ctx.QuadraticCurveTo(center.X, center.Y + 12f, left.X, left.Y);
-        ctx.ClosePath();
-        ctx.Fill();
+        ctx.Fill(cavity);
 
-        // 2. Teeth Shelf (Upper teeth band)
         ctx.FillStyle = teethColor;
-        ctx.BeginPath();
-        ctx.MoveTo(left.X + 3f, left.Y);
-        ctx.QuadraticCurveTo(center.X, center.Y - 2f, right.X - 3f, right.Y);
-        ctx.LineTo(right.X - 4f, right.Y + 4f);
-        ctx.QuadraticCurveTo(center.X, center.Y + 3f, left.X + 4f, left.Y + 3f);
-        ctx.ClosePath();
-        ctx.Fill();
+        ctx.Fill(teeth);
 
-        // 3. Inked Mouth Outline & Upper Lip
         ctx.StrokeStyle = inkColor;
         ctx.LineWidth = 2.4f;
         ctx.LineCap = "round";
-        ctx.BeginPath();
-        ctx.MoveTo(left.X, left.Y);
-        ctx.QuadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
-        ctx.Stroke();
+        ctx.Stroke(lipLine);
 
-        // 4. Lower Lip Shadow Crescent
         ctx.FillStyle = lipColor;
-        ctx.BeginPath();
-        ctx.Arc(center.X, center.Y + 16f, 6f, 0.2f, MathF.PI - 0.2f);
-        ctx.Fill();
+        ctx.Fill(lowerLip);
 
         ctx.Restore();
+
+        return new Dictionary<string, object?>
+        {
+            ["cavity"] = cavity,
+            ["teeth"] = teeth,
+            ["lipLine"] = lipLine,
+            ["lowerLip"] = lowerLip
+        };
     }
     #endregion
 
     #region Tapered Strokes, Feathering & Hair Ribbons
-    public void DrawTaperedStroke(CanvasRenderingContext2D ctx, object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null)
+    public CanvasPath DrawTaperedStroke(CanvasRenderingContext2D ctx, object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null)
     {
         var s = ExtractPoint(start);
         var c1 = ExtractPoint(cp1);
         var c2 = ExtractPoint(cp2);
         var e = ExtractPoint(end);
-        DrawTaperedStroke(ctx, s.X, s.Y, c1.X, c1.Y, c2.X, c2.Y, e.X, e.Y, maxThickness, fillOrStrokeStyle);
+        return DrawTaperedStroke(ctx, s.X, s.Y, c1.X, c1.Y, c2.X, c2.Y, e.X, e.Y, maxThickness, fillOrStrokeStyle);
     }
 
-    public void DrawTaperedStroke(CanvasRenderingContext2D ctx, float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null)
+    /// <summary>
+    /// The tapered ink mark, as the shape it is: a sine-tapered envelope around a cubic Bézier,
+    /// filled on <paramref name="ctx"/> and <b>returned</b> so it can be built on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Returning the path is the point. A mark that is only painted is finished; a mark you hold is
+    /// geometry — <c>subtract</c> a bite out of it, fill it with a gradient running <i>across</i> the
+    /// stroke rather than along it, clip inside it, union a run of them into one silhouette, or let
+    /// it reach <c>outSvg</c> as vector instead of only as pixels. None of that was reachable while
+    /// the call painted and returned nothing, and rebuilding the envelope by hand means duplicating
+    /// the twenty-five-sample sweep below and getting the normals right.
+    /// </para>
+    /// <para>
+    /// A script that ignores the return value behaves exactly as before, which is what makes this
+    /// safe to add to a call that was <c>void</c>.
+    /// </para>
+    /// </remarks>
+    public CanvasPath DrawTaperedStroke(CanvasRenderingContext2D ctx, float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
+        var mark = BuildTaperedStroke(sx, sy, cp1x, cp1y, cp2x, cp2y, ex, ey, maxThickness);
+
+        ctx.Save();
+        if (fillOrStrokeStyle != null)
+            ctx.FillStyle = fillOrStrokeStyle;
+        ctx.Fill(mark);
+        ctx.Restore();
+        return mark;
+    }
+
+    /// <summary>
+    /// The same envelope without a context to paint it on — for laying out marks, measuring them, or
+    /// combining a run of them before anything is drawn.
+    /// </summary>
+    public CanvasPath CreateTaperedStrokePath(object start, object cp1, object cp2, object end, float maxThickness)
+    {
+        var s = ExtractPoint(start);
+        var c1 = ExtractPoint(cp1);
+        var c2 = ExtractPoint(cp2);
+        var e = ExtractPoint(end);
+        return BuildTaperedStroke(s.X, s.Y, c1.X, c1.Y, c2.X, c2.Y, e.X, e.Y, maxThickness);
+    }
+
+    static CanvasPath BuildTaperedStroke(float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness)
+    {
         const int steps = 24;
         var points = new (float x, float y, float nx, float ny, float thickness)[steps + 1];
 
@@ -597,31 +699,25 @@ public class ConstructiveDrawingToolkit
             points[i] = (x, y, nx, ny, thickness);
         }
 
-        ctx.Save();
-        ctx.BeginPath();
-        ctx.MoveTo(points[0].x, points[0].y);
+        var path = new CanvasPath();
+        path.MoveTo(points[0].x, points[0].y);
 
         // Forward pass along positive normal
         for (var i = 0; i <= steps; i++)
         {
             var p = points[i];
-            ctx.LineTo(p.x + p.nx * (p.thickness * 0.5f), p.y + p.ny * (p.thickness * 0.5f));
+            path.LineTo(p.x + p.nx * (p.thickness * 0.5f), p.y + p.ny * (p.thickness * 0.5f));
         }
 
         // Backward pass along negative normal
         for (var i = steps; i >= 0; i--)
         {
             var p = points[i];
-            ctx.LineTo(p.x - p.nx * (p.thickness * 0.5f), p.y - p.ny * (p.thickness * 0.5f));
+            path.LineTo(p.x - p.nx * (p.thickness * 0.5f), p.y - p.ny * (p.thickness * 0.5f));
         }
 
-        ctx.ClosePath();
-
-        if (fillOrStrokeStyle != null)
-            ctx.FillStyle = fillOrStrokeStyle;
-
-        ctx.Fill();
-        ctx.Restore();
+        path.ClosePath();
+        return path;
     }
 
     public void DrawFeathering(CanvasRenderingContext2D ctx, object origin, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float lineWidth = 1.2f)
@@ -1038,10 +1134,30 @@ public class ConstructiveDrawingToolkit
         };
     }
 
-    public void DrawPerspectiveBox(CanvasRenderingContext2D ctx, object boxObj, object? options = null)
+    /// <summary>
+    /// Draws the box and <b>returns its faces as geometry</b>: <c>faces</c> (a
+    /// <see cref="CanvasPath"/> per face, including the hidden ones whether or not they were drawn)
+    /// and <c>silhouette</c>, the three visible faces unioned into the box's outline.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A face is the natural unit to <i>clip a texture to</i>, which is what a box in a scene is
+    /// usually for — a crate's planking, a wall's brick, a floor's tiling all want the quad the
+    /// projection produced, and re-deriving one from <c>box.faces</c> means re-walking the point
+    /// list on every use. The <c>silhouette</c> is what a cast shadow, a rim light or an occluding
+    /// clip wants instead.
+    /// </para>
+    /// <para>
+    /// The hidden faces are returned even when <c>drawHiddenLines</c> is false: building a path is
+    /// not drawing it, and a caller staging occlusion needs the back of the box precisely when it is
+    /// not being drawn.
+    /// </para>
+    /// <para>A script that ignores the return value behaves exactly as before.</para>
+    /// </remarks>
+    public Dictionary<string, object?> DrawPerspectiveBox(CanvasRenderingContext2D ctx, object boxObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (JsInterop.AsDict(boxObj) is not IDictionary box) return;
+        if (JsInterop.AsDict(boxObj) is not IDictionary box) return [];
 
         var opt = JsInterop.AsDict(options);
         var topFill = opt?["topFill"]?.ToString() ?? "#e6f0fa";
@@ -1052,31 +1168,39 @@ public class ConstructiveDrawingToolkit
         var drawHidden = opt != null && opt.Contains("drawHiddenLines") && Convert.ToBoolean(opt["drawHiddenLines"]);
 
         var faces = JsInterop.AsDict(box["faces"]);
-        if (faces == null) return;
+        if (faces == null) return [];
 
-        void RenderFace(object? faceObj, object? fill)
+        // Every face the projection produced, drawn or not.
+        var built = new Dictionary<string, CanvasPath>();
+        foreach (var name in new[] { "bottom", "backLeft", "backRight", "left", "right", "top" })
         {
-            if (faceObj is not IList pts || pts.Count < 3) return;
-            ctx.BeginPath();
+            if (faces[name] is not IList pts || pts.Count < 3) continue;
+            var quad = new CanvasPath();
             var first = ExtractPoint(pts[0]);
-            ctx.MoveTo(first.X, first.Y);
+            quad.MoveTo(first.X, first.Y);
             for (var i = 1; i < pts.Count; i++)
             {
                 var p = ExtractPoint(pts[i]);
-                ctx.LineTo(p.X, p.Y);
+                quad.LineTo(p.X, p.Y);
             }
-            ctx.ClosePath();
+            quad.ClosePath();
+            built[name] = quad;
+        }
+
+        void RenderFace(string name, object? fill)
+        {
+            if (!built.TryGetValue(name, out var quad)) return;
             if (fill != null)
             {
                 ctx.FillStyle = fill;
-                ctx.Fill();
+                ctx.Fill(quad);
             }
             if (strokeColor != null)
             {
                 ctx.StrokeStyle = strokeColor;
                 ctx.LineWidth = strokeWidth;
                 ctx.LineJoin = "round";
-                ctx.Stroke();
+                ctx.Stroke(quad);
             }
         }
 
@@ -1087,17 +1211,31 @@ public class ConstructiveDrawingToolkit
             ctx.Save();
             ctx.StrokeStyle = "#9bbcd9";
             ctx.LineWidth = strokeWidth * 0.7f;
-            RenderFace(faces["bottom"], null);
-            RenderFace(faces["backLeft"], null);
-            RenderFace(faces["backRight"], null);
+            RenderFace("bottom", null);
+            RenderFace("backLeft", null);
+            RenderFace("backRight", null);
             ctx.Restore();
         }
 
-        RenderFace(faces["left"], leftFill);
-        RenderFace(faces["right"], rightFill);
-        RenderFace(faces["top"], topFill);
+        RenderFace("left", leftFill);
+        RenderFace("right", rightFill);
+        RenderFace("top", topFill);
 
         ctx.Restore();
+
+        CanvasPath? outline = null;
+        foreach (var name in new[] { "left", "right", "top" })
+            if (built.TryGetValue(name, out var quad))
+                outline = outline == null ? quad : outline.Union(quad);
+
+        var faceDict = new Dictionary<string, object?>();
+        foreach (var kv in built) faceDict[kv.Key] = kv.Value;
+
+        return new Dictionary<string, object?>
+        {
+            ["faces"] = faceDict,
+            ["silhouette"] = outline == null ? new CanvasPath() : outline.Simplify()
+        };
     }
 
     /// <summary>
@@ -2250,18 +2388,24 @@ public class ConstructiveDrawingToolkit
         (rightKnee, rightAnkle, rightFoot) = PoseLimb(rightLegPose, "hipDeg", "kneeDeg",
             rightHip, rightKnee, rightAnkle, rightFoot);
 
-        return new Dictionary<string, object?>
+        // The lean is an orientation, not just a displacement. The masses used to carry only their
+        // static tilt while `spineDeg` moved their centres, so a figure leaning 18 degrees kept a
+        // perfectly upright head and an untilted ribcage. The pelvis is the pivot and so is unmoved.
+        var ribcageTiltDeg = shoulderTiltDeg + spineDeg;
+        var headAngleDeg = spineDeg + neckDeg;
+
+        var figure = new Dictionary<string, object?>
         {
             ["headUnit"] = H,
             ["totalHeight"] = totalHeight,
             // Echoed so a caller can read back what the figure is doing — and so a later pass can
             // reproduce or nudge a pose without having kept the arguments that made it.
             ["posed"] = pose != null,
-            ["head"] = new Dictionary<string, object?> { ["center"] = ToDict(headCenter), ["rx"] = H * 0.36f, ["ry"] = H * 0.50f },
+            ["head"] = new Dictionary<string, object?> { ["center"] = ToDict(headCenter), ["rx"] = H * 0.36f, ["ry"] = H * 0.50f, ["angleDeg"] = headAngleDeg },
             ["neck"] = ToDict(neckCenter),
             ["sternum"] = ToDict(sternalNotch),
             ["clavicles"] = new Dictionary<string, object?> { ["left"] = ToDict(leftShoulder), ["right"] = ToDict(rightShoulder), ["center"] = ToDict(sternalNotch) },
-            ["ribcage"] = new Dictionary<string, object?> { ["center"] = ToDict(ribcageCenter), ["rx"] = ribcageRx, ["ry"] = ribcageRy, ["tiltDeg"] = shoulderTiltDeg },
+            ["ribcage"] = new Dictionary<string, object?> { ["center"] = ToDict(ribcageCenter), ["rx"] = ribcageRx, ["ry"] = ribcageRy, ["tiltDeg"] = ribcageTiltDeg },
             ["navel"] = ToDict(navel),
             ["pelvis"] = new Dictionary<string, object?> { ["center"] = ToDict(pelvisCenter), ["leftHip"] = ToDict(leftHip), ["rightHip"] = ToDict(rightHip), ["rx"] = H * 0.70f, ["ry"] = H * 0.45f, ["tiltDeg"] = pelvicTiltDeg },
             ["crotch"] = ToDict(crotch),
@@ -2270,7 +2414,224 @@ public class ConstructiveDrawingToolkit
             ["leftLeg"] = new Dictionary<string, object?> { ["hip"] = ToDict(leftHip), ["knee"] = ToDict(leftKnee), ["ankle"] = ToDict(leftAnkle), ["foot"] = ToDict(leftFoot) },
             ["rightLeg"] = new Dictionary<string, object?> { ["hip"] = ToDict(rightHip), ["knee"] = ToDict(rightKnee), ["ankle"] = ToDict(rightAnkle), ["foot"] = ToDict(rightFoot) }
         };
+
+        // Cheap enough to be unconditional — closed-form over the same masses the geometry uses, no
+        // paths and no boolean operations. A posed figure's extent is *not* its height: a thrown arm
+        // reaches wider than the canon ever does, so fitting one to a panel by height alone runs a
+        // limb straight off the edge.
+        figure["bounds"] = FigureBounds(figure);
+        return figure;
     }
+
+    #region Figure Geometry
+    /// <summary>A bone as a drawable mass: a tapering band with a disc at each joint.</summary>
+    /// <remarks>
+    /// Discs rather than hand-swept arc caps. An arc cap has to choose which half of the circle it
+    /// sweeps, and choosing wrong subtracts a bite from the join instead of adding one — silently,
+    /// as a white disc at every joint. A union of a band and two circles cannot get that wrong.
+    /// </remarks>
+    static CanvasPath Capsule(Point2D a, Point2D b, float ra, float rb)
+    {
+        float dx = b.X - a.X, dy = b.Y - a.Y;
+        var len = MathF.Sqrt(dx * dx + dy * dy);
+        if (len < 0.001f) return Disc(a, MathF.Max(ra, rb));
+
+        float nx = -dy / len, ny = dx / len;
+        var band = new CanvasPath();
+        band.MoveTo(a.X + nx * ra, a.Y + ny * ra);
+        band.LineTo(b.X + nx * rb, b.Y + ny * rb);
+        band.LineTo(b.X - nx * rb, b.Y - ny * rb);
+        band.LineTo(a.X - nx * ra, a.Y - ny * ra);
+        band.ClosePath();
+        return band.Union(Disc(a, ra)).Union(Disc(b, rb));
+    }
+
+    static CanvasPath Disc(Point2D c, float r)
+    {
+        var p = new CanvasPath();
+        p.Arc(c.X, c.Y, MathF.Max(0.01f, r), 0f, MathF.PI * 2f);
+        p.ClosePath();
+        return p;
+    }
+
+    static CanvasPath OrientedEllipse(Point2D c, float rx, float ry, float degrees)
+    {
+        var p = new CanvasPath();
+        p.Ellipse(c.X, c.Y, MathF.Max(0.01f, rx), MathF.Max(0.01f, ry), degrees * MathF.PI / 180f, 0f, MathF.PI * 2f);
+        return p;
+    }
+
+    static float Num(IDictionary? d, string key, float fallback) =>
+        d != null && d.Contains(key) && d[key] != null
+            ? Convert.ToSingle(d[key], CultureInfo.InvariantCulture)
+            : fallback;
+
+    /// <summary>
+    /// Every tapering mass in the figure, named, with the radii <see cref="DrawMannequinSolid"/>
+    /// already paints. One table so bounds and geometry can never disagree about the same figure.
+    /// </summary>
+    static List<(string Name, string Group, Point2D A, Point2D B, float RA, float RB)> FigureBones(IDictionary fig, float H)
+    {
+        var lArm = JsInterop.AsDict(fig["leftArm"]);
+        var rArm = JsInterop.AsDict(fig["rightArm"]);
+        var lLeg = JsInterop.AsDict(fig["leftLeg"]);
+        var rLeg = JsInterop.AsDict(fig["rightLeg"]);
+        var clav = JsInterop.AsDict(fig["clavicles"]);
+        var pelvis = JsInterop.AsDict(fig["pelvis"]);
+
+        var neck = ExtractPoint(fig["neck"]);
+        var sternum = ExtractPoint(fig["sternum"]);
+        var pelCenter = ExtractPoint(pelvis?["center"]);
+
+        var bones = new List<(string, string, Point2D, Point2D, float, float)>
+        {
+            ("neck", "torso", neck, sternum, H * 0.18f, H * 0.34f),
+            ("spine", "torso", sternum, pelCenter, H * 0.55f, H * 0.58f),
+            ("shoulders", "torso", ExtractPoint(clav?["left"]), ExtractPoint(clav?["right"]), H * 0.29f, H * 0.29f)
+        };
+
+        void Limb(IDictionary? d, string side, string group, string j0, string j1, string j2, string j3,
+                  string n0, string n1, string n2, float r0, float r1, float r2, float r3)
+        {
+            if (d == null) return;
+            Point2D p0 = ExtractPoint(d[j0]), p1 = ExtractPoint(d[j1]), p2 = ExtractPoint(d[j2]), p3 = ExtractPoint(d[j3]);
+            bones.Add((side + n0, group, p0, p1, r0, r1));
+            bones.Add((side + n1, group, p1, p2, r1, r2));
+            bones.Add((side + n2, group, p2, p3, r2, r3));
+        }
+
+        Limb(lArm, "left", "leftArm", "shoulder", "elbow", "wrist", "hand",
+            "UpperArm", "Forearm", "Hand", H * 0.22f, H * 0.16f, H * 0.12f, H * 0.10f);
+        Limb(rArm, "right", "rightArm", "shoulder", "elbow", "wrist", "hand",
+            "UpperArm", "Forearm", "Hand", H * 0.22f, H * 0.16f, H * 0.12f, H * 0.10f);
+        Limb(lLeg, "left", "leftLeg", "hip", "knee", "ankle", "foot",
+            "Thigh", "Shin", "Foot", H * 0.28f, H * 0.20f, H * 0.14f, H * 0.10f);
+        Limb(rLeg, "right", "rightLeg", "hip", "knee", "ankle", "foot",
+            "Thigh", "Shin", "Foot", H * 0.28f, H * 0.20f, H * 0.14f, H * 0.10f);
+
+        return bones;
+    }
+
+    /// <summary>The three elliptical masses, each with the orientation the pose gave it.</summary>
+    static List<(string Name, string Group, Point2D C, float Rx, float Ry, float Deg)> FigureMasses(IDictionary fig, float H)
+    {
+        var head = JsInterop.AsDict(fig["head"]);
+        var rib = JsInterop.AsDict(fig["ribcage"]);
+        var pel = JsInterop.AsDict(fig["pelvis"]);
+
+        return
+        [
+            ("head", "head", ExtractPoint(head?["center"]), Num(head, "rx", H * 0.36f), Num(head, "ry", H * 0.50f), Num(head, "angleDeg", 0f)),
+            ("ribcage", "torso", ExtractPoint(rib?["center"]), Num(rib, "rx", H * 0.85f), Num(rib, "ry", H * 0.70f), Num(rib, "tiltDeg", 0f)),
+            ("pelvis", "torso", ExtractPoint(pel?["center"]), Num(pel, "rx", H * 0.70f), Num(pel, "ry", H * 0.45f), Num(pel, "tiltDeg", 0f))
+        ];
+    }
+
+    /// <summary>Closed-form extent of every mass, without building a single path.</summary>
+    static Dictionary<string, object?> FigureBounds(IDictionary fig, float padding = 0f)
+    {
+        var H = Num(fig as IDictionary, "headUnit", 70f);
+        float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+
+        void Add(float cx, float cy, float hw, float hh)
+        {
+            x0 = MathF.Min(x0, cx - hw); y0 = MathF.Min(y0, cy - hh);
+            x1 = MathF.Max(x1, cx + hw); y1 = MathF.Max(y1, cy + hh);
+        }
+
+        foreach (var b in FigureBones(fig, H))
+        {
+            Add(b.A.X, b.A.Y, b.RA + padding, b.RA + padding);
+            Add(b.B.X, b.B.Y, b.RB + padding, b.RB + padding);
+        }
+        foreach (var m in FigureMasses(fig, H))
+        {
+            // Exact half-extents of an ellipse rotated by theta.
+            var t = m.Deg * MathF.PI / 180f;
+            float c = MathF.Cos(t), s = MathF.Sin(t), rx = m.Rx + padding, ry = m.Ry + padding;
+            Add(m.C.X, m.C.Y, MathF.Sqrt(rx * rx * c * c + ry * ry * s * s), MathF.Sqrt(rx * rx * s * s + ry * ry * c * c));
+        }
+
+        if (x0 > x1) return new Dictionary<string, object?>
+        {
+            ["x"] = 0f, ["y"] = 0f, ["width"] = 0f, ["height"] = 0f,
+            ["x2"] = 0f, ["y2"] = 0f, ["cx"] = 0f, ["cy"] = 0f
+        };
+
+        return new Dictionary<string, object?>
+        {
+            ["x"] = x0, ["y"] = y0, ["width"] = x1 - x0, ["height"] = y1 - y0,
+            ["x2"] = x1, ["y2"] = y1, ["cx"] = (x0 + x1) * 0.5f, ["cy"] = (y0 + y1) * 0.5f
+        };
+    }
+
+    /// <summary>
+    /// The figure as geometry rather than as a drawing: one silhouette, a path per mass, the coarse
+    /// groups those masses belong to, and the bounds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>drawMannequinSolid</c> builds these same masses and hands nothing back, so every caller
+    /// that wanted to clip to a limb, occlude a figure, cut a garment, or fit a figure to a panel
+    /// had to rebuild them by hand. A path composes — it fills, clips, strokes, takes boolean
+    /// operations, converts through <c>strokeToPath</c>, and survives into <c>outSvg</c>; a draw
+    /// call composes with nothing.
+    /// </para>
+    /// <para>
+    /// Separate from <see cref="CreateMannequinFigure"/> because paths are not free: this builds
+    /// about twenty native paths and some fifty boolean operations, which a loop measuring poses
+    /// should not pay for. <c>figure.bounds</c> lives on the figure itself and costs nothing.
+    /// </para>
+    /// <para>
+    /// <c>padding</c> inflates every mass, which is how a garment is derived: cloth covers the
+    /// figure without fitting it, and that gap is where every fold comes from (Studio Manual 22).
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateFigureGeometry(object figureObj, object? options = null)
+    {
+        if (JsInterop.AsDict(figureObj) is not IDictionary fig)
+            throw new ArgumentException("createFigureGeometry needs a figure from Drawing.createMannequinFigure(...).", nameof(figureObj));
+
+        var opt = JsInterop.AsDict(options);
+        var padding = Num(opt, "padding", 0f);
+        var H = Num(fig, "headUnit", 70f);
+
+        var parts = new Dictionary<string, object?>();
+        var groups = new Dictionary<string, CanvasPath>();
+
+        void Record(string name, string group, CanvasPath path)
+        {
+            parts[name] = path;
+            groups[group] = groups.TryGetValue(group, out var acc) ? acc.Union(path) : path;
+        }
+
+        foreach (var b in FigureBones(fig, H))
+            Record(b.Name, b.Group, Capsule(b.A, b.B, b.RA + padding, b.RB + padding));
+        foreach (var m in FigureMasses(fig, H))
+            Record(m.Name, m.Group, OrientedEllipse(m.C, m.Rx + padding, m.Ry + padding, m.Deg));
+
+        CanvasPath? whole = null;
+        var groupDict = new Dictionary<string, object?>();
+        foreach (var kv in groups)
+        {
+            groupDict[kv.Key] = kv.Value;
+            whole = whole == null ? kv.Value : whole.Union(kv.Value);
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["silhouette"] = whole == null ? new CanvasPath() : whole.Simplify(),
+            ["parts"] = parts,
+            ["groups"] = groupDict,
+            ["bounds"] = FigureBounds(fig, padding),
+            ["padding"] = padding,
+            // Construction order, NOT depth — the toolkit has no z, so this is the order
+            // `drawMannequinSolid` paints in and nothing more. A pose where an arm passes behind the
+            // torso still needs the caller to say so.
+            ["order"] = new List<object?> { "leftLeg", "rightLeg", "torso", "leftArm", "rightArm", "head" }
+        };
+    }
+    #endregion
 
     public void DrawMannequinWireframe(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
     {
@@ -2285,6 +2646,9 @@ public class ConstructiveDrawingToolkit
         var head = JsInterop.AsDict(fig["head"]);
         var headCenter = ExtractPoint(head?["center"]);
         var headRx = head != null && head.Contains("rx") ? Convert.ToSingle(head["rx"], CultureInfo.InvariantCulture) : 25f;
+        // The pose orients the masses as well as placing them; without this a leaning figure keeps
+        // a perfectly upright head, which is what it did before these three angles were read.
+        var headAngle = Num(head, "angleDeg", 0f) * MathF.PI / 180f;
         var headRy = head != null && head.Contains("ry") ? Convert.ToSingle(head["ry"], CultureInfo.InvariantCulture) : 35f;
 
         var neck = ExtractPoint(fig["neck"]);
@@ -2296,11 +2660,13 @@ public class ConstructiveDrawingToolkit
         var ribCenter = ExtractPoint(ribcage?["center"]);
         var ribRx = ribcage != null && ribcage.Contains("rx") ? Convert.ToSingle(ribcage["rx"], CultureInfo.InvariantCulture) : 60f;
         var ribRy = ribcage != null && ribcage.Contains("ry") ? Convert.ToSingle(ribcage["ry"], CultureInfo.InvariantCulture) : 50f;
+        var ribTilt = Num(ribcage, "tiltDeg", 0f) * MathF.PI / 180f;
 
         var pelvis = JsInterop.AsDict(fig["pelvis"]);
         var pelCenter = ExtractPoint(pelvis?["center"]);
         var pelRx = pelvis != null && pelvis.Contains("rx") ? Convert.ToSingle(pelvis["rx"], CultureInfo.InvariantCulture) : 50f;
         var pelRy = pelvis != null && pelvis.Contains("ry") ? Convert.ToSingle(pelvis["ry"], CultureInfo.InvariantCulture) : 32f;
+        var pelTilt = Num(pelvis, "tiltDeg", 0f) * MathF.PI / 180f;
 
         var lArm = JsInterop.AsDict(fig["leftArm"]);
         var rArm = JsInterop.AsDict(fig["rightArm"]);
@@ -2315,7 +2681,7 @@ public class ConstructiveDrawingToolkit
 
         // Head Ellipse
         ctx.BeginPath();
-        ctx.Ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Ellipse(headCenter.X, headCenter.Y, headRx, headRy, headAngle, 0f, MathF.PI * 2f);
         ctx.Stroke();
 
         // Spine Line of Action (Cervical -> Thoracic -> Lumbar -> Sacral)
@@ -2329,12 +2695,12 @@ public class ConstructiveDrawingToolkit
 
         // Ribcage Egg
         ctx.BeginPath();
-        ctx.Ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, ribTilt, 0f, MathF.PI * 2f);
         ctx.Stroke();
 
         // Pelvic Basin
         ctx.BeginPath();
-        ctx.Ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, pelTilt, 0f, MathF.PI * 2f);
         ctx.Stroke();
 
         // 2. Graphite Limb Bones & Joint Hinges
@@ -2425,8 +2791,9 @@ public class ConstructiveDrawingToolkit
         var pelCenter = ExtractPoint(pelvis?["center"]);
         var pelRx = pelvis != null && pelvis.Contains("rx") ? Convert.ToSingle(pelvis["rx"], CultureInfo.InvariantCulture) : H * 0.70f;
         var pelRy = pelvis != null && pelvis.Contains("ry") ? Convert.ToSingle(pelvis["ry"], CultureInfo.InvariantCulture) : H * 0.45f;
+        var pelTilt = Num(pelvis, "tiltDeg", 0f) * MathF.PI / 180f;
         ctx.BeginPath();
-        ctx.Ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Ellipse(pelCenter.X, pelCenter.Y, pelRx, pelRy, pelTilt, 0f, MathF.PI * 2f);
         ctx.Fill();
         ctx.Stroke();
 
@@ -2435,8 +2802,9 @@ public class ConstructiveDrawingToolkit
         var ribCenter = ExtractPoint(ribcage?["center"]);
         var ribRx = ribcage != null && ribcage.Contains("rx") ? Convert.ToSingle(ribcage["rx"], CultureInfo.InvariantCulture) : H * 0.85f;
         var ribRy = ribcage != null && ribcage.Contains("ry") ? Convert.ToSingle(ribcage["ry"], CultureInfo.InvariantCulture) : H * 0.70f;
+        var ribTilt = Num(ribcage, "tiltDeg", 0f) * MathF.PI / 180f;
         ctx.BeginPath();
-        ctx.Ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Ellipse(ribCenter.X, ribCenter.Y, ribRx, ribRy, ribTilt, 0f, MathF.PI * 2f);
         ctx.Fill();
         ctx.Stroke();
 
@@ -2456,9 +2824,10 @@ public class ConstructiveDrawingToolkit
         var head = JsInterop.AsDict(fig["head"]);
         var headCenter = ExtractPoint(head?["center"]);
         var headRx = head != null && head.Contains("rx") ? Convert.ToSingle(head["rx"], CultureInfo.InvariantCulture) : H * 0.36f;
+        var headAngle = Num(head, "angleDeg", 0f) * MathF.PI / 180f;
         var headRy = head != null && head.Contains("ry") ? Convert.ToSingle(head["ry"], CultureInfo.InvariantCulture) : H * 0.50f;
         ctx.BeginPath();
-        ctx.Ellipse(headCenter.X, headCenter.Y, headRx, headRy, 0f, 0f, MathF.PI * 2f);
+        ctx.Ellipse(headCenter.X, headCenter.Y, headRx, headRy, headAngle, 0f, MathF.PI * 2f);
         ctx.Fill();
         ctx.Stroke();
 
@@ -3287,10 +3656,31 @@ public class ConstructiveDrawingToolkit
     /// wedge off it, and every phalanx as its own tapering box.
     /// </summary>
     /// <remarks>Exposed to scripts, so members are PascalCase here and camelCase in JS.</remarks>
-    public void DrawHandSolid(CanvasRenderingContext2D ctx, object handObj, object? options = null)
+    /// <summary>
+    /// Draws Plate 78's block forms and <b>returns them</b>: <c>silhouette</c> (the whole hand as one
+    /// contour), <c>parts</c> (a <see cref="CanvasPath"/> per mass, named anatomically) and
+    /// <c>bounds</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same gap the mannequin had, at a tenth the size: this paints a <i>construction sheet</i> —
+    /// a palm slab, a thenar wedge and eleven separate boxes, each with its own outline — where a
+    /// drawn hand is one shape. At the scale a hand actually appears in a panel, perhaps fifteen
+    /// pixels, the interior outlines are noise and the silhouette is the whole of the drawing.
+    /// </para>
+    /// <para>
+    /// Part names follow the bones: <c>palm</c>, <c>thenar</c>, then
+    /// <c>indexProximal</c> / <c>indexMiddle</c> / <c>indexDistal</c> and the same for
+    /// <c>middle</c>, <c>ring</c> and <c>little</c>, plus <c>thumbProximal</c> and
+    /// <c>thumbDistal</c>. A hand posed with a different joint count keeps the same scheme,
+    /// falling back to <c>Segment{n}</c> past the named three.
+    /// </para>
+    /// <para>A script that ignores the return value behaves exactly as before.</para>
+    /// </remarks>
+    public Dictionary<string, object?> DrawHandSolid(CanvasRenderingContext2D ctx, object handObj, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (JsInterop.AsDict(handObj) is not IDictionary hand) return;
+        if (JsInterop.AsDict(handObj) is not IDictionary hand) return [];
 
         var opt = JsInterop.AsDict(options);
         var fillColor = opt?["fillColor"]?.ToString() ?? "#dbe7f2";
@@ -3301,31 +3691,42 @@ public class ConstructiveDrawingToolkit
         var palm = JsInterop.AsDict(hand["palm"]);
         var fingers = hand["fingers"] as IList;
         var thumb = JsInterop.AsDict(hand["thumb"]);
-        if (palm == null || fingers == null || thumb == null) return;
+        if (palm == null || fingers == null || thumb == null) return [];
+
+        var parts = new Dictionary<string, object?>();
+        CanvasPath? whole = null;
+
+        void Keep(string name, CanvasPath path)
+        {
+            parts[name] = path;
+            whole = whole == null ? path : whole.Union(path);
+        }
 
         ctx.Save();
         ctx.StrokeStyle = strokeColor;
         ctx.LineWidth = strokeWidth;
 
         // A phalanx is a box: a quad about the segment, narrowing toward the tip.
-        void Box(Point2D a, Point2D b, float wA, float wB, string fill)
+        CanvasPath? Box(Point2D a, Point2D b, float wA, float wB, string fill)
         {
             var dx = b.X - a.X;
             var dy = b.Y - a.Y;
             var len = MathF.Sqrt(dx * dx + dy * dy);
-            if (len < 0.01f) return;
+            if (len < 0.01f) return null;
             var nx = -dy / len;
             var ny = dx / len;
 
+            var box = new CanvasPath();
+            box.MoveTo(a.X + nx * wA * 0.5f, a.Y + ny * wA * 0.5f);
+            box.LineTo(b.X + nx * wB * 0.5f, b.Y + ny * wB * 0.5f);
+            box.LineTo(b.X - nx * wB * 0.5f, b.Y - ny * wB * 0.5f);
+            box.LineTo(a.X - nx * wA * 0.5f, a.Y - ny * wA * 0.5f);
+            box.ClosePath();
+
             ctx.FillStyle = fill;
-            ctx.BeginPath();
-            ctx.MoveTo(a.X + nx * wA * 0.5f, a.Y + ny * wA * 0.5f);
-            ctx.LineTo(b.X + nx * wB * 0.5f, b.Y + ny * wB * 0.5f);
-            ctx.LineTo(b.X - nx * wB * 0.5f, b.Y - ny * wB * 0.5f);
-            ctx.LineTo(a.X - nx * wA * 0.5f, a.Y - ny * wA * 0.5f);
-            ctx.ClosePath();
-            ctx.Fill();
-            ctx.Stroke();
+            ctx.Fill(box);
+            ctx.Stroke(box);
+            return box;
         }
 
         // 1. The palm slab.
@@ -3333,40 +3734,42 @@ public class ConstructiveDrawingToolkit
         var wo = ExtractPoint(palm["wristOuter"]);
         var ki = ExtractPoint(palm["knuckleInner"]);
         var ko = ExtractPoint(palm["knuckleOuter"]);
+        var palmSlab = new CanvasPath();
+        palmSlab.MoveTo(wi.X, wi.Y);
+        palmSlab.LineTo(ki.X, ki.Y);
+        palmSlab.LineTo(ko.X, ko.Y);
+        palmSlab.LineTo(wo.X, wo.Y);
+        palmSlab.ClosePath();
         ctx.FillStyle = fillColor;
-        ctx.BeginPath();
-        ctx.MoveTo(wi.X, wi.Y);
-        ctx.LineTo(ki.X, ki.Y);
-        ctx.LineTo(ko.X, ko.Y);
-        ctx.LineTo(wo.X, wo.Y);
-        ctx.ClosePath();
-        ctx.Fill();
-        ctx.Stroke();
+        ctx.Fill(palmSlab);
+        ctx.Stroke(palmSlab);
+        Keep("palm", palmSlab);
 
         // 2. The thumb muscle - the big mass Loomis calls by far the most important in the hand - as a
         // wedge from the wrist out to the thumb's base.
         var thumbBase = ExtractPoint(thumb["base"]);
         var thenar = JsInterop.AsDict(hand["thenar"]);
-        ctx.FillStyle = shadowColor;
-        ctx.BeginPath();
+        var thenarWedge = new CanvasPath();
         if (thenar != null)
         {
             var thenarWrist = ExtractPoint(thenar["wrist"]);
             var thenarCrest = ExtractPoint(thenar["crest"]);
             var thenarWeb = ExtractPoint(thenar["web"]);
-            ctx.MoveTo(thenarWrist.X, thenarWrist.Y);
-            ctx.QuadraticCurveTo(thenarCrest.X, thenarCrest.Y, thumbBase.X, thumbBase.Y);
-            ctx.LineTo(thenarWeb.X, thenarWeb.Y);
+            thenarWedge.MoveTo(thenarWrist.X, thenarWrist.Y);
+            thenarWedge.QuadraticCurveTo(thenarCrest.X, thenarCrest.Y, thumbBase.X, thumbBase.Y);
+            thenarWedge.LineTo(thenarWeb.X, thenarWeb.Y);
         }
         else
         {
-            ctx.MoveTo(wo.X, wo.Y);
-            ctx.LineTo(thumbBase.X, thumbBase.Y);
-            ctx.LineTo(ko.X, ko.Y);
+            thenarWedge.MoveTo(wo.X, wo.Y);
+            thenarWedge.LineTo(thumbBase.X, thumbBase.Y);
+            thenarWedge.LineTo(ko.X, ko.Y);
         }
-        ctx.ClosePath();
-        ctx.Fill();
-        ctx.Stroke();
+        thenarWedge.ClosePath();
+        ctx.FillStyle = shadowColor;
+        ctx.Fill(thenarWedge);
+        ctx.Stroke(thenarWedge);
+        Keep("thenar", thenarWedge);
 
         // 3. Three boxes per finger, narrowing toward the tip.
         foreach (var f in fingers)
@@ -3375,12 +3778,14 @@ public class ConstructiveDrawingToolkit
             var joints = fd?["joints"] as IList;
             if (fd == null || joints == null) continue;
 
+            var name = fd["name"]?.ToString() ?? "finger";
             var w = Convert.ToSingle(fd["width"], CultureInfo.InvariantCulture);
             var from = ExtractPoint(fd["knuckle"]);
             for (var s = 0; s < joints.Count; s++)
             {
                 var to = ExtractPoint(joints[s]);
-                Box(from, to, w * (1f - s * 0.13f), w * (1f - (s + 1) * 0.13f), s % 2 == 0 ? fillColor : shadowColor);
+                var box = Box(from, to, w * (1f - s * 0.13f), w * (1f - (s + 1) * 0.13f), s % 2 == 0 ? fillColor : shadowColor);
+                if (box != null) Keep(name + PhalanxName(s, joints.Count), box);
                 from = to;
             }
         }
@@ -3394,13 +3799,33 @@ public class ConstructiveDrawingToolkit
             for (var s = 0; s < tJoints.Count; s++)
             {
                 var to = ExtractPoint(tJoints[s]);
-                Box(from, to, tw * (1f - s * 0.15f), tw * (1f - (s + 1) * 0.15f), s % 2 == 0 ? fillColor : shadowColor);
+                var box = Box(from, to, tw * (1f - s * 0.15f), tw * (1f - (s + 1) * 0.15f), s % 2 == 0 ? fillColor : shadowColor);
+                if (box != null) Keep("thumb" + PhalanxName(s, tJoints.Count), box);
                 from = to;
             }
         }
 
         ctx.Restore();
+
+        var silhouette = whole == null ? new CanvasPath() : whole.Simplify();
+        var box2 = silhouette.Path.Bounds;
+        return new Dictionary<string, object?>
+        {
+            ["silhouette"] = silhouette,
+            ["parts"] = parts,
+            ["bounds"] = new Dictionary<string, object?>
+            {
+                ["x"] = box2.Left, ["y"] = box2.Top, ["width"] = box2.Width, ["height"] = box2.Height,
+                ["x2"] = box2.Right, ["y2"] = box2.Bottom,
+                ["cx"] = box2.MidX, ["cy"] = box2.MidY
+            }
+        };
     }
+
+    /// <summary>Bone name for the n-th segment out from a knuckle, so parts read anatomically.</summary>
+    static string PhalanxName(int index, int count) => count == 2
+        ? index switch { 0 => "Proximal", 1 => "Distal", _ => "Segment" + index }
+        : index switch { 0 => "Proximal", 1 => "Middle", 2 => "Distal", _ => "Segment" + index };
     #endregion
 
     #endregion

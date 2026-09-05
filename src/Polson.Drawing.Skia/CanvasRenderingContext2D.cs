@@ -1150,10 +1150,10 @@ public class CanvasRenderingContext2D
     #region Constructive Drawing & Inking
     private static readonly ConstructiveDrawingToolkit _toolkit = new();
 
-    public void DrawTaperedStroke(object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null) =>
+    public CanvasPath DrawTaperedStroke(object start, object cp1, object cp2, object end, float maxThickness, object? fillOrStrokeStyle = null) =>
         _toolkit.DrawTaperedStroke(this, start, cp1, cp2, end, maxThickness, fillOrStrokeStyle ?? FillStyle);
 
-    public void DrawTaperedStroke(float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null) =>
+    public CanvasPath DrawTaperedStroke(float sx, float sy, float cp1x, float cp1y, float cp2x, float cp2y, float ex, float ey, float maxThickness, object? fillOrStrokeStyle = null) =>
         _toolkit.DrawTaperedStroke(this, sx, sy, cp1x, cp1y, cp2x, cp2y, ex, ey, maxThickness, fillOrStrokeStyle ?? FillStyle);
 
     public void DrawFeathering(object origin, float angleDeg, int count, float length, float spacing, object? strokeColor = null, float LineWidth = 1.2f) =>
@@ -1174,13 +1174,13 @@ public class CanvasRenderingContext2D
     public void DrawPerspectiveGrid(object grid, object? options = null) =>
         _toolkit.DrawPerspectiveGrid(this, grid, options);
 
-    public void DrawPerspectiveBox(object box, object? options = null) =>
+    public Dictionary<string, object?> DrawPerspectiveBox(object box, object? options = null) =>
         _toolkit.DrawPerspectiveBox(this, box, options);
 
-    public void DrawPerspectiveBox(object grid, float anchorX, float anchorY, float width, float height, float depth, object? options = null)
+    public Dictionary<string, object?> DrawPerspectiveBox(object grid, float anchorX, float anchorY, float width, float height, float depth, object? options = null)
     {
         var box = _toolkit.CreatePerspectiveBox(grid, anchorX, anchorY, width, height, depth);
-        _toolkit.DrawPerspectiveBox(this, box, options);
+        return _toolkit.DrawPerspectiveBox(this, box, options);
     }
 
     public void DrawPerspectiveCylinder(object grid, float anchorX, float anchorY, float radius, float height, object? options = null) =>
@@ -1209,12 +1209,19 @@ public class CanvasRenderingContext2D
             _toolkit.DrawMannequinWireframe(this, figure, options);
     }
 
-    public void DrawHand(object hand, bool solid = false, object? options = null)
+    /// <summary>
+    /// Draws the hand, solid or as construction. In solid mode this returns what
+    /// <see cref="ConstructiveDrawingToolkit.DrawHandSolid"/> built — <c>silhouette</c>, <c>parts</c>
+    /// and <c>bounds</c>; the wireframe pass draws guides rather than masses, so it returns an
+    /// empty object rather than pretending to have geometry worth building on.
+    /// </summary>
+    public Dictionary<string, object?> DrawHand(object hand, bool solid = false, object? options = null)
     {
         if (solid)
-            _toolkit.DrawHandSolid(this, hand, options);
-        else
-            _toolkit.DrawHandWireframe(this, hand, options);
+            return _toolkit.DrawHandSolid(this, hand, options);
+
+        _toolkit.DrawHandWireframe(this, hand, options);
+        return [];
     }
 
     public void DrawTorsoMusculature(object figure, object? options = null) =>

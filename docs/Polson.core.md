@@ -1401,6 +1401,8 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 - `Chart.createColumnChart(rect, data, options?)` → `object` — Categories across, values up.
 - `Chart.createBarChart(rect, data, options?)` → `object` — Categories down, values across. Usually the better of the two: horizontal bars give category labels room to be words.
 - `Chart.createDotChart(rect, data, options?)` → `object` — Value as **position on one shared axis**, categories down. The most accurately decoded form there is, and the one Cleveland & McGill offer in place of a bar chart. Adds `radius` and `sort` (`'none'`, `'asc'`, `'desc'`) to the options.
+- `Chart.createGroupedDotChart(rect, data, options?)` → `object` — The same, with rows gathered into labelled groups from a `group` field, **still against one axis**. Adds `groupGap` and `headingHeight`.
+- `Chart.createFramedRectangleChart(rect, data, options?)` → `object` — A value as a **level inside an identical box**, placed anywhere. What Cleveland & McGill offer in place of a **shaded map**. Rows carry `x` and `y` in the plot's own coordinate space; rows without them are laid out on a grid. Adds `frameWidth`, `frameHeight`, `columns` and `gap`.
 - `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry.
 - `Chart.drawChart(ctx, chartModel)` → the same geometry — Fills the marks with the context's current `fillStyle` and returns what it drew.
 
@@ -1416,7 +1418,9 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `plot` · `bounds` | the rectangle the marks occupy |
 | `scale` · `band` | the `LinearScale` and `BandScale` used, so you can place anything else against them |
 | `bars` | *(bar/column)* one rectangle per datum, each with `x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`, plus `index`, `value` and `label` |
-| `dots` | *(dot)* one per datum with `cx`, `cy`, `radius`, `value`, `label`, `index`, `sourceIndex`, and `leaderX1/Y1/X2/Y2` for the line from the axis |
+| `dots` | *(dot)* one per datum with `cx`, `cy`, `radius`, `value`, `label`, `index`, `sourceIndex`, and `leaderX1/Y1/X2/Y2` for the line from the axis; grouped charts add `group` and `groupIndex` |
+| `groups` | *(grouped dot)* `{ name, index, count, y, y2, height, headingX, headingY, min, max, mean }` — the block each group occupies, and its own summary |
+| `items` | *(framed rectangle)* `{ label, value, anchorX, anchorY, frame, fill, fraction, index }` — the reference box, the filled part, and how full it is from 0 to 1 |
 | `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
 | `labels` | `{ text, x, y, align, baseline, index }` for the categories |
 | `baseline` · `baselinePosition` | the value, and the pixel it maps to |
@@ -1433,7 +1437,25 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 >
 > So `lieFactor` is `1` for a dot chart by the nature of the encoding, not by the baseline, and `isZeroBased` may be `false` without anything being wrong. Cropping to the data's own range is the ordinary thing to do: it is exactly what lets a dot chart show a spread that a zero-based bar chart flattens into five bars of nearly equal length.
 >
-> **`sort` is usually worth setting.** A form whose whole advantage is comparison gets most of that advantage from putting the values in order. Sorting reorders the rows but never the data — every dot keeps a `sourceIndex` back to the row it came from, so a parallel array of colours still lines up.
+> **`sort` is usually worth setting.** A form whose whole advantage is comparison gets most of that advantage from putting the values in order. Sorting reorders the rows but never the data — every dot keeps a `sourceIndex` back to the row it came from, so a parallel array of colours still lines up. On a **grouped** chart it sorts *within* each group, because that is the comparison grouping exists to support.
+
+> [!TIP]
+> **A grouped dot chart is one chart, not several — and that is the reason to prefer it over a panel per group.** Small multiples give each panel its own axis unless you force a shared one, which is the failure mode §2 warns about: panels that look comparable and are not. Here the scale is computed across every group at once and cannot drift apart.
+>
+> Rows carry their group in the data — `{ group: 'Nordics', label: 'Norway', value: 74.1 }` — and group order is first-seen, so a deliberate arrangement survives. Each group reports its own `min`, `max` and `mean`, which are awkward to recover once the rows have been sorted.
+>
+> **`Chart.createDotChart(...)` ignores a `group` field rather than grouping by it.** Worth knowing, because the alternative is silent: data shaped for the grouped call, passed to the plain one, draws a correct ungrouped chart and loses the structure without complaint. Ungrouped data passed the *other* way is fine — it becomes a single group rather than an error.
+>
+> A plot too short for its headings and gaps is **refused with the arithmetic** — how many rows, how many groups, and how much height went to chrome before any row was drawn — rather than silently stacking rows on top of each other.
+
+> [!IMPORTANT]
+> **On a framed-rectangle chart the frame is the mechanism, not decoration — do not draw the fills without them.** Cleveland & McGill are explicit: without frames these are "located bars" and the reader's task drops to perceiving **length**, rank 3. The identical frames are *"one step higher in the hierarchy"* — rank 2, position along identical but non-aligned scales. `createChartGeometry(...)` returns `frames` alongside `marks` for exactly this reason.
+>
+> It also fixes two faults of a shaded map that have nothing to do with the hierarchy. Shading a region makes its total ink the value **times its area** — on a US map Texas is imposing and Rhode Island is hard to see whatever the numbers say — and contiguous shaded regions merge into clusters the eye reads as structure whether or not any exists. Identical frames can do neither.
+>
+> **Each item reports `fraction`, not an absolute fill height, and the difference matters.** Frames sit at different places, so the fill's absolute `y` says more about where the item is than what it holds. An earlier version of this model reported the absolute level and a test caught it immediately: Texas at `y: 340` read as "lower" than North Dakota at `y: 90` while holding nine times the value. `fraction` is what the reader actually judges, and it is comparable between frames.
+>
+> **Positions are all-or-nothing.** If any row lacks `x`/`y`, the whole set is laid out on a grid — half a set on a map with the rest gridded over the top of it is a picture nobody wants and a mistake nothing downstream could report.
 
 > [!TIP]
 > **Small multiples share one scale by passing `max`.** This is the one rule in `polson://manual/13` §2 that no single panel can detect, because each panel is individually correct:

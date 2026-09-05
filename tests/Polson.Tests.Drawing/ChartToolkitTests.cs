@@ -383,4 +383,291 @@ public class ChartToolkitTests : TestsRuntime
         Assert.Equal(3, ((CanvasPath[])bars["marks"]!).Length);
     }
     #endregion
+
+    #region Tests — the grouped dot chart
+    static IDictionary[] Groups(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["groups"]!).Cast<object>().Select(g => (IDictionary)g!).ToArray();
+
+    static object[] Regions() =>
+    [
+        new Dictionary<string, object?> { ["group"] = "Nordics", ["label"] = "Norway", ["value"] = 74.1d },
+        new Dictionary<string, object?> { ["group"] = "Nordics", ["label"] = "Sweden", ["value"] = 54.3d },
+        new Dictionary<string, object?> { ["group"] = "Baltics", ["label"] = "Estonia", ["value"] = 47.6d },
+        new Dictionary<string, object?> { ["group"] = "Baltics", ["label"] = "Latvia", ["value"] = 39.2d },
+        new Dictionary<string, object?> { ["group"] = "Baltics", ["label"] = "Lithuania", ["value"] = 41.8d }
+    ];
+
+    /// <summary>
+    /// The claim that makes this one chart rather than several: every group reads against one scale.
+    /// </summary>
+    [Fact]
+    public void TestEveryGroupSharesOneAxis()
+    {
+        var model = Chart.CreateGroupedDotChart(Rect(0, 0, 400, 300), Regions());
+        var dots = Dots(model);
+
+        // Equal values in different groups must land at the same x, whatever their group's spread.
+        var scale = (LinearScale)model["scale"]!;
+        foreach (var dot in dots)
+        {
+            Assert.Equal(scale.Map(Num(dot, "value")), Num(dot, "cx"), 6);
+        }
+
+        Assert.Equal(1, Convert.ToInt32(model["encodingRank"]));
+    }
+
+    [Fact]
+    public void TestGroupsKeepFirstSeenOrderAndCarryTheirStats()
+    {
+        var groups = Groups(Chart.CreateGroupedDotChart(Rect(0, 0, 400, 300), Regions()));
+
+        Assert.Equal(["Nordics", "Baltics"], groups.Select(g => g["name"]?.ToString()));
+        Assert.Equal(2, Convert.ToInt32(groups[0]["count"]));
+        Assert.Equal(3, Convert.ToInt32(groups[1]["count"]));
+
+        Assert.Equal(74.1d, Num(groups[0], "max"), 3);
+        Assert.Equal(54.3d, Num(groups[0], "min"), 3);
+        Assert.Equal((47.6d + 39.2d + 41.8d) / 3d, Num(groups[1], "mean"), 6);
+    }
+
+    /// <summary>Rows are ordered inside their group, not across the chart.</summary>
+    [Fact]
+    public void TestSortingIsWithinGroups()
+    {
+        var dots = Dots(Chart.CreateGroupedDotChart(Rect(0, 0, 400, 300), Regions(),
+            new Dictionary<string, object?> { ["sort"] = "desc" }));
+
+        // Sorted globally these would interleave; grouped, each block stays whole and ordered.
+        Assert.Equal(["Norway", "Sweden", "Estonia", "Lithuania", "Latvia"],
+            dots.Select(d => d["label"]?.ToString()));
+        Assert.Equal(["Nordics", "Nordics", "Baltics", "Baltics", "Baltics"],
+            dots.Select(d => d["group"]?.ToString()));
+    }
+
+    [Fact]
+    public void TestRowsAdvanceDownwardsAndGroupsDoNotOverlap()
+    {
+        var model = Chart.CreateGroupedDotChart(Rect(0, 20, 400, 300), Regions());
+        var dots = Dots(model);
+        var groups = Groups(model);
+
+        for (var i = 1; i < dots.Length; i++)
+        {
+            Assert.True(Num(dots[i], "cy") > Num(dots[i - 1], "cy"), "rows advance downwards");
+        }
+
+        Assert.True(Num(groups[1], "y") >= Num(groups[0], "y2"), "the second group starts after the first ends");
+
+        foreach (var dot in dots) Assert.InRange(Num(dot, "cy"), 20d, 320d);
+    }
+
+    /// <summary>Group headings sit above their own first row.</summary>
+    [Fact]
+    public void TestEachHeadingSitsAboveItsGroup()
+    {
+        var model = Chart.CreateGroupedDotChart(Rect(0, 0, 400, 300), Regions());
+        var groups = Groups(model);
+        var dots = Dots(model);
+
+        foreach (var group in groups)
+        {
+            var first = dots.First(d => d["group"]?.ToString() == group["name"]?.ToString());
+            Assert.True(Num(group, "headingY") < Num(first, "cy"));
+        }
+    }
+
+    /// <summary>Ungrouped data is one group, not an error.</summary>
+    [Fact]
+    public void TestUngroupedDataBecomesASingleGroup()
+    {
+        var model = Chart.CreateGroupedDotChart(Rect(0, 0, 400, 300), new[] { 10d, 20d, 30d });
+        Assert.Single(Groups(model));
+        Assert.Equal(3, Dots(model).Length);
+    }
+
+    /// <summary>
+    /// Too little height is refused with the arithmetic, rather than drawing rows on top of each other.
+    /// </summary>
+    [Fact]
+    public void TestAPlotTooShortForItsGroupsIsRefusedWithNumbers()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            Chart.CreateGroupedDotChart(Rect(0, 0, 400, 30), Regions()));
+
+        Assert.Contains("5 rows", ex.Message);
+        Assert.Contains("2 groups", ex.Message);
+        Assert.Contains("headingHeight", ex.Message);
+    }
+
+    /// <summary>createDotChart ignores a group field — stated in the docs, pinned here.</summary>
+    [Fact]
+    public void TestThePlainDotChartIgnoresGrouping()
+    {
+        var plain = Chart.CreateDotChart(Rect(0, 0, 400, 300), Regions());
+        Assert.Null(plain.GetValueOrDefault("groups"));
+        Assert.Equal(5, Dots(plain).Length);
+    }
+
+    [Fact]
+    public void TestGeometryWorksForAGroupedDotChart()
+    {
+        var geometry = Chart.CreateChartGeometry(
+            Chart.CreateGroupedDotChart(Rect(0, 0, 400, 300), Regions()));
+        Assert.Equal(5, ((CanvasPath[])geometry["marks"]!).Length);
+    }
+    #endregion
+
+    #region Tests — the framed-rectangle chart
+    static IDictionary[] Items(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["items"]!).Cast<object>().Select(i => (IDictionary)i!).ToArray();
+
+    static IDictionary Part(IDictionary item, string name) => (IDictionary)item[name]!;
+
+    static object[] Located() =>
+    [
+        new Dictionary<string, object?> { ["label"] = "TX", ["value"] = 12.7d, ["x"] = 210d, ["y"] = 340d },
+        new Dictionary<string, object?> { ["label"] = "RI", ["value"] = 3.9d, ["x"] = 520d, ["y"] = 140d },
+        new Dictionary<string, object?> { ["label"] = "ND", ["value"] = 1.4d, ["x"] = 250d, ["y"] = 90d }
+    ];
+
+    /// <summary>
+    /// Every frame is identical — that is the mechanism, not decoration.
+    /// </summary>
+    /// <remarks>
+    /// Without the frames these would be located bars and the reader's task would be perceiving
+    /// length, rank 3. The frames buy exactly one step; identical size is what buys it.
+    /// </remarks>
+    [Fact]
+    public void TestEveryFrameIsTheSameSize()
+    {
+        var model = Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), Located());
+        var frames = Items(model).Select(i => Part(i, "frame")).ToArray();
+
+        foreach (var frame in frames)
+        {
+            Assert.Equal(Num(frames[0], "width"), Num(frame, "width"), 6);
+            Assert.Equal(Num(frames[0], "height"), Num(frame, "height"), 6);
+        }
+
+        // Rank 2: position along identical but non-aligned scales.
+        Assert.Equal("position", model["encoding"]);
+        Assert.Equal(2, Convert.ToInt32(model["encodingRank"]));
+    }
+
+    /// <summary>
+    /// Bigger values fill fuller, and the fill never leaves its frame.
+    /// </summary>
+    /// <remarks>
+    /// Compared by <c>fraction</c> rather than by the fill's absolute y, and that is the point: the
+    /// frames sit at different map positions, so an absolute coordinate says more about latitude than
+    /// about the data. An earlier version of this model reported the absolute level and this test
+    /// caught it — TX at y=340 read as "lower" than ND at y=90 while holding nine times the value.
+    /// </remarks>
+    [Fact]
+    public void TestFillLevelTracksValueAndStaysInsideTheFrame()
+    {
+        var items = Items(Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), Located()));
+
+        var tx = items.First(i => i["label"]?.ToString() == "TX");
+        var nd = items.First(i => i["label"]?.ToString() == "ND");
+
+        Assert.True(Num(tx, "fraction") > Num(nd, "fraction"), "12.7 fills fuller than 1.4");
+        foreach (var item in items) Assert.InRange(Num(item, "fraction"), 0d, 1d);
+
+        foreach (var item in items)
+        {
+            var frame = Part(item, "frame");
+            var fill = Part(item, "fill");
+            Assert.InRange(Num(fill, "y"), Num(frame, "y") - 0.001d, Num(frame, "y2") + 0.001d);
+            Assert.InRange(Num(fill, "y2"), Num(frame, "y") - 0.001d, Num(frame, "y2") + 0.001d);
+            Assert.Equal(Num(frame, "x"), Num(fill, "x"), 6);
+            Assert.Equal(Num(frame, "width"), Num(fill, "width"), 6);
+        }
+    }
+
+    /// <summary>Frames are centred on the position the caller gave, which is the map location.</summary>
+    [Fact]
+    public void TestFramesAreCentredOnTheirGivenPosition()
+    {
+        var items = Items(Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), Located()));
+
+        Assert.Equal(210d, Num(items[0], "anchorX"), 6);
+        Assert.Equal(340d, Num(items[0], "anchorY"), 6);
+        Assert.Equal(210d, Num(Part(items[0], "frame"), "cx"), 6);
+        Assert.Equal(340d, Num(Part(items[0], "frame"), "cy"), 6);
+        Assert.True((bool)Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), Located())["positioned"]!);
+    }
+
+    /// <summary>Data with no positions lays out on a grid, so the form is not map-only.</summary>
+    [Fact]
+    public void TestUnpositionedDataIsLaidOutOnAGrid()
+    {
+        var model = Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), new[] { 1d, 2d, 3d, 4d },
+            new Dictionary<string, object?> { ["columns"] = 2 });
+
+        Assert.False((bool)model["positioned"]!);
+        var items = Items(model);
+
+        Assert.Equal(Num(items[0], "anchorY"), Num(items[1], "anchorY"), 6);   // same row
+        Assert.True(Num(items[2], "anchorY") > Num(items[0], "anchorY"));      // next row down
+        Assert.Equal(Num(items[0], "anchorX"), Num(items[2], "anchorX"), 6);   // same column
+    }
+
+    /// <summary>
+    /// Positions are all-or-nothing: a half-positioned set would draw part on a map and part on a
+    /// grid over the top of it.
+    /// </summary>
+    [Fact]
+    public void TestPartlyPositionedDataFallsBackToTheGrid()
+    {
+        var mixed = new object[]
+        {
+            new Dictionary<string, object?> { ["label"] = "a", ["value"] = 1d, ["x"] = 10d, ["y"] = 10d },
+            new Dictionary<string, object?> { ["label"] = "b", ["value"] = 2d }
+        };
+
+        Assert.False((bool)Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), mixed)["positioned"]!);
+    }
+
+    /// <summary>Ticks are offsets from a frame's foot, so a legend frame can go anywhere.</summary>
+    [Fact]
+    public void TestTicksAreOffsetsFromTheFrameFoot()
+    {
+        var model = Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), Located(),
+            new Dictionary<string, object?> { ["frameHeight"] = 40d });
+        var ticks = ((IEnumerable)model["ticks"]!).Cast<object>().Select(t => (IDictionary)t!).ToArray();
+
+        Assert.NotEmpty(ticks);
+        foreach (var tick in ticks) Assert.InRange(Num(tick, "offset"), -0.001d, 40.001d);
+    }
+
+    [Fact]
+    public void TestAZeroSizedFrameIsRefused()
+    {
+        Assert.Throws<ArgumentException>(() => Chart.CreateFramedRectangleChart(
+            Rect(0, 0, 600, 400), Located(), new Dictionary<string, object?> { ["frameWidth"] = 0d }));
+        Assert.Throws<ArgumentException>(() => Chart.CreateFramedRectangleChart(
+            Rect(0, 0, 600, 400), Located(), new Dictionary<string, object?> { ["frameHeight"] = -4d }));
+    }
+
+    /// <summary>Geometry returns the fills as marks and the frames separately.</summary>
+    [Fact]
+    public void TestGeometrySeparatesFillsFromFrames()
+    {
+        var geometry = Chart.CreateChartGeometry(
+            Chart.CreateFramedRectangleChart(Rect(0, 0, 600, 400), Located()));
+
+        Assert.Equal(3, ((CanvasPath[])geometry["marks"]!).Length);
+        Assert.Equal(3, ((CanvasPath[])geometry["frames"]!).Length);
+    }
+
+    /// <summary>The other forms have no frames, and say so with an empty array rather than null.</summary>
+    [Fact]
+    public void TestUnframedChartsReturnNoFrames()
+    {
+        var geometry = Chart.CreateChartGeometry(
+            Chart.CreateColumnChart(Rect(0, 0, 400, 200), new[] { 1d, 2d }));
+        Assert.Empty((CanvasPath[])geometry["frames"]!);
+    }
+    #endregion
 }

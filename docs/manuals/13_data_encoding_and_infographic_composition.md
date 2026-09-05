@@ -99,9 +99,42 @@ can crop to the data's own range and show a spread that a zero-based bar chart f
 bars of nearly equal length. The model reports `lieFactor: 1` and `isZeroBased: false` together, and
 both are correct.
 
-**The other two do not exist yet.** Grouped dot charts and framed-rectangle charts are on the toolkit
-list. Where a *framed-rectangle* map is indicated, the honest move is to say in a `Stage.note` which
-form you used instead and that shading is rank 6.
+**`Chart.createGroupedDotChart(...)` is the second**, and it is the one to reach for when the rows
+have structure — regions, product lines, cohorts. Grouping buys a second comparison (within a group,
+and between groups) without spending any accuracy, because every dot still reads against **one**
+axis:
+
+```js
+const chart = Chart.createGroupedDotChart(panel, rows, { sort: 'desc' });   // rows carry a `group`
+```
+
+> [!IMPORTANT]
+> **Prefer this to a panel per group.** The obvious alternative — small multiples, one panel per
+> region — gives each panel its own axis unless you remember to force a shared one, and that is
+> precisely the failure §2 names: panels that look comparable and are not. A grouped dot chart cannot
+> make that mistake, because the scale is computed across every group at once.
+
+**`Chart.createFramedRectangleChart(...)` is the third, and it replaces the shaded map.** A choropleth
+asks the reader to judge *shading* — rank 6, the very bottom. Put an identical small frame at each
+location and fill it to the value, and the task becomes reading a level inside a box:
+
+```js
+const chart = Chart.createFramedRectangleChart(panel, rows);   // rows carry x, y, value
+```
+
+> [!IMPORTANT]
+> **Draw the frames.** Without them these are "located bars" and the task falls back to perceiving
+> length, rank 3; the frames are what buy the step up to rank 2. `createChartGeometry(...)` returns
+> them separately from the fills so you can stroke them lightly and fill the data solidly.
+
+It also fixes two faults of a shaded map that are nothing to do with the hierarchy, and both are worth
+knowing because they are invisible until named. **Shading a region makes its total ink the value times
+its area**, so on a US map Texas is imposing and Rhode Island is hard to see whatever the numbers say.
+And **contiguous shaded regions merge into clusters** the eye reads as structure whether or not any
+exists. Identical frames can do neither.
+
+**All three forms now exist.** Where you use a lower-ranked form anyway — and §1's table still lists
+plenty — the discipline is unchanged: use it knowingly, and say so in a `Stage.note`.
 
 ### Form-level anti-patterns
 

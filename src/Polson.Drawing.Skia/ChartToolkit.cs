@@ -47,7 +47,10 @@ public class ChartToolkit
     /// this project treats as worst.
     /// </remarks>
     private static readonly string[] KnownOptions =
-        ["baseline", "max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap", "radius", "sort"];
+    [
+        "baseline", "max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap",
+        "radius", "sort", "groupGap", "headingHeight", "frameWidth", "frameHeight", "columns", "gap"
+    ];
     #endregion
 
     #region Methods
@@ -206,6 +209,351 @@ public class ChartToolkit
     }
 
     /// <summary>
+    /// A dot chart whose rows are gathered into labelled groups, all against <b>one shared axis</b>.
+    /// </summary>
+    /// <remarks>
+    /// The second of the three forms Cleveland and McGill offer in place of the charts they want
+    /// surgery on. Grouping adds structure without spending accuracy: every dot is still read against
+    /// the same scale, so the judgment stays rank 1, and the reader gains a second comparison — within
+    /// a group, and between groups — for the price of some vertical space.
+    /// <para>
+    /// <b>The one scale is the whole point, and it is why this is not several small charts.</b> Panels
+    /// with their own axes would put each group on its own scale, which is the small-multiples lie of
+    /// <c>polson://manual/13</c> §2 — comparable-looking and not comparable. Here the axis is computed
+    /// across every group at once and cannot drift apart.
+    /// </para>
+    /// <para>
+    /// Rows carry their group in a <c>group</c> field: <c>{ group: 'Nordics', label: 'Norway',
+    /// value: 74.1 }</c>. Group order is first-seen, which keeps a deliberate ordering the caller
+    /// chose; <c>sort</c> orders rows <b>within</b> each group rather than across the whole chart.
+    /// </para>
+    /// <para>
+    /// <b><see cref="CreateDotChart"/> ignores a <c>group</c> field rather than grouping by it.</b>
+    /// Stated because the alternative is a silent surprise — data shaped for this call, passed to that
+    /// one, would draw a correct ungrouped chart and lose the structure without saying so.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateGroupedDotChart(object rect, object data, object? options = null)
+    {
+        var plot = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt);
+
+        var (values, labels) = ReadData(data, opt);
+        if (values.Length == 0) throw new ArgumentException("A chart needs at least one value.", nameof(data));
+
+        var groupOf = ReadGroups(data, values.Length);
+
+        // First-seen order, so a caller who arranged the groups deliberately keeps that arrangement.
+        var groupNames = new List<string>();
+        foreach (var name in groupOf)
+        {
+            if (!groupNames.Contains(name, StringComparer.Ordinal)) groupNames.Add(name);
+        }
+
+        var px = Num(plot, "x");
+        var py = Num(plot, "y");
+        var pw = Num(plot, "width");
+        var ph = Num(plot, "height");
+
+        var tickCount = (int)Opt(opt, "tickCount", 5d);
+        var labelGap = Opt(opt, "labelGap", 8d);
+        var tickGap = Opt(opt, "tickGap", 8d);
+        var groupGap = Opt(opt, "groupGap", 14d);
+        var headingHeight = Opt(opt, "headingHeight", 18d);
+
+        // One scale over every group at once. Computed here rather than per group, which is the
+        // difference between a grouped chart and several small ones that only look comparable.
+        var scaleTk = new ScaleToolkit();
+        var niced = scaleTk.Nice(values.Min(), values.Max(), tickCount);
+        var min = Opt(opt, "min", Convert.ToDouble(niced["min"], CultureInfo.InvariantCulture));
+        var max = Opt(opt, "max", Convert.ToDouble(niced["max"], CultureInfo.InvariantCulture));
+        var scale = scaleTk.Linear(min, max, px, px + pw);
+
+        var reserved = groupNames.Count * headingHeight + Math.Max(0, groupNames.Count - 1) * groupGap;
+        var rowStep = (ph - reserved) / values.Length;
+
+        if (rowStep <= 0d)
+        {
+            throw new ArgumentException(
+                $"{values.Length} rows in {groupNames.Count} groups need more than {ph:0} px of height: "
+                + $"{reserved:0} px goes to headings and gaps before any row is drawn. Give the chart a "
+                + "taller plot, or reduce headingHeight / groupGap.", nameof(rect));
+        }
+
+        var radius = Opt(opt, "radius", Math.Clamp(rowStep * 0.28d, 2d, 9d));
+
+        var dots = new List<Dictionary<string, object>>(values.Length);
+        var labelList = new List<Dictionary<string, object>>(values.Length);
+        var groups = new List<Dictionary<string, object>>(groupNames.Count);
+
+        var y = py;
+        for (var g = 0; g < groupNames.Count; g++)
+        {
+            var name = groupNames[g];
+            var members = Enumerable.Range(0, values.Length)
+                .Where(i => string.Equals(groupOf[i], name, StringComparison.Ordinal))
+                .ToArray();
+
+            var headingY = y;
+            y += headingHeight;
+            var firstRowY = y;
+
+            // Sorting is within the group: the comparison a grouped chart is built to support is
+            // between its members, and ordering across the whole chart would break the grouping up.
+            foreach (var source in SortOrder(values, opt, members))
+            {
+                var cy = y + rowStep / 2d;
+                var cx = scale.Map(values[source]);
+
+                dots.Add(new Dictionary<string, object>
+                {
+                    ["index"] = dots.Count,
+                    ["sourceIndex"] = source,
+                    ["value"] = values[source],
+                    ["label"] = labels[source],
+                    ["group"] = name,
+                    ["groupIndex"] = g,
+                    ["cx"] = cx,
+                    ["cy"] = cy,
+                    ["radius"] = radius,
+                    ["leaderX1"] = px,
+                    ["leaderY1"] = cy,
+                    ["leaderX2"] = cx,
+                    ["leaderY2"] = cy
+                });
+
+                labelList.Add(new Dictionary<string, object>
+                {
+                    ["text"] = labels[source],
+                    ["x"] = px - labelGap,
+                    ["y"] = cy,
+                    ["align"] = "right",
+                    ["baseline"] = "middle",
+                    ["index"] = labelList.Count,
+                    ["group"] = name
+                });
+
+                y += rowStep;
+            }
+
+            var memberValues = members.Select(i => values[i]).ToArray();
+            groups.Add(new Dictionary<string, object>
+            {
+                ["name"] = name,
+                ["index"] = g,
+                ["count"] = members.Length,
+                ["y"] = headingY,
+                ["y2"] = y,
+                ["height"] = y - headingY,
+                ["headingX"] = px - labelGap,
+                ["headingY"] = headingY,
+
+                // Cheap to compute here and awkward to recover afterwards once rows are sorted.
+                ["min"] = memberValues.Min(),
+                ["max"] = memberValues.Max(),
+                ["mean"] = memberValues.Average()
+            });
+
+            if (g < groupNames.Count - 1) y += groupGap;
+        }
+
+        var ticks = scale.Ticks(tickCount).Select(t => new Dictionary<string, object>
+        {
+            ["value"] = t,
+            ["position"] = scale.Map(t),
+            ["label"] = Format(t),
+            ["x"] = scale.Map(t),
+            ["y"] = py + ph + tickGap
+        }).ToArray();
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "groupedDot",
+            ["plot"] = Rect(px, py, pw, ph),
+            ["bounds"] = Rect(px, py, pw, ph),
+            ["scale"] = scale,
+            ["dots"] = dots.ToArray(),
+            ["groups"] = groups.ToArray(),
+            ["ticks"] = ticks,
+            ["labels"] = labelList.ToArray(),
+            ["min"] = min,
+            ["max"] = max,
+            ["radius"] = radius,
+            ["rowStep"] = rowStep,
+            ["sorted"] = (opt?["sort"]?.ToString() ?? "none").ToLowerInvariant(),
+            ["encoding"] = "position",
+            ["encodingRank"] = 1,
+            ["isZeroBased"] = scale.IsZeroBased,
+            ["lieFactor"] = 1d
+        };
+    }
+
+    /// <summary>
+    /// Framed rectangles: a value read as a <b>level inside an identical box</b>, placed anywhere.
+    /// </summary>
+    /// <remarks>
+    /// The third of Cleveland and McGill's replacements, and the one they offer for the **shaded
+    /// statistical map** — the choropleth, whose reader must judge shading, the very bottom of the
+    /// hierarchy. Every frame is the same size, so the eye compares fill levels between identical
+    /// boxes, like reading a row of thermometers.
+    /// <para>
+    /// <b>The frame is the mechanism, not decoration.</b> In their words: had the bars been shown
+    /// without frames, *"the elementary task would then have been perceiving length"* — rank 3 — and
+    /// the frames are *"one step higher in the hierarchy"*. That puts this at **rank 2**: position
+    /// along identical but non-aligned scales, since the boxes sit at different places. Strip the
+    /// frames and you have lost the whole point of the form.
+    /// </para>
+    /// <para>
+    /// <b>It also removes two faults of a shaded map that have nothing to do with the hierarchy.</b>
+    /// First, shading a region makes its total ink the value <i>times its area</i>, so on a US map
+    /// Texas is imposing and Rhode Island is hard to see, whatever the numbers say; identical frames
+    /// cannot do that. Second, contiguous shaded regions merge into clusters the eye reads as
+    /// structure whether or not any exists.
+    /// </para>
+    /// <para>
+    /// Rows carry a position — <c>{ label: 'TX', value: 12.7, x: 210, y: 340 }</c> — in the same
+    /// coordinate space as the plot rectangle, because the caller owns the projection and this
+    /// toolkit has none. Rows without a position are laid out on a grid instead, which makes the form
+    /// usable for any set of small comparable readings, not only maps.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateFramedRectangleChart(object rect, object data, object? options = null)
+    {
+        var plot = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt);
+
+        var (values, labels) = ReadData(data, opt);
+        if (values.Length == 0) throw new ArgumentException("A chart needs at least one value.", nameof(data));
+
+        var positions = ReadPositions(data, values.Length);
+
+        var px = Num(plot, "x");
+        var py = Num(plot, "y");
+        var pw = Num(plot, "width");
+        var ph = Num(plot, "height");
+
+        var frameWidth = Opt(opt, "frameWidth", 14d);
+        var frameHeight = Opt(opt, "frameHeight", 34d);
+        var tickCount = (int)Opt(opt, "tickCount", 4d);
+
+        if (frameWidth <= 0d || frameHeight <= 0d)
+        {
+            throw new ArgumentException("frameWidth and frameHeight must be positive.", nameof(options));
+        }
+
+        // One scale for every frame, mapping a value to a level inside a box. Identical boxes are
+        // what make this rank 2 rather than rank 3; a shared scale is what makes them comparable.
+        var scaleTk = new ScaleToolkit();
+        var niced = scaleTk.Nice(values.Min(), values.Max(), tickCount);
+        var min = Opt(opt, "min", Convert.ToDouble(niced["min"], CultureInfo.InvariantCulture));
+        var max = Opt(opt, "max", Convert.ToDouble(niced["max"], CultureInfo.InvariantCulture));
+        var level = scaleTk.Linear(min, max, frameHeight, 0d);   // 0 at the frame's foot
+
+        var placed = positions is not null;
+        var columns = Math.Max(1, (int)Opt(opt, "columns", Math.Ceiling(Math.Sqrt(values.Length))));
+        var gap = Opt(opt, "gap", 12d);
+
+        var items = new List<Dictionary<string, object>>(values.Length);
+        var labelList = new List<Dictionary<string, object>>(values.Length);
+
+        for (var i = 0; i < values.Length; i++)
+        {
+            double anchorX, anchorY;
+            if (placed)
+            {
+                anchorX = positions![i].X;
+                anchorY = positions[i].Y;
+            }
+            else
+            {
+                // No positions: a grid, so the form still serves a plain set of small readings.
+                var row = i / columns;
+                var column = i % columns;
+                anchorX = px + column * (frameWidth + gap) + frameWidth / 2d;
+                anchorY = py + row * (frameHeight + gap + 14d) + frameHeight / 2d;
+            }
+
+            var fx = anchorX - frameWidth / 2d;
+            var fy = anchorY - frameHeight / 2d;
+            var top = fy + level.Map(values[i]);
+
+            items.Add(new Dictionary<string, object>
+            {
+                ["index"] = i,
+                ["sourceIndex"] = i,
+                ["value"] = values[i],
+                ["label"] = labels[i],
+                ["anchorX"] = anchorX,
+                ["anchorY"] = anchorY,
+
+                // The reference box — identical for every item, which is the whole mechanism.
+                ["frame"] = Rect(fx, fy, frameWidth, frameHeight),
+
+                // The data-bearing part: filled from the foot of the frame up to the value's level.
+                ["fill"] = Rect(fx, top, frameWidth, fy + frameHeight - top),
+
+                // How full the frame is, 0 to 1. Reported instead of the fill's absolute y because
+                // frames sit at different places — on a map, at different latitudes — so an absolute
+                // coordinate is not comparable between them and inviting that comparison would be a
+                // trap. The fraction is what the reader actually judges, and it *is* comparable.
+                ["fraction"] = (fy + frameHeight - top) / frameHeight
+            });
+
+            labelList.Add(new Dictionary<string, object>
+            {
+                ["text"] = labels[i],
+                ["x"] = anchorX,
+                ["y"] = fy + frameHeight + 4d,
+                ["align"] = "center",
+                ["baseline"] = "top",
+                ["index"] = i
+            });
+        }
+
+        // Ticks as offsets from a frame's foot, so a legend frame can be drawn anywhere.
+        var ticks = level.Ticks(tickCount).Select(t => new Dictionary<string, object>
+        {
+            ["value"] = t,
+            ["offset"] = level.Map(t),
+            ["label"] = Format(t)
+        }).ToArray();
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "framedRectangle",
+            ["plot"] = Rect(px, py, pw, ph),
+            ["bounds"] = Rect(px, py, pw, ph),
+            ["scale"] = level,
+            ["items"] = items.ToArray(),
+            ["ticks"] = ticks,
+            ["labels"] = labelList.ToArray(),
+            ["min"] = min,
+            ["max"] = max,
+            ["frameWidth"] = frameWidth,
+            ["frameHeight"] = frameHeight,
+            ["positioned"] = placed,
+
+            // Rank 2: position along identical but non-aligned scales. The frames buy exactly one
+            // step over located bars, which would be rank 3 — see the remarks above.
+            ["encoding"] = "position",
+            ["encodingRank"] = 2,
+            ["isZeroBased"] = level.IsZeroBased,
+
+            // As the dot chart: the reader compares levels, and a linear mapping preserves the ratios
+            // of differences wherever the scale starts.
+            ["lieFactor"] = 1d
+        };
+    }
+
+    /// <summary>
     /// The marks of a chart model as geometry: one path per bar, plus the whole set unioned.
     /// </summary>
     /// <remarks>
@@ -224,13 +572,15 @@ public class ChartToolkit
         // One geometry call for every form: the model says which marks it has, and each shape knows
         // how to become a path. A caller clipping a texture into a chart should not have to know
         // whether it was built from bars or dots.
-        var rows = (model["bars"] ?? model["dots"]) as IEnumerable
+        var rows = (model["bars"] ?? model["dots"] ?? model["items"]) as IEnumerable
             ?? throw new ArgumentException(
-                "That does not look like a chart model — it has neither 'bars' nor 'dots'.",
+                "That does not look like a chart model — it has no 'bars', 'dots' or 'items'.",
                 nameof(chartModel));
 
         var circular = model["dots"] is not null;
+        var framed = model["items"] is not null;
         var marks = new List<CanvasPath>();
+        var frames = new List<CanvasPath>();
         CanvasPath? silhouette = null;
 
         foreach (var row in rows)
@@ -244,10 +594,19 @@ public class ChartToolkit
                 path.Arc((float)Num(mark, "cx"), (float)Num(mark, "cy"),
                     (float)Num(mark, "radius"), 0f, (float)(Math.PI * 2d));
             }
+            else if (framed)
+            {
+                // The fill is the mark — it is what changes with the data. The frame is the reference
+                // the reader judges against, so it comes back separately rather than being unioned in.
+                AddRect(path, JsInterop.AsDict(mark["fill"]));
+
+                var frame = new CanvasPath();
+                AddRect(frame, JsInterop.AsDict(mark["frame"]));
+                frames.Add(frame);
+            }
             else
             {
-                path.Rect((float)Num(mark, "x"), (float)Num(mark, "y"),
-                    (float)Num(mark, "width"), (float)Num(mark, "height"));
+                AddRect(path, mark);
             }
 
             marks.Add(path);
@@ -257,6 +616,7 @@ public class ChartToolkit
         return new Dictionary<string, object?>
         {
             ["marks"] = marks.ToArray(),
+            ["frames"] = frames.ToArray(),
             ["silhouette"] = silhouette ?? new CanvasPath(),
             ["bounds"] = model["plot"]
         };
@@ -430,9 +790,9 @@ public class ChartToolkit
     /// <c>sourceIndex</c> back to the row it came from. A caller colouring dots from a parallel array
     /// would otherwise silently mismatch them the moment sorting was switched on.
     /// </remarks>
-    static int[] SortOrder(double[] values, IDictionary? opt)
+    static int[] SortOrder(double[] values, IDictionary? opt, int[]? subset = null)
     {
-        var order = Enumerable.Range(0, values.Length).ToArray();
+        var order = subset ?? [.. Enumerable.Range(0, values.Length)];
         var how = opt?["sort"]?.ToString()?.ToLowerInvariant();
 
         return how switch
@@ -463,6 +823,53 @@ public class ChartToolkit
                 $"Chart option{(unknown.Count > 1 ? "s" : string.Empty)} not recognised: "
                 + $"{string.Join(", ", unknown)}. Accepted: {string.Join(", ", KnownOptions)}.", nameof(opt));
         }
+    }
+
+    /// <summary>
+    /// Each row's position, or null when the data carries none for every row.
+    /// </summary>
+    /// <remarks>
+    /// All or nothing on purpose. Positions for some rows and not others would place part of the set
+    /// on a map and lay the rest out on a grid over the top of it, which is a picture nobody wants and
+    /// a mistake nothing downstream could report.
+    /// </remarks>
+    static (double X, double Y)[]? ReadPositions(object data, int count)
+    {
+        if (data is not IEnumerable items || data is string) return null;
+
+        var found = new List<(double X, double Y)>(count);
+        foreach (var item in items)
+        {
+            var row = JsInterop.AsDict(item);
+            if (row is null || !row.Contains("x") || !row.Contains("y")) return null;
+            found.Add((Num(row, "x"), Num(row, "y")));
+        }
+
+        return found.Count == count ? [.. found] : null;
+    }
+
+    /// <summary>Each row's group name, defaulting to one unnamed group when the data has none.</summary>
+    /// <remarks>
+    /// A grouped chart over ungrouped data is a legitimate degenerate case — one group holding
+    /// everything — rather than an error, so a caller switching between the two forms as their data
+    /// arrives does not have to branch.
+    /// </remarks>
+    static string[] ReadGroups(object data, int count)
+    {
+        var groups = new List<string>(count);
+
+        if (data is IEnumerable items and not string)
+        {
+            foreach (var item in items)
+            {
+                var row = JsInterop.AsDict(item);
+                var name = row?["group"]?.ToString();
+                groups.Add(string.IsNullOrWhiteSpace(name) ? string.Empty : name);
+            }
+        }
+
+        while (groups.Count < count) groups.Add(string.Empty);
+        return [.. groups];
     }
 
     /// <summary>Values and their labels, from numbers or from objects carrying <c>value</c>.</summary>
@@ -503,6 +910,13 @@ public class ChartToolkit
         }
 
         return ([.. values], [.. labels]);
+    }
+
+    static void AddRect(CanvasPath path, IDictionary? rect)
+    {
+        if (rect is null) return;
+        path.Rect((float)Num(rect, "x"), (float)Num(rect, "y"),
+            (float)Num(rect, "width"), (float)Num(rect, "height"));
     }
 
     static Dictionary<string, object> Rect(double x, double y, double width, double height) =>

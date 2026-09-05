@@ -200,6 +200,10 @@ beautiful and overstates its numbers has failed the more important half.
   for compositional armatures and value hierarchy.
 - `polson://manual/15` — measuring a render, for the verification pass: `palette` checks the colour
   hierarchy you claimed, and `rowProfile` checks that a bar's length matches the value it encodes.
+- `polson://sdk/core/Chart` — whole charts as constructions: the form, its `slots` armature, and the
+  integrity fields (`lieFactor`, `isZeroBased`) that let you assert rather than hope. **Read this
+  before hand-rolling a chart out of `Scale` and `Layout`** — a run that skipped it rebuilt a column
+  chart by hand and a waffle as a raw 10×10 grid.
 - `polson://sdk/core/Scale` — value-to-pixel mapping. `polson://sdk/core/Layout` — zones and
   measured stacking. `polson://sdk/core/Css` — reading a design language's tokens and type.
 

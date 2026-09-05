@@ -163,6 +163,17 @@ public class PolsonMCPServer : Runtime
     private static DrawingMcpTools RegisterToolsAndResources(IMcpServerBuilder mcp, SessionRegistry registry, string? projectRoot)
     {
         var tools = new DrawingMcpTools(new JsDrawingEngine(), registry, new LocalKnowledgeIndex(), projectRoot);
+
+        // Resources are served by static methods, so this is how they reach the run's event log.
+        // Without it the record cannot say which documentation an agent read — and on ADK, where a
+        // resource is injected for one turn and never persisted, how OFTEN it was read is the
+        // difference between an agent that has the reference and one that had it once.
+        PolsonResources.OnRead = uri => tools.Events.Append("doc.read", fields: new Dictionary<string, object?>
+        {
+            ["uri"] = uri,
+            ["via"] = "resource"
+        });
+
         mcp.WithTools(tools);
         mcp.WithResources<PolsonResources>();
         mcp.WithResources(PolsonResources.AreaResources(PolsonResources.Docs));

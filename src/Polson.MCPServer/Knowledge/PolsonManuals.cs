@@ -209,7 +209,7 @@ public class PolsonManuals
         {
             var captured = manual;
             yield return McpServerResource.Create(
-                () => ServedBody(captured),
+                () => PolsonResources.Served(captured.Uri, ServedBody(captured)),
                 new McpServerResourceCreateOptions
                 {
                     UriTemplate = captured.Uri,
@@ -227,7 +227,8 @@ public class PolsonManuals
         "lighting, anatomy, composition, logo geometry, and typography — distilled from the studio reference library " +
         "and cross-referenced to the SDK calls that implement each technique. Read a manual at polson://manual/{NN}, " +
         "or use the Search tool for ranked passages.")]
-    public static string ManualIndex() => index ??= BuildIndex();
+    public static string ManualIndex() =>
+        PolsonResources.Served("polson://manual/index", index ??= BuildIndex());
 
     /// <summary>
     /// Generic Canvas2D drawing primitives (<c>ctx.moveTo</c>, <c>ctx.fill</c>, …). Citing these is not evidence

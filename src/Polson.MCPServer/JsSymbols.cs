@@ -504,11 +504,37 @@ public static partial class JsSymbolManifest
         return $"{jsName}({string.Join(", ", args)}) -> {JsType(m.ReturnType)}";
     }
 
+    /// <summary>The JavaScript spelling of a CLR type, for text an agent reads.</summary>
+    /// <remarks>
+    /// Generics used to fall through to <c>t.Name</c>, which carries the arity suffix, so the symbol
+    /// index advertised <c>Chart.createColumnChart(...) -> Dictionary`2</c>. `CLAUDE.md` §8 requires
+    /// agent-facing text to use the JS spelling, and this is the reader's only description of what a
+    /// call hands back — a CLR name there is a wrong answer, not an untidy one.
+    /// </remarks>
     static string JsType(Type t)
     {
         var u = Nullable.GetUnderlyingType(t);
         if (u is not null) return JsType(u) + "?";
         if (t.IsArray) return JsType(t.GetElementType()!) + "[]";
+
+        if (t.IsGenericType)
+        {
+            var definition = t.GetGenericTypeDefinition().Name;
+            var args = t.GetGenericArguments();
+
+            // The three Assets calls are the only async surface, and a script must await them.
+            if (definition is "Task`1" or "ValueTask`1") return $"Promise<{JsType(args[0])}>";
+
+            // A dictionary crosses the boundary as a plain object, which is what a script sees.
+            if (definition.Contains("Dictionary", StringComparison.Ordinal)) return "object";
+
+            // A callback parameter reads as a function rather than as its delegate type.
+            if (definition.StartsWith("Func`", StringComparison.Ordinal)
+                || definition.StartsWith("Action`", StringComparison.Ordinal)) return "function";
+
+            // Every remaining single-argument shape here is a sequence.
+            return args.Length == 1 ? JsType(args[0]) + "[]" : "object";
+        }
 
         return t.Name switch
         {
@@ -517,6 +543,10 @@ public static partial class JsSymbolManifest
             "Boolean" => "boolean",
             "Void" => "void",
             "Object" => "any",
+            "Task" or "ValueTask" => "Promise<void>",
+            "JsonObject" or "JsonNode" => "object",
+            "JsonArray" => "any[]",
+            "Action" => "function",
             _ => t.Name,
         };
     }

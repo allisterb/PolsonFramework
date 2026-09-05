@@ -74,11 +74,21 @@ if [ -n "${POLSON_SEED_PROJECT:-}" ]; then
             seed_deadline="--deadline ${POLSON_SEED_DEADLINE}"
         fi
 
+        # Narrows the workflow's direction: `blueprint` for an infographic, `review` for a drawing.
+        # Without it `{{TYPE}}` renders **empty** rather than defaulting, so a seeded run silently
+        # loses the whole type overlay -- and the loss looks like the workflow behaving differently
+        # rather than like a missing argument. `newproject.py` has always taken `--type`; only this
+        # file could not say it.
+        seed_type=""
+        if [ -n "${POLSON_SEED_TYPE:-}" ]; then
+            seed_type="--type ${POLSON_SEED_TYPE}"
+        fi
+
         python /app/adk_agent/newproject.py "${POLSON_SEED_PROJECT}" \
             --workflow "${POLSON_SEED_WORKFLOW:-logo}" \
             --prompt "${POLSON_SEED_PROMPT:-a mark for a small independent studio}" \
             --projects-dir "${POLSON_PROJECTS_DIR:-/app/projects}" \
-            ${seed_test} ${seed_deadline} \
+            ${seed_test} ${seed_deadline} ${seed_type} \
             || echo "entrypoint: WARNING - seeding failed; the service starts without it" >&2
     fi
 fi

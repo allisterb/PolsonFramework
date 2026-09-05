@@ -43,8 +43,16 @@ public static class SdkDocs
         new("LogoType", ["LogoType", "logoType", "Typography"], "LogoType"),
         new("Layout", ["Layout", "layout"], "Layout (Page Composition)"),
         new("Css", ["Css", "css", "Stylesheet"], "Css (Design Languages)"),
-        new("Scale", ["Scale", "scale", "Chart"], "Scale (Data to Pixels)"),
-        new("Assets", ["Assets", "ExtendedMind"], "Assets (Cloud Asset Requisition)")
+        new("Scale", ["Scale", "scale"], "Scale (Data to Pixels)"),
+        // Chart is its own area rather than a keyword on Scale, and the difference is not
+        // cosmetic. `Slice` stops at the next heading of equal level, so asking for `Scale`
+        // returns the Scale section alone — the whole Chart section is a sibling `#` heading and
+        // never arrives. Listing `Chart` only as a Scale keyword therefore advertised a toolkit
+        // the slice could not deliver, and left it out of `polson://sdk/index` entirely, which is
+        // the one place an agent looks to find out what exists.
+        new("Chart", ["Chart", "chart"], "Chart (Whole Charts as Constructions)"),
+        new("Assets", ["Assets", "ExtendedMind"], "Assets (Cloud Asset Requisition)"),
+        new("Motion", ["Motion", "motion", "Timeline"], "Motion (Frame Capture & Animated Encoding)")
     ];
     #endregion
 

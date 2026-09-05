@@ -65,6 +65,16 @@ public class DrawingMcpTools
     /// </summary>
     /// <remarks>Calibrated against observed hits: on-target passages score 19-31, off-target ones 2-8.</remarks>
     public const double ScoreFloor = 10.0;
+
+    /// <summary>
+    /// Characters of each passage inlined in a <c>Search</c> result before it is cut short.
+    /// </summary>
+    /// <remarks>
+    /// Enough to judge whether a passage is the one you want, and not enough to be the cheap way of
+    /// reading it — <c>ReadDoc(uri)</c> is that. A five-hit search inlining whole passages measured
+    /// 26,503 characters against roughly 3,000 with snippets.
+    /// </remarks>
+    public const int SnippetChars = 240;
     #endregion
 
     #region Methods
@@ -218,7 +228,16 @@ public class DrawingMcpTools
         "drawing, perspective, lighting, anatomy, composition, logo geometry, typography, distilled from the studio " +
         "reference library — plus the Polson JS SDK core and schema documents. CALL THIS FIRST when you know what you " +
         "want to draw but not how the studio does it (e.g. 'two point perspective box', 'cast shadow falloff', " +
-        "'golden ratio logo grid', 'optical kerning'). Each result carries a resource URI to read in full.\n\n" +
+        "'golden ratio logo grid', 'optical kerning'). Each result carries a resource URI to read in full — " +
+        "fetch it with ReadDoc(uri) when you need the parameters rather than the summary.\n\n" +
+        "ONE TOPIC PER SEARCH. This ranks passages by word overlap; it is not syntax-aware, has no AND/OR " +
+        "or quoting, and a longer query does not narrow the results, it DILUTES them — every extra word " +
+        "spreads the score over more subject areas, and k defaults to 5, so what you wanted drops off the " +
+        "end without saying so. Measured: 'column chart' ranks the Chart reference 1st; 'editorial " +
+        "typography and layout Scale column chart' ranks it 4th, and absent entirely under scope 'all'. " +
+        "Run several narrow searches instead of one broad one, set scope when you know which corpus you " +
+        "want, and raise k when surveying. A ranked list is never evidence that a capability is ABSENT — " +
+        "read polson://sdk/symbols to settle that.\n\n" +
         "Pass a CALL NAME instead ('paper.squircle', 'ctx.drawRimLight', or a bare 'clearSpaceGuide') and this " +
         "resolves it exactly against the generated symbol index rather than searching prose. Read `confidence`: " +
         "'direct' means the call exists and the returned signature is authoritative; 'no-match' on a call name is a " +
@@ -229,6 +248,9 @@ public class DrawingMcpTools
         [Description("What you are trying to do or find, in natural language or as an API name (e.g. 'construct a perspective cylinder').")] string query,
         [Description("Number of passages to return (1-25; default 5).")] int? k = null,
         [Description("Corpus to search: 'all' (default), 'manual' for design theory only, 'sdk' for the API reference only.")] string? scope = null,
+        [Description("true to inline each passage in full. Default false: results carry a short snippet plus the " +
+            "call signatures, and you read the whole document with ReadDoc(uri) if you need it. Full text costs " +
+            "roughly ten times as much and is usually read once and discarded.")] bool? fullText = null,
         CancellationToken cancellationToken = default)
     => RecordedAsync(nameof(Search), async () =>
     {
@@ -274,6 +296,27 @@ public class DrawingMcpTools
         var results = new JsonArray();
         foreach (var hit in hits)
         {
+            // Signatures were carried here for a while and were **two thirds of the payload** —
+            // 9,334 characters of 14,069 on a five-hit search — describing five documents so the
+            // caller could choose one. That is a catalogue's job, and a catalogue entry does not
+            // need parameter lists: `apis` names what a passage covers, `ReadDoc(uri)` fetches the
+            // whole section, and a dotted-name query still resolves exactly through `symbols`
+            // below, which is the cheap targeted route to one signature.
+            //
+            // It matters more than a one-off saving, because every result stays in the
+            // conversation and is re-sent on every later turn — a Search result is charged for the
+            // rest of the run, so waste here is not paid once.
+
+            // A ranked list is for deciding what to read, and inlining every passage charges the
+            // full price of five documents to answer that. Measured: a five-hit search returned
+            // 26,503 characters — roughly 6,500 tokens — of which the caller typically used one
+            // passage. The snippet is enough to judge relevance, `signatures` is the part that is
+            // directly actionable, and `ReadDoc(uri)` fetches the whole document when it is wanted.
+            var full = fullText == true;
+            var text = full || hit.Text.Length <= SnippetChars
+                ? hit.Text
+                : hit.Text[..SnippetChars] + " …";
+
             results.Add(new JsonObject
             {
                 ["uri"] = hit.Uri,
@@ -282,7 +325,9 @@ public class DrawingMcpTools
                 ["source"] = hit.Source,
                 ["score"] = hit.Score,
                 ["apis"] = new JsonArray([.. hit.Apis.Select(a => (JsonNode)JsonValue.Create(a)!)]),
-                ["text"] = hit.Text
+                ["text"] = text,
+                ["truncated"] = text.Length < hit.Text.Length,
+                ["chars"] = hit.Text.Length
             });
         }
 
@@ -329,12 +374,70 @@ public class DrawingMcpTools
             {
                 "direct" => "`symbols` resolved exactly against the generated index — those signatures are authoritative. "
                     + "The passages below are context for how the call is used.",
-                "related" => "Read the `uri` of a result for the full section. These are the nearest passages, not a "
+                "related" => "This is a catalogue: a snippet and the calls each passage covers. Call `ReadDoc(uri)` for the full section, or search a dotted call name for its exact signature. These are the nearest passages, not a "
                     + "confirmation that any particular call exists — check `polson://sdk/symbols` before writing one.",
                 _ => "Nothing matched with confidence. Nothing here confirms a capability exists or is absent: to settle "
                     + "that, read `polson://sdk/symbols` or `polson://sdk/symbols/{Receiver}`. "
                     + (notSearched.Count > 0 ? $"Scopes not consulted: {string.Join(", ", notSearched.Select(n => n!.ToString()))}." : "")
             }
+        };
+    });
+
+    [McpServerTool(Name = "ReadDoc")]
+    [Description("Reads a studio document IN FULL by its `polson://` URI and returns the text — the SDK method " +
+        "reference (polson://sdk/core/{Area}), the schemas (polson://sdk/schema/{Area}), the symbol index " +
+        "(polson://sdk/symbols), or a studio manual (polson://manual/13). This is the tool to call when Search " +
+        "hands you a `uri` and you need the parameters, not the summary: Search returns excerpts and signatures, " +
+        "this returns the whole document. Bare forms work too — '13', 'manual/13', 'sdk/core/Chart'. An unknown " +
+        "URI lists what is actually published rather than returning nothing.")]
+    public JsonObject ReadDoc(
+        [Description("The document URI, e.g. 'polson://sdk/core/Chart' or 'polson://manual/13'.")] string uri)
+    => Recorded(nameof(ReadDoc), () =>
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+
+        var body = PolsonResources.Read(uri);
+        if (body is not null)
+        {
+            // Recorded here rather than inside Read(...) so the run says how the document was
+            // reached: an MCP resource read and a ReadDoc call cost very different things on ADK,
+            // where only the second persists in the conversation.
+            Events.Append("doc.read", fields: new Dictionary<string, object?>
+            {
+                ["uri"] = uri,
+                ["via"] = nameof(ReadDoc),
+                ["chars"] = body.Length
+            });
+
+            return new JsonObject
+            {
+                ["uri"] = uri,
+                ["found"] = true,
+                ["length"] = body.Length,
+                ["text"] = body
+            };
+        }
+
+        // Name what exists rather than returning an empty result: a miss is nearly always a
+        // spelling or an area name, and a list is the answer to both. Ranked on the LAST segment,
+        // not on the whole string — every URI shares the `polson://sdk/` prefix, so a whole-string
+        // comparison ranks on the part they all have in common.
+        var leaf = uri.Trim().TrimEnd('/').Split('/')[^1];
+        var known = PolsonResources.KnownUris();
+        var nearest = known
+            .Where(u => u.Split('/')[^1].Contains(leaf, StringComparison.OrdinalIgnoreCase)
+                     || leaf.Contains(u.Split('/')[^1], StringComparison.OrdinalIgnoreCase))
+            .Take(5)
+            .Select(u => (JsonNode)JsonValue.Create(u)!);
+
+        return new JsonObject
+        {
+            ["uri"] = uri,
+            ["found"] = false,
+            ["nearest"] = new JsonArray([.. nearest]),
+            ["known"] = new JsonArray([.. known.Select(u => (JsonNode)JsonValue.Create(u)!)]),
+            ["hint"] = $"Nothing is published at '{uri}'. `known` is the complete list — this is a definitive "
+                + "answer, not a failed search. Area names are case-insensitive but must match exactly."
         };
     });
 

@@ -67,7 +67,19 @@ public sealed class LocalKnowledgeIndex : IKnowledgeIndex
             if (score > 0) hits.Add((i, score));
         }
 
+        // One hit per document, not per chunk. Chunks are scored individually, so a long document
+        // wins several of the k slots with near-identical passages and crowds out whole subject
+        // areas — the caller sees breadth it did not get. Measured on a live failure: a five-hit
+        // search returned Scale, Layout and manual 13 twice each, three documents in five slots,
+        // and the Chart reference the query was really about never appeared. The agent concluded
+        // no chart toolkit existed and rebuilt a column chart by hand.
+        //
+        // The best-scoring chunk represents its document, so the ranking is unchanged — only the
+        // duplicates are dropped, and the freed slots go to the next distinct subject.
         return [.. hits
+            .OrderByDescending(h => h.Score)
+            .GroupBy(h => Chunks[h.Index].Uri, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
             .OrderByDescending(h => h.Score)
             .Take(Math.Clamp(k, 1, 25))
             .Select(h => Hit(Chunks[h.Index], h.Score, terms))];

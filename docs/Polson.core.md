@@ -152,7 +152,7 @@ The logging console:
 ### `has(object: any, name: string)` → `boolean`
 Whether `object` really has a member called `name`, **without touching it**. Use it to check a call exists before writing a script around it.
 
-```javascript
+```js
 const draw = has(ctx, 'drawMannequinWireframe') ? 'drawMannequinWireframe'
            : has(ctx, 'drawMannequin') ? 'drawMannequin' : null;
 ```
@@ -165,7 +165,7 @@ It answers for the **documented surface**, so `has(ctx, 'getType')` is `false` e
 ### `suggest(object: any, name: string)` → `string`
 What to write instead. Same advice a failed access gives, without having to fail:
 
-```javascript
+```js
 if (!has(ctx, 'drawLoomisWireframe')) log(suggest(ctx, 'drawLoomisWireframe'));
 // 'CanvasRenderingContext2D' has no property or method 'drawLoomisWireframe'.
 // Did you mean 'drawCompositionGrid', 'drawPerspectiveGrid', 'drawTorsoMusculature'? …
@@ -806,7 +806,7 @@ Applies a medium: its colour or grain, its width and cap, its path texture and i
 preset leaves null is **cleared** rather than left standing, so switching media never inherits the
 previous one's texture. Wrap it in `save()`/`restore()` to scope a medium to one passage.
 
-```javascript
+```js
 ctx.save();
 ctx.useBrush(Skia.Brush.pencil());     // construction lines
 ctx.stroke(guides);
@@ -1536,7 +1536,7 @@ Session.oakUri = oak.toDataUri();
 log(`oak ${oak.size}px, wraps=${oak.tiling.wraps}, ${Assets.budget.remaining} left`);
 ```
 
-```javascript
+```js
 // Script 2 — draw. The material is already in the session scratchpad.
 const canvas = createCanvas(1200, 760);
 const ctx = canvas.getContext('2d');

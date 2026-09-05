@@ -1,7 +1,23 @@
 # Studio Manual 13: Data Encoding & Infographic Composition
 
-> **Credits & Theoretical Foundation**: Distilled from the *Epic Infographics* skill corpus (MIT-licensed; `reference/projects/EpicInfographics-main`, ledger entry 2026-08-29) — its form taxonomy, chart ground rules and composition patterns — restated here in our own terms and bound to the Polson SDK. The quantitative rules it states are the standard ones from the dataviz literature: proportional ink, zero-based length encoding, and shared scales across small multiples.
-> **Purpose**: Provides form selection by question, the encoding rules that decide whether a chart tells the truth, and the composition patterns that separate a designed infographic from a dashboard.
+> **Credits & Theoretical Foundation**: Four sources, each named where it is used. **Edward R. Tufte**, *The Visual Display of Quantitative Information* (Graphics Press 1983) for graphical integrity, the lie factor, data-ink and data density; *Envisioning Information* (1990) for micro/macro readings and layering; *Visual Explanations* (1997) for the smallest effective difference. **William S. Cleveland & Robert McGill**, *Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods*, JASA 79:531–554 (1984), with its companion in Science 229:828–833 (1985), for the measured accuracy of perceptual judgments — the reason §1 orders forms the way it does. The form taxonomy and composition patterns are distilled from the *Epic Infographics* skill corpus (MIT-licensed). All are restated in our own words and bound to the Polson SDK; ledger entries and the differing licence terms are in `reference/README.md`.
+> **Purpose**: How to choose a form because of how accurately a reader can decode it, prove the picture is not lying, decide what ink to remove, and compose the result — with the checks that make each of those verifiable rather than asserted.
+
+---
+
+> [!IMPORTANT]
+> **This manual is more prescriptive than the drawing manuals, deliberately.** Those carry two schools
+> where two exist, because a figure can be constructed by Loomis or by Reilly and neither is wrong.
+> Most of what follows is not like that. **§2 is about truth** — a bar chart with a truncated axis
+> asserts something the data does not, and that is an error, not a style. **§1's ordering is an
+> experimental result.** The cost of error is also asymmetric: a mediocre drawing disappoints
+> somebody, whereas a chart with a false baseline is a claim a client may publish under their own
+> name.
+>
+> Where the sources hedge, this manual hedges with them and says so — the perceptual ordering is
+> partly conjectural (§1), and data-ink is genuinely contested (§3). Everywhere else, the rule is
+> stated plainly and, where possible, **stated as a check you can run** rather than as advice. A rule
+> that ships with an assertion does not need firm language.
 
 ---
 
@@ -27,6 +43,49 @@ Pick the form by the question the data answers, not by habit. Three questions de
 
 **Mix 3–5 different forms.** One form repeated for every section is a design failure, not a house style.
 
+### 1a. Why that table is ordered as it is
+
+The table above is not taste. Cleveland and McGill asked people to read values off graphs and
+**measured how accurately they did it**, then ordered the elementary judgments a chart can ask for,
+most accurate first:
+
+1. **Position along a common scale** — points on one shared axis
+2. **Position along non-aligned scales** — small multiples, each with its own axis
+3. **Length, direction, angle**
+4. **Area**
+5. **Volume, curvature**
+6. **Shading, colour saturation**
+
+**The design rule that follows is the one they state: build the graph out of judgments as high in
+that list as you can get.** A dot on a shared axis beats a bar's length, which beats a pie's angle,
+which beats a bubble's area, which beats a choropleth's shading. When you reach for a lower rank, you
+are spending accuracy — sometimes worth it for density or for the picture, but spend it knowingly.
+
+> [!NOTE]
+> **Two honesties about this list, both from the authors.**
+>
+> It is **six ranks, not ten items**: length, direction and angle are *tied*; so are volume and
+> curvature; so are shading and saturation. Writing it as a flat ten-step ladder adds precision the
+> source does not claim.
+>
+> And it is **part measured, part reasoned**. Position and length were tested and won. Of the rest
+> the authors write that *"aspects of the ordering are partly conjectural in that we have no
+> controlled experimentation to support them"* — their own example being that position on a common
+> scale is *stipulated* to beat position on non-aligned scales, while their third experiment found
+> the two nearly identical. Use the top of the list as fact and the bottom as informed argument.
+
+### 1b. The forms they recommend, which we cannot yet draw
+
+Their conclusion is blunter than the ranking is usually reported to be: bar charts, divided bar
+charts, pie charts and shaded maps need *"radical surgery"*, and they offer replacements — the **dot
+chart**, the **dot chart with grouping**, and the **framed-rectangle chart** (which replaces a
+choropleth's shading, rank 6, with position in a frame, rank 1–2).
+
+**The SDK has none of the three.** Building them is on the toolkit list, not in this manual. Until
+then, the honest move where a dot chart is indicated is a **horizontal bar sorted by value**, whose
+length is rank 3 rather than rank 1 — and to say in a `Stage.note` that you traded accuracy for what
+was available.
+
 ### Form-level anti-patterns
 
 - A one-bar bar chart, or a two-slice pie → a big-number callout.
@@ -34,9 +93,16 @@ Pick the form by the question the data answers, not by habit. Three questions de
 - 3D anything, exploded pies, gauge dials with needles → never.
 - A chart where a sentence and one big number would say it better.
 
+> [!TIP]
+> **When a brief demands a pie anyway** — and in brand work it sometimes will — the encoding rule
+> does not change, so make the angle do as little work as possible: order segments by size from
+> twelve o'clock, keep them to five or fewer, and **label every segment with its value**, which
+> converts the reader's task from judging angles into reading numbers. Then record the trade in a
+> `Stage.note`. Refusing outright leaves the agent with no move; conceding silently loses the reason.
+
 ---
 
-## 2. Truthful Geometry
+## 2. Graphical Integrity
 
 > **Implemented by**: `Scale.linear(...)`, `Scale.band(...)`, `Scale.radiusFor(...)`, `Scale.extent(...)`.
 > Three of these rules are encoded in those calls rather than left here as prose, because **each one
@@ -75,12 +141,114 @@ to the whole. If they do not sum to the whole, it is not a part-to-whole form �
 **Never put two scales on one plot.** A dual axis invents a correlation out of two arbitrary ranges.
 Draw two charts, or index both series to 100.
 
+### 2a. The lie factor: the measurement that proves the rest
+
+Tufte gives distortion a number rather than a name:
+
+```
+              size of effect shown in the graphic
+lie factor = ────────────────────────────────────
+                 size of effect in the data
+```
+
+A lie factor of **1** means the ink is telling the truth. He treats anything outside **0.95–1.05** as
+substantial distortion — beyond plotting slop — and notes that distortions in the wild almost always
+*overstate*, with factors of two to five common and one published example reaching **14.8**.
+
+**The point for us is that it is computable, so it can be asserted rather than believed.** Take any
+two data points and compare the ratio of what was drawn to the ratio of what is true:
+
+```js
+const shown = y.extent(bounds.min, big) / y.extent(bounds.min, small);
+const actual = big / small;
+const lieFactor = shown / actual;
+Stage.check('lie factor within tolerance', Math.abs(lieFactor - 1) <= 0.05, lieFactor.toFixed(3));
+```
+
+> [!IMPORTANT]
+> **With a zero-based linear scale this comes out at 1 by construction — which is exactly why it is
+> worth computing.** It is not a sixth rule to remember; it is the check that proves the five above
+> actually held in the finished picture. It catches what they cannot: a rectangle placed by hand, an
+> icon scaled by eye, a baseline nudged during a later revision, an image resized non-uniformly. Those
+> are the ways a correct scale still yields a lying graphic.
+>
+> `scale.invert(...)` lets you close the loop from the other end — read a drawn pixel back into a
+> value and compare it with the datum it was supposed to encode.
+
 ---
 
-## 3. Axes, Chrome & Labels
+## 3. Data-Ink and the Smallest Effective Difference
+
+> **Implemented by**: no single call — this governs how you set `ctx.lineWidth`, `ctx.strokeStyle`
+> and fills throughout. `bitmap.palette(...)` is what turns it from taste into a reading.
+
+Tufte separates the ink that carries information from the ink that does not. **Data-ink is the
+non-erasable core of a graphic** — the marks that change when the numbers change. Everything else is
+frame, grid, rule, shadow, bevel, and decoration.
+
+The principle, in his words and including his own hedge: **maximise the data-ink ratio, within
+reason.** Every mark needs a reason to exist, and nearly always that reason should be that it carries
+information a reader could not otherwise get.
+
+The practical form is an editing pass, not a design rule: **draw it, then erase.** Take out the grid,
+the frame, the tick marks, the second decimal, the drop shadow, the legend that a direct label would
+replace — and keep each removal that costs the reader nothing.
+
+### 3a. How subtle is subtle enough
+
+*Visual Explanations* gives the rule that stops the erasing pass from going too far, and it is the
+most directly usable sentence in any of these books:
+
+> **Make all visual distinctions as subtle as possible, but still clear and effective.**
+
+Tufte calls it the Occam's razor of information design. It applies to every difference you draw: the
+weight step between a data line and a gridline, the value step between a layer and its ground, the
+size step between a heading and a label. The failure it names is the one nobody looks for — a
+distinction *louder than its job*, where the emphasis is real but disproportionate to what it
+signals. A hairline would have separated those two layers; a 3px rule separates them and also shouts.
+
+Concretely, in this SDK: gridlines one step off the ground rather than mid-grey, hairline rather than
+1px where the surface allows, and layer separation attempted first with **value**, then weight, then
+colour — in that order, because value costs the least attention.
+
+### 3b. And it is measurable
+
+`bitmap.palette(...)` reports each dominant colour and its share of the image, so **ink share is a
+number you can read** — and the erasing pass becomes an experiment rather than an opinion:
+
+```js
+const before = canvas.toBitmap().palette(6);
+// …remove the gridlines, redraw…
+const after = canvas.bitmap.palette(6);
+Stage.note(`ink share ${before[0].share.toFixed(3)} → ${after[0].share.toFixed(3)} after erasing the grid`);
+```
+
+The same call checks the smallest effective difference from the other side: if two layers you
+intended to separate collapse into one bucket, the difference was too subtle and the palette says so.
+
+> [!NOTE]
+> **This is the one section where the sources genuinely disagree, so treat it as a knob rather than a
+> law.** Tufte's case for minimal non-data ink is an argument for analytic efficiency — the fastest,
+> least-mediated path from mark to number. There is a real counter-literature arguing that
+> embellishment aids recall and engagement, and that a graphic nobody looks at communicates nothing.
+> **We do not hold that literature and it is not in `reference/`, so nothing here cites it** — but the
+> disagreement exists and you should know it does.
+>
+> The studio's own position: for an analytic display, erase hard. For **advertising and brand work,
+> where the job may be attention rather than efficiency**, ink beyond the data can be doing real work
+> — and §6's "the ground participates" is that case argued deliberately. Tufte's own *"within reason"*
+> concedes the point further than he is usually quoted as doing. What is never defensible is
+> decoration that *distorts* — that is §2, and §2 does not bend.
+
+---
+
+## 4. Axes, Chrome & Labels
 
 > **Implemented by**: `Scale.ticks(...)` and `Scale.nice(...)` for the numbers, `ctx.fillText(...)` and
 > `ctx.measureText(...)` for the labels, `Layout.inset(...)` for the plot's margins.
+>
+> This section is §3 applied to the furniture of a chart: each rule below is either data-ink
+> reduction or the smallest effective difference, made specific.
 
 **A static image has no tooltips.** Every value that matters is directly labelled or readable off a
 labelled axis — but label *selectively*: endpoints, extremes, and the hero series. A number glued to
@@ -94,6 +262,10 @@ axis reading 0 / 50 / 100 is legible; one reading 0 / 47.5 / 95 is arithmetic sh
 an axis line with direct labels usually beats a grid in an infographic. Bars 24–32px thick with air
 between them; lines 2–3px.
 
+**A direct label beats a legend.** A legend makes the reader hold a colour in memory and carry it to
+the mark; a label at the end of the line removes the task. This is data-ink reduction and rank-1
+positioning at the same time.
+
 **Text never wears the series colour.** Labels and values take the ink colour; the coloured mark
 beside them carries the identity. Text set *inside* a filled shape picks white or ink by that fill's
 luminance, and only goes inside if it fits with padding — otherwise it goes outside the bar's end.
@@ -101,7 +273,59 @@ Never clip a label.
 
 ---
 
-## 4. The Canvas Is a Place
+## 5. Micro/Macro Readings and Layering
+
+> **Implemented by**: `ctx.lineWidth` tiers and `Skia.Brush.ink(...)` for weight, `Layout.*` for
+> zones, `bitmap.palette(...)` to check a layer actually separates. Judgment governs this section
+> more than any other here — it is the one place where the checks run out.
+
+Most advice about dense information says *simplify*. Tufte's is the opposite, and it is the theory of
+every technical drawing that rewards a second look:
+
+> **To clarify, add detail.**
+
+A **micro/macro** display works at two distances at once. Stand back and it resolves into pattern —
+the shape of the trajectory, the balance of the mass budget, where the weight sits. Lean in and it
+holds particulars — this callout, that figure, this annotated waypoint. Neither reading is a
+concession to the other; the detail *is* what makes the pattern legible, because a pattern with
+nothing beneath it is a shape rather than a finding.
+
+The practical consequence is that **data density is usually too low, not too high**. Tufte measures
+it as the number of entries in the data matrix divided by the area of the graphic. Four numbers
+across a poster is a decoration with figures on it. When a panel feels thin, the fix is more often
+another layer of real information than more white space.
+
+### 5a. Layering and separation
+
+Density only works if the layers come apart. Tufte is worth quoting exactly here because the sentence
+reassigns blame:
+
+> **Confusion and clutter are failures of design, not attributes of information.**
+
+So a busy graphic is not a reason to remove information — it is a reason to stratify it. Give each
+layer its own visual register and let the reader attend to one at a time:
+
+- **Value first.** A ground layer at low contrast, data at full ink. Value separates with the least
+  attention and the least colour.
+- **Weight second.** A three-tier line hierarchy is enough for most drawings — structure, data,
+  annotation. Manual 03 §1's ink weights are the same idea in a different craft.
+- **Colour last, and sparingly.** Colour is rank 6 for quantity (§1) but excellent for *identity*.
+  Use it to say which, not how much.
+- **Per §3a, the smallest step that works.** Layering fails in both directions: too little separation
+  and it is mud, too much and the layers stop reading as one picture.
+
+`bitmap.palette(...)` will tell you whether a separation you intended actually landed — if the layer
+and its ground fall in one bucket, it did not.
+
+> [!NOTE]
+> **This is the softest section in the manual and knows it.** There is no assertion that proves a
+> micro/macro reading succeeded; the honest check is Manual 03's, applied at both distances — look at
+> the whole at final size, then look at a detail at 100%, and ask whether each is doing its job. §8's
+> reduction test is the closest mechanical proxy.
+
+---
+
+## 6. The Canvas Is a Place
 
 > **Implemented by**: `Layout.*` for the zones, and the whole drawing toolkit for what fills them.
 > No call chooses a composition — this section is the decision you make first.
@@ -152,7 +376,7 @@ the whole layout.
 
 ---
 
-## 5. Tension Rules
+## 7. Tension Rules
 
 > **Implemented by**: `Layout.rows(...)` / `Layout.columns(...)` with **weighted** divisions —
 > `[62, 38]`, not `2`. Equal division is what produces the wallpaper this section warns about.
@@ -172,51 +396,75 @@ Apply to every pattern:
 
 ---
 
-## 6. Litmus Tests Before Rendering
+## 8. Litmus Tests Before Rendering
 
-Run these against the render, not the plan:
+Run these against the render, not the plan. **The first five are assertions**; the last three are
+perceptual and stay judgment.
+
+| Test | How | Fails when |
+| :--- | :--- | :--- |
+| Zero baseline | `scale.isZeroBased` | anything whose *length* or *area* encodes value |
+| Lie factor | §2a, `Stage.check(...)` | outside 0.95–1.05 |
+| One shared scale | a single `Scale.extent(...)` over every series | small multiples drawn to their own extents |
+| Layers separate | `bitmap.palette(...)` | a layer and its ground land in one bucket |
+| Legible at final size | `bitmap.resize(...)` to the delivered size, then read it | the smallest type or thinnest rule disappears |
+
+**The reduction test is borrowed from a different craft and is the most useful of the five.** Lee and
+Buscema judge inked comic art by whether it still reads *after reduction to printed size*; a chart is
+judged the same way, because almost nothing is viewed at the size it was drawn. `bitmap.resize(...)`
+makes it a real check rather than a squint:
+
+```js
+const delivered = canvas.toBitmap().resize(480, 260);
+Stage.expect('axis labels and hairlines survive reduction to 480px');
+```
+
+Then the three that need eyes:
 
 - **Could this layout hold a SaaS dashboard's data without looking odd?** Then it is a dashboard.
-  Recompose.
+  Recompose (§6).
 - **Cover the text — is the topic still recognisable from the shapes alone?** If not, there is no
   visual identity yet.
 - **Are all four corners doing the same amount of work?** Then there is no focal point.
-- **Is any bar's baseline non-zero, or any circle sized by radius?** Then the picture is lying even
-  though the data is right (§2).
 
 ---
 
-## 7. Symbol → SDK Parameter Map
+## 9. Symbol → SDK Parameter Map
 
 | Concept | SDK call or field | Notes |
 | --- | --- | --- |
 | Value → pixel | `Scale.linear(d0, d1, r0, r1)` | Range may run backwards; that is a vertical axis. |
+| Pixel → value | `scale.invert(position)` | Reads a drawn coordinate back to a datum — the other half of a lie-factor check. |
 | Bar length | `scale.extent(baseline, value)` | Always positive, whichever way the range runs. |
 | Zero-baseline check | `scale.isZeroBased` | Assert it for bars, columns, areas. |
-| Category positions | `Scale.band(count, r0, r1, padding)` | `band.bandwidth` is the drawn width; `band.center(i)` is the label anchor. |
+| Category positions | `Scale.band(count, r0, r1, padding)` | `band.bandwidth` is the drawn width; `band.center(i)` is the label anchor; `band.step` includes the gap. |
 | Round axis numbers | `Scale.nice(min, max)`, `scale.ticks(n)` | `nice` first, then build the scale from its bounds. |
 | Shared scale | `Scale.extent(allValues)` | Once, over every series. Non-negotiable for small multiples. |
 | Area encoding | `Scale.radiusFor(value, maxValue, maxRadius)` | Square-rooted, so area carries the value. |
-| Zones and margins | `Layout.rows/columns(rect, weights, gap)`, `Layout.inset(...)` | Weighted, not equal — see §5. |
+| Ink share / layer separation | `bitmap.palette(count)` | Dominant colours and their shares — §3b and §5a. |
+| Reduction test | `bitmap.resize(w, h)` | Redraw the judgment at delivered size — §8. |
+| Zones and margins | `Layout.rows/columns(rect, weights, gap)`, `Layout.inset(...)` | Weighted, not equal — see §7. |
 | Measured text blocks | `ctx.measureWrappedText(text, maxWidth)` | Height before placement, so captions can stack. |
 | Design language | `Css.fromCss(...)`, `sheet.tokens()`, `sheet.rule('.h1')` | Palette and type from a stylesheet; see Manual 11 §3. |
+| Recording a trade-off | `Stage.note(...)`, `Stage.check(...)` | An accuracy traded for a form (§1b) is a decision a reader should find. |
 
 ---
 
-## 8. Constructing It: A Runnable Panel
+## 10. Constructing It: A Runnable Panel
 
-Three of §2's rules in one panel: a zero baseline, an area-encoded circle set, and a shared scale
-across two series. Every coordinate comes from `Scale` or `Layout`; none is written by hand.
+Three of §2's rules in one panel — a zero baseline, an area-encoded circle set, and a shared scale
+across two series — with §2a's lie factor computed on the result. Every coordinate comes from `Scale`
+or `Layout`; none is written by hand.
 
 ```javascript
-// Encoding demo: zero-based columns, √-scaled circles, one shared scale.
+// Encoding demo: zero-based columns, sqrt-scaled circles, one shared scale, lie factor asserted.
 const canvas = createCanvas(900, 460);
 const ctx = canvas.getContext('2d');
 ctx.fillStyle = '#f7f4ee';
 ctx.fillRect(0, 0, 900, 460);
 
 const page = Layout.inset(Layout.rect(0, 0, 900, 460), 34);
-// §5 — weighted, not equal: one dense zone and one that breathes.
+// §7 — weighted, not equal: one dense zone and one that breathes.
 const [left, right] = Layout.columns(page, [62, 38], 34);
 
 // §2 — one extent over BOTH series, so the two panels are comparable.
@@ -224,7 +472,7 @@ const north = [38, 61, 47, 92, 74];
 const south = [22, 35, 29, 58, 44];
 const shared = Scale.extent(north.concat(south));
 const bounds = Scale.nice(0, shared.max);
-log('shared extent ' + shared.min + '–' + shared.max + ', axis to ' + bounds.max);
+log('shared extent ' + shared.min + '-' + shared.max + ', axis to ' + bounds.max);
 
 const [plotN, plotS] = Layout.rows(left, 2, 22);
 const labels = ['Mar', 'Apr', 'May', 'Jun', 'Jul'];
@@ -249,10 +497,18 @@ const drawSeries = (rect, values, fill, title) => {
         ctx.fillText(labels[i], x.center(i), rect.y2 - 14);
         ctx.textAlign = 'left';
     }
+    return y;
 };
 
-drawSeries(plotN, north, '#1f6f8b', 'NORTH');
+const yNorth = drawSeries(plotN, north, '#1f6f8b', 'NORTH');
 drawSeries(plotS, south, '#c96a2e', 'SOUTH');
+
+// §2a — the check that proves the rules above held in the finished picture. With a zero-based
+// linear scale this is 1 by construction; it catches the marks that bypassed the scale.
+const shownRatio = yNorth.extent(bounds.min, 92) / yNorth.extent(bounds.min, 38);
+const lieFactor = shownRatio / (92 / 38);
+log('lie factor ' + lieFactor.toFixed(4));
+if (Math.abs(lieFactor - 1) > 0.05) throw new Error('graphic distorts the data');
 
 // §2 — area encodes value: four times the number is twice the radius.
 ctx.textAlign = 'center';
@@ -264,8 +520,8 @@ ctx.font = '600 12px sans-serif';
 ctx.fillStyle = '#6b7684';
 ctx.textAlign = 'left';
 ctx.textBaseline = 'top';
-// Plain ASCII in *drawn* text: the maths glyphs in this manual's prose (∝, √) are not in every
-// installed face, and a missing glyph renders as a tofu box rather than failing loudly.
+// Plain ASCII in *drawn* text: the maths glyphs in this manual's prose are not in every installed
+// face, and a missing glyph renders as a tofu box rather than failing loudly.
 ctx.fillText('AREA SCALES WITH VALUE', right.x, right.y);
 
 const biggest = Scale.radiusFor(100, 100, band.bandwidth / 2);
@@ -286,6 +542,10 @@ for (let i = 0; i < circles.length; i++) {
     ctx.textBaseline = 'top';
     ctx.fillText(circles[i].t, cx, cy + biggest + 10);
 }
+
+// §5a — did the layers actually separate? The palette answers; the eye guesses.
+const palette = canvas.toBitmap().palette(4);
+log('dominant ink ' + palette[0].color + ' at ' + (palette[0].share * 100).toFixed(1) + '%');
 
 canvas;
 ```

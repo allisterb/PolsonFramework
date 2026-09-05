@@ -181,8 +181,8 @@ public static partial class SnapAttributes
                 element.TextAnchor = ParseTextAnchor(valStr);
                 break;
 
+            // NormalizeKey lower-cases the key, so a mixed-case viewBox label here would never be reached.
             case "viewbox":
-            case "viewBox":
                 SetViewBox(element, valStr);
                 break;
 
@@ -285,13 +285,30 @@ public static partial class SnapAttributes
 
             // The same rule, applied to three more that were settable and unreadable. `display` is
             // what a timeline's visibility window writes, and a window that cannot read back the
-            // value it is restoring has nothing to restore. The remaining gaps — font-size,
-            // font-weight, text-anchor, the stroke-dash and line-cap family, points, viewBox, href
-            // and a line's x1/y1/x2/y2 — are still write-only; they need an enum or collection
-            // formatted back to its SVG spelling, which is a larger job than this one.
+            // value it is restoring has nothing to restore.
             "display" => string.IsNullOrEmpty(element.Display) ? null : element.Display,
             "visibility" => string.IsNullOrEmpty(element.Visibility) ? null : element.Visibility,
             "fontfamily" or "font-family" => string.IsNullOrEmpty(element.FontFamily) ? null : element.FontFamily,
+
+            // And to the rest of them. Each needed an enum or a collection put back into its SVG
+            // spelling rather than its CLR one — `middle`, not `Middle` — so that what comes out is
+            // a value the setter above would accept again. SnapAttributeRoundTripTests holds the whole
+            // switch to that: every case label in the setter must have an arm here.
+            "strokelinecap" or "stroke-linecap" => StrokeLineCapToString(element.StrokeLineCap),
+            "strokelinejoin" or "stroke-linejoin" => StrokeLineJoinToString(element.StrokeLineJoin),
+            "strokedasharray" or "stroke-dasharray" => element.StrokeDashArray is { Count: > 0 } dashes ? dashes.ToString() : null,
+            "strokedashoffset" or "stroke-dashoffset" => element.StrokeDashOffset.Value,
+            "fontsize" or "font-size" => element.FontSize.Value,
+            "fontweight" or "font-weight" => FontWeightToString(element.FontWeight),
+            "textanchor" or "text-anchor" => TextAnchorToString(element.TextAnchor),
+            "x1" => GetX1(element),
+            "y1" => GetY1(element),
+            "x2" => GetX2(element),
+            "y2" => GetY2(element),
+            "points" => GetPoints(element),
+            "viewbox" => GetViewBox(element),
+            "href" or "xlink:href" or "src" => GetHref(element),
+
             _ => element.CustomAttributes.TryGetValue(name, out var customVal) ? customVal : null
         };
     }
@@ -558,6 +575,58 @@ public static partial class SnapAttributes
         return collection;
     }
 
+    // The inverses of the four parsers above. Each returns the spelling SVG uses — which is also the
+    // spelling its own parser accepts — so attr(name, v) followed by attr(name) yields something the
+    // setter would take again. The CLR enum name would not: it says `Middle` where SVG says `middle`.
+    // Each default arm mirrors its parser's, so the pair agrees on what an unrecognised value means.
+    private static string StrokeLineCapToString(SvgStrokeLineCap val) =>
+        val switch
+        {
+            SvgStrokeLineCap.Round => "round",
+            SvgStrokeLineCap.Square => "square",
+            SvgStrokeLineCap.Inherit => "inherit",
+            _ => "butt"
+        };
+
+    private static string StrokeLineJoinToString(SvgStrokeLineJoin val) =>
+        val switch
+        {
+            SvgStrokeLineJoin.Round => "round",
+            SvgStrokeLineJoin.Bevel => "bevel",
+            SvgStrokeLineJoin.MiterClip => "miter-clip",
+            SvgStrokeLineJoin.Arcs => "arcs",
+            SvgStrokeLineJoin.Inherit => "inherit",
+            _ => "miter"
+        };
+
+    private static string FontWeightToString(SvgFontWeight val) =>
+        val switch
+        {
+            SvgFontWeight.Bold => "bold",
+            SvgFontWeight.Bolder => "bolder",
+            SvgFontWeight.Lighter => "lighter",
+            SvgFontWeight.W100 => "100",
+            SvgFontWeight.W200 => "200",
+            SvgFontWeight.W300 => "300",
+            SvgFontWeight.W400 => "400",
+            SvgFontWeight.W500 => "500",
+            SvgFontWeight.W600 => "600",
+            SvgFontWeight.W700 => "700",
+            SvgFontWeight.W800 => "800",
+            SvgFontWeight.W900 => "900",
+            SvgFontWeight.Inherit => "inherit",
+            _ => "normal"
+        };
+
+    private static string TextAnchorToString(SvgTextAnchor val) =>
+        val switch
+        {
+            SvgTextAnchor.Middle => "middle",
+            SvgTextAnchor.End => "end",
+            SvgTextAnchor.Inherit => "inherit",
+            _ => "start"
+        };
+
     private static string PaintServerToString(SvgPaintServer? server)
     {
         if (server is null || server == SvgPaintServer.None) return "none";
@@ -752,6 +821,7 @@ public static partial class SnapAttributes
         {
             SvgCircle c => c.CenterX.Value,
             SvgEllipse e => e.CenterX.Value,
+            SvgRadialGradientServer radial => radial.CenterX.Value,
             _ => null
         };
 
@@ -760,6 +830,7 @@ public static partial class SnapAttributes
         {
             SvgCircle c => c.CenterY.Value,
             SvgEllipse e => e.CenterY.Value,
+            SvgRadialGradientServer radial => radial.CenterY.Value,
             _ => null
         };
 
@@ -767,6 +838,7 @@ public static partial class SnapAttributes
         el switch
         {
             SvgCircle c => c.Radius.Value,
+            SvgRadialGradientServer radial => radial.Radius.Value,
             _ => null
         };
 
@@ -801,6 +873,65 @@ public static partial class SnapAttributes
             SvgRectangle r => r.Height.Value,
             SvgImage img => img.Height.Value,
             SvgFragment f => f.Height.Value,
+            _ => null
+        };
+
+    // Each reads back from whatever the matching setter above writes to, gradient servers included,
+    // so `null` from here means "this element has no such attribute" rather than "unimplemented".
+    private static object? GetX1(SvgElement el) =>
+        el switch
+        {
+            SvgLine line => line.StartX.Value,
+            SvgLinearGradientServer linear => linear.X1.Value,
+            _ => null
+        };
+
+    private static object? GetY1(SvgElement el) =>
+        el switch
+        {
+            SvgLine line => line.StartY.Value,
+            SvgLinearGradientServer linear => linear.Y1.Value,
+            _ => null
+        };
+
+    private static object? GetX2(SvgElement el) =>
+        el switch
+        {
+            SvgLine line => line.EndX.Value,
+            SvgLinearGradientServer linear => linear.X2.Value,
+            _ => null
+        };
+
+    private static object? GetY2(SvgElement el) =>
+        el switch
+        {
+            SvgLine line => line.EndY.Value,
+            SvgLinearGradientServer linear => linear.Y2.Value,
+            _ => null
+        };
+
+    // `SvgPointCollection` serialises as `1,2 3,4`, which SetPoints parses back to the same points —
+    // it splits on comma and whitespace alike. The list form the setter also takes is not recoverable
+    // from the element, so one spelling has to serve, and the SVG one is what the markup holds.
+    private static object? GetPoints(SvgElement el)
+    {
+        // SvgPolyline derives from SvgPolygon here, so the base type covers both elements.
+        var points = (el as SvgPolygon)?.Points;
+        return points is { Count: > 0 } ? points.ToString() : null;
+    }
+
+    // SvgViewBox.ToString() is the inherited object one — it answers "Svg.SvgViewBox" — so the four
+    // numbers are formatted here, invariantly, in the order SetViewBox reads them.
+    private static object? GetViewBox(SvgElement el) =>
+        el is SvgFragment frag && frag.ViewBox != SvgViewBox.Empty
+            ? string.Create(CultureInfo.InvariantCulture, $"{frag.ViewBox.MinX} {frag.ViewBox.MinY} {frag.ViewBox.Width} {frag.ViewBox.Height}")
+            : null;
+
+    private static object? GetHref(SvgElement el) =>
+        el switch
+        {
+            SvgImage img => string.IsNullOrEmpty(img.Href) ? null : img.Href,
+            SvgUse use => use.ReferencedElement?.ToString() is { Length: > 0 } href ? href : null,
             _ => null
         };
     #endregion

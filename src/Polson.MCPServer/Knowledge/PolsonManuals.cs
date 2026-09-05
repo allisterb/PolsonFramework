@@ -75,15 +75,22 @@ public class PolsonManuals
         index.AppendLine("""
             These manuals are the **bridge between the studio's reference library and the drawing SDK**. Each one
             distils a source text — Loomis for construction and light, Janson for inking and for staging a
-            page, Glebas for depth and screen continuity, Hampton, Faragasso and Norling, Bokhua and Tubik
-            for logo work — into formulas, construction procedures, and the **named SDK calls that
-            implement them**. Every manual names its own sources in its header; that list is the
-            authority, and this sentence is only a summary of it.
+            page, Glebas for depth and screen continuity, Lee & Buscema for the comic idiom, Hampton,
+            Faragasso and Norling, Bokhua and Tubik for logo work — into formulas, construction
+            procedures, and the **named SDK calls that implement them**. Every manual names its own
+            sources in its header; that list is the authority, and this sentence is only a summary of it.
 
-            *How to Draw Comics the Marvel Way* was named here for a long time and is cited by **no
-            manual at all** — only its inking chapter was ever read, and `janson-inking` supplanted it.
-            An agent told a book is a source will trust an answer drawn from it, so the claim is
-            removed rather than left standing.
+            Not every manual rests on a book. Where the studio's own practice is the source — the run
+            record, measuring a render, scoring motion — the manual says so in its header instead of
+            borrowing a citation, because an unearned one is the same defect as an unearned
+            measurement.
+
+            *How to Draw Comics the Marvel Way* is worth stating precisely, because this paragraph has
+            twice said something false about it. It was listed here as a source while **no** manual
+            cited it; that was corrected on 2026-09-04 by removing it. **Manuals 23 and 24 were then
+            written from its ch. 8 and ch. 6**, so it is a source again, and the removal is now the
+            stale claim — corrected 2026-09-05. Three chapters have been read in all; the third,
+            ch. 12 on inking, was supplanted by `janson-inking` and is cited by nothing.
 
             Use them to decide *what* to draw and *why*; use `polson://sdk/*` for the exact call signatures.
 

@@ -1,8 +1,20 @@
 # Agentic Cinema hackathon — feasibility assessment
 
-> **Status as of 2026-09-03: eligible, technically feasible, six days left.** No work started. This
-> document is the cold-start brief for a session picking it up, and it carries the verification behind
-> each claim so nothing has to be re-litigated.
+> **Status as of 2026-09-05: eligible, technically feasible, four days left. Two of the four items
+> are built.** The ADK entry point and container are done and the studio is **deployed and running on
+> Cloud Run**, where it has produced real work. What remains is Parallel's Search API — the track's
+> hard requirement, and the only item that gates eligibility — public access to the URL, mounting the
+> studio UI, and the video. §4 has the detail.
+>
+> This document is the cold-start brief for a session picking it up, and it carries the verification
+> behind each claim so nothing has to be re-litigated.
+
+> [!IMPORTANT]
+> **This header said "No work started" until 2026-09-05, three days after it stopped being true**, and
+> a session reading it stated as fact that the ADK entry point was missing. §4 said "Four items, none
+> started" beneath a tree containing `main.py`, a `Dockerfile`, and four working apps. A cold-start
+> brief that is wrong about the state of the work is worse than no brief, because it is trusted.
+> **If you build one of these items, update §4 in the same session.**
 
 ---
 
@@ -190,18 +202,53 @@ credential we hold is probably the one this contest expects. **Probably: unteste
 
 ## 4. What is missing, in the order to attempt it
 
-Four items, none started.
+**Updated 2026-09-05.** Two done, two not, and one of the two done is done only in part.
 
-1. **ADK entry point + container.** Smallest, and **do it first** — it is the only item that could turn
-   out to be *blocked* rather than merely laborious, and discovering that on day six is the bad
-   outcome.
-2. **Parallel Search API at runtime.** The track's hard requirement. `Polson.ExtendedMind` is the right
-   home; it is already built around an `IImageGenerator` seam, so there is an established shape for
-   adding a second external service.
-3. **A hosted project URL.** A submission requirement, not optional. `src/webapp` is ~30 Python files
-   with an `orchestrator/` and a `hello_agent.py` — **how far it actually runs was not established.**
-   Size this early; it feeds criterion 2 (Design), which is 25% of the score.
+### Built
+
+1. ~~**ADK entry point + container.**~~ **Done.** `src/adk_agent/main.py` calls
+   `get_fast_api_app(...)` and returns an **ordinary `FastAPI`**, with a `Dockerfile` at the repo
+   root. It was the item that might have been *blocked* rather than laborious; it was not. The
+   Dockerfile records every deploy failure beside the line that fixes it.
+2. ~~**A hosted project URL.**~~ **Deployed, with two gaps** — see below. The studio runs on Cloud
+   Run as `polson-studio` (project `polson`, region `us-east4`) and **has produced real work there**;
+   four apps exist under `src/adk_agent/apps/`. `src/webapp` turned out to matter less than feared,
+   because a plain `FastAPI` app means the studio UI mounts on the same app and port rather than
+   needing its own service.
+   > **`src/adk_agent/README.md` is the deployment brief** — read it before touching the service.
+   > Some environment facts live only in session memory rather than the repo, notably that `gcloud`
+   > on the build machine needs `CLOUDSDK_PYTHON` set or every command dies with *"Python was not
+   > found"*, and that `--set-env-vars` splits on commas so a value containing one is silently torn
+   > in half.
+
+### Remaining
+
+1. **Parallel Search API at runtime.** The track's **hard requirement**, so it is the only item that
+   gates eligibility — and it is untouched. Checked 2026-09-05: the sole "parallel" matches in
+   `src/adk_agent` are a warning against ADK's `ParallelAgent`, which is unrelated.
+   `Polson.ExtendedMind` remains the right home; it is already built around an `IImageGenerator`
+   seam, so there is an established shape for a second external service.
+   > This is also the piece the **infographics direction** needs — retrieving real-world figures to
+   > construct the points a graphic makes — so the eligibility requirement and the differentiator
+   > demo are one task rather than two competing ones. A run that searches for figures, cites them,
+   > and renders a chart whose bars are provably those figures satisfies both.
+2. **Public access to the URL.** Deployed **private** — no `--allow-unauthenticated` — so a judge
+   cannot open it, and "a hosted project URL for judges to test" is a submission requirement. **Not
+   merely a flag:** `CLAUDE.md` Milestone 6 requires per-session and per-day caps on concurrency and
+   asset-requisition spend before a public URL drives a metered image service. Open the caps first,
+   then the door.
+3. **Mount the studio UI.** `main.py` says plainly: *"Nothing is mounted yet; that is the next piece
+   of work. Until then this is `adk web` with a seam."* So what a judge would currently reach is
+   **ADK's own developer interface**, not a product. That is criterion 2 (Design), which asks for
+   *"a complete, coherent product experience not just a technical proof of concept"* and is 25% of
+   the score — the single place where the gap between what exists and what is judged is widest.
 4. **The 3-minute video.**
+
+### Already satisfied, worth not re-checking
+
+- **Public repo with an OSI-approved licence.** `LICENSE` is **AGPL-3.0**, which is OSI-approved, and
+  the remote is `github.com/allisterb/Polson`. **Whether that repo is public was not verified** —
+  confirm before submitting.
 
 ### The open question that shapes everything else
 

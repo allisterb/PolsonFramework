@@ -70,8 +70,12 @@ public class ManualCoverageTests : TestsRuntime
     /// on the receivers that inherit them. A symbol nobody should type is not a gap a manual can close.
     /// </para>
     /// <para>
-    /// What remains is thinner and more defensible. <c>Scale</c> (54%) is accessor properties —
-    /// <c>band.step</c>, <c>scale.domainStart</c> — that a chart reads without a manual naming them;
+    /// What remains is thinner and more defensible. <c>Scale</c> was 54% for the same reason —
+    /// accessor properties a chart reads without a manual naming them — and reached **63%** on
+    /// 2026-09-05 when Manual 13 was rewritten on Tufte and Cleveland &amp; McGill: <c>scale.invert</c>
+    /// and <c>band.step</c> earned their mention there rather than being listed to move the number,
+    /// the first as half of a lie-factor check and the second as the width a label is centred in.
+    /// <c>scale.domainStart</c> and its siblings are still unnamed and still defensible.
     /// <c>Canvas2D</c> (75%) is raster primitives like <c>ctx.miterLimit</c> that need no design theory
     /// written about them; and <c>Snap</c>'s residue is mostly aliases (<c>group</c> for <c>g</c>,
     /// <c>append</c> for <c>add</c>) plus every member <c>SnapGradient</c> inherits from
@@ -91,7 +95,7 @@ public class ManualCoverageTests : TestsRuntime
         ["Layout"] = 66,
         ["LogoType"] = 66,
         ["Logo"] = 65,
-        ["Scale"] = 54,
+        ["Scale"] = 63,
 
         // Was 0 while Motion was a spike, on the stated grounds that "the authoring model above it
         // is still an open question — whether a timeline lives in JavaScript or in the engine, and

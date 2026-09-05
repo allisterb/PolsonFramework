@@ -9,7 +9,9 @@ The previous handoff is superseded; its open items are carried forward at the en
 
 > **§14 is the current state** for the drawing corpus and **§15 is the detailed queue** — a session
 > continuing that work should start at §15, which carries the designs, the measured constants and the
-> acceptance tests, so nothing has to be re-derived. Together they supersede §13's pick-up list,
+> acceptance tests, so nothing has to be re-derived. **§16 is the separate motion thread** (animated
+> SVG, frame capture, the score API), and its plan lives in `docs/motion-score-api.md`.
+> Together they supersede §13's pick-up list,
 > though §13 remains accurate on everything else and is
 > where the manuals and the `pose` parameter are described. §12 is the session before that and
 > remains accurate as history. §§1–8 are the fifth session (observability, `scriptFile`, the Claude
@@ -1619,6 +1621,76 @@ the radii.
   than on a foot. Documented in Manual 08 §2a. Faithful to the canon; the canon has no foot to give.
 - **`head.unit` is an object** `{H, W, eyeW, thirdH}`, not a number — reading it as one gives `NaN` in
   silence.
+
+
+---
+
+## 16. Motion — animated SVG, frame capture, and the score API
+
+**Session of 2026-09-05, second half.** Opened as "does Svg.Skia's animation support actually work",
+became a working animated-WebP pipeline and a design decision about the client API.
+**Tests: 1,334 .NET** (Drawing 469, MCPServer 493, CLI 278, ExtendedMind 94).
+
+> **`docs/motion-score-api.md` is the plan for what comes next** — the score API, specified cold:
+> the position grammar, the semantics that must hold, the test list, the guardrails, and a build
+> order. Nothing in it is started. Read that; this section is only what was established getting there.
+
+### It works, and the measurements settle the format questions
+
+**Svg.Skia 5.2.1 carries a full SMIL engine and it is exact.** `SKSvg.SetAnimationTime(t)` seeks to
+any time in **0.43 ms**, deterministically — t = 1 s rendered directly and after visiting t = 3 s are
+identical. Every feature tested animates: `animateTransform` translate/rotate/scale, `animate` on any
+attribute, `values` + `keyTimes` (exact to the pixel), `begin` offsets, `repeatCount="indefinite"`,
+`animateMotion`, `<set>`, `stroke-dashoffset` line-draw, and `additive="sum"`.
+
+**SkiaSharp encodes animated WebP natively** — `SKWebpEncoder.EncodeAnimated(frames, options)` with
+`SKWebpEncoderFrame(bitmap, duration)`. 50 frames at 25 fps, 480×270, **76 KB**, decoding back as
+exactly 50 × 40 ms. No ffmpeg.
+
+| | |
+| :--- | :--- |
+| Render (SVG document → bitmap) | **2.7 ms/frame** at 1280×720 with 20 animated elements, **12.2 ms** with 200 |
+| Encode | **59–68 ms/frame** — dominates render by 5× |
+| SMIL seek | **0.43 ms**, O(1) |
+| Animated WebP random access | **O(n)** — 1 of 47 frames independently decodable; frame 36 costs 13 ms against 1 ms for frame 0 |
+| Skia encoders | PNG, JPEG, WebP. **No GIF, APNG or AVIF.** |
+
+### What was built
+
+`SvgRenderPipeline` gained **`atTime`** on `RenderToImage`, `RenderToBitmap` and `SaveImage`, plus
+`HasAnimations(xml)`. Before it, an animated document rendered its opening frame — successfully, with
+no error. `Motion` gained `frame`, `save`, `sheet`, `count`, `clear`.
+
+### Three defects found, all by verification rather than by reading
+
+- **`SvgDocument.Write` corrupts SMIL's `fill="freeze"` into `style="fill:freeze;"`**, conflating the
+  timing attribute with the paint property of the same name — so an animation snapped back instead of
+  freezing. **Fixed** by routing the document overloads through `SKSvg.FromSvgDocument` rather than
+  serialising and re-parsing; static output is **byte-identical** between the two routes, and it drops
+  a serialise plus full re-parse from every render.
+- **`Motion.save` reported a frame count the file did not have.** WebP merges consecutive
+  pixel-identical frames and sums their durations — correct, and a real size win. It now decodes what
+  it wrote and reports `frames`, `storedFrames` and `merged`.
+- **A use-after-free that aborted the whole test run.** The frame-size-mismatch branch disposed the
+  bitmap and then read `bitmap.Width` composing the error message. Native memory, so it does not
+  throw — it takes the process down, and an agent would lose the run rather than the frame.
+
+### Two findings that shape the API rather than the plumbing
+
+**An agent cannot watch a video.** It reads images, so a moving file is close to the worst artifact to
+hand it for inspection — it can produce one and still not perceive the motion. `Motion.sheet` tiles
+N instants into one labelled image: a single read, and unlike a video it supports comparison, by eye
+and by `bitmap.diff`. **`sheet` is the artifact to look at; `save` is the artifact to ship.**
+
+**An animated file is also the wrong thing to hand the next stage.** Random access is O(n) (above).
+Stage transfer should carry the **script** plus a stage SVG/PNG at chosen times, and reach a time by
+re-evaluating the timeline — O(1) at any `t`.
+
+### The reference ledger
+
+`projects/Snap.svg-master/src/` scanned and recorded: clean, **Apache 2.0 © 2016 Adobe**, permissive
+and one-way compatible with our AGPL-3.0. `dist/`, `demos/`, `test/` and `doc/` remain unscanned
+apart from `demos/illustrated-infographic-coffee/`, which was scanned clean for the API read.
 
 ---
 

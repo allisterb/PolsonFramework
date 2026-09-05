@@ -136,9 +136,24 @@ exists. Identical frames can do neither.
 **All three forms now exist.** Where you use a lower-ranked form anyway — and §1's table still lists
 plenty — the discipline is unchanged: use it knowingly, and say so in a `Stage.note`.
 
+### 1c. Two more forms, and why they are where they are
+
+**`Chart.createCallout(...)` — one number, made big.** It sits *above* the whole hierarchy, because a
+reader **reads** a numeral rather than judging it: no decoding, no error. That is the argument behind
+the first two anti-patterns below — a one-bar bar chart and a two-slice pie both take a number the
+reader could simply have read and convert it into a judgment. `compact: true` handles the formatting
+that makes a big number legible (`1234567` → `1.2M`).
+
+**`Chart.createWaffle(...)` — a share, as countable cells.** Ten by ten with each cell worth a percent
+is why the manual prefers it to a donut: a donut's angle is rank 3 and cannot be counted, while a
+waffle **can** be. But the model reports itself as **area, rank 4**, which is deliberately the
+pessimistic reading — a reader who counts gets an exact answer and you cannot assume anyone will.
+Claiming counting's exactness for a graphic most people eyeball would be the flattering assumption
+rather than the safe one.
+
 ### Form-level anti-patterns
 
-- A one-bar bar chart, or a two-slice pie → a big-number callout.
+- A one-bar bar chart, or a two-slice pie → a big-number callout (§1c).
 - Radar/spider charts → a ranked bar list reads better almost every time.
 - 3D anything, exploded pies, gauge dials with needles → never.
 - A chart where a sentence and one big number would say it better.

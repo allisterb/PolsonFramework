@@ -46,12 +46,23 @@ public class ChartToolkit
     /// would otherwise bind to nothing and silently draw the default, which is the class of failure
     /// this project treats as worst.
     /// </remarks>
-    private static readonly string[] KnownOptions =
-    [
-        "baseline", "max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap",
-        "radius", "sort", "groupGap", "headingHeight", "frameWidth", "frameHeight", "columns", "gap",
-        "form", "rowGap", "titleHeight"
-    ];
+    /// <remarks>
+    /// One set per call rather than one for the toolkit. A single shared list would accept
+    /// <c>frameWidth</c> on a bar chart and <c>compact</c> on a dot chart — names that mean nothing
+    /// there — and the misspelling this check exists to catch would slip through whenever it happened
+    /// to be another call's option.
+    /// </remarks>
+    private static readonly string[] BarOptions =
+        ["baseline", "max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap"];
+
+    private static readonly string[] DotOptions =
+        ["max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap", "radius", "sort"];
+
+    private static readonly string[] GroupedDotOptions =
+        [.. DotOptions, "groupGap", "headingHeight"];
+
+    private static readonly string[] FramedOptions =
+        ["min", "max", "tickCount", "labels", "frameWidth", "frameHeight", "columns", "gap"];
 
     /// <summary>Options a per-panel chart understands, so the rest are not handed down to be refused.</summary>
     /// <remarks>
@@ -60,10 +71,26 @@ public class ChartToolkit
     /// the first version and, being valid at the grid level and unknown at the panel level, was
     /// accepted and then silently discarded. Found by drawing one and noticing the months were
     /// missing, which is the only way it could have been found.
+    /// <para>
+    /// <b>Declared before <see cref="SmallMultipleOptions"/>, which spreads it, and that ordering is
+    /// load-bearing.</b> Static field initialisers run in declaration order, so with this below the
+    /// spread it was still null and every call into the toolkit died in the type initialiser — one
+    /// unrelated-looking failure across every test in the file.
+    /// </para>
     /// </remarks>
     private static readonly string[] PanelOptions =
         ["baseline", "padding", "tickCount", "labelGap", "tickGap", "radius", "sort",
          "groupGap", "headingHeight", "frameWidth", "frameHeight", "labels"];
+
+    private static readonly string[] SmallMultipleOptions =
+        ["form", "columns", "gap", "rowGap", "titleHeight", "min", "max", .. PanelOptions];
+
+    private static readonly string[] CalloutOptions =
+        ["label", "caption", "unit", "prefix", "suffix", "decimals", "compact",
+         "valueSize", "labelSize", "captionSize", "align"];
+
+    private static readonly string[] WaffleOptions =
+        ["columns", "rows", "gap", "total", "labels"];
     #endregion
 
     #region Methods
@@ -122,7 +149,7 @@ public class ChartToolkit
                 "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
 
         var opt = JsInterop.AsDict(options);
-        RefuseUnknownOptions(opt);
+        RefuseUnknownOptions(opt, DotOptions);
 
         var (values, labels) = ReadData(data, opt);
         if (values.Length == 0) throw new ArgumentException("A chart needs at least one value.", nameof(data));
@@ -253,7 +280,7 @@ public class ChartToolkit
                 "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
 
         var opt = JsInterop.AsDict(options);
-        RefuseUnknownOptions(opt);
+        RefuseUnknownOptions(opt, GroupedDotOptions);
 
         var (values, labels) = ReadData(data, opt);
         if (values.Length == 0) throw new ArgumentException("A chart needs at least one value.", nameof(data));
@@ -441,7 +468,7 @@ public class ChartToolkit
                 "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
 
         var opt = JsInterop.AsDict(options);
-        RefuseUnknownOptions(opt);
+        RefuseUnknownOptions(opt, FramedOptions);
 
         var (values, labels) = ReadData(data, opt);
         if (values.Length == 0) throw new ArgumentException("A chart needs at least one value.", nameof(data));
@@ -596,7 +623,7 @@ public class ChartToolkit
                 "Small multiples need a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
 
         var opt = JsInterop.AsDict(options);
-        RefuseUnknownOptions(opt);
+        RefuseUnknownOptions(opt, SmallMultipleOptions);
 
         var panelsIn = ReadSeries(series);
         if (panelsIn.Count == 0)
@@ -680,6 +707,236 @@ public class ChartToolkit
             ["encodingRank"] = first["encodingRank"],
             ["isZeroBased"] = first["isZeroBased"],
             ["lieFactor"] = first["lieFactor"]
+        };
+    }
+
+    /// <summary>
+    /// One number, made big. The right answer when there is only one value to show.
+    /// </summary>
+    /// <remarks>
+    /// <b>A callout asks the reader to <i>read a numeral</i>, not to judge a length or an angle</b>, so
+    /// it is exact — no perceptual decoding happens at all. That is why a one-bar bar chart and a
+    /// two-slice pie are both mistakes: they take a number the reader could simply have read and
+    /// convert it into a judgment. <c>polson://manual/13</c> §1 lists both as anti-patterns.
+    /// <para>
+    /// <c>encodingRank</c> is <b>0</b> here, and that is this toolkit's marker rather than a rank from
+    /// the literature: Cleveland and McGill's ordering begins at 1 and has nothing to say about
+    /// reading text. It means "no perceptual judgment", and it sorts above rank 1 as it should.
+    /// </para>
+    /// <para>
+    /// <b>What this saves is the formatting and the size ladder, not the drawing.</b> The model gives
+    /// anchors and sizes; the caller sets the font and draws, because measuring glyphs needs a context
+    /// and every other model here is closed-form arithmetic. <c>compact</c> turns 1,234,567 into
+    /// <c>1.2M</c>, which is fiddly to get right and easy to get subtly wrong.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateCallout(object rect, double value, object? options = null)
+    {
+        var area = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A callout needs a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt, CalloutOptions);
+
+        var x = Num(area, "x");
+        var y = Num(area, "y");
+        var w = Num(area, "width");
+        var h = Num(area, "height");
+
+        var label = opt?["label"]?.ToString();
+        var caption = opt?["caption"]?.ToString();
+        var compact = opt is not null && opt.Contains("compact") && Convert.ToBoolean(opt["compact"]);
+        var decimals = (int)Opt(opt, "decimals", compact ? 1d : 0d);
+        var prefix = opt?["prefix"]?.ToString() ?? string.Empty;
+        var suffix = opt?["suffix"]?.ToString() ?? opt?["unit"]?.ToString() ?? string.Empty;
+
+        // A ladder rather than three independent numbers, so the parts stay in proportion at any size.
+        var valueSize = Opt(opt, "valueSize", Math.Max(12d, h * 0.46d));
+        var labelSize = Opt(opt, "labelSize", Math.Max(9d, valueSize * 0.22d));
+        var captionSize = Opt(opt, "captionSize", Math.Max(8d, valueSize * 0.16d));
+
+        var align = (opt?["align"]?.ToString() ?? "left").ToLowerInvariant();
+        var anchorX = align switch
+        {
+            "left" or "start" => x,
+            "center" or "centre" => x + w / 2d,
+            "right" or "end" => x + w,
+            _ => throw new ArgumentException($"align must be 'left', 'center' or 'right'; got '{align}'.")
+        };
+
+        var display = prefix + FormatValue(value, compact, decimals) + suffix;
+
+        // Stacked from the top: label, value, caption. Baselines are 'top', which is the predictable
+        // one — see the note on textBaseline in the Canvas2D reference.
+        var cursor = y;
+        double? labelY = null, captionY = null;
+
+        if (!string.IsNullOrEmpty(label))
+        {
+            labelY = cursor;
+            cursor += labelSize * 1.5d;
+        }
+
+        var valueY = cursor;
+        cursor += valueSize * 1.12d;
+
+        if (!string.IsNullOrEmpty(caption)) captionY = cursor;
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "callout",
+            ["plot"] = Rect(x, y, w, h),
+            ["bounds"] = Rect(x, y, w, h),
+            ["value"] = value,
+            ["display"] = display,
+            ["label"] = label,
+            ["caption"] = caption,
+            ["align"] = align,
+            ["valueX"] = anchorX,
+            ["valueY"] = valueY,
+            ["valueSize"] = valueSize,
+            ["labelX"] = anchorX,
+            ["labelY"] = labelY,
+            ["labelSize"] = labelSize,
+            ["captionX"] = anchorX,
+            ["captionY"] = captionY,
+            ["captionSize"] = captionSize,
+            ["height"] = cursor - y + (captionY is null ? 0d : captionSize),
+
+            // Read, not judged — see the remarks. 0 is this toolkit's marker, not the paper's.
+            ["encoding"] = "number",
+            ["encodingRank"] = 0,
+            ["isZeroBased"] = true,
+            ["lieFactor"] = 1d
+        };
+    }
+
+    /// <summary>
+    /// A waffle: a grid of cells divided between parts, for a share of a whole.
+    /// </summary>
+    /// <remarks>
+    /// <b>More honest than a donut</b>, which is why <c>polson://manual/13</c> §1 prefers it: a donut
+    /// asks the reader to judge angle, and a waffle can be <i>counted</i>. Ten by ten with each cell
+    /// worth a percent is the usual arrangement and the reason it reads so directly.
+    /// <para>
+    /// <b>Reported as area, rank 4, deliberately.</b> A reader who counts cells gets an exact answer,
+    /// but you cannot assume they will, and claiming the exactness of counting for a graphic most
+    /// people eyeball would be the more flattering assumption rather than the safer one. Rank 4 is
+    /// what it is worth if nobody counts.
+    /// </para>
+    /// <para>
+    /// <b>Cells are whole, so the shares are apportioned by largest remainder.</b> Rounding each share
+    /// on its own gives 99 or 101 cells out of 100 often enough to matter, and a waffle that does not
+    /// fill its own grid is visibly wrong in a way nothing would have reported. Every cell is assigned
+    /// and the counts sum to exactly the grid.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateWaffle(object rect, object parts, object? options = null)
+    {
+        var area = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A waffle needs a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt, WaffleOptions);
+
+        var (values, labels) = ReadData(parts, opt);
+        if (values.Length == 0) throw new ArgumentException("A waffle needs at least one part.", nameof(parts));
+        if (values.Any(v => v < 0d))
+        {
+            throw new ArgumentException("A waffle shows parts of a whole, so no part may be negative.", nameof(parts));
+        }
+
+        var columns = Math.Max(1, (int)Opt(opt, "columns", 10d));
+        var rows = Math.Max(1, (int)Opt(opt, "rows", 10d));
+        var gap = Opt(opt, "gap", 3d);
+        var cellCount = columns * rows;
+
+        var sum = values.Sum();
+        var total = Opt(opt, "total", sum);
+        if (total <= 0d)
+        {
+            throw new ArgumentException("A waffle needs a positive total to take shares of.", nameof(parts));
+        }
+
+        var x = Num(area, "x");
+        var y = Num(area, "y");
+        var cellWidth = (Num(area, "width") - gap * (columns - 1)) / columns;
+        var cellHeight = (Num(area, "height") - gap * (rows - 1)) / rows;
+
+        if (cellWidth <= 0d || cellHeight <= 0d)
+        {
+            throw new ArgumentException(
+                $"A {columns}x{rows} waffle with {gap:0.#} px gaps does not fit in "
+                + $"{Num(area, "width"):0}x{Num(area, "height"):0} px. Use fewer cells or a smaller gap.",
+                nameof(rect));
+        }
+
+        var counts = Apportion(values, total, cellCount);
+        var cells = new List<Dictionary<string, object>>(cellCount);
+        var partList = new List<Dictionary<string, object>>(values.Length);
+
+        var next = 0;
+        for (var p = 0; p < values.Length; p++)
+        {
+            partList.Add(new Dictionary<string, object>
+            {
+                ["index"] = p,
+                ["label"] = labels[p],
+                ["value"] = values[p],
+                ["share"] = values[p] / total,
+                ["cells"] = counts[p],
+                ["firstCell"] = next
+            });
+            next += counts[p];
+        }
+
+        for (var i = 0; i < cellCount; i++)
+        {
+            var row = i / columns;
+            var column = i % columns;
+
+            // Which part owns this cell: the first whose running total has not been passed.
+            var owner = -1;
+            var seen = 0;
+            for (var p = 0; p < counts.Length; p++)
+            {
+                seen += counts[p];
+                if (i < seen) { owner = p; break; }
+            }
+
+            var cell = Rect(x + column * (cellWidth + gap), y + row * (cellHeight + gap), cellWidth, cellHeight);
+            cell["index"] = i;
+            cell["row"] = row;
+            cell["column"] = column;
+            cell["partIndex"] = owner;
+            cell["label"] = owner >= 0 ? labels[owner] : string.Empty;
+            cell["filled"] = owner >= 0;
+            cells.Add(cell);
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "waffle",
+            ["plot"] = Rect(x, y, Num(area, "width"), Num(area, "height")),
+            ["bounds"] = Rect(x, y, Num(area, "width"), Num(area, "height")),
+            ["cells"] = cells.ToArray(),
+            ["parts"] = partList.ToArray(),
+            ["columns"] = columns,
+            ["rows"] = rows,
+            ["cellCount"] = cellCount,
+            ["cellWidth"] = cellWidth,
+            ["cellHeight"] = cellHeight,
+            ["total"] = total,
+
+            // Cells are filled row by row from the top left; a part's block is contiguous.
+            ["order"] = "rowMajor",
+
+            ["encoding"] = "area",
+            ["encodingRank"] = 4,
+            ["isZeroBased"] = true,
+            ["lieFactor"] = 1d
         };
     }
 
@@ -779,7 +1036,7 @@ public class ChartToolkit
                 "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
 
         var opt = JsInterop.AsDict(options);
-        RefuseUnknownOptions(opt);
+        RefuseUnknownOptions(opt, BarOptions);
 
         var (values, labels) = ReadData(data, opt);
         if (values.Length == 0)
@@ -935,7 +1192,7 @@ public class ChartToolkit
         };
     }
 
-    static void RefuseUnknownOptions(IDictionary? opt)
+    static void RefuseUnknownOptions(IDictionary? opt, string[] accepted)
     {
         if (opt is null) return;
 
@@ -944,15 +1201,67 @@ public class ChartToolkit
         {
             var name = entry.Key?.ToString();
             if (name is null) continue;
-            if (!KnownOptions.Contains(name, StringComparer.OrdinalIgnoreCase)) unknown.Add(name);
+            if (!accepted.Contains(name, StringComparer.OrdinalIgnoreCase)) unknown.Add(name);
         }
 
         if (unknown.Count > 0)
         {
             throw new ArgumentException(
                 $"Chart option{(unknown.Count > 1 ? "s" : string.Empty)} not recognised: "
-                + $"{string.Join(", ", unknown)}. Accepted: {string.Join(", ", KnownOptions)}.", nameof(opt));
+                + $"{string.Join(", ", unknown)}. Accepted here: {string.Join(", ", accepted.Distinct())}.",
+                nameof(opt));
         }
+    }
+
+    /// <summary>
+    /// Whole cells apportioned between parts by largest remainder, summing to exactly the grid.
+    /// </summary>
+    /// <remarks>
+    /// Rounding each share independently is the obvious approach and it does not add up: three parts
+    /// at 33.3% each round to 33 cells apiece and leave one of a hundred unassigned, and other splits
+    /// overshoot. Largest remainder gives every part its floor and then hands the leftovers to whoever
+    /// was rounded down hardest, which is exact by construction.
+    /// </remarks>
+    static int[] Apportion(double[] values, double total, int cellCount)
+    {
+        var exact = values.Select(v => v / total * cellCount).ToArray();
+        var counts = exact.Select(e => (int)Math.Floor(e)).ToArray();
+
+        var assigned = counts.Sum();
+        var spare = Math.Min(cellCount, (int)Math.Round(values.Sum() / total * cellCount)) - assigned;
+
+        foreach (var i in Enumerable.Range(0, values.Length)
+            .OrderByDescending(i => exact[i] - Math.Floor(exact[i]))
+            .Take(Math.Max(0, spare)))
+        {
+            counts[i] += 1;
+        }
+
+        return counts;
+    }
+
+    /// <summary>A number as a reader should see it: grouped, rounded, and optionally compacted.</summary>
+    static string FormatValue(double value, bool compact, int decimals)
+    {
+        var places = Math.Clamp(decimals, 0, 6);
+
+        if (!compact)
+        {
+            var pattern = places == 0 ? "#,0" : "#,0." + new string('0', places);
+            return value.ToString(pattern, CultureInfo.InvariantCulture);
+        }
+
+        var magnitude = Math.Abs(value);
+        var (scaled, unit) = magnitude switch
+        {
+            >= 1e12 => (value / 1e12, "T"),
+            >= 1e9 => (value / 1e9, "B"),
+            >= 1e6 => (value / 1e6, "M"),
+            >= 1e3 => (value / 1e3, "K"),
+            _ => (value, string.Empty)
+        };
+
+        return scaled.ToString("0." + new string('#', places), CultureInfo.InvariantCulture) + unit;
     }
 
     /// <summary>One panel's worth of input: its title and the data behind it.</summary>

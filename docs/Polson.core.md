@@ -1403,6 +1403,8 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 - `Chart.createDotChart(rect, data, options?)` → `object` — Value as **position on one shared axis**, categories down. The most accurately decoded form there is, and the one Cleveland & McGill offer in place of a bar chart. Adds `radius` and `sort` (`'none'`, `'asc'`, `'desc'`) to the options.
 - `Chart.createGroupedDotChart(rect, data, options?)` → `object` — The same, with rows gathered into labelled groups from a `group` field, **still against one axis**. Adds `groupGap` and `headingHeight`.
 - `Chart.createFramedRectangleChart(rect, data, options?)` → `object` — A value as a **level inside an identical box**, placed anywhere. What Cleveland & McGill offer in place of a **shaded map**. Rows carry `x` and `y` in the plot's own coordinate space; rows without them are laid out on a grid. Adds `frameWidth`, `frameHeight`, `columns` and `gap`.
+- `Chart.createCallout(rect, value, options?)` → `object` — One number, made big, with an optional `label` and `caption`. The right answer when there is only one value — a reader *reads* it rather than judging it. `compact: true` turns 1,234,567 into `1.2M`. Options: `label`, `caption`, `unit`/`suffix`, `prefix`, `decimals`, `compact`, `valueSize`, `labelSize`, `captionSize`, `align`.
+- `Chart.createWaffle(rect, parts, options?)` → `object` — A grid of cells divided between parts. More honest than a donut, because a waffle can be *counted*. Options: `columns` (10), `rows` (10), `gap`, `total`, `labels`.
 - `Chart.createSmallMultiples(rect, series, options?)` → `object` — A grid of panels **sharing one scale**, computed across every series before any panel is built. `series` is `[{ label, data }]` or an array of arrays; `form` picks what each panel is (`'column'`, `'bar'`, `'dot'`, `'groupedDot'`, `'framedRectangle'`). Adds `columns`, `gap`, `rowGap`, `titleHeight`.
 - `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], frames: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry. `frames` is populated for framed rectangles and empty otherwise.
 - `Chart.drawChart(ctx, chartModel)` → the same geometry — Fills the marks with the context's current `fillStyle` and returns what it drew.
@@ -1422,6 +1424,8 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `dots` | *(dot)* one per datum with `cx`, `cy`, `radius`, `value`, `label`, `index`, `sourceIndex`, and `leaderX1/Y1/X2/Y2` for the line from the axis; grouped charts add `group` and `groupIndex` |
 | `groups` | *(grouped dot)* `{ name, index, count, y, y2, height, headingX, headingY, min, max, mean }` — the block each group occupies, and its own summary |
 | `items` | *(framed rectangle)* `{ label, value, anchorX, anchorY, frame, fill, fraction, index }` — the reference box, the filled part, and how full it is from 0 to 1 |
+| `display` | *(callout)* the formatted number, plus `valueX/Y/Size`, `labelX/Y/Size`, `captionX/Y/Size` as anchors to draw at |
+| `cells` · `parts` | *(waffle)* every cell with its `partIndex` and `filled`, and each part's `share`, `cells` and `firstCell` |
 | `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
 | `labels` | `{ text, x, y, align, baseline, index }` for the categories |
 | `baseline` · `baselinePosition` | the value, and the pixel it maps to |
@@ -1476,6 +1480,18 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 > **It returns charts, not pictures.** Every panel carries a complete model of the form you asked for, so `drawChart`, `createChartGeometry`, the ticks, the labels and the integrity fields all work on a panel exactly as on a standalone chart.
 >
 > **A shared scale does not excuse truncating it.** For `'column'` and `'bar'` the zero is forced into the shared domain, because sharing one scale across panels that each individually lie is not an improvement. For `'dot'` the domain crops to the union of the data, which is the whole advantage of the form.
+
+> [!IMPORTANT]
+> **A callout is not a chart, and that is why it wins.** It asks the reader to *read a numeral*, so no perceptual decoding happens at all and the answer is exact. That is the argument against a one-bar bar chart and a two-slice pie: both take a number the reader could have read and turn it into a judgment. Its `encodingRank` is **0**, which is this toolkit's marker for "no perceptual judgment" and **not** a rank from the literature — Cleveland & McGill's ordering starts at 1 and says nothing about reading text.
+>
+> The model gives **anchors and sizes**, not drawn text: measuring glyphs needs a context, and every other model here is closed-form arithmetic. What it saves you is the formatting and the size ladder.
+>
+> **A waffle reports itself as `area`, rank 4, deliberately.** A reader who counts cells gets an exact answer — that is why it beats a donut, whose angle is rank 3 but uncountable — but you cannot assume anyone will count. Rank 4 is what the graphic is worth if nobody does, and claiming the exactness of counting would be the flattering assumption rather than the safe one.
+>
+> **Cells are whole, so shares are apportioned by largest remainder.** Rounding each share on its own is the obvious approach and does not add up: three parts at a third each floor to 33 cells apiece and leave one of a hundred unassigned. Every cell is assigned and the counts sum to exactly the grid.
+
+> [!TIP]
+> **Each call accepts only its own options.** A single shared list would let `frameWidth` through on a bar chart and `compact` through on a waffle — names that mean nothing there — and the misspelling this check exists to catch would slip past whenever it happened to be another call's option. The error names what was passed and lists what is accepted **here**.
 
 > [!TIP]
 > **The model is closed-form and allocates no paths**, so measuring twenty-four panels is arithmetic. `createChartGeometry(...)` is the one that builds native geometry — the same split as `createMannequinFigure` and `createFigureGeometry`, and for the same reason.

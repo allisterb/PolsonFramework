@@ -858,4 +858,203 @@ public class ChartToolkitTests : TestsRuntime
         Assert.Throws<ArgumentException>(() => Chart.CreateSmallMultiples(Rect(0, 0, 600, 400), "not a series"));
     }
     #endregion
+
+    #region Tests — the callout
+    /// <summary>Reading a numeral is not a perceptual judgment, and the model says so.</summary>
+    [Fact]
+    public void TestACalloutIsNotAPerceptualJudgment()
+    {
+        var model = Chart.CreateCallout(Rect(0, 0, 200, 120), 42d);
+        Assert.Equal("number", model["encoding"]);
+        Assert.Equal(0, Convert.ToInt32(model["encodingRank"]));   // this toolkit's marker, not C&M's
+        Assert.Equal(1d, Num(model, "lieFactor"), 9);
+    }
+
+    [Theory]
+    [InlineData(1234d, false, 0, "1,234")]
+    [InlineData(1234.56d, false, 2, "1,234.56")]
+    [InlineData(42d, false, 0, "42")]
+    [InlineData(1234d, true, 1, "1.2K")]
+    [InlineData(1234567d, true, 1, "1.2M")]
+    [InlineData(2_500_000_000d, true, 1, "2.5B")]
+    [InlineData(999d, true, 1, "999")]
+    [InlineData(-1500d, true, 1, "-1.5K")]
+    public void TestNumbersAreFormattedForAReader(double value, bool compact, int decimals, string expected)
+    {
+        var model = Chart.CreateCallout(Rect(0, 0, 200, 120), value,
+            new Dictionary<string, object?> { ["compact"] = compact, ["decimals"] = decimals });
+        Assert.Equal(expected, model["display"]);
+    }
+
+    [Fact]
+    public void TestPrefixAndSuffixWrapTheNumber()
+    {
+        var money = Chart.CreateCallout(Rect(0, 0, 200, 120), 1200d,
+            new Dictionary<string, object?> { ["prefix"] = "$", ["compact"] = true });
+        Assert.Equal("$1.2K", money["display"]);
+
+        var pct = Chart.CreateCallout(Rect(0, 0, 200, 120), 61d,
+            new Dictionary<string, object?> { ["unit"] = "%" });
+        Assert.Equal("61%", pct["display"]);
+    }
+
+    /// <summary>Label, value and caption stack down the box without overlapping.</summary>
+    [Fact]
+    public void TestTheThreePartsStackInOrder()
+    {
+        var model = Chart.CreateCallout(Rect(0, 40, 260, 160), 74.1d, new Dictionary<string, object?>
+        {
+            ["label"] = "RENEWABLE SHARE", ["caption"] = "of electricity, 2026", ["unit"] = "%"
+        });
+
+        Assert.True(Num(model, "labelY") < Num(model, "valueY"));
+        Assert.True(Num(model, "valueY") < Num(model, "captionY"));
+        Assert.True(Num(model, "valueSize") > Num(model, "labelSize"));
+        Assert.Equal(40d, Num(model, "labelY"), 3);   // starts at the top of its box
+    }
+
+    /// <summary>With no label the value starts at the top; nothing reserves space for what is absent.</summary>
+    [Fact]
+    public void TestAnAbsentLabelReservesNoSpace()
+    {
+        var bare = Chart.CreateCallout(Rect(0, 40, 260, 160), 12d);
+        Assert.Null(bare["labelY"]);
+        Assert.Null(bare["captionY"]);
+        Assert.Equal(40d, Num(bare, "valueY"), 3);
+    }
+
+    [Theory]
+    [InlineData("left", 100d)]
+    [InlineData("center", 200d)]
+    [InlineData("right", 300d)]
+    public void TestAlignmentMovesTheAnchor(string align, double expected)
+    {
+        var model = Chart.CreateCallout(Rect(100, 0, 200, 120), 5d,
+            new Dictionary<string, object?> { ["align"] = align });
+        Assert.Equal(expected, Num(model, "valueX"), 3);
+    }
+
+    [Fact]
+    public void TestAnUnknownAlignmentIsRefused() =>
+        Assert.Throws<ArgumentException>(() => Chart.CreateCallout(Rect(0, 0, 200, 120), 5d,
+            new Dictionary<string, object?> { ["align"] = "middleish" }));
+    #endregion
+
+    #region Tests — the waffle
+    static IDictionary[] Cells(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["cells"]!).Cast<object>().Select(c => (IDictionary)c!).ToArray();
+
+    static IDictionary[] Parts(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["parts"]!).Cast<object>().Select(p => (IDictionary)p!).ToArray();
+
+    /// <summary>
+    /// Whole cells sum to exactly the grid, whatever the shares.
+    /// </summary>
+    /// <remarks>
+    /// Three parts at a third each is the case that breaks naive rounding: each floors to 33 and one
+    /// cell of a hundred goes unassigned, leaving a waffle that visibly does not fill its own grid.
+    /// </remarks>
+    [Theory]
+    [InlineData(new[] { 1d, 1d, 1d })]
+    [InlineData(new[] { 33.3d, 33.3d, 33.4d })]
+    [InlineData(new[] { 61d, 22d, 17d })]
+    [InlineData(new[] { 1d, 1d, 1d, 1d, 1d, 1d, 1d })]
+    [InlineData(new[] { 99d, 1d })]
+    public void TestEveryCellIsAssignedWhateverTheShares(double[] values)
+    {
+        var model = Chart.CreateWaffle(Rect(0, 0, 200, 200), values);
+        var parts = Parts(model);
+
+        Assert.Equal(100, Convert.ToInt32(model["cellCount"]));
+        Assert.Equal(100, parts.Sum(p => Convert.ToInt32(p["cells"])));
+        Assert.All(Cells(model), c => Assert.True((bool)c["filled"]!));
+    }
+
+    [Fact]
+    public void TestPartsGetCellsInProportionToTheirShare()
+    {
+        var parts = Parts(Chart.CreateWaffle(Rect(0, 0, 200, 200), new[] { 61d, 22d, 17d }));
+
+        Assert.Equal(61, Convert.ToInt32(parts[0]["cells"]));
+        Assert.Equal(22, Convert.ToInt32(parts[1]["cells"]));
+        Assert.Equal(17, Convert.ToInt32(parts[2]["cells"]));
+        Assert.Equal(0.61d, Num(parts[0], "share"), 6);
+    }
+
+    /// <summary>A part's cells are contiguous, so each block reads as one shape.</summary>
+    [Fact]
+    public void TestEachPartsCellsAreContiguous()
+    {
+        var cells = Cells(Chart.CreateWaffle(Rect(0, 0, 200, 200), new[] { 40d, 35d, 25d }));
+        var owners = cells.Select(c => Convert.ToInt32(c["partIndex"])).ToArray();
+
+        // Owner index never decreases, and only changes at a block boundary.
+        for (var i = 1; i < owners.Length; i++) Assert.True(owners[i] >= owners[i - 1]);
+        Assert.Equal(3, owners.Distinct().Count());
+    }
+
+    [Fact]
+    public void TestCellsAreLaidOutRowMajorInsideTheArea()
+    {
+        var model = Chart.CreateWaffle(Rect(10, 20, 210, 210), new[] { 50d, 50d },
+            new Dictionary<string, object?> { ["columns"] = 10, ["rows"] = 10, ["gap"] = 0d });
+        var cells = Cells(model);
+
+        Assert.Equal(10d, Num(cells[0], "x"), 3);
+        Assert.Equal(20d, Num(cells[0], "y"), 3);
+        Assert.Equal(0, Convert.ToInt32(cells[9]["row"]));      // end of the first row
+        Assert.Equal(1, Convert.ToInt32(cells[10]["row"]));     // start of the second
+        Assert.Equal(21d, Num(model, "cellWidth"), 3);
+    }
+
+    /// <summary>An explicit total lets a waffle show a share of something bigger than its parts.</summary>
+    [Fact]
+    public void TestAnExplicitTotalLeavesCellsUnfilled()
+    {
+        var model = Chart.CreateWaffle(Rect(0, 0, 200, 200), new[] { 30d },
+            new Dictionary<string, object?> { ["total"] = 100d });
+
+        Assert.Equal(30, Convert.ToInt32(Parts(model)[0]["cells"]));
+        Assert.Equal(30, Cells(model).Count(c => (bool)c["filled"]!));
+        Assert.Equal(70, Cells(model).Count(c => !(bool)c["filled"]!));
+    }
+
+    /// <summary>Honest about what it is: area unless the reader counts, and you cannot assume they do.</summary>
+    [Fact]
+    public void TestAWaffleReportsItselfAsArea()
+    {
+        var model = Chart.CreateWaffle(Rect(0, 0, 200, 200), new[] { 60d, 40d });
+        Assert.Equal("area", model["encoding"]);
+        Assert.Equal(4, Convert.ToInt32(model["encodingRank"]));
+    }
+
+    [Fact]
+    public void TestAWaffleRefusesNegativePartsAndImpossibleGrids()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            Chart.CreateWaffle(Rect(0, 0, 200, 200), new[] { 60d, -10d }));
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            Chart.CreateWaffle(Rect(0, 0, 20, 20), new[] { 1d },
+                new Dictionary<string, object?> { ["columns"] = 10, ["rows"] = 10, ["gap"] = 8d }));
+        Assert.Contains("10x10", ex.Message);
+    }
+
+    /// <summary>Each call accepts only its own options — a shared list would have let these through.</summary>
+    [Fact]
+    public void TestOptionsAreValidatedPerCall()
+    {
+        // frameWidth is real, but not here.
+        Assert.Throws<ArgumentException>(() => Chart.CreateColumnChart(Rect(0, 0, 200, 200),
+            new[] { 1d, 2d }, new Dictionary<string, object?> { ["frameWidth"] = 10d }));
+
+        // compact is real, but not on a waffle.
+        Assert.Throws<ArgumentException>(() => Chart.CreateWaffle(Rect(0, 0, 200, 200),
+            new[] { 1d }, new Dictionary<string, object?> { ["compact"] = true }));
+
+        // and sort is real, but not on a column chart.
+        Assert.Throws<ArgumentException>(() => Chart.CreateColumnChart(Rect(0, 0, 200, 200),
+            new[] { 1d, 2d }, new Dictionary<string, object?> { ["sort"] = "desc" }));
+    }
+    #endregion
 }

@@ -47,7 +47,7 @@ public class ChartToolkit
     /// this project treats as worst.
     /// </remarks>
     private static readonly string[] KnownOptions =
-        ["baseline", "max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap"];
+        ["baseline", "max", "min", "padding", "tickCount", "labels", "labelGap", "tickGap", "radius", "sort"];
     #endregion
 
     #region Methods
@@ -76,6 +76,136 @@ public class ChartToolkit
         Build(rect, data, options, horizontal: true);
 
     /// <summary>
+    /// A dot chart: value encoded as <b>position along one shared axis</b>, categories down.
+    /// </summary>
+    /// <remarks>
+    /// <b>The form Cleveland and McGill recommend in place of a bar chart</b>, and the reason is their
+    /// measured ranking: a dot read against a common scale is the most accurately decoded judgment
+    /// there is (rank 1), where a bar's length is rank 3. Their own conclusion was that bar charts,
+    /// divided bar charts, pie charts and shaded maps need *"radical surgery"*, with the dot chart as
+    /// the first replacement offered. See <c>polson://manual/13</c> §1a.
+    /// <para>
+    /// <b>Its axis does not have to start at zero, and that is not a licence — it is a consequence.</b>
+    /// A bar claims a <i>ratio</i>, because its length is the quantity, so cropping the axis makes the
+    /// ink assert something false. A dot claims a <i>difference</i>, because only its position carries
+    /// meaning, and under any linear mapping the ratio of pixel distances equals the ratio of value
+    /// differences wherever the axis begins. So <c>lieFactor</c> is 1 here by the nature of the
+    /// encoding rather than by the baseline, and cropping to the data's own range is the ordinary
+    /// thing to do — it is what lets a dot chart show a spread that a zero-based bar chart flattens.
+    /// </para>
+    /// <para>
+    /// Options add <c>radius</c> and <c>sort</c> (<c>'none'</c>, <c>'asc'</c>, <c>'desc'</c>) to the
+    /// set the bar charts take. <b>Sorting is usually right</b>: a form whose whole advantage is
+    /// comparison gets most of that advantage from putting the values in order.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateDotChart(object rect, object data, object? options = null)
+    {
+        var plot = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt);
+
+        var (values, labels) = ReadData(data, opt);
+        if (values.Length == 0) throw new ArgumentException("A chart needs at least one value.", nameof(data));
+
+        var order = SortOrder(values, opt);
+
+        var px = Num(plot, "x");
+        var py = Num(plot, "y");
+        var pw = Num(plot, "width");
+        var ph = Num(plot, "height");
+
+        var padding = Math.Clamp(Opt(opt, "padding", 0.4d), 0d, 0.95d);
+        var tickCount = (int)Opt(opt, "tickCount", 5d);
+        var labelGap = Opt(opt, "labelGap", 8d);
+        var tickGap = Opt(opt, "tickGap", 8d);
+
+        var scaleTk = new ScaleToolkit();
+        var niced = scaleTk.Nice(values.Min(), values.Max(), tickCount);
+        var min = Opt(opt, "min", Convert.ToDouble(niced["min"], CultureInfo.InvariantCulture));
+        var max = Opt(opt, "max", Convert.ToDouble(niced["max"], CultureInfo.InvariantCulture));
+
+        var scale = scaleTk.Linear(min, max, px, px + pw);
+        var band = scaleTk.Band(order.Length, py, py + ph, padding);
+        var radius = Opt(opt, "radius", Math.Clamp(band.Bandwidth * 0.32d, 2d, 9d));
+
+        var dots = new List<Dictionary<string, object>>(order.Length);
+        var labelList = new List<Dictionary<string, object>>(order.Length);
+
+        for (var row = 0; row < order.Length; row++)
+        {
+            var source = order[row];
+            var cy = band.Center(row);
+            var cx = scale.Map(values[source]);
+
+            dots.Add(new Dictionary<string, object>
+            {
+                ["index"] = row,
+                ["sourceIndex"] = source,
+                ["value"] = values[source],
+                ["label"] = labels[source],
+                ["cx"] = cx,
+                ["cy"] = cy,
+                ["radius"] = radius,
+
+                // The leader runs from the category axis to the dot. It is chrome, so it is reported
+                // rather than drawn — see the erasing pass in polson://manual/13 §3.
+                ["leaderX1"] = px,
+                ["leaderY1"] = cy,
+                ["leaderX2"] = cx,
+                ["leaderY2"] = cy
+            });
+
+            labelList.Add(new Dictionary<string, object>
+            {
+                ["text"] = labels[source],
+                ["x"] = px - labelGap,
+                ["y"] = cy,
+                ["align"] = "right",
+                ["baseline"] = "middle",
+                ["index"] = row
+            });
+        }
+
+        var ticks = scale.Ticks(tickCount).Select(t => new Dictionary<string, object>
+        {
+            ["value"] = t,
+            ["position"] = scale.Map(t),
+            ["label"] = Format(t),
+            ["x"] = scale.Map(t),
+            ["y"] = py + ph + tickGap
+        }).ToArray();
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "dot",
+            ["plot"] = Rect(px, py, pw, ph),
+            ["bounds"] = Rect(px, py, pw, ph),
+            ["scale"] = scale,
+            ["band"] = band,
+            ["dots"] = dots.ToArray(),
+            ["ticks"] = ticks,
+            ["labels"] = labelList.ToArray(),
+            ["min"] = min,
+            ["max"] = max,
+            ["radius"] = radius,
+            ["sorted"] = (opt?["sort"]?.ToString() ?? "none").ToLowerInvariant(),
+
+            // Rank 1: position along a common scale, the most accurately decoded judgment there is.
+            ["encoding"] = "position",
+            ["encodingRank"] = 1,
+            ["isZeroBased"] = scale.IsZeroBased,
+
+            // Position encodes differences, and a linear mapping preserves their ratios wherever the
+            // axis starts — so this is 1 whether or not the axis is cropped. See the remarks above.
+            ["lieFactor"] = 1d
+        };
+    }
+
+    /// <summary>
     /// The marks of a chart model as geometry: one path per bar, plus the whole set unioned.
     /// </summary>
     /// <remarks>
@@ -91,23 +221,35 @@ public class ChartToolkit
                 "createChartGeometry(...) takes a chart model from Chart.createColumnChart(...) or "
                 + "Chart.createBarChart(...).", nameof(chartModel));
 
-        if (model["bars"] is not IEnumerable rows)
-        {
-            throw new ArgumentException(
-                "That does not look like a chart model — it has no 'bars'.", nameof(chartModel));
-        }
+        // One geometry call for every form: the model says which marks it has, and each shape knows
+        // how to become a path. A caller clipping a texture into a chart should not have to know
+        // whether it was built from bars or dots.
+        var rows = (model["bars"] ?? model["dots"]) as IEnumerable
+            ?? throw new ArgumentException(
+                "That does not look like a chart model — it has neither 'bars' nor 'dots'.",
+                nameof(chartModel));
 
+        var circular = model["dots"] is not null;
         var marks = new List<CanvasPath>();
         CanvasPath? silhouette = null;
 
         foreach (var row in rows)
         {
-            var bar = JsInterop.AsDict(row);
-            if (bar is null) continue;
+            var mark = JsInterop.AsDict(row);
+            if (mark is null) continue;
 
             var path = new CanvasPath();
-            path.Rect((float)Num(bar, "x"), (float)Num(bar, "y"),
-                (float)Num(bar, "width"), (float)Num(bar, "height"));
+            if (circular)
+            {
+                path.Arc((float)Num(mark, "cx"), (float)Num(mark, "cy"),
+                    (float)Num(mark, "radius"), 0f, (float)(Math.PI * 2d));
+            }
+            else
+            {
+                path.Rect((float)Num(mark, "x"), (float)Num(mark, "y"),
+                    (float)Num(mark, "width"), (float)Num(mark, "height"));
+            }
+
             marks.Add(path);
             silhouette = silhouette is null ? path : silhouette.Union(path);
         }
@@ -280,6 +422,27 @@ public class ChartToolkit
         var shown = (hi - baseline) / (lo - baseline);
         var actual = hi / lo;
         return shown / actual;
+    }
+
+    /// <summary>The row order a dot chart draws in — given order, or sorted by value.</summary>
+    /// <remarks>
+    /// Returns indices into the original data rather than reordering it, so every dot keeps a
+    /// <c>sourceIndex</c> back to the row it came from. A caller colouring dots from a parallel array
+    /// would otherwise silently mismatch them the moment sorting was switched on.
+    /// </remarks>
+    static int[] SortOrder(double[] values, IDictionary? opt)
+    {
+        var order = Enumerable.Range(0, values.Length).ToArray();
+        var how = opt?["sort"]?.ToString()?.ToLowerInvariant();
+
+        return how switch
+        {
+            null or "" or "none" => order,
+            "asc" or "ascending" => [.. order.OrderBy(i => values[i])],
+            "desc" or "descending" => [.. order.OrderByDescending(i => values[i])],
+            _ => throw new ArgumentException(
+                $"sort must be 'none', 'asc' or 'desc'; got '{how}'.", nameof(opt))
+        };
     }
 
     static void RefuseUnknownOptions(IDictionary? opt)

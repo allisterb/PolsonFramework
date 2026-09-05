@@ -76,17 +76,32 @@ are spending accuracy — sometimes worth it for density or for the picture, but
 > scale is *stipulated* to beat position on non-aligned scales, while their third experiment found
 > the two nearly identical. Use the top of the list as fact and the bottom as informed argument.
 
-### 1b. The forms they recommend, which we cannot yet draw
+### 1b. The forms they recommend
 
 Their conclusion is blunter than the ranking is usually reported to be: bar charts, divided bar
 charts, pie charts and shaded maps need *"radical surgery"*, and they offer replacements — the **dot
 chart**, the **dot chart with grouping**, and the **framed-rectangle chart** (which replaces a
 choropleth's shading, rank 6, with position in a frame, rank 1–2).
 
-**The SDK has none of the three.** Building them is on the toolkit list, not in this manual. Until
-then, the honest move where a dot chart is indicated is a **horizontal bar sorted by value**, whose
-length is rank 3 rather than rank 1 — and to say in a `Stage.note` that you traded accuracy for what
-was available.
+**`Chart.createDotChart(...)` is the first of the three, and where a bar chart would do, it is the
+better default.** Same data, same shape of call, and the reader's task drops from rank 3 to rank 1:
+
+```js
+const chart = Chart.createDotChart(panel, rows, { sort: 'desc' });
+```
+
+Sort it. A form whose advantage is comparison gets most of that advantage from ordering the values.
+
+**Its axis need not start at zero, and that is the point rather than a concession.** A bar's length
+*is* its quantity, so it claims a ratio and must start at zero (§2). A dot claims only a difference,
+and a linear mapping preserves the ratios of differences wherever the axis begins — so a dot chart
+can crop to the data's own range and show a spread that a zero-based bar chart flattens into five
+bars of nearly equal length. The model reports `lieFactor: 1` and `isZeroBased: false` together, and
+both are correct.
+
+**The other two do not exist yet.** Grouped dot charts and framed-rectangle charts are on the toolkit
+list. Where a *framed-rectangle* map is indicated, the honest move is to say in a `Stage.note` which
+form you used instead and that shading is rank 6.
 
 ### Form-level anti-patterns
 

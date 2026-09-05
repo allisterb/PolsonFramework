@@ -1400,6 +1400,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 
 - `Chart.createColumnChart(rect, data, options?)` → `object` — Categories across, values up.
 - `Chart.createBarChart(rect, data, options?)` → `object` — Categories down, values across. Usually the better of the two: horizontal bars give category labels room to be words.
+- `Chart.createDotChart(rect, data, options?)` → `object` — Value as **position on one shared axis**, categories down. The most accurately decoded form there is, and the one Cleveland & McGill offer in place of a bar chart. Adds `radius` and `sort` (`'none'`, `'asc'`, `'desc'`) to the options.
 - `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry.
 - `Chart.drawChart(ctx, chartModel)` → the same geometry — Fills the marks with the context's current `fillStyle` and returns what it drew.
 
@@ -1414,7 +1415,8 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `type` | `'column'` or `'bar'` |
 | `plot` · `bounds` | the rectangle the marks occupy |
 | `scale` · `band` | the `LinearScale` and `BandScale` used, so you can place anything else against them |
-| `bars` | one rectangle per datum, each with `x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`, plus `index`, `value` and `label` |
+| `bars` | *(bar/column)* one rectangle per datum, each with `x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`, plus `index`, `value` and `label` |
+| `dots` | *(dot)* one per datum with `cx`, `cy`, `radius`, `value`, `label`, `index`, `sourceIndex`, and `leaderX1/Y1/X2/Y2` for the line from the axis |
 | `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
 | `labels` | `{ text, x, y, align, baseline, index }` for the categories |
 | `baseline` · `baselinePosition` | the value, and the pixel it maps to |
@@ -1425,6 +1427,13 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 > **`ticks` and `labels` are data rather than drawn marks, and `drawChart` deliberately draws neither.** The caller owns their typography, and declining to draw them *is* the erasing pass of `polson://manual/13` §3 — a decision rather than an edit to a function.
 >
 > **`lieFactor` is computed for you.** On a zero baseline it is exactly `1`, which is the point: it is not a rule to remember but the number that says whether the rules held. A truncated baseline reports the distortion — 100 and 104 drawn from a baseline of 96 gives `1.92` — and a baseline that clips a bar away entirely reports `Infinity` rather than some large finite number that might be mistaken for a measurement.
+
+> [!IMPORTANT]
+> **A dot chart's axis does not have to start at zero, and that is a consequence rather than a licence.** A bar claims a **ratio**, because its length *is* the quantity, so cropping the axis makes the ink assert something false. A dot claims a **difference**, because only its position carries meaning — and under any linear mapping the ratio of pixel distances equals the ratio of value differences wherever the axis begins.
+>
+> So `lieFactor` is `1` for a dot chart by the nature of the encoding, not by the baseline, and `isZeroBased` may be `false` without anything being wrong. Cropping to the data's own range is the ordinary thing to do: it is exactly what lets a dot chart show a spread that a zero-based bar chart flattens into five bars of nearly equal length.
+>
+> **`sort` is usually worth setting.** A form whose whole advantage is comparison gets most of that advantage from putting the values in order. Sorting reorders the rows but never the data — every dot keeps a `sourceIndex` back to the row it came from, so a parallel array of colours still lines up.
 
 > [!TIP]
 > **Small multiples share one scale by passing `max`.** This is the one rule in `polson://manual/13` §2 that no single panel can detect, because each panel is individually correct:

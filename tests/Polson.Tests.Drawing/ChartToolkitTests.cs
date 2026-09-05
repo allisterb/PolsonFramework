@@ -265,4 +265,122 @@ public class ChartToolkitTests : TestsRuntime
         }
     }
     #endregion
+
+    #region Tests — the dot chart
+    static IDictionary[] Dots(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["dots"]!).Cast<object>().Select(d => (IDictionary)d!).ToArray();
+
+    /// <summary>Position, not length: the dot's x is the value's place on a shared axis.</summary>
+    [Fact]
+    public void TestDotsSitAtTheirValuesPositionOnACommonScale()
+    {
+        var model = Chart.CreateDotChart(Rect(0, 0, 400, 200), new[] { 10d, 50d, 90d },
+            new Dictionary<string, object?> { ["min"] = 0d, ["max"] = 100d });
+        var dots = Dots(model);
+
+        Assert.Equal(40d, Num(dots[0], "cx"), 3);
+        Assert.Equal(200d, Num(dots[1], "cx"), 3);
+        Assert.Equal(360d, Num(dots[2], "cx"), 3);
+
+        // Every dot shares one axis, which is what makes it rank 1.
+        Assert.Equal("position", model["encoding"]);
+        Assert.Equal(1, Convert.ToInt32(model["encodingRank"]));
+    }
+
+    /// <summary>Rows advance down the category axis and each dot keeps its own row.</summary>
+    [Fact]
+    public void TestDotsAdvanceDownTheCategoryAxis()
+    {
+        var dots = Dots(Chart.CreateDotChart(Rect(0, 0, 400, 200), new[] { 1d, 2d, 3d }));
+        Assert.True(Num(dots[0], "cy") < Num(dots[1], "cy"));
+        Assert.True(Num(dots[1], "cy") < Num(dots[2], "cy"));
+    }
+
+    /// <summary>
+    /// A cropped axis is legitimate here, and the model says so rather than reporting distortion.
+    /// </summary>
+    /// <remarks>
+    /// A bar claims a ratio and must start at zero; a dot claims a difference, and a linear mapping
+    /// preserves the ratios of differences wherever the axis begins. The same data would fail the
+    /// bar chart's check and passes this one, which is the distinction being pinned.
+    /// </remarks>
+    [Fact]
+    public void TestACroppedAxisIsNotDistortionForAPositionEncoding()
+    {
+        var values = new[] { 100d, 104d };
+
+        var dot = Chart.CreateDotChart(Rect(0, 0, 400, 200), values);
+        Assert.False((bool)dot["isZeroBased"]!);
+        Assert.Equal(1d, Num(dot, "lieFactor"), 9);
+
+        var column = Chart.CreateColumnChart(Rect(0, 0, 400, 200), values,
+            new Dictionary<string, object?> { ["baseline"] = 96d });
+        Assert.True(Num(column, "lieFactor") > 1.05d);
+    }
+
+    /// <summary>Differences keep their ratios under a cropped axis — the claim above, measured.</summary>
+    [Fact]
+    public void TestDifferencesKeepTheirRatiosWhateverTheAxisStartsAt()
+    {
+        var values = new[] { 20d, 30d, 60d };
+        var wide = Dots(Chart.CreateDotChart(Rect(0, 0, 400, 200), values,
+            new Dictionary<string, object?> { ["min"] = 0d, ["max"] = 100d }));
+        var cropped = Dots(Chart.CreateDotChart(Rect(0, 0, 400, 200), values,
+            new Dictionary<string, object?> { ["min"] = 15d, ["max"] = 65d }));
+
+        double Gap(IDictionary[] d, int a, int b) => Math.Abs(Num(d[b], "cx") - Num(d[a], "cx"));
+
+        // 30-20 against 60-30 is 1:3 in the data, and must stay 1:3 in the ink either way.
+        Assert.Equal(Gap(wide, 0, 1) / Gap(wide, 1, 2), Gap(cropped, 0, 1) / Gap(cropped, 1, 2), 6);
+    }
+
+    [Fact]
+    public void TestSortingReordersRowsAndKeepsTheSourceIndex()
+    {
+        var data = new object[]
+        {
+            new Dictionary<string, object?> { ["label"] = "a", ["value"] = 30d },
+            new Dictionary<string, object?> { ["label"] = "b", ["value"] = 10d },
+            new Dictionary<string, object?> { ["label"] = "c", ["value"] = 20d }
+        };
+
+        var sorted = Dots(Chart.CreateDotChart(Rect(0, 0, 400, 200), data,
+            new Dictionary<string, object?> { ["sort"] = "desc" }));
+
+        Assert.Equal(["a", "c", "b"], sorted.Select(d => d["label"]?.ToString()));
+
+        // The row moved; the pointer back to the original data did not.
+        Assert.Equal([0, 2, 1], sorted.Select(d => Convert.ToInt32(d["sourceIndex"])));
+    }
+
+    [Fact]
+    public void TestAnUnknownSortIsRefused() =>
+        Assert.Throws<ArgumentException>(() => Chart.CreateDotChart(Rect(0, 0, 400, 200),
+            new[] { 1d, 2d }, new Dictionary<string, object?> { ["sort"] = "sideways" }));
+
+    /// <summary>The leader runs from the category axis to the dot, and is reported, not drawn.</summary>
+    [Fact]
+    public void TestEachDotCarriesItsLeaderLine()
+    {
+        var model = Chart.CreateDotChart(Rect(40, 0, 300, 200), new[] { 10d, 90d });
+        foreach (var dot in Dots(model))
+        {
+            Assert.Equal(40d, Num(dot, "leaderX1"), 3);
+            Assert.Equal(Num(dot, "cx"), Num(dot, "leaderX2"), 3);
+            Assert.Equal(Num(dot, "cy"), Num(dot, "leaderY1"), 3);
+        }
+    }
+
+    /// <summary>One geometry call serves both forms — a caller need not know which it holds.</summary>
+    [Fact]
+    public void TestGeometryWorksForDotsAsWellAsBars()
+    {
+        var dots = Chart.CreateChartGeometry(Chart.CreateDotChart(Rect(0, 0, 400, 200), new[] { 10d, 40d, 25d }));
+        Assert.Equal(3, ((CanvasPath[])dots["marks"]!).Length);
+        Assert.NotNull(dots["silhouette"]);
+
+        var bars = Chart.CreateChartGeometry(Chart.CreateColumnChart(Rect(0, 0, 400, 200), new[] { 10d, 40d, 25d }));
+        Assert.Equal(3, ((CanvasPath[])bars["marks"]!).Length);
+    }
+    #endregion
 }

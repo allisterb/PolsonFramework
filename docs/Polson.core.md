@@ -1416,6 +1416,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 - `Chart.createFramedRectangleChart(rect, data, options?)` → `object` — A value as a **level inside an identical box**, placed anywhere. What Cleveland & McGill offer in place of a **shaded map**. Rows carry `x` and `y` in the plot's own coordinate space; rows without them are laid out on a grid. Adds `frameWidth`, `frameHeight`, `columns` and `gap`.
 - `Chart.createCallout(rect, value, options?)` → `object` — One number, made big, with an optional `label` and `caption`. The right answer when there is only one value — a reader *reads* it rather than judging it. `compact: true` turns 1,234,567 into `1.2M`. Options: `label`, `caption`, `unit`/`suffix`, `prefix`, `decimals`, `compact`, `valueSize`, `labelSize`, `captionSize`, `align`.
 - `Chart.createWaffle(rect, parts, options?)` → `object` — A grid of cells divided between parts. More honest than a donut, because a waffle can be *counted*. Options: `columns` (10), `rows` (10), `gap`, `total`, `labels`.
+- `Chart.createPictogram(rect, data, options?)` → `object` — A value as a row of **repeated identical icons**, one per `unit`. The isotype idiom: 47,000 people as five little figures at 10,000 each. Options: `unit`, `iconSize`, `gap`, `rowGap`, `labels`, `labelGap`, `partial` (`'clip'` or `'whole'`), `max`.
 - `Chart.createSmallMultiples(rect, series, options?)` → `object` — A grid of panels **sharing one scale**, computed across every series before any panel is built. `series` is `[{ label, data }]` or an array of arrays; `form` picks what each panel is (`'column'`, `'bar'`, `'dot'`, `'groupedDot'`, `'framedRectangle'`). Adds `columns`, `gap`, `rowGap`, `titleHeight`.
 - `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], frames: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry. `frames` is populated for framed rectangles and empty otherwise.
 - `Chart.drawChart(ctx, chartModel)` → the same geometry — Fills the marks with the context's current `fillStyle` and returns what it drew.
@@ -1438,6 +1439,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `items` | *(framed rectangle)* `{ label, value, anchorX, anchorY, frame, fill, fraction, index }` — the reference box, the filled part, and how full it is from 0 to 1 |
 | `display` | *(callout)* the formatted number, plus `valueX/Y/Size`, `labelX/Y/Size`, `captionX/Y/Size` as anchors to draw at |
 | `cells` · `parts` | *(waffle)* every cell with its `partIndex` and `filled`, and each part's `share`, `cells` and `firstCell` |
+| `icons` · `rows` | *(pictogram)* every icon with its `rowIndex`, `fraction`, `partial` flag and `clip` rectangle, and each row's `fullIcons`, `partialFraction` and drawn `width` |
 | `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
 | `labels` | `{ text, x, y, align, baseline, index }` for the categories |
 | `baseline` · `baselinePosition` | the value, and the pixel it maps to |
@@ -1501,6 +1503,25 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 > **A waffle reports itself as `area`, rank 4, deliberately.** A reader who counts cells gets an exact answer — that is why it beats a donut, whose angle is rank 3 but uncountable — but you cannot assume anyone will count. Rank 4 is what the graphic is worth if nobody does, and claiming the exactness of counting would be the flattering assumption rather than the safe one.
 >
 > **Cells are whole, so shares are apportioned by largest remainder.** Rounding each share on its own is the obvious approach and does not add up: three parts at a third each floor to 33 cells apiece and leave one of a hundred unassigned. Every cell is assigned and the counts sum to exactly the grid.
+
+> [!IMPORTANT]
+> **A pictogram repeats the icon and never scales it, and the construction makes that impossible to get wrong.** Doubling an icon's height to mean double **quadruples its area**, so the reader sees four times the quantity — the same failure `Scale.radiusFor` exists to prevent, and the commonest way a pictogram lies. Every icon box here is identical, and a part-unit is shown by **clipping** one:
+>
+> ```javascript
+> for (const icon of picto.icons) {
+>     if (!icon.partial) { drawFigure(ctx, icon); continue; }
+>     ctx.save();
+>     const clip = new CanvasPath();
+>     clip.rect(icon.clip.x, icon.clip.y, icon.clip.width, icon.clip.height);
+>     ctx.clip(clip);
+>     drawFigure(ctx, icon);       // full size, cut short — never a smaller figure
+>     ctx.restore();
+> }
+> ```
+>
+> `unit` is what one icon is worth; left out, a **round** value is chosen from the same tick logic the axes use, so the reader is never asked to multiply by 3,700. `partial: 'whole'` rounds to a whole icon instead, which is honest only when the unit is small. A row that cannot fit is refused with the arithmetic and a unit that would work.
+>
+> Reported as **`count`, rank 3** — the same as the bar a row of icons visually is. Counting is the form's upside, not its claim.
 
 > [!TIP]
 > **`fraction` is a position on the scale, not a rank.** It is how many floors a tower gets or how full a bottle is, so it tracks the scale rather than the ordering — and with a niced maximum sitting above the data, the largest value does **not** reach 1. A mark that treats `fraction === 1` as "this is the biggest" will be wrong; compare values for that, or pass an explicit `max`.

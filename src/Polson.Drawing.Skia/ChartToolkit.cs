@@ -91,6 +91,9 @@ public class ChartToolkit
 
     private static readonly string[] WaffleOptions =
         ["columns", "rows", "gap", "total", "labels"];
+
+    private static readonly string[] PictogramOptions =
+        ["unit", "iconSize", "gap", "rowGap", "labels", "labelGap", "partial", "max"];
     #endregion
 
     #region Methods
@@ -959,6 +962,179 @@ public class ChartToolkit
     }
 
     /// <summary>
+    /// A pictogram: a value as a row of <b>repeated identical icons</b>, one per unit.
+    /// </summary>
+    /// <remarks>
+    /// The isotype idiom, and the most durable one in this file for advertising work: forty-seven
+    /// thousand people drawn as five little figures at ten thousand each says the number and shows the
+    /// subject in the same mark.
+    /// <para>
+    /// <b>The rule the form lives or dies by: repeat the icon, never scale it.</b> Doubling an icon's
+    /// height to mean double quadruples its area, so the reader sees four times the quantity — the same
+    /// failure <c>Scale.radiusFor</c> exists to prevent, and the commonest way a pictogram lies. This
+    /// construction cannot commit it: every icon box is identical by construction and a part-unit is
+    /// shown by <b>clipping</b> one, never by shrinking it.
+    /// </para>
+    /// <para>
+    /// <b>Reported as <c>count</c> at rank 3</b> — the same as the bar it visually is. A reader who
+    /// counts icons gets an exact answer, which is the form's real advantage, but a row of icons read
+    /// as a row is a length judgment and that is the safe assumption. Same reasoning as the waffle.
+    /// </para>
+    /// <para>
+    /// <c>unit</c> is what one icon is worth; left out, a round value is chosen so the largest row
+    /// holds roughly ten. <c>partial</c> is <c>'clip'</c> (default) to show a fractional icon, or
+    /// <c>'whole'</c> to round to a whole one — which is honest only if the unit is small.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreatePictogram(object rect, object data, object? options = null)
+    {
+        var area = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A pictogram needs a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt, PictogramOptions);
+
+        var (values, labels) = ReadData(data, opt);
+        if (values.Length == 0) throw new ArgumentException("A pictogram needs at least one row.", nameof(data));
+        if (values.Any(v => v < 0d))
+        {
+            throw new ArgumentException("A pictogram counts units, so no value may be negative.", nameof(data));
+        }
+
+        var px = Num(area, "x");
+        var py = Num(area, "y");
+        var pw = Num(area, "width");
+        var ph = Num(area, "height");
+
+        var biggest = Opt(opt, "max", values.Max());
+        if (biggest <= 0d) throw new ArgumentException("A pictogram needs a positive value.", nameof(data));
+
+        // A round unit, chosen so the longest row holds about ten icons — reusing the tick logic
+        // rather than inventing a second idea of what a round number is.
+        var unit = Opt(opt, "unit", DefaultUnit(biggest));
+        if (unit <= 0d) throw new ArgumentException("unit must be positive.", nameof(options));
+
+        var whole = string.Equals(opt?["partial"]?.ToString(), "whole", StringComparison.OrdinalIgnoreCase);
+        var gap = Opt(opt, "gap", 4d);
+        var rowGap = Opt(opt, "rowGap", 10d);
+        var labelGap = Opt(opt, "labelGap", 8d);
+
+        var widest = (int)Math.Ceiling(biggest / unit - 1e-9);
+        if (widest <= 0) widest = 1;
+
+        var rowHeight = (ph - rowGap * (values.Length - 1)) / values.Length;
+        var byWidth = (pw - gap * (widest - 1)) / widest;
+        var iconSize = Opt(opt, "iconSize", Math.Min(rowHeight, byWidth));
+
+        if (iconSize <= 0d)
+        {
+            var needed = unit * Math.Ceiling(widest / Math.Max(1d, Math.Floor(pw / (8d + gap))));
+            throw new ArgumentException(
+                $"{widest} icons of unit {Format(unit)} do not fit across {pw:0} px. "
+                + $"Raise unit to about {Format(needed)}, or give the pictogram a wider area.",
+                nameof(rect));
+        }
+
+        var rows = new List<Dictionary<string, object>>(values.Length);
+        var icons = new List<Dictionary<string, object>>();
+        var labelList = new List<Dictionary<string, object>>(values.Length);
+
+        for (var r = 0; r < values.Length; r++)
+        {
+            var top = py + r * (rowHeight + rowGap);
+            var exact = values[r] / unit;
+            var full = whole ? (int)Math.Round(exact, MidpointRounding.AwayFromZero) : (int)Math.Floor(exact + 1e-9);
+            var part = whole ? 0d : exact - full;
+            if (part < 1e-9) part = 0d;
+
+            var firstIcon = icons.Count;
+            var count = full + (part > 0d ? 1 : 0);
+
+            for (var i = 0; i < count; i++)
+            {
+                var isPartial = part > 0d && i == full;
+                var fraction = isPartial ? part : 1d;
+                var x = px + i * (iconSize + gap);
+
+                var icon = Rect(x, top, iconSize, iconSize);
+                icon["index"] = icons.Count;
+                icon["rowIndex"] = r;
+                icon["positionInRow"] = i;
+                icon["label"] = labels[r];
+                icon["value"] = values[r];
+
+                // Whole or part, the box is the same size. A part-unit is drawn by clipping to this
+                // rectangle, never by scaling the icon — see the remarks.
+                icon["fraction"] = fraction;
+                icon["partial"] = isPartial;
+                icon["clip"] = Rect(x, top, iconSize * fraction, iconSize);
+
+                // Slot fields, so the armature reaches an icon exactly as it reaches a bar.
+                icon["baseX"] = x + iconSize / 2d;
+                icon["baseY"] = top + iconSize;
+                icon["tipX"] = x + iconSize / 2d;
+                icon["tipY"] = top;
+                icon["length"] = iconSize;
+                icon["thickness"] = iconSize;
+                icon["angleDeg"] = 0d;
+
+                icons.Add(icon);
+            }
+
+            rows.Add(new Dictionary<string, object>
+            {
+                ["index"] = r,
+                ["label"] = labels[r],
+                ["value"] = values[r],
+                ["fullIcons"] = full,
+                ["partialFraction"] = part,
+                ["iconCount"] = count,
+                ["firstIcon"] = firstIcon,
+                ["y"] = top,
+                ["height"] = iconSize,
+                ["width"] = count > 0 ? (count - 1) * (iconSize + gap) + iconSize : 0d
+            });
+
+            labelList.Add(new Dictionary<string, object>
+            {
+                ["text"] = labels[r],
+                ["x"] = px - labelGap,
+                ["y"] = top + iconSize / 2d,
+                ["align"] = "right",
+                ["baseline"] = "middle",
+                ["index"] = r
+            });
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "pictogram",
+            ["plot"] = Rect(px, py, pw, ph),
+            ["bounds"] = Rect(px, py, pw, ph),
+            ["rows"] = rows.ToArray(),
+            ["icons"] = icons.ToArray(),
+
+            // Each icon is a place to draw a mark, so the armature is the icon list itself.
+            ["slots"] = icons.ToArray(),
+
+            ["labels"] = labelList.ToArray(),
+            ["unit"] = unit,
+            ["iconSize"] = iconSize,
+            ["gap"] = gap,
+            ["widestRow"] = widest,
+            ["partial"] = whole ? "whole" : "clip",
+
+            // A row of identical icons is the bar it looks like unless the reader counts, and you
+            // cannot assume they will. Counting is the upside, not the claim.
+            ["encoding"] = "count",
+            ["encodingRank"] = 3,
+            ["isZeroBased"] = true,
+            ["lieFactor"] = 1d
+        };
+    }
+
+    /// <summary>
     /// The marks of a chart model as geometry: one path per bar, plus the whole set unioned.
     /// </summary>
     /// <remarks>
@@ -1269,6 +1445,19 @@ public class ChartToolkit
         }
 
         return counts;
+    }
+
+    /// <summary>A round value per icon, sized so the longest row holds roughly ten.</summary>
+    /// <remarks>
+    /// Taken from the tick logic rather than invented, so "round" means the same thing here as it does
+    /// on an axis: 1, 2 or 5 times a power of ten. A unit of 3,700 would be arithmetically fine and
+    /// useless to a reader who has to multiply by it.
+    /// </remarks>
+    static double DefaultUnit(double biggest)
+    {
+        var ticks = new ScaleToolkit().Ticks(0d, biggest, 10);
+        var step = ticks.Length > 1 ? ticks[1] - ticks[0] : biggest;
+        return step > 0d ? step : Math.Max(1d, biggest);
     }
 
     /// <summary>A number as a reader should see it: grouped, rounded, and optionally compacted.</summary>

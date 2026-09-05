@@ -1187,4 +1187,160 @@ public class ChartToolkitTests : TestsRuntime
         foreach (var panel in Panels(grid)) Assert.Equal(3, Slots(PanelChart(panel)).Length);
     }
     #endregion
+
+    #region Tests — the pictogram
+    static IDictionary[] Icons(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["icons"]!).Cast<object>().Select(i => (IDictionary)i!).ToArray();
+
+    static IDictionary[] Rows(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["rows"]!).Cast<object>().Select(r => (IDictionary)r!).ToArray();
+
+    /// <summary>
+    /// Every icon is the same size — the rule the whole form depends on.
+    /// </summary>
+    /// <remarks>
+    /// Scaling an icon to mean more is the classic isotype lie: double the height and the area
+    /// quadruples, so the reader sees four times the quantity. This construction cannot commit it,
+    /// and a part-unit is shown by clipping an identical box rather than by shrinking one.
+    /// </remarks>
+    [Fact]
+    public void TestEveryIconIsIdenticallySized()
+    {
+        var icons = Icons(Chart.CreatePictogram(Rect(0, 0, 500, 200),
+            new[] { 47d, 12d, 33d }, new Dictionary<string, object?> { ["unit"] = 10d }));
+
+        var size = Num(icons[0], "width");
+        foreach (var icon in icons)
+        {
+            Assert.Equal(size, Num(icon, "width"), 6);
+            Assert.Equal(size, Num(icon, "height"), 6);   // including the partial ones
+        }
+    }
+
+    /// <summary>A part-unit clips an identical box; the box never shrinks.</summary>
+    [Fact]
+    public void TestAPartialUnitIsClippedNotScaled()
+    {
+        var model = Chart.CreatePictogram(Rect(0, 0, 500, 200), new[] { 47d },
+            new Dictionary<string, object?> { ["unit"] = 10d });
+        var icons = Icons(model);
+
+        Assert.Equal(5, icons.Length);                        // four whole and one part
+        Assert.Equal(4, Convert.ToInt32(Rows(model)[0]["fullIcons"]));
+        Assert.Equal(0.7d, Num(Rows(model)[0], "partialFraction"), 6);
+
+        var partial = icons[4];
+        Assert.True((bool)partial["partial"]!);
+        Assert.Equal(0.7d, Num(partial, "fraction"), 6);
+
+        // The box is full size; only the clip is short.
+        Assert.Equal(Num(icons[0], "width"), Num(partial, "width"), 6);
+        Assert.Equal(Num(icons[0], "width") * 0.7d, Num((IDictionary)partial["clip"]!, "width"), 6);
+        Assert.Equal(Num(icons[0], "height"), Num((IDictionary)partial["clip"]!, "height"), 6);
+    }
+
+    [Theory]
+    [InlineData(40d, 10d, 4, 0d)]
+    [InlineData(47d, 10d, 4, 0.7d)]
+    [InlineData(5d, 10d, 0, 0.5d)]
+    [InlineData(100d, 25d, 4, 0d)]
+    public void TestIconCountsFollowTheUnit(double value, double unit, int full, double part)
+    {
+        var row = Rows(Chart.CreatePictogram(Rect(0, 0, 500, 200), new[] { value },
+            new Dictionary<string, object?> { ["unit"] = unit, ["max"] = 100d }))[0];
+
+        Assert.Equal(full, Convert.ToInt32(row["fullIcons"]));
+        Assert.Equal(part, Num(row, "partialFraction"), 6);
+    }
+
+    /// <summary>Rounding to whole icons is available, and says so in the model.</summary>
+    [Fact]
+    public void TestWholeUnitModeRoundsAndReportsItself()
+    {
+        var model = Chart.CreatePictogram(Rect(0, 0, 500, 200), new[] { 47d },
+            new Dictionary<string, object?> { ["unit"] = 10d, ["partial"] = "whole" });
+
+        Assert.Equal("whole", model["partial"]);
+        Assert.Equal(5, Convert.ToInt32(Rows(model)[0]["fullIcons"]));   // 4.7 rounds to 5
+        Assert.Equal(0d, Num(Rows(model)[0], "partialFraction"), 6);
+        Assert.All(Icons(model), i => Assert.False((bool)i["partial"]!));
+    }
+
+    /// <summary>Icons advance across a row; rows advance down the block.</summary>
+    [Fact]
+    public void TestIconsRunAcrossAndRowsRunDown()
+    {
+        var model = Chart.CreatePictogram(Rect(10, 20, 500, 200), new[] { 30d, 20d },
+            new Dictionary<string, object?> { ["unit"] = 10d });
+        var icons = Icons(model);
+
+        Assert.Equal(10d, Num(icons[0], "x"), 3);
+        Assert.Equal(20d, Num(icons[0], "y"), 3);
+        Assert.True(Num(icons[1], "x") > Num(icons[0], "x"));
+        Assert.Equal(Num(icons[0], "y"), Num(icons[1], "y"), 3);
+
+        // The fourth icon is the first of the second row.
+        Assert.Equal(1, Convert.ToInt32(icons[3]["rowIndex"]));
+        Assert.True(Num(icons[3], "y") > Num(icons[0], "y"));
+        Assert.Equal(10d, Num(icons[3], "x"), 3);
+    }
+
+    /// <summary>A unit is chosen as a round number, not an arithmetically convenient one.</summary>
+    [Theory]
+    [InlineData(47000d)]
+    [InlineData(93d)]
+    [InlineData(6.2d)]
+    public void TestADefaultUnitIsARoundNumber(double biggest)
+    {
+        var unit = Num(Chart.CreatePictogram(Rect(0, 0, 600, 200), new[] { biggest }), "unit");
+
+        // 1, 2 or 5 times a power of ten — the same idea of "round" the axis ticks use.
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(unit)));
+        var normalised = Math.Round(unit / magnitude, 6);
+        Assert.Contains(normalised, new[] { 1d, 2d, 2.5d, 5d });
+        Assert.InRange(biggest / unit, 3d, 20d);
+    }
+
+    /// <summary>Icons are slots, so the armature reaches them exactly as it reaches bars.</summary>
+    [Fact]
+    public void TestIconsAreSlots()
+    {
+        var model = Chart.CreatePictogram(Rect(0, 0, 500, 200), new[] { 30d, 20d },
+            new Dictionary<string, object?> { ["unit"] = 10d });
+
+        Assert.Equal(Icons(model).Length, Slots(model).Length);
+        foreach (var slot in Slots(model))
+        {
+            Assert.True(Num(slot, "thickness") > 0d);
+            Assert.Equal(0d, Num(slot, "angleDeg"), 3);
+            Assert.True(Num(slot, "baseY") > Num(slot, "tipY"));
+        }
+    }
+
+    /// <summary>Counting is the upside, not the claim.</summary>
+    [Fact]
+    public void TestAPictogramReportsItselfAsARowNotACount()
+    {
+        var model = Chart.CreatePictogram(Rect(0, 0, 500, 200), new[] { 30d });
+        Assert.Equal("count", model["encoding"]);
+        Assert.Equal(3, Convert.ToInt32(model["encodingRank"]));   // the bar it visually is
+        Assert.Equal(1d, Num(model, "lieFactor"), 9);
+    }
+
+    /// <summary>Too many icons to fit is refused with the arithmetic and a workable unit.</summary>
+    [Fact]
+    public void TestARowThatCannotFitIsRefusedWithASuggestion()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            Chart.CreatePictogram(Rect(0, 0, 100, 60), new[] { 5000d },
+                new Dictionary<string, object?> { ["unit"] = 1d }));
+
+        Assert.Contains("do not fit", ex.Message);
+        Assert.Contains("Raise unit", ex.Message);
+    }
+
+    [Fact]
+    public void TestAPictogramRefusesNegativeValues() =>
+        Assert.Throws<ArgumentException>(() => Chart.CreatePictogram(Rect(0, 0, 500, 200), new[] { 10d, -4d }));
+    #endregion
 }

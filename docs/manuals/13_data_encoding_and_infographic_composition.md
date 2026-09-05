@@ -144,6 +144,21 @@ the first two anti-patterns below — a one-bar bar chart and a two-slice pie bo
 reader could simply have read and convert it into a judgment. `compact: true` handles the formatting
 that makes a big number legible (`1234567` → `1.2M`).
 
+**`Chart.createPictogram(...)` — a value as repeated icons.** The isotype idiom, and the one that
+carries a subject as well as a number: forty-seven thousand cyclists as figures on bicycles says both
+at once. It is the form most worth reaching for in promotional work, and it has exactly one rule.
+
+> [!CAUTION]
+> **Repeat the icon. Never scale it.** Doubling an icon's height to mean double **quadruples its
+> area**, so the reader sees four times the quantity — the same error as sizing a circle by radius
+> (§2), and the commonest way a pictogram lies. `createPictogram(...)` cannot commit it: every icon box
+> is identical, and a part-unit arrives with a `clip` rectangle so you draw a **full-size icon cut
+> short** rather than a small one.
+
+Pick a `unit` a reader can multiply by — the construction defaults to a round one from the same tick
+logic the axes use, so never 3,700. It reports itself as **`count`, rank 3**, the bar a row of icons
+visually is; counting is the upside, not the claim.
+
 **`Chart.createWaffle(...)` — a share, as countable cells.** Ten by ten with each cell worth a percent
 is why the manual prefers it to a donut: a donut's angle is rank 3 and cannot be counted, while a
 waffle **can** be. But the model reports itself as **area, rank 4**, which is deliberately the

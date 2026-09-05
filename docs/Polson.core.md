@@ -1416,6 +1416,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 - `Chart.createFramedRectangleChart(rect, data, options?)` → `object` — A value as a **level inside an identical box**, placed anywhere. What Cleveland & McGill offer in place of a **shaded map**. Rows carry `x` and `y` in the plot's own coordinate space; rows without them are laid out on a grid. Adds `frameWidth`, `frameHeight`, `columns` and `gap`.
 - `Chart.createCallout(rect, value, options?)` → `object` — One number, made big, with an optional `label` and `caption`. The right answer when there is only one value — a reader *reads* it rather than judging it. `compact: true` turns 1,234,567 into `1.2M`. Options: `label`, `caption`, `unit`/`suffix`, `prefix`, `decimals`, `compact`, `valueSize`, `labelSize`, `captionSize`, `align`.
 - `Chart.createWaffle(rect, parts, options?)` → `object` — A grid of cells divided between parts. More honest than a donut, because a waffle can be *counted*. Options: `columns` (10), `rows` (10), `gap`, `total`, `labels`.
+- `Chart.createTimeline(rect, events, options?)` → `object` — Events and periods on a time axis, **packed into lanes so their labels do not collide**. `events` is `[{ time, label, end?, width? }]`. Options: `orientation` (`'horizontal'`/`'vertical'`), `min`, `max`, `sides` (`'alternate'`/`'above'`/`'below'`), `labelWidth`, `laneHeight`, `laneGap`, `tickCount`, `markerRadius`.
 - `Chart.createProportionalShapes(rect, data, options?)` → `object` — A value as the **area** of a mark. `layout` is `'row'`, `'nested'`, or `'free'` (taken automatically when rows carry `x` and `y`). Options: `shape` (`'circle'`/`'square'`), `layout`, `maxSize`, `max`, `gap`, `labels`, `labelGap`, `align`, `legendCount`.
 - `Chart.createProgressMeter(rect, value, options?)` → `object` — One value against a target, as a track with a filled part. `shape: 'bar'` (default) or `'arc'` for a ring or gauge; `segments` divides the track into blocks. Options: `min`, `target`/`max`, `shape`, `thickness`, `segments`, `gap`, `startAngleDeg`, `sweepDeg`, `decimals`, `compact`, `prefix`, `suffix`/`unit`.
 - `Chart.createPictogram(rect, data, options?)` → `object` — A value as a row of **repeated identical icons**, one per `unit`. The isotype idiom: 47,000 people as five little figures at 10,000 each. Options: `unit`, `iconSize`, `gap`, `rowGap`, `labels`, `labelGap`, `partial` (`'clip'` or `'whole'`), `max`.
@@ -1442,6 +1443,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `display` | *(callout)* the formatted number, plus `valueX/Y/Size`, `labelX/Y/Size`, `captionX/Y/Size` as anchors to draw at |
 | `cells` · `parts` | *(waffle)* every cell with its `partIndex` and `filled`, and each part's `share`, `cells` and `firstCell` |
 | `icons` · `rows` | *(pictogram)* every icon with its `rowIndex`, `fraction`, `partial` flag and `clip` rectangle, and each row's `fullIcons`, `partialFraction` and drawn `width` |
+| `events` | *(timeline)* each with `time`, `lane`, `side`, `axisX`/`axisY` on the spine, `x`/`y` in its lane, `leaderX1…Y2`, and for a period `end`, `duration` and a `span` rectangle |
 | `shapes` · `legend` | *(proportional shapes)* each mark's `cx`, `cy`, `radius`, `size`, `area`, `fraction` and `bounds`, plus round reference sizes for a size key |
 | `track` · `fill` | *(meter)* the whole extent and the filled part — rectangles for a bar, arc bands for a ring — plus `fraction`, `rawFraction`, `overflow`, `shortfall`, `percentDisplay` and `tipX`/`tipY` |
 | `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
@@ -1507,6 +1509,21 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 > **A waffle reports itself as `area`, rank 4, deliberately.** A reader who counts cells gets an exact answer — that is why it beats a donut, whose angle is rank 3 but uncountable — but you cannot assume anyone will count. Rank 4 is what the graphic is worth if nobody does, and claiming the exactness of counting would be the flattering assumption rather than the safe one.
 >
 > **Cells are whole, so shares are apportioned by largest remainder.** Rounding each share on its own is the obvious approach and does not add up: three parts at a third each floor to 33 cells apiece and leave one of a hundred unassigned. Every cell is assigned and the counts sum to exactly the grid.
+
+> [!IMPORTANT]
+> **A timeline's work is not placing the events — it is keeping their labels apart.** Two milestones a year apart with ninety-pixel labels cannot share a lane, and arranging that by hand is an afternoon of nudging. Each event is packed into the first lane on its side where its own label span is clear, so a crowded stretch grows outward and a sparse one stays on the spine.
+>
+> **You supply the label widths**, because measuring glyphs needs a context and this has none. Measure, then lay out — the same division as `ctx.measureWrappedText(...)` and `Layout.stack(...)`:
+>
+> ```javascript
+> ctx.font = '400 11px sans-serif';
+> for (const r of rows) r.width = ctx.measureText(r.label).width + 18;
+> const tl = Chart.createTimeline(plot, rows, { laneHeight: 30 });
+> ```
+>
+> **Time is a number** — a year, or `date.getTime()` — never a date object. Parsing and formatting dates is a job with its own literature, and half of one would be worse than none. An event with an **`end`** is a period rather than a point: it gets a `span` rectangle and a `duration`, and shares the lane packing, so a phase and a milestone cannot land on top of each other.
+>
+> **Given order is kept, never sorted.** Alternating sides reads as deliberate when the author chose the sequence, and silently reordering would rearrange a story someone wrote. Events still sit at their times regardless of the order they arrive in.
 
 > [!IMPORTANT]
 > **Proportional shapes carry the value in their AREA, and every linear dimension goes as the square root.** Size a circle by its radius and four times the number shows as **sixteen** times the ink. The rule is the same whatever the mark — a circle's radius, a square's side, a droplet, a coin — because a uniformly scaled shape's area goes as the square of its size. This routes through `Scale.radiusFor(...)`, so there is one implementation of it in the SDK rather than two that could disagree.

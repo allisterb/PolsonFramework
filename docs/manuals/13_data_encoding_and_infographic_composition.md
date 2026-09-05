@@ -144,6 +144,20 @@ the first two anti-patterns below — a one-bar bar chart and a two-slice pie bo
 reader could simply have read and convert it into a judgment. `compact: true` handles the formatting
 that makes a big number legible (`1234567` → `1.2M`).
 
+**`Chart.createTimeline(...)` — events and periods on a time axis.** The brand-history form, and one
+of the few here that is **rank 1**: a reader compares *when*, and when is a position on a common
+scale. It reads easily for the same reason a dot chart does.
+
+What the construction actually does for you is the part that is tedious by hand — **keeping labels
+from colliding**. Each event goes into the first lane on its side where its own label span is clear,
+so a crowded decade grows outward while a sparse one stays on the spine. You supply the widths, having
+measured them; the same measure-then-place division as `ctx.measureWrappedText(...)` and
+`Layout.stack(...)`.
+
+An event with an `end` is a **period** rather than a point — a phase, a campaign, a tenure — and shares
+the packing, so a phase and a milestone cannot overlap. Given order is preserved rather than sorted:
+alternating sides reads as deliberate when you chose the sequence.
+
 **`Chart.createProportionalShapes(...)` — a value as the area of a mark.** The form where the mark can
 be the subject itself: droplets for water, coins for money, a footprint for emissions. §2's
 area-goes-as-the-square-root rule is not advice here, it is the construction — every linear dimension

@@ -1717,4 +1717,208 @@ public class ChartToolkitTests : TestsRuntime
         Assert.Contains("hexagon", ex.Message);
     }
     #endregion
+
+    #region Tests — the timeline
+    static IDictionary[] Events(Dictionary<string, object?> model) =>
+        ((IEnumerable)model["events"]!).Cast<object>().Select(e => (IDictionary)e!).ToArray();
+
+    static object Event(double time, string label, double? end = null, double? width = null)
+    {
+        var row = new Dictionary<string, object?> { ["time"] = time, ["label"] = label };
+        if (end is not null) row["end"] = end;
+        if (width is not null) row["width"] = width;
+        return row;
+    }
+
+    /// <summary>Events sit at their time on the axis, which is what a timeline claims.</summary>
+    [Fact]
+    public void TestEventsSitAtTheirTime()
+    {
+        var model = Chart.CreateTimeline(Rect(0, 0, 400, 200),
+            new[] { Event(2000, "a"), Event(2010, "b"), Event(2020, "c") },
+            new Dictionary<string, object?> { ["min"] = 2000d, ["max"] = 2020d, ["labelWidth"] = 10d });
+
+        var events = Events(model);
+        Assert.Equal(0d, Num(events[0], "axisX"), 3);
+        Assert.Equal(200d, Num(events[1], "axisX"), 3);
+        Assert.Equal(400d, Num(events[2], "axisX"), 3);
+
+        // Position along a common scale — the reason a timeline reads so easily.
+        Assert.Equal(1, Convert.ToInt32(model["encodingRank"]));
+    }
+
+    /// <summary>
+    /// The work this construction actually does: labels that would collide go into separate lanes.
+    /// </summary>
+    /// <remarks>
+    /// Three events a year apart with ninety-pixel labels cannot share a lane. Placed by hand this is
+    /// an afternoon of nudging; here it is the first lane on that side where the label's own span is
+    /// clear.
+    /// </remarks>
+    [Fact]
+    public void TestCollidingLabelsArePushedIntoSeparateLanes()
+    {
+        var crowded = Chart.CreateTimeline(Rect(0, 0, 400, 300),
+            new[] { Event(2000, "a"), Event(2001, "b"), Event(2002, "c"), Event(2003, "d") },
+            new Dictionary<string, object?>
+            {
+                ["min"] = 2000d, ["max"] = 2010d, ["labelWidth"] = 200d, ["sides"] = "above"
+            });
+
+        Assert.True(Convert.ToInt32(crowded["lanes"]) > 1, "crowded labels need more than one lane");
+
+        // No two events in the same lane may overlap.
+        foreach (var group in Events(crowded).GroupBy(e => Convert.ToInt32(e["lane"])))
+        {
+            var spans = group
+                .Select(e => (From: Num(e, "axisX") - Num(e, "labelWidth") / 2d,
+                              To: Num(e, "axisX") + Num(e, "labelWidth") / 2d))
+                .OrderBy(s => s.From)
+                .ToArray();
+
+            for (var i = 1; i < spans.Length; i++)
+            {
+                Assert.True(spans[i].From >= spans[i - 1].To - 0.001d,
+                    "two events share a lane and overlap");
+            }
+        }
+    }
+
+    /// <summary>Room enough, and everything stays in the first lane.</summary>
+    [Fact]
+    public void TestUncrowdedEventsStayInOneLane()
+    {
+        var roomy = Chart.CreateTimeline(Rect(0, 0, 600, 200),
+            new[] { Event(2000, "a"), Event(2010, "b"), Event(2020, "c") },
+            new Dictionary<string, object?> { ["labelWidth"] = 20d, ["sides"] = "above" });
+
+        Assert.Equal(1, Convert.ToInt32(roomy["lanes"]));
+        Assert.All(Events(roomy), e => Assert.Equal(0, Convert.ToInt32(e["lane"])));
+    }
+
+    [Fact]
+    public void TestAlternatingSidesPutsNeighboursOpposite()
+    {
+        var events = Events(Chart.CreateTimeline(Rect(0, 0, 400, 200),
+            new[] { Event(1, "a"), Event(2, "b"), Event(3, "c") },
+            new Dictionary<string, object?> { ["labelWidth"] = 10d }));
+
+        Assert.Equal(["above", "below", "above"], events.Select(e => e["side"]?.ToString()));
+        Assert.True(Num(events[0], "y") < Num(events[1], "y"), "above is up the canvas");
+    }
+
+    [Theory]
+    [InlineData("above")]
+    [InlineData("below")]
+    public void TestASingleSidedTimelineKeepsEverythingOnIt(string side)
+    {
+        var events = Events(Chart.CreateTimeline(Rect(0, 0, 600, 200),
+            new[] { Event(1, "a"), Event(2, "b") },
+            new Dictionary<string, object?> { ["sides"] = side, ["labelWidth"] = 10d }));
+
+        Assert.All(events, e => Assert.Equal(side, e["side"]?.ToString()));
+    }
+
+    /// <summary>An event with an end is a period, and gets a span rather than a point.</summary>
+    [Fact]
+    public void TestAnEventWithAnEndBecomesAPeriod()
+    {
+        var model = Chart.CreateTimeline(Rect(0, 0, 400, 200),
+            new[] { Event(2000, "phase one", end: 2010), Event(2015, "launch") },
+            new Dictionary<string, object?> { ["min"] = 2000d, ["max"] = 2020d, ["labelWidth"] = 10d });
+
+        var events = Events(model);
+        Assert.True((bool)events[0]["isPeriod"]!);
+        Assert.Equal(10d, Num(events[0], "duration"), 6);
+        Assert.Equal(200d, Num((IDictionary)events[0]["span"]!, "width"), 3);   // half the axis
+
+        Assert.False((bool)events[1]["isPeriod"]!);
+        Assert.Null(events[1].Contains("span") ? events[1]["span"] : null);
+    }
+
+    /// <summary>A period and a milestone cannot land on top of each other.</summary>
+    [Fact]
+    public void TestPeriodsShareTheLanePackingWithPoints()
+    {
+        var model = Chart.CreateTimeline(Rect(0, 0, 400, 300),
+            new[] { Event(2000, "long phase", end: 2018), Event(2005, "milestone") },
+            new Dictionary<string, object?>
+            {
+                ["min"] = 2000d, ["max"] = 2020d, ["labelWidth"] = 120d, ["sides"] = "above"
+            });
+
+        var events = Events(model);
+        Assert.NotEqual(Convert.ToInt32(events[0]["lane"]), Convert.ToInt32(events[1]["lane"]));
+    }
+
+    [Fact]
+    public void TestAVerticalTimelineRunsDownTheOtherAxis()
+    {
+        var model = Chart.CreateTimeline(Rect(0, 0, 200, 400),
+            new[] { Event(2000, "a"), Event(2020, "b") },
+            new Dictionary<string, object?>
+            {
+                ["orientation"] = "vertical", ["min"] = 2000d, ["max"] = 2020d, ["labelWidth"] = 10d
+            });
+
+        Assert.Equal("vertical", model["orientation"]);
+        var events = Events(model);
+        Assert.Equal(0d, Num(events[0], "axisY"), 3);
+        Assert.Equal(400d, Num(events[1], "axisY"), 3);
+        Assert.Equal(["left", "right"], events.Select(e => e["side"]?.ToString()));
+    }
+
+    /// <summary>Each event carries the connector out to its label.</summary>
+    [Fact]
+    public void TestEachEventCarriesItsLeader()
+    {
+        foreach (var e in Events(Chart.CreateTimeline(Rect(0, 0, 400, 200),
+            new[] { Event(1, "a"), Event(2, "b") },
+            new Dictionary<string, object?> { ["labelWidth"] = 10d })))
+        {
+            Assert.Equal(Num(e, "axisX"), Num(e, "leaderX1"), 3);
+            Assert.Equal(Num(e, "axisY"), Num(e, "leaderY1"), 3);
+            Assert.Equal(Num(e, "x"), Num(e, "leaderX2"), 3);
+            Assert.Equal(Num(e, "y"), Num(e, "leaderY2"), 3);
+        }
+    }
+
+    /// <summary>Given order is kept — sorting would rearrange a story somebody wrote.</summary>
+    [Fact]
+    public void TestEventOrderIsPreserved()
+    {
+        var events = Events(Chart.CreateTimeline(Rect(0, 0, 600, 200),
+            new[] { Event(2020, "last"), Event(2000, "first"), Event(2010, "middle") },
+            new Dictionary<string, object?> { ["labelWidth"] = 10d }));
+
+        Assert.Equal(["last", "first", "middle"], events.Select(e => e["label"]?.ToString()));
+        Assert.True(Num(events[1], "axisX") < Num(events[2], "axisX"), "but they still sit at their times");
+    }
+
+    [Fact]
+    public void TestBadEventsAreRefusedWithTheirPosition()
+    {
+        var missing = Assert.Throws<ArgumentException>(() => Chart.CreateTimeline(Rect(0, 0, 400, 200),
+            new object[] { Event(1, "a"), new Dictionary<string, object?> { ["label"] = "b" } }));
+        Assert.Contains("Event 2", missing.Message);
+        Assert.Contains("getTime", missing.Message);
+
+        var backwards = Assert.Throws<ArgumentException>(() => Chart.CreateTimeline(Rect(0, 0, 400, 200),
+            new[] { Event(2010, "a", end: 2000) }));
+        Assert.Contains("ends before it starts", backwards.Message);
+
+        Assert.Throws<ArgumentException>(() => Chart.CreateTimeline(Rect(0, 0, 400, 200), "not events"));
+    }
+
+    [Fact]
+    public void TestTimelineEventsAreSlots()
+    {
+        var model = Chart.CreateTimeline(Rect(0, 0, 600, 200),
+            new[] { Event(2000, "a"), Event(2010, "b", end: 2015) },
+            new Dictionary<string, object?> { ["labelWidth"] = 40d });
+
+        Assert.Equal(2, Slots(model).Length);
+        foreach (var slot in Slots(model)) Assert.InRange(Num(slot, "fraction"), 0d, 1d);
+    }
+    #endregion
 }

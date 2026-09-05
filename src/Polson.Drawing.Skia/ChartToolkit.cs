@@ -95,6 +95,10 @@ public class ChartToolkit
     private static readonly string[] PictogramOptions =
         ["unit", "iconSize", "gap", "rowGap", "labels", "labelGap", "partial", "max"];
 
+    private static readonly string[] TimelineOptions =
+        ["orientation", "min", "max", "sides", "labelWidth", "laneHeight", "laneGap",
+         "tickCount", "labels", "markerRadius"];
+
     private static readonly string[] ShapeOptions =
         ["shape", "layout", "maxSize", "max", "gap", "labels", "labelGap", "align", "legendCount"];
 
@@ -1556,6 +1560,210 @@ public class ChartToolkit
     }
 
     /// <summary>
+    /// A timeline: events and periods on a time axis, laid into lanes so their labels do not collide.
+    /// </summary>
+    /// <remarks>
+    /// <b>Placing the events is the easy half; keeping their labels apart is the work.</b> Two
+    /// milestones three months apart need labels forty pixels wide, and a timeline drawn by hand
+    /// becomes an afternoon of nudging. This packs them into lanes — the first lane on each side of
+    /// the axis where the label's own span does not overlap one already there — so the arrangement is
+    /// computed rather than fiddled.
+    /// <para>
+    /// <b>You supply the label widths, because measuring glyphs needs a context and this does not have
+    /// one.</b> Measure with <c>ctx.measureText(...)</c> and pass <c>width</c> per event, or set one
+    /// <c>labelWidth</c> for all of them. That is the same division as
+    /// <c>measureWrappedText</c> and <c>Layout.stack</c>: the toolkit does the geometry, the context
+    /// does the measuring.
+    /// </para>
+    /// <para>
+    /// <b>Time is a number here</b> — a year, or milliseconds since the epoch — and never a date
+    /// object, because parsing and formatting dates is a job with its own literature and this is not
+    /// the place for half of one. A caller with real dates passes <c>d.getTime()</c> and supplies its
+    /// own labels.
+    /// </para>
+    /// <para>
+    /// An event with an <c>end</c> is a <b>period</b> rather than a point — a phase, a campaign, a
+    /// tenure — and gets a bar between the two times instead of a marker. Both kinds share the lane
+    /// packing, so a phase and a milestone cannot land on top of each other.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateTimeline(object rect, object events, object? options = null)
+    {
+        var area = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A timeline needs a { x, y, width, height } area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt, TimelineOptions);
+
+        var rows = ReadEvents(events);
+        if (rows.Count == 0) throw new ArgumentException("A timeline needs at least one event.", nameof(events));
+
+        var vertical = string.Equals(opt?["orientation"]?.ToString(), "vertical", StringComparison.OrdinalIgnoreCase);
+        var sides = (opt?["sides"]?.ToString() ?? "alternate").ToLowerInvariant();
+        if (sides is not ("alternate" or "above" or "below"))
+        {
+            throw new ArgumentException(
+                $"sides must be 'alternate', 'above' or 'below'; got '{sides}'.", nameof(options));
+        }
+
+        var px = Num(area, "x");
+        var py = Num(area, "y");
+        var pw = Num(area, "width");
+        var ph = Num(area, "height");
+
+        var everyTime = rows.SelectMany(r => r.End is { } e ? new[] { r.Time, e } : [r.Time]).ToArray();
+        var scaleTk = new ScaleToolkit();
+        var niced = scaleTk.Nice(everyTime.Min(), everyTime.Max());
+        var min = Opt(opt, "min", Convert.ToDouble(niced["min"], CultureInfo.InvariantCulture));
+        var max = Opt(opt, "max", Convert.ToDouble(niced["max"], CultureInfo.InvariantCulture));
+
+        // The axis runs the long way; lanes stack away from it on both sides.
+        var scale = vertical
+            ? scaleTk.Linear(min, max, py, py + ph)
+            : scaleTk.Linear(min, max, px, px + pw);
+
+        var axisAt = vertical ? px + pw / 2d : py + ph / 2d;
+        var laneHeight = Opt(opt, "laneHeight", 34d);
+        var laneGap = Opt(opt, "laneGap", 6d);
+        var defaultWidth = Opt(opt, "labelWidth", vertical ? laneHeight * 3d : 90d);
+        var markerRadius = Opt(opt, "markerRadius", 5d);
+        var tickCount = (int)Opt(opt, "tickCount", 5d);
+
+        // One list of occupied intervals per side per lane. An event goes in the first lane where its
+        // own label span is clear — the greedy packing a person does by eye, made repeatable.
+        var occupied = new Dictionary<(int Side, int Lane), List<(double From, double To)>>();
+
+        var placed = new List<Dictionary<string, object>>(rows.Count);
+        var slots = new List<Dictionary<string, object>>(rows.Count);
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var at = scale.Map(row.Time);
+            var endAt = row.End is { } end ? scale.Map(end) : at;
+            var width = row.Width ?? defaultWidth;
+
+            // A period occupies its whole span plus room for the label; a point occupies its label.
+            var from = Math.Min(at, endAt) - (row.End is null ? width / 2d : 0d);
+            var to = Math.Max(at, endAt) + (row.End is null ? width / 2d : width);
+
+            var side = sides switch
+            {
+                "above" => -1,
+                "below" => 1,
+                _ => i % 2 == 0 ? -1 : 1
+            };
+
+            var lane = 0;
+            while (true)
+            {
+                var key = (side, lane);
+                if (!occupied.TryGetValue(key, out var taken))
+                {
+                    occupied[key] = [(from, to)];
+                    break;
+                }
+
+                if (taken.All(t => to <= t.From || from >= t.To))
+                {
+                    taken.Add((from, to));
+                    break;
+                }
+
+                lane++;
+            }
+
+            var offset = (laneHeight + laneGap) * (lane + 1) * side;
+            var laneAt = axisAt + offset;
+
+            var item = new Dictionary<string, object>
+            {
+                ["index"] = i,
+                ["label"] = row.Label,
+                ["time"] = row.Time,
+                ["lane"] = lane,
+                ["side"] = side < 0 ? (vertical ? "left" : "above") : vertical ? "right" : "below",
+                ["isPeriod"] = row.End is not null,
+
+                // Where the event sits on the axis, and where its label block sits off it.
+                ["axisX"] = vertical ? axisAt : at,
+                ["axisY"] = vertical ? at : axisAt,
+                ["x"] = vertical ? laneAt : at,
+                ["y"] = vertical ? at : laneAt,
+                ["labelWidth"] = width,
+                ["markerRadius"] = markerRadius,
+
+                // The connector from the axis out to the label, so a leader line is not recomputed.
+                ["leaderX1"] = vertical ? axisAt : at,
+                ["leaderY1"] = vertical ? at : axisAt,
+                ["leaderX2"] = vertical ? laneAt : at,
+                ["leaderY2"] = vertical ? at : laneAt
+            };
+
+            if (row.End is { } finish)
+            {
+                item["end"] = finish;
+                item["span"] = vertical
+                    ? Rect(laneAt - laneHeight / 2d, Math.Min(at, endAt), laneHeight, Math.Abs(endAt - at))
+                    : Rect(Math.Min(at, endAt), laneAt - laneHeight / 2d, Math.Abs(endAt - at), laneHeight);
+                item["duration"] = finish - row.Time;
+            }
+
+            placed.Add(item);
+
+            var boxLength = row.End is null ? width : Math.Abs(endAt - at);
+            slots.Add(Slot(i, row.Label, row.Time, Fraction(row.Time, min, max),
+                vertical ? laneAt - laneHeight / 2d : Math.Min(at, endAt) - (row.End is null ? width / 2d : 0d),
+                vertical ? Math.Min(at, endAt) : laneAt - laneHeight / 2d,
+                vertical ? laneHeight : boxLength,
+                vertical ? boxLength : laneHeight,
+                vertical ? axisAt : at, vertical ? at : axisAt,
+                vertical ? laneAt : at, vertical ? at : laneAt,
+                laneHeight, side < 0 ? (vertical ? 180d : 270d) : vertical ? 0d : 90d));
+        }
+
+        var ticks = scale.Ticks(tickCount).Select(t => new Dictionary<string, object>
+        {
+            ["value"] = t,
+            ["position"] = scale.Map(t),
+            ["label"] = Format(t),
+            ["x"] = vertical ? axisAt : scale.Map(t),
+            ["y"] = vertical ? scale.Map(t) : axisAt
+        }).ToArray();
+
+        var lanesUsed = occupied.Count == 0 ? 0 : occupied.Keys.Max(k => k.Lane) + 1;
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "timeline",
+            ["orientation"] = vertical ? "vertical" : "horizontal",
+            ["plot"] = Rect(px, py, pw, ph),
+            ["bounds"] = Rect(px, py, pw, ph),
+            ["scale"] = scale,
+            ["events"] = placed.ToArray(),
+            ["slots"] = slots.ToArray(),
+            ["ticks"] = ticks,
+            ["axis"] = vertical
+                ? Rect(axisAt, py, 0d, ph)
+                : Rect(px, axisAt, pw, 0d),
+            ["axisAt"] = axisAt,
+            ["min"] = min,
+            ["max"] = max,
+            ["lanes"] = lanesUsed,
+            ["laneHeight"] = laneHeight,
+            ["sides"] = sides,
+
+            // Position along a common scale: the most accurately read judgment there is, which is why
+            // a timeline works at all — a reader compares *when*, and when is a position.
+            ["encoding"] = "position",
+            ["encodingRank"] = 1,
+            ["isZeroBased"] = scale.IsZeroBased,
+            ["lieFactor"] = 1d
+        };
+    }
+
+    /// <summary>
     /// The marks of a chart model as geometry: one path per bar, plus the whole set unioned.
     /// </summary>
     /// <remarks>
@@ -1903,6 +2111,67 @@ public class ChartToolkit
         };
 
         return scaled.ToString("0." + new string('#', places), CultureInfo.InvariantCulture) + unit;
+    }
+
+    /// <summary>One event on a timeline: when, what, how long, and how wide its label is.</summary>
+    private readonly record struct TimelineEvent(double Time, double? End, string Label, double? Width);
+
+    /// <summary>Reads <c>[{ time, label, end?, width? }]</c>, in the order given.</summary>
+    /// <remarks>
+    /// Order is kept rather than sorted by time. Alternating sides reads as deliberate when the
+    /// author chose the sequence, and sorting silently would rearrange a story someone wrote.
+    /// </remarks>
+    static List<TimelineEvent> ReadEvents(object events)
+    {
+        if (events is not IEnumerable items || events is string)
+        {
+            throw new ArgumentException(
+                "A timeline takes an array of events — [{ time, label }], optionally with `end`.",
+                nameof(events));
+        }
+
+        var found = new List<TimelineEvent>();
+        var i = 0;
+
+        foreach (var item in items)
+        {
+            var row = JsInterop.AsDict(item)
+                ?? throw new ArgumentException(
+                    $"Event {i + 1} is not an object; a timeline event needs at least a time.", nameof(events));
+
+            if (!row.Contains("time"))
+            {
+                throw new ArgumentException(
+                    $"Event {i + 1} has no `time`. Times are numbers — a year, or milliseconds since "
+                    + "the epoch from `date.getTime()`.", nameof(events));
+            }
+
+            var time = Convert.ToDouble(row["time"], CultureInfo.InvariantCulture);
+            if (!double.IsFinite(time))
+            {
+                throw new ArgumentException($"Event {i + 1} has a time that is not a number.", nameof(events));
+            }
+
+            double? end = row.Contains("end") && row["end"] is not null
+                ? Convert.ToDouble(row["end"], CultureInfo.InvariantCulture)
+                : null;
+
+            if (end is { } finish && finish < time)
+            {
+                throw new ArgumentException(
+                    $"Event {i + 1} ends before it starts ({Format(finish)} < {Format(time)}).", nameof(events));
+            }
+
+            double? width = row.Contains("width") && row["width"] is not null
+                ? Convert.ToDouble(row["width"], CultureInfo.InvariantCulture)
+                : null;
+
+            found.Add(new TimelineEvent(
+                time, end, row["label"]?.ToString() ?? string.Empty, width));
+            i++;
+        }
+
+        return found;
     }
 
     /// <summary>One panel's worth of input: its title and the data behind it.</summary>

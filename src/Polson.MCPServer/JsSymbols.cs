@@ -109,6 +109,10 @@ public static class JsSurface
         new("scale", typeof(LinearScale), "Scale", true),
         new("band", typeof(BandScale), "Scale", true),
 
+        // Constructions above those primitives. Its own area rather than more of Scale, because
+        // Scale is deliberately "draws nothing and knows no forms" and that is worth keeping.
+        new("Chart", typeof(ChartToolkit), "Chart", false),
+
         // SPIKE: frame capture and animated encoding. Declared here so the manifest stays honest
         // about what a script can reach, not because the surface is settled.
         new("Motion", typeof(MotionToolkit), "Motion", false),

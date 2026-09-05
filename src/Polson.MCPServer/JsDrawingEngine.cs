@@ -272,6 +272,11 @@ public partial class JsDrawingEngine : Runtime
             var scaleToolkit = new ScaleToolkit();
             engine.SetValue("Scale", scaleToolkit);
 
+            // Whole charts as constructions, above the Scale/Layout primitives. Returns models and
+            // geometry rather than drawing, on the createMannequinFigure/createFigureGeometry split.
+            var chartToolkit = new ChartToolkit();
+            engine.SetValue("Chart", chartToolkit);
+
             // SPIKE: frame capture and animated encoding. Holds bitmaps for the life of the
             // execution, so it is disposed with the engine rather than left to the collector.
             motionToolkit = new MotionToolkit(ProjectRoot);

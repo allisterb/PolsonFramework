@@ -23,8 +23,10 @@
 
 ## 1. Form Follows the Question
 
-> **Implemented by**: nothing — this is the choice you make before any call. The forms themselves are
-> built from `Scale.*` for their geometry, `Layout.*` for their placement, and ordinary `ctx` drawing.
+> **Implemented by**: nothing — *choosing* is the decision you make before any call. Two of the forms
+> below are then one call: `Chart.createColumnChart(...)` and `Chart.createBarChart(...)`. The rest are
+> still built from `Scale.*` for their geometry, `Layout.*` for their placement, and ordinary `ctx`
+> drawing.
 
 Pick the form by the question the data answers, not by habit. Three questions decide it:
 
@@ -433,6 +435,10 @@ Then the three that need eyes:
 
 | Concept | SDK call or field | Notes |
 | --- | --- | --- |
+| A whole bar or column chart | `Chart.createColumnChart(rect, data, options)`, `Chart.createBarChart(...)` | Returns a model — bars, ticks, labels, scale — and draws nothing. Start here rather than with `Scale`. |
+| Its marks as geometry | `Chart.createChartGeometry(model)` | One `CanvasPath` per bar plus a silhouette, for clipping, subtracting, texturing or animating. |
+| Drawing the marks | `Chart.drawChart(ctx, model)` | Fills with the current `fillStyle` and returns the geometry. Draws **no** chrome — see §3. |
+| Integrity, carried | `model.lieFactor`, `model.isZeroBased`, `model.encodingRank` | Computed at construction; §1a and §2a rather than a checklist. |
 | Value → pixel | `Scale.linear(d0, d1, r0, r1)` | Range may run backwards; that is a vertical axis. |
 | Pixel → value | `scale.invert(position)` | Reads a drawn coordinate back to a datum — the other half of a lie-factor check. |
 | Bar length | `scale.extent(baseline, value)` | Always positive, whichever way the range runs. |
@@ -452,12 +458,13 @@ Then the three that need eyes:
 
 ## 10. Constructing It: A Runnable Panel
 
-Three of §2's rules in one panel — a zero baseline, an area-encoded circle set, and a shared scale
-across two series — with §2a's lie factor computed on the result. Every coordinate comes from `Scale`
-or `Layout`; none is written by hand.
+Two column series and an area-encoded set, with §2a's lie factor asserted on the result. **The
+columns are one call each** — `Chart.createColumnChart(...)` returns the model and draws nothing, so
+the drawing below is the part you actually chose. The circles are still built from `Scale.radiusFor`,
+because area encoding has no construction of its own.
 
 ```javascript
-// Encoding demo: zero-based columns, sqrt-scaled circles, one shared scale, lie factor asserted.
+// Encoding demo: a shared scale across two panels, sqrt-scaled circles, lie factor asserted.
 const canvas = createCanvas(900, 460);
 const ctx = canvas.getContext('2d');
 ctx.fillStyle = '#f7f4ee';
@@ -467,51 +474,50 @@ const page = Layout.inset(Layout.rect(0, 0, 900, 460), 34);
 // §7 — weighted, not equal: one dense zone and one that breathes.
 const [left, right] = Layout.columns(page, [62, 38], 34);
 
-// §2 — one extent over BOTH series, so the two panels are comparable.
+// §2 — one extent over BOTH series, passed to both charts as `max`. This is the rule no single
+// panel can detect, because each panel is individually correct.
 const north = [38, 61, 47, 92, 74];
 const south = [22, 35, 29, 58, 44];
 const shared = Scale.extent(north.concat(south));
 const bounds = Scale.nice(0, shared.max);
-log('shared extent ' + shared.min + '-' + shared.max + ', axis to ' + bounds.max);
-
-const [plotN, plotS] = Layout.rows(left, 2, 22);
 const labels = ['Mar', 'Apr', 'May', 'Jun', 'Jul'];
 
-const drawSeries = (rect, values, fill, title) => {
-    const y = Scale.linear(bounds.min, bounds.max, rect.y2 - 18, rect.y + 16);
-    const x = Scale.band(values.length, rect.x, rect.x2, 0.34);
-    if (!y.isZeroBased) throw new Error('columns need a zero baseline');
+const [plotN, plotS] = Layout.rows(left, 2, 22);
+const charts = [
+    { model: Chart.createColumnChart(plotN, north, { max: bounds.max, labels: labels }), fill: '#1f6f8b', title: 'NORTH' },
+    { model: Chart.createColumnChart(plotS, south, { max: bounds.max, labels: labels }), fill: '#c96a2e', title: 'SOUTH' }
+];
+
+for (const panel of charts) {
+    // §2a — carried by the model, not recomputed by hand. Zero-based, so it is 1 by construction.
+    if (!panel.model.isZeroBased) throw new Error('columns need a zero baseline');
+    if (Math.abs(panel.model.lieFactor - 1) > 0.05) throw new Error('graphic distorts the data');
+
+    ctx.fillStyle = panel.fill;
+    Chart.drawChart(ctx, panel.model);
 
     ctx.font = '600 12px sans-serif';
     ctx.fillStyle = '#6b7684';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(title, rect.x, rect.y);
+    ctx.fillText(panel.title, panel.model.plot.x, panel.model.plot.y - 12);
 
-    for (let i = 0; i < values.length; i++) {
-        ctx.fillStyle = fill;
-        ctx.fillRect(x.map(i), y.map(values[i]), x.bandwidth, y.extent(bounds.min, values[i]));
-        ctx.fillStyle = '#8a94a0';
-        ctx.font = '400 10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(labels[i], x.center(i), rect.y2 - 14);
-        ctx.textAlign = 'left';
-    }
-    return y;
-};
+    // §3 — the labels are data, so drawing them is a decision. Here we want them; the gridlines
+    // the ticks would carry are left undrawn, which is the erasing pass as a choice.
+    ctx.font = '400 10px sans-serif';
+    ctx.fillStyle = '#8a94a0';
+    ctx.textAlign = 'center';
+    for (const label of panel.model.labels) ctx.fillText(label.text, label.x, label.y);
+}
 
-const yNorth = drawSeries(plotN, north, '#1f6f8b', 'NORTH');
-drawSeries(plotS, south, '#c96a2e', 'SOUTH');
+log('lie factor ' + charts[0].model.lieFactor.toFixed(4) + ', rank ' + charts[0].model.encodingRank);
 
-// §2a — the check that proves the rules above held in the finished picture. With a zero-based
-// linear scale this is 1 by construction; it catches the marks that bypassed the scale.
-const shownRatio = yNorth.extent(bounds.min, 92) / yNorth.extent(bounds.min, 38);
-const lieFactor = shownRatio / (92 / 38);
-log('lie factor ' + lieFactor.toFixed(4));
-if (Math.abs(lieFactor - 1) > 0.05) throw new Error('graphic distorts the data');
+// The marks came back as geometry, so the hero bar is picked out without redrawing the panel.
+const hero = charts[0].model.bars.reduce((a, b) => (b.value > a.value ? b : a));
+ctx.fillStyle = '#15384a';
+ctx.fillRect(hero.x, hero.y, hero.width, hero.height);
 
-// §2 — area encodes value: four times the number is twice the radius.
-ctx.textAlign = 'center';
+// §2 — area encodes value: four times the number is twice the radius. No construction for this one.
 const circles = [{ v: 25, t: '25' }, { v: 50, t: '50' }, { v: 100, t: '100' }];
 const slot = Layout.rows(right, [22, 78], 10)[1];
 const band = Scale.band(circles.length, slot.x, slot.x2, 0.1);

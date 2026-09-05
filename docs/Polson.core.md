@@ -1394,6 +1394,98 @@ canvas;
 
 ---
 
+# Chart (Whole Charts as Constructions)
+
+Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one call returns a **model** you can read, measure, restyle and animate. `Scale` maps values to pixels and `Layout` divides a page; this is the layer above them, and it exists because writing that loop by hand was sixty lines every time.
+
+- `Chart.createColumnChart(rect, data, options?)` → `object` — Categories across, values up.
+- `Chart.createBarChart(rect, data, options?)` → `object` — Categories down, values across. Usually the better of the two: horizontal bars give category labels room to be words.
+- `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry.
+- `Chart.drawChart(ctx, chartModel)` → the same geometry — Fills the marks with the context's current `fillStyle` and returns what it drew.
+
+`rect` is any `{ x, y, width, height }`, so a `Layout` rectangle fits. `data` is an array of numbers, or of objects carrying `value` and optionally `label`.
+
+`options`: `{ baseline, max, min, padding, tickCount, labels, labelGap, tickGap }`. **An unrecognised option is refused by name**, listing what is accepted — unlike an options object bound to a typed shape, a dictionary can see the misspelling and report it.
+
+### What the model carries
+
+| Field | |
+| :--- | :--- |
+| `type` | `'column'` or `'bar'` |
+| `plot` · `bounds` | the rectangle the marks occupy |
+| `scale` · `band` | the `LinearScale` and `BandScale` used, so you can place anything else against them |
+| `bars` | one rectangle per datum, each with `x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`, plus `index`, `value` and `label` |
+| `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
+| `labels` | `{ text, x, y, align, baseline, index }` for the categories |
+| `baseline` · `baselinePosition` | the value, and the pixel it maps to |
+| `encoding` · `encodingRank` | which perceptual judgment the chart spends — `'length'`, rank 3 |
+| `isZeroBased` · `lieFactor` | whether the ink is proportional to the numbers |
+
+> [!IMPORTANT]
+> **`ticks` and `labels` are data rather than drawn marks, and `drawChart` deliberately draws neither.** The caller owns their typography, and declining to draw them *is* the erasing pass of `polson://manual/13` §3 — a decision rather than an edit to a function.
+>
+> **`lieFactor` is computed for you.** On a zero baseline it is exactly `1`, which is the point: it is not a rule to remember but the number that says whether the rules held. A truncated baseline reports the distortion — 100 and 104 drawn from a baseline of 96 gives `1.92` — and a baseline that clips a bar away entirely reports `Infinity` rather than some large finite number that might be mistaken for a measurement.
+
+> [!TIP]
+> **Small multiples share one scale by passing `max`.** This is the one rule in `polson://manual/13` §2 that no single panel can detect, because each panel is individually correct:
+>
+> ```javascript
+> const bounds = Scale.extent(seriesA.concat(seriesB, seriesC));
+> const panels = Layout.grid(page, 3, 1, 16);
+> const charts = [seriesA, seriesB, seriesC].map((s, i) =>
+>     Chart.createColumnChart(panels[i], s, { max: bounds.max }));
+> ```
+>
+> **The model is closed-form and allocates no paths**, so measuring twenty-four panels is arithmetic. `createChartGeometry(...)` is the one that builds native geometry — the same split as `createMannequinFigure` and `createFigureGeometry`, and for the same reason.
+
+```javascript
+// One call for the chart; the drawing is what you choose to do with it.
+const canvas = createCanvas(760, 380);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#faf8f4';
+ctx.fillRect(0, 0, 760, 380);
+
+const plot = Layout.inset(Layout.rect(0, 0, 760, 380), 40, 40, 56, 64);
+const chart = Chart.createColumnChart(plot, [
+    { label: 'Mar', value: 38 }, { label: 'Apr', value: 61 },
+    { label: 'May', value: 47 }, { label: 'Jun', value: 92 }, { label: 'Jul', value: 74 }
+]);
+
+log(`lie factor ${chart.lieFactor}, zero-based ${chart.isZeroBased}, rank ${chart.encodingRank}`);
+
+// Ticks are data — draw as much or as little of the chrome as the design wants.
+ctx.font = '400 12px sans-serif';
+ctx.textAlign = 'right';
+ctx.textBaseline = 'middle';
+for (const tick of chart.ticks) {
+    ctx.strokeStyle = '#e3ded3';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(chart.plot.x, tick.position);
+    ctx.lineTo(chart.plot.x2, tick.position);
+    ctx.stroke();
+    ctx.fillStyle = '#8a94a0';
+    ctx.fillText(tick.label, tick.x, tick.y);
+}
+
+ctx.fillStyle = '#1f6f8b';
+const geometry = ctx.fill ? Chart.drawChart(ctx, chart) : null;
+
+// The marks came back as geometry, so one of them can be picked out without redrawing the rest.
+const hero = chart.bars.reduce((a, b) => (b.value > a.value ? b : a));
+ctx.fillStyle = '#c9553d';
+ctx.fillRect(hero.x, hero.y, hero.width, hero.height);
+
+ctx.fillStyle = '#1c2733';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'top';
+for (const label of chart.labels) ctx.fillText(label.text, label.x, label.y);
+
+canvas;
+```
+
+---
+
 # Css (Design Languages)
 
 Reads a stylesheet as a **design language** — its tokens and its text styling — in a form the drawing context takes directly. It answers *what does `.h1` look like*: family, size, weight, colour, tracking.

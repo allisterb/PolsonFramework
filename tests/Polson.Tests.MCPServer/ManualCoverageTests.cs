@@ -97,6 +97,12 @@ public class ManualCoverageTests : TestsRuntime
         ["Logo"] = 65,
         ["Scale"] = 63,
 
+        // Arrived at 100 on 2026-09-05 rather than climbing to it: `Chart` was built and documented
+        // in Manual 13 in one go, so there was never a version of it an agent could not find. That is
+        // the order this ratchet is meant to encourage — surface and manual together, not surface
+        // first and a floor of 0 with an apology.
+        ["Chart"] = 100,
+
         // Was 0 while Motion was a spike, on the stated grounds that "the authoring model above it
         // is still an open question — whether a timeline lives in JavaScript or in the engine, and
         // whether easings are baked to SMIL for export — so a manual written now would document a

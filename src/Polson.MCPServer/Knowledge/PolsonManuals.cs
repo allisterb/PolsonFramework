@@ -156,6 +156,52 @@ public class PolsonManuals
         return index.ToString();
     }
 
+    /// <summary>
+    /// Prepended to every manual as it is served, so the scope travels with the thing it scopes.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately here rather than only in <see cref="BuildIndex"/>.</b> The index already
+    /// carried a "not prescriptive" paragraph, and an agent that reads <c>polson://manual/06</c>
+    /// directly never sees it — the same defect that let the index claim for two days that no manual
+    /// cited *How to Draw Comics the Marvel Way* while two did. A statement kept in a second place
+    /// from the thing it describes is read by nobody and drifts unnoticed; attached to the body, it
+    /// cannot be missed and cannot go stale separately.
+    /// <para>
+    /// Injected at <b>serve</b> time only. <c>ManualExampleTests</c> and <c>ManualCoverageTests</c>
+    /// read <see cref="StudioManual.Body"/>, and <see cref="KnowledgeCorpus"/> chunks it for search —
+    /// none of those should see it, and twenty-five identical preamble chunks would be search noise.
+    /// </para>
+    /// </remarks>
+    internal const string ScopeNote = """
+        > [!NOTE]
+        > **What a studio manual is.** It teaches a craft *once you have chosen it*. It does not decide
+        > that the craft is the right one for this job — that judgment is yours and sits upstream of
+        > every manual here. A manual that lists forms is listing the forms of its own craft, not the
+        > options available to the piece.
+        >
+        > **These are recommendations, and where a craft has two traditions the manual carries both**
+        > rather than hiding the choice — Loomis and Reilly construct a figure differently and neither
+        > is wrong. Where a source scoped its own claim, the manual keeps that scope and says so.
+        >
+        > **One exception, and it is narrow.** Manual 13 §2 — the integrity of a quantitative encoding —
+        > is about *truth* rather than taste: a bar whose length misstates its value is an error, not a
+        > style, and that section is firm on purpose. Everything else you may argue with.
+        >
+        > **The SDK calls named in a manual are what implement its technique, not a requirement to use
+        > them.** Any of it can be drawn by hand from the primitives.
+
+        ---
+
+        """;
+
+    /// <summary>A manual as an agent receives it: the scope note, then the manual.</summary>
+    /// <remarks>
+    /// A named method rather than an expression inside the resource lambda, so a test can assert that
+    /// the note is actually served. Composed here and nowhere else.
+    /// </remarks>
+    public static string ServedBody(StudioManual manual) =>
+        ScopeNote + (manual ?? throw new ArgumentNullException(nameof(manual))).Body;
+
     /// <summary>One addressable MCP resource per manual, plus the catalogue.</summary>
     public static IEnumerable<McpServerResource> ManualResources()
     {
@@ -163,7 +209,7 @@ public class PolsonManuals
         {
             var captured = manual;
             yield return McpServerResource.Create(
-                () => captured.Body,
+                () => ServedBody(captured),
                 new McpServerResourceCreateOptions
                 {
                     UriTemplate = captured.Uri,

@@ -1,7 +1,37 @@
 # Studio Manual 25: Scoring Motion
 
 > **Credits & Theoretical Foundation**: **This manual distils no book in `reference/`, and says so rather than borrowing a citation.** The studio's reference corpus is about drawing, not timing, and there is no animation text in it. What is here comes from three places, each named where it is used: the **position paradigm** is GSAP's, adopted deliberately and credited (it is not from the corpus and no claim is made about the rest of that library); the **cost figures** are our own measurements, recorded in `docs/motion-score-api.md` §3; and the **seek-rather-than-play** model is the studio's own, argued from the medium — an agent renders frames, it does not watch them. Where this manual states a principle of timing craft that animators have long known, it is stated as received practice without attribution to a source we have not read. The calls are documented at `polson://sdk/core/Motion`.
-> **Purpose**: How to build a piece of motion that can be inspected, revised and resumed — why a score is a function of time rather than a sequence of events, how to place beats so that editing one does not break the rest, and how to look at a result you cannot watch.
+> **Purpose**: How to build a piece of motion that can be inspected, revised and resumed — why a score is a function of time rather than a sequence of events, how to place beats so that editing one does not break the rest, and how to look at a result you cannot watch. **It governs the building of a score, not the decision that the piece should move**; see the scope note below.
+
+---
+
+> [!CAUTION]
+> **This manual governs how to build a seekable score. It does not decide that the piece should
+> move, and it is not the only way to make something that does.**
+>
+> **A still is not a lesser deliverable.** Motion earns its place when *sequence itself carries
+> meaning* — a process in order, a change over time, a reveal, a before and after. Where the content
+> has no sequence, movement is decoration that also takes the reader's control of the pace away.
+> Whether this piece has a sequence worth showing is a design judgment upstream of this manual, and
+> nothing here answers it.
+>
+> **Nor does every piece of motion need a timeline.** `Motion.frame(...)` captures whatever is on a
+> canvas, so a procedural loop that redraws and captures needs no score at all — §6's render cost is
+> what makes rebuilding per frame affordable. A dozen states tiled with `Motion.sheet(...)` may be
+> the whole job. Reach for `Motion.timeline(...)` when you want what §1 lists: to look at any moment,
+> to reproduce a frame exactly, to render out of order, or to revise one beat without disturbing the
+> rest. A twelve-frame logo sting driven by a straight loop needs none of those.
+>
+> **And read the firmness here differently from `polson://manual/13`.** That manual is prescriptive
+> because §2 is about *truth* — a bar's length makes a claim that can be false. **Motion makes no
+> such claim, so this manual has no §2 and is mostly craft.** §5 in particular is received practice,
+> unsourced and said so in the header; treat it as advice from a tradition rather than as a finding.
+> The one part that behaves like a correctness rule is §1's purity property, and even that binds
+> **conditionally** — it is what makes seeking work, so it applies exactly when you want seeking.
+>
+> Where the two manuals meet: an animated infographic is still an infographic. The integrity rules
+> in Manual 13 §2 apply to every quantity in every frame, and a bar that grows is a bar the whole way
+> up.
 
 ---
 
@@ -61,6 +91,8 @@ Name the moments a reader would want to talk about — `open`, `reveal`, `settle
 > **Implemented by**: `tl.tween(...)`, `tl.to(...)`, `tl.set(...)`, `tl.show(...)`, `tl.stagger(...)`.
 
 This is the rule that catches people, and it follows from §1 rather than being an extra restriction: **a change made outside the score does not come back on a backwards seek.** The score can only restore what it knows about.
+
+It binds **as far as you want seeking to work**, which is the conditional in the scope note above. The alternative is not to cheat it but to step outside it: **rebuild the scene each frame and capture that**, which §6's render cost makes affordable and which needs no score at all. What does not work is a half-measure — some state scored and some mutated behind its back — because that reproduces going forwards and quietly does not going back.
 
 Five ways to put a change into it, and the choice is about what kind of change it is:
 

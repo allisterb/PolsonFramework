@@ -1,12 +1,34 @@
 # Studio Manual 13: Data Encoding & Infographic Composition
 
 > **Credits & Theoretical Foundation**: Four sources, each named where it is used. **Edward R. Tufte**, *The Visual Display of Quantitative Information* (Graphics Press 1983) for graphical integrity, the lie factor, data-ink and data density; *Envisioning Information* (1990) for micro/macro readings and layering; *Visual Explanations* (1997) for the smallest effective difference. **William S. Cleveland & Robert McGill**, *Graphical Perception: Theory, Experimentation, and Application to the Development of Graphical Methods*, JASA 79:531–554 (1984), with its companion in Science 229:828–833 (1985), for the measured accuracy of perceptual judgments — the reason §1 orders forms the way it does. The form taxonomy and composition patterns are distilled from the *Epic Infographics* skill corpus (MIT-licensed). All are restated in our own words and bound to the Polson SDK; ledger entries and the differing licence terms are in `reference/README.md`.
-> **Purpose**: How to choose a form because of how accurately a reader can decode it, prove the picture is not lying, decide what ink to remove, and compose the result — with the checks that make each of those verifiable rather than asserted.
+> **Purpose**: How to encode a quantity honestly and legibly — choosing the form by how accurately a reader can decode it, proving the picture is not lying, deciding what ink to remove, and composing the result — with the checks that make each of those verifiable rather than asserted. **It governs the quantitative parts of a graphic, not the choice of what the graphic is**; see the scope note below and §1d.
 
 ---
 
+> [!CAUTION]
+> **Read this before the next note, because it bounds it. This manual governs how you draw a
+> quantity. It does not decide what the graphic should be.**
+>
+> Nothing here says a piece must be built out of charts, and the table in §1 is **not a menu of what
+> to make** — it answers a narrower question: *given that the reader has to extract a quantity, which
+> form lets them do it most accurately?* Whether the reader should be extracting quantities at all is
+> a design judgment upstream of this manual, and §6 is where it lives.
+>
+> **Cleveland and McGill scope their own theory exactly this way**, and the sentence is worth having
+> in front of you: *"We do not argue that this accuracy of quantitative extraction is the only aspect
+> of a graph for which one might want to develop a theory, but it is an important one."* An earlier
+> draft of this manual dropped that boundary and read as though the ranking governed every graphic.
+> It governs one thing, and governs it well.
+>
+> So: **a cutaway with callouts, an annotated schematic, a map, an exploded assembly, a drawn object
+> with figures pinned to its parts** — none of these is on §1's list, none is a failure to follow this
+> manual, and the studio's best work is of that kind. Invent the form. Then, **where a number is
+> actually encoded inside it** — a bar of mass fractions, a plotted trajectory, a filled gauge — §2
+> and §1a apply to *that part*, in full and without softening. Freedom about the form; no freedom
+> about the truth of an encoding.
+
 > [!IMPORTANT]
-> **This manual is more prescriptive than the drawing manuals, deliberately.** Those carry two schools
+> **Within that scope, this manual is more prescriptive than the drawing manuals, deliberately.** Those carry two schools
 > where two exist, because a figure can be constructed by Loomis or by Reilly and neither is wrong.
 > Most of what follows is not like that. **§2 is about truth** — a bar chart with a truncated axis
 > asserts something the data does not, and that is an error, not a style. **§1's ordering is an
@@ -28,7 +50,9 @@
 > still built from `Scale.*` for their geometry, `Layout.*` for their placement, and ordinary `ctx`
 > drawing.
 
-Pick the form by the question the data answers, not by habit. Three questions decide it:
+**First decide whether the reader is extracting a quantity at all** — see §1d, because if they are not,
+this table is the wrong tool and the rest of §1 does not apply. Where they are, pick the form by the
+question the data answers, not by habit. Three questions decide it:
 
 1. **What must the reader do** — compare, count, follow, or locate?
 2. **How many values?** One value is not a chart. Make it big and label it.
@@ -207,6 +231,34 @@ waffle **can** be. But the model reports itself as **area, rank 4**, which is de
 pessimistic reading — a reader who counts gets an exact answer and you cannot assume anyone will.
 Claiming counting's exactness for a graphic most people eyeball would be the flattering assumption
 rather than the safe one.
+
+### 1d. When the reader is not extracting a quantity
+
+The table above assumes the reader's job is to get a number back out. Often it is not, and then none
+of §1a's ranking bears on the decision at all — there is no quantity being decoded, so there is no
+decoding accuracy to optimise. Forms with no entry in that table and no need of one:
+
+- **A cutaway or exploded assembly** — the parts of a thing, named and pointed at.
+- **An annotated schematic or blueprint** — a drawn object with figures pinned to its features.
+- **A map or a plan** — where, rather than how much.
+- **A process or sequence** — what happens next, and what it depends on.
+- **A specimen sheet** — many labelled items whose interest is the range, not any value.
+- **A drawn scene carrying its data diegetically** — §6a, and the form most worth reaching for in
+  promotional work.
+
+**These are not lesser choices or exceptions.** A technical cutaway that names forty parts is doing a
+job no bar chart can do, and reaching for a bar chart because §1 lists one would be the mistake.
+
+> [!IMPORTANT]
+> **The two halves compose, and that is the whole point.** A blueprint is free to be a blueprint —
+> and the moment it contains a stacked bar of mass fractions, that bar's segments must be
+> proportional and must sum to the whole (§2); the moment it plots a trajectory, the axis rules
+> apply; the moment it fills a gauge, the meter's rules do. **Invent the container, then be strict
+> about every quantity inside it.**
+>
+> That is also how to read `Chart.*`: those constructions are for the quantitative *parts*, and their
+> `slots` (§6a) exist precisely so those parts can be drawn as anything the piece calls for rather
+> than as rectangles.
 
 ### Form-level anti-patterns
 

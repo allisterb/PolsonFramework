@@ -1,7 +1,7 @@
 # Studio Manual 11: Typography, Font Pairing & Logotypes
 
 > **Credits & Theoretical Foundation**: Synthesized from Robin Williams' *The Non-Designer's Design Book* (CRAP principles, type categories, and contrast rules) and Doyald Young's *Fonts and Logos* (letterform optical mechanics, kerning matrices, stroke weight rules, and logotype lockups).
-> **Purpose**: Provides rigorous principles, mathematical ratios, and algorithmic rules for logotype design, font pairing, typographic hierarchy, and brand lockups.
+> **Purpose**: Ratios and procedures for logotype design, font pairing, typographic hierarchy and brand lockups. **Craft guidance, not law** — the pairing matrix and the scale ratios are conventions that work, and a brief with its own typographic voice may reasonably depart from them.
 
 ---
 

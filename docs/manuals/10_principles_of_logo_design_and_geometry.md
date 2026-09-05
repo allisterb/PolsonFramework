@@ -9,7 +9,18 @@
 
 > **Implemented by**: the toolkit as a whole — `Logo.*` for raster construction and `VectorLogo.*` / `paper.*` for the vector equivalents. Signatures: `polson://sdk/core/Logo` and `polson://sdk/core/VectorLogo`; returned models: `polson://sdk/schema/Logo`.
 
-A professional logo mark is not a freehand sketch; it is a **rigorous geometric construct** grounded in:
+> [!IMPORTANT]
+> **This manual teaches the constructed mark, which is a school and not the only one.** Bokhua's case
+> is that a mark built on a rational grid holds together at every size and can be reasoned about and
+> defended — and that case is strong, which is why the whole manual follows it. But a great many
+> celebrated marks were **drawn**, and a hand-made letterform or an illustrative mark is not a failure
+> to be rigorous. Choose the approach for the brief; if you choose construction, this is how it is
+> done properly.
+>
+> An earlier draft of this line read *"a professional logo mark is not a freehand sketch"* — which
+> states one tradition's position as a fact about the trade.
+
+A mark built this way is a **geometric construct** grounded in:
 1. **Rational Proportions**: Ratios that the human visual cortex perceives as inherently harmonious (Golden Ratio $\Phi = 1.61803398875$, $\sqrt{2} \approx 1.414$, $1:1$, $1:2$).
 2. **Tangent Fillets & Continuity**: Zero broken kinks or unintended curvature discontinuities between lines and arcs ($G^0, G^1, G^2$ continuity).
 3. **Optical Illusion Corrections**: Compensations for human perceptual phenomena (irradiation, bone effect narrowing, circular overshoot, visual mass centroids).

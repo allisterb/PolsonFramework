@@ -1,34 +1,40 @@
-﻿# Session Handoff — 2026-09-02 (fifth and sixth sessions)
+﻿# Session Handoff — 2026-09-05 (seventh session)
 
-State after the session that gave the studio a **window onto runs it does not drive**. It started as
-"can we watch a Claude Code run in the browser" and turned into the discovery that most of what the
-dashboard needed already existed — and that once you can watch a run, you start finding things.
+State after the session that **finished the motion score** and then turned the studio toward
+**infographics** — the direction the business case actually rests on, and the first one where the
+competition is a diffusion model rather than another drawing tool.
 
-**Tests: 1,232 .NET — all passing** (Drawing 406, MCPServer 464, CLI 268, ExtendedMind 94).
-The previous handoff is superseded; its open items are carried forward at the end.
+**Tests: 1,645 .NET — all passing** (Drawing 736, MCPServer 537, CLI 278, ExtendedMind 94).
+Sections are appended, never rewritten, so everything below §17 is history and remains accurate as
+such.
 
-> **§14 is the current state** for the drawing corpus and **§15 is the detailed queue** — a session
-> continuing that work should start at §15, which carries the designs, the measured constants and the
-> acceptance tests, so nothing has to be re-derived. **§16 is the separate motion thread** (animated
-> SVG, frame capture, the score API), and its plan lives in `docs/motion-score-api.md`.
-> Together they supersede §13's pick-up list,
-> though §13 remains accurate on everything else and is
-> where the manuals and the `pose` parameter are described. §12 is the session before that and
-> remains accurate as history. §§1–8 are the fifth session (observability, `scriptFile`, the Claude
-> profile); §§9–12 are the sixth (cs-5 findings, encode cost, the Guy exclusion, and re-sourcing the
-> manuals to Loomis, Norling, Faragasso, Hampton and Janson).
+> **§§17–20 are this session and are the current state.** §17 is the motion score, which lands §16's
+> plan and **reverses two of its decisions by measurement** — read it before touching `Mina` or
+> `MotionTimeline`. §18 is the infographics thread: the sources and **their two different licence
+> classes**, Manual 13, and the `Chart` toolkit. §19 is the prescription/scope distinction, which
+> touched every manual. **§20 is the pick-up list** — start there.
+>
+> Earlier: **§14** is the drawing corpus and **§15** its queue, both still accurate; §15's designs and
+> measured constants are worth reading before adding to `Drawing`. **§16 is now history** — its plan
+> is built, so read §17 rather than §16 for what the motion surface does. §13 describes the manuals
+> and the `pose` parameter; §12 is the session before that. §§1–8 are the fifth session
+> (observability, `scriptFile`, the Claude profile); §§9–12 are the sixth (cs-5 findings, encode cost,
+> the Guy exclusion, and re-sourcing the manuals to Loomis, Norling, Faragasso, Hampton and Janson).
 
 > [!IMPORTANT]
 > **A different thread is open and is time-boxed: the Agentic Cinema hackathon.**
 > `docs/agentic-cinema-assessment.md` is the cold-start brief — contest rules, the eligibility checks,
-> and what was verified in Google's ADK source. Assessed 2026-09-03, **no work started**, deadline
-> **14:00 PT 2026-09-09**.
+> and what was verified in Google's ADK source. Assessed 2026-09-03, deadline **14:00 PT 2026-09-09**.
 >
 > The short version: Polson is **eligible** (initial commit 2026-08-23 is inside the contest period,
 > and no rule bars a concurrent hackathon entry — both checked, not assumed). ADK plugs `bin/cli` in
 > unchanged through `McpToolset` + `StdioConnectionParams`, and **Agent Engine deploys a container
-> rather than a pickled agent**, so the .NET engine survives deployment. Four things are missing: an
-> ADK entry point and container, Parallel's Search API at runtime, a hosted URL, and a 3-minute video.
+> rather than a pickled agent**, so the .NET engine survives deployment.
+>
+> **This paragraph said "no work started" for three days after that stopped being true, and a later
+> session believed it** — the ADK entry point, the container and the Cloud Run deploy are done. What
+> remains is in §20: **Parallel's Search API, which gates eligibility**, public access, mounting the
+> studio UI, and the video.
 >
 > **The container finding outlives the contest** — it is the unlock for Milestone 5, running the studio
 > outside the Antigravity IDE.
@@ -1758,3 +1764,242 @@ A slice of `cs-5` as the dashboard shows it, which is the shortest way to see wh
 
 The timestamps, the gaps, the tool arguments, the role attribution and the at-work line were all
 invisible at the start of the session. The last line cost an hour before any of them existed.
+
+---
+
+## 17. The motion score landed — `docs/motion-score-api.md` is now history, not a plan
+
+**Everything in §16's plan is built** apart from `Motion.saveFrames`. The plan document has been
+updated in place: each step is struck through with what actually happened, so it reads as a record
+rather than a queue. Two of its decisions were **reversed by measurement**, and both reversals are
+worth carrying.
+
+### 17a. §6.1 resolved — declare the delegate type
+
+The open question was how a JS function reaches C# on a hot path. **Option 1 works**: declare
+`Action<double>` / `Func<double, double>` and Jint marshals it. Measured against an engine carrying
+the options that matter:
+
+| | |
+| :--- | :--- |
+| JS arrow → `Action<double>` | binds; **1.5 µs per call** |
+| the delegate held and called **after `Execute` returned** | works |
+| cost per *conversion* | **17.8 µs — 12× a call**, so convert at add time, never per frame |
+| JS object literal → a C# class with settable properties | binds, `Func<double,double>` included |
+| a positional `record` | **does not bind** — "No public methods with the specified arguments were found" |
+
+**The consequence that shaped the API:** a function inside an options object read through
+`JsInterop.AsDict(...)` arrives as a raw `Func<JsValue, JsValue[], JsValue>` — a Jint type the Skia
+assembly must not name. So `MotionEntryOptions` is a **typed class**, and `MotionToolkit`'s existing
+`object? options` + `AsDict` pattern must not be copied where a callback is involved.
+
+> **But the reverse holds for the Chart toolkit, and that is not a contradiction.** A typed class
+> cannot report a misspelled option — the binding was never told the name exists, so `{ durr: 400 }`
+> is silently ignored. A dictionary *can* see it. So: **typed class where a callback must survive,
+> dictionary where it must not, and validate the keys.** Both are in the tree and both are right.
+
+### 17b. The `mina` prelude was measured and rejected
+
+§5 planned a JS prelude rebinding `mina` to closures. It works and **costs the strict-member
+surface**: `mina` becomes an `ExpandoObject`, so `has(mina, 'nonsense')` answers **true** and
+`suggest` answers *"'nonsense' exists on ExpandoObject — nothing to correct"* — wrong advice naming a
+type no script author has heard of.
+
+**Built instead:** every easing is a **delegate-valued property** (`public Func<double, double>
+Elastic { get; } = ElasticCore;`), so it carries its own target and `this` never enters into it. All
+four positions work, `has`/`suggest`/probe recording are untouched, and no prelude runs. `Mina`'s
+`<remarks>` says not to tidy them back into methods; `MinaInteropTests` pins all four positions.
+
+§5 also contained a **false claim that was the stated reason to do the prelude first** — that
+`easing: mina.elastic` inside an options object would break. It does not; only *calling* through an
+object did. Corrected in place.
+
+### 17c. What is built
+
+`MotionTimeline` in `src/Polson.Drawing.Skia/`, registered as `tl`: `tween` · `to` · `set` · `show` ·
+`stagger` · `label` · `seek`/`at` · `duration` · `labels` · `count`, with the full GSAP position
+grammar (`'+='`, `'-='`, `'<'`, `'>'`, `'<+=100'`, labels, label offsets). 38 engine-free tests.
+**Manual 25** written; the `Motion` coverage floor raised **0 → 100**.
+
+Two defects found while building it, both fixed: `SkiaColorParser.Parse` returned black for
+unrecognised input with no way to tell (now `TryParse`, with `Parse` as the discarding wrapper), and
+a dozen SVG attributes were **settable but not readable** — `display` among them, which a visibility
+window needs. A background task then fixed the rest (§18d).
+
+**Not done:** `Motion.saveFrames(dir, options?)` — step 7, trivial, the seam to ffmpeg for anything
+over ~20 s. And the spike file `scratchpad/figure/20_spike.js` **is gone** with its session, so step
+5 became "build a score and assert determinism" rather than a regression check.
+
+---
+
+## 18. The infographics thread — sources, Manual 13, and a `Chart` toolkit
+
+The session's largest thread, and a **product direction rather than a feature**: for advertising and
+promotional work Polson can do what a diffusion model structurally cannot — proportional encoding,
+frame-to-frame identity, vector output, and brand compliance from a stylesheet. The argument that
+survives scrutiny is not *precision* but **auditability**: the image *is* the data, and every number
+traces to a source.
+
+### 18a. Five sources acquired, scanned and ledgered
+
+| | Terms |
+| :--- | :--- |
+| Tufte, *Visual Display of Quantitative Information* (1983) | Bokhua class |
+| Tufte, *Envisioning Information* (1990) | Bokhua class |
+| Tufte, *Visual Explanations* (1997, 7th printing 2005) | **Faragasso class** |
+| Cleveland & McGill, *Science* 229:828–833 (1985) | JSTOR — **personal, non-commercial** |
+| Cleveland & McGill, **JASA 79:531–554 (1984)** | JSTOR — same |
+
+**The Tufte licence split is the thing to remember: it is the printing date, not the author.** The
+1983 and 1990 printings carry a bare all-rights-reserved; the 2005 printing of *Visual Explanations*
+names *"information storage and retrieval… computer software… now known or developed in the future"*
+with an express carve-out for **scholarly analysis**. So a manual distilled from it is fine; its
+OCR'd text must not enter the retrieval corpus. **Do not generalise one Tufte volume's terms to
+another** — that is why all three were read separately.
+
+**The C&M rows need a decision before anything commercial ships.** JSTOR's terms bind *the copy*, not
+the *finding* — so distil and cite as `JASA 79:531–554 (1984)`, never by the JSTOR URL, keep the text
+out of the corpus, and do not redistribute the PDF (the 1984 copy carries a per-download stamp with
+the accessing IP on every page). Nothing depends on the artifact; the ranking is in Cleveland's own
+*Elements of Graphing Data*. **Bertin, Munzner and Wilkinson are still absent** and are the remaining
+names on the 2026-08-29 list; none is blocking.
+
+### 18b. Manual 13 rewritten, and three things the sources say that most citations get wrong
+
+- **It is six ranks, not a ten-item ladder.** Length/direction/angle are tied, as are volume/curvature
+  and shading/saturation.
+- **The ordering is part measured and part asserted, and the authors say so**: *"aspects of the
+  ordering are partly conjectural in that we have no controlled experimentation to support them."*
+  Position and length were tested and won; much of the rest is reasoned.
+- **They name replacement forms**, which is the part usually forgotten — bar charts, divided bars,
+  pies and shaded maps need *"radical surgery"*, with **dot charts, grouped dot charts and
+  framed-rectangle charts** offered instead. That was a toolkit gap, and it is now closed.
+
+The manual gained graphical integrity with the **lie factor as a computed check**, data-ink and the
+**smallest effective difference**, micro/macro readings and layering, and litmus tests upgraded from
+prose to five assertions (including the *Marvel Way* **reduction test** via `bitmap.resize`).
+`Scale` coverage rose 54% → **63%** on members that earned their mention.
+
+### 18c. The `Chart` toolkit — eleven constructions, and `slots`
+
+New area, new receiver, floor at **100**: `createColumnChart` · `createBarChart` · `createDotChart` ·
+`createGroupedDotChart` · `createFramedRectangleChart` · `createSmallMultiples` · `createCallout` ·
+`createWaffle` · `createPictogram` · `createProgressMeter` · `createProportionalShapes` ·
+`createTimeline`, plus `createChartGeometry` and `drawChart`. **156 tests**, all through the model
+rather than the pixels.
+
+> **The reframe that matters, and it came from the director mid-thread: for ad work the chart forms
+> are not the deliverable — the armature is.** Every model carries **`slots`**: one entry per mark
+> with where it stands, how big it is, which way it grows (`angleDeg` 0 up / 90 right) and how far up
+> the scale it got (`fraction`). Draw skyscrapers, droplets, coins, little figures. `slots` means the
+> same thing in every form, so a mark routine survives a change of chart form. **This is the feature
+> to lead with**, and `drawChart` (plain rectangles) is explicitly a drafting tool.
+
+Each model also carries `encoding`, `encodingRank`, `isZeroBased` and `lieFactor`, so a run record
+shows what accuracy a chart spent and whether its ink is honest. Two lie factors are **measured from
+the drawn geometry** rather than asserted — proportional shapes compare drawn *areas* against value
+ratios, so a sizing error reports itself.
+
+**Rank-0 is ours, not the literature's**: a callout asks the reader to *read a numeral*, and C&M's
+ordering starts at 1 and says nothing about text. Said so in the docs.
+
+### 18d. Two background tasks, landed
+
+Both spun off mid-session and both worth keeping:
+
+- **`CoreReferenceExampleTests`** — the nine `docs/Polson.core.md` examples now execute, with a floor
+  so demoting fences cannot become the way to pass. Four genuine fragments were demoted to ` ```js `.
+- **`SnapAttributeRoundTripTests`** — every settable SVG attribute now reads back, with a test that
+  scans the source and asserts **every setter case has a getter arm**, which makes the class of bug
+  impossible rather than fixing this instance.
+
+> **Line endings bit both landings, in opposite directions.** A worktree checks out CRLF where the
+> main tree holds LF for some files and CRLF for others. Copying a whole file across flipped 1,680
+> lines in one case; hand-applying four edits was correct there, and a straight copy was correct for
+> the other. **Check `git diff --numstat` after landing worktree work**, always.
+
+---
+
+## 19. Prescription versus scope — the distinction that runs through all of it
+
+Manual 13 was deliberately made **more prescriptive** than the drawing manuals, on the argument that
+§2 is about *truth* (a truncated axis asserts something false) and that the cost of error is
+asymmetric — a mediocre drawing disappoints somebody; a false baseline is a claim a client publishes
+under their own name.
+
+**Then the director caught the over-reach**, and it was real: a manual prescriptive about *how to
+encode a quantity* was reading as though it governed *what the graphic should be*, which would have
+argued away the Apollo blueprint — the studio's own best work.
+
+**The source had already drawn the line the manual dropped.** Cleveland & McGill, verbatim: *"We do
+not argue that this accuracy of quantitative extraction is the only aspect of a graph for which one
+might want to develop a theory, but it is an important one."* Restoring that boundary is honesty
+about the source, not a softening of it.
+
+So the shape now is:
+
+- **Manual 13** — new scope note above the prescriptive one, bounding it; §1's table is *not a menu of
+  what to make*; **new §1d** naming the non-quantitative forms (cutaway, schematic, map, sequence,
+  specimen sheet, diegetic scene) as first-class. **Invent the container, then be strict about every
+  quantity inside it.**
+- **Manual 25** — a different note, because **motion makes no claim that can be false, so it has no
+  §2 and is mostly craft**. A still is not a lesser deliverable; `Motion.frame` needs no timeline;
+  §1's purity property binds *conditionally*, exactly when you want seeking.
+- **Every manual** — a scope note is now **prepended at serve time** by `PolsonManuals.ServedBody(...)`.
+
+> **Why served rather than in the index.** `BuildIndex()` already carried a "not prescriptive"
+> paragraph that an agent reading `polson://manual/06` never sees — the same second-place-copy defect
+> that let the index claim for two days that no manual cited *Marvel Way* while two were written from
+> it. Injected at **serve** time only, so `ManualExampleTests`, `ManualCoverageTests` and the search
+> corpus still read a clean `Body`.
+
+**Audited all 23 rather than writing 23 notes.** Over-reach was concentrated: Manual 10 asserted
+*"a professional logo mark is **not** a freehand sketch"* (Bokhua's school as fact), Manual 12's
+stages were "required", and 01/02/03/04/11 said "exact", "standards", "rigorous rules". Fixed.
+**05, 08, 15, 16 and 23 were already properly scoped and were left alone.**
+
+`ManualScopeTests` guards it. Its register lint failed first time on Manual 12's *own disclaimer* —
+"not a **required** sequence" — because a substring cannot tell a claim from its negation; it matches
+phrases now, and its remarks record the false positive and admit it is a lint rather than a proof.
+
+---
+
+## 20. Where to pick up
+
+**Tests: 1,645 — all passing** (Drawing 736, MCPServer 537, CLI 278, ExtendedMind 94).
+
+### The infographics direction
+
+1. **Wire Parallel's Search API.** It is the Agentic Cinema track's **hard requirement** and it is
+   still untouched — and it is the same work the infographics direction needs, so the eligibility
+   requirement and the differentiator demo are one task. A run that searches for figures, cites them,
+   and renders a chart whose bars are provably those figures satisfies both. **Design the provenance
+   path deliberately**: a retrieved number rendered into an authoritative-looking chart is a worse
+   failure than one in prose.
+2. **Build the demo that shows a revision, not a render.** The same graphic with one number changed
+   and everything downstream consistent; or three brand palettes from three stylesheets. Aesthetics
+   is the one axis where the argument is uphill; consistency under revision has no contest.
+3. **Follow-on toolkit**: an ink-share helper for §3's erasing pass. (`Scale.lieFactor` is moot — the
+   models compute it.)
+
+### Agentic Cinema — `docs/agentic-cinema-assessment.md`, corrected this session
+
+Its §4 said "Four items, **none started**" three days after that stopped being true, and a session
+believed it. Now accurate: **ADK entry point, container and Cloud Run deploy are done.** Remaining —
+**Parallel (gates eligibility)**, public access (needs the Milestone 6 spend caps first, not just the
+flag), **mounting the studio UI** (`main.py` says "nothing is mounted yet"; a judge currently reaches
+ADK's dev interface, against the 25% Design criterion), and the video. **Repo is AGPL-3.0; whether it
+is public was not verified.**
+
+### Carried forward
+
+- **An unidentified intermittent failure in `Polson.Tests.MCPServer`** — seen twice in ~6
+  full-solution runs, passes in isolation, never captured. **It is not the recorded flake**, which is
+  `IrradiationCompensationTests` in `Polson.Tests.Drawing`. Do not file it there.
+- **`reference/README.md` is gitignored** (`.gitignore:432`), so the ingestion ledger has no version
+  history and a fresh clone gets none. Worth force-adding even though the books stay out.
+- **The fence regex is duplicated** between `CoreReferenceExampleTests` and `ManualExampleTests`,
+  described in a comment as "shared".
+- **Eighteen callout examples in `Polson.core.md` are untested** — quoted blocks sit off column 0.
+  Currently none is a complete program, but nothing enforces that.
+- `Motion.saveFrames` (§17c); Bertin/Munzner/Wilkinson (§18a).

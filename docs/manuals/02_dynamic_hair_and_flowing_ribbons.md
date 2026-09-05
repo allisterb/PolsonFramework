@@ -3,7 +3,7 @@
 > **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956) — §1 from
 > pp. 71, 77 and 99. The ribbon construction of §2 is the studio's own and is marked as such; what
 > Loomis supplies is the reason for it.
-> **Purpose**: Provides geometric modeling principles, 3D ribbon algorithms, volume offset rules, and Bézier strand formulas for drawing expressive, windswept comic hair and headbands.
+> **Purpose**: How to build comic hair and cloth ribbons as 3D volumes rather than outlines — ribbon algorithms, volume offsets and Bézier strand formulas. **One idiom among several**: the ribbon model suits stylised comic hair, and a painterly or naturalistic treatment is a different craft this manual does not cover.
 
 ---
 

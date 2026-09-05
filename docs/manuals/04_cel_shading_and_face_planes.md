@@ -3,7 +3,7 @@
 > **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956) — §2 from
 > Plate 9 (p. 29) and Plates 32–33 (p. 61). §1's light vectors are Manual 07's material and
 > cross-reference it rather than repeating it; §3's palettes are a **character brief**, not theory.
-> **Purpose**: Provides lighting vectors, facial shadow plane geometries, color tiering formulas, and atmospheric gradients for high-impact comic book coloring.
+> **Purpose**: Cel-shaded comic colouring — lighting vectors, facial shadow planes, colour tiering and atmospheric gradients. **The flat-tier idiom specifically**; continuous rendering is a different approach to the same light, and Manual 07 carries the volumetric treatment.
 
 ---
 

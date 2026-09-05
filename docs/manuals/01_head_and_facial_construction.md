@@ -6,7 +6,7 @@
 > `Drawing.createLoomisHead(...)` returns these proportions; §2a lists what it carries that neither
 > source supplies.
 
-> **Purpose**: Provides exact mathematical proportions, geometric construction formulas, and JavaScript Canvas2D algorithms for drawing human and comic heads in 3/4 and dynamic perspective views.
+> **Purpose**: Loomis's proportional canon and its construction, as formulas and Canvas2D algorithms, for heads in 3/4 and dynamic perspective. **A canon, not a measurement of humanity** — real heads vary, other schools divide them differently, and §2a says which numbers are Loomis's and which the toolkit added. Manual 23 carries the *comic* idiom for the same subject.
 
 ---
 

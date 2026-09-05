@@ -1399,6 +1399,11 @@ canvas;
 Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one call returns a **model** you can read, measure, restyle and animate. `Scale` maps values to pixels and `Layout` divides a page; this is the layer above them, and it exists because writing that loop by hand was sixty lines every time.
 
 > [!IMPORTANT]
+> **Reach for these when the reader has to extract a quantity — not for every graphic.** A cutaway with callouts, an annotated schematic, a map, an exploded assembly, a drawn scene carrying its figures: none of those is a chart, none is on `polson://manual/13` §1's list, and none is a failure to use this toolkit. Cleveland & McGill scope their own ranking the same way — *"we do not argue that this accuracy of quantitative extraction is the only aspect of a graph for which one might want to develop a theory"*.
+>
+> **The two compose.** Invent the container freely; then, where a number is actually encoded inside it — a stacked bar of mass fractions, a plotted trajectory, a filled gauge — use the construction for *that part* and its integrity rules apply in full. Freedom about the form, none about the truth of an encoding. See `polson://manual/13` §1d.
+
+> [!IMPORTANT]
 > **These are armatures, not pictures — a rectangle is the dullest thing you can put in a bar's box.** Every model carries **`slots`**: one entry per mark, saying where it stands, how big it is, which way it grows, and how far up the scale it got. Draw whatever you like there — skyscrapers for a height record, bottles filling, coins stacking, a rocket climbing — and the result is still a chart underneath, with its baseline and its lie factor intact.
 >
 > ```javascript
@@ -1809,6 +1814,9 @@ canvas;
 A **seekable score**. Entries are placed on a timeline and every one is a pure function of the time you ask for, so `tl.seek(t)` states the whole scene at `t` without having played anything before it.
 
 - `Motion.timeline(options?)` → `tl` — A new score. `options` is `{ defaults?: { dur?: number, easing?: fn } }`; `dur` defaults to 500 ms and `easing` to linear.
+
+> [!IMPORTANT]
+> **Not every piece of motion needs a timeline, and not every piece needs to move.** `Motion.frame(...)` captures whatever is on a canvas, so a procedural loop that redraws and captures needs no score — the 2.7–12 ms render cost is what makes rebuilding per frame affordable. Reach for a score when you want what it buys: to look at any moment without playing to it, to reproduce a frame exactly, to render out of order, or to revise one beat without disturbing the rest. A twelve-frame sting driven by a straight loop needs none of those. See `polson://manual/25` for when motion earns its place at all.
 
 ### Adding to the score
 

@@ -3,7 +3,7 @@
 > **Source Reference**: Klaus Janson, *The DC Comics Guide to Inking Comics* (Watson-Guptill / DC
 > Comics, 2003) — §1 from ch. 6 (p. 80), §2 from ch. 7 (p. 88), §4 from ch. 9 (pp. 110–113), §5 from
 > ch. 7 (pp. 90, 96–98). Pixel widths are the studio's calibration; no book gives pixels.
-> **Purpose**: Provides line weight hierarchy standards, tapered stroke algorithms, directional cross-hatching recipes, and graphic black ink placement rules for authentic comic book illustration.
+> **Purpose**: Janson's inking craft as code — the line-weight hierarchy, tapered strokes, directional feathering and where the blacks go. **Conventions of one tradition**, taught by one of its best practitioners; other inkers weight a page differently, and a piece that is not inked comic art may want none of it.
 
 ---
 

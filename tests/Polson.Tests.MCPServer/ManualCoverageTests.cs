@@ -92,6 +92,13 @@ public class ManualCoverageTests : TestsRuntime
         ["LogoType"] = 66,
         ["Logo"] = 65,
         ["Scale"] = 54,
+
+        // A spike, and deliberately at zero rather than given a manual it has not earned. The
+        // authoring model above it is still an open question — whether a timeline lives in
+        // JavaScript or in the engine, and whether easings are baked to SMIL for export — so a
+        // manual written now would document a decision nobody has made. It is in
+        // `docs/Polson.core.md` so it is discoverable, and this floor rises when the shape settles.
+        ["Motion"] = 0,
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>

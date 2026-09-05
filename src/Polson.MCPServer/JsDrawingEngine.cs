@@ -119,6 +119,7 @@ public partial class JsDrawingEngine : Runtime
 
         var papers = new List<SnapPaper>();
         var canvases = new List<SkiaCanvas>();
+        MotionToolkit? motionToolkit = null;
         var exitRequested = false;
         string? exitMessage = null;
 
@@ -270,6 +271,11 @@ public partial class JsDrawingEngine : Runtime
             // Value-to-pixel mapping: the numeric spine of a chart. Draws nothing itself.
             var scaleToolkit = new ScaleToolkit();
             engine.SetValue("Scale", scaleToolkit);
+
+            // SPIKE: frame capture and animated encoding. Holds bitmaps for the life of the
+            // execution, so it is disposed with the engine rather than left to the collector.
+            motionToolkit = new MotionToolkit(ProjectRoot);
+            engine.SetValue("Motion", motionToolkit);
 
             // Cloud asset requisition. Registered even when disabled so scripts can branch on the
             // returned failure rather than on the global being absent.
@@ -589,6 +595,10 @@ public partial class JsDrawingEngine : Runtime
             result.Error = Explain(ex);
             Runtime.Error(ex, "Script execution error: {0}", ex.Message);
         }
+
+        // Frames are uncompressed bitmaps and can be hundreds of megabytes, so they are released
+        // when the execution ends rather than left for the collector to notice.
+        motionToolkit?.Dispose();
 
         result.ImageSize = result.ImageBytes?.Length ?? 0;
         result.EncodeTimeMs = encodeSw.ElapsedMilliseconds;

@@ -1551,3 +1551,48 @@ ctx.fillRect(0, 0, 1200, 760);
 ctx.restore();
 canvas;
 ```
+
+---
+
+# Motion (Frame Capture & Animated Encoding)
+
+> [!WARNING]
+> **This is a spike.** It proves one path end to end — a script drives its own timeline, captures a frame per step, and saves an animated WebP — so that the authoring API above it can be designed against something that works rather than something imagined. The calls below may change. Nothing else in this reference depends on them.
+
+- `Motion.frame(source: SnapPaper | SkiaCanvas | SkiaBitmapWrapper, width?: number, height?: number)` → `number` — Rasterises the **current state** of a paper, canvas or bitmap and keeps it as the next frame. Returns the frame count so far. A **copy** is taken, so a caller may keep drawing on the same paper.
+- `Motion.save(filePath: string, options?: { fps?: number, frameMs?: number, quality?: number, lossless?: boolean })` → `{ path, frames, storedFrames, merged, width, height, frameMs, durationMs, bytes }` — Encodes the held frames as one animated WebP. `filePath` is contained exactly as `outFile` is. Frames are **kept** afterwards, so the same sequence can be saved twice at different qualities without redrawing it.
+- `Motion.count` → `number` — How many frames are held.
+- `Motion.clear()` — Discards them.
+
+> [!IMPORTANT]
+> **`frames` is what you handed in; `storedFrames` is what the file holds, and they differ legitimately.** The WebP encoder merges consecutive **pixel-identical** frames and sums their durations — a real size win, and lossless — so a sequence that holds still for half a second stores one long frame rather than twelve short ones. `durationMs` is unaffected. A 57-frame capture whose opening is motionless stored 47 frames and played for exactly the same 2280 ms.
+>
+> Every frame must be the same size; a mismatch is refused with both sizes named rather than silently letterboxed. Frames are uncompressed bitmaps, so there is a ceiling on retained pixels — save, `clear()`, or draw a smaller board.
+
+> [!TIP]
+> **The timeline is not here, and does not need to be.** A tween is an easing — a pure function of `0..1`, and `mina` already supplies all nine — applied to a setter. So the whole model is a few lines of JavaScript over calls that already exist, and the status comes from a seek instead of a clock:
+>
+> ```javascript
+> const tweens = [];
+> function tween(from, to, set, at, dur, easing) {
+>     const ease = easing || mina.linear;          // captured into a local — see the warning below
+>     tweens.push({ from, to, set, at, dur, ease: n => ease(n) });
+> }
+> function seek(ms) {
+>     for (const t of tweens) {
+>         const raw = (ms - t.at) / t.dur;
+>         const s = raw < 0 ? 0 : raw > 1 ? 1 : raw;   // clamped, so a finished tween holds
+>         t.set(t.from + (t.to - t.from) * t.ease(s));
+>     }
+> }
+>
+> for (let i = 0; i < 57; i++) { seek(i * 40); Motion.frame(paper); }
+> Motion.save('artifacts/shot.webp', { fps: 25 });
+> ```
+>
+> Because every tween is a pure function of its own status, **seeking is order-independent**: frames can be rendered in any order, and re-seeking a time already visited reproduces it exactly.
+
+> [!CAUTION]
+> **An easing cannot be stored directly on an object and called through it.** `{ ease: mina.elastic }` followed by `t.ease(0.5)` **throws** — JavaScript binds `this` to the containing object, and the interop layer then refuses the receiver with *"Object type Polson.Drawing.Svg.Mina does not match target type System.Dynamic.ExpandoObject"*, a message naming neither easings nor the line responsible.
+>
+> Every other position works: `mina.elastic(0.5)` directly, `const f = mina.elastic; f(0.5)`, and `n => mina.elastic(n)`. So capture the easing into a local and call it through a closure, as above.

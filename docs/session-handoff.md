@@ -7,8 +7,10 @@ dashboard needed already existed — and that once you can watch a run, you star
 **Tests: 1,232 .NET — all passing** (Drawing 406, MCPServer 464, CLI 268, ExtendedMind 94).
 The previous handoff is superseded; its open items are carried forward at the end.
 
-> **§14 is the current state** for the drawing corpus and where a session continuing that work should
-> start — it supersedes §13's pick-up list, though §13 remains accurate on everything else and is
+> **§14 is the current state** for the drawing corpus and **§15 is the detailed queue** — a session
+> continuing that work should start at §15, which carries the designs, the measured constants and the
+> acceptance tests, so nothing has to be re-derived. Together they supersede §13's pick-up list,
+> though §13 remains accurate on everything else and is
 > where the manuals and the `pose` parameter are described. §12 is the session before that and
 > remains accurate as history. §§1–8 are the fifth session (observability, `scriptFile`, the Claude
 > profile); §§9–12 are the sixth (cs-5 findings, encode cost, the Guy exclusion, and re-sourcing the
@@ -1437,6 +1439,186 @@ that down for all four at once.
    `createFigureGeometry` instead, which is the same need answered properly rather than by a snippet
    every caller has to copy and can get wrong.
 
+**§15 is the detailed queue** — designs, measured constants and acceptance tests for each of items
+2 to 5, written so a cold session can start without re-deriving anything.
+
+---
+
+## 15. Toolkit queue — designs and measured constants for the next sessions
+
+Written 2026-09-05, at the point the drawing thread was paused for the Agentic Cinema hackathon
+(deadline **14:00 PT 2026-09-09**, `docs/agentic-cinema-assessment.md`). Nothing here is started.
+Ordered by value; items are independent except where noted.
+
+**Working state at the pause.** Tests 1,311 (Drawing 448, MCPServer 491, CLI 278, ExtendedMind 94).
+`bin/cli` is current. The exercise that drove all of this is `docs/manuals/08` §2a, `03` §3, `06` §2a,
+`19` §2a and `01` §4D — those five manual passages are the worked examples, and they execute as tests,
+so they cannot rot silently.
+
+---
+
+### 15.1 `lineOfAction` — the highest-value item, and the only one that changes how a pose is *chosen*
+
+**The problem, measured.** *Marvel Way* ch. 6 says the centre line is drawn **first** and the figure
+built around it. Our API is the reverse: joints first, no line. Measured across five very different
+poses of one action, the centre-line swing (perpendicular bow of `pelvis.center → sternum → head.center`
+off the chord) was **1.1, 1.1, 1.1, 1.1, 5.2** — essentially flat, because **`spineDeg` rotates the
+upper body rigidly and a rigid rotation moves a line without curving it.** The figure has a hinge where
+the book asks for a swing. Manual 24 §4 carries this and Hampton's C/S/I (Manual 05) is the same idea
+from a second tradition, which is unusually strong support.
+
+**Proposed shape.**
+
+```javascript
+Drawing.createMannequinFigure(x, y, h, {
+    pose: { lineOfAction: { shape: 'C' | 'S', amplitudeDeg: 24, phase: 0.5 }, /* joints as now */ }
+});
+```
+
+**Implementation sketch.** The spine is already a chain of nodes — `pelvis.center`, `navel`,
+`sternum`, `neck`, `head.center`. Today they are laid out at fixed offsets and then *all* rotated by
+`spineDeg` about the pelvis. Instead, give each node an **incremental** rotation about its predecessor
+and accumulate down the chain:
+
+- **C**: `angleᵢ = amplitudeDeg × (i / n)` — curvature increasing steadily toward the head.
+- **S**: `angleᵢ = amplitudeDeg × sin(2π × (i / n − phase))` — sign reverses partway, which is the
+  reversing curve Hampton calls the S.
+- Each node is placed by rotating its offset about the *previous* node by the accumulated angle, so
+  the chain bends rather than swinging as one body.
+- Shoulders and arms hang off the **sternum's** accumulated transform; the head off the **neck's**.
+  `head.angleDeg` and `ribcage.tiltDeg` (both now live and honoured by the drawers — §14) must be fed
+  from the accumulated angle at their own node, not from `spineDeg`.
+
+**Compatibility.** Keep `spineDeg` as it is: a rigid lean. Define the order as **`lineOfAction` shapes
+the spine, then `spineDeg` leans the result**, and document it. An omitted `lineOfAction` must leave
+the figure bit-identical, exactly as the existing `pose` additivity tests require.
+
+**Acceptance test, and it is already written in prose.** Reuse `swingOf` from Manual 24 §5: swing must
+be **monotonic in `amplitudeDeg`** and must exceed the flat ~1.1 baseline at any non-zero amplitude.
+That turns "more swing" from a judgement into an assertion, which is the whole reason the number was
+measured in the first place.
+
+---
+
+### 15.2 A composed head — `createComicHead`
+
+Manual 23 §6 names this gap, and this session hit it hard enough to specify it. **Two attempts failed
+before the cause was found**, so the constants below are the expensive part and should not be
+re-derived.
+
+> **`temporalOval` is NOT the cranium.** It is the side-plane ball. At a 300px head its top sits
+> **91px below `crown`** — build a head outline on it and the skull begins below its own hairline.
+
+**Derive the cranium instead**, which is what finally worked:
+
+```javascript
+const cx = head.crown.x;
+const rx = (jaw.nearStation.x - jaw.farStation.x) * 0.5 * 1.22;
+const bottom = jaw.angle.y + HGT * 0.028;
+const cy = (head.crown.y + bottom) * 0.5, ry = (bottom - head.crown.y) * 0.5;
+```
+
+Then one contour: the top half of that ellipse (π → 2π), down the near cheekbone through
+`jaw.nearStation`, `jaw.nearAngle`, the chin, `jaw.chinFar`, `jaw.angle`, `jaw.farStation`, back up.
+**At yaw the near cheekbone sits outside the cranial ellipse**, which is why a union of oval-and-box
+squares the head off — the first attempt did exactly that.
+
+**Bake in the Marvel corrections**, all three measured this session and reproducible:
+
+| | Loomis, as implemented | Lee & Buscema | ratio |
+| :--- | :--- | :--- | :--- |
+| head width in eye-widths | 6.0 | 5 | eye × **6/5** |
+| mouth width | landmark width | equilateral triangle from `noseWedge.bridgeTop` | **×2.04** |
+| chin width | `jaw.chinNear − jaw.chinFar` | equilateral triangle from `noseWedge.underNose` | **×0.89** |
+
+Half-width at any depth below an equilateral apex is `depth × tan(30°)`. **The chin ratio is new** —
+Manual 23 describes the construction but never measured it; add the row to its §1 table when this
+lands.
+
+**Return**, following the established shape: `silhouette` (cranium ∪ jaw ∪ neck), `parts`
+(`cranium`, `jaw`, `hair`, `neck`, `ear`), `bounds`, and the landmark object it was built from. Hair
+that worked: a cap ellipse at `rx × 1.09, ry × 1.10` of the cranium, minus everything below the
+hairline, plus a lock crossing the cap edge — Manual 23 §3's *body and thickness, never flat on the
+skull*.
+
+---
+
+### 15.3 Garment derived from the figure
+
+`padding` on `createFigureGeometry` already gives the cloth its **volume** (Manual 22 §1: cloth covers
+the figure without fitting it). What is still hand-built is the garment body and, more importantly,
+its **fold anchors**:
+
+```javascript
+Drawing.createGarment(figure, { type: 'coat' | 'tunic', hemHeads: 2, trailing: -1 })
+// → { path, anchors: { pulls: [Point], beltLine: {left, right}, elbowRings: [{centre, angle}] } }
+```
+
+The anchors are Manual 22 made executable, and each is a rule rather than a shape: folds radiate from
+**points of pull** (the two shoulders), ring folds appear where the belt **crushes** the cylinder, and
+a **bent** elbow crowds *four* ring folds on the inside — Young's own count. Fold density rises on the
+side whose support is lower, which is a relationship the figure already knows.
+
+**Still no fan primitive.** `drawFeathering` is *parallel* hatching whatever its `origin` argument
+suggests; used for folds it silently draws plausible verticals that state nothing. Build fans from
+`drawTaperedStroke`, which now returns its mark so a fan can be unioned into one shape and inked once.
+
+---
+
+### 15.4 Converting the remaining drawers
+
+The pattern and its justification are in §14; this is the queue and the recipe.
+
+**Still painting and returning nothing**, in rough order of value: `drawMannequinSolid` /
+`drawMannequinWireframe` (superseded in practice by `createFigureGeometry`, but they still hand
+nothing back), `drawLoomisWireframe`, `drawCastShadow`, `drawRimLight`, `renderVolumetricSphere` /
+`renderVolumetricCylinder`, `drawPerspectiveCylinder`, `drawCrossContourHatch`, `drawHairRibbon`, and
+the `Logo.*` drawers.
+
+**None is urgent.** Convert each when a piece of work actually wants its geometry — that is what keeps
+the value demonstrable instead of converting on spec.
+
+**The recipe, four steps:**
+
+1. **Render a reference with the binary already in `bin/cli`, before rebuilding it.** This is the step
+   that is easy to skip and impossible to recover.
+2. Move the shape construction out of the context and onto `CanvasPath`s; paint with `ctx.fill(path)`
+   / `ctx.stroke(path)` in the same order and with the same state as before.
+3. Rebuild, re-render, and **`bitmap.diff` at `tolerance: 0`**. It came back 0 differing pixels for all
+   four conversions so far; anything else means the refactor moved something.
+4. Return named paths for several shapes, a single path for one mark; fills closed, strokes as open
+   centre-lines. Add the doc line (`docs/Polson.core.md`) and a manual passage — the test suite
+   enforces both, and manual examples execute, so they must be self-contained.
+
+---
+
+### 15.5 Foreshortening — the quality ceiling, and the one gap with no code yet
+
+**Every limb in the comic page drawn this session lies in the picture plane.** Nothing comes toward
+the viewer, because nothing can: there is no per-segment depth. That is the largest single limit on
+how the figure work reads, and it is invisible until you look for it.
+
+The source is *Marvel Way* **ch. 7, Foreshortening: the Figure in Perspective** — recorded in the
+`reference/` ledger as the last of the three non-duplicate chapters and **still unread**. It is also
+the only figure-in-perspective source in the corpus.
+
+Minimum shape: a `zScale` per bone, shortening the drawn segment and widening its capsule as it turns
+toward the viewer. `createFigureGeometry` is the natural place for the widening, since it already owns
+the radii.
+
+---
+
+### 15.6 Open defects, unchanged
+
+- **A malformed colour is silently accepted.** `ctx.strokeStyle = '#6e6counts'` becomes `#000000` with
+  no error — hit twice in three scripts by someone who already knew about it. A misspelled *member*
+  throws with "did you mean"; a malformed *colour value* does not. **Not fixed**, and it is the
+  cheapest remaining silent failure to close.
+- **`drawFeathering`'s `origin` is misleading** — see §15.3.
+- **The canon's `foot` is a stub**, so `createFigureGeometry`'s silhouette ends at the ankle rather
+  than on a foot. Documented in Manual 08 §2a. Faithful to the canon; the canon has no foot to give.
+- **`head.unit` is an object** `{H, W, eyeW, thirdH}`, not a number — reading it as one gives `NaN` in
+  silence.
 
 ---
 

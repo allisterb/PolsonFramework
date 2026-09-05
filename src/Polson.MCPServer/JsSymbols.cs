@@ -108,6 +108,10 @@ public static class JsSurface
         new("Scale", typeof(ScaleToolkit), "Scale", false),
         new("scale", typeof(LinearScale), "Scale", true),
         new("band", typeof(BandScale), "Scale", true),
+
+        // SPIKE: frame capture and animated encoding. Declared here so the manifest stays honest
+        // about what a script can reach, not because the surface is settled.
+        new("Motion", typeof(MotionToolkit), "Motion", false),
     ];
 
     /// <summary>
@@ -174,6 +178,7 @@ public static class JsSurface
             // Lifetime management, not drawing.
             ["bitmap.dispose"] = "documented in the Skia area prose rather than as a call",
             ["canvas.dispose"] = "lifetime management, not a drawing call",
+            ["Motion.dispose"] = "the engine releases held frames when the execution ends; Motion.clear is the script-facing control",
             ["paper.saveImage"] = "server-side file write; ExecuteScript outFile is the documented route",
             ["canvas.saveImage"] = "server-side file write; ExecuteScript outFile is the documented route",
             ["bitmap.saveImage"] = "server-side file write; ExecuteScript outFile is the documented route"

@@ -360,6 +360,26 @@ if (!y.isZeroBased) throw new Error('bars need a zero baseline');
 Line and dot charts may crop the axis, because they encode *position*, not length. Bars, columns,
 areas and anything filled may not.
 
+**A line encodes a trajectory, so each position carries one value.** The segment between two points
+is itself a claim: that the quantity moved that way, over that interval. Give one position two values
+and the line rises or falls *within a single x*, asserting a change that never happened — and give it
+positions that go backwards and the path doubles back through time. Check it:
+
+```js
+const check = Scale.checkSeries(rows.map(r => r.year));
+if (!check.ok) throw new Error(check.message);
+```
+
+**The fix is never to drop a point**, because both points are real. Two chips released the same year
+are two *series*, or a dot chart — a form where two values at one position is exactly what is being
+shown. This is a **form** error wearing the clothes of a data error, which is why nothing else here
+catches it: every figure is correct and the picture still lies.
+
+> A studio run put Apple M4 and NVIDIA B200 both at 2024 on one transistor line. It spiked to 208
+> billion and dropped back to 28 inside a single tick. The audit recorded *"monotonic scaling
+> preserved"* — asserted from the plan rather than read off the render, which is the failure §7 is
+> written against.
+
 **Area encodes value, so radius goes as the square root.** The eye reads the ink, not the radius. A
 circle sized by value directly shows four times the number as sixteen times the area:
 

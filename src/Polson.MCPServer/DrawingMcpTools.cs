@@ -39,6 +39,28 @@ public class DrawingMcpTools
     /// keeps the image model out of <c>Assets</c>'s script-facing surface.
     /// </remarks>
     public static string ResearchProcessor { get; set; } = TaskProcessor.Default;
+
+    /// <summary>
+    /// Seconds <c>Research</c> holds a connection open before handing back a run id to resume with.
+    /// </summary>
+    /// <remarks>
+    /// <b>Set by the transport, not by the research.</b> A task takes one to two minutes and the
+    /// obvious default was 150 seconds to cover it — but an MCP host imposes its own request timeout,
+    /// and ADK's is <b>60 seconds</b>. A wait longer than that does not produce a slow answer; it
+    /// produces no answer at all, because the client gives up first and the reply is discarded with
+    /// the run id inside it.
+    /// <para>
+    /// Measured on a live ADK run: the agent asked for 150, the call failed at 60 with a transport
+    /// error carrying no run id, and — having no way to resume something it could not name — it
+    /// started a <b>second</b> research run. Both completed server-side, so neither was refunded, and
+    /// one question consumed the entire two-run allowance.
+    /// </para>
+    /// <para>
+    /// Forty-five leaves headroom for the round trip and serialisation, so the reply arrives, carries
+    /// the run id, and resuming costs nothing. Waiting is cheap; losing the handle is not.
+    /// </para>
+    /// </remarks>
+    public const int DefaultWaitSeconds = 45;
     #endregion
 
     #region Constructors
@@ -847,6 +869,11 @@ public class DrawingMcpTools
         "nested object or an array. Never split the requirement into a second run, and note you cannot choose " +
         "a bigger engine: which processor runs your research is a cost decision held in configuration, not a " +
         "parameter.\n\n" +
+        "IF THIS CALL ITSELF TIMES OUT — a transport error rather than a reply from this tool — YOUR RESEARCH IS " +
+        "STILL RUNNING AND HAS STILL COST YOU A RUN. Do NOT call Research again with the same question: that " +
+        "starts a SECOND run and spends the whole allowance on one. Find the run you already have, from a " +
+        "script — `for (const t of Research.tasks) log(t.id + ' ' + t.status)` — then call Research with that " +
+        "runId to collect it. A run is lost only if you abandon it.\n\n" +
         "A run that FAILS is refunded, so the ceiling is two successful runs rather than two attempts — you may " +
         "retry a genuine failure. It is not a second question.\n\n" +
         "Your schema is CHECKED BEFORE ANYTHING IS SPENT. Malformed JSON, a schema that is not an object, or one " +
@@ -865,7 +892,7 @@ public class DrawingMcpTools
         [Description("What this research is for, in your own words. Recorded in the run and used to find the task later.")] string description,
         [Description("The whole research brief, in prose, read by a model — not a search string. No published length limit, so be complete: the question, its context, the units and period you want, and any source preference. Required when starting; omit when resuming with runId.")] string? objective = null,
         [Description("JSON Schema for the answer, as a string. Field descriptions steer the result, so write them as instructions. Omit for prose.")] string? schema = null,
-        [Description("Seconds to wait before handing back a runId to resume with. Default 150, which covers the base processor's observed p90 of 2 minutes.")] int? waitSeconds = null,
+        [Description("Seconds to hold the connection before handing back a runId to resume with. Default 45, deliberately under the 60s request timeout most MCP hosts impose — a longer wait does not reach you, it just makes the whole call fail. Raise it only on a host you know waits longer.")] int? waitSeconds = null,
         [Description("false to start the research and return immediately, collecting it later with runId. Default true.")] bool? wait = null,
         [Description("Resume or collect an already-started task by its run id.")] string? runId = null,
         RequestContext<CallToolRequestParams>? context = null,
@@ -885,7 +912,7 @@ public class DrawingMcpTools
         }
 
         var wait_ = wait ?? true;
-        var budget = TimeSpan.FromSeconds(Math.Clamp(waitSeconds ?? 150, 5, 900));
+        var budget = TimeSpan.FromSeconds(Math.Clamp(waitSeconds ?? DefaultWaitSeconds, 5, 900));
         ResearchTask task;
 
         if (!string.IsNullOrWhiteSpace(runId))

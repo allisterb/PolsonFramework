@@ -223,6 +223,11 @@ Declares which stage of work you are in, so every script, render and note that f
 - `Stage.expect(claim: string)` — Records what you expect the next render to show, **before** you make it.
 - `Stage.check(claim: string, passed: boolean, detail?: string)` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold.
 
+> [!IMPORTANT]
+> **`detail` carries the measurement, not the claim restated.** Against the claim *"monotonic scaling"*, a detail of *"monotonic scaling preserved"* records a belief and dresses it as a test; `'measured ' + n` records something a reader can disagree with. If there is no number, colour, count or returned value to put there, you did not measure — and a claim you cannot measure belongs in a `Stage.note`, honestly, rather than in a `check`, decoratively.
+>
+> **A stage of passing checks with no `observe` events measured nothing.** `bitmap.diff`, `bitmap.palette` and `bitmap.rowProfile` write those events themselves, so the record shows the difference between auditing and asserting whether or not you meant it to. See `polson://manual/18` §3a.
+
 `log(...)` reaches only the caller of the one tool call that produced it. `Stage.note(...)` persists into the run's record, and is what a reader sees afterwards — use it for the reasoning that would otherwise be lost, such as why a direction was abandoned or what a render was meant to test.
 
 ```javascript
@@ -1328,6 +1333,19 @@ It draws nothing. Marks are ordinary `CanvasPath` and `ctx.fill` work, axis labe
 - `Scale.nice(min: number, max: number, count?: number)` → `{ min, max, span }` — Widens an interval outward to round numbers, so the first and last tick sit at the ends of the plot.
 - `Scale.extent(values: number[])` → `{ min, max, span }` — The interval containing every value. **Feed every series through this once when drawing small multiples** — panels drawn to their own extents look comparable and are not.
 - `Scale.radiusFor(value: number, maxValue: number, maxRadius: number)` → `number` — The radius that makes a circle's **area** proportional to its value.
+- `Scale.checkSeries(positions: number[])` → `{ ok, count, duplicates, ascending, firstDescentIndex, nonFinite, message }` — Whether a run of positions can honestly be joined by a **line**, and what is wrong when it cannot. `duplicates` is `{ value, count }` per position carrying more than one value.
+
+> [!IMPORTANT]
+> **A line asserts a trajectory: one value at each position, moving one way.** Two points sharing a position break that claim — the segment between them rises or falls *within a single x*, which reads as a change that never happened. Positions that go backwards break it the other way, drawing a path that doubles back through time.
+>
+> Neither is a data error, which is why nothing else catches them: every value is correct and the picture still lies. It is a **form** error — two chips released the same year are two series or a scatter, not two points on one trajectory. So the remedy is never to drop one:
+>
+> ```javascript
+> const check = Scale.checkSeries(chips.map(c => c.year));
+> if (!check.ok) throw new Error(check.message);   // names the position and the fix
+> ```
+>
+> Measured on a live run: a transistor chart carried Apple M4 and NVIDIA B200 both at 2024, and the line spiked to 208 billion then dropped back to 28 inside one tick. The audit that followed recorded *"monotonic scaling preserved"* — it checked the intention rather than the render, which is what §7 of `polson://manual/13` exists to prevent.
 
 ## `LinearScale`
 
@@ -1849,6 +1867,8 @@ ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA �
 
 > [!IMPORTANT]
 > **This is a model doing research, not a keyword lookup.** The objective is prose read by an LLM and has **no published length limit**, so being complete costs nothing while being terse costs accuracy — state the whole question, its context, the units and period you want, and any source preference. One long, specific objective with a rich schema is both *faster* and *more accurate* than several small ones: it pays the latency once rather than per query, and the model reconciles every field against the others in a single pass instead of answering each in isolation.
+>
+> **A `Research` call that times out at the transport is not a failed run** — it is still going and has still cost you one. Find it with `Research.tasks` from a script and collect it by `runId`; calling again with the same question starts a second run and spends the whole allowance on one.
 >
 > **You get two research runs, and they are not equal.** The **first** must carry the entire data requirement — every figure the graphic needs, in one schema, planned before you call. The **second** exists only to *correct* the first: a field that came back empty, wrong, or at a confidence too low to draw. It is not the second half of the research, and planning to use both means the requirement has already been split. The size of one question is bounded by **field count, not length**: an array is a single field however many rows it holds, so nest it and step up a tier (`core` takes ~10 top-level fields against `base`s ~5) rather than splitting into a second run. A run that **fails is refunded**, so the ceiling is two *successful* runs rather than two attempts; `budget.attempts` against `budget.maxAttempts` is what stops a run that keeps failing.
 >

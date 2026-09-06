@@ -127,9 +127,98 @@ public class ScaleToolkit
         var numbers = Numbers(values).Where(double.IsFinite).ToArray();
         return numbers.Length == 0 ? Bounds(0, 0) : Bounds(numbers.Min(), numbers.Max());
     }
+
+    /// <summary>
+    /// Whether a run of positions can honestly be joined by a line, and what is wrong when it cannot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A line asserts a trajectory: one value at each position, moving one way.</b> Two points
+    /// sharing a position break that claim — the segment between them rises or falls within a single
+    /// x, which reads as a change that never happened. Positions that go backwards break it the other
+    /// way, drawing a path that doubles back through time.
+    /// </para>
+    /// <para>
+    /// Neither is a data error, which is why nothing else catches them: every value is correct and
+    /// the picture still lies. It is a <i>form</i> error — two chips released the same year are two
+    /// series or a scatter, not two points on one trajectory.
+    /// </para>
+    /// <para>
+    /// Observed on a live run: a transistor chart carried Apple M4 and NVIDIA B200 both at 2024, and
+    /// the line spiked to 208 billion and dropped back to 28 within the same tick. The audit that
+    /// followed recorded <i>"monotonic scaling preserved"</i>, because it checked the intention rather
+    /// than the render.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object> CheckSeries(object positions)
+    {
+        var xs = Numbers(positions);
+        var finite = xs.Where(double.IsFinite).ToArray();
+
+        var duplicates = finite
+            .GroupBy(x => x)
+            .Where(g => g.Count() > 1)
+            .OrderBy(g => g.Key)
+            .Select(g => new Dictionary<string, object> { ["value"] = g.Key, ["count"] = g.Count() })
+            .ToArray();
+
+        var firstDescent = -1;
+        for (var i = 1; i < finite.Length; i++)
+        {
+            if (finite[i] < finite[i - 1]) { firstDescent = i; break; }
+        }
+
+        var ok = duplicates.Length == 0 && firstDescent < 0 && xs.Length == finite.Length;
+
+        return new Dictionary<string, object>
+        {
+            ["ok"] = ok,
+            ["count"] = xs.Length,
+            ["duplicates"] = duplicates,
+            ["ascending"] = firstDescent < 0,
+            ["firstDescentIndex"] = firstDescent,
+            ["nonFinite"] = xs.Length - finite.Length,
+            ["message"] = SeriesMessage(ok, duplicates, firstDescent, xs.Length - finite.Length),
+        };
+    }
     #endregion
 
     #region Methods (private)
+    /// <summary>
+    /// Says what is wrong in terms of the <b>form</b>, because that is where the fix is. "Two points
+    /// share x" invites deduplication, which would discard a real chip; the honest answers are a
+    /// second series or a different form.
+    /// </summary>
+    private static string SeriesMessage(
+        bool ok, Dictionary<string, object>[] duplicates, int firstDescent, int nonFinite)
+    {
+        if (ok) return "Drawable as a line: one value per position, ascending.";
+
+        var parts = new List<string>();
+
+        if (duplicates.Length > 0)
+        {
+            var where = string.Join(", ", duplicates.Take(3).Select(d => d["value"]));
+            parts.Add($"{duplicates.Length} position(s) carry more than one value ({where}). A line "
+                    + "between them asserts a change within a single position. Draw them as separate "
+                    + "series, or use a dot chart, where two values at one position is exactly what "
+                    + "the form is for.");
+        }
+
+        if (firstDescent >= 0)
+        {
+            parts.Add($"Positions go backwards at index {firstDescent}, so the path doubles back on "
+                    + "itself. Sort by position before drawing, or the line is not a trajectory.");
+        }
+
+        if (nonFinite > 0)
+        {
+            parts.Add($"{nonFinite} position(s) are not finite numbers and cannot be placed at all.");
+        }
+
+        return string.Join(" ", parts);
+    }
+
     private static Dictionary<string, object> Bounds(double min, double max) =>
         new() { ["min"] = min, ["max"] = max, ["span"] = max - min };
 

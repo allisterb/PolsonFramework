@@ -136,6 +136,12 @@ Two rules follow from that, and both have been broken in a live run:
 
 - **Every `expect` gets a `check`.** An unsettled expectation reads as verification and is not, which makes it worse than saying nothing. The run report warns when they do not balance.
 - **A failing check gets re-run after the fix.** The failure identifies the fault; the pass is the only evidence the correction landed. A stage where every check failed has diagnosed without demonstrating, and the report warns about that too.
+- **The `detail` carries the measurement, not the claim again.** A check whose detail restates its own claim has recorded a belief and dressed it as a test. Against *"monotonic scaling"*, the detail *"monotonic scaling preserved"* adds nothing a reader could disagree with; `'measured ' + n` does. If there is no number, colour, count or returned value to put there, you did not measure — and a claim you cannot measure belongs in a `Stage.note`, honestly, rather than in a `check`, decoratively.
+
+> [!IMPORTANT]
+> **§3b is how you audit your own audit.** `observe` events are machine-recorded, so a stage holding several passing checks and **no `observe` events measured nothing** — it read its intentions back to itself and wrote them down as verification. That is worse than an absent audit, because it looks like a present one.
+>
+> It has happened. A studio run drew two chips at the same year on one transistor line, so the trajectory spiked to 208 billion and fell back to 28 inside a single tick, and the audit recorded *"transistor log scale integrity — passed — monotonic scaling preserved"*. Every figure in that piece was correct and every one was sourced. **The only false thing in the artifact was the check**, and it was false because it was never run.
 
 ### Why this exists
 

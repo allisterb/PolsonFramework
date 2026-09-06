@@ -243,6 +243,24 @@ public class ResearchToolLiveTests : TestsRuntime, IDisposable
         Assert.Empty(Events("research.started"));
     }
 
+    /// <summary>
+    /// The default wait must stay under the request timeout an MCP host imposes — 60 seconds on ADK.
+    /// </summary>
+    /// <remarks>
+    /// Measured on a live run with the old 150-second default: the call died at 60 with a transport
+    /// error carrying no run id, so the agent could not name the run it already had and started a
+    /// second one. Both completed, so neither refunded, and one question ate the whole allowance.
+    /// A slow answer is fine; an answer that never arrives takes the run id with it.
+    /// </remarks>
+    [Fact]
+    public void TestTheDefaultWaitFitsInsideATypicalHostTimeout()
+    {
+        Assert.True(DrawingMcpTools.DefaultWaitSeconds < 60,
+            $"a default wait of {DrawingMcpTools.DefaultWaitSeconds}s does not fit inside a 60s host timeout");
+        Assert.True(DrawingMcpTools.DefaultWaitSeconds >= 30,
+            "too short to collect a fast run in one call, which makes every research two round trips");
+    }
+
     /// <summary>The processor is not a parameter, so an agent cannot pull the cost lever at all.</summary>
     [Fact]
     public void TestTheToolExposesNoProcessorParameter()

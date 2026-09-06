@@ -218,6 +218,38 @@ could this layout hold a dashboard's data; is the topic recognisable with the te
 four corners doing equal work; is any baseline non-zero or any circle sized by radius. Record the
 answers as notes. An audit that finds nothing is a suspicious audit — say what you looked at.
 
+**Every `Stage.check(...)` carries a measurement, and the measurement comes from a call you made in
+this stage.** That is a mechanical rule, not a counsel of diligence: `detail` must hold a number, a
+colour, a count or a returned value that something produced. **A detail that restates the claim is not
+evidence** — against the claim *"monotonic scaling"*, the detail *"monotonic scaling preserved"*
+reports only that you believe it, and a belief is what an audit exists to test.
+
+These are the calls that produce evidence. Reach for one before writing a claim, not after:
+
+| To check | Call | What comes back |
+| :--- | :--- | :--- |
+| a line is a trajectory | `Scale.checkSeries(xs)` | `ok`, the positions carrying two values, where it doubles back |
+| bars start at zero | `scale.isZeroBased`, `chart.lieFactor` | a boolean, and the distortion as a number |
+| something is drawn where you think | `bitmap.getPixel(x, y)` | the colour there — or the ground, if nothing was drawn |
+| a layer separated from its background | `bitmap.palette(n)` | the dominant colours and their shares |
+| an edge lands where intended | `bitmap.rowProfile(colour)` | where that colour starts and ends, per row |
+| a revision changed what you meant | `bitmap.diff(previous)` | the similarity, and the rectangle that changed |
+
+**A claim you cannot measure is not a check — write it as a `Stage.note` instead.** Taste, tone and
+composition are judgments, and recording them honestly as judgments is worth more than dressing them
+as tests. Reserve `Stage.check` for what the machine can answer.
+
+> [!IMPORTANT]
+> **The record will say whether you audited or asserted, so you may as well know before the director
+> does.** `bitmap.diff`, `bitmap.palette` and `bitmap.rowProfile` each write an `observe` event
+> carrying what they *found*. An `Audit` stage holding several passing checks and **no `observe`
+> events measured nothing** — it is a stage that read its own intentions back to itself.
+>
+> This has happened. A run put two chips at the same year on one line, so the trajectory spiked and
+> fell inside a single tick, and the audit recorded *"transistor log scale integrity — passed —
+> monotonic scaling preserved"*. Every figure in that piece was correct and sourced. The check was
+> the only thing that was wrong, and it was wrong because it was never run.
+
 ---
 
 ## Verifying, rather than hoping
@@ -265,7 +297,10 @@ describe.
 5. One named composition pattern, stated in a `Stage.note`, and the tension rules of Manual 13 §5
    satisfied — one dense zone and one that breathes, three sizes minimum, something crossing a
    boundary, a ground that is not flat.
-6. The litmus tests of §6 answered against the render, in notes.
+6. The litmus tests of §6 answered against the render, in notes. **Every `Stage.check` carries a
+   measured value in its `detail`, and the `Audit` stage wrote at least one `observe` event** — a
+   stage of passing checks that measured nothing has audited nothing. Any line series has been
+   through `Scale.checkSeries`.
 7. A final render in `artifacts/`, with `outSvg` alongside it if the piece is vector.
 
 A graphic that is accurate and looks like a dashboard has failed half the brief; one that is

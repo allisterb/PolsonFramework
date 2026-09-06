@@ -44,6 +44,20 @@ _LOG = logging.getLogger("polson.watchdog")
 #: it, edit, re-run. The run this exists for made **twenty** script versions.
 THRASH_CALLS = 8
 
+#: The same, for a run with nobody to hand off to. **Eight is the floor of normal for one agent
+#: carrying a whole commission, not a warning sign.** Measured working calls — renders plus script
+#: writes and edits — across five runs:
+#:
+#:   doctest8   8      finished, correct
+#:   doctest6   9      finished, correct
+#:   doctest7   9      finished, correct
+#:   inf6      14      finished, correct, a dense blueprint
+#:   inf5      32      the run this plugin exists for: hand-rolled a chart, five overlapping panels
+#:
+#: So 8 fired on every one of them, and twenty separates the pathological run from every healthy
+#: one with room to spare.
+SOLO_THRASH_CALLS = 20
+
 #: Consecutive renders that do not move the picture before that counts as not resolving. Two could
 #: be a deliberate re-run; three is a loop.
 THRASH_REPEAT_RENDERS = 3
@@ -276,6 +290,19 @@ class StudioWatchdog(BasePlugin):
             return  # could not tell; leave the count where it is rather than guessing either way
         activity.stalled_renders = 0 if moved else activity.stalled_renders + 1
 
+        # **A render that moved re-arms the plugin.** Without this the only ways back were a handoff
+        # or an advisor call, and a single-agent run can do neither — so one intervention silenced
+        # the watchdog permanently, taking the stalled-render and elapsed checks with it. That is
+        # the opposite of what an intervention is for: the agent was told to look, it looked, it
+        # changed something, and the picture moved. That is the episode ending well, and the next
+        # one deserves to be noticed too.
+        #
+        # Only on movement, never on a render alone: re-arming on any render would let a role that
+        # is genuinely stuck earn its way back by re-running the same script.
+        if moved:
+            activity.calls = 0
+            activity.armed = True
+
     # ------------------------------------------------------------------ judgement
 
     def _trigger(self, activity: _RoleActivity, now: float, agent: str) -> str | None:
@@ -296,8 +323,20 @@ class StudioWatchdog(BasePlugin):
                 f"{allowance / 60:.0f} minute allowance and still editing"
             )
 
-        if activity.calls >= THRASH_CALLS:
-            return f"you have made {activity.calls} working calls without handing off"
+        # `_advisor` is None exactly when `build` found no roles, so this is the single-agent test
+        # and it is already computed for us. Telling a lone agent to hand off names something that
+        # does not exist: `inf6` was told at call 8 to stop and transfer, had nobody to transfer to,
+        # and — because any trigger disarms the plugin — lost the stalled-render and elapsed checks
+        # for the rest of the run. One unactionable sentence cost every useful signal after it.
+        limit = THRASH_CALLS if self._advisor else SOLO_THRASH_CALLS
+        if activity.calls >= limit:
+            return (
+                f"you have made {activity.calls} working calls without handing off"
+                if self._advisor
+                else f"you have made {activity.calls} working calls on this stage. Render what you "
+                     f"have and look at it before editing again — if the picture is not moving, the "
+                     f"next edit will not move it either"
+            )
 
         return None
 

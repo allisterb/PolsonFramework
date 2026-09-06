@@ -75,6 +75,22 @@ source what it needs.
 year-on-year delta computed from figures you already hold is a derived figure: show the arithmetic
 in `brief.md` and draw it. Do not spend a research run on a subtraction.
 
+**A figure describing the artifact is still a figure on the artifact.** A lie factor, a scale ratio,
+a data-point count, a "verified" stamp in a title block — if it is printed, it is **computed and
+rendered from the same value the check used**, never typed:
+
+```javascript
+ctx.fillText('LIE FACTOR: ' + chart.lieFactor.toFixed(3), x, y);   // reads what was measured
+ctx.fillText('LIE FACTOR: 1.000 (TRUE)', x, y);                    // asserts it — never do this
+```
+
+A typed integrity claim is the worst kind of invented number, because it is a claim *about* the
+piece's honesty. It has already happened here: a blueprint carried a hardcoded
+`LIE FACTOR: 1.000 (TRUE)` in its title block while the run's own audit recorded 1.2477 for the same
+bar. The caption was right by luck — the bar was faithful and the *check* was miscomputed — but had
+the distortion been real, the artifact would have gone out asserting its own integrity and been
+wrong about it.
+
 **2. The picture must not say more than the data does.**
 Manual 13 §2 is the rule set, and three of them are enforceable in code rather than by eye:
 
@@ -239,6 +255,20 @@ These are the calls that produce evidence. Reach for one before writing a claim,
 composition are judgments, and recording them honestly as judgments is worth more than dressing them
 as tests. Reserve `Stage.check` for what the machine can answer.
 
+**Every failing check is settled before you deliver.** Fix the fault and re-run the check — the pass
+is the only evidence the correction landed — or, if the check itself was wrong, correct it and say so
+in a note. What you may not do is leave a red check standing in the record while the piece and the
+summary claim success: that is the artifact contradicting its own audit, and a reader who finds it
+cannot tell which of the two to believe.
+
+> [!IMPORTANT]
+> **Read a failure before dismissing it, because the fault is often in the check.** A live run
+> recorded `Descent Propellant Mass Lie Factor => 1.2477` and shipped anyway. The bar was drawn
+> correctly; the check had compared the drawn width of the whole *descent stage* against the mass of
+> its *propellant* alone — two different quantities, betrayed by a variable named `drawnPropWidth`
+> holding a stage width. **Looking at the number for one minute was the entire fix**, and nobody
+> looked. A check that fails has done its job; ignoring it wastes the only thing it produced.
+
 > [!IMPORTANT]
 > **The record will say whether you audited or asserted, so you may as well know before the director
 > does.** `bitmap.diff`, `bitmap.palette` and `bitmap.rowProfile` each write an `observe` event
@@ -300,8 +330,11 @@ describe.
 6. The litmus tests of §6 answered against the render, in notes. **Every `Stage.check` carries a
    measured value in its `detail`, and the `Audit` stage wrote at least one `observe` event** — a
    stage of passing checks that measured nothing has audited nothing. Any line series has been
-   through `Scale.checkSeries`.
-7. A final render in `artifacts/`, with `outSvg` alongside it if the piece is vector.
+   through `Scale.checkSeries`. **No check is left failing**: each was fixed and re-run, or corrected
+   with a note saying why it was wrong.
+7. **Every number printed on the canvas is computed**, including numbers about the graphic itself —
+   a lie factor or an integrity stamp is rendered from the value that was measured, never typed.
+8. A final render in `artifacts/`, with `outSvg` alongside it if the piece is vector.
 
 A graphic that is accurate and looks like a dashboard has failed half the brief; one that is
 beautiful and overstates its numbers has failed the more important half.

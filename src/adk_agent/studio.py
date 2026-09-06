@@ -54,13 +54,26 @@ DEFAULT_CLI_DLL = REPO_ROOT / "bin" / "cli" / "Polson.CLI.dll"
 #: Instructions filenames, in the order `ProjectGenerator.HostFiles` can have written them.
 INSTRUCTIONS_FILENAMES = ("GEMINI.md", "CLAUDE.md")
 
-#: **Measured against this project's key, not taken from `adk create`.** Probed 2026-09-04:
+#: **Measured against this project's key, not taken from `adk create`.** Re-probed 2026-09-06,
+#: median of three calls on one reasoning prompt, with the total tokens each spent answering it:
 #:
-#:   gemini-3.7-flash  OK  2.4s   <- the default
-#:   gemini-3.5-flash  OK  2.4s
-#:   gemini-2.5-pro    OK  5.2s
-#:   gemini-2.5-flash  OK 17.6s   <- works, and is seven times slower
+#:   gemini-2.5-flash  OK  1.0s    130 tok
+#:   gemini-3.5-flash  OK  3.8s    485 tok
+#:   gemini-3.7-flash  OK  4.3s    467 tok   <- the default
+#:   gemini-2.5-pro    OK 11.8s   1260 tok
 #:   gemini-3-flash / gemini-3-pro / gemini-3.0-pro / gemini-3.1-pro   404 NOT_FOUND
+#:
+#: **The 2026-09-04 probe recorded `gemini-2.5-flash OK 17.6s <- seven times slower`, and that was
+#: wrong.** It is the fastest of the four here. A single unrepeated call was measured, so a cold
+#: start or a moment of throttling became a documented property of the model, and the note then
+#: argued against a model on a number that was never true. Probe more than once before writing a
+#: figure into a comment somebody will later plan around.
+#:
+#: The token column is the more interesting one and cuts the other way: 3.x spends three to four
+#: times as much answering the same question, because it thinks first. On a one-line prompt that is
+#: pure overhead; across an eighty-turn studio run it is most of what the model is being paid for.
+#: So this table ranks latency and cost, and says nothing about whether a cheaper model can hold a
+#: staged brief together — which is the only question that matters and is not measurable from here.
 #:
 #: 3.7 rather than the 3.5 `adk create` offers, for one measured reason and one weaker one.
 #:

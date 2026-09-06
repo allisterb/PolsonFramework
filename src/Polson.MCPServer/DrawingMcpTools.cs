@@ -889,7 +889,7 @@ public class DrawingMcpTools
         "Completed results stay readable from any later script as the `Research` global: Research.latest.result is " +
         "ordinary JS, and Research.latest.citeField('missions.0') gives the caption line for one row.")]
     public Task<JsonObject> Research(
-        [Description("What this research is for, in your own words. Recorded in the run and used to find the task later.")] string description,
+        [Description("Optional label for this research, in your own words — recorded in the run and used to find the task later with Research.find(...). Left out, it is taken from the objective.")] string? description = null,
         [Description("The whole research brief, in prose, read by a model — not a search string. No published length limit, so be complete: the question, its context, the units and period you want, and any source preference. Required when starting; omit when resuming with runId.")] string? objective = null,
         [Description("JSON Schema for the answer, as a string. Field descriptions steer the result, so write them as instructions. Omit for prose.")] string? schema = null,
         [Description("Seconds to hold the connection before handing back a runId to resume with. Default 45, deliberately under the 60s request timeout most MCP hosts impose — a longer wait does not reach you, it just makes the whole call fail. Raise it only on a host you know waits longer.")] int? waitSeconds = null,
@@ -901,6 +901,12 @@ public class DrawingMcpTools
     {
         var session = Registry.GetOrCreate(GetSessionId(context?.Server));
         var response = new JsonObject();
+
+        // A label is not worth failing a research call over. It was required, and a model that sent
+        // objective and schema without it got "An error occurred invoking 'Research'" — no clue which
+        // argument was missing — three times, then gave up and reported the tool broken. It was right
+        // to refuse to invent figures; it should never have been in that position. Derive one.
+        description = Trimmed(description) ?? Label(objective) ?? "research";
 
         if (Parallel is null)
         {
@@ -1044,6 +1050,32 @@ public class DrawingMcpTools
 
         return DescribeTask(task, response, session);
     });
+
+    /// <summary>Null for anything blank, so an empty argument reads as absent rather than as "".</summary>
+    private static string? Trimmed(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// A short label from the objective's first sentence, for when a caller gave no description.
+    /// </summary>
+    /// <remarks>
+    /// Only ever a fallback: a caller's own words say what the research is <i>for</i>, which the
+    /// objective does not — that says what was asked. But a derived label keeps the run findable
+    /// through <c>Research.find(...)</c>, and findable beats absent.
+    /// </remarks>
+    private static string? Label(string? objective)
+    {
+        var text = Trimmed(objective);
+        if (text is null) return null;
+
+        // A research objective is as likely to end its first sentence with '?' as with '.', and the
+        // mark is worth keeping: a label reading as a question is clearer than one that trails off.
+        var stop = text.AsSpan().IndexOfAny(".?!\n".AsSpan());
+        var end = stop > 0 && text[stop] != '\n' ? stop + 1 : stop;
+        var first = (end > 0 ? text[..end] : text).Trim();
+
+        return first.Length <= 80 ? first : string.Concat(first.AsSpan(0, 77), "…");
+    }
 
     /// <summary>
     /// Scans everything a research run brought back from the open web, and says what it found.

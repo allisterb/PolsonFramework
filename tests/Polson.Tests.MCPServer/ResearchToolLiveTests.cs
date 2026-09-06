@@ -261,6 +261,49 @@ public class ResearchToolLiveTests : TestsRuntime, IDisposable
             "too short to collect a fast run in one call, which makes every research two round trips");
     }
 
+    /// <summary>
+    /// Only the substantive arguments are required. A missing label must not fail the call.
+    /// </summary>
+    /// <remarks>
+    /// <c>description</c> was required, and a model that sent <c>objective</c> and <c>schema</c>
+    /// without it got <i>"An error occurred invoking 'Research'"</i> — naming no argument — three
+    /// times, then reported the tool broken and stopped. It was right to refuse to invent figures;
+    /// it should never have been put in that position by a human-readable label.
+    /// </remarks>
+    [Fact]
+    public void TestOnlyTheSubstantiveArgumentsAreRequired()
+    {
+        var required = typeof(DrawingMcpTools).GetMethod(nameof(DrawingMcpTools.Research))!
+            .GetParameters()
+            .Where(p => !p.IsOptional && p.ParameterType != typeof(CancellationToken))
+            .Select(p => p.Name)
+            .ToArray();
+
+        Assert.True(required.Length == 0,
+            $"Research requires {string.Join(", ", required)}; a missing one fails opaquely at the MCP layer");
+    }
+
+    /// <summary>A run started without a label is still findable, because one is derived.</summary>
+    [Fact]
+    public async Task TestAResearchCallWithoutALabelStillCarriesOne()
+    {
+        var tools = new DrawingMcpTools(null, null, null, root)
+        {
+            Parallel = new ParallelClient("unused", new HttpClient(new ExplodingHandler())),
+        };
+
+        // Refused on the schema, so nothing is reached — but the label is resolved before that.
+        var refused = await tools.Research(
+            objective: "What was the duration of the Powered Descent phase? It ran from PDI to touchdown.",
+            schema: """{ "type": "object", "properties": {} }""");
+
+        Assert.False(refused["ok"]!.GetValue<bool>());
+
+        var e = Single("research.schemaRejected");
+        Assert.Equal("What was the duration of the Powered Descent phase?",
+            e.GetProperty("description").GetString());
+    }
+
     /// <summary>The processor is not a parameter, so an agent cannot pull the cost lever at all.</summary>
     [Fact]
     public void TestTheToolExposesNoProcessorParameter()

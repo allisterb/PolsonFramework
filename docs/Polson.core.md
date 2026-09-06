@@ -1200,6 +1200,46 @@ Also accessible via `Skia.Logo`.
 
 Retained-mode SVG vector logo construction methods available directly on `SnapPaper` (`paper`), `Snap.path`, and the global `VectorLogo` object.
 
+
+## Drawing a Chart on a Paper (`VectorChart`)
+
+`Chart.*` builds the model; `Chart.drawChart(ctx, model)` draws it on a **canvas**. This draws the same model on a **paper**, as real SVG elements — which is what an Illustrator-bound deliverable needs.
+
+- `paper.chart(chartModel, options?)` → `SnapGroup` — Appends the marks as one `<g>` and returns it.
+- `VectorChart.drawChart(paper, chartModel, options?)` → `SnapGroup` — The same call with the paper as the first argument, for when the paper is held in a variable.
+
+`options`: `{ fill, stroke, strokeWidth, opacity, colors, radius, empty }`.
+
+- **`colors`** — an array indexed by mark. This is the one nearly every real chart wants and the one a canvas `fillStyle` cannot express, since a context has a single current fill. A shorter list cycles.
+- **`empty`** — the unfilled part: a waffle's remaining cells and a meter's track. Default `#e6e8ec`.
+- **`radius`** — corner rounding on rectangular marks.
+
+```javascript
+const data = [{ label: 'Mar', value: 38 }, { label: 'Apr', value: 61 }, { label: 'May', value: 47 }];
+const paper = Snap(760, 380);
+const chart = Chart.createColumnChart(Layout.inset(Layout.rect(0, 0, 760, 380), 40), data);
+paper.chart(chart, { colors: ['#1f6f8b', '#c9553d', '#5fb49c', '#e5a93c', '#9b8ec4'], radius: 2 });
+
+// Ticks and labels are data on either surface — draw them as <text> where you want them.
+for (const t of chart.ticks) paper.text(t.x, t.y, t.label).attr({ 'font-size': 11, fill: '#8a94a0' });
+paper;
+```
+
+Every form is handled: column, bar, dot, groupedDot, framedRectangle, waffle, pictogram, proportionalShapes, progressMeter (bar **and** arc), timeline, callout, and smallMultiples, which recurses into each panel's own model. An unrecognised `type` falls back to `slots`, which every model carries, so a form added later still draws.
+
+> [!NOTE]
+> **Ticks and labels are not drawn**, exactly as `Chart.drawChart` leaves them on canvas. They are data — `chart.ticks` and `chart.labels` carry positions and text — and their typography is yours. Declining to draw them is the erasing pass of `polson://manual/13` §3 rather than an omission.
+>
+> A **callout** is the exception that proves it: its only marks *are* glyphs, so they are drawn — but the model carries no anchors, so the positions and sizes are this toolkit's arithmetic derived from `chart.plot` and `chart.align`, not the model's. Restyle the returned `<text>` nodes, or place the strings yourself.
+
+> [!TIP]
+> The marks come back as a group, so the whole chart transforms, restyles or moves as one, and a second chart on the same paper cannot be confused with the first.
+>
+> ```javascript
+> const g = paper.chart(model, { colors });
+> g.transform('t40,20');                        // the whole chart, moved
+> g.selectAll('rect')[3].attr({ fill: '#c9553d' });   // one mark, picked out
+> ```
 ## SnapPaper Vector Methods
 - `paper.squircle(x: number, y: number, width: number, height: number, exponent?: number)` → `SnapPath` — Appends a Lamé superellipse squircle path element to the paper.
 - `paper.goldenSpiral(startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `SnapPath` — Appends a logarithmic golden spiral path ($r = a \cdot e^{b\theta}$) to the paper.
@@ -1499,7 +1539,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `dots` | *(dot)* one per datum with `cx`, `cy`, `radius`, `value`, `label`, `index`, `sourceIndex`, and `leaderX1/Y1/X2/Y2` for the line from the axis; grouped charts add `group` and `groupIndex` |
 | `groups` | *(grouped dot)* `{ name, index, count, y, y2, height, headingX, headingY, min, max, mean }` — the block each group occupies, and its own summary |
 | `items` | *(framed rectangle)* `{ label, value, anchorX, anchorY, frame, fill, fraction, index }` — the reference box, the filled part, and how full it is from 0 to 1 |
-| `display` | *(callout)* the formatted number, plus `valueX/Y/Size`, `labelX/Y/Size`, `captionX/Y/Size` as anchors to draw at |
+| `display` | *(callout)* the formatted number as a **string** — e.g. `$135M`. The label and caption are separate top-level fields (`label`, `caption`, `align`), and there are **no anchor or size fields**: place them yourself from `chart.plot`, or let `paper.chart(...)` derive a default ladder. This entry previously described `valueX/Y/Size` anchors that never existed, so a caller following it drew at `NaN` and saw nothing. |
 | `cells` · `parts` | *(waffle)* every cell with its `partIndex` and `filled`, and each part's `share`, `cells` and `firstCell` |
 | `icons` · `rows` | *(pictogram)* every icon with its `rowIndex`, `fraction`, `partial` flag and `clip` rectangle, and each row's `fullIcons`, `partialFraction` and drawn `width` |
 | `events` | *(timeline)* each with `time`, `lane`, `side`, `axisX`/`axisY` on the spine, `x`/`y` in its lane, `leaderX1…Y2`, and for a period `end`, `duration` and a `span` rectangle |

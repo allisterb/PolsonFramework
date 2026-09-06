@@ -1,9 +1,15 @@
-namespace Polson.Drawing.Skia;
+namespace Polson;
 
 using System.Collections;
 using System.Collections.Generic;
 
 /// <summary>Normalises loosely-typed values arriving from the JavaScript sandbox.</summary>
+/// <remarks>
+/// In <c>Polson.Runtime</c> and in the root namespace rather than in a drawing project, because both
+/// surfaces need it: the raster toolkits take options objects, and the vector chart drawer reads the
+/// same closed-form models onto a <c>SnapPaper</c>. C# resolves up the namespace chain, so every
+/// <c>Polson.Drawing.*</c> file sees it without a using directive and no call site changed when it moved.
+/// </remarks>
 public static class JsInterop
 {
     #region Methods

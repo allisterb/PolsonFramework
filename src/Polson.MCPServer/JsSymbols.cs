@@ -113,6 +113,7 @@ public static class JsSurface
         new("Drawing", typeof(ConstructiveDrawingToolkit), "Drawing", false),
         new("Logo", typeof(LogoDesignToolkit), "Logo", false),
         new("VectorLogo", typeof(VectorLogoToolkit), "VectorLogo", false),
+        new("VectorChart", typeof(VectorChartToolkit), "VectorLogo", false),
         new("LogoType", typeof(LogoTypeToolkit), "LogoType", false),
         new("Layout", typeof(LayoutToolkit), "Layout", false),
 
@@ -171,6 +172,7 @@ public static class JsSurface
             ["canvas.toDataURL"] = "alias of canvas.toDataUri",
             ["paper.logo"] = "alias of paper.vectorLogo",
             ["paper.vectorLogo"] = "per-paper accessor for the global VectorLogo toolkit",
+            ["paper.vectorChart"] = "per-paper accessor for the global VectorChart toolkit; paper.chart(model) is the documented call",
             // Typed .NET escape hatches with no JS-facing contract.
             ["paper.document"] = "raw Svg.NET document; not part of the JS surface",
             ["element.node"] = "raw Svg.NET node; not part of the JS surface",

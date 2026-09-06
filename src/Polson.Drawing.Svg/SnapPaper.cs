@@ -51,6 +51,9 @@ public class SnapPaper : SnapElement
     public SnapElement Defs => _defs ??= EnsureDefs();
 
     public VectorLogoToolkit VectorLogo { get; } = new();
+
+    /// <summary>Vector chart drawing, also reachable as <c>paper.chart(model)</c>.</summary>
+    public VectorChartToolkit VectorChart { get; } = new();
     public VectorLogoToolkit Logo => VectorLogo;
     #endregion
 
@@ -81,6 +84,19 @@ public class SnapPaper : SnapElement
         Document.Children.Add(polygon);
         return new SnapPolygon(polygon, this);
     }
+
+    #region Vector Chart Methods
+    /// <summary>
+    /// Draws any <c>Chart.create*</c> model onto this paper as real SVG elements, returning the group.
+    /// </summary>
+    /// <remarks>
+    /// The vector counterpart of <c>Chart.drawChart(ctx, model)</c>. The models were always
+    /// surface-agnostic arithmetic; this is the drawing half they lacked. Ticks and labels are not
+    /// drawn, exactly as on canvas — they are data, and their typography is the caller's.
+    /// </remarks>
+    public SnapGroup Chart(object chartModel, object? options = null) =>
+        VectorChart.DrawChart(this, chartModel, options);
+    #endregion
 
     #region Vector Logo Methods
     public SnapPath Squircle(float x, float y, float width, float height, float exponent = 4.5f) =>

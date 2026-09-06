@@ -265,6 +265,11 @@ public partial class JsDrawingEngine : Runtime
             var vectorLogoToolkit = new VectorLogoToolkit();
             engine.SetValue("VectorLogo", vectorLogoToolkit);
 
+            // Chart models were always surface-agnostic arithmetic — 2,436 lines of ChartToolkit of
+            // which exactly one method takes a canvas. This is the vector half of the drawing they
+            // lacked, so a chart can reach an SVG deliverable. Also reachable as paper.chart(model).
+            engine.SetValue("VectorChart", new VectorChartToolkit());
+
             // Pure .NET Logotype & Typography Toolkit
             var logoTypeToolkit = new LogoTypeToolkit();
             engine.SetValue("LogoType", logoTypeToolkit);

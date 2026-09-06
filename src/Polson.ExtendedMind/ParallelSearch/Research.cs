@@ -154,6 +154,12 @@ public sealed class ResearchToolkit
     /// graphic, and this saves carrying an id between scripts.
     /// </summary>
     public ResearchTask? Latest => registry.All.Count == 0 ? null : registry.All[^1];
+
+    /// <summary>
+    /// What remains of this run's research allowance. Read it before planning work that assumes more
+    /// figures can still be sourced.
+    /// </summary>
+    public ResearchBudget Budget => registry.Budget;
     #endregion
 
     #region Methods
@@ -180,12 +186,110 @@ public sealed class ResearchToolkit
 }
 
 /// <summary>
+/// How many pieces of research a run may commission. A hard ceiling, checked before anything is
+/// started.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Counted in <b>runs</b> rather than in money, for the same reason <c>AssetBudget</c> counts
+/// generations: it is the only quantity knowable before the call. Unlike image generation, though,
+/// there is no measured figure to set beside it — <b>the Task API returns no usage data at all</b>.
+/// Search and Extract both report a <c>usage</c> array; a task envelope carries <c>run</c> and
+/// <c>output</c> and nothing else, verified against the live service. So spend can only be inferred
+/// from the count and the published price of the processor, and this count is the whole control.
+/// </para>
+/// <para>
+/// A resumed or re-collected task does not spend again — only starting one does.
+/// </para>
+/// </remarks>
+public sealed class ResearchBudget
+{
+    #region Constructors
+    public ResearchBudget(int total) => Total = total;
+    #endregion
+
+    #region Properties
+    /// <summary>Pieces of research this run may successfully commission.</summary>
+    public int Total { get; }
+
+    /// <summary>Runs that succeeded or are still going. A failed run is refunded and does not count.</summary>
+    public int Spent { get; internal set; }
+
+    /// <summary>
+    /// Every run ever started, refunded or not. The stop on a run that keeps failing.
+    /// </summary>
+    public int Attempts { get; internal set; }
+
+    public int Remaining => Math.Max(0, Total - Spent);
+
+    /// <summary>
+    /// How many extra starts a run may make purely to recover from failures.
+    /// </summary>
+    /// <remarks>
+    /// A failed run is refunded so a transient service fault does not leave a graphic with no data at
+    /// all — but a refund that could be earned indefinitely is not a ceiling. Two retries is enough
+    /// for a blip and short of a loop.
+    /// </remarks>
+    public const int RetryAllowance = 2;
+
+    public int MaxAttempts => Total + RetryAllowance;
+
+    public bool Exhausted => Remaining <= 0 || Attempts >= MaxAttempts;
+    #endregion
+
+    #region Methods
+    public bool CanAfford(int count = 1) => Remaining >= count && Attempts + count <= MaxAttempts;
+    #endregion
+}
+
+/// <summary>
 /// The research commissioned during one run. Held on the session so it spans executions, and keyed
 /// by the service's run id so a task can be recovered after a session drop.
 /// </summary>
 public sealed class ResearchRegistry
 {
+    #region Constructors
+    /// <param name="budget">Runs allowed. Defaults to <see cref="DefaultBudget"/>.</param>
+    public ResearchRegistry(int budget = DefaultBudget) => Budget = new ResearchBudget(budget);
+    #endregion
+
     #region Properties
+    /// <summary>
+    /// Runs allowed when nothing is configured.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Two, and they are not equal.</b> The first must carry the entire data requirement: one
+    /// schema costs one run, pays the latency once, and lets the service reconcile the fields against
+    /// each other rather than answering them in isolation. The second exists <b>only to correct</b> —
+    /// a field that came back empty, wrong, or at a confidence too low to draw. It is not the second
+    /// half of the research, and an agent that plans to use both has already split the requirement,
+    /// which is the failure this ceiling exists to prevent.
+    /// </para>
+    /// <para>
+    /// One would have been the tighter rule, and was the first choice. Two is deliberate: an agent
+    /// that can see its answer is unusable and cannot act on that judgment is being denied the review
+    /// step we would want a person to take. The ceiling is there to keep the work focused, not to
+    /// stop it from being checked.
+    /// </para>
+    /// <para>
+    /// The size of a single question is bounded by <b>field capacity, not by length</b> — roughly 5
+    /// top-level fields on <c>base</c>, 10 on <c>core</c>, 20 on <c>pro</c>. An array counts as one
+    /// field however many rows it holds: a measured run returned six Apollo missions with three
+    /// properties each, eighteen values, under a single <c>missions</c> field on <c>base</c>. So the
+    /// answer to "it will not fit" is <b>nest it and step up a tier</b>, never split it into a second
+    /// run.
+    /// </para>
+    /// <para>
+    /// A failed run is refunded, so these are two <i>successful</i> runs rather than two attempts — a
+    /// transient service fault costs nothing. Raise <c>Research:Budget</c> for a piece that genuinely
+    /// needs unrelated bodies of data.
+    /// </para>
+    /// </remarks>
+    public const int DefaultBudget = 2;
+
+    public ResearchBudget Budget { get; }
+
     /// <summary>In the order they were started, which is the order a reader wants them.</summary>
     public IReadOnlyList<ResearchTask> All
     {
@@ -214,6 +318,18 @@ public sealed class ResearchRegistry
         };
 
         task.Status = status;
+
+        // Charged here rather than at the call site, so the count cannot drift from the registry —
+        // and only for a genuinely new run, since Add is idempotent on the id.
+        lock (gate)
+        {
+            if (!byId.ContainsKey(id))
+            {
+                Budget.Spent++;
+                Budget.Attempts++;
+            }
+        }
+
         return Add(task);
     }
 
@@ -240,9 +356,23 @@ public sealed class ResearchRegistry
         task.Basis = basis;
     }
 
-    /// <summary>Records that a run ended without data.</summary>
+    /// <summary>
+    /// Records that a run ended without data, and refunds it.
+    /// </summary>
+    /// <remarks>
+    /// The refund is what makes a ceiling of one survivable. Without it a single transient service
+    /// fault would leave a graphic with no figures and no way to get any — and the agent's only
+    /// remaining options would be to ship an empty chart or invent the numbers, which is the outcome
+    /// this entire surface exists to prevent. <see cref="ResearchBudget.Attempts"/> is not refunded,
+    /// so a run that keeps failing still stops.
+    /// </remarks>
     public void Fail(ResearchTask task, string? error)
     {
+        lock (gate)
+        {
+            if (task.Status != "failed" && Budget.Spent > 0) Budget.Spent--;
+        }
+
         task.Status = "failed";
         task.Error = error;
     }

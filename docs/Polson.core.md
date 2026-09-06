@@ -1839,6 +1839,18 @@ ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA �
 - `Research.get(id: string)` → `ResearchTask?` — By run id, or null.
 - `Research.find(text: string)` → `ResearchTask?` — By a fragment of its description, case-insensitively. Lets a later stage find research by what it was *for* rather than by an id it must carry.
 - `Research.allComplete()` → `boolean` — Whether every task finished with data. True when none was commissioned, so pair it with `Research.count`.
+- `Research.budget` → `ResearchBudget` — What remains of this run's allowance.
+
+## `ResearchBudget`
+
+- `budget.total` · `budget.spent` · `budget.remaining` · `budget.attempts` · `budget.maxAttempts` → `number`
+- `budget.exhausted` → `boolean`
+- `budget.canAfford(count?: number)` → `boolean`
+
+> [!IMPORTANT]
+> **You get two research runs, and they are not equal.** The **first** must carry the entire data requirement — every figure the graphic needs, in one schema, planned before you call. The **second** exists only to *correct* the first: a field that came back empty, wrong, or at a confidence too low to draw. It is not the second half of the research, and planning to use both means the requirement has already been split. The size of one question is bounded by **field count, not length**: an array is a single field however many rows it holds, so nest it and step up a tier (`core` takes ~10 top-level fields against `base`s ~5) rather than splitting into a second run. A run that **fails is refunded**, so the ceiling is two *successful* runs rather than two attempts; `budget.attempts` against `budget.maxAttempts` is what stops a run that keeps failing.
+>
+> There is no usage figure to check against this. **The Task API returns no billing data at all** — unlike Search and Extract, a task envelope carries only `run` and `output` — so the run count is the entire control, and it is spent by *starting* a task, never by resuming or re-reading one.
 
 ## `ResearchTask`
 

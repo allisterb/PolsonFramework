@@ -817,6 +817,18 @@ public class DrawingMcpTools
         "single worst thing this studio can produce: the layout puts a source line under it and the graphic then " +
         "asserts something nobody checked. If research fails, say so in the artifact and to the director — a chart " +
         "that admits a missing figure is worth more than one that fabricates it.\n\n" +
+        "YOU GET TWO RUNS, AND THEY ARE NOT EQUAL. The FIRST must carry your ENTIRE data requirement — every " +
+        "figure the graphic needs, in one schema, planned before you call. The SECOND exists only to CORRECT the " +
+        "first: a field that came back empty, wrong, or at a confidence too low to draw. It is not the second " +
+        "half of the research. If you are planning to use both, you have already split the requirement, which is " +
+        "the mistake this ceiling exists to prevent. `researchRemaining` in the reply tells you what is left.\n\n" +
+        "A single question is bounded by FIELD COUNT, not by length, so a large requirement fits fine. An array " +
+        "counts as one field however many rows it holds — six Apollo missions with three properties each, " +
+        "eighteen values, went through as a single `missions` field on the default processor. If it genuinely " +
+        "will not fit, NEST IT and move up a tier ('core' takes about 10 top-level fields against 'base's 5). " +
+        "Never split it into a second run.\n\n" +
+        "A run that FAILS is refunded, so the ceiling is one successful piece of research rather than one " +
+        "attempt — you may retry a genuine failure. It is not a second question.\n\n" +
         "Give `schema` when you want a table or a record set: a JSON Schema whose field DESCRIPTIONS are " +
         "instructions, because they determine what comes back. Omit it for a prose answer. This BLOCKS while the " +
         "research runs — typically 15-50 seconds — so start it before the work that needs it. If it has not " +
@@ -870,6 +882,26 @@ public class DrawingMcpTools
             {
                 response["ok"] = false;
                 response["error"] = "An objective is required to start research.";
+                return response;
+            }
+
+            // Checked before the call, so an exhausted allowance costs nothing and says so plainly.
+            if (!session.Research.Budget.CanAfford())
+            {
+                response["ok"] = false;
+                response["error"] = $"This run's research allowance is spent "
+                                  + $"({session.Research.Budget.Spent} of {session.Research.Budget.Total} used).";
+                response["remedy"] = "Work with the figures already sourced — read them from a script with "
+                                   + "Research.tasks. Do NOT invent the missing ones: if the graphic needs a "
+                                   + "figure you could not source, say so in the artifact and tell the director "
+                                   + "the allowance was reached.";
+                Events.Append("research.refused", session.Stage, null,
+                    new Dictionary<string, object?>
+                    {
+                        ["description"] = description,
+                        ["spent"] = session.Research.Budget.Spent,
+                        ["total"] = session.Research.Budget.Total,
+                    });
                 return response;
             }
 
@@ -964,6 +996,7 @@ public class DrawingMcpTools
         response["processor"] = task.Processor;
         response["elapsedSeconds"] = task.ElapsedSeconds;
         response["description"] = task.Description;
+        response["researchRemaining"] = session.Research.Budget.Remaining;
 
         if (task.IsComplete)
         {
@@ -984,6 +1017,19 @@ public class DrawingMcpTools
             response["basis"] = basis;
             response["note"] = $"Read the full reasoning from a script: Research.get('{task.Id}').basis. "
                              + $"Per-row caption: Research.get('{task.Id}').citeField('field.0').";
+
+            // Said at the moment it matters — when the agent is looking at an answer and deciding
+            // whether it is good enough — rather than only in the tool description it read once.
+            var remaining = session.Research.Budget.Remaining;
+            response["allowanceNote"] = remaining switch
+            {
+                0 => "No research runs remain. Draw with these figures; if one is unusable, say so in the "
+                   + "artifact rather than substituting a guess.",
+                1 => "One run remains, and it is for CORRECTING this answer — a field that came back empty, "
+                   + "wrong, or too low-confidence to draw. Check the basis now and decide. It is not for a "
+                   + "further question.",
+                _ => $"{remaining} research runs remain.",
+            };
             return response;
         }
 

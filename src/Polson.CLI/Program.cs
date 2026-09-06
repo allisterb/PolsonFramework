@@ -198,6 +198,22 @@ internal class Program : Runtime
     /// that data cannot be sourced. Absent credentials must never read to an agent as licence to
     /// invent a figure, which is why the warning says what to do instead.
     /// </summary>
+    /// <summary>
+    /// The research ceiling from <c>Research:Budget</c>, or the default. Reported and ignored when
+    /// unusable, for the same reason as the asset budget: a typo parsing to zero would disable
+    /// research entirely and present as "research is broken" with nothing saying why.
+    /// </summary>
+    internal static int ResolveResearchBudget(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured)) return ResearchRegistry.DefaultBudget;
+
+        if (int.TryParse(configured.Trim(), out var parsed) && parsed > 0) return parsed;
+
+        Warn("Ignoring Research:Budget='{0}': it must be a positive whole number. Using {1}.",
+            configured, ResearchRegistry.DefaultBudget);
+        return ResearchRegistry.DefaultBudget;
+    }
+
     static void ConfigureResearch()
     {
         var apiKey = Setting("ApiKeys:Parallel");
@@ -211,8 +227,10 @@ internal class Program : Runtime
             return;
         }
 
+        var budget = ResolveResearchBudget(Setting("Research:Budget"));
         DrawingMcpTools.ResearchClient = new ParallelClient(apiKey);
-        Info("Research enabled (default processor: {0}).", TaskProcessor.Default);
+        SessionContext.ResearchBudget = budget;
+        Info("Research enabled (processor: {0}, budget: {1} runs).", TaskProcessor.Default, budget);
     }
 
     static async Task HandleServerArgs(ServerOptions opts)

@@ -55,7 +55,19 @@ public sealed class SessionContext
     /// and read by a later one, so it has to outlive a single execution. Keyed by the service's run
     /// id, which is durable — a task can be recovered after a session drop by asking for it again.
     /// </remarks>
-    public ResearchRegistry Research { get; } = new();
+    public ResearchRegistry Research { get; } = new(ResearchBudget);
+
+    /// <summary>
+    /// Runs allowed per session, set once at startup from <c>Research:Budget</c>.
+    /// </summary>
+    /// <remarks>
+    /// Static because a session is created on demand, deep inside a tool call, with no route for
+    /// configuration to reach it — the same arrangement as <see cref="JsDrawingEngine.Assets"/>.
+    /// Unlike the asset budget this is <b>per session</b> rather than per server run, because the
+    /// research registry is too: a public deployment serving many visitors from one process would
+    /// otherwise let the first of them spend everyone's allowance.
+    /// </remarks>
+    public static int ResearchBudget { get; set; } = Polson.ExtendedMind.ParallelSearch.ResearchRegistry.DefaultBudget;
 
     /// <summary>
     /// The stage of work the agent says it is in, e.g. "Blocking". Null until it declares one.

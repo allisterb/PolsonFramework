@@ -183,6 +183,156 @@ public class ResearchTests : TestsRuntime
     }
     #endregion
 
+    #region Budget
+
+    [Fact]
+    public void StartingARunSpendsExactlyOne()
+    {
+        var registry = new ResearchRegistry(3);
+
+        Assert.Equal(3, registry.Budget.Total);
+        Assert.Equal(3, registry.Budget.Remaining);
+        Assert.True(registry.Budget.CanAfford());
+        Assert.False(registry.Budget.Exhausted);
+
+        registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+        Assert.Equal(1, registry.Budget.Spent);
+        Assert.Equal(2, registry.Budget.Remaining);
+    }
+
+    /// <summary>
+    /// Re-registering the same run id is a resume, not a new commission. Charging it again would let
+    /// a poll loop eat the allowance without starting any research at all.
+    /// </summary>
+    [Fact]
+    public void ResumingAKnownRunSpendsNothing()
+    {
+        var registry = new ResearchRegistry(3);
+        registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+
+        registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+        registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+
+        Assert.Equal(1, registry.Budget.Spent);
+        Assert.Single(registry.All);
+    }
+
+    [Fact]
+    public void TheAllowanceRunsOutAfterTheConfiguredNumberOfRuns()
+    {
+        var registry = new ResearchRegistry(2);
+        registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+        registry.Start("trun_2", "d", "o", TaskProcessor.Base);
+
+        Assert.True(registry.Budget.Exhausted);
+        Assert.False(registry.Budget.CanAfford());
+        Assert.Equal(0, registry.Budget.Remaining);
+    }
+
+    /// <summary>Remaining never goes negative, so a caller can format it without guarding.</summary>
+    [Fact]
+    public void RemainingClampsAtZero()
+    {
+        var registry = new ResearchRegistry(1);
+        registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+        registry.Start("trun_2", "d", "o", TaskProcessor.Base);   // past the ceiling
+
+        Assert.Equal(0, registry.Budget.Remaining);
+        Assert.Equal(2, registry.Budget.Spent);
+    }
+
+    [Fact]
+    public void TwoIsTheDefault()
+    {
+        Assert.Equal(2, ResearchRegistry.DefaultBudget);
+        Assert.Equal(2, new ResearchRegistry().Budget.Total);
+    }
+
+    /// <summary>
+    /// The safeguard that makes a ceiling of one survivable: a run that fails is refunded, so a
+    /// transient fault does not leave a graphic with no figures and no way to get any.
+    /// </summary>
+    [Fact]
+    public void AFailedRunIsRefundedSoTheAgentCanTryAgain()
+    {
+        var registry = new ResearchRegistry(1);
+        var first = registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+        Assert.True(registry.Budget.Exhausted);
+
+        registry.Fail(first, "the service failed");
+
+        Assert.Equal(0, registry.Budget.Spent);
+        Assert.Equal(1, registry.Budget.Remaining);
+        Assert.False(registry.Budget.Exhausted);
+        Assert.Equal(1, registry.Budget.Attempts);   // the attempt is not refunded
+    }
+
+    /// <summary>A refund is not a second question: a completed run still consumes the allowance.</summary>
+    [Fact]
+    public void ACompletedRunKeepsTheAllowanceSpent()
+    {
+        var registry = new ResearchRegistry(1);
+        var task = registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+
+        registry.Complete(task, new Dictionary<string, object?>(), []);
+
+        Assert.Equal(1, registry.Budget.Spent);
+        Assert.True(registry.Budget.Exhausted);
+    }
+
+    /// <summary>
+    /// Refunds cannot be earned indefinitely. Past the retry allowance the run stops, however many
+    /// times it has failed — otherwise a pathological loop would never be capped at all.
+    /// </summary>
+    [Fact]
+    public void RepeatedFailuresStopAtTheRetryAllowance()
+    {
+        var registry = new ResearchRegistry(1);
+
+        for (var i = 0; i < 1 + ResearchBudget.RetryAllowance; i++)
+        {
+            Assert.True(registry.Budget.CanAfford(), $"attempt {i + 1} should have been allowed");
+            var task = registry.Start($"trun_{i}", "d", "o", TaskProcessor.Base);
+            registry.Fail(task, "failed again");
+        }
+
+        Assert.Equal(0, registry.Budget.Spent);         // all refunded
+        Assert.Equal(3, registry.Budget.Attempts);
+        Assert.True(registry.Budget.Exhausted);          // but no further attempt is allowed
+        Assert.False(registry.Budget.CanAfford());
+    }
+
+    /// <summary>Failing an already-failed task must not refund twice.</summary>
+    [Fact]
+    public void RefundingTwiceIsNotPossible()
+    {
+        var registry = new ResearchRegistry(2);
+        var task = registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+
+        registry.Fail(task, "once");
+        registry.Fail(task, "again");
+
+        Assert.Equal(0, registry.Budget.Spent);
+    }
+
+    /// <summary>A script can read what remains, and cannot change it.</summary>
+    [Fact]
+    public void TheBudgetIsVisibleToScriptsAndReadOnly()
+    {
+        var registry = new ResearchRegistry(3);
+        registry.Start("trun_1", "d", "o", TaskProcessor.Base);
+        var research = new ResearchToolkit(registry);
+
+        Assert.Equal(2, research.Budget.Remaining);
+
+        foreach (var name in new[] { nameof(ResearchBudget.Total), nameof(ResearchBudget.Spent) })
+        {
+            var setter = typeof(ResearchBudget).GetProperty(name)!.SetMethod;
+            Assert.True(setter is null || !setter.IsPublic, $"ResearchBudget.{name} is publicly settable");
+        }
+    }
+    #endregion
+
     #region Citation
 
     [Fact]

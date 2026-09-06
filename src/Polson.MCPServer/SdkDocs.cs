@@ -52,6 +52,7 @@ public static class SdkDocs
         // the one place an agent looks to find out what exists.
         new("Chart", ["Chart", "chart"], "Chart (Whole Charts as Constructions)"),
         new("Assets", ["Assets", "ExtendedMind"], "Assets (Cloud Asset Requisition)"),
+        new("Photo", ["Photo", "photo", "portrait", "likeness"], "Photo (Reference Photographs)"),
         new("Motion", ["Motion", "motion", "Timeline"], "Motion (Frame Capture & Animated Encoding)")
     ];
     #endregion

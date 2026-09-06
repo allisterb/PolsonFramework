@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -19,6 +20,7 @@ using Jint.Runtime.Interop;
 
 using Polson.ExtendedMind.ImageGeneration;
 using Polson.ExtendedMind.ParallelSearch;
+using Polson.ExtendedMind.Photos;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
@@ -54,6 +56,13 @@ public partial class JsDrawingEngine : Runtime
     /// configured" refusal instead of a ReferenceError it cannot interpret.
     /// </summary>
     public static AssetRequisitionToolkit? Assets { get; set; }
+
+    /// <summary>
+    /// Reference-photograph surface, configured once at startup. Null means the same thing it means
+    /// for <see cref="Assets"/> — a disabled toolkit is registered instead, so a script asking for a
+    /// likeness is refused in words rather than by a ReferenceError.
+    /// </summary>
+    public static PhotoToolkit? Photos { get; set; }
 
     /// <summary>
     /// The project directory a script's file paths resolve against. Null for an ad-hoc server.
@@ -288,6 +297,11 @@ public partial class JsDrawingEngine : Runtime
             var assets = Assets ?? new AssetRequisitionToolkit(null, new RequisitionCache(), new AssetBudget(0), "agent");
             engine.SetValue("Assets", assets);
 
+            // Reference photography. Registered on the same terms as Assets, and for a stronger
+            // reason: a script that cannot fetch a likeness must be told so, because the failure it
+            // would otherwise reach for is inventing an image URL.
+            engine.SetValue("Photo", Photos ?? new PhotoToolkit(null, new PhotoBudget(0), "agent"));
+
             // Sourced research, read-only. Commissioning is the Research MCP tool's job because a run
             // takes far longer than ScriptTimeoutSeconds allows; by the time a script sees a task the
             // waiting is done, so every member here is a plain read.
@@ -407,6 +421,34 @@ public partial class JsDrawingEngine : Runtime
             {
                 var svg = args.Length > 0 ? args[0].ToString() : string.Empty;
                 var paper = Snap.Parse(svg);
+                papers.Add(paper);
+                return JsValue.FromObject(engine, paper);
+            }));
+
+            // The reopen half of outSvg, and the reason `svgXml` no longer travels in the response.
+            // Registered here rather than on Snap itself because containment needs ProjectRoot, which
+            // is the engine's — exactly as Skia.Image.load resolves against the same root.
+            snapFunc.Set("load", new ClrFunction(engine, "load", (_, args) =>
+            {
+                var path = args.Length > 0 && !args[0].IsUndefined() ? args[0].ToString() : string.Empty;
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    throw new ArgumentException("Snap.load(path) needs a path relative to the project directory.");
+                }
+
+                // Plain .NET exceptions, as Skia.Image.load throws — Jint surfaces them to the script
+                // and the engine's own handler turns them into a failed execution with the message.
+                var full = ProjectPath.Resolve(ProjectRoot, path, "path", "Read");
+                if (!File.Exists(full))
+                {
+                    throw new FileNotFoundException(
+                        string.IsNullOrEmpty(ProjectRoot) || full.Equals(path, StringComparison.Ordinal)
+                            ? $"SVG file not found: {path}"
+                            : $"SVG file not found: '{path}' resolves to '{full}'. Paths are relative to the project directory.",
+                        full);
+                }
+
+                var paper = Snap.Parse(File.ReadAllText(full));
                 papers.Add(paper);
                 return JsValue.FromObject(engine, paper);
             }));

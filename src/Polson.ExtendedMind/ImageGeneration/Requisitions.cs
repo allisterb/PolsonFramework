@@ -228,7 +228,7 @@ public abstract record RequisitionResult
 }
 
 /// <summary>A flat material swatch. Geometry-independent, reusable, and cheap to re-derive at any size.</summary>
-public sealed record MaterialAsset : RequisitionResult
+public sealed record MaterialAsset : RequisitionResult, IDataUriSource
 {
     /// <summary>Encoded bytes at the requested size and format. Empty when <see cref="RequisitionResult.Success"/> is false.</summary>
     public byte[] Bytes { get; init; } = [];
@@ -280,7 +280,7 @@ public sealed record PlateMetrics
 }
 
 /// <summary>A background plate. Composited beneath the scene; never handed back as a drawable-over layer.</summary>
-public sealed record BackdropPlate : RequisitionResult
+public sealed record BackdropPlate : RequisitionResult, IDataUriSource
 {
     public byte[] Bytes { get; init; } = [];
 

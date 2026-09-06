@@ -9,6 +9,7 @@ using CommandLine;
 using Microsoft.Extensions.Configuration;
 using Polson.ExtendedMind.ImageGeneration;
 using Polson.ExtendedMind.ParallelSearch;
+using Polson.ExtendedMind.Photos;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 using Polson.MCPServer;
@@ -49,6 +50,13 @@ internal class Program : Runtime
     /// </para>
     /// </remarks>
     const int DefaultAssetBudget = 120;
+
+    /// <summary>
+    /// Reference photographs allowed per run. Far smaller than the asset budget because the unit is
+    /// bigger: one photograph is a whole subject in the finished graphic, and a piece needing more
+    /// than a couple of dozen likenesses is a piece that wanted drawing.
+    /// </summary>
+    const int DefaultPhotoBudget = 24;
     #endregion
 
     #region Methods
@@ -194,6 +202,46 @@ internal class Program : Runtime
     }
 
     /// <summary>
+    /// Wires the reference-photograph surface.
+    /// </summary>
+    /// <remarks>
+    /// Always enabled, unlike asset requisition and research: the source needs no key and bills
+    /// nothing. The budget is therefore about restraint rather than money — a graphic wanting twenty
+    /// portraits is usually a graphic that should have been drawn — and about the fact that a public
+    /// URL driving an unbounded fetcher is an open surface, per Milestone 6 §4.
+    /// </remarks>
+    static void ConfigurePhotos()
+    {
+        var budget = ResolvePhotoBudget(Setting("Photos:Budget"));
+        var hosts = Setting("Photos:AllowedHosts")?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        JsDrawingEngine.Photos = new PhotoToolkit(
+            new WikimediaPhotoSource(allowedMediaHosts: hosts, userAgent: Setting("Photos:UserAgent")),
+            new PhotoBudget(budget), "agent");
+
+        Info("Reference photography enabled (budget: {0} photographs, hosts: {1}).",
+            budget, string.Join(", ", hosts ?? WikimediaPhotoSource.DefaultMediaHosts));
+    }
+
+    /// <summary>Reads <c>Photos:Budget</c>; separated from the config lookup so it can be tested.</summary>
+    /// <remarks>
+    /// Zero is <b>accepted</b> here, unlike <c>Assets:Budget</c>, and the difference is deliberate:
+    /// there is no API key to leave unset, so setting the budget to zero is the only way to turn the
+    /// surface off. A negative value is still a typo and is refused.
+    /// </remarks>
+    internal static int ResolvePhotoBudget(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured)) return DefaultPhotoBudget;
+
+        if (int.TryParse(configured.Trim(), out var parsed) && parsed >= 0) return parsed;
+
+        Warn("Ignoring Photos:Budget='{0}': it must be a whole number, zero or more. Using {1}.",
+            configured, DefaultPhotoBudget);
+        return DefaultPhotoBudget;
+    }
+
+    /// <summary>
     /// Wires the research transport, or leaves it null so the <c>Research</c> tool can say plainly
     /// that data cannot be sourced. Absent credentials must never read to an agent as licence to
     /// invent a figure, which is why the warning says what to do instead.
@@ -277,6 +325,7 @@ internal class Program : Runtime
             : Directory.GetCurrentDirectory();
 
         ConfigureAssetRequisition(projectDir);
+        ConfigurePhotos();
         ConfigureResearch();
 
         if (opts.Http)
@@ -322,6 +371,12 @@ internal class Program : Runtime
 
     static Task HandleEvalArgs(EvalOptions opts)
     {
+        // Reference photography, but not requisition or research. The difference is credentials:
+        // this one needs none, so a script pasted into `eval` behaves as it would under the server
+        // instead of refusing with NotConfigured for a reason the author cannot act on. The other
+        // two stay unconfigured here because a metered surface should be turned on deliberately.
+        ConfigurePhotos();
+
         var engine = new JsDrawingEngine();
         DrawingExecutionResult result;
 

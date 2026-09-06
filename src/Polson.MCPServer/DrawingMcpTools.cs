@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,7 +19,7 @@ using Polson.Drawing.Skia;
 using Polson.ExtendedMind.ParallelSearch;
 using Polson.Drawing.Svg;
 
-public class DrawingMcpTools
+public partial class DrawingMcpTools
 {
     #region Constants & Static Properties
     public static TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(1);
@@ -260,6 +261,57 @@ public class DrawingMcpTools
 
         return text;
     }
+
+    /// <summary>
+    /// Hrefs in the saved SVG that a viewer will not resolve — everything but a <c>data:</c> URI.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The check exists because the failure is invisible from inside the run. An SVG loaded through
+    /// <c>&lt;img&gt;</c> or a CSS background does not fetch external resources at all, so an
+    /// external href renders as nothing even when the file sits beside it and serves perfectly; and
+    /// this renderer never fetches one either, drawing a broken-image cross while the execution
+    /// still reports success. Both halves look fine to an agent that does not open the artifact.
+    /// </para>
+    /// <para>
+    /// Reported rather than rewritten. Inlining somebody's href behind their back would be a
+    /// surprise, and an external reference is legitimate when the SVG is meant to be opened as a
+    /// document — this only says the deliverable will not carry the picture.
+    /// </para>
+    /// <para>
+    /// Distinct hrefs, capped and truncated: a generated SVG can carry hundreds of
+    /// <c>&lt;image&gt;</c> elements, and a warning longer than the response it rides on is a
+    /// warning nobody reads.
+    /// </para>
+    /// </remarks>
+    internal static List<string> UnresolvableImageHrefs(string svgXml)
+    {
+        const int MaxReported = 5;
+        const int MaxHrefChars = 80;
+
+        var found = new List<string>();
+        if (string.IsNullOrEmpty(svgXml)) return found;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match match in ImageHrefRegex().Matches(svgXml))
+        {
+            var href = match.Groups["href"].Value.Trim();
+
+            // An empty href draws nothing but is not an unresolved *reference*, so it is left to the
+            // author; a data URI is exactly what this is asking people to use.
+            if (href.Length == 0 || href.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!seen.Add(href)) continue;
+
+            found.Add(href.Length > MaxHrefChars ? string.Concat(href.AsSpan(0, MaxHrefChars), "…") : href);
+            if (found.Count == MaxReported) break;
+        }
+
+        return found;
+    }
+
+    /// <summary>Matches <c>href</c> and the SVG 1.1 <c>xlink:href</c> spelling on an <c>&lt;image&gt;</c>.</summary>
+    [GeneratedRegex(@"<image\b[^>]*?\b(?:xlink:)?href\s*=\s*""(?<href>[^""]*)""", RegexOptions.IgnoreCase)]
+    private static partial Regex ImageHrefRegex();
 
     internal string ResolveOutputPath(string path, string parameterName)
     {
@@ -633,6 +685,24 @@ public class DrawingMcpTools
                     ["artifact"] = Events.Relativize(fullSvgPath),
                     ["format"] = "svg"
                 });
+
+                if (UnresolvableImageHrefs(result.SvgXml!) is { Count: > 0 } unresolvable)
+                {
+                    result.Logs.Add(
+                        $"[WARN] outSvg '{outSvg}' saved {unresolvable.Count} <image> element(s) whose href will not "
+                        + $"resolve for a viewer: {string.Join(", ", unresolvable)}. An SVG loaded through <img> or a "
+                        + "CSS background does not fetch external resources, so the picture is simply missing — and "
+                        + "this renderer does not fetch them either, which is why the peek shows a broken-image cross. "
+                        + "Pass the object rather than a path — paper.image(photo, x, y, w, h) or "
+                        + "paper.image(bitmap, ...) — and it is inlined as a data URI. See polson://manual/14.");
+
+                    Events.Append("render.unresolvedimage", session.Stage, executionId, new Dictionary<string, object?>
+                    {
+                        ["script"] = scriptPath,
+                        ["artifact"] = Events.Relativize(fullSvgPath),
+                        ["hrefs"] = unresolvable
+                    });
+                }
             }
             else if (!string.IsNullOrWhiteSpace(outSvg) && result.Success)
             {
@@ -1469,7 +1539,8 @@ public class DrawingMcpTools
     [McpServerTool(Name = "RenderSvg")]
     [Description("Headlessly renders raw SVG XML markup to a WebP/PNG/JPEG byte array.")]
     public DrawingExecutionResult RenderSvg(
-        [Description("The SVG XML string to render.")] string svgXml,
+        [Description("The SVG XML string to render. Give this or `file`, not both. Prefer `file` for markup already on disk — passing a saved document back through this parameter means the whole of it, data URIs included, travels through your context window twice.")] string? svgXml = null,
+        [Description("A path relative to the project directory to read the SVG from instead — normally something outSvg wrote. Give this or `svgXml`, not both.")] string? file = null,
         [Description("Target image width in pixels (optional, defaults to SVG width or 800).")] int? width = null,
         [Description("Target image height in pixels (optional, defaults to SVG height or 600).")] int? height = null,
         [Description("Output image encoding format ('webp', 'png', 'jpeg'; default 'webp').")] string? format = null,
@@ -1478,19 +1549,30 @@ public class DrawingMcpTools
         [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default: true if outFile is omitted, false if outFile is specified). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null)
     => Recorded(nameof(RenderSvg), () =>
     {
-        ArgumentNullException.ThrowIfNull(svgXml);
+        // Exactly one source. Accepting both and picking one would silently render markup the caller
+        // did not mean; accepting neither has nothing to draw.
+        if (string.IsNullOrWhiteSpace(svgXml) == string.IsNullOrWhiteSpace(file))
+        {
+            throw new ArgumentException(
+                "RenderSvg needs either svgXml or file, not both and not neither. Prefer file for "
+                + "markup already on disk.");
+        }
+
+        var markup = string.IsNullOrWhiteSpace(file)
+            ? svgXml!
+            : File.ReadAllText(ResolveOutputPath(file, nameof(file)));
 
         var fmt = format ?? "webp";
         var q = quality ?? 85;
         var result = new DrawingExecutionResult
         {
-            SvgXml = svgXml,
+            SvgXml = markup,
             ImageFormat = SkiaImageEncoder.NormalizeFormatName(fmt)
         };
 
         try
         {
-            var imgBytes = SvgRenderPipeline.RenderToImage(svgXml, width, height, fmt, q);
+            var imgBytes = SvgRenderPipeline.RenderToImage(markup, width, height, fmt, q);
             result.Success = true;
             result.ImageBytes = imgBytes;
 

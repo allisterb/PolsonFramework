@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 
 using Polson.ExtendedMind.ImageGeneration;
 using Polson.ExtendedMind.ParallelSearch;
+using Polson.ExtendedMind.Photos;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
@@ -96,6 +97,12 @@ public static class JsSurface
         new("plate", typeof(BackdropPlate), "Assets", true),
         new("matte", typeof(MatteAsset), "Assets", true),
         new("budget", typeof(AssetBudget), "Assets", true),
+
+        new("Photo", typeof(PhotoToolkit), "Photo", false),
+        new("photo", typeof(PhotoAsset), "Photo", true),
+        new("subject", typeof(SubjectMatch), "Photo", true),
+        new("licence", typeof(PhotoLicence), "Photo", true),
+        new("photoBudget", typeof(PhotoBudget), "Photo", true),
 
         // Read-only. Research is commissioned by the Research MCP tool, never from a script.
         new("Research", typeof(ResearchToolkit), "Research", false),

@@ -75,7 +75,9 @@ public class ToolErrorRecordingTests : TestsRuntime, IDisposable
     [Fact]
     public void TestRenderSvgFailureIsRecorded()
     {
-        Assert.Throws<ArgumentNullException>(() => Tools().RenderSvg(null!));
+        // ArgumentException, not ArgumentNullException: since RenderSvg gained a `file` source,
+        // passing no markup is "neither source was given" rather than "this argument was null".
+        Assert.Throws<ArgumentException>(() => Tools().RenderSvg(null!));
 
         Assert.Equal("RenderSvg", ToolError()?.GetProperty("tool").GetString());
     }

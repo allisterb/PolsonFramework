@@ -211,6 +211,20 @@ surface and the budget.
 Write what comes back into the tables in `brief.md`, with the run id as the source, so every figure
 on the canvas traces to a row and every row traces to a citation.
 
+**Fourth, ask whether the subject is a set of specific people or places** — a ranking of named
+individuals, a comparison of particular cities, a timeline anchored to one building. If it is, a
+reference photograph is available: `Photo.of('name', { expect: 'actress' })` returns a portrait with
+its licence, its photographer and any publicity-rights restriction, and `paper.image(photo, …)`
+inlines it. Read `polson://manual/26` before using one; §6 is equally clear about when *not* to, and
+a subject that is a category rather than an individual is better drawn than photographed.
+
+This step exists because a run of this workflow missed it entirely. Asked for the top five earning
+actresses, it produced a technically sound piece — zero baseline, lie factor computed live, palette
+verified — naming five women and showing **not one face**, because nothing in this file had told it
+faces were obtainable. A ranked list of people is the case where recognition *is* the mechanism: the
+reader scans for someone they know. **Never invent a likeness**, and where a portrait is refused or
+unavailable, say so in the piece rather than leaving a silent gap.
+
 **The goal is then frozen.** Stages 2 to 7 serve it; they do not renegotiate it because a figure
 turned out inconvenient. If research genuinely undermines the claim — the series does not exist, the
 sourced values say the opposite — **the claim may change, and the change is an event**: re-open
@@ -354,6 +368,9 @@ beautiful and overstates its numbers has failed the more important half.
   chart by hand and a waffle as a raw 10×10 grid.
 - `polson://sdk/core/Scale` — value-to-pixel mapping. `polson://sdk/core/Layout` — zones and
   measured stacking. `polson://sdk/core/Css` — reading a design language's tokens and type.
+- `polson://sdk/core/Photo` and `polson://manual/26` — reference photographs of real people and
+  places, with the licence and the credit that must ride with them. Read these whenever the subject
+  is named individuals rather than a category.
 
 Query them rather than recalling from memory. The API is large and specific, and a call invented
 from memory that happens to sound right will fail in ways that cost more than the lookup.

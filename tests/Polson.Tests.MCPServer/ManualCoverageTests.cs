@@ -92,6 +92,7 @@ public class ManualCoverageTests : TestsRuntime
         // Documented at the same time it was built, like Chart, so this is where it started rather
         // than where it climbed to. Every member is named in the reference.
         ["Research"] = 100,
+        ["Photo"] = 100,
         ["Snap"] = 82,
         ["Canvas2D"] = 75,
         ["VectorLogo"] = 74,

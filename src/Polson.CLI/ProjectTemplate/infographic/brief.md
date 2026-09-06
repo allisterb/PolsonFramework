@@ -27,6 +27,23 @@ the citation below — do not fill the gap with something plausible, and do not 
 told. If it cannot be sourced, write *unavailable* in `Value` and say so in the piece; a stated gap
 is an honest artifact and a plausible number is not.
 
+**And check the period the figures actually cover against the period the brief names.** This is a
+separate failure from an unsourced number and a sneakier one, because the data sources perfectly
+well — it just does not describe the span the headline claims. Annual rankings are published in
+arrears, so a list *released* in one year almost always *covers* the year before; a brief naming the
+current year is often naming a year nobody has reported on yet.
+
+Measured, on a run of this workflow: the brief asked for the top-earning actresses "of 2026",
+research returned a Forbes ranking released in March 2026 whose every cited work was a 2025 release,
+and the piece went out headlined **of 2026** with a subtitle hedging *"FORBES 2025/2026"*. Its own
+source line did not support its own headline. The agent had seen the ambiguity — its research
+objective said "2025/2026" — and resolved it in eight-point type.
+
+**Title the piece for the period the data covers, not the period the brief assumed**, and say
+plainly in the piece if the two differ. Record the covered period in `Notes` for every figure whose
+span is not obvious. A graphic that says *"2025 earnings, published March 2026"* is correct; one that
+says *"of 2026"* over 2025 figures is wrong however carefully the subtitle is worded.
+
 `Source` is either the client (say so) or a research citation. Put the run id in `Notes` so the
 figure traces back to its basis: `Research.get('trun_…').citeField('field')` is the caption, and
 `.basisFor('field')` is the reasoning and confidence behind it.

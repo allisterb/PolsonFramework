@@ -233,7 +233,8 @@ def toolset_for(project: Path, cli_dll: Path | None = None) -> McpToolset:
 # replayable record a human opens and the web app serves as URLs; the ADK artifact service holds
 # versioned blobs the *model* can be shown. Neither substitutes for the other.
 
-#: What a script can render. `outSvg` writes text, which the model reads better as source anyway.
+#: What a script can render, and so what `peek` can show. An `.svg` is not here and is not readable
+#: either: see `read_file`, which turns one away with the route that actually produces a picture.
 PEEKABLE = {
     ".webp": "image/webp",
     ".png": "image/png",
@@ -277,9 +278,17 @@ def _make_peek(project: Path):
 
         mime = PEEKABLE.get(candidate.suffix.lower())
         if mime is None:
+            # The .svg case is called out rather than left to the generic list, because the generic
+            # advice used to be "read it another way" and read_file now turns an .svg away too.
+            # Two tools pointing at each other is the exact failure `_make_read_file` records:
+            # turns spent discovering that a documented instruction is unfollowable.
+            svg_hint = (
+                f" An .svg is markup, not an image — render it first with "
+                f"RenderSvg(file='{artifact_path}', outFile='artifacts/preview.png'), then peek that."
+                if candidate.suffix.lower() == ".svg" else "")
             return {"ok": False, "error": (
                 f"{candidate.suffix!r} is not a peekable image. Peekable: "
-                f"{', '.join(sorted(PEEKABLE))}. An .svg is text — read it another way.")}
+                f"{', '.join(sorted(PEEKABLE))}.{svg_hint}")}
 
         if not candidate.is_file():
             existing = sorted(p.name for p in (project / "artifacts").glob("*")
@@ -328,8 +337,14 @@ MAX_SCRIPT_BYTES = 512 * 1024
 
 #: What `read_file` will open. Text only — an image is `peek`'s job, and a binary handed to a model
 #: as mojibake is worse than a refusal that says which tool to use.
+#:
+#: **`.svg` is deliberately absent**, though it is text. Reading one is never the right move: it
+#: cannot be *seen* by reading, it should not be *edited* as text when `Snap.load` will open it
+#: inside a script, and its structure is answered better by querying it there than by pulling the
+#: whole document into context. For an SVG the agent itself produced, the script that made it is
+#: both shorter and more meaningful than its output. See the `.svg` branch in `read_file`.
 READABLE_SUFFIXES = {
-    ".md", ".txt", ".json", ".js", ".svg", ".csv", ".yaml", ".yml", ".xml", ".html", ".css",
+    ".md", ".txt", ".json", ".js", ".csv", ".yaml", ".yml", ".xml", ".html", ".css",
 }
 
 #: A cap, not a policy. `brief.md` is a couple of KB and a drawing script is tens; anything past
@@ -376,6 +391,30 @@ def _make_read_file(project: Path):
                 f"{path!r} resolves outside the project directory. Read only inside the project.")}
 
         suffix = candidate.suffix.lower()
+
+        # Turned away before the generic check, so the message names the three things that do work
+        # rather than listing readable extensions. This is the ADK-side half of the rule the MCP
+        # server enforces by no longer returning svgXml in a tool result — without it, the field
+        # simply came back through the file reader instead.
+        #
+        # It is a flat refusal rather than a size or data-URI test, because no threshold makes
+        # reading an SVG the right move. A vector page carrying one 400px portrait is ~110,000
+        # characters of base64 describing a picture the model still cannot see; a page with none is
+        # merely verbose rather than useful, since the script that produced it is shorter and says
+        # what it meant. Every question an agent has about an SVG is answered better elsewhere.
+        if suffix == ".svg":
+            return {"ok": False, "error": (
+                f"{path} is markup, and reading it is never what you want — you cannot see a "
+                "picture by reading its source, and this would spend the context of a large "
+                "document to tell you nothing you can look at.\n"
+                f"  • To SEE it: RenderSvg(file='{path}', outFile='artifacts/preview.png'), then "
+                "peek('artifacts/preview.png').\n"
+                f"  • To EDIT or INSPECT it: open it inside a script with Snap.load('{path}') and "
+                "query it there — selectAll('path').length, attr('fill'), getBBox() — so only your "
+                "answer comes back, not the whole document.\n"
+                "  • To understand one you drew: read the .js script that produced it. It is "
+                "shorter than its output and says what it meant.")}
+
         if suffix not in READABLE_SUFFIXES:
             hint = (" Use peek(...) to look at a rendered image."
                     if suffix in PEEKABLE else "")
@@ -389,6 +428,7 @@ def _make_read_file(project: Path):
             return {"ok": False, "error": (
                 f"no file at {path}."
                 + (f" In the project root: {', '.join(siblings[:12])}" if siblings else ""))}
+
 
         size = candidate.stat().st_size
         if size > MAX_READ_BYTES:

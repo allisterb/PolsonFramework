@@ -9,7 +9,7 @@ using SkiaSharp;
 /// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
 /// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
 /// </remarks>
-public class ImageData
+public class ImageData : IDataUriSource
 {
     #region Constructors
     public ImageData(int width, int height)
@@ -62,6 +62,10 @@ public class ImageData
         var bytes = ToImageBytes(format, quality);
         return SkiaImageEncoder.ToDataUri(bytes, format);
     }
+
+    /// <summary>Explicit: the optional-parameter overload above does not satisfy the interface, and
+    /// explicit keeps it off the reflected public surface. See <see cref="IDataUriSource"/>.</summary>
+    string IDataUriSource.ToDataUri() => ToDataUri();
 
     public string ToDataURL(string format = "webp", int quality = 85) =>
         ToDataUri(format, quality);

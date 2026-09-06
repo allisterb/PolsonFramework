@@ -84,7 +84,7 @@ ExecuteScript(script, outFile: 'artifacts/03_mark.webp', outSvg: 'artifacts/03_m
 ```
 
 - `outFile` writes the **rendered image**. Always available.
-- `outSvg` writes the **vector markup**, taken from `result.SvgXml`. Available only when the script built a `SnapPaper`.
+- `outSvg` writes the **vector markup** of the paper the script built, and `result.svgFilePath` names the file. Available only when the script built a `SnapPaper`. **The markup is never returned in the response** — see §8 for why, and for how to read it back.
 
 Pass both on every vector stage. The raster render is what a director looks at between turns; the SVG is the deliverable and the thing a later stage can reopen and edit. Neither replaces the other.
 
@@ -95,7 +95,7 @@ Inside a script the same markup is `paper.toString()`, which returns the seriali
 >
 > Decide in §2, before the first script. That is the cheapest place to make this decision and the only cheap one.
 
-A mixed script — one that builds a paper, then composites it onto a canvas and returns the canvas — keeps the last paper it made in `result.SvgXml`, so `outSvg` still writes the vector half. That is deliberate: a mark built in vector and presented on a raster board should still deliver the mark.
+A mixed script — one that builds a paper, then composites it onto a canvas and returns the canvas — keeps the last paper it made, so `outSvg` still writes the vector half. That is deliberate: a mark built in vector and presented on a raster board should still deliver the mark.
 
 ---
 
@@ -281,7 +281,46 @@ The same three calls exist on `Snap.path` for a bare `d` string, with no element
 - **`element.toSkPath()`** converts one element's geometry to a Skia path, for measurement or raster compositing.
 - **`element.attr('d')`** hands you the path string, which `new CanvasPath(d)` accepts — the bridge to boolean operations. Cut a real counter with `outer.subtract(inner)` on the raster side, then read the result back into a `path` element if it must return to vector.
 - **`paper.toImageBytes(w, h, format, quality)`** and **`paper.toDataUri(format, w, h, quality)`** render a paper directly, without going through a canvas.
-- **`Snap.parse(svgXml)`** reads SVG markup back into an editable paper — the reopen half of `outSvg`, and how a later stage picks up an earlier stage's vector file.
+- **`Snap.load(path)`** reads a saved `.svg` **from disk** into an editable paper. This is the reopen half of `outSvg`, and how a later stage picks up an earlier stage's vector file. Contained to the project exactly as `outFile` is.
+- **`Snap.parse(svgXml)`** does the same from a **string** — for markup you already hold, such as `Session.svg = paper.toString()` handed between two scripts in one session.
+
+---
+
+## 8a. Putting a Photograph Inside the Vector Deliverable
+
+> **Implemented by**: `paper.image(src, x, y, width, height)`, `element.image(...)`.
+
+The other direction: not vector onto raster, but a raster picture *inside* a vector document. A portrait in an infographic, a texture plate behind a mark, a rendered canvas stage embedded in a vector page.
+
+SVG's `<image>` takes an href, and it can be either an external reference or an inlined `data:` URI. **They are not interchangeable, and the difference is invisible from inside a run.**
+
+| href | this renderer | `<img src="x.svg">`, CSS background | opened directly, `<object>`, `<iframe>` |
+| :--- | :--- | :--- | :--- |
+| `data:` URI | ✅ | ✅ | ✅ |
+| relative path | ❌ broken-image cross | ❌ **blank** | ✅ |
+| absolute URL | ❌ broken-image cross | ❌ blank | ✅ |
+
+**An SVG loaded as an image fetches no external resources.** That is not a bug or a cache miss — a document embedded through `<img>` or a CSS background runs in a restricted mode by design. The photograph is absent even with the sidecar file sitting beside it and serving perfectly well. And this renderer never fetches an external href either, so a peek shows a cross while the execution reports success.
+
+So the natural spelling is the one that fails. `'artifacts/portrait.png'` is exactly the project-relative convention `outFile` and `Skia.Image.load` establish, which is precisely why an agent reaches for it.
+
+**Pass the object and it is inlined for you.** A bitmap, a canvas, a reference photograph and a requisitioned material all work:
+
+```js
+const photo = await Photo.of('Zendaya', { expect: 'actress', width: 400 });
+paper.image(photo, 40, 40, 280, 300);              // inlined — works everywhere
+paper.image(canvas.toBitmap(), 340, 40, 280, 300); // a raster stage, dropped into the page
+paper.image(oak, 640, 40, 280, 300);               // a requisitioned material
+```
+
+**The size objection is smaller than it looks.** Measured on one 275 KB portrait: base64 costs **+33.5% on disk** — 275,511 bytes becomes 367,816 — and **0.3% gzipped**, 275,586 against 276,402. Base64 carries six bits of entropy in an eight-bit byte, so deflate recovers essentially all of it. Wherever the deliverable is served or stored compressed, inlining is close to free.
+
+> [!TIP]
+> **Write the artifact file as well.** These are not alternatives. The data URI is what makes the *deliverable* work; the file on disk is what makes the run replayable, reviewable, and re-croppable at another size. `outSvg` warns when it saves an `<image>` whose href will not resolve, and names the hrefs — but a warning after the fact is worse than passing the object in the first place.
+
+**Round-tripping is safe.** `Snap.parse` reads an inlined image back and re-renders it, so a later stage can reopen its own artifact without losing the picture — the failure where stage one looks perfect and stage two comes back empty.
+
+**If the graphic is mostly photographs, reconsider the surface.** SVG's advantages are scalability and editability, and neither applies to the pixels. A page that is four portraits and a caption is a raster deliverable with vector type over it; §2 is where that decision belongs.
 
 ---
 
@@ -319,7 +358,8 @@ If a scene needs several of these, it is a raster scene. Decide that in §2 rath
 | What you want | The call | Notes |
 | :--- | :--- | :--- |
 | A vector document | `Snap(width, height)` | Returns a `SnapPaper` |
-| Reopen saved markup | `Snap.parse(svgXml)` | The counterpart to `outSvg` |
+| Reopen a saved file | `Snap.load(path)` | The counterpart to `outSvg`; contained like `outFile` |
+| Reopen markup you hold | `Snap.parse(svgXml)` | From a string — e.g. carried in `Session` |
 | Set / read style | `element.attr(...)` | Chainable when setting; hyphenated keys quoted |
 | Find something | `element.select(sel)`, `element.selectAll(sel)` | `#id`, `.class`, or a tag name |
 | Walk the tree | `element.children`, `element.parent` | Properties, not methods |

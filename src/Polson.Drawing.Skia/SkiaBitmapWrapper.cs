@@ -13,7 +13,7 @@ using SkiaSharp;
 /// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
 /// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
 /// </remarks>
-public class SkiaBitmapWrapper : IDisposable
+public class SkiaBitmapWrapper : IDisposable, IDataUriSource
 {
     #region Constructors
     public SkiaBitmapWrapper(int width, int height)
@@ -177,6 +177,13 @@ public class SkiaBitmapWrapper : IDisposable
         var bytes = ToImageBytes(format, quality);
         return SkiaImageEncoder.ToDataUri(bytes, format);
     }
+
+    /// <summary>
+    /// Explicit, because <see cref="ToDataUri(string, int)"/>'s optional parameters do not satisfy
+    /// the interface's no-argument signature — and explicit keeps it off the reflected public
+    /// surface, so it adds no member for the reference and the manifest to account for.
+    /// </summary>
+    string IDataUriSource.ToDataUri() => ToDataUri();
 
     public string ToDataURL(string format = "webp", int quality = 85) =>
         ToDataUri(format, quality);

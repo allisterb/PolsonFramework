@@ -93,7 +93,7 @@ public class MCPServerTests : TestsRuntime
         var tools = new DrawingMcpTools();
         var svg = "<svg width=\"200\" height=\"200\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"100\" cy=\"100\" r=\"50\" fill=\"#10b981\"/></svg>";
 
-        var result = tools.RenderSvg(svg, 200, 200);
+        var result = tools.RenderSvg(svg, width: 200, height: 200);
         Assert.True(result.Success, result.Error);
         Assert.NotNull(result.ImageBytes);
         Assert.True(result.ImageBytes.Length > 0);
@@ -108,7 +108,7 @@ public class MCPServerTests : TestsRuntime
         try
         {
             var svg = "<svg width=\"200\" height=\"200\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"200\" height=\"200\" fill=\"#3b82f6\"/></svg>";
-            var result = tools.RenderSvg(svg, 200, 200, outFile: tempImg);
+            var result = tools.RenderSvg(svg, width: 200, height: 200, outFile: tempImg);
             Assert.True(result.Success, result.Error);
             Assert.NotNull(result.ImageFilePath);
             Assert.True(File.Exists(tempImg));

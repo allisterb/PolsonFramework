@@ -76,8 +76,13 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 
   - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. **Both are relative to the project directory, and a path resolving outside it is refused** — an absolute path or a `..` traversal fails with a message naming the project root rather than writing somewhere unexpected. Missing intermediate directories are created for you. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
     > [!IMPORTANT]
-    > **`outSvg` needs a vector document to write.** It saves `result.SvgXml`, which only exists when the script built a `SnapPaper`. A script that draws entirely on a raster canvas has no markup to save, so `outSvg` writes **no file** and the run still reports success — the response carries a `[WARN] outSvg … wrote nothing` line, but by then the stage is drawn. **If the brief asks for an SVG, build the scene on `Snap(width, height)` from the first script.** Read `polson://manual/14` before choosing the surface.
-  - For vector scenes (`SnapPaper` / `SnapElement`), `result.SvgXml` contains the serialized SVG XML markup. For 2D canvas raster scripts, `result.SvgXml` retains the last vector image produced by the agent prior to switching to 2D canvas mode.
+    > **`outSvg` needs a vector document to write.** It saves the markup of the `SnapPaper` the script built, so a script that built none has nothing to save. A script that draws entirely on a raster canvas has no markup to save, so `outSvg` writes **no file** and the run still reports success — the response carries a `[WARN] outSvg … wrote nothing` line, but by then the stage is drawn. **If the brief asks for an SVG, build the scene on `Snap(width, height)` from the first script.** Read `polson://manual/14` before choosing the surface.
+  - **The markup itself never comes back in the response.** `outSvg` writes it and `result.SvgFilePath` names the file; to read it again use `Snap.load(path)` in a later script, or `RenderSvg(file: path)` to re-render it. A mixed script — one that builds a paper, then composites it onto a canvas and returns the canvas — still saves the last paper it made, so a mark built in vector and presented on a raster board still delivers the mark.
+
+    > [!IMPORTANT]
+    > **There is no `result.svgXml`, and this is why.** It used to be returned in full on every vector call, even when `outSvg` had just written the same bytes to disk — an agent run flagged the duplication in 2026 as a few KB per call, which is what it then was. Once a bitmap could be inlined as a data URI it stopped being a few KB: measured over a live session, a page carrying one 400px portrait returned a **117,786-character** tool result of which **109,045 characters** were the markup — about 29,000 tokens, on a call that had already asked for both `outFile` and `outSvg`, and carried forward in the conversation from then on.
+    >
+    > Nothing ever read it from the response: an agent sees its work through the raster peek and understands it through the script it wrote. So the round trip is file-based on both sides now, and symmetric — `outFile` → `Skia.Image.load`, `outSvg` → `Snap.load`. Within one session `Session.svg = paper.toString()` also works and costs nothing at all.
   - If a script creates one or more canvases or Snap papers without explicitly returning them, the last created canvas/paper is rendered automatically.
 - **Measuring without rendering (`render: false`):** Suppresses the rasterise-and-encode step for a script whose picture nobody will look at — a probe that samples pixels, a pass that diffs against an earlier stage, a script that stashes a canvas in `Session` for the next call. The script runs normally and its logs, measurements and `Session` writes all survive; only the image is not produced.
   > [!IMPORTANT]
@@ -277,6 +282,7 @@ Snap.svg-compatible retained-mode vector graphics API.
 - `Snap(width: number, height: number)` → `SnapPaper` — Creates a new root SVG document with the specified viewport dimensions.
 - `Snap.Create(width: number, height: number)` → `SnapPaper` — Alias for `Snap(w, h)`.
 - `Snap.parse(svgXml: string)` → `SnapPaper` — Parses an SVG XML string into an editable `SnapPaper` document tree.
+- `Snap.load(filePath: string)` → `SnapPaper` — Reads a saved `.svg` **from disk** into an editable paper. **The reopen half of `outSvg`**, and the way a later stage picks up an earlier stage's vector file without the markup passing through your context. The path is relative to the project directory and contained exactly as `outFile` is; a missing file names where it looked. Inlined images survive, so a portrait embedded at stage one is still there at stage two.
 - `Snap.matrix(a?: number, b?: number, c?: number, d?: number, e?: number, f?: number)` → `SnapMatrix` — Constructs a 2D affine transformation matrix.
 - `Snap.path` → `SnapPathApi` — Path measurement and geometry utility namespace.
 - `Snap.rgb(r: number, g: number, b: number, a?: number)` → `string` — Returns a formatted CSS `rgb()` or `rgba()` string.
@@ -305,7 +311,7 @@ Represents the root SVG canvas surface:
 - `paper.polygon(...points: number[] | number[][])` → `SnapElement` — Appends a `<polygon>`.
 - `paper.path(d?: string)` → `SnapElement` — Appends a `<path>`.
 - `paper.text(x: number, y: number, text: string)` → `SnapElement` — Appends a `<text>` element.
-- `paper.image(src: string, x: number, y: number, width: number, height: number)` → `SnapElement` — Appends an `<image>`.
+- `paper.image(src: SkiaBitmapWrapper | SkiaCanvas | PhotoAsset | MaterialAsset | string, x: number, y: number, width: number, height: number)` → `SnapElement` — Appends an `<image>`. **Pass the object, not a path** — a bitmap, canvas, photograph or material is inlined as a data URI. See the warning below.
 - `paper.g(...elements: SnapElement[])` / `paper.group(...)` → `SnapElement` — Creates and appends a container `<g>`.
 - `paper.svg(x: number, y: number, width: number, height: number)` → `SnapElement` — Creates a nested `<svg>` element.
 - `paper.use(element: SnapElement)` → `SnapElement` — Creates a `<use>` element referencing another element.
@@ -313,6 +319,23 @@ Represents the root SVG canvas surface:
 - `paper.toString()` → `string` — Serializes the document tree to an SVG XML string.
 - `paper.toImageBytes(width?: number, height?: number, format?: string, quality?: number)` → `byte[]` — Headlessly renders the SVG to image bytes (default: WebP Q=85).
 - `paper.toDataUri(format?: string, width?: number, height?: number, quality?: number)` → `string` — Renders to a `data:image/...;base64,...` URI (defaults to `format: 'svg'`).
+
+> [!WARNING]
+> **A raster picture must be *inlined* into an SVG deliverable, not referenced.** An `<image>` resolves an external href only when the SVG is treated as a **document** — opened directly, or embedded through `<object>` / `<iframe>`. Loaded through `<img src="…">` or a CSS `background-image` it is an **image**, and an image fetches no external resources: the picture is simply absent, with the sidecar file sitting next to it and serving perfectly well. **This renderer does not fetch them either**, and draws a broken-image cross in their place while the execution still reports success.
+>
+> So the natural spelling is the one that fails, and fails quietly — `'artifacts/portrait.png'` is exactly the project-relative convention `outFile` and `Skia.Image.load` establish. Pass the object instead and it is inlined for you:
+>
+> ```javascript
+> const photo = await Photo.of('Zendaya', { expect: 'actress', width: 400 });
+> paper.image(photo, 40, 40, 280, 300);          // inlined — works everywhere
+> paper.image(canvas.toBitmap(), 340, 40, 280, 300);
+> paper.image('artifacts/portrait.png', 0, 0);   // an href — resolves only in document mode
+> ```
+>
+> Measured on one 275 KB portrait: base64 costs **+33.5% on disk** (275,511 → 367,816 bytes) and **0.3% gzipped** (275,586 → 276,402), because base64 carries six bits of entropy in an eight-bit byte and deflate takes it all back. Inlining is close to free wherever the file is served or stored compressed.
+>
+> **Write the artifact file as well.** The two are not alternatives: the data URI is what makes the deliverable work, and the file on disk is what makes the run replayable and the picture re-croppable. `outSvg` warns when it saves an `<image>` whose href will not resolve, naming the hrefs.
+
 
 > [!NOTE]
 > **A paper is itself a `SnapElement`**, so everything under [`SnapElement`](#snapelement) works on it — most usefully `paper.select(...)`, `paper.selectAll(...)`, `paper.children`, `paper.attr(...)`, `paper.getBBox()` and the tree-placement calls. `paper.select('#mark')` searching the whole document is the ordinary way to find something a previous stage drew.
@@ -422,7 +445,7 @@ Represents any SVG node in the document hierarchy:
 - `element.polyline(...points: number[])` → `SnapPolyline` — Creates and appends a child `<polyline>`.
 - `element.polygon(...points: number[])` → `SnapPolygon` — Creates and appends a child `<polygon>`.
 - `element.text(x: number, y: number, text: any)` → `SnapText` — Creates and appends a child `<text>`.
-- `element.image(src: string, x: number, y: number, width: number, height: number)` → `SnapImage` — Creates and appends a child `<image>`.
+- `element.image(src: SkiaBitmapWrapper | SkiaCanvas | PhotoAsset | MaterialAsset | string, x: number, y: number, width: number, height: number)` → `SnapImage` — Creates and appends a child `<image>`. Same inlining as `paper.image`.
 - `element.g(...elements: SnapElement[])` / `element.group(...)` → `SnapGroup` — Creates and appends a nested `<g>`.
 - `element.use(target: SnapElement | string)` → `SnapUse` — Creates and appends a child `<use>` element.
 - `element.el(name: string, attrs?: object)` → `SnapElement` — Creates and appends an SVG child element by tag name. Supported: `rect`, `circle`, `ellipse`, `path`, `g`, `image`, `text`, `tspan`, `textPath`, `line`, `polyline`, `polygon`, `mask`, `clipPath`, `pattern`, `use`, `defs`, `linearGradient`, `radialGradient`, `stop`, `symbol`, `marker`, `svg`. **An unrecognised name throws** rather than silently producing a `<g>`. For gradients prefer `paper.gradient(...)`.
@@ -1828,6 +1851,101 @@ canvas;
 ```
 
 ---
+---
+
+# Photo (Reference Photographs)
+
+A photograph of a real person or place, with the terms it arrived under. `Assets` **generates** substance that your code turns into form; this **retrieves** a likeness your code cannot synthesise and must not invent.
+
+> [!CAUTION]
+> **Never invent an image URL, and never draw a placeholder face.** If a photograph is refused or the surface is unavailable, say so in the artifact and to the director. A graphic that admits a missing portrait is worth more than one carrying a stranger's face under someone else's name — and unlike a wrong number, a wrong face renders perfectly and nothing downstream can detect it.
+
+Three gates stand between a name and bytes, and each one is refused **before** the budget is touched:
+
+- **Identity** — an ambiguous name is refused outright, and `expect` lets you assert what you think you are asking for.
+- **Terms** — a file with no stated licence is refused by default, because it cannot be credited or recorded.
+- **Provenance** — what is delivered carries its licence, its photographer, and any non-copyright restriction.
+
+```javascript
+const photo = await Photo.of('Zendaya', { expect: 'actress', width: 600 });
+if (!photo.success) { error(photo.remedy); exit(photo.failureName); }
+
+const bitmap = Skia.Image.fromDataUrl(photo.toDataUri());
+ctx.drawImage(bitmap, 40, 40, 200, 200 / photo.aspectRatio);
+ctx.fillText(photo.creditLine(), 40, 260);        // "Photo: PhilipRomano, CC BY-SA 4.0"
+```
+
+> [!IMPORTANT]
+> **`Photo.of` is asynchronous — you must `await` it**, like the `Assets.*` calls and for the same reason. Without `await` you hold a `Promise` whose every documented property reads `undefined`, which looks like a failure while the fetch still happens and still spends budget.
+
+## `Photo`
+
+- `Photo.of(subject: string, options?: object)` → `Promise<PhotoAsset>` — Resolve a name and deliver the bytes. Charges one photograph on a fetch; a refusal and a cache hit cost nothing.
+- `Photo.resolve(subject: string, options?: object)` → `Promise<SubjectMatch>` — **Who is this, and on what terms** — with no pixels fetched and nothing charged. Check identity or licence as often as you like before committing.
+- `Photo.budget` → `PhotoBudget` — Remaining allowance. **Check before a run of portraits.**
+- `Photo.library` → `PhotoAsset[]` — Every photograph delivered this session, by any agent. Reuse from here rather than re-fetching.
+- `Photo.credits()` → `string[]` — Every distinct credit the artwork owes, ready to set as a block. **Attribution is owed per photograph and is easy to forget**, which is why this exists rather than leaving you to assemble it.
+- `Photo.isAvailable` → `boolean` — Whether a source is configured at all. `false` means every call will refuse.
+
+`options`: `{ width?: number, expect?: string, requireLicence?: string[], allowUnstatedLicence?: boolean, language?: string }`.
+
+- **`expect`** — a word that must appear in the subject's own one-line description, else the match is refused as `WrongSubject`. The descriptions are reliably diagnostic — *"American actress (born 1997)"*, *"Volcano in Japan"*, *"Bridge in the San Francisco Bay Area"* — so a caller wanting an actress can have a musician of the same name refused. **Set it whenever you know what you are asking for.**
+- **`requireLicence`** — accepted licence names, matched at a word boundary: `['CC0', 'CC BY']` accepts `CC0` and `CC BY 3.0` and refuses `CC BY-SA 4.0`. Worth setting for anything commercial, since cropping a photograph into a graphic is plausibly an adaptation and would carry a share-alike obligation onto the finished artwork.
+- **`allowUnstatedLicence`** — deliver a file whose source states no licence. Off, and it should stay off: an unstated licence is not a permissive one.
+- **`width`** — a request, **not a guarantee**. The source renders at standard sizes and rounds up, so 400 comes back as 500 and 800 as 960. `photo.width` is measured from the decoded bytes and is always true; treat this as a ceiling on cost rather than a layout dimension.
+
+## `PhotoAsset`
+
+- `photo.success` → `boolean` · `photo.failureName` → `string` · `photo.remedy` → `string` · `photo.retryable` → `boolean` · `photo.error` → `string?`
+- `photo.bytes` → `byte[]`, `photo.width` / `photo.height` → `number`, `photo.mimeType` → `string`
+- `photo.toDataUri()` → `string` — Feed straight to `Skia.Image.fromDataUrl(...)`.
+- `photo.creditLine()` → `string` — `Photo: <artist>, <licence>`, omitting what the source did not supply. **Empty when nothing is known**, so test it rather than printing `Photo: unknown` under a picture.
+- `photo.licence` → `PhotoLicence` — The terms.
+- `photo.subject` → `SubjectMatch` — How the name resolved, including the runners-up.
+- `photo.aspectRatio` → `number` — Width over height. **Not consistent between subjects** — measured 0.67 to 0.82 across five people and 1.60 to 2.05 across two places — so a row of portraits needs cropping. There is no face detection anywhere in this stack, so a naive centre crop will decapitate someone eventually.
+- `photo.source` → `string` (e.g. `wikimedia`) · `photo.sourceUrl` → `string?` · `photo.id` → `string` · `photo.fetchedUtc` → `Date` · `photo.requester` → `string`
+- `photo.fromCache` → `boolean` — True when the session cache answered and nothing was spent.
+- `photo.failure` → the same value as a number; prefer `failureName`.
+
+`failureName` is one of: `'None'`, `'NotConfigured'`, `'BudgetExhausted'`, `'NotFound'`, `'Ambiguous'`, `'WrongSubject'`, `'NoImage'`, `'LicenceUnstated'`, `'LicenceNotAllowed'`, `'Undecodable'`, `'BlockedHost'`, `'RateLimited'`, `'Network'`, `'Timeout'`, `'ServiceError'`, `'Cancelled'`.
+
+> [!TIP]
+> **Only transport faults are worth repeating.** `retryable` is false for everything decided locally or by the subject's own data — a refused licence, a missing lead image and an ambiguous name all give the same answer however often you ask. Read `remedy` before doing anything again.
+
+## `SubjectMatch`
+
+What `Photo.resolve(...)` returns, and what `photo.subject` carries.
+
+- `subject.success` → `boolean` · `subject.failure` / `subject.failureName` · `subject.remedy` · `subject.retryable` · `subject.error` → `string?`
+- `subject.query` → `string` — What you asked for, verbatim.
+- `subject.title` → `string?` — The article it resolved to.
+- `subject.description` → `string?` — The subject's own one-line description. **This is what `expect` tests, and what you read to check identity yourself.**
+- `subject.alternatives` → `string[]` — Other pages the search matched, best first. **This is the remedy for an ambiguous name** — when `Georgia` refuses, this is what says `Georgia (country)` and `Georgia (U.S. state)` were the runners-up.
+- `subject.isDisambiguation` → `boolean` — True when the name landed on a disambiguation page, which is never a subject.
+- `subject.file` → `string?` — The lead image's file title on the source.
+- `subject.licence` → `PhotoLicence?` — The terms, available before any bytes are fetched.
+- `subject.imageUrl` → `string?` — Direct URL of the rendition that would be delivered.
+- `subject.sourceWidth` / `subject.sourceHeight` → `number` — Size of the source original, which can be very large.
+
+## `PhotoLicence`
+
+- `licence.name` → `string?` — Short name, e.g. `CC BY-SA 4.0`, `CC0`. Null when the source states none.
+- `licence.artist` → `string?` — Who made the photograph.
+- `licence.attributionRequired` → `boolean?` — Null when the source does not say.
+- `licence.restrictions` → `string?` — **Non-licence constraints, e.g. `personality` or `trademarked`.** Not implied by the licence and not settled by it: `personality` means the subject's own publicity rights bear on the use. Read it before putting a likeness in anything commercial.
+- `licence.usageTerms` → `string?` · `licence.credit` → `string?` · `licence.descriptionUrl` → `string?` — Where a human verifies any of this.
+- `licence.isStated` → `boolean` — Whether a licence was stated at all.
+
+## `PhotoBudget`
+
+- `photoBudget.total` / `photoBudget.spent` / `photoBudget.remaining` → `number`
+- `photoBudget.cacheHits` → `number` — Deliveries served from cache, which cost nothing.
+- `photoBudget.bytesFetched` → `number` — Bytes actually pulled over the wire.
+- `photoBudget.canAfford(count?: number)` → `boolean`
+
+> [!IMPORTANT]
+> **A failed fetch is still charged, and resolution never is.** The allowance counts requests made of the host, not pictures successfully obtained — an allowance that counted only successes could be overrun without limit by an unlucky run. Resolution moves no pixels, so check identity freely.
+
 
 # Research (Sourced Data & Provenance)
 

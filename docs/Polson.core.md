@@ -1201,6 +1201,68 @@ Also accessible via `Skia.Logo`.
 Retained-mode SVG vector logo construction methods available directly on `SnapPaper` (`paper`), `Snap.path`, and the global `VectorLogo` object.
 
 
+
+## Filters — Grain, Blur and Roughened Edges (`paper.filter`)
+
+The vector surface has no `Skia.Brush`, `Skia.PathEffect`, `Skia.MaskFilter` or SkSL shader, because all four take a canvas context. **That does not mean grain, soft edges and colour grading are unavailable** — SVG has its own filter chain, this renderer draws it, and the only thing that was missing was a way to build one.
+
+- `paper.filter(id?)` → `SnapFilter` — Creates a `<filter>` in `<defs>` and returns it for chaining. The id is generated unless you name one.
+- `filter.url` → `string` — The `url(#id)` reference to put in an element's `filter` attribute. **This is how you apply it.**
+
+```javascript
+const paper = Snap(400, 300);
+const grain = paper.filter().turbulence(0.85, 3);
+paper.rect(0, 0, 400, 300).attr({ filter: grain.url });
+paper;
+```
+
+### Primitives
+
+Each returns the filter, so they chain. `input` names a previous step's `result` (or a standard input such as `SourceGraphic`); omit both for the simple single-step case.
+
+- `filter.turbulence(baseFrequency, octaves?, type?, seed?, result?)` — **Procedural noise. This *is* Perlin** — the same algorithm `Skia.Shader.perlinNoiseFractal` wraps, whose own documentation calls it faithful to `feTurbulence`. `type` is `'fractalNoise'` (cloudy, the default) or `'turbulence'` (wispier). Frequency is small: `0.01` for broad cloud, `0.6`–`0.9` for paper grain.
+- `filter.gaussianBlur(stdDeviation, input?, result?)` — The soft edge `Skia.MaskFilter.blur` gives on canvas.
+- `filter.colorMatrix(values, type?, input?, result?)` — The counterpart of `Skia.ColorFilter.colorMatrix`. `values` is twenty numbers as an array or string; `type` may instead be `'saturate'`, `'hueRotate'` or `'luminanceToAlpha'` with a single value.
+- `filter.displacementMap(scale, input?, input2?, xChannel?, yChannel?, result?)` — Displaces one input by another's channels.
+- `filter.dropShadow(dx, dy, stdDeviation, color?, opacity?, input?, result?)` — In one primitive rather than offset + blur + flood + composite.
+- `filter.morphology(radius, op?, input?, result?)` — `'dilate'` thickens, `'erode'` thins. The vector `Skia.ImageFilter.dilate`.
+- `filter.offset(dx, dy, input?, result?)` · `filter.flood(color, opacity?, result?)` · `filter.composite(op?, input?, input2?, result?)` · `filter.blend(mode?, input?, input2?, result?)` · `filter.merge(...inputs)`
+- `filter.region(x, y, width, height)` — Widens the filter region as fractions of the element's box.
+
+> [!TIP]
+> **A roughened contour is turbulence driving a displacement map**, and it is the nearest vector idiom to a drawn rather than plotted line — the closest thing the vector surface has to `Skia.PathEffect.discrete` or the jitter under `Skia.Brush.pencil`:
+>
+> ```javascript
+> const rough = paper.filter().region(-0.3, -0.3, 1.6, 1.6)
+>     .turbulence(0.04, 3, 'fractalNoise', 7, 'noise')
+>     .displacementMap(22, 'SourceGraphic', 'noise');
+> paper.rect(20, 20, 175, 120).attr({ fill: '#5fb49c', filter: rough.url });
+> ```
+>
+> **`region` is not optional there.** A blur or a displacement reaches outside the shape, and the default region clips at `-10%`/`110%`. A wide effect that looks cropped on all four sides needs a wider region, not a smaller deviation.
+
+### Stylesheets
+
+- `paper.style(css)` → `number` — Applies a CSS stylesheet to everything drawn so far, keeps the `<style>` block in the document, and returns how many elements were styled.
+
+```javascript
+const paper = Snap(760, 200);
+for (let i = 0; i < 5; i++) paper.rect(30 + i * 140, 40, 110, 90).attr({ class: i === 2 ? 'mark hero' : 'mark' });
+
+// Drawn first, styled last: the sheet resolves against the tree as it then stands.
+log('styled ' + paper.style(`.mark { fill: #1f6f8b; stroke: #0d4a5e; stroke-width: 3; }
+                             .hero { fill: #c9553d; }`) + ' elements');
+paper;
+```
+
+Selectors are `.class`, `#id`, a bare tag name, `*` or `:root`, singly or comma-separated. Anything more — descendants, attributes — is left to `.attr(...)` rather than silently matching nothing.
+
+> [!IMPORTANT]
+> **Call it last.** The rules resolve against the tree as it stands at that moment, so elements drawn afterwards are not styled. Call it again to pick up later work; applying the same sheet twice is harmless.
+>
+> **Two things happen, and both are necessary.** The declarations are written onto matching elements as attributes, so the *render* is right; and the `<style>` block is kept, so the *deliverable* carries one rule a designer edits in Illustrator instead of ninety baked attributes. Writing only the block renders as nothing — this library resolves CSS inside its parser, not in memory, so a class-styled rect came back **black** in the peek while looking correct in the saved file. The parsing is `Css`'s own, so there is one CSS implementation here rather than two that could disagree.
+
+`paper.el(name)` now also creates `filter`, `feTurbulence`, `feGaussianBlur`, `feColorMatrix`, `feDisplacementMap`, `feOffset`, `feFlood`, `feComposite`, `feBlend`, `feMerge`, `feMergeNode`, `feDropShadow`, `feMorphology` and `feTile`, for a chain the helpers above do not cover.
 ## Drawing a Chart on a Paper (`VectorChart`)
 
 `Chart.*` builds the model; `Chart.drawChart(ctx, model)` draws it on a **canvas**. This draws the same model on a **paper**, as real SVG elements — which is what an Illustrator-bound deliverable needs.

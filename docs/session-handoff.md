@@ -4,11 +4,15 @@ State after the session that **finished the motion score** and then turned the s
 **infographics** — the direction the business case actually rests on, and the first one where the
 competition is a diffusion model rather than another drawing tool.
 
-**Tests: 1,645 .NET — all passing** (Drawing 736, MCPServer 537, CLI 278, ExtendedMind 94).
+**Tests: 1,645 .NET at the close of the seventh session; 1,987 .NET + 39 Python as of §21.**
 Sections are appended, never rewritten, so everything below §17 is history and remains accurate as
 such.
 
-> **§§17–20 are this session and are the current state.** §17 is the motion score, which lands §16's
+> **§21 is the current state** — reference photography, the raster/vector boundary, and the
+> `vector_infographic` workflow. **§21.7 is the pick-up list; start there.** §21.6 is the only
+> uncommitted code.
+>
+> Earlier: **§§17–20 were the seventh session.** §17 is the motion score, which lands §16's
 > plan and **reverses two of its decisions by measurement** — read it before touching `Mina` or
 > `MotionTimeline`. §18 is the infographics thread: the sources and **their two different licence
 > classes**, Manual 13, and the `Chart` toolkit. §19 is the prescription/scope distinction, which
@@ -2003,3 +2007,199 @@ is public was not verified.**
 - **Eighteen callout examples in `Polson.core.md` are untested** — quoted blocks sit off column 0.
   Currently none is a complete program, but nothing enforces that.
 - `Motion.saveFrames` (§17c); Bertin/Munzner/Wilkinson (§18a).
+
+---
+
+## §21 — Reference photography, and the vector deliverable (2026-09-06, eighth session)
+
+**Tests: 1,987 .NET — all passing** (Drawing 773, MCPServer 617, CLI 292, ExtendedMind 305), plus
+**39 Python** in `src/adk_agent/tests` — which run under `python-adk/`, not `python/`. Two commits
+landed during the session (`09d4cab` Photo, `85321cd` vector workflow); **§21.6 is uncommitted.**
+
+The session went: a question about retrieving photographs, which turned into the `Photo` surface;
+then the discovery that our SVG deliverables could not carry them, which turned into the raster
+boundary work; then a measured finding that vector deliverables were unreachable from the
+infographic workflow at all, which turned into `vector_infographic` and the chart port.
+
+---
+
+### 21.1 `Photo` — likenesses, with their terms
+
+`src/Polson.ExtendedMind/Photos/` (4 files), exposed as `Photo`. Manual 26. Shaped like `Assets`:
+failure-as-a-value, readable budget, shared library, `RequisitionScope` events (`kind: "photo"`).
+
+**Parallel cannot do this and neither can ADK.** Measured, not assumed:
+
+- Parallel's extract **drops `src` entirely** — 30,000 chars of a photo-heavy page yielded 0 markdown
+  images, 0 `<img>` tags. What survives is the `File:` description-page link.
+- **ADK 2.8.0 has no image search anywhere** — zero hits for `image_search` / `searchType=image`
+  across 1,819 `.py` files. `VertexAiSearchTool` is a **model-side built-in** with no `run_async`:
+  it appends `types.Tool(retrieval=…)` and the model searches internally, so there is nothing to
+  meter, gate, or record. It also cannot coexist with function calling — *"Gemini API does not allow
+  built-in search tools to be combined with function calling"* — and with `bypass_multi_tools_limit`
+  the thing you constructed is silently swapped for something else in `_convert_tool_union_to_tools`.
+- Google **does** have image search — the Custom Search JSON API, wrappable via
+  `GoogleApiToolset(api_name, api_version)` which takes any API from the discovery service. It has
+  `searchType=image`, `imgType=face`, and a `rights` **filter** — but its `Result` schema carries
+  **no licence field**, so a filtered result still cannot be credited or ledgered.
+
+Wikimedia was chosen because it is the only source measured that returns the terms *with* the bytes:
+`LicenseShortName`, `Artist`, `AttributionRequired`, and `Restrictions` (one probe subject carried
+`personality`). Coverage was 7/8; the miss was a deliberate ambiguity case that failed **loudly**.
+
+Two traps are pinned in tests because both are silent:
+
+- **MediaWiki normalises `_` to spaces in returned titles.** Keying the batched `imageinfo` lookup
+  on the title you *sent* misses every multi-word filename — six of seven probe subjects, reported
+  as "no file information", which points nowhere near the cause.
+- **`width` is a request, not a guarantee.** The source rounds up to standard renditions (400 → 500,
+  800 → 960) *while reporting the width you asked for in its metadata*. `photo.width` is measured
+  from the decoded bytes and is always true.
+
+Also: **`SKBitmap.Decode` throws `ArgumentNullException("codec")` on undecodable input** rather than
+returning null, so the one guard whose purpose is "a bad file from the open web is a named failure"
+would have killed the script. And licence prefix matching must be at a **word boundary**:
+`"CC BY-SA 4.0".StartsWith("CC BY")` is `true`, so a caller allowing `CC BY` precisely to avoid
+share-alike would have been handed exactly what they excluded.
+
+---
+
+### 21.2 Rasters inside SVG deliverables
+
+An `<image>` resolves an external href **only when the SVG is treated as a document** — opened
+directly, or embedded through `<object>`/`<iframe>`. Through `<img src>` or a CSS background it
+fetches nothing: verified over HTTP with the sidecar serving 200 beside it. Our renderer fetches
+nothing either and draws a broken-image cross while the run reports success.
+
+So `paper.image(...)` now takes the **object** — bitmap, canvas, `PhotoAsset`, `MaterialAsset` —
+through `IDataUriSource` in `Polson.Runtime`, and inlines it. **Measured cost: +33.5% on disk, 0.3%
+gzipped**, because base64 carries six bits in an eight-bit byte.
+
+`outSvg` warns when it saves an `<image>` whose href will not resolve. It **reports rather than
+rewrites** — an external reference is legitimate for a document-mode SVG.
+
+**The trap to keep in mind:** an agent told only "the deliverable must be an SVG" can wrap a finished
+bitmap in one `<image>`. Measured, both are valid SVG and both open in Illustrator:
+
+| | `<image>` | `<text>` | `<rect>` |
+| :--- | :--- | :--- | :--- |
+| wrapped bitmap | 1 | **0** | **0** |
+| a real vector page | 5 | 65 | 130 |
+
+---
+
+### 21.3 `svgXml` is off the wire
+
+`DrawingExecutionResult.SvgXml` is `[JsonIgnore]` — kept for the CLI and the href scan, never
+serialised. Nothing ever consumed it from the response, and an agent run had flagged the duplication
+in 2026 as "a few KB per call". Once a bitmap could be inlined it stopped being a few KB: measured
+over a live MCP session, **117,786 chars of which 109,045 were the markup — about 29,000 tokens** on
+a call that had already asked for `outFile` and `outSvg`. After: **454 chars.**
+
+Removing it exposed the gap it was masking — there was no file-based way back into a saved SVG. So:
+`Snap.load(path)` (contained like `outFile`) and `RenderSvg(file:)`. The round trip is now symmetric:
+`outFile` → `Skia.Image.load`, `outSvg` → `Snap.load`. Within one session `Session.svg =
+paper.toString()` still costs nothing.
+
+ADK-side, `read_file` now **refuses `.svg` outright** — the field had simply come back through the
+file reader. `peek` was saying *"read it another way"* while `read_file` said *"peek it"*; both now
+name `RenderSvg(file:)`. Pinned in `src/adk_agent/tests/test_svg_reading.py`.
+
+---
+
+### 21.4 The two agent runs, and what they measured
+
+Both on "Visualize the top 5 earning actresses of 2026" — a deliberate trap, since the year is
+9 months old and unreported.
+
+**Run 1** (`projects/actresses2026`) produced a technically sound raster piece — zero baseline, lie
+factor computed live, palette verified, a 480px reduction test — that **named five women and showed
+no faces**, and headlined *"of 2026"* over 2025 figures with the ambiguity hedged in 8pt type.
+Neither failure appeared in `findings.md`, because `--test` surfaces friction the agent *hit*, not
+capability it never found.
+
+**Run 2** (`projects/actresses2026b`) after two template fixes: five portraits with `expect: 'actress'`,
+5/5 resolved, per-card credits plus a footer from `Photo.credits()`, and *"2026 INDUSTRY FINANCIAL
+REPORT · 2025 CALENDAR YEAR PRETAX EARNINGS"* with no year in the headline.
+
+**The lesson is about discoverability, not the surface.** Manual 26 ranked first for *"photograph of
+a person"*, *"portrait"* and *"likeness of a real person"*, and `polson://sdk/index` listed `Photo` —
+and the agent still never asked, because nothing in its 796-line `GEMINI.md` prompted the question.
+One paragraph in Stage 1 closed it.
+
+---
+
+### 21.5 `vector_infographic`, and the chart port
+
+**A new workflow; `infographic` is untouched and remains raster.** Note the **underscore** — embedded
+resource names mangle `-` to `_`, which is why `comic_studio` is spelled that way.
+
+`VectorChartToolkit` in `Polson.Drawing.Svg`, as `paper.chart(model, options)`. It reads the model
+dictionary only — no `ChartToolkit` reference, no Skia — which is what lets it live in the vector
+project without inverting the layering. All twelve forms draw; an unknown `type` falls back to
+`slots`. `options.colors` is a per-mark array, which a canvas `fillStyle` structurally cannot be.
+`JsInterop` moved to `Polson.Runtime` (namespace `Polson`): **141 call sites, zero changed**, because
+C# resolves up the namespace chain.
+
+Two bugs found by *counting elements* rather than looking:
+
+- The model's type string is **`progressMeter`, not `meter`**, so the ring fell through to the slots
+  fallback and drew one flat rectangle — which still looks like a chart.
+- A **full-turn arc whose endpoints coincide is dropped entirely by SVG.** The track ring silently
+  vanished; only the fill rendered. Annuli are now walked in ≤180° segments.
+
+And a doc/code drift: **`Chart.createCallout` has no `valueX/Y/Size` anchors** — the reference
+claimed them, `display` is just the formatted string, and a caller following the docs drew at `NaN`.
+Corrected.
+
+> **ADK interpolates `{var}` in agent instructions.** The first vector run died at startup with
+> `KeyError: Context variable not found: 'colors'` because the substitution table contained
+> `paper.chart(model, { colors })`. The pattern is `{+[^{}]*}+` and anything that parses as a valid
+> state name is looked up: **`{ bareIdentifier }` is fatal**, `{ label: 'Mar', value: 38 }` is safe
+> because the punctuation makes it an invalid name. Scan new templates before running them.
+
+Run 3 produced `projects/vectest/artifacts/final.svg` — **513 KB, 5 inlined portraits, 73 `<text>`,
+125 `<rect>`, 20 `<circle>`, 4 `<path>`**, with the acceptance check passing in its own footer.
+
+---
+
+### 21.6 Filters and stylesheets — **uncommitted**
+
+`SnapFilter.cs`, `SnapStylesheet.cs`, and edits to `SnapPaper.cs`, `GlobalUsings.cs`,
+`Polson.Drawing.Svg.csproj`, `docs/Polson.core.md`.
+
+**The raster gap was our own whitelist, not the renderer.** Svg.Skia draws the whole filter chain;
+`CreateElementByName` simply had no `filter` or `fe*` entries. Verified rendering: `feTurbulence`
+(**this *is* Perlin** — the same algorithm `Skia.Shader.perlinNoise*` wraps), `feGaussianBlur` (the
+`MaskFilter.blur` equivalent), and **turbulence driving `feDisplacementMap`, which gives a genuinely
+roughened contour** — the nearest vector idiom to `PathEffect.discrete`, and the most promising lead
+for the brush gap.
+
+`paper.style(css)` applies a stylesheet **and** keeps the `<style>` block. Both halves are necessary:
+the first attempt wrote only the block and rendered **black in the peek** while looking correct in
+the file, because this library resolves CSS inside its parser, not in memory. It parses with
+`Polson.HtmlParser`'s existing `CssToolkit` — one CSS implementation, not two — and
+`Drawing.Svg → HtmlParser` is acyclic because HtmlParser is a leaf. **Call it last**; it resolves
+against the tree as it then stands. Selectors: `.class`, `#id`, tag, `*`/`:root`, comma-separated.
+
+---
+
+### 21.7 Pick-up list
+
+1. **Commit §21.6**, or review it first — it is the only outstanding code.
+2. **Tests and manual coverage for the filter and stylesheet surface.** They have none beyond manual
+   renders, unlike the chart port's 20. This is the clearest debt this session leaves.
+3. **The brush question**, now precisely bounded: `Skia.Brush`, `Skia.PathEffect`, `Skia.MaskFilter`
+   and SkSL shaders are the *entire* vector-side deficit — everything else has a counterpart, and
+   `feTurbulence` + `feDisplacementMap` may cover much of what a brush was for.
+4. **`SKSvgCanvas` — parked deliberately.** It exists in SkiaSharp 4.148 (`Create(SKRect, Stream)`)
+   and emits real `<text>` with per-glyph positions. But it **silently drops the media layer**:
+   a Perlin shader became `<rect/>` with no fill, a blur became a hard-edged ellipse. It converts a
+   loud constraint into a silent one, and it has no pixels, so the whole Manual 15 measurement suite
+   would have nothing to read. Revisit only as a *third* surface with peek-from-SVG.
+5. **Photo:** session-only cache (`Id` is a stable content address, so a durable one is a drop-in);
+   **no face detection**, so the upward crop bias will eventually decapitate someone.
+6. **The ADK agent's instructions still never mention `Snap.load`**, so an ADK-hosted agent learns of
+   it from a refusal rather than its brief.
+7. **`Program.cs` has an orphaned doc comment** — `ConfigureAssetRequisition`'s `<summary>` sits above
+   `Setting()`, ~45 lines from its method. Pre-existing, untouched.

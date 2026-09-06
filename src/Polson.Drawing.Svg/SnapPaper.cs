@@ -85,6 +85,64 @@ public class SnapPaper : SnapElement
         return new SnapPolygon(polygon, this);
     }
 
+    #region Filters and Stylesheets
+    /// <summary>
+    /// Creates a <c>&lt;filter&gt;</c> in <c>&lt;defs&gt;</c> and returns it for chaining.
+    /// </summary>
+    /// <remarks>
+    /// Reference it with the filter's own <c>url</c>:
+    /// <code>
+    /// const grain = paper.filter().turbulence(0.85, 3).colorMatrix('0 0 0 0 0.1 …');
+    /// paper.rect(0, 0, w, h).attr({ filter: grain.url });
+    /// </code>
+    /// </remarks>
+    public SnapFilter Filter(string? id = null)
+    {
+        var filter = new global::Svg.FilterEffects.SvgFilter
+        {
+            ID = string.IsNullOrWhiteSpace(id) ? "filter_" + Guid.NewGuid().ToString("N")[..8] : id,
+        };
+        Defs.Node.Children.Add(filter);
+        return new SnapFilter(filter, this);
+    }
+
+    /// <summary>
+    /// Applies a CSS stylesheet to everything drawn so far, and keeps the <c>&lt;style&gt;</c> block.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Call it last.</b> The rules are resolved against the tree as it stands at the moment of the
+    /// call, so elements drawn afterwards are not styled — which is how a stylesheet behaves on a
+    /// finished document, and the only semantics that does not require re-running on every mutation.
+    /// Call it again to pick up later work; applying the same sheet twice is harmless.
+    /// </para>
+    /// <para>
+    /// Both halves happen: the declarations are written onto matching elements as attributes so the
+    /// <i>render</i> is right, and the stylesheet is appended so the <i>deliverable</i> still carries
+    /// one rule a designer can edit in Illustrator instead of ninety baked attributes. Writing only
+    /// the block would render as nothing — the library resolves CSS inside its parser, not in memory,
+    /// so a class-styled rect came back black in the peek and correct in the file.
+    /// </para>
+    /// <para>
+    /// Selectors are <c>.class</c>, <c>#id</c>, a bare tag name, <c>*</c> or <c>:root</c>, singly or
+    /// comma-separated. Anything more — descendants, attributes — is left to <c>.attr(...)</c>
+    /// rather than silently matching nothing.
+    /// </para>
+    /// </remarks>
+    /// <returns>How many elements were styled, so an empty sheet is distinguishable from a typo.</returns>
+    public int Style(string css)
+    {
+        var styled = SnapStylesheet.Apply(this, css);
+
+        var style = new NonSvgElement("style", "http://www.w3.org/2000/svg");
+        style.Nodes.Add(new SvgContentNode { Content = css ?? string.Empty });
+        Document.Children.Insert(0, style);
+        return styled;
+    }
+
+
+    #endregion
+
     #region Vector Chart Methods
     /// <summary>
     /// Draws any <c>Chart.create*</c> model onto this paper as real SVG elements, returning the group.
@@ -372,10 +430,32 @@ public class SnapPaper : SnapElement
             "marker" => new SvgMarker(),
             
             "svg" => new SvgFragment(),
+
+            // The filter chain. Absent until now, which made the standing conclusion — that grain,
+            // soft edges and colour grading were unavailable in a vector deliverable — true of the
+            // API rather than of the renderer. Svg.Skia draws all of these; only the factory was
+            // missing. `feTurbulence` in particular *is* Perlin noise.
+            "filter" => new global::Svg.FilterEffects.SvgFilter(),
+            "feturbulence" => new global::Svg.FilterEffects.SvgTurbulence(),
+            "fegaussianblur" => new global::Svg.FilterEffects.SvgGaussianBlur(),
+            "fecolormatrix" or "fecolourmatrix" => new global::Svg.FilterEffects.SvgColourMatrix(),
+            "fedisplacementmap" => new global::Svg.FilterEffects.SvgDisplacementMap(),
+            "feoffset" => new global::Svg.FilterEffects.SvgOffset(),
+            "feflood" => new global::Svg.FilterEffects.SvgFlood(),
+            "fecomposite" => new global::Svg.FilterEffects.SvgComposite(),
+            "feblend" => new global::Svg.FilterEffects.SvgBlend(),
+            "femerge" => new global::Svg.FilterEffects.SvgMerge(),
+            "femergenode" => new global::Svg.FilterEffects.SvgMergeNode(),
+            "fedropshadow" => new global::Svg.FilterEffects.SvgDropShadow(),
+            "femorphology" => new global::Svg.FilterEffects.SvgMorphology(),
+            "fetile" => new global::Svg.FilterEffects.SvgTile(),
             _ => throw new ArgumentException(
                 $"'{name}' is not an SVG element this adapter can create. Supported: rect, circle, ellipse, path, " +
                 "g, image, text, tspan, textPath, line, polyline, polygon, mask, clipPath, pattern, use, defs, " +
-                "linearGradient, radialGradient, stop, symbol, marker, svg. For gradients prefer " +
+                "linearGradient, radialGradient, stop, symbol, marker, svg, filter, feTurbulence, "
+                + "feGaussianBlur, feColorMatrix, feDisplacementMap, feOffset, feFlood, feComposite, "
+                + "feBlend, feMerge, feMergeNode, feDropShadow, feMorphology, feTile. "
+                + "For filters prefer paper.filter(...); for gradients prefer " +
                 "paper.gradient(...), paper.gradientLinear(...) or paper.gradientRadial(...).",
                 nameof(name))
         };

@@ -17,6 +17,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Polson.Runtime\Polson.Runtime.csproj" />
+    <!-- For paper.style(css): the CSS parser already exists rather than being written twice.
+         HtmlParser is a leaf with no project references of its own, so this stays acyclic. -->
+    <ProjectReference Include="..\Polson.HtmlParser\Polson.HtmlParser.csproj" />
   </ItemGroup>
 
 </Project>

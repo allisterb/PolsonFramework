@@ -838,6 +838,7 @@
       "polson.drawing.svg": {
         "type": "Project",
         "dependencies": {
+          "Polson.HtmlParser": "[0.1.0, )",
           "Polson.Runtime": "[0.1.0, )",
           "Svg.Custom": "[5.2.1, )",
           "Svg.Model": "[5.2.1, )",

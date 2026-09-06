@@ -11,6 +11,12 @@
 
 ---
 
+> **Superseded in part by `docs/session-handoff-2026-09-05.md`.** That session found why the SDK
+> documentation was not reaching agents (MCP resources are injected for one turn and dropped, and the
+> acknowledgement reads like a failure), added `ReadDoc`, `--budget`, `budget_status`,
+> `Stage.elapsedMinutes` and `doc.read` events, and fixed the watchdog's single-agent misfire. Read
+> that one first; this remains accurate about the container, the deploy, and Cloud Run itself.
+
 ## 1. Where it is
 
 | | |

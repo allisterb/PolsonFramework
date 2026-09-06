@@ -22,6 +22,7 @@ using Xunit;
 /// by <c>ParallelClientTests</c> and <c>ResearchTests</c>; what only a live run can prove is that the
 /// tool, the session registry, the run record and the JS global agree with each other.
 /// </remarks>
+[Collection(ResearchCollection.Name)]
 public class ResearchToolLiveTests : TestsRuntime, IDisposable
 {
     #region Fields

@@ -28,3 +28,9 @@ Answer these in `findings.md`:
   and was it stated where you would find it before relying on inheritance?
 - **Where you hand-rolled arithmetic** the toolkit already had. Bar length, band width, tick spacing,
   lane packing on a timeline, icon counts on a pictogram.
+- **`Research`, and the two-run budget.** Could you enumerate the whole data requirement before
+  calling, or did you discover a needed figure after the first run was spent? Was the schema's field
+  capacity clear before you wrote it, and did the dry run catch anything? Report what the basis gave
+  you — reasoning, confidence, citations — and whether it was enough to caption a figure without
+  going back. **If the brief was thin, say what you had to infer** and whether the instructions made
+  it clear that inferring was allowed and recording it was required.

@@ -20,8 +20,16 @@ their source, before drawing anything.
 
 **Every figure that appears in the finished piece must appear in this table.** A number that reaches
 the canvas without passing through here has no source, and neither you nor the director can tell
-afterwards whether it was given, derived, or invented. If the brief implies a figure it does not
-state, ask — do not fill the gap with something plausible.
+afterwards whether it was given, derived, or invented.
+
+**If the brief implies a figure it does not state, source it** with the `Research` tool and record
+the citation below — do not fill the gap with something plausible, and do not stall waiting to be
+told. If it cannot be sourced, write *unavailable* in `Value` and say so in the piece; a stated gap
+is an honest artifact and a plausible number is not.
+
+`Source` is either the client (say so) or a research citation. Put the run id in `Notes` so the
+figure traces back to its basis: `Research.get('trun_…').citeField('field')` is the caption, and
+`.basisFor('field')` is the reasoning and confidence behind it.
 
 | Figure | Value | Unit | Source | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -38,13 +46,22 @@ arithmetic written out, so a reader can check the step rather than trust it.
 
 ## Framing
 
-Fill these in with the director. Where the brief is silent, ask.
+**Where the brief is silent, decide — and write down that you did.** Most briefs are a sentence or
+two, and filling what they leave open is the work rather than a blocker. Ask the director where one
+is present and the choice is genuinely not yours, but never wait on an answer: take the defensible
+option, record it in the last column, and carry on.
 
-| Parameter | Value |
-| :--- | :--- |
-| The one sentence a reader should leave with | |
-| Audience, and what they already know | |
-| Canvas size and orientation | |
-| Where the reader is standing (Manual 13 §4) | |
-| Tone, and anything explicitly ruled out | |
-| Attribution required for the data | |
+That column is the point of this table. It is what lets a reader tell what the client asked for from
+what the studio decided, and it means a director who disagrees can correct one line instead of the
+whole piece.
+
+| Parameter | Value | Given, or chosen — and why |
+| :--- | :--- | :--- |
+| The one sentence a reader should leave with | | |
+| How you would know the piece worked | | |
+| Audience, and what they already know | | |
+| Subject, metric and period actually being shown | | |
+| Canvas size and orientation | | |
+| Where the reader is standing (Manual 13 §4) | | |
+| Tone, and anything explicitly ruled out | | |
+| Attribution required for the data | | |

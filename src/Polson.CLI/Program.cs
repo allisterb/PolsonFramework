@@ -214,6 +214,30 @@ internal class Program : Runtime
         return ResearchRegistry.DefaultBudget;
     }
 
+    /// <summary>
+    /// The processor every research run uses, from <c>Research:Processor</c>.
+    /// </summary>
+    /// <remarks>
+    /// An unrecognised name is <b>accepted with a warning</b> rather than replaced. New tiers keep
+    /// arriving — <c>core2x</c> and <c>ultra8x</c> both did — and silently substituting the default
+    /// for a name we simply have not heard of would run the whole studio on the wrong engine while
+    /// the configuration said otherwise. The service rejects a name it does not know, which is a
+    /// clearer failure than ours would be. Only a blank falls back.
+    /// </remarks>
+    internal static string ResolveResearchProcessor(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured)) return TaskProcessor.Default;
+
+        var processor = configured.Trim();
+        if (TaskSchema.CapacityOf(processor) == 0)
+        {
+            Warn("Research:Processor='{0}' is not a tier this build knows, so its field capacity cannot "
+               + "be checked and schemas will not be warned about. Using it anyway.", processor);
+        }
+
+        return processor;
+    }
+
     static void ConfigureResearch()
     {
         var apiKey = Setting("ApiKeys:Parallel");
@@ -228,9 +252,13 @@ internal class Program : Runtime
         }
 
         var budget = ResolveResearchBudget(Setting("Research:Budget"));
+        var processor = ResolveResearchProcessor(Setting("Research:Processor"));
+
         DrawingMcpTools.ResearchClient = new ParallelClient(apiKey);
+        DrawingMcpTools.ResearchProcessor = processor;
         SessionContext.ResearchBudget = budget;
-        Info("Research enabled (processor: {0}, budget: {1} runs).", TaskProcessor.Default, budget);
+        Info("Research enabled (processor: {0}, ~{1} fields, budget: {2} runs per session).",
+            processor, TaskSchema.CapacityOf(processor), budget);
     }
 
     static async Task HandleServerArgs(ServerOptions opts)

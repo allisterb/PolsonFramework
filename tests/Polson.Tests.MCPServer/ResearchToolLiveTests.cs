@@ -67,7 +67,6 @@ public class ResearchToolLiveTests : TestsRuntime, IDisposable
                   "required": ["apollo_11_hours", "apollo_17_hours"]
                 }
                 """,
-            processor: TaskProcessor.Base,
             waitSeconds: 240);
 
         Info("Research tool answered: {Json}", commissioned.ToJsonString());
@@ -104,7 +103,7 @@ public class ResearchToolLiveTests : TestsRuntime, IDisposable
         var started = Single("research.started");
         Assert.Equal(runId, started.GetProperty("runId").GetString());
         Assert.Equal("Apollo mission durations for the timeline panel", started.GetProperty("description").GetString());
-        Assert.Equal(TaskProcessor.Base, started.GetProperty("processor").GetString());
+        Assert.Equal(DrawingMcpTools.ResearchProcessor, started.GetProperty("processor").GetString());
 
         var completed = Single("research.completed");
         Assert.Equal(runId, completed.GetProperty("runId").GetString());
@@ -194,6 +193,82 @@ public class ResearchToolLiveTests : TestsRuntime, IDisposable
         {
             SessionContext.ResearchBudget = previous;
         }
+    }
+    /// <summary>
+    /// A schema wider than the configured processor handles is a <b>forecast</b>, not a fault: the
+    /// caller cannot answer it by choosing a bigger engine, and simple fields may fit anyway. So it
+    /// warns and proceeds — the run reaches the service.
+    /// </summary>
+    [Fact]
+    public void TestAnOversizedSchemaWarnsRatherThanRefusing()
+    {
+        var properties = string.Join(",", Enumerable.Range(0, 14)
+            .Select(i => $"\"f{i}\":{{\"type\":\"string\",\"description\":\"Field {i}.\"}}"));
+        var schema = $"{{\"type\":\"object\",\"properties\":{{{properties}}},\"required\":[\"f0\"]}}";
+
+        var report = TaskSchema.Inspect(schema, DrawingMcpTools.ResearchProcessor);
+
+        Assert.True(report.Usable);
+        Assert.True(report.OverCapacity);
+        Assert.Equal(14, report.FieldCount);
+        Assert.Contains(report.Warnings, w => w.Contains("14 top-level fields"));
+        Assert.Contains(report.Warnings, w => w.Contains("counts as ONE field"));
+    }
+
+    /// <summary>
+    /// A structural fault is a fault, and refusing costs nothing — proven by a transport that throws
+    /// if anything reaches it.
+    /// </summary>
+    [Fact]
+    public async Task TestAStructurallyBrokenSchemaIsRefusedBeforeSpending()
+    {
+        var tools = new DrawingMcpTools(null, null, null, root)
+        {
+            Parallel = new ParallelClient("unused", new HttpClient(new ExplodingHandler())),
+        };
+
+        var refused = await tools.Research(
+            description: "asks for nothing",
+            objective: "Anything.",
+            schema: """{ "type": "object", "properties": {} }""");
+
+        Assert.False(refused["ok"]!.GetValue<bool>());
+        Assert.Contains("asks for nothing", refused["error"]!.GetValue<string>());
+        Assert.Contains("Nothing was spent", refused["note"]!.GetValue<string>());
+
+        // The allowance is untouched, which is what "nothing was spent" has to mean.
+        Assert.Equal(SessionContext.ResearchBudget, refused["researchRemaining"]!.GetValue<int>());
+        Assert.Single(Events("research.schemaRejected"));
+        Assert.Empty(Events("research.started"));
+    }
+
+    /// <summary>The processor is not a parameter, so an agent cannot pull the cost lever at all.</summary>
+    [Fact]
+    public void TestTheToolExposesNoProcessorParameter()
+    {
+        var parameters = typeof(DrawingMcpTools).GetMethod(nameof(DrawingMcpTools.Research))!
+            .GetParameters()
+            .Select(p => p.Name)
+            .ToArray();
+
+        Assert.DoesNotContain("processor", parameters);
+        Assert.Contains("schema", parameters);
+    }
+
+    /// <summary>Malformed JSON is caught by the same pass, rather than as a 422 a minute later.</summary>
+    [Fact]
+    public async Task TestAMalformedSchemaIsRefusedBeforeSpending()
+    {
+        var tools = new DrawingMcpTools(null, null, null, root)
+        {
+            Parallel = new ParallelClient("unused", new HttpClient(new ExplodingHandler())),
+        };
+
+        var refused = await tools.Research("d", "Anything.", schema: "{ not json");
+
+        Assert.False(refused["ok"]!.GetValue<bool>());
+        Assert.Contains("not valid JSON", refused["error"]!.GetValue<string>());
+        Assert.Empty(Events("research.started"));
     }
     #endregion
 

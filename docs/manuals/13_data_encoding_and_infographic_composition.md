@@ -310,6 +310,18 @@ for (const m of data.result.missions) drawRow(m);
 ctx.fillText(data.citeField('missions.0'), x, y);   // the source under that one row
 ```
 
+**Brief it, do not query it.** The service is a model doing research, not a search box, and the
+objective has no published length limit — so write the whole brief: the question, the context it sits
+in, the units and period, any source preference. Terseness is not economy here. It buys nothing and
+costs accuracy, because every constraint you leave out is one the model has to guess.
+
+That is also why the whole requirement belongs in **one** call rather than several. One run pays the
+latency once instead of per question, and the model reconciles the fields against each other in a
+single pass rather than answering each in isolation — a table of six missions comes back internally
+consistent in a way six separate answers would not. Observed once, and worth the caution that goes
+with a single observation: a six-row table returned Apollo 11's duration exactly, at high confidence,
+while a narrower two-field query on the same figure came back thirty-six seconds out at medium.
+
 **Never draw a placeholder number.** The temptation is real: research takes about a minute, the
 layout is ready, and a stand-in would let the composition proceed. But a placeholder that survives
 into a finished graphic is indistinguishable from a sourced one — the layout has already put a

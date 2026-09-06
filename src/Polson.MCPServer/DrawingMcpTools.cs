@@ -28,6 +28,17 @@ public class DrawingMcpTools
     /// same arrangement as <see cref="JsDrawingEngine.Assets"/>. Null when no key is configured.
     /// </summary>
     public static ParallelClient? ResearchClient { get; set; }
+
+    /// <summary>
+    /// The processor every research run uses, from <c>Research:Processor</c>.
+    /// </summary>
+    /// <remarks>
+    /// Configuration rather than a tool parameter, deliberately. The tiers span thirty-fold on price —
+    /// $5 per thousand runs on <c>lite</c> against $300 on <c>ultra</c> — which makes this the sharpest
+    /// cost lever in the studio, and it is not one an agent should be able to pull. The same reasoning
+    /// keeps the image model out of <c>Assets</c>'s script-facing surface.
+    /// </remarks>
+    public static string ResearchProcessor { get; set; } = TaskProcessor.Default;
     #endregion
 
     #region Constructors
@@ -822,13 +833,27 @@ public class DrawingMcpTools
         "first: a field that came back empty, wrong, or at a confidence too low to draw. It is not the second " +
         "half of the research. If you are planning to use both, you have already split the requirement, which is " +
         "the mistake this ceiling exists to prevent. `researchRemaining` in the reply tells you what is left.\n\n" +
-        "A single question is bounded by FIELD COUNT, not by length, so a large requirement fits fine. An array " +
-        "counts as one field however many rows it holds — six Apollo missions with three properties each, " +
-        "eighteen values, went through as a single `missions` field on the default processor. If it genuinely " +
-        "will not fit, NEST IT and move up a tier ('core' takes about 10 top-level fields against 'base's 5). " +
-        "Never split it into a second run.\n\n" +
-        "A run that FAILS is refunded, so the ceiling is one successful piece of research rather than one " +
-        "attempt — you may retry a genuine failure. It is not a second question.\n\n" +
+        "THIS IS AN LLM DOING RESEARCH, NOT A KEYWORD LOOKUP — so write to it as you would brief a researcher. " +
+        "`objective` is prose read by a model and has no published length limit, so being complete costs you " +
+        "nothing and terseness costs you accuracy. Say the whole question, the context it sits in, the units " +
+        "and period you want, and any source preference. A long specific objective with a rich schema is both " +
+        "FASTER and MORE ACCURATE than several small ones: one run pays the latency once instead of per query, " +
+        "and the model reconciles every field against the others in a single pass rather than answering each in " +
+        "isolation. (Observed once: a six-row table returned Apollo 11's duration exactly at high confidence, " +
+        "while a narrower two-field query on the same figure came back 36 seconds out at medium.)\n\n" +
+        "The limit is FIELD COUNT, not length. An array counts as ONE field however many rows it holds — six " +
+        "Apollo missions with three properties each, eighteen values, went through as a single `missions` " +
+        "field. Around five TOP-LEVEL fields is the comfortable size; past that, group related ones into a " +
+        "nested object or an array. Never split the requirement into a second run, and note you cannot choose " +
+        "a bigger engine: which processor runs your research is a cost decision held in configuration, not a " +
+        "parameter.\n\n" +
+        "A run that FAILS is refunded, so the ceiling is two successful runs rather than two attempts — you may " +
+        "retry a genuine failure. It is not a second question.\n\n" +
+        "Your schema is CHECKED BEFORE ANYTHING IS SPENT. Malformed JSON, a schema that is not an object, or one " +
+        "declaring no properties is REFUSED — that costs nothing and leaves the allowance untouched, so read it " +
+        "as free advice rather than as one of your two runs. Too many top-level fields only WARNS, in " +
+        "`schemaWarnings`: it is a forecast about quality rather than a hard limit, so heed it if your fields " +
+        "are research-heavy and ignore it if they are dates and booleans.\n\n" +
         "Give `schema` when you want a table or a record set: a JSON Schema whose field DESCRIPTIONS are " +
         "instructions, because they determine what comes back. Omit it for a prose answer. This BLOCKS while the " +
         "research runs — typically 15-50 seconds — so start it before the work that needs it. If it has not " +
@@ -838,9 +863,8 @@ public class DrawingMcpTools
         "ordinary JS, and Research.latest.citeField('missions.0') gives the caption line for one row.")]
     public Task<JsonObject> Research(
         [Description("What this research is for, in your own words. Recorded in the run and used to find the task later.")] string description,
-        [Description("The question, self-contained and specific — e.g. 'Key technical data for the crewed Apollo lunar landing missions'. Required when starting; omit when resuming with runId.")] string? objective = null,
+        [Description("The whole research brief, in prose, read by a model — not a search string. No published length limit, so be complete: the question, its context, the units and period you want, and any source preference. Required when starting; omit when resuming with runId.")] string? objective = null,
         [Description("JSON Schema for the answer, as a string. Field descriptions steer the result, so write them as instructions. Omit for prose.")] string? schema = null,
-        [Description("Processor: 'base' (default, ~5 fields, median 50s), 'core' (~10 fields, median 1.5min), 'lite' (~2 fields, median 45s). Fast variants exist at the same price but their trade-off is undocumented — name one only deliberately.")] string? processor = null,
         [Description("Seconds to wait before handing back a runId to resume with. Default 150, which covers the base processor's observed p90 of 2 minutes.")] int? waitSeconds = null,
         [Description("false to start the research and return immediately, collecting it later with runId. Default true.")] bool? wait = null,
         [Description("Resume or collect an already-started task by its run id.")] string? runId = null,
@@ -905,6 +929,37 @@ public class DrawingMcpTools
                 return response;
             }
 
+            var chosen = ResearchProcessor;
+
+            // A dry run over the schema, before anything is spent. The allowance is two and the first
+            // carries the whole requirement, so a schema that would come back thin is worth catching
+            // here rather than discovering a minute later with the run already gone.
+            var inspection = TaskSchema.Inspect(schema, chosen);
+            if (!inspection.Usable)
+            {
+                response["ok"] = false;
+                response["error"] = inspection.Problem;
+                response["remedy"] = inspection.Remedy;
+                response["fieldCount"] = inspection.FieldCount;
+                response["processorCapacity"] = inspection.Capacity;
+                response["researchRemaining"] = session.Research.Budget.Remaining;
+                response["note"] = "Nothing was spent — fix the schema and call again.";
+                if (inspection.SuggestedProcessor is not null)
+                {
+                    response["suggestedProcessor"] = inspection.SuggestedProcessor;   // for the operator, not the agent
+                }
+
+                Events.Append("research.schemaRejected", session.Stage, null,
+                    new Dictionary<string, object?>
+                    {
+                        ["description"] = description,
+                        ["problem"] = inspection.Problem,
+                        ["fields"] = inspection.FieldCount,
+                        ["capacity"] = inspection.Capacity,
+                    });
+                return response;
+            }
+
             TaskSpec? spec;
             try
             {
@@ -912,13 +967,11 @@ public class DrawingMcpTools
             }
             catch (ArgumentException ex)
             {
-                // Caught here rather than 90 seconds later as a 422.
+                // Belt and braces: Inspect has already parsed it, so this should be unreachable.
                 response["ok"] = false;
                 response["error"] = ex.Message;
                 return response;
             }
-
-            var chosen = string.IsNullOrWhiteSpace(processor) ? TaskProcessor.Default : processor.Trim();
             var started = await Parallel.StartTask(
                 objective, spec, new TaskOptions { Processor = chosen }, cancellationToken);
 
@@ -933,6 +986,14 @@ public class DrawingMcpTools
 
             task = session.Research.Start(
                 started.RunId, description, objective, started.Processor, started.Status);
+
+            // Not grounds for refusing, but worth saying while the answer can still be judged against
+            // them — an undescribed field is the one most likely to come back wrong.
+            if (inspection.Warnings.Count > 0)
+            {
+                response["schemaWarnings"] = new JsonArray(
+                    inspection.Warnings.Select(w => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(w)!).ToArray());
+            }
 
             Events.Append("research.started", session.Stage, null,
                 new Dictionary<string, object?>

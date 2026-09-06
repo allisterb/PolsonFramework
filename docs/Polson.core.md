@@ -1848,7 +1848,11 @@ ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA �
 - `budget.canAfford(count?: number)` → `boolean`
 
 > [!IMPORTANT]
+> **This is a model doing research, not a keyword lookup.** The objective is prose read by an LLM and has **no published length limit**, so being complete costs nothing while being terse costs accuracy — state the whole question, its context, the units and period you want, and any source preference. One long, specific objective with a rich schema is both *faster* and *more accurate* than several small ones: it pays the latency once rather than per query, and the model reconciles every field against the others in a single pass instead of answering each in isolation.
+>
 > **You get two research runs, and they are not equal.** The **first** must carry the entire data requirement — every figure the graphic needs, in one schema, planned before you call. The **second** exists only to *correct* the first: a field that came back empty, wrong, or at a confidence too low to draw. It is not the second half of the research, and planning to use both means the requirement has already been split. The size of one question is bounded by **field count, not length**: an array is a single field however many rows it holds, so nest it and step up a tier (`core` takes ~10 top-level fields against `base`s ~5) rather than splitting into a second run. A run that **fails is refunded**, so the ceiling is two *successful* runs rather than two attempts; `budget.attempts` against `budget.maxAttempts` is what stops a run that keeps failing.
+>
+> Your schema is checked before anything is spent — it must parse, declare properties, and fit the processor's field capacity — so a rejection costs nothing and names the count, the capacity and a processor that would fit.
 >
 > There is no usage figure to check against this. **The Task API returns no billing data at all** — unlike Search and Extract, a task envelope carries only `run` and `output` — so the run count is the entire control, and it is spent by *starting* a task, never by resuming or re-reading one.
 

@@ -283,7 +283,7 @@ job no bar chart can do, and reaching for a bar chart because §1 lists one woul
 > `Research.allComplete()`; on a task, `task.result`, `task.basis`, `task.status`, `task.isComplete`,
 > `task.isFailed`, `task.isActive`, `task.needsAction`, `task.elapsedSeconds`, `task.startedUtc`,
 > `task.error`, `task.description`, `task.objective`, `task.processor`, `task.id`,
-> `task.citeField(field)`, `task.basisFor(field)`, `task.sources()`; the allowance as `Research.budget`
+> `task.citeField(field)`, `task.basisFor(field)`, `task.sources()`, `task.warnings`; the allowance as `Research.budget`
 > with `budget.total`, `budget.spent`, `budget.remaining`, `budget.attempts`, `budget.maxAttempts`,
 > `budget.exhausted`, `budget.canAfford()`;
 > on a basis entry, `basis.field`,

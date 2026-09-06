@@ -69,6 +69,17 @@ public sealed class ResearchTask
     /// <summary>Why the research failed, when it did. Null otherwise.</summary>
     public string? Error { get; internal set; }
 
+    /// <summary>
+    /// What the codepoint scan found in what this run brought back — hidden characters, or text
+    /// addressed to the reader. Empty is the expected result and means nothing was concealed.
+    /// </summary>
+    /// <remarks>
+    /// A finding is not proof the figure is wrong, but it is a reason to look at the source before
+    /// citing it: a page that talks to whoever is processing it is not behaving like a source. The
+    /// prose has already been stripped of the concealment classes by the time you read it.
+    /// </remarks>
+    public IReadOnlyList<string> Warnings { get; internal set; } = [];
+
     /// <summary>Finished, with data. Only then is <see cref="Result"/> meaningful.</summary>
     public bool IsComplete => Status == "completed";
 
@@ -376,6 +387,12 @@ public sealed class ResearchRegistry
         task.Status = "failed";
         task.Error = error;
     }
+
+    /// <summary>
+    /// Records what a codepoint scan found in this run's returned text. Kept here with the other
+    /// mutators so a script can read a warning and never write one.
+    /// </summary>
+    public void Flag(ResearchTask task, IReadOnlyList<string> warnings) => task.Warnings = warnings;
 
     /// <summary>Updates a run's status while it is still going.</summary>
     public void SetStatus(ResearchTask task, string status)

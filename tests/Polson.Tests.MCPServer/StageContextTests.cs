@@ -202,6 +202,32 @@ public class StageContextTests : TestsRuntime, IDisposable
 
         Assert.Contains(result.Logs, l => l.Contains("stage=Concept", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// The sandbox has `Date.now()` and `mina.time()`, and both answer "now" rather than "since
+    /// when". Stamping a start into `Session` measures from the first script rather than from the
+    /// run, so an agent that reads for twelve minutes first records those as zero.
+    /// </summary>
+    [Fact]
+    public async Task TestElapsedMinutesIsReadable()
+    {
+        var result = await Tools().ExecuteScript(
+            "log('elapsed=' + (typeof Stage.elapsedMinutes) + ' ' + (Stage.elapsedMinutes >= 0)); exit('ok');");
+
+        Assert.Contains(result.Logs, l => l.Contains("elapsed=number True", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>It measures from the session, so it survives the executions it spans.</summary>
+    [Fact]
+    public async Task TestElapsedMinutesDoesNotResetBetweenExecutions()
+    {
+        var tools = Tools();
+        await tools.ExecuteScript("Session.first = Stage.elapsedMinutes; exit('ok');");
+        var result = await tools.ExecuteScript(
+            "log('grew=' + (Stage.elapsedMinutes >= Session.first)); exit('ok');");
+
+        Assert.Contains(result.Logs, l => l.Contains("grew=True", StringComparison.OrdinalIgnoreCase));
+    }
     #endregion
 
     #region Execution Id Tests

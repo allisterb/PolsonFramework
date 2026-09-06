@@ -206,6 +206,19 @@ Declares which stage of work you are in, so every script, render and note that f
 - `Stage.begin(name: string)` → `string` — Declares the stage and returns the name as recorded. Beginning a **different** stage closes the previous one first, so two never overlap. Re-declaring the stage you are already in is an announcement, not a transition: it records a continuation and leaves the stage running, so you can safely restate it at the top of each script. Case is ignored when comparing, and the originally recorded spelling is kept.
 - `Stage.end()` — Ends the current stage. Harmless when none is open.
 - `Stage.current` → `string?` — The stage in effect, or **`null`** if none, so `if (!Stage.current)` is the check to write. Outside a project — an ad-hoc engine with no run session — this always reads `null`, even directly after `Stage.begin(...)`, because the stage lives on the session.
+- `Stage.elapsedMinutes` → `number?` — Minutes since this run began, or **`null`** outside a session. This is how you pace a deadline.
+
+> [!IMPORTANT]
+> **`Date.now()` and `mina.time()` both answer "now", not "since when".** Stamping your own start — `Session.startedAt ??= Date.now()` — measures from whenever you first ran a script, which is not when the run began: twelve minutes spent reading the brief and the manuals before the first execution are recorded as zero. It understates silently and hands back a number that looks right.
+>
+> `Stage.elapsedMinutes` is anchored on the run's actual start, so it cannot be got wrong:
+>
+> ```javascript
+> const spent = Stage.elapsedMinutes;
+> if (spent > 20) Stage.note(`${spent.toFixed(1)} min spent — closing this stage rather than starting another pass`);
+> ```
+>
+> It is the clock only. If your host offers a `budget_status` tool, that reports the same elapsed time *and* what remains of any input-token allowance — which is often the binding constraint, since input is the whole conversation resent every turn and climbs whether or not the work is progressing.
 - `Stage.note(message: string)` — Records a note under the current stage.
 - `Stage.expect(claim: string)` — Records what you expect the next render to show, **before** you make it.
 - `Stage.check(claim: string, passed: boolean, detail?: string)` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold.

@@ -62,6 +62,26 @@ Comparison is case-insensitive, so re-declaring the stage you are already in is 
 > [!NOTE]
 > **Outside a project, `Stage` is a no-op.** `Stage.begin('X')` returns `'X'`, but `Stage.current` still reads `null` and nothing is recorded, because the stage lives on the run's session and an ad-hoc engine has none. That is why the example at the end of this manual declares a stage without reading it back.
 
+### Knowing how long you have been at it
+
+`Stage.elapsedMinutes` is minutes since the run began — `null` outside a session, for the same reason `Stage.current` is. It belongs here rather than with the drawing calls because pacing is part of the record: a stage closed deliberately at twenty minutes reads very differently from one that stopped because the run was halted.
+
+```js
+const spent = Stage.elapsedMinutes;
+if (spent > 20) Stage.note(`${spent.toFixed(1)} min spent — closing this stage rather than opening another`);
+```
+
+> [!IMPORTANT]
+> **Do not stamp your own start.** `Date.now()` and `mina.time()` both answer *now*, never *since when*, so the obvious recipe —
+>
+> ```javascript
+> Session.startedAt ??= Date.now();     // measures from your FIRST SCRIPT, not from the run
+> ```
+>
+> — records the time you spent reading the brief, the manuals and the SDK reference as zero. It understates silently and hands back a number that looks right. Two runs of one brief differed by four scripts before their first render; the same recipe would have given them very different baselines for the same true elapsed time.
+>
+> `Stage.elapsedMinutes` is anchored on the session the server opened, which it has known all along.
+
 ### Naming a stage
 
 Name it for what a reader would want to click on. `Concept`, `Blocking`, `Refine`, `Stress test`, `Critique` — a phase of work, at the granularity where the answer to "what was happening here?" is interesting.

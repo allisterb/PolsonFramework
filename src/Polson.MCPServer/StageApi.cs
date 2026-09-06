@@ -51,6 +51,28 @@ public sealed class StageApi
     #region Properties
     /// <summary>The stage currently in effect, or null if none has been declared.</summary>
     public string? Current => session?.Stage;
+
+    /// <summary>
+    /// Minutes since this run began, or null outside a session. Read as <c>Stage.elapsedMinutes</c>.
+    /// </summary>
+    /// <remarks>
+    /// **The sandbox has `Date.now()` and `mina.time()`, and both answer "now" rather than "since
+    /// when".** Without this the only way to pace a deadline was for the agent to stamp its own
+    /// start — `Session.startedAt ??= Date.now()` — which measures from whenever it first ran a
+    /// script, not from when the run began. That understates, silently, and returns a number that
+    /// looks like an answer: an agent that spends twelve minutes reading the brief and the manuals
+    /// before its first execution stamps minute twelve as zero. Two runs of one brief differed by
+    /// four scripts before the first render, so the same recipe gave them very different baselines
+    /// for the same true elapsed time.
+    /// <para>
+    /// Anchored on <see cref="SessionContext.StartedUtc"/>, which the server has known all along and
+    /// never told anyone. Null rather than zero when there is no session, matching
+    /// <see cref="Current"/>: outside a run there is no elapsed time, and zero would be a claim.
+    /// </para>
+    /// </remarks>
+    public double? ElapsedMinutes => session is null
+        ? null
+        : (DateTimeOffset.UtcNow - session.StartedUtc).TotalMinutes;
     #endregion
 
     #region Methods

@@ -396,6 +396,58 @@ def _make_read_file(project: Path):
     return read_file
 
 
+def _make_budget_status(token_cap: int | None, budget_minutes: float | None):
+    """Builds `budget_status`, the tool that lets an agent ask what it has spent.
+
+    **Time and tokens were asymmetric, and this closes it.** `deadline.md` hands the agent a clock —
+    `Session.startedAt`, then `Date.now()` — so it can pace itself. Nothing equivalent existed for
+    tokens: the counter lives here, in the Python process, and the sandbox cannot see it. The agent
+    learned its spend only when the 75% notice arrived, which is advice at a moment it cannot
+    choose. Being able to *ask* is what makes a budget something to plan against rather than
+    something that happens to you — the same argument `deadline.md` makes for stating the deadline
+    up front.
+
+    Reports both allowances, since a run usually has both and the binding one is whichever is
+    nearer. Cheap and read-only: no model call, no I/O, just the counters this module already keeps.
+    """
+
+    async def budget_status(tool_context) -> dict:
+        """How much of this run's budget is spent: input tokens, and wall-clock minutes.
+
+        Call it when deciding whether another pass will fit. Input tokens are the whole conversation
+        resent every turn, so they climb whether or not you are making progress.
+        """
+        invocation = getattr(tool_context, "invocation_id", None)
+        spent = _invocation_input.get(invocation, 0)
+        started = _invocation_started.get(invocation)
+        elapsed = (time.monotonic() - started) / 60.0 if started else 0.0
+
+        cached = _invocation_cached.get(invocation, 0)
+        status: dict = {
+            "inputTokensSpent": spent,
+            # Part of inputTokensSpent, not extra to it. Worth watching: a low share means the
+            # conversation is being re-sent at full price, and it is not something you control.
+            "cachedInputTokens": cached,
+            "cachedSharePercent": round(cached / spent * 100, 1) if spent else 0.0,
+            "minutesElapsed": round(elapsed, 1),
+            # The count is only known after a turn completes, so this trails the turn in progress.
+            "note": "inputTokensSpent excludes the turn now running; it is known only once the "
+                    "model has answered.",
+        }
+        if token_cap:
+            status["inputTokenCap"] = token_cap
+            status["inputTokensRemaining"] = max(0, token_cap - spent)
+            status["inputTokensUsedPercent"] = round(spent / token_cap * 100, 1)
+        if budget_minutes:
+            status["deadlineMinutes"] = budget_minutes
+            status["minutesRemaining"] = round(max(0.0, budget_minutes - elapsed), 1)
+        if not token_cap and not budget_minutes:
+            status["note"] = "This run has no budget set; the figures above are what you have spent."
+        return status
+
+    return budget_status
+
+
 def _make_write_script(project: Path):
     """Builds the `write_script` tool bound to one project directory.
 
@@ -709,6 +761,40 @@ _role_clock: dict[tuple[str, str], _RoleClock] = {}
 _invocation_started: dict[str, float] = {}
 _tripped: set[str] = set()
 
+# --------------------------------------------------------------------------------------------
+# The token budget.
+# --------------------------------------------------------------------------------------------
+#
+# **Input, not output, and not dollars.** Input is what spirals: every turn resends the whole
+# conversation, so a run that will not converge grows its input as O(n²) while output stays bounded
+# per turn. Measured on one small brief — 22 turns, a conversation growing 12K → 83K — the input
+# summed to 1.2M against 11K of output. A cap on output would not have noticed.
+#
+# **Raw prompt tokens, deliberately, even though cached input bills at about a tenth.** Cost is not
+# what this defends against; runaway is. Weighting by cache rate would make the number a better
+# estimate of the bill and a worse alarm, because a loop that resends an identical prefix caches
+# *well* and would be discounted precisely when it is most out of control. `cached=` and `out=` are
+# recorded per turn alongside it, so the bill stays computable afterwards from the same log.
+#
+# **It is one turn late, and that is inherent.** Tokens are only known once the model has answered,
+# so this halts the turn *after* the one that crossed the line. The overshoot is bounded by the
+# largest single turn — 83K on the run above. Checking `llm_request.contents` beforehand would give
+# an estimate rather than a count, and an estimate that disagreed with the log would be worse than
+# a known one-turn lag.
+_invocation_input: dict[str, int] = {}
+
+#: Cached input, accumulated the same way. **A subset of `_invocation_input`, not an addition to
+#: it** — `prompt_token_count` is the whole prompt and `cached_content_token_count` is the part of
+#: that which was served from cache, so the two must never be summed.
+#:
+#: Reported rather than deducted, because it is the difference between a run being cheap and dear
+#: and nothing else surfaces it. Measured across three runs of one brief, with identical shape and
+#: comparable work: 54%, 46% and 29% cached, and **the run with the fewest turns and the least
+#: input cost the most**. Caching here is implicit — we neither create nor control it — so this is
+#: a fact to observe, not a lever to pull.
+_invocation_cached: dict[str, int] = {}
+_token_warned: dict[str, set[float]] = {}
+
 
 # --------------------------------------------------------------------------------------------
 # The circuit breaker.
@@ -741,14 +827,24 @@ _tripped: set[str] = set()
 # invocation, which is the runaway unit that costs money.
 
 
-def _make_halt_response(elapsed: float, cap: float):
+def _make_halt_response(elapsed: float, cap: float, limit: str = "time"):
     """The turn a halted agent gets instead of a model call.
 
     Phrased as the runtime speaking and naming the numbers, because this text lands in the
     transcript: a halt that reads like the agent deciding it had finished would be worse than no
     message, and someone reading the run later has to be able to tell the two apart.
+
+    `limit` names which cap was hit, so the transcript distinguishes a run that ran long from one
+    that ran expensive — they call for different fixes and would otherwise read identically.
     """
     from google.adk.models.llm_response import LlmResponse
+
+    if limit == "tokens":
+        breached = (
+            f"spent {elapsed:,.0f} input tokens against a limit of {cap:,.0f}"
+        )
+    else:
+        breached = f"passed its hard limit of {cap / 60:.0f} minutes ({elapsed / 60:.0f} used)"
 
     return LlmResponse(
         content=types.Content(
@@ -756,8 +852,7 @@ def _make_halt_response(elapsed: float, cap: float):
             parts=[
                 types.Part(
                     text=(
-                        f"[studio runtime] HALTED. This run passed its hard limit of "
-                        f"{cap / 60:.0f} minutes ({elapsed / 60:.0f} used) and was stopped by the "
+                        f"[studio runtime] HALTED. This run {breached} and was stopped by the "
                         f"circuit breaker. No further model calls will be made under this "
                         f"invocation. Work already written to the project directory is intact; "
                         f"anything in progress at the moment of the halt is not."
@@ -782,6 +877,24 @@ def _env_minutes(name: str) -> float | None:
         return float(raw)
     except ValueError:
         _TURN_LOG.warning("%s=%r is not a number, ignored.", name, raw)
+        return None
+
+
+def _env_tokens(name: str) -> int | None:
+    """An integer-valued environment variable, or None. Ignored, and logged, if it will not parse.
+
+    Ignored rather than raised for the same reason as `_env_minutes`: a mistyped cap should not stop
+    a studio from starting. Accepts `2_000_000` and `2,000,000`, because a seven-digit number typed
+    into a deploy command is easy to get wrong by an order of magnitude and both spellings are what
+    people reach for to make it readable.
+    """
+    raw = os.environ.get(name, "").strip().replace("_", "").replace(",", "")
+    if not raw:
+        return None
+    try:
+        return int(float(raw))
+    except ValueError:
+        _TURN_LOG.warning("%s=%r is not a number, ignored.", name, os.environ.get(name))
         return None
 
 
@@ -876,8 +989,16 @@ def _budget_notice(elapsed: float, allowance: float, hand_off_to: str | None, ur
 
 
 def _prune_role_clocks(now: float) -> None:
-    """Drops clocks from runs that ended, or died, long ago."""
-    if len(_role_clock) < 64:
+    """Drops clocks, counters and trip marks from runs that ended, or died, long ago.
+
+    **The size guard reads every map it prunes, not just the clocks.** It used to check
+    `_role_clock` alone, and role clocks only exist when a *time* budget does — so a single-agent
+    run with a token cap and no deadline created none, the guard returned immediately, and
+    `_invocation_started`, `_tripped` and the token counters grew for the life of the process.
+    There is no invocation-end hook to clean up on, so this is the only thing that bounds them.
+    """
+    if max(len(_role_clock), len(_invocation_started), len(_invocation_input),
+           len(_invocation_cached)) < 64:
         return
     stale = {
         key for key, clock in _role_clock.items() if now - clock.started > _ROLE_CLOCK_TTL
@@ -888,9 +1009,12 @@ def _prune_role_clocks(now: float) -> None:
         if now - started > _ROLE_CLOCK_TTL:
             del _invocation_started[invocation]
             _tripped.discard(invocation)
+            _invocation_input.pop(invocation, None)
+            _invocation_cached.pop(invocation, None)
+            _token_warned.pop(invocation, None)
 
 
-def _trip_breaker(callback_context, elapsed: float, cap: float):
+def _trip_breaker(callback_context, elapsed: float, cap: float, limit: str = "time"):
     """Halts this invocation and returns the response the agent gets instead of a model call."""
     invocation = callback_context.invocation_id
     first = invocation not in _tripped
@@ -910,19 +1034,25 @@ def _trip_breaker(callback_context, elapsed: float, cap: float):
     except AttributeError:  # pragma: no cover - depends on ADK internals
         pass
 
-    _TURN_LOG.log(
-        logging.ERROR if first else logging.WARNING,
-        "BREAKER %s/%s halted at %.1f min (cap %.1f min)%s",
-        callback_context.agent_name,
-        invocation,
-        elapsed / 60,
-        cap / 60,
-        "" if first else " [already tripped]",
-    )
-    return _make_halt_response(elapsed, cap)
+    if limit == "tokens":
+        _TURN_LOG.log(
+            logging.ERROR if first else logging.WARNING,
+            "BREAKER %s/%s halted at %.0f input tokens (cap %.0f)%s",
+            callback_context.agent_name, invocation, elapsed, cap,
+            "" if first else " [already tripped]",
+        )
+    else:
+        _TURN_LOG.log(
+            logging.ERROR if first else logging.WARNING,
+            "BREAKER %s/%s halted at %.1f min (cap %.1f min)%s",
+            callback_context.agent_name, invocation, elapsed / 60, cap / 60,
+            "" if first else " [already tripped]",
+        )
+    return _make_halt_response(elapsed, cap, limit)
 
 
-def _make_before_model(budget: _RoleBudget | None, cap: float | None = None):
+def _make_before_model(budget: _RoleBudget | None, cap: float | None = None,
+                       token_cap: int | None = None):
     """The per-turn clock, the budget warning, and the circuit breaker.
 
     A closure per agent rather than one shared function: the allowance and the successor differ by
@@ -944,7 +1074,37 @@ def _make_before_model(budget: _RoleBudget | None, cap: float | None = None):
             if now - started >= cap:
                 return _trip_breaker(callback_context, now - started, cap)
 
+        # The token cap shares the trip set with the clock, so whichever fires first halts the
+        # invocation and the other cannot un-halt it. Checked even when there is no time cap: a run
+        # can be given one budget without the other.
+        if token_cap:
+            spent = _invocation_input.get(invocation, 0)
+            if invocation in _tripped or spent >= token_cap:
+                return _trip_breaker(callback_context, spent, token_cap, "tokens")
+
         _turn_started[invocation] = now
+        _prune_role_clocks(now)
+
+        # Told once per threshold per invocation, on `contents` rather than the system instruction —
+        # the latter is the head of the cache prefix, and cached input bills at roughly a tenth, so
+        # warning that way can cost more than the overrun it prevents.
+        if token_cap:
+            spent = _invocation_input.get(invocation, 0)
+            share = spent / token_cap
+            seen = _token_warned.setdefault(invocation, set())
+            crossed = [t for t in BUDGET_WARN_AT if share >= t and t not in seen]
+            if crossed:
+                seen.update(crossed)
+                _TURN_LOG.warning(
+                    "budget %s/%s %.0f%% of token cap (%.0f of %.0f input tokens)",
+                    callback_context.agent_name, invocation, share * 100, spent, token_cap)
+                llm_request.contents.append(types.Content(role="user", parts=[types.Part(
+                    text=(f"[studio runtime] You have used {share * 100:.0f}% of this run's input-token "
+                          f"budget ({spent:,.0f} of {token_cap:,.0f}). Input is the whole conversation "
+                          f"resent every turn, so it grows whether or not you are making progress. "
+                          f"Finish what is drawn and write it out rather than starting a new pass; at "
+                          f"100% the run is halted where it stands."))]))
+
         if budget is None or budget.seconds <= 0:
             return None
 
@@ -1014,14 +1174,39 @@ def _after_model(callback_context, llm_response):
     # accurately for exactly this reason.
     cached_tokens = getattr(usage, "cached_content_token_count", None) if usage else None
 
+    # Reasoning tokens, billed as output and reported apart from it. **This is the only number that
+    # sees an agent thinking rather than working**, and it is the one signal the watchdog cannot
+    # have: every trigger it owns is counted from tool calls, so an agent that thinks in circles and
+    # calls nothing never reaches `after_tool_callback` at all. A thinking loop reads here as
+    # `think=` climbing while `out=` stays flat.
+    thought_tokens = getattr(usage, "thoughts_token_count", None) if usage else None
+
+    # What the tool definitions and their results cost, separable from the conversation. Worth
+    # having because tool output is the part we control: it answers "what did that Search response
+    # actually cost" directly, instead of inferring it from the growth between two turns.
+    tool_tokens = getattr(usage, "tool_use_prompt_token_count", None) if usage else None
+
+    # The token budget's counter. Here rather than in `before_model` because this is the only place
+    # the number exists — which is also why the breaker is one turn late.
+    if prompt_tokens:
+        invocation = callback_context.invocation_id
+        _invocation_input[invocation] = _invocation_input.get(invocation, 0) + int(prompt_tokens)
+        if cached_tokens:
+            _invocation_cached[invocation] = _invocation_cached.get(invocation, 0) + int(cached_tokens)
+
+    # ASCII, one line, fixed key order: this is a grep target in a container log, not prose. Absent
+    # counts print as 0 rather than being dropped, so a parser can split on the same fields every
+    # turn — except in= and out=, where "?" says the model reported nothing and 0 would be a claim.
     _TURN_LOG.warning(
-        "turn %s/%s %.1fs in=%s cached=%s out=%s",
+        "turn %s/%s %.1fs in=%s cached=%s out=%s think=%s tooluse=%s",
         callback_context.agent_name,
         callback_context.invocation_id,
         elapsed,
         prompt_tokens if prompt_tokens is not None else "?",
         cached_tokens if cached_tokens is not None else 0,
         output_tokens if output_tokens is not None else "?",
+        thought_tokens if thought_tokens is not None else 0,
+        tool_tokens if tool_tokens is not None else 0,
     )
     return None
 
@@ -1169,6 +1354,7 @@ def build(
     role_weights: dict[str, float] | None = None,
     breaker_minutes: float | None = None,
     breaker_grace_minutes: float | None = None,
+    budget_tokens: int | None = None,
 ) -> Agent:
     """The studio for one generated project, as a single agent or a role tree.
 
@@ -1218,6 +1404,21 @@ def build(
 
     roles = roles_in(project)
     root_name = "facilitator" if roles else "polson"
+
+    # No per-project default: unlike a deadline, which the workflow sets because a logo and a study
+    # painting are different commissions, a token cap is a property of the deployment paying for it.
+    # A public URL wants one; a developer iterating locally usually does not.
+    token_cap = budget_tokens if budget_tokens is not None else _env_tokens("POLSON_BUDGET_TOKENS")
+    if token_cap is not None and token_cap <= 0:
+        token_cap = None
+    if token_cap:
+        _TURN_LOG.warning("token budget: %s input tokens per invocation", f"{token_cap:,}")
+
+    # Appended here rather than with the other project tools because it needs the caps, and those
+    # are resolved below the perception list — the resolution reads in the order the values are
+    # decided, which is worth more than having every tool in one literal.
+    perception.append(FunctionTool(_make_budget_status(
+        token_cap, deadline_in(project) or _env_minutes("POLSON_BUDGET_MINUTES"))))
     # Environment is the fallback here for the same reason it is for the model: an allowance is a
     # deployment fact, and the container is where a run's deadline is actually known.
     # Explicit argument, then the project's own deadline, then the deployment-wide default.
@@ -1251,7 +1452,7 @@ def build(
             instruction=prompt + role_deadline_note(plan.get(name), allowance),
             tools=[toolset, *perception, *advice],
             generate_content_config=_retry_config(),
-            before_model_callback=_make_before_model(plan.get(name), cap),
+            before_model_callback=_make_before_model(plan.get(name), cap, token_cap),
             after_model_callback=_after_model,
             disallow_transfer_to_peers=not transfer_between_roles,
         )
@@ -1271,7 +1472,7 @@ def build(
         # multi-agent case the Facilitator still needs to look at what the roles produced.
         tools=[toolset, *perception],
         generate_content_config=_retry_config(),
-        before_model_callback=_make_before_model(plan.get(root_name), cap),
+        before_model_callback=_make_before_model(plan.get(root_name), cap, token_cap),
         after_model_callback=_after_model,
         sub_agents=sub_agents,
     )

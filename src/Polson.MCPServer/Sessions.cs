@@ -22,6 +22,19 @@ public sealed class SessionContext
 
     public DateTimeOffset LastAccess { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>When this session began. The anchor for <c>Stage.elapsedMinutes</c>.</summary>
+    /// <remarks>
+    /// The session rather than the server process, because a server can outlive one run — under ADK
+    /// a single stdio process serves every session of an app, so its own start time would measure
+    /// from whenever the app was built rather than from when this run began.
+    /// <para>
+    /// Set once at construction and never updated; <see cref="LastAccess"/> is the moving one, and
+    /// the two must not be confused — an idle sweep touches the second and would silently reset a
+    /// run's clock through the first.
+    /// </para>
+    /// </remarks>
+    public DateTimeOffset StartedUtc { get; } = DateTimeOffset.UtcNow;
+
     /// <summary>
     /// Per-session scratch storage exposed to the JS engine as the global Session object.
     /// </summary>

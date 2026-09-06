@@ -19,20 +19,59 @@ using System.Text.Json.Serialization;
 /// </remarks>
 public static class TaskProcessor
 {
-    /// <summary>Simple lookups, ~2 fields, 5-60 s.</summary>
+    /// <summary>~2 fields. Observed p50 45 s, p90 1.5 min. $5 per 1,000 runs.</summary>
     public const string Lite = "lite";
 
-    /// <summary>Simple enrichments, ~5 fields, 15-100 s. The SDK's own examples use this.</summary>
+    /// <summary>~5 fields. Observed p50 50 s, p90 2 min. $10 per 1,000 runs.</summary>
     public const string Base = "base";
 
-    /// <summary>Up to ~10 fields with reliable accuracy, 1-5 min. The sensible default for a table.</summary>
+    /// <summary>~10 fields with reliable accuracy. Observed p50 1.5 min, p90 3 min. $25 per 1,000.</summary>
     public const string Core = "core";
 
-    /// <summary>~20 fields where reasoning depth matters, 3-9 min.</summary>
+    /// <summary>~20 fields. Observed p50 3.5 min, p90 7.5 min. $100 per 1,000.</summary>
     public const string Pro = "pro";
 
-    /// <summary>~20 fields, deepest reasoning, 5-25 min.</summary>
+    /// <summary>~20 fields, deepest reasoning. Observed p50 4 min, p90 10 min. $300 per 1,000.</summary>
     public const string Ultra = "ultra";
+
+    /// <summary>~2 fields. Advertised 10-20 s. Same price as <see cref="Lite"/>.</summary>
+    public const string LiteFast = "lite-fast";
+
+    /// <summary>~5 fields. Advertised 15-50 s, at the same $10 per 1,000 as <see cref="Base"/>.</summary>
+    public const string BaseFast = "base-fast";
+
+    /// <summary>
+    /// ~10 fields, advertised 15-100 s against <see cref="Core"/>'s observed p50 of 1.5 min, at the
+    /// same $25 per 1,000. The tier to reach for when a table outgrows five fields.
+    /// </summary>
+    public const string CoreFast = "core-fast";
+
+    /// <summary>
+    /// The default: <see cref="Base"/>. Cheap, carries the full basis, and sized for the five-or-so
+    /// fields a figure in a graphic usually needs.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Deliberately not a fast variant, despite the identical price.</b> If <c>base-fast</c> were
+    /// strictly better than <c>base</c> at the same cost, the standard tier would have no reason to
+    /// exist — so something is being traded, and the documentation does not say what. It states no
+    /// quality trade-off, which is not the same as affirming there is none.
+    /// </para>
+    /// <para>
+    /// Two facts sharpen that. The service's observed-latency table has <b>no row for any fast
+    /// variant</b>, so their figures are advertised rather than measured — a different kind of number
+    /// from the p50/p90 quoted on the standard tiers, and not comparable with them. And what this
+    /// studio sells is data that survives being checked, so an unexplained saving on the research
+    /// step is the wrong place to accept an unknown.
+    /// </para>
+    /// <para>
+    /// What we have measured: one <c>base</c> run took <b>96 s</b>, between its p50 of 50 s and its
+    /// p90 of 2 min. Size waits against p90, not p50, or one run in ten times out. The fast constants
+    /// remain available to name explicitly — revisit them if we ever measure the two side by side on
+    /// the same objective and find the basis equally strong.
+    /// </para>
+    /// </remarks>
+    public const string Default = Base;
 }
 #endregion
 
@@ -121,8 +160,8 @@ public sealed record TaskSpec
 /// <summary>Optional settings for a task run.</summary>
 public sealed record TaskOptions
 {
-    /// <summary>See <see cref="TaskProcessor"/>. Defaults to <see cref="TaskProcessor.Base"/>.</summary>
-    public string Processor { get; init; } = TaskProcessor.Base;
+    /// <summary>See <see cref="TaskProcessor"/>. Defaults to <see cref="TaskProcessor.Default"/>.</summary>
+    public string Processor { get; init; } = TaskProcessor.Default;
 
     public IReadOnlyList<string>? IncludeDomains { get; init; }
 

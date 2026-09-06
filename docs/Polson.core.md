@@ -1811,6 +1811,75 @@ canvas;
 
 ---
 
+# Research (Sourced Data & Provenance)
+
+Facts commissioned from the web, with a citation and a confidence for **every field**. Read-only here: a task is started and waited for by the `Research` **tool**, and by the time a script sees one the waiting is done.
+
+> [!CAUTION]
+> **Never invent a figure, and never draw a placeholder number.** A plausible-looking invented value is the worst thing this studio can produce — the layout puts a source line under it, and the graphic then asserts something nobody checked. If research failed or was never commissioned, say so in the artifact and to the director. A chart that admits a missing figure is worth more than one that fabricates it.
+
+There is deliberately **no way to start research from a script**, and no way to write a result. A run takes around a minute — far longer than the {{SCRIPT_TIMEOUT_SECONDS}}-second script limit allows — so commissioning belongs to the tool, which blocks outside the sandbox. The one-way door is the point: an agent that could author its own `basis` could produce a cited number it made up.
+
+```javascript
+// The Research tool has already run. The script only reads.
+const data = Research.latest;
+if (!data || !data.isComplete) exit('figures not available — do not draw invented ones');
+
+for (const m of data.result.missions) {          // ordinary JS objects and arrays
+    ctx.fillText(`${m.mission}: ${m.duration_hours} h`, x, y);
+}
+ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA — nasa.gov"
+```
+
+## `Research`
+
+- `Research.tasks` → `ResearchTask[]` — Every task commissioned this run, in the order they were started.
+- `Research.count` → `number` — How many there are. `0` means none was commissioned.
+- `Research.latest` → `ResearchTask?` — The most recent, or **`null`**. The common case is one piece of research per graphic, so this saves carrying an id between scripts.
+- `Research.get(id: string)` → `ResearchTask?` — By run id, or null.
+- `Research.find(text: string)` → `ResearchTask?` — By a fragment of its description, case-insensitively. Lets a later stage find research by what it was *for* rather than by an id it must carry.
+- `Research.allComplete()` → `boolean` — Whether every task finished with data. True when none was commissioned, so pair it with `Research.count`.
+
+## `ResearchTask`
+
+- `task.id` → `string` — The service's run id, and the durable handle.
+- `task.description` → `string` — What it was commissioned for, in the requester's words.
+- `task.objective` → `string` — The question put to the service.
+- `task.processor` → `string` — Which tier ran it.
+- `task.status` → `string` — `queued`, `running`, `completed`, `failed`, `cancelled`, or `action_required`.
+- `task.startedUtc` → `Date` — When it was commissioned.
+- `task.elapsedSeconds` → `number` — Seconds since then.
+- `task.result` → `object?` — The data, as ordinary JavaScript. **Null until complete, and null is not an empty result.**
+- `task.basis` → `FieldBasis[]` — What each field rests on. Empty until complete.
+- `task.error` → `string?` — Why it failed, when it did.
+- `task.isComplete` · `task.isFailed` · `task.isActive` · `task.needsAction` → `boolean`
+
+> [!IMPORTANT]
+> **These four are not a boolean pair.** `isFailed` is terminal and waiting longer will not help; `needsAction` is stalled on something outside the run and will never progress on its own. A script that treats "not complete" as "still coming" waits forever on both.
+
+- `task.citeField(field: string)` → `string?` — A caption-ready source line for one output field, or **null when that field has no sources** — which is not the same as an empty string, and is worth checking before printing it. Array elements are addressed with a dot index as the service reports them: `missions.0`.
+- `task.basisFor(field: string)` → `FieldBasis?` — The full basis for one field, or null.
+- `task.sources()` → `string[]` — Every distinct source across the whole result, for a combined credit line.
+
+## `FieldBasis`
+
+- `basis.field` → `string` — The output field this supports. List elements carry a dot index, e.g. `missions.0`.
+- `basis.reasoning` → `string` — Why the service arrived at that value.
+- `basis.citations` → `TaskCitation[]?` — Supporting sources, or null when it had none.
+- `basis.confidence` → `string?` — `high`, `medium`, and so on. Only some processors report one.
+
+## `TaskCitation`
+
+- `citation.url` → `string`
+- `citation.title` → `string?` — Usually present, and **occasionally a URL rather than a headline**, so expect that when printing one.
+- `citation.excerpts` → `string[]?` — The supporting passages. Only some processors return them.
+- `citation.cite()` → `string` — `Title — publisher`, omitting whatever the source did not supply.
+
+> [!TIP]
+> **Ask for research before the work that needs it, not after.** A run takes about a minute, and the layout grid, the type scale, the palette and the panel structure need none of the figures — so commission first, do the work that does not depend on the numbers, then place them. That is not drawing placeholders; nothing false enters the artifact.
+
+---
+
 # Motion (Frame Capture & Animated Encoding)
 
 > [!WARNING]

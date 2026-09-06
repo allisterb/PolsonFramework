@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Hosting;
 
+using Polson.ExtendedMind.ParallelSearch;
+
 /// <summary>
 /// Per-MCP-session state: scratch storage dictionary and script history.
 /// </summary>
@@ -44,6 +46,16 @@ public sealed class SessionContext
     /// Historical record of scripts executed by the agent in this session.
     /// </summary>
     public List<string> ScriptHistory { get; } = new();
+
+    /// <summary>
+    /// Research commissioned during this run, exposed to scripts as the global <c>Research</c>.
+    /// </summary>
+    /// <remarks>
+    /// On the session for the same reason <see cref="Stage"/> is: a task is started by one tool call
+    /// and read by a later one, so it has to outlive a single execution. Keyed by the service's run
+    /// id, which is durable — a task can be recovered after a session drop by asking for it again.
+    /// </remarks>
+    public ResearchRegistry Research { get; } = new();
 
     /// <summary>
     /// The stage of work the agent says it is in, e.g. "Blocking". Null until it declares one.

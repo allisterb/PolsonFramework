@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommandLine;
 using Microsoft.Extensions.Configuration;
 using Polson.ExtendedMind.ImageGeneration;
+using Polson.ExtendedMind.ParallelSearch;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 using Polson.MCPServer;
@@ -192,6 +193,28 @@ internal class Program : Runtime
         }
     }
 
+    /// <summary>
+    /// Wires the research transport, or leaves it null so the <c>Research</c> tool can say plainly
+    /// that data cannot be sourced. Absent credentials must never read to an agent as licence to
+    /// invent a figure, which is why the warning says what to do instead.
+    /// </summary>
+    static void ConfigureResearch()
+    {
+        var apiKey = Setting("ApiKeys:Parallel");
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            DrawingMcpTools.ResearchClient = null;
+            Warn("Research disabled: no ApiKeys:Parallel in {0}. Agents will be told that figures "
+               + "cannot be sourced, and must say so rather than inventing them.",
+                Path.Combine(AssemblyLocation, "appsettings.json"));
+            return;
+        }
+
+        DrawingMcpTools.ResearchClient = new ParallelClient(apiKey);
+        Info("Research enabled (default processor: {0}).", TaskProcessor.Default);
+    }
+
     static async Task HandleServerArgs(ServerOptions opts)
     {
         if (opts.Timeout.HasValue && opts.Timeout.Value > 0)
@@ -208,6 +231,7 @@ internal class Program : Runtime
             : Directory.GetCurrentDirectory();
 
         ConfigureAssetRequisition(projectDir);
+        ConfigureResearch();
 
         if (opts.Http)
         {

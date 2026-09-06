@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 
 using Polson.ExtendedMind.ImageGeneration;
+using Polson.ExtendedMind.ParallelSearch;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
@@ -95,6 +96,12 @@ public static class JsSurface
         new("plate", typeof(BackdropPlate), "Assets", true),
         new("matte", typeof(MatteAsset), "Assets", true),
         new("budget", typeof(AssetBudget), "Assets", true),
+
+        // Read-only. Research is commissioned by the Research MCP tool, never from a script.
+        new("Research", typeof(ResearchToolkit), "Research", false),
+        new("task", typeof(ResearchTask), "Research", true),
+        new("basis", typeof(FieldBasis), "Research", true),
+        new("citation", typeof(TaskCitation), "Research", true),
 
         new("Drawing", typeof(ConstructiveDrawingToolkit), "Drawing", false),
         new("Logo", typeof(LogoDesignToolkit), "Logo", false),

@@ -276,6 +276,56 @@ job no bar chart can do, and reaching for a bar chart because §1 lists one woul
 
 ---
 
+## 1a. Where the Numbers Come From
+
+> **Implemented by**: the `Research` tool, and the read-only `Research` global —
+> `Research.latest`, `Research.tasks`, `Research.count`, `Research.get(id)`, `Research.find(text)`,
+> `Research.allComplete()`; on a task, `task.result`, `task.basis`, `task.status`, `task.isComplete`,
+> `task.isFailed`, `task.isActive`, `task.needsAction`, `task.elapsedSeconds`, `task.startedUtc`,
+> `task.error`, `task.description`, `task.objective`, `task.processor`, `task.id`,
+> `task.citeField(field)`, `task.basisFor(field)`, `task.sources()`; on a basis entry, `basis.field`,
+> `basis.reasoning`, `basis.confidence`, `basis.citations`; on a source, `citation.url`,
+> `citation.title`, `citation.excerpts`, `citation.cite()`.
+
+Every rule in §2 concerns whether the ink is faithful to the numbers. This one concerns whether the
+numbers are faithful to the world, and it comes first because no amount of integrity below it repairs
+a figure that was invented.
+
+**A studio that draws is not a studio that knows.** Asked for Apollo mission durations, a model will
+produce seven plausible numbers without hesitating, and they will be approximately right — which is
+worse than wrong, because approximately right survives review. The whole difference between this
+studio and a picture generator is that our figures can be checked.
+
+So: **commission the number, do not recall it.** `Research` returns data with a citation, a reasoning
+line and a confidence for *every field* — not per document, per **cell**:
+
+```js
+const data = Research.latest;
+if (!data || !data.isComplete) exit('figures not sourced — nothing to draw yet');
+
+for (const m of data.result.missions) drawRow(m);
+ctx.fillText(data.citeField('missions.0'), x, y);   // the source under that one row
+```
+
+**Never draw a placeholder number.** The temptation is real: research takes about a minute, the
+layout is ready, and a stand-in would let the composition proceed. But a placeholder that survives
+into a finished graphic is indistinguishable from a sourced one — the layout has already put a
+citation line beneath it. There is no revision pass reliable enough to make that risk worth taking.
+
+What you *may* do while research runs is everything that does not depend on the figures: the grid,
+the type scale, the palette, the panel structure, the armature. Commission first, build the container,
+then place the numbers. Nothing false enters the artifact at any point.
+
+**If research fails, say so.** `task.isFailed` is terminal and `task.needsAction` will never progress
+on its own; neither is "still coming". A graphic that states *"2024 figure unavailable"* is a
+stronger artifact than one that quietly fills the gap, and it is the honest version of the same page.
+Tell the director too — a missing figure is a fact about the work, not a detail to absorb silently.
+
+**Confidence is part of the datum.** `basis.confidence` comes back `high` or `medium` per field. A
+medium-confidence figure is still worth drawing; it is not always worth drawing *emphatically*. Where
+one row of a table rests on a weaker source than its neighbours, the honest design says so rather
+than flattening every value into the same authority.
+
 ## 2. Graphical Integrity
 
 > **Implemented by**: `Scale.linear(...)`, `Scale.band(...)`, `Scale.radiusFor(...)`, `Scale.extent(...)`.

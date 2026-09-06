@@ -951,7 +951,7 @@ public class ParallelClientTests : TestsRuntime
 
         var sent = Sent(handler);
         Assert.False(sent.TryGetProperty("task_spec", out _));
-        Assert.Equal("base", sent.GetProperty("processor").GetString());   // the default
+        Assert.Equal(TaskProcessor.Default, sent.GetProperty("processor").GetString());
     }
 
     /// <summary>A malformed schema fails at the call site, not as a 422 minutes into a run.</summary>

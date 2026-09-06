@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,12 +15,19 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 using Polson.Drawing.Skia;
+using Polson.ExtendedMind.ParallelSearch;
 using Polson.Drawing.Svg;
 
 public class DrawingMcpTools
 {
     #region Constants & Static Properties
     public static TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Research transport, configured once at startup and picked up by every tools instance — the
+    /// same arrangement as <see cref="JsDrawingEngine.Assets"/>. Null when no key is configured.
+    /// </summary>
+    public static ParallelClient? ResearchClient { get; set; }
     #endregion
 
     #region Constructors
@@ -31,6 +39,7 @@ public class DrawingMcpTools
         ProjectRoot = string.IsNullOrWhiteSpace(projectRoot) ? null : Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectRoot));
         Events = new RunEventLog(ProjectRoot);
         Engine.Events = Events;
+        Parallel = ResearchClient;
 
         // So a script's file paths mean the same thing the tool's outFile does.
         Engine.ProjectRoot = ProjectRoot;
@@ -59,6 +68,16 @@ public class DrawingMcpTools
 
     /// <summary>The run's append-only record. Inert when there is no project directory.</summary>
     public RunEventLog Events { get; }
+
+    /// <summary>
+    /// Sourced-data research, or null when no Parallel key is configured.
+    /// </summary>
+    /// <remarks>
+    /// Null is a first-class state rather than a fault: a studio with no key must still run, and the
+    /// <c>Research</c> tool answers plainly that data cannot be sourced instead of failing obscurely.
+    /// What it must never do is let an agent conclude that inventing the figure is the alternative.
+    /// </remarks>
+    public ParallelClient? Parallel { get; set; }
 
     /// <summary>
     /// Top score below which prose retrieval is reporting its nearest neighbour rather than an answer.
@@ -324,7 +343,7 @@ public class DrawingMcpTools
                 ["section"] = hit.Section,
                 ["source"] = hit.Source,
                 ["score"] = hit.Score,
-                ["apis"] = new JsonArray([.. hit.Apis.Select(a => (JsonNode)JsonValue.Create(a)!)]),
+                ["apis"] = new JsonArray([.. hit.Apis.Select(a => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(a)!)]),
                 ["text"] = text,
                 ["truncated"] = text.Length < hit.Text.Length,
                 ["chars"] = hit.Text.Length
@@ -428,14 +447,14 @@ public class DrawingMcpTools
             .Where(u => u.Split('/')[^1].Contains(leaf, StringComparison.OrdinalIgnoreCase)
                      || leaf.Contains(u.Split('/')[^1], StringComparison.OrdinalIgnoreCase))
             .Take(5)
-            .Select(u => (JsonNode)JsonValue.Create(u)!);
+            .Select(u => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(u)!);
 
         return new JsonObject
         {
             ["uri"] = uri,
             ["found"] = false,
             ["nearest"] = new JsonArray([.. nearest]),
-            ["known"] = new JsonArray([.. known.Select(u => (JsonNode)JsonValue.Create(u)!)]),
+            ["known"] = new JsonArray([.. known.Select(u => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(u)!)]),
             ["hint"] = $"Nothing is published at '{uri}'. `known` is the complete list — this is a definitive "
                 + "answer, not a failed search. Area names are case-insensitive but must match exactly."
         };
@@ -790,6 +809,206 @@ public class DrawingMcpTools
                          format: format, quality: quality, outFile: outFile, outSvg: outSvg,
                          includeBytes: includeBytes);
 
+    [McpServerTool(Name = "Research")]
+    [Description("Commissions sourced factual data from the web and returns it as JSON, with a citation and a " +
+        "confidence for EVERY field. Use it whenever a graphic states a number, a date, a rank or a quantity that " +
+        "you do not already have from the brief.\n\n" +
+        "NEVER INVENT A FIGURE, AND NEVER DRAW A PLACEHOLDER NUMBER. A plausible-looking invented value is the " +
+        "single worst thing this studio can produce: the layout puts a source line under it and the graphic then " +
+        "asserts something nobody checked. If research fails, say so in the artifact and to the director — a chart " +
+        "that admits a missing figure is worth more than one that fabricates it.\n\n" +
+        "Give `schema` when you want a table or a record set: a JSON Schema whose field DESCRIPTIONS are " +
+        "instructions, because they determine what comes back. Omit it for a prose answer. This BLOCKS while the " +
+        "research runs — typically 15-50 seconds — so start it before the work that needs it. If it has not " +
+        "finished by `waitSeconds`, you get a runId back: call Research again with that runId to keep waiting, " +
+        "which costs nothing extra. Pass wait=false to start one and collect it later while you do other work.\n\n" +
+        "Completed results stay readable from any later script as the `Research` global: Research.latest.result is " +
+        "ordinary JS, and Research.latest.citeField('missions.0') gives the caption line for one row.")]
+    public Task<JsonObject> Research(
+        [Description("What this research is for, in your own words. Recorded in the run and used to find the task later.")] string description,
+        [Description("The question, self-contained and specific — e.g. 'Key technical data for the crewed Apollo lunar landing missions'. Required when starting; omit when resuming with runId.")] string? objective = null,
+        [Description("JSON Schema for the answer, as a string. Field descriptions steer the result, so write them as instructions. Omit for prose.")] string? schema = null,
+        [Description("Processor: 'base' (default, ~5 fields, median 50s), 'core' (~10 fields, median 1.5min), 'lite' (~2 fields, median 45s). Fast variants exist at the same price but their trade-off is undocumented — name one only deliberately.")] string? processor = null,
+        [Description("Seconds to wait before handing back a runId to resume with. Default 150, which covers the base processor's observed p90 of 2 minutes.")] int? waitSeconds = null,
+        [Description("false to start the research and return immediately, collecting it later with runId. Default true.")] bool? wait = null,
+        [Description("Resume or collect an already-started task by its run id.")] string? runId = null,
+        RequestContext<CallToolRequestParams>? context = null,
+        CancellationToken cancellationToken = default)
+    => RecordedAsync(nameof(Research), async () =>
+    {
+        var session = Registry.GetOrCreate(GetSessionId(context?.Server));
+        var response = new JsonObject();
+
+        if (Parallel is null)
+        {
+            response["ok"] = false;
+            response["error"] = "No Parallel API key is configured, so research is unavailable for this whole run.";
+            response["remedy"] = "Do not invent figures. Tell the director the data could not be sourced, and "
+                               + "either drop the quantitative element or label it as unsourced.";
+            return response;
+        }
+
+        var wait_ = wait ?? true;
+        var budget = TimeSpan.FromSeconds(Math.Clamp(waitSeconds ?? 150, 5, 900));
+        ResearchTask task;
+
+        if (!string.IsNullOrWhiteSpace(runId))
+        {
+            var known = session.Research.Get(runId);
+            if (known is null)
+            {
+                response["ok"] = false;
+                response["error"] = $"No research task '{runId}' was started in this session.";
+                return response;
+            }
+
+            task = known;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(objective))
+            {
+                response["ok"] = false;
+                response["error"] = "An objective is required to start research.";
+                return response;
+            }
+
+            TaskSpec? spec;
+            try
+            {
+                spec = string.IsNullOrWhiteSpace(schema) ? null : TaskSpec.Json(schema);
+            }
+            catch (ArgumentException ex)
+            {
+                // Caught here rather than 90 seconds later as a 422.
+                response["ok"] = false;
+                response["error"] = ex.Message;
+                return response;
+            }
+
+            var chosen = string.IsNullOrWhiteSpace(processor) ? TaskProcessor.Default : processor.Trim();
+            var started = await Parallel.StartTask(
+                objective, spec, new TaskOptions { Processor = chosen }, cancellationToken);
+
+            if (!started.Success)
+            {
+                response["ok"] = false;
+                response["error"] = started.Error;
+                response["remedy"] = started.Remedy;
+                response["retryable"] = started.Retryable;
+                return response;
+            }
+
+            task = session.Research.Start(
+                started.RunId, description, objective, started.Processor, started.Status);
+
+            Events.Append("research.started", session.Stage, null,
+                new Dictionary<string, object?>
+                {
+                    ["runId"] = task.Id,
+                    ["description"] = description,
+                    ["processor"] = task.Processor,
+                });
+        }
+
+        if (wait_ && task.IsActive)
+        {
+            var result = await Parallel.AwaitTask(task.Id, budget, cancellationToken);
+            ApplyResult(session.Research, task, result);
+        }
+        else if (!wait_ && task.IsActive)
+        {
+            var status = await Parallel.CheckTask(task.Id, cancellationToken);
+            if (status.Success) session.Research.SetStatus(task, status.Status);
+        }
+
+        return DescribeTask(task, response, session);
+    });
+
+    /// <summary>Folds a collected result into the task, or records why it is not there yet.</summary>
+    private void ApplyResult(ResearchRegistry registry, ResearchTask task, ParallelTaskResult result)
+    {
+        if (result.Success)
+        {
+            registry.Complete(task, JsonInterop.ToClr(result.Json), result.Basis, result.Run?.Status);
+
+            Events.Append("research.completed", null, null,
+                new Dictionary<string, object?>
+                {
+                    ["runId"] = task.Id,
+                    ["seconds"] = task.ElapsedSeconds,
+                    ["fields"] = task.Basis.Count,
+                });
+            return;
+        }
+
+        // A timeout is the run still running, not a failure — the id stays good.
+        if (result.Failure != ParallelFailure.Timeout)
+        {
+            registry.Fail(task, result.Error);
+            Events.Append("research.failed", null, null,
+                new Dictionary<string, object?> { ["runId"] = task.Id, ["error"] = result.Error });
+        }
+    }
+
+    /// <summary>
+    /// Builds the tool's answer. The data is inlined because that is the point; the basis is
+    /// summarised, because a full reasoning string per field is large and a script can read it in
+    /// full from the <c>Research</c> global.
+    /// </summary>
+    private static JsonObject DescribeTask(ResearchTask task, JsonObject response, SessionContext session)
+    {
+        response["ok"] = task.IsComplete;
+        response["runId"] = task.Id;
+        response["status"] = task.Status;
+        response["processor"] = task.Processor;
+        response["elapsedSeconds"] = task.ElapsedSeconds;
+        response["description"] = task.Description;
+
+        if (task.IsComplete)
+        {
+            response["result"] = task.Result is null ? null : JsonSerializer.SerializeToNode(task.Result);
+
+            var basis = new JsonArray();
+            foreach (var entry in task.Basis)
+            {
+                basis.Add(new JsonObject
+                {
+                    ["field"] = entry.Field,
+                    ["confidence"] = entry.Confidence,
+                    ["sources"] = new JsonArray(
+                        (entry.Citations ?? []).Select(c => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(c.Cite())!).ToArray()),
+                });
+            }
+
+            response["basis"] = basis;
+            response["note"] = $"Read the full reasoning from a script: Research.get('{task.Id}').basis. "
+                             + $"Per-row caption: Research.get('{task.Id}').citeField('field.0').";
+            return response;
+        }
+
+        if (task.IsFailed)
+        {
+            response["error"] = task.Error ?? "The research run failed.";
+            response["remedy"] = "Do NOT substitute an invented figure. Either commission different research, "
+                               + "or state in the graphic and to the director that the number could not be sourced.";
+            return response;
+        }
+
+        if (task.NeedsAction)
+        {
+            response["remedy"] = "The run is waiting on something outside itself and will not progress on its "
+                               + "own. Do not keep polling it.";
+            return response;
+        }
+
+        response["remedy"] = $"Still running after {task.ElapsedSeconds:F0}s. Call Research again with "
+                           + $"runId '{task.Id}' to keep waiting — it costs nothing extra. Meanwhile you may do "
+                           + "work that does not depend on these figures (layout, palette, type), but do not draw "
+                           + "placeholder numbers.";
+        return response;
+    }
+
     [McpServerTool(Name = "InspectScript")]
     [Description("Answers structural questions about a JavaScript file in the project WITHOUT reading it into your context. " +
         "Call with just `scriptFile` for an outline: every top-level function and constant it declares, with line spans and sizes. " +
@@ -887,9 +1106,9 @@ public class DrawingMcpTools
                 ["stage"] = r.Episode.Stage,
                 ["when"] = r.Episode.RunStarted?.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
                 ["score"] = r.Score,
-                ["notes"] = new JsonArray([.. r.Episode.Notes.Select(n => (JsonNode)JsonValue.Create(n)!)]),
-                ["artifacts"] = new JsonArray([.. r.Episode.Artifacts.Select(a => (JsonNode)JsonValue.Create(a)!)]),
-                ["scripts"] = new JsonArray([.. r.Episode.Scripts.Select(s => (JsonNode)JsonValue.Create(s)!)]),
+                ["notes"] = new JsonArray([.. r.Episode.Notes.Select(n => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(n)!)]),
+                ["artifacts"] = new JsonArray([.. r.Episode.Artifacts.Select(a => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(a)!)]),
+                ["scripts"] = new JsonArray([.. r.Episode.Scripts.Select(s => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(s)!)]),
                 ["executions"] = r.Episode.Executions,
                 ["failures"] = r.Episode.Failures
             });

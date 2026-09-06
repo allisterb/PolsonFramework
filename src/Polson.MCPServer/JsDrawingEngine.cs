@@ -18,6 +18,7 @@ using Jint.Runtime;
 using Jint.Runtime.Interop;
 
 using Polson.ExtendedMind.ImageGeneration;
+using Polson.ExtendedMind.ParallelSearch;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
@@ -286,6 +287,11 @@ public partial class JsDrawingEngine : Runtime
             // returned failure rather than on the global being absent.
             var assets = Assets ?? new AssetRequisitionToolkit(null, new RequisitionCache(), new AssetBudget(0), "agent");
             engine.SetValue("Assets", assets);
+
+            // Sourced research, read-only. Commissioning is the Research MCP tool's job because a run
+            // takes far longer than ScriptTimeoutSeconds allows; by the time a script sees a task the
+            // waiting is done, so every member here is a plain read.
+            engine.SetValue("Research", new ResearchToolkit(session?.Research ?? new ResearchRegistry()));
 
             // Global logging & exit helpers
             engine.SetValue("log", new Action<string>(msg =>

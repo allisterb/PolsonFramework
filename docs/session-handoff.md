@@ -4,13 +4,16 @@ State after the session that **finished the motion score** and then turned the s
 **infographics** — the direction the business case actually rests on, and the first one where the
 competition is a diffusion model rather than another drawing tool.
 
-**Tests: 1,645 .NET at the close of the seventh session; 1,987 .NET + 39 Python as of §21.**
+**Tests: 1,645 .NET at the close of the seventh session; 1,987 .NET + 39 Python as of §21;
+2,038 .NET as of §22.**
 Sections are appended, never rewritten, so everything below §17 is history and remains accurate as
 such.
 
-> **§21 is the current state** — reference photography, the raster/vector boundary, and the
-> `vector_infographic` workflow. **§21.7 is the pick-up list; start there.** §21.6 is the only
-> uncommitted code.
+> **§22 is the current state** — the filter and stylesheet surface, now tested and documented, which
+> closes §21.7 items 1 and 2. **§22.3 is the pick-up list; start there.** Nothing is uncommitted.
+>
+> Earlier: **§21** is reference photography, the raster/vector boundary, and the
+> `vector_infographic` workflow. Its §21.6 has since been committed as `591d510`.
 >
 > Earlier: **§§17–20 were the seventh session.** §17 is the motion score, which lands §16's
 > plan and **reverses two of its decisions by measurement** — read it before touching `Mina` or
@@ -2203,3 +2206,57 @@ against the tree as it then stands. Selectors: `.class`, `#id`, tag, `*`/`:root`
    it from a refusal rather than its brief.
 7. **`Program.cs` has an orphaned doc comment** — `ConfigureAssetRequisition`'s `<summary>` sits above
    `Setting()`, ~45 lines from its method. Pre-existing, untouched.
+
+---
+
+## 22. The filter and stylesheet surface, covered — 2026-09-06
+
+**§21.7 items 1 and 2 are done.** §21.6 was committed as `591d510`, and the debt that commit left —
+"tests and manual coverage, none beyond manual renders" — is paid. **2,038 .NET tests, all passing**,
+up from 1,987.
+
+### 22.1 The tests
+
+`tests/Polson.Tests.Drawing/SnapFilterTests.cs` (30) and `SnapStylesheetTests.cs` (21).
+
+**Both suites assert on sampled pixels wherever a call claims a visual effect**, not on the
+serialised markup alone. That is not house style for its own sake: it is the exact failure this
+surface invites, and the one the stylesheet half actually committed during §21.6 — a `<style>` block
+that serialised perfectly and rendered black. A test reading only `result.SvgXml` would have passed
+on the broken version.
+
+- The blur test renders the same square twice, filtered and not, and compares a pixel *outside* the
+  rect's own edge. A single-render assertion could not tell a blur from a shape that happens to be
+  grey there.
+- The turbulence test samples 24 pixels across a row and requires them to disagree. An ignored
+  primitive leaves a flat fill, which is a spread of zero.
+- The displacement test samples alpha down what was a straight edge. The claim is that the contour
+  stopped being straight, so that is what is measured.
+- The class-rule test carries an explicit **control**: the identical tree with no `style()` call must
+  render SVG's default black. Without it the assertion could pass on a coincidence.
+
+Two adjustments were needed and both were the test's fault, not the code's: `result.Logs` entries
+carry a `[LOG]` prefix, so a count logged from JS arrives as `"[LOG] 1"` — there is now a `Logged(...)`
+helper in each file — and a filtered shape drawn over a white ground is opaque everywhere, so the
+edge assertions read the red channel rather than alpha.
+
+### 22.2 The manual, which was actively wrong
+
+Manual 14 §9 told agents the vector surface has **no procedural noise, no blur and no colour
+grading**, and §2's decision table sent any scene needing "texture, grain, noise" to the raster
+canvas. Both statements predate `paper.filter()` and neither was true any more. This is worse than an
+omission: an agent following §2 rebuilt a vector scene as raster to get a capability the vector
+surface already had, and would have had no way to discover the mistake.
+
+Added **§6a Filters** (the primitives, each named against its canvas counterpart; the
+`turbulence` → `displacementMap` roughened-contour recipe; why `region` is not optional) and
+**§6b Stylesheets** (call it last, both halves, the return count). §9 now lists what is genuinely
+absent — `Skia.Brush`, `Skia.PathEffect`, SkSL — and says so much more narrowly. Four trap rows and
+three symbol-map rows follow.
+
+### 22.3 What is still open from §21.7
+
+Items **3–7 stand unchanged**: the brush question (now the whole of the vector deficit, and
+`feTurbulence` + `feDisplacementMap` covers part of even that), `SKSvgCanvas` parked, `Photo`'s
+session-only cache and absent face detection, the ADK instructions' silence on `Snap.load`, and the
+orphaned doc comment in `Program.cs`.

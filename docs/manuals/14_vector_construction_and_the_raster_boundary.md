@@ -62,8 +62,10 @@ const canvas = createCanvas(800, 600); // immediate: pixels, the moment you draw
 | The deliverable is `.svg` | The deliverable is `.webp` / `.png` and always was |
 | The mark will be scaled to unknown sizes — logos, icons, marks | The output size is fixed and known |
 | A later stage must *edit* what an earlier stage drew | Each stage composites over the last |
-| The picture is built from a countable number of shapes | The picture is built from texture, grain, noise or gradient wash |
-| You need a real hole in a shape that survives a knockout | You need brushes, shaders, mask filters or per-pixel work |
+| The picture is built from a countable number of shapes | The picture is built from marks — brushwork, stamped strokes, drawn texture |
+| You need a real hole in a shape that survives a knockout | You need brushes, path effects, SkSL or per-pixel work |
+
+Grain, noise, blur, colour grading and soft edges are **not** on the right-hand side: they are `paper.filter()`, which is §6a. That row said otherwise until the filter chain was exposed, and an agent following it rebuilt vector scenes as raster for a capability the vector surface already had.
 
 The honest summary: **the vector paper is the better surface for anything that must be reproduced, and the raster canvas is the better surface for anything that must be rendered.** A mark, a diagram, a chart, a monogram, a piece of lettering, a technical illustration — vector. A painting, a comic panel with inked texture, an atmospheric plate — raster.
 
@@ -241,6 +243,76 @@ scene.attr({ mask: 'url(#' + soft.attr('id') + ')' });
 
 ---
 
+## 6a. Filters — Grain, Blur and Roughened Edges
+
+> **Implemented by**: `paper.filter(id?)`, `filter.url`, and the primitives `turbulence`, `gaussianBlur`, `colorMatrix`, `displacementMap`, `offset`, `flood`, `composite`, `blend`, `merge`, `dropShadow`, `morphology`, `region`.
+
+**This section corrects §9.** For most of this manual's life it said the vector surface had no procedural noise, no soft edges and no colour grading, because `Skia.Shader`, `Skia.MaskFilter` and `Skia.ColorFilter` all take a canvas context. That was true of our element factory rather than of the renderer: SVG has its own filter chain, this engine draws it, and the only thing missing was a way to build one. An agent that reached for a raster canvas *because a scene needed grain* was rebuilding a vector scene for no reason.
+
+A filter is created on the paper, lands in `<defs>`, and is referenced by its own `url`:
+
+```js
+const grain = paper.filter().turbulence(0.85, 3);
+paper.rect(0, 0, 400, 300).attr({ filter: grain.url });
+```
+
+`filter.url` is the whole `url(#id)` string, because the id is generated and a caller assembling it by hand is assembling something it did not choose.
+
+**What each primitive is, in the terms the raster side uses:**
+
+| Primitive | The canvas call it corresponds to |
+| :--- | :--- |
+| `turbulence(baseFrequency, octaves?, type?, seed?, result?)` | `Skia.Shader.perlinNoiseFractal` — **it is the same algorithm**; the Skia one documents itself as faithful to `feTurbulence` |
+| `gaussianBlur(stdDeviation, input?, result?)` | `Skia.MaskFilter.blur` |
+| `colorMatrix(values, type?, input?, result?)` | `Skia.ColorFilter.colorMatrix`; `type` may be `'saturate'`, `'hueRotate'` or `'luminanceToAlpha'` with one value |
+| `morphology(radius, op?, ...)` | `Skia.ImageFilter.dilate` / `.erode` |
+| `dropShadow(dx, dy, stdDeviation, color?, opacity?, ...)` | the shadow properties, in one primitive |
+| `turbulence` → `displacementMap` | the nearest thing to `Skia.PathEffect.discrete` — see below |
+
+`baseFrequency` is small: about `0.01` for broad cloud, `0.6`–`0.9` for paper grain. `type` is `'fractalNoise'` (cloudy, the default) or `'turbulence'` (wispier).
+
+**Chaining.** Each primitive takes an optional `input` naming a previous step's `result`, or a standard input such as `SourceGraphic`. Omit both for the single-step case. `merge(...)` stacks named results, last on top.
+
+**The roughened contour** is the recipe worth memorising, because it is the closest the vector surface comes to a drawn rather than plotted line — turbulence driving a displacement map:
+
+```js
+const rough = paper.filter().region(-0.3, -0.3, 1.6, 1.6)
+    .turbulence(0.05, 3, 'fractalNoise', 7, 'noise')
+    .displacementMap(18, 'SourceGraphic', 'noise');
+paper.rect(50, 50, 100, 100).attr({ fill: '#15151a', filter: rough.url });
+```
+
+> [!IMPORTANT]
+> **`region` is not optional there.** A blur or a displacement reaches outside the shape, and the default filter region clips at `-10%`/`110%` of the element's own box. A wide effect that looks cropped on all four sides needs a wider region, not a smaller deviation.
+
+**What this does not give you.** A filter is applied to a shape's *rendering*, not to its geometry: there is still no stamped bristle stroke, no hatching-as-geometry that scales, and no per-pixel measurement. `Skia.Brush`, `Skia.PathEffect.stamp` and `Skia.PathEffect.hatch` remain the reasons to choose the raster canvas — and they are now the *whole* of that reason, which is a much narrower list than §9 used to carry.
+
+---
+
+## 6b. Stylesheets
+
+> **Implemented by**: `paper.style(css)`.
+
+A stylesheet applied to the paper, and kept in the document:
+
+```js
+for (let i = 0; i < 5; i++) paper.rect(30 + i * 140, 40, 110, 90).attr({ class: i === 2 ? 'mark hero' : 'mark' });
+
+log(paper.style(`.mark { fill: #1f6f8b; stroke: #0d4a5e; stroke-width: 3; }
+                 .hero { fill: #c9553d; }`) + ' elements styled');
+```
+
+Selectors are `.class`, `#id`, a bare tag name, `*` or `:root`, singly or comma-separated. Anything more — descendants, attributes — is left to `.attr(...)` rather than silently matching nothing. Source order decides ties; there is no specificity and no inheritance, which is the right model for a script-built SVG because such a document is flat and class-per-element anyway.
+
+The return value is **how many elements were styled**, which is what distinguishes an empty sheet from a typo'd selector. Check it.
+
+> [!IMPORTANT]
+> **Call it last.** The rules resolve against the tree as it stands at that moment, so elements drawn afterwards are not styled. Call it again to pick up later work; applying the same sheet twice is harmless.
+
+**Two things happen, and both are necessary.** The declarations are written onto matching elements as attributes, so the *render* is right; and the `<style>` block is kept, so the *deliverable* carries one rule a designer edits in Illustrator instead of ninety baked attributes. The first attempt wrote only the block: it serialised perfectly and rendered **black** in the peek, because this library resolves CSS inside its parser rather than in memory. A call whose effect appears in the file and not in the render is the worst shape available — you verify against the peek, see the wrong thing, and ship the file that looked right.
+
+---
+
 ## 7. Geometry and Measurement
 
 > **Implemented by**: `element.getBBox()`, `element.getTotalLength()`, `element.getPointAtLength(...)`, `Snap.path.getTotalLength(...)`, `Snap.path.getPointAtLength(...)`, `Snap.path.getBBox(...)`.
@@ -328,8 +400,9 @@ paper.image(oak, 640, 40, 280, 300);               // a requisitioned material
 
 An honest list, because the failure mode is reaching for a raster capability halfway through a vector scene and rebuilding everything.
 
-- **No brushes, path effects or mask filters.** `Skia.Brush.*`, `Skia.PathEffect.*` and `Skia.MaskFilter.*` are canvas-side. A pencil line, a stamped bristle stroke, hatching-as-geometry and an airbrushed edge are all raster.
-- **No SkSL shaders or image filters.** Procedural noise, halftone shaders and blurs are canvas-side. An SVG gradient is the vector equivalent, and it is much less expressive.
+- **No brushes or path effects.** `Skia.Brush.*` and `Skia.PathEffect.*` are canvas-side. A pencil line, a stamped bristle stroke and hatching-as-geometry are raster. This is now the *main* reason to choose the canvas, and §6a's `turbulence` → `displacementMap` covers part of even this — a roughened contour reads as drawn rather than plotted.
+- **No SkSL.** A custom shader or runtime colour filter written in SkSL is canvas-side, and there is no vector equivalent.
+- **Noise, blur, colour grading and soft edges are *not* on this list, and used to be.** They are `paper.filter()` — see §6a. `feTurbulence` is the same Perlin the Skia shader wraps. Reaching for a raster canvas because a vector scene needs grain is a rebuild for nothing.
 - **No text wrapping.** `ctx.measureWrappedText` and `ctx.fillWrappedText` are canvas-only, because SVG has no flow. A paragraph broken into `<tspan>` lines is your decision, line by line.
 - **No pixel measurement.** `bitmap.diff`, `rowProfile`, `getPixel` and `palette` operate on rendered bitmaps. To verify a vector scene, render it and measure the render.
 - **No boolean operations on elements directly.** Go through `attr('d')` → `CanvasPath` → the operation, as in §8.
@@ -350,6 +423,10 @@ If a scene needs several of these, it is a raster scene. Decide that in §2 rath
 | Two shapes sharing a gradient show a seam between them | Gradient units default to each shape's own bounding box | `gradientUnits: 'userSpaceOnUse'` with absolute coordinates (§6) |
 | Calling `children` or `parent` as a method throws "not a function" | They are properties here, not the Snap.svg methods of the same name | Drop the parentheses |
 | A hex colour reads back as different text than you set | `attr` normalises and uppercases | Compare case-insensitively, or keep your own value |
+| `paper.style(...)` returns 0 | Nothing matched: the selector is a typo, or the elements carry no `class` | Read the count; it exists to tell a typo from an empty sheet |
+| A stylesheet works for the first half of the drawing only | It resolved against the tree as it stood when called | Call it last, or call it again |
+| A blur or displacement looks cropped on all four sides | The default filter region clips at `-10%`/`110%` of the element's box | `filter.region(-0.3, -0.3, 1.6, 1.6)`, not a smaller deviation |
+| A filter chain renders as the untouched source | A primitive's `input` names a `result` no step produced | Name the `result` on the earlier primitive; check both in the saved markup |
 
 ---
 
@@ -371,6 +448,9 @@ If a scene needs several of these, it is a raster scene. Decide that in §2 rath
 | Gradient | `paper.gradient(desc)`, `gradientLinear`, `gradientRadial` | Reference by `attr('id')`; watch the seam |
 | Gradient stops | `gradient.addStop(...)`, `setStops(...)`, `stops()` | `addStop` chains |
 | Mask / pattern / defs | `paper.mask(...)`, `paper.ptrn(...)`, `paper.defs` | Luminance masks: white shows |
+| Grain, blur, colour grading | `paper.filter()` then a primitive | Apply with `attr({ filter: f.url })`; §6a |
+| A drawn rather than plotted edge | `turbulence(...)` → `displacementMap(...)` | Widen `region` first, or it is clipped |
+| One rule instead of ninety attributes | `paper.style(css)` | Call it last; returns the count styled |
 | Measure | `element.getBBox()` | Real font metrics for `<text>`; `y` is the baseline |
 | Along a curve | `getTotalLength()`, `getPointAtLength(d)` | `alpha` is the tangent in degrees |
 | Same, on a bare string | `Snap.path.getTotalLength/getPointAtLength/getBBox` | No element needed |

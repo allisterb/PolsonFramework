@@ -152,7 +152,7 @@ requirement at the end has to start over.
 | :--- | :--- | :--- |
 | A chart | `paper.chart(model, { colors: palette })` — every `Chart.create*` form | `Chart.drawChart(ctx, …)` |
 | **A quantity over time, or any series** | `Chart.createLineChart(rect, rows, { area: true })` — rows carry `x` for a real time axis | a hand-built `d` string of `Q` or `C` curves |
-| **Events or periods on a date axis** | `Chart.createTimeline(rect, events, { sides: 'alternate' })` — lanes are packed so labels cannot collide | a hand-staggered spine and a collision check after the fact |
+| **Events or periods on a date axis** | a hand-built spine, with `Chart.createTimeline(...)` used for its `scale` and `lanes` — see below | `Chart.drawChart(ctx, …)` |
 | Text | `paper.text(x, y, s).attr({ 'font-size': 14 })` | `ctx.fillText` |
 | Measuring text | `element.getBBox()` — real font metrics, agrees with canvas | `ctx.measureText` |
 | **Tracked / letter-spaced type** | `paper.trackedText(x, y, s, tracking, attrs)` | `.attr({ 'letter-spacing': … })` — **renders nothing** |
@@ -202,18 +202,67 @@ above is easy to read as a list of consolations. It is not:
   positions that double back. `lieFactor` is 1 until you set `area`, at which point the filled height
   becomes the quantity and the baseline is forced into the domain.
 
-- **A timeline.** `Chart.createTimeline(rect, events, options)` — events and periods on a date axis.
-  **Its work is not placing the events; it is keeping their labels apart**, by packing each into the
-  first lane on its side where its own label span is clear. A hand-staggered spine is an afternoon of
-  nudging and a collision check afterwards; this cannot collide in the first place.
+- **A timeline. Build the spine by hand for now, and use `Chart.createTimeline(...)` for the
+  arithmetic rather than the picture.** This is a studio preference on current evidence, not a defect
+  in the toolkit — see the note below for exactly what it rests on, because it is the kind of
+  preference worth revisiting.
+
+  The model is still the cheapest way to get the numbers right: `tl.scale.map(year)` puts a year on
+  the spine, `ev.lane` says how far off it a card must sit to clear its neighbours, and `tl.lanes`
+  says whether the labels fit the span at all. Take those; draw the spine, the ticks, the cards and
+  the connectors yourself.
 
   ```javascript
   const events = films.map(f => ({ time: f.year, label: f.title }));
-  events.push({ time: 1987, end: 1999, label: 'widening production gap' });   // a period, not a point
   for (const e of events) e.width = paper.text(0, 0, e.label).getBBox().width + 18;
   const tl = Chart.createTimeline(plot, events, { sides: 'alternate', laneHeight: 52 });
-  for (const e of tl.events) drawCard(e.x, e.y, e.axisX, e.axisY, e.leaderX1, e.leaderY1);
+
+  // Not colliding is not the same as reading. Check the depth before drawing a line of it.
+  if (!Stage.check(`timeline packed into ${tl.lanes} lanes`, tl.lanes <= 2, `${tl.lanes} lanes`)) {
+      Stage.note('labels too wide for the span — shortening them rather than offsetting the cards');
+  }
+
+  for (const ev of tl.events) {
+      // A card centred on its own year, and a leader straight down to it. Both x values are the
+      // same number, which is what makes the drop vertical — see below.
+      drawCard(ev.x - cardW / 2, ev.y - cardH / 2, cardW, cardH, films[ev.index]);
+      paper.line(ev.leaderX1, ev.leaderY1, ev.leaderX2, ev.leaderY2)
+           .attr({ stroke: accent, 'stroke-width': 1 });
+      paper.circle(ev.axisX, ev.axisY, 4.5).attr({ fill: accent });
+  }
   ```
+
+  > **The connector is already there, and it is already vertical.** Every event carries
+  > `leaderX1`/`leaderY1` on the spine and `leaderX2`/`leaderY2` at the card, and every slot carries
+  > the same segment as `baseX`/`baseY` → `tipX`/`tipY`. On a horizontal timeline both x values are
+  > the event's own position, so the supplied leader is a straight drop. **You do not have to compute
+  > it, and computing your own is how it stops being vertical.**
+  >
+  > **`tl.lanes` is the number that says whether this is working, and three is already too many.**
+  > Lane *n* sits `(n + 1)` steps off the axis, so its leader crosses every lane inside it. Measured
+  > on a previous run of this brief: a 135px label on a 930px plot spanning 52 years is **7.5 years
+  > wide**, against early releases one to three years apart — 3 lanes deep, and the outermost card
+  > 204px off the spine. **Shorten the label** — a year and a title is a caption; the rest belongs in
+  > a card the timeline points at. Then widen the plot, or crop `min`/`max` to the data.
+  >
+  > **Do not add your own offsets to a packed layout.** The packer has already put each label where
+  > nothing overlaps it, so moving one reintroduces the collisions it was run to prevent — and the
+  > leader has to bend to reach the card. **That, precisely, is what went wrong last time**: the run
+  > drew a correct vertical leader, then in its final revision added six hand-tuned `xOffset` values
+  > *"to prevent any horizontal collision"* and pointed each leader at the moved card. If the packing
+  > will not come down to two lanes, the cluster wants a shorter label or a different form — never a
+  > nudge.
+  >
+  > **A slanted leader is not the defect, and you may draw one.** Angled leaders are ordinary
+  > timeline craft, and a card that genuinely cannot sit over its own tick — one at the very edge of
+  > the plot, or a cluster you have chosen to fan deliberately — needs one. What made the last run
+  > worse was not the angle: it was six *hand-tuned* offsets undoing the packing, and leaders that
+  > **crossed each other**. Crossing is the failure a reader actually feels, because it is what makes
+  > a card ambiguous about which tick it belongs to.
+  >
+  > So the rule is the measurable one rather than the aesthetic one: **slant freely and
+  > systematically; do not let two leaders cross.** Derive the offset from something — the lane, the
+  > side, the index — rather than typing a value per event, and check the result.
 
   **You supply `width` per event**, measured with `getBBox()` — the same division as everywhere else,
   because measuring glyphs needs the paper and the model is closed-form arithmetic. **Time is a
@@ -520,10 +569,82 @@ These are the calls that produce evidence. Reach for one before writing a claim,
 | an edge lands where intended | `bitmap.rowProfile(colour)` | where that colour starts and ends, per row |
 | a revision changed what you meant | `bitmap.diff(previous)` | the similarity, and the rectangle that changed |
 | **no two labels overlap** | `paper.selectAll('text')` + `getBBox()` | every colliding pair, and by how much |
+| **a drawn rate follows from the operands drawn beside it** | the division, in script | the number a reader would get, against the number you drew |
+| **no two leader lines cross** | the segment test below | every crossing pair, by index |
 
 **A claim you cannot measure is not a check — write it as a `Stage.note` instead.** Taste, tone and
 composition are judgments, and recording them honestly as judgments is worth more than dressing them
 as tests. Reserve `Stage.check` for what the machine can answer.
+
+#### Leaders may slant; they may not cross
+
+**Only where a graphic draws leader lines** — a timeline's connectors, callout rules, annotation
+pointers. An angled leader is fine and often necessary. Two that cross are not, because the crossing
+is what makes a card ambiguous about which point it belongs to, and it is the one property of a
+connector a reader is actually sensitive to.
+
+It is two lines of arithmetic, so there is no reason to leave it to the eye:
+
+```javascript
+const side = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+const crosses = (p, q, r, t) =>
+    (side(r, t, p) > 0) !== (side(r, t, q) > 0) && (side(p, q, r) > 0) !== (side(p, q, t) > 0);
+
+// Strict comparisons on purpose: leaders that merely touch at a shared endpoint are not crossing.
+const leaders = tl.events.map(e => [{ x: e.leaderX1, y: e.leaderY1 }, { x: e.leaderX2, y: e.leaderY2 }]);
+const tangled = [];
+for (let i = 0; i < leaders.length; i++)
+    for (let j = i + 1; j < leaders.length; j++)
+        if (crosses(...leaders[i], ...leaders[j])) tangled.push(i + 'x' + j);   // concatenate, not interpolate — see below
+
+Stage.check(`no leaders cross`, tangled.length === 0, tangled.length ? tangled.join(', ') : '0 of '
+    + (leaders.length * (leaders.length - 1) / 2) + ' pairs');
+```
+
+> **Concatenate rather than interpolating a bare loop index.** Template interpolation leaves a brace
+> wrapping that bare name in the text, and ADK reads a brace-wrapped bare identifier as a context
+> variable — it **refuses to start the agent** rather than rendering it. Interpolating a *dotted*
+> expression is fine, because the dot breaks the pattern; a lone index is not. Concatenation avoids
+> the question, which is why the line above is written with `+`.
+
+**Vertical leaders pass this for free**, which is the honest argument for the default: parallel
+segments cannot cross, so drawing them straight down means never having to run the check at all.
+Slant when the design wants it, and pay for it with the check.
+
+#### A derived figure must survive the division a reader would do
+
+**Do this for every rate, average, share or per-unit figure the piece states.** `lieFactor` and
+`isZeroBased` audit an *encoding* — whether the ink is proportional to the numbers. They say nothing
+about a **label**, and a label is where this fails, because the number is drawn as text and no mark
+is wrong.
+
+The test is mechanical: **recompute the figure from the operands that appear on the canvas beside
+it**, not from the ones in `brief.md`. Those are different sets, and the gap between them is the
+defect.
+
+```javascript
+// Drawn: "6.2 yrs / film" over "6 films in 31 yrs". A reader divides. So do you.
+const shown = { rate: 6.2, count: 6, span: 31 };
+const readerGets = shown.span / shown.count;
+Stage.check(`${shown.span}/${shown.count} reads as ${readerGets.toFixed(1)}`,
+    Math.abs(readerGets - shown.rate) < 0.05, `drawn ${shown.rate}, divides to ${readerGets.toFixed(1)}`);
+```
+
+**Measured, on a previous run of this brief, and it passed every other check.** `brief.md` derived it
+correctly — *"average release gap … `(1999 - 1968) / 5 intervals` → 6.20"* — and the canvas rendered
+**6.2 yrs / film** over **6 films in 31 yrs**, which divides to 5.2. The word *intervals* is what made
+the arithmetic true and it never reached the page. The footer said `HONESTY AUDIT · ALL 13 FEATURES
+VERIFIED` underneath.
+
+**So the rule is about the qualifier, not the number.** *Gaps between releases* is one fewer than
+*releases*; a *per-year* rate over an inclusive span is one fewer than the years listed; a percentage
+*of the total* is not a percentage *of the subset*. **If the arithmetic needs a word to be true, that
+word belongs on the canvas.** `brief.md` is where you show your working; the piece is what a reader
+checks, and they can only check what is in front of them.
+
+The neighbouring cell in that same box divided correctly — by coincidence, because its interval count
+happened to equal the film count it claimed. **One cell right for the wrong reason is why this is a
+per-figure check and not a spot check.**
 
 #### Labels must not collide, and you can prove it
 

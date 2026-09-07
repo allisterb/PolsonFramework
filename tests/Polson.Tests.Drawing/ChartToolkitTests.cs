@@ -1784,6 +1784,104 @@ public class ChartToolkitTests : TestsRuntime
         }
     }
 
+    /// <summary>
+    /// The crowding diagnostic the reference tells a caller to run, run against the case that
+    /// produced it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The packing was never wrong; the labels were too wide and nothing said so.</b> A live run
+    /// of the Kubrick brief put a 135px label on a 930px plot spanning 1950-2002 — 17.9 px/year, so
+    /// each label covered <b>7.5 years</b> of an axis whose early events are one to three years
+    /// apart. The packer did its job and went three lanes deep, the outermost card landed 204px off
+    /// the spine, and the piece read worse than the same brief drawn by hand with no toolkit at all.
+    /// <para>
+    /// <c>lanes</c> was returned by the model that whole time and documented nowhere, which in this
+    /// codebase means it did not exist: the reference is the agent's only view of the API. This
+    /// fixes the numbers in the guidance to the model that produces them, so the two cannot drift.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestTheDocumentedCrowdingDiagnosticFindsTheCrowding()
+    {
+        var years = new[] { 1953d, 1955, 1956, 1957, 1960, 1962, 1964, 1968, 1971, 1975, 1980, 1987, 1999 };
+        var model = Chart.CreateTimeline(Rect(330, 190, 930, 460),
+            years.Select(y => Event(y, y.ToString(CultureInfo.InvariantCulture), width: 135d)).ToArray(),
+            new Dictionary<string, object?> { ["min"] = 1950d, ["max"] = 2002d, ["sides"] = "alternate" });
+
+        // Exactly the recipe in polson://sdk/core/Chart — every field it reads must be there.
+        var plot = (IDictionary)model["plot"]!;
+        var perUnit = Num(plot, "width") / (Num(model, "max") - Num(model, "min"));
+        var labelSpan = 135d / perUnit;
+
+        Assert.Equal(17.9d, perUnit, 1);
+        Assert.Equal(7.5d, labelSpan, 1);
+        Assert.Equal(3, Convert.ToInt32(model["lanes"]));
+
+        // The threshold the guidance names, and the reason it is worth naming: this is the shape a
+        // caller must be told to fix rather than to nudge.
+        Assert.True(Convert.ToInt32(model["lanes"]) > 2, "this is the case the guidance is about");
+    }
+
+    /// <summary>
+    /// The supplied leader is vertical however deep the lane, which is the claim the guidance rests
+    /// on.
+    /// </summary>
+    /// <remarks>
+    /// <b>Depth costs a long leader, never a slanted one.</b> An earlier reading of the kubrick3
+    /// render blamed the crossing diagonals on the packing going three lanes deep; the script says
+    /// otherwise. Each event carries <c>leaderX1/Y1</c> on the spine and <c>leaderX2/Y2</c> at the
+    /// card, and on a horizontal timeline both x values are the event's own position — so a card in
+    /// lane 3 hangs further down and stays directly below its own year. The run drew that correctly,
+    /// then in its final revision added six hand-tuned x offsets and aimed each leader at the moved
+    /// card. Every diagonal was the offset.
+    /// <para>
+    /// Worth a test because two documents now tell a caller not to compute its own connector, on the
+    /// grounds that the supplied one is already a straight drop. If that ever stopped being true the
+    /// advice would quietly become wrong.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestTheSuppliedLeaderIsVerticalAtEveryLaneDepth()
+    {
+        var years = new[] { 1953d, 1955, 1956, 1957, 1960, 1962, 1964, 1968, 1971, 1975, 1980, 1987, 1999 };
+        var model = Chart.CreateTimeline(Rect(330, 190, 930, 460),
+            years.Select(y => Event(y, "x", width: 135d)).ToArray(),
+            new Dictionary<string, object?> { ["min"] = 1950d, ["max"] = 2002d, ["sides"] = "alternate" });
+
+        Assert.True(Convert.ToInt32(model["lanes"]) > 2, "the crowded case, so depth is actually exercised");
+
+        foreach (var e in Events(model))
+        {
+            // The drop stays under the event's own position, whatever lane it landed in.
+            Assert.Equal(Num(e, "leaderX1"), Num(e, "leaderX2"), 6);
+            Assert.Equal(Num(e, "axisX"), Num(e, "leaderX1"), 6);
+
+            // And it is a real segment rather than a degenerate point, or there is nothing to draw.
+            Assert.True(Math.Abs(Num(e, "leaderY2") - Num(e, "leaderY1")) > 0d,
+                "a leader with no length is not a connector");
+        }
+    }
+
+    /// <summary>Shortening the label is the first remedy, and it is the one that works.</summary>
+    /// <remarks>
+    /// Stated as a remedy in the reference, so it is checked here rather than assumed. Nothing about
+    /// the data changes — same thirteen events, same plot, same span — only how wide each label is.
+    /// </remarks>
+    [Fact]
+    public void TestShorteningTheLabelIsWhatBringsTheLanesDown()
+    {
+        var years = new[] { 1953d, 1955, 1956, 1957, 1960, 1962, 1964, 1968, 1971, 1975, 1980, 1987, 1999 };
+
+        static Dictionary<string, object?> At(double[] years, double width) =>
+            Chart.CreateTimeline(Rect(330, 190, 930, 460),
+                years.Select(y => Event(y, "x", width: width)).ToArray(),
+                new Dictionary<string, object?> { ["min"] = 1950d, ["max"] = 2002d, ["sides"] = "alternate" });
+
+        Assert.Equal(3, Convert.ToInt32(At(years, 135d)["lanes"]));
+        Assert.True(Convert.ToInt32(At(years, 46d)["lanes"]) <= 2,
+            "a label narrow enough to sit inside the median gap should pack within two lanes");
+    }
+
     /// <summary>Room enough, and everything stays in the first lane.</summary>
     [Fact]
     public void TestUncrowdedEventsStayInOneLane()

@@ -1711,6 +1711,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `cells` · `parts` | *(waffle)* every cell with its `partIndex` and `filled`, and each part's `share`, `cells` and `firstCell` |
 | `icons` · `rows` | *(pictogram)* every icon with its `rowIndex`, `fraction`, `partial` flag and `clip` rectangle, and each row's `fullIcons`, `partialFraction` and drawn `width` |
 | `events` | *(timeline)* each with `time`, `lane`, `side`, `axisX`/`axisY` on the spine, `x`/`y` in its lane, `leaderX1…Y2`, and for a period `end`, `duration` and a `span` rectangle |
+| `lanes` | *(timeline)* **how deep the packing had to go** — 1 means every label sat in the nearest lane on its side. The crowding signal; see below. `laneHeight` and `sides` come back beside it |
 | `shapes` · `legend` | *(proportional shapes)* each mark's `cx`, `cy`, `radius`, `size`, `area`, `fraction` and `bounds`, plus round reference sizes for a size key |
 | `track` · `fill` | *(meter)* the whole extent and the filled part — rectangles for a bar, arc bands for a ring — plus `fraction`, `rawFraction`, `overflow`, `shortfall`, `percentDisplay` and `tipX`/`tipY` |
 | `ticks` | `{ value, position, label, x, y }` — **data, not ink** |
@@ -1791,6 +1792,28 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 > **Time is a number** — a year, or `date.getTime()` — never a date object. Parsing and formatting dates is a job with its own literature, and half of one would be worse than none. An event with an **`end`** is a period rather than a point: it gets a `span` rectangle and a `duration`, and shares the lane packing, so a phase and a milestone cannot land on top of each other.
 >
 > **Given order is kept, never sorted.** Alternating sides reads as deliberate when the author chose the sequence, and silently reordering would rearrange a story someone wrote. Events still sit at their times regardless of the order they arrive in.
+
+> [!IMPORTANT]
+> **Read `chart.lanes` before you draw. It is the one number that says whether this form is working, and a high count is a fact about your labels rather than about the data.** Packing guarantees labels do not *collide*; it cannot make a reader able to tell which card belongs to which dot. Those are different things, and past two or three lanes deep they come apart: lane *n* sits `(n + 1) × (laneHeight + laneGap)` from the axis, so a third lane is already three steps out, and the leader connecting it crosses the two lanes in between.
+>
+> The diagnostic is **how many units of time one label covers**:
+>
+> ```javascript
+> const tl = Chart.createTimeline(plot, rows, { laneHeight: 30 });
+> const perUnit = tl.plot.width / (tl.max - tl.min);            // pixels per year, day, whatever
+> const labelSpan = 135 / perUnit;                               // that label, measured in those units
+> Stage.check(`labels span ${labelSpan.toFixed(1)}u, ${tl.lanes} lanes`, tl.lanes <= 2);
+> ```
+>
+> **Measured, on the kubrick3 run — a 13-film career on a 930px plot.** 17.9 px/year against a 135px label makes each one **7.5 years wide**, on a timeline whose early releases are one to three years apart. Every label therefore overlapped two to seven neighbours, the packer went **3 lanes deep** on both sides, and the outermost card sat 204px off the spine. Nothing was wrong with the packing; the labels were too wide for the span and nothing said so.
+>
+> **The leader is already supplied, and it is already vertical.** Each event carries `leaderX1`/`leaderY1` on the spine and `leaderX2`/`leaderY2` at the card — and on a horizontal timeline both x values are the event's own position, so it is a straight drop however deep the lane. Depth alone therefore costs a *long* leader, never a slanted one. That run drew a correct vertical leader and then, in its final revision, added six hand-tuned `xOffset` values *"to prevent any horizontal collision"* — work the packer had already done — and aimed each leader at the moved card. **Every diagonal in that render was the offset**, which is why the rule below is worth stating as a rule.
+>
+> **The remedies, in the order worth trying.** Shorten the label — a year and a title is a caption, and everything else belongs in a card the timeline points *at* rather than in the timeline. Widen the plot. Crop `min`/`max` to the data instead of padding it. Split a long span into two rows. **Do not add your own offsets to a packed layout**: the packer has already placed each label where nothing overlaps it, so moving one reintroduces exactly the collisions it was run to prevent, and the leader lengthens to reach it.
+>
+> **A slanted leader is allowed; two that cross are not.** The angle was never the defect — an angled leader is ordinary timeline craft, and a card that cannot sit over its own tick needs one. What a reader feels is the **crossing**, which is what makes a card ambiguous about which point it belongs to. So slant systematically if the design wants it — derive the offset from the lane, the side or the index rather than typing one per event — and test it, because a crossing is two lines of arithmetic to detect and a matter of opinion to argue about. Vertical leaders are parallel and pass for free, which is the whole argument for the default.
+>
+> **And a dense cluster on a true time axis may simply want another form.** The packing is honest — real dates, real spacing — but seven films in fifteen years next to one film in twelve will always crowd one end. A dot chart against the same axis, with the titles as a separate keyed list, spends the same rank-1 judgment and asks nothing of the labels.
 
 > [!IMPORTANT]
 > **Proportional shapes carry the value in their AREA, and every linear dimension goes as the square root.** Size a circle by its radius and four times the number shows as **sixteen** times the ink. The rule is the same whatever the mark — a circle's radius, a square's side, a droplet, a coin — because a uniformly scaled shape's area goes as the square of its size. This routes through `Scale.radiusFor(...)`, so there is one implementation of it in the SDK rather than two that could disagree.

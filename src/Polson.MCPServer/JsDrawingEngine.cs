@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 
 using Jint;
 using Jint.Native;
+using Jint.Native.Object;
 using Jint.Runtime;
 using Jint.Runtime.Interop;
 
@@ -141,6 +142,10 @@ public partial class JsDrawingEngine : Runtime
         MotionToolkit? motionToolkit = null;
         var exitRequested = false;
         string? exitMessage = null;
+
+        // Declared out here so the catch can read it: a rejection is explained after the try has been
+        // left, and whether the script was wrapped is what decides the line arithmetic.
+        var needsAwait = false;
 
         try
         {
@@ -592,10 +597,15 @@ public partial class JsDrawingEngine : Runtime
             // `paper;` at the end of a script into undefined — the documented way to hand back a
             // drawing. Sync scripts therefore keep byte-identical semantics; an awaiting script must
             // use an explicit `return`, which is what the reference tells it to do.
-            var needsAwait = AwaitPattern().IsMatch(jsScript);
+            needsAwait = AwaitPattern().IsMatch(jsScript);
             var source = needsAwait
                 ? $"(async () => {{\n{jsScript}\n}})();"
                 : jsScript;
+
+            // The opener is its own line, so every position Jint reports for a wrapped script is
+            // the author's line plus this. Reporting it unadjusted is worse than reporting
+            // nothing: an off-by-one sends a reader to the line above the mistake, which in a
+            // long file is usually a plausible-looking statement they will then try to fix.
 
             var evalResult = await engine.EvaluateAsync(source, null, ct);
             sw.Stop();
@@ -695,7 +705,7 @@ public partial class JsDrawingEngine : Runtime
             sw.Stop();
             result.ExecutionTimeMs = sw.ElapsedMilliseconds;
             result.Success = false;
-            result.Error = $"JavaScript error: {prex.Message}";
+            result.Error = ExplainRejection(prex, jsScript, needsAwait ? WrapperLines : 0);
             Runtime.Error("JavaScript promise rejected: {0}", result.Error);
         }
         catch (JavaScriptException jsex)
@@ -919,6 +929,70 @@ public partial class JsDrawingEngine : Runtime
             "bitmap.palette(...) measure natively, and Skia.Shader / Skia.ImageFilter transform " +
             "natively.";
     }
+
+    /// <summary>A rejected promise, explained as fully as a thrown error is.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This exists because the diagnostics were reaching exactly the wrong half of the scripts.</b>
+    /// Jint surfaces anything thrown inside an <c>await</c> as a <see cref="PromiseRejectedException"/>
+    /// rather than a <see cref="JavaScriptException"/>, and the first version of that catch stopped at
+    /// the message. So <see cref="Where"/>, <see cref="ArgumentHelp"/> and <see cref="NotCallableHelp"/>
+    /// were skipped for **every script using top-level await** — which is every script that
+    /// requisitions an asset or reads a document, and therefore the normal shape of an infographic
+    /// run rather than an edge case.
+    /// </para>
+    /// <para>
+    /// Measured on a live run: <c>timelineModel.scale(yr)</c> — the d3 habit
+    /// <see cref="NotCallableHelp"/> was written for — cost a script and got back
+    /// "Promise was rejected with value TypeError: scale is not a function", with no line and no
+    /// advice, from a 566-line file. The hint had been written, tested, and was unreachable.
+    /// </para>
+    /// <para>
+    /// The wrapping also defeats the matching itself: every pattern here is anchored at the start of
+    /// the message, and the rejected text arrives behind "Promise was rejected with value TypeError: ".
+    /// So the value is unwrapped to the inner message before anything is asked of it.
+    /// </para>
+    /// </remarks>
+    internal static string ExplainRejection(PromiseRejectedException ex, string? script = null,
+        int lineOffset = 0)
+    {
+        var (message, reported) = Rejected(ex.RejectedValue);
+        var line = reported > lineOffset ? reported - lineOffset : 0;
+
+        // A non-Error rejection — `Promise.reject('gave up')` — has no message of its own, so the
+        // exception's own text is the only account of it there is.
+        if (string.IsNullOrEmpty(message)) return $"JavaScript error: {ex.Message}";
+
+        return $"JavaScript error: {message}{(line > 0 ? $" (line {line})" : string.Empty)}"
+            + ArgumentHelp(message, SourceLine(script, line))
+            + NotCallableHelp(message, script);
+    }
+
+    /// <summary>The message and line of a rejected value, when it is an Error object.</summary>
+    private static (string Message, int Line) Rejected(JsValue value)
+    {
+        if (value is not ObjectInstance error) return (string.Empty, 0);
+
+        var text = error.Get("message");
+        var message = text.IsString() ? text.AsString() : string.Empty;
+        if (string.IsNullOrEmpty(message)) return (string.Empty, 0);
+
+        // The line comes from the Error's own stack rather than from a Location, because a rejection
+        // carries no position: by the time it is observed the frame that threw has gone. Best effort
+        // on purpose — a missing line costs the "(line n)" suffix and nothing else, where guessing a
+        // wrong one would send a reader to the wrong place in a long file.
+        var line = 0;
+        var stack = error.Get("stack");
+        if (stack.IsString() && StackLine().Match(stack.AsString()) is { Success: true } hit)
+        {
+            _ = int.TryParse(hit.Groups["line"].Value, out line);
+        }
+
+        return (message, line);
+    }
+
+    [GeneratedRegex(@":(?<line>\d+):\d+")]
+    private static partial Regex StackLine();
 
     /// <summary>Where in the script it happened, when Jint recorded a position.</summary>
     private static string Where(JavaScriptException ex)
@@ -1190,6 +1264,14 @@ public partial class JsDrawingEngine : Runtime
     #endregion
 
     /// <summary>Whole-word `await`, ignoring occurrences inside identifiers.</summary>
+    /// <summary>Lines the async wrapper adds above the script, when one is used.</summary>
+    /// <remarks>
+    /// A named constant because two places depend on it and they sit far apart: the wrapping
+    /// itself, and the arithmetic that turns a reported position back into the author's own
+    /// numbering. They cannot drift while both read this.
+    /// </remarks>
+    private const int WrapperLines = 1;
+
     [System.Text.RegularExpressions.GeneratedRegex(@"\bawait\s")]
     private static partial System.Text.RegularExpressions.Regex AwaitPattern();
     #endregion

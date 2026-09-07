@@ -72,6 +72,21 @@ FORMATTER = HtmlFormatter(style="friendly", cssclass="code", linenos="table", li
 ARTIFACT_SUFFIXES = frozenset({".webp", ".png", ".jpg", ".jpeg", ".svg"})
 
 
+def base(request: Request) -> str:
+    """The prefix this app is mounted under, or "" when it is the whole server.
+
+    **Every absolute path the pages emit has to carry this**, because the studio is served two ways
+    and only one of them is at the root. Standalone it is `""` and nothing changes; mounted on the
+    ADK runtime at `/studio` it is that prefix, and without it the stylesheet, the live event stream
+    and every artifact `src` resolve one level too high and 404 — a page that renders and is inert,
+    which is the failure mode hardest to notice from a status code.
+
+    Starlette sets `root_path` on a mounted sub-application, so this is read rather than configured;
+    a setting would be one more thing that can disagree with where the app actually is.
+    """
+    return request.scope.get("root_path", "")
+
+
 def create_app(root: Path | None = None, registry: Registry | None = None) -> FastAPI:
     """Builds the app. Takes its collaborators so a test can supply its own."""
     app = FastAPI(title="Polson Studio", docs_url=None, redoc_url=None)
@@ -86,6 +101,7 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Any:
         return TEMPLATES.TemplateResponse(request, "index.html", {
+            "base": base(request),
             "root": app.state.root,
             "projects": discover(app.state.root),
             "runs": [r.summary() for r in app.state.registry.runs],
@@ -114,7 +130,7 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
         except StudioError as exc:
             return refuse(request, str(exc))
 
-        return RedirectResponse(f"/runs/{run.id}", status_code=303)
+        return RedirectResponse(f"{base(request)}/runs/{run.id}", status_code=303)
 
     @app.post("/projects")
     async def make(request: Request,
@@ -137,7 +153,7 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
                                                    "kind": kind, "brief": brief})
 
         if not start_now:
-            return RedirectResponse("/", status_code=303)
+            return RedirectResponse(f"{base(request)}/", status_code=303)
 
         try:
             # A project made moments ago has no session to continue, so this is the opening
@@ -148,7 +164,7 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
             # difference between "try again later" and "your brief is gone".
             return refuse(request, f"Project '{made.name}' was created, but the run was not started: {exc}")
 
-        return RedirectResponse(f"/runs/{run.id}", status_code=303)
+        return RedirectResponse(f"{base(request)}/runs/{run.id}", status_code=303)
 
     @app.post("/observe")
     async def watch(request: Request, project: str = Form(...)) -> Any:
@@ -164,12 +180,12 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
         except StudioError as exc:
             return refuse(request, str(exc))
 
-        return RedirectResponse(f"/runs/{run.id}", status_code=303)
+        return RedirectResponse(f"{base(request)}/runs/{run.id}", status_code=303)
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     async def show(request: Request, run_id: str) -> Any:
         run = found(app.state.registry, run_id)
-        return TEMPLATES.TemplateResponse(request, "run.html", {"run": run.summary()})
+        return TEMPLATES.TemplateResponse(request, "run.html", {"run": run.summary(), "base": base(request)})
     # endregion
 
     # region Stream
@@ -407,6 +423,7 @@ def refuse(request: Request, why: str, form: dict[str, str] | None = None) -> An
     costs the visitor their work, which is a worse outcome than whatever was wrong with it.
     """
     return TEMPLATES.TemplateResponse(request, "index.html", {
+        "base": base(request),
         "root": request.app.state.root,
         "projects": discover(request.app.state.root),
         "runs": [r.summary() for r in request.app.state.registry.runs],

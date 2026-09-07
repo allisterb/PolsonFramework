@@ -146,3 +146,54 @@ try:
     _logger.warning("polson runtime: intake mounted at /new")
 except Exception as _e:
     _logger.warning("polson runtime: intake not mounted (%s)", _e)
+
+# The studio's own pages, mounted as a sub-application at /studio.
+#
+# **Read-only here, and that is a property of the runtime rather than a setting.** The studio can
+# both drive a run and watch one; driving needs `orchestrator.run`, which needs the Antigravity SDK,
+# which this environment deliberately does not ship (`requirements.in` says why). Every module on the
+# *observing* path was decoupled from the driver so this import succeeds — see the lazy imports in
+# `studio.runs`, `orchestrator.watch` and `orchestrator/__init__.py`. So `/studio/observe` works and
+# `/studio/runs` raises, which is the honest split: a page here is a window onto the record, and
+# direction happens where the agent actually is.
+#
+# Mounted rather than merged so its routes cannot collide with ADK's own, and wrapped because a
+# missing UI must not stop the agent runtime from serving.
+try:
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _webapp = _Path(__file__).resolve().parent.parent / "webapp"
+    if _webapp.is_dir():
+        _sys.path.insert(0, str(_webapp))
+
+        # **Two packages in this tree are called `studio`.** `src/adk_agent/studio.py` is the agent
+        # factory every generated `agent.py` imports by that name, and `src/webapp/studio/` is the
+        # web layer. This process has the ADK one first on `sys.path` (uvicorn's `--app-dir`), so a
+        # plain `import studio.app` finds the module and reports that `studio` is not a package.
+        #
+        # Loaded under an alias rather than renaming either: the ADK name is baked into every
+        # generated app on disk, and the webapp name is what its own tests and imports use. The
+        # alias is local to this import — inside the package, `from . import projects` still
+        # resolves against it, and `from orchestrator import …` finds the path added above.
+        import importlib.util as _ilu
+
+        _pkg = _webapp / "studio"
+        _spec = _ilu.spec_from_file_location(
+            "polson_studio", _pkg / "__init__.py", submodule_search_locations=[str(_pkg)])
+        _mod = _ilu.module_from_spec(_spec)
+        _sys.modules["polson_studio"] = _mod
+        _spec.loader.exec_module(_mod)
+
+        from polson_studio.app import create_app as _create_studio
+
+        # From `newproject`, which owns the POLSON_PROJECTS_DIR resolution — recomputing it here
+        # would let the page list a different directory from the one projects are created in.
+        from newproject import PROJECTS_DIR as _projects
+
+        app.mount("/studio", _create_studio(root=_Path(_projects)))
+        _logger.warning("polson runtime: studio mounted at /studio (observe only)")
+    else:
+        _logger.warning("polson runtime: studio not mounted — no webapp at %s", _webapp)
+except Exception as _e:
+    _logger.warning("polson runtime: studio not mounted (%s)", _e)

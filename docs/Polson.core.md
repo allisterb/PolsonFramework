@@ -2294,6 +2294,12 @@ What the answer rests on, so a figure drawn from a document traces back to the d
 - `provenance.bytes` → `number` · `provenance.hash` → `string` — SHA-256 prefix, so two answers about one file are recognisably about it.
 - `provenance.query` → `string` — The question, verbatim.
 - `provenance.readUtc` → `Date` · `provenance.tokensSpent` → `number`
+- `provenance.fromCache` → `boolean` — True when the answer was served from cache and nothing was spent. **`readUtc` and `tokensSpent` then describe the original read**, not this call, so together they say how old the answer you are using actually is.
+
+> [!TIP]
+> **The same question of the same document costs once.** Answers are cached on the document's content, the question and the model together — so re-running a script that opens with a `Documents.ask` re-bills nothing, which is the loop that matters, since a drawing is built by editing one file and running it again. Change any of the three and it is a new read: a different question of the same file is a different answer, and serving the first question's text for the second would be the wrong answer in the right shape.
+>
+> **A hit is served even when the allowance is spent**, because it costs nothing — `Documents.budget.cacheHits` counts them.
 
 ## `DocumentBudget`
 

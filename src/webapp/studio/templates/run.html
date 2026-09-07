@@ -1,10 +1,10 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>{{ run.id }} — Polson Studio</title>
-<link rel="stylesheet" href="/static/studio.css">
-<link rel="stylesheet" href="/code.css">
+<link rel="stylesheet" href="{{ base }}/static/studio.css">
+<link rel="stylesheet" href="{{ base }}/code.css">
 
-<main class="run" data-run="{{ run.id }}" data-live="{{ 'yes' if run.live else 'no' }}">
+<main class="run" data-base="{{ base }}" data-run="{{ run.id }}" data-live="{{ 'yes' if run.live else 'no' }}">
   <header>
     <a class="back" href="/">← projects</a>
     <h1>{{ run.project }}</h1>
@@ -159,6 +159,9 @@
 (function () {
   const main = document.querySelector('main');
   const runId = main.dataset.run;
+  // The prefix this app is mounted under: "" standalone, "/studio" on the ADK runtime.
+  // Every fetch below is absolute, so without it they resolve above the mount and 404.
+  const base = main.dataset.base || '';
   const list = document.getElementById('events');
   const count = document.getElementById('count');
   const status = document.getElementById('status');
@@ -228,7 +231,7 @@
   const shown = new Set(Object.keys(MODE));
 
   let n = 0;
-  const stream = new EventSource(`/runs/${runId}/events`);
+  const stream = new EventSource(`${base}/runs/${runId}/events`);
   stream.onmessage = () => {};
 
   for (const kind of Object.keys(LABEL).concat(['run.closed'])) {
@@ -431,7 +434,7 @@
   async function drawCurve() {
     if (curveTimer !== null) { clearTimeout(curveTimer); curveTimer = null; }
     try {
-      const response = await fetch(`/runs/${runId}/curve`);
+      const response = await fetch(`${base}/runs/${runId}/curve`);
       if (!response.ok) return;
       coded = await response.json();
     } catch (err) { return; }
@@ -727,7 +730,7 @@
     // The version stamp is the one the render arrived under, not the current event count, so a
     // pinned pass keeps a stable URL instead of re-fetching every time the trace moves.
     render.innerHTML = made.artifact
-      ? `<img src="/runs/${runId}/artifact/${made.artifact}?v=${made.v}" alt="${esc(made.artifact)}">` +
+      ? `<img src="${base}/runs/${runId}/artifact/${made.artifact}?v=${made.v}" alt="${esc(made.artifact)}">` +
         `<figcaption>${esc(made.artifact)}</figcaption>`
       : '<p class="empty">This pass rendered nothing.</p>';
 
@@ -749,7 +752,7 @@
     source.innerHTML = '<p class="empty">Loading…</p>';
     expand.disabled = true;
     try {
-      const response = await fetch(`/runs/${runId}/${path}`);
+      const response = await fetch(`${base}/runs/${runId}/${path}`);
       if (mine !== request) return;
       if (response.ok) {
         source.innerHTML = await response.text();

@@ -178,7 +178,16 @@ public sealed record DocumentProvenance
     public required System.DateTime ReadUtc { get; init; }
 
     /// <summary>Tokens billed for this call, as reported by the service.</summary>
+    /// <remarks>On a cache hit this is what the <i>original</i> read cost; the hit itself cost nothing.</remarks>
     public long TokensSpent { get; init; }
+
+    /// <summary>True when this answer was served from cache and nothing was spent.</summary>
+    /// <remarks>
+    /// Paired with <see cref="ReadUtc"/>, which is likewise the original read's time. Together they
+    /// say how old the answer being used is — a cached answer to a document that has since been
+    /// replaced is the one way this surface can be quietly stale, and the hash is what settles it.
+    /// </remarks>
+    public bool FromCache { get; init; }
 }
 
 /// <summary>Why a document read did not produce an answer.</summary>

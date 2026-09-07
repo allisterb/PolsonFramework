@@ -264,6 +264,21 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: --requiremen
 # The engine, then the runtime code.
 COPY --from=engine /engine ./bin/cli
 COPY src/adk_agent/ ./adk_agent/
+
+# The studio's web layer, which `main.py` mounts at /studio so one container serves the agent and
+# the pages a visitor watches it through.
+#
+# **Only the two packages it actually imports.** Not `src/webapp/` wholesale: that directory also
+# holds the Antigravity orchestrator's entry points, its own venv marker files and an install
+# script, none of which this image runs — and `orchestrator/run.py` imports an SDK deliberately
+# absent from `requirements.txt`, so copying the tree and *appearing* to offer the driver would be
+# worse than not copying it. The lazy imports in `orchestrator/__init__.py` are what make the
+# observing half work without it; see the note beside the mount in `main.py`.
+#
+# `main.py` looks for this beside `adk_agent/`, so the layout has to mirror the repository: a flat
+# copy here would import locally and 404 in the container.
+COPY src/webapp/studio/ ./webapp/studio/
+COPY src/webapp/orchestrator/ ./webapp/orchestrator/
 COPY docker-entrypoint.sh /usr/local/bin/polson-entrypoint
 RUN chmod +x /usr/local/bin/polson-entrypoint
 

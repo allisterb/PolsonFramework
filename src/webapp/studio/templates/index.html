@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Polson Studio</title>
-<link rel="stylesheet" href="/static/studio.css">
+<link rel="stylesheet" href="{{ base }}/static/studio.css">
 
 <main>
   <h1>Polson Studio</h1>
@@ -12,11 +12,11 @@
   {% endif %}
 
   {% if active %}
-    <p class="active">A run is going — <a href="/runs/{{ active }}">watch it</a>. One at a time.</p>
+    <p class="active">A run is going — <a href="{{ base }}/runs/{{ active }}">watch it</a>. One at a time.</p>
   {% endif %}
 
   <h2>New brief</h2>
-  <form method="post" action="/projects" class="brief">
+  <form method="post" action="{{ base }}/projects" class="brief">
     <div class="row">
       <div>
         <label for="name">Project name</label>
@@ -56,7 +56,7 @@
 
   <h2>Start an existing project</h2>
   {% if projects %}
-    <form method="post" action="/runs" id="existing">
+    <form method="post" action="{{ base }}/runs" id="existing">
       <table>
         <thead><tr><th></th><th>project</th><th>workflow</th><th>state</th><th></th></tr></thead>
         <tbody>
@@ -86,7 +86,7 @@
 
         {# Same selection, different verb. Watching starts no agent and spends nothing: it reads the
            record a host is already writing, which is why it is never blocked by a run in progress. #}
-        <button type="submit" formaction="/observe" formnovalidate id="watchbtn">Watch</button>
+        <button type="submit" formaction="{{ base }}/observe" formnovalidate id="watchbtn">Watch</button>
 
         <label class="inline" id="freshwrap" hidden>
           <input type="checkbox" name="fresh" value="1" id="fresh"> start a fresh session
@@ -113,7 +113,7 @@
     <ul class="runs">
       {% for r in runs %}
         <li>
-          <a href="/runs/{{ r.id }}">{{ r.id }}</a>
+          <a href="{{ base }}/runs/{{ r.id }}">{{ r.id }}</a>
           <span class="status {{ r.status }}">{{ r.status }}</span>
           <span class="hint">{{ r.workflow }} · {{ r.started }}</span>
           {% if r.error %}<span class="why">{{ r.error }}</span>{% endif %}

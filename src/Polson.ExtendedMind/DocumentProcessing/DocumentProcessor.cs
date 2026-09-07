@@ -45,10 +45,13 @@ public class DocumentProcessor : Runtime, IDisposable
     /// <param name="budget">Reads allowed this session.</param>
     /// <param name="projectRoot">Documents are read from inside this directory and nowhere else.</param>
     /// <param name="model">Default model. Overridable per call.</param>
-    public DocumentProcessor(string? apiKey, DocumentBudget budget, string? projectRoot = null, string model = DefaultModel)
+    /// <param name="cache">Where repeated answers are held. Null disables caching entirely.</param>
+    public DocumentProcessor(string? apiKey, DocumentBudget budget, string? projectRoot = null,
+        string model = DefaultModel, DocumentCache? cache = null)
     {
         this.budget = budget;
         this.projectRoot = projectRoot;
+        this.cache = cache;
         Model = model;
 
         // Null when unconfigured rather than throwing, so a server without a key still starts and
@@ -151,45 +154,68 @@ public class DocumentProcessor : Runtime, IDisposable
                 named);
         }
 
+        var useModel = opts.Model ?? Model;
+        var hash = Convert.ToHexString(SHA256.HashData(bytes))[..16];
+
+        // Before the budget check, not after — a hit costs nothing, so it must still be served when
+        // the allowance is spent. Checking affordability first would refuse a read that was free.
+        if (cache is not null)
+        {
+            var key = DocumentCache.KeyOf(hash, query, useModel, mime);
+            if (await cache.Get(key) is { } hit)
+            {
+                budget.CacheHits += 1;
+                RequisitionScope.Record(new RequisitionRecord(
+                    "document", named, Success: true, Failure: null,
+                    Reason: hit.Warnings.Count == 0 ? null : string.Join("; ", hit.Warnings),
+                    Model: useModel, FromCache: true, Refused: false));
+                RecordBudgetState();
+
+                return new DocumentAnswer
+                {
+                    Success = true,
+                    Text = hit.Text,
+                    Warnings = hit.Warnings,
+                    Provenance = new DocumentProvenance
+                    {
+                        Model = hit.Model,
+                        Source = named,
+                        MimeType = mime,
+                        Bytes = bytes.Length,
+                        Hash = hash,
+                        Query = query,
+                        // The original read's time and cost, not this call's. A hit spent nothing,
+                        // and reporting "now" would erase how old the answer being used actually is.
+                        ReadUtc = hit.ReadUtc,
+                        TokensSpent = hit.TokensSpent,
+                        FromCache = true,
+                    },
+                };
+            }
+        }
+
         if (!budget.CanAfford())
         {
             return Refused(DocumentFailure.BudgetExhausted,
                 $"{budget.Spent} of {budget.Total} document reads already spent.", named);
         }
 
-        var useModel = opts.Model ?? Model;
-        var hash = Convert.ToHexString(SHA256.HashData(bytes))[..16];
-
         budget.Spent += 1;
 
         try
         {
-            var parts = new List<Part>
-            {
-                new() { InlineData = new Blob { MimeType = mime, Data = bytes } },
-                new() { Text = query },
-            };
-
-            var response = await client.Models.GenerateContentAsync(
-                useModel, [new Content { Role = "user", Parts = parts }], config: null, ct);
-
-            var text = string.Concat(response.Candidates?
-                .SelectMany(c => c.Content?.Parts ?? [])
-                .Select(p => p.Text)
-                .Where(t => !string.IsNullOrEmpty(t)) ?? []);
+            var (text, tokens, finish) = await Generate(bytes, mime, query, useModel, ct);
 
             // A 200 carrying no text is not an empty answer. Reporting it as success with an empty
             // string would let "" propagate into a caption and read as a deliberate blank.
             if (string.IsNullOrWhiteSpace(text))
             {
-                var finish = response.Candidates?.FirstOrDefault()?.FinishReason?.ToString();
                 var blocked = finish?.Contains("SAFETY", StringComparison.OrdinalIgnoreCase) == true;
                 return Attempted(blocked ? DocumentFailure.SafetyBlocked : DocumentFailure.NoAnswer,
                     finish is null ? "The response carried no text." : $"Finish reason: {finish}.",
                     named, useModel);
             }
 
-            var tokens = response.UsageMetadata?.TotalTokenCount ?? 0;
             budget.TokensSpent += tokens;
 
             var warnings = Scan(text);
@@ -209,10 +235,32 @@ public class DocumentProcessor : Runtime, IDisposable
                 Model: useModel, FromCache: false, Refused: false));
             RecordBudgetState();
 
+            var sanitised = TextScan.Sanitize(text);
+
+            // One timestamp for both, so a cache hit replays exactly the time the original read
+            // reported. Two calls to UtcNow differ by about a millisecond, which is enough to make
+            // a hit and its own original disagree about when the document was read.
+            var readUtc = DateTime.UtcNow;
+
+            if (cache is not null)
+            {
+                // Stored after scanning, so a hit and a miss deliver the same thing. Awaited rather
+                // than fired and forgotten: a write that loses the race with the next identical call
+                // would make the cache look broken in exactly the loop it exists for.
+                await cache.Put(DocumentCache.KeyOf(hash, query, useModel, mime), new CachedAnswer
+                {
+                    Text = sanitised,
+                    Warnings = warnings,
+                    Model = useModel,
+                    ReadUtc = readUtc,
+                    TokensSpent = tokens,
+                });
+            }
+
             return new DocumentAnswer
             {
                 Success = true,
-                Text = TextScan.Sanitize(text),
+                Text = sanitised,
                 Warnings = warnings,
                 Provenance = new DocumentProvenance
                 {
@@ -222,8 +270,9 @@ public class DocumentProcessor : Runtime, IDisposable
                     Bytes = bytes.Length,
                     Hash = hash,
                     Query = query,
-                    ReadUtc = DateTime.UtcNow,
+                    ReadUtc = readUtc,
                     TokensSpent = tokens,
+                    FromCache = false,
                 },
             };
         }
@@ -235,6 +284,38 @@ public class DocumentProcessor : Runtime, IDisposable
         {
             return Attempted(Classify(ex), ex.Message, named, useModel);
         }
+    }
+
+    /// <summary>
+    /// The one call that reaches the service. Overridable so the rest can be tested without one.
+    /// </summary>
+    /// <remarks>
+    /// <b>A seam rather than an interface, because there is exactly one thing to swap.</b> The asset
+    /// side has <c>IImageGenerator</c> and earns it — a generator carries a model, a cache key and a
+    /// failure taxonomy of its own. Here the whole boundary is "bytes and a question in, text and a
+    /// token count out", and everything worth testing sits on this side of it: containment, typing,
+    /// ordering, the budget, the scan and the cache. Without some seam the cache could not be tested
+    /// at all, which is worse than a protected method.
+    /// </remarks>
+    protected virtual async Task<(string? Text, long Tokens, string? Finish)> Generate(
+        byte[] bytes, string mime, string query, string model, CancellationToken ct)
+    {
+        var parts = new List<Part>
+        {
+            new() { InlineData = new Blob { MimeType = mime, Data = bytes } },
+            new() { Text = query },
+        };
+
+        var response = await client!.Models.GenerateContentAsync(
+            model, [new Content { Role = "user", Parts = parts }], config: null, ct);
+
+        var text = string.Concat(response.Candidates?
+            .SelectMany(c => c.Content?.Parts ?? [])
+            .Select(p => p.Text)
+            .Where(t => !string.IsNullOrEmpty(t)) ?? []);
+
+        return (text, response.UsageMetadata?.TotalTokenCount ?? 0,
+            response.Candidates?.FirstOrDefault()?.FinishReason?.ToString());
     }
 
     /// <summary>Releases the client. Host lifetime, not something a script calls.</summary>
@@ -410,6 +491,7 @@ public class DocumentProcessor : Runtime, IDisposable
     #region Fields
     readonly Client? client;
     readonly DocumentBudget budget;
+    readonly DocumentCache? cache;
     readonly string? projectRoot;
     #endregion
 

@@ -23,12 +23,16 @@ before the broker closes, and watchers see the end of the run rather than losing
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import asyncio
 from typing import Any, Callable
 
 from .broker import BACKLOG, HISTORY, Broker, Subscription
-from .director import WebDirector
 from .interject import Interjections
+if TYPE_CHECKING:                                  # pragma: no cover - types only
+    from .director import WebDirector
+
 from .events import EventLog
 from .project import Project
 from .tail import INTERVAL, Tailer
@@ -117,6 +121,11 @@ class RunStream:
         that it has one. The log arrives here, and the interjection channel adopts it too so that an
         interruption lands in the same record as everything else the director said.
         """
+        # Imported here, not at module scope: a director is what answers an agent's questions, and
+        # it needs the Antigravity SDK. Watching a run asks nothing, so observation must not require
+        # the SDK to import — see the same move in `studio.runs`.
+        from .director import WebDirector
+
         self.director = WebDirector(log, self.broker.publish, timeout=timeout)
         self.interjections.log = log
         return self.director

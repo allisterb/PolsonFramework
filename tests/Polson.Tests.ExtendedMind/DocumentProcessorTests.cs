@@ -199,6 +199,173 @@ public class DocumentProcessorTests : TestsRuntime, IDisposable
     }
     #endregion
 
+    #region Cache Tests
+    /// <summary>
+    /// The same question of the same document costs once.
+    /// </summary>
+    /// <remarks>
+    /// The loop this shortens is re-running a script, which is how an agent works: a drawing is
+    /// built by editing <c>artwork.js</c> and running it again, and a <c>Documents.ask</c> near the
+    /// top of that file was re-billed on every pass.
+    /// </remarks>
+    [Fact]
+    public async Task ARepeatedReadIsServedFromCacheAndCostsNothing()
+    {
+        var budget = new DocumentBudget(5);
+        var processor = new FakeProcessor(budget, root, new DocumentCache(Path.Combine(root, "cache")));
+        File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+
+        var first = await processor.Ask("a.txt", "what does it say");
+        var second = await processor.Ask("a.txt", "what does it say");
+
+        Assert.True(second.Success, second.Error);
+        Assert.Equal(first.Text, second.Text);
+        Assert.Equal(1, processor.Calls);        // the service was reached once
+        Assert.Equal(1, budget.Spent);           // and charged once
+        Assert.Equal(1, budget.CacheHits);
+        Assert.True(second.Provenance!.FromCache);
+        Assert.False(first.Provenance!.FromCache);
+    }
+
+    /// <summary>
+    /// A hit is served even when the allowance is spent, because it costs nothing.
+    /// </summary>
+    /// <remarks>
+    /// The ordering assertion: checking affordability before the cache would refuse a read that was
+    /// free, which is the same class of mistake as charging for one.
+    /// </remarks>
+    [Fact]
+    public async Task ACacheHitIsServedAfterTheBudgetIsExhausted()
+    {
+        var budget = new DocumentBudget(1);
+        var processor = new FakeProcessor(budget, root, new DocumentCache(Path.Combine(root, "cache")));
+        File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+
+        await processor.Ask("a.txt", "what does it say");
+        Assert.Equal(0, budget.Remaining);
+
+        var again = await processor.Ask("a.txt", "what does it say");
+
+        Assert.True(again.Success, again.Error);
+        Assert.True(again.Provenance!.FromCache);
+    }
+
+    /// <summary>
+    /// A different question of the same document is a different read.
+    /// </summary>
+    /// <remarks>
+    /// The failure this prevents was live in the Northwind run: it asked for a field extraction and
+    /// then for a verbatim transcription of the same PDF. Keyed on the document alone, the second
+    /// call would have been served the first call's answer — the right shape of text for the wrong
+    /// question, with nothing downstream able to tell.
+    /// </remarks>
+    [Fact]
+    public async Task ADifferentQuestionIsNotACacheHit()
+    {
+        var budget = new DocumentBudget(5);
+        var processor = new FakeProcessor(budget, root, new DocumentCache(Path.Combine(root, "cache")));
+        File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+
+        await processor.Ask("a.txt", "list every film");
+        await processor.Ask("a.txt", "transcribe it verbatim");
+
+        Assert.Equal(2, processor.Calls);
+        Assert.Equal(2, budget.Spent);
+        Assert.Equal(0, budget.CacheHits);
+    }
+
+    /// <summary>A different document is a different read, even for the same question.</summary>
+    [Fact]
+    public async Task ADifferentDocumentIsNotACacheHit()
+    {
+        var budget = new DocumentBudget(5);
+        var processor = new FakeProcessor(budget, root, new DocumentCache(Path.Combine(root, "cache")));
+        File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+        File.WriteAllText(Path.Combine(root, "b.txt"), "different content entirely");
+
+        await processor.Ask("a.txt", "what does it say");
+        await processor.Ask("b.txt", "what does it say");
+
+        Assert.Equal(2, processor.Calls);
+        Assert.Equal(0, budget.CacheHits);
+    }
+
+    /// <summary>A different model is a different read.</summary>
+    /// <remarks>Serving a cheaper model's answer to a call that asked for a better one is a lie about provenance.</remarks>
+    [Fact]
+    public async Task ADifferentModelIsNotACacheHit()
+    {
+        var budget = new DocumentBudget(5);
+        var processor = new FakeProcessor(budget, root, new DocumentCache(Path.Combine(root, "cache")));
+        File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+
+        await processor.Ask("a.txt", "what does it say");
+        await processor.Ask("a.txt", "what does it say", new DocumentOptions { Model = "gemini-2.5-pro" });
+
+        Assert.Equal(2, processor.Calls);
+        Assert.Equal(0, budget.CacheHits);
+    }
+
+    /// <summary>A hit reports the original read's cost and time, not this call's.</summary>
+    /// <remarks>
+    /// Stamping a hit with "now" would erase how old the answer being used is — and a cached answer
+    /// to a document that has since changed is the one way this surface can be quietly stale.
+    /// </remarks>
+    [Fact]
+    public async Task AHitCarriesTheOriginalReadsProvenance()
+    {
+        var processor = new FakeProcessor(new DocumentBudget(5), root, new DocumentCache(Path.Combine(root, "cache")));
+        File.WriteAllText(Path.Combine(root, "a.txt"), "hello");
+
+        var first = await processor.Ask("a.txt", "what does it say");
+        var second = await processor.Ask("a.txt", "what does it say");
+
+        Assert.Equal(first.Provenance!.ReadUtc, second.Provenance!.ReadUtc);
+        Assert.Equal(first.Provenance.TokensSpent, second.Provenance.TokensSpent);
+    }
+
+    /// <summary>An unreadable entry misses rather than delivering nothing as an answer.</summary>
+    /// <remarks>A cache is an optimisation and must never be the reason a read fails.</remarks>
+    [Fact]
+    public async Task ACorruptedEntryIsTreatedAsAMiss()
+    {
+        var dir = Path.Combine(root, "cache");
+        Directory.CreateDirectory(dir);
+        var key = DocumentCache.KeyOf("doc", "query", "model", "text/plain");
+
+        // Stands in for a half-written or hand-edited file; nothing legitimate writes this.
+        File.WriteAllText(Path.Combine(dir, key + ".json"), "{ not json");
+
+        Assert.Null(await new DocumentCache(dir).Get(key));
+    }
+
+    /// <summary>An entry holding no text is not an answer, and misses.</summary>
+    [Fact]
+    public async Task AnEmptyEntryIsTreatedAsAMiss()
+    {
+        var dir = Path.Combine(root, "cache-empty");
+        var cache = new DocumentCache(dir);
+        var key = DocumentCache.KeyOf("doc", "query", "model", "text/plain");
+
+        await cache.Put(key, new CachedAnswer { Text = "  ", Model = "m", ReadUtc = DateTime.UtcNow });
+
+        Assert.Null(await cache.Get(key));
+    }
+
+    /// <summary>Every part of the key changes the address.</summary>
+    [Fact]
+    public void TheKeyCoversDocumentQueryModelAndType()
+    {
+        var baseline = DocumentCache.KeyOf("doc", "query", "model", "text/plain");
+
+        Assert.NotEqual(baseline, DocumentCache.KeyOf("other", "query", "model", "text/plain"));
+        Assert.NotEqual(baseline, DocumentCache.KeyOf("doc", "other", "model", "text/plain"));
+        Assert.NotEqual(baseline, DocumentCache.KeyOf("doc", "query", "other", "text/plain"));
+        Assert.NotEqual(baseline, DocumentCache.KeyOf("doc", "query", "model", "application/pdf"));
+        Assert.Equal(baseline, DocumentCache.KeyOf("doc", "query", "model", "text/plain"));
+    }
+    #endregion
+
     #region Type Tests
     /// <summary>
     /// An extension with no known type is refused rather than guessed at.
@@ -369,6 +536,28 @@ public class DocumentProcessorTests : TestsRuntime, IDisposable
         Assert.Equal("None", answer.FailureName);
         Assert.Equal(string.Empty, answer.Remedy);
         Assert.Empty(answer.Warnings);
+    }
+    #endregion
+
+    #region Types
+    /// <summary>
+    /// A processor that answers without a network, so the surrounding behaviour can be tested.
+    /// </summary>
+    /// <remarks>
+    /// It counts calls, which is what makes a cache assertion mean anything: a second read that
+    /// merely returns equal text proves nothing, while a second read the service never sees is a hit.
+    /// </remarks>
+    private sealed class FakeProcessor(DocumentBudget budget, string? root, DocumentCache? cache)
+        : DocumentProcessor("test-key", budget, root, "fake-model", cache)
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<(string? Text, long Tokens, string? Finish)> Generate(
+            byte[] bytes, string mime, string query, string model, System.Threading.CancellationToken ct)
+        {
+            Calls += 1;
+            return Task.FromResult<(string?, long, string?)>(($"answer to '{query}'", 100, null));
+        }
     }
     #endregion
 }

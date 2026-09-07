@@ -26,3 +26,17 @@
 # websockets <16, where google-antigravity has no upper bound and the webapp lock currently sits at
 # 16.1.1 — which is precisely why this resolves in its own environment.
 google-adk[mcp]==2.8.0
+
+# Rendering the studio's run page from inside this runtime, so one container serves both the agent
+# and the pages a visitor watches it through. `main.py` returns an ordinary FastAPI precisely so
+# `src/webapp`'s UI can be mounted on it; these two are what that UI needs and this environment
+# lacks. The alternative is a second process on a second port, which is the deployment this seam
+# exists to avoid.
+#
+#   jinja2    every studio page is a Jinja template; FastAPI's Jinja2Templates requires it
+#   pygments  syntax-highlights the scripts view on the run page
+#
+# Pinned like google-adk above: what runs should be what was reviewed. Between them they add only
+# markupsafe, which is jinja2's sole dependency — check the lock diff and refuse anything more.
+jinja2==3.1.6
+pygments==2.19.2

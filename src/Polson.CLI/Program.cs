@@ -218,8 +218,13 @@ internal class Program : Runtime
         var model = Setting("Documents:Model") ?? DocumentProcessor.DefaultModel;
         var budget = ResolveDocumentBudget(Setting("Documents:Budget"));
 
+        // Inside the project rather than beside the asset cache, because an answer is about *this*
+        // project's document: the same file staged into two commissions is two readings, and a
+        // director clearing a project should not leave its answers behind.
+        var cacheDir = Setting("Documents:CacheDir") ?? Path.Combine(projectDir, ".polson", "documents");
+
         JsDrawingEngine.Documents = new DocumentProcessor(
-            apiKey, new DocumentBudget(budget), projectDir, model);
+            apiKey, new DocumentBudget(budget), projectDir, model, new DocumentCache(cacheDir));
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {

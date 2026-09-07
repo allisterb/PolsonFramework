@@ -433,6 +433,22 @@ if (!a.success) { error(a.remedy); exit(a.failureName); }
 if (a.warnings.length) for (const w of a.warnings) error('SCAN: ' + w);
 ```
 
+**Ask for what the document plausibly holds, and ask once.** `list()` gave you its name, size and
+type, and the brief says what it is — that is enough to aim a question. Naming fields it cannot
+contain does not cost you nothing: it spends a read and returns nulls you then have to tell apart
+from real absences.
+
+Measured on a live run of this workflow, against a five-column table of eight films: the first query
+asked for production budget, international box office, marketing spend and ROI — none of which the
+document had — and the second spent a whole read on *"transcribe the entire document verbatim"*. Two
+reads, and one aimed question would have done. **A verbatim transcription is what you reach for when
+a targeted question came back thin, not what you open with.**
+
+Repeats are free and rewordings are not. An answer is cached on the document, the question and the
+model together, so re-running a script that opens with a `Documents.ask` re-bills nothing — but
+changing a word in the question makes it a new read. That is the reason to spend a moment on the
+question rather than on the retry.
+
 **`a.warnings` is not optional reading.** A document is supplied from outside and its text reaches
 you verbatim: a PDF can carry a paragraph addressed to whoever is processing it. A finding is not
 proof the answer is wrong, but it *is* a reason to say so in `findings.md` and treat the figure as

@@ -19,11 +19,13 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from orchestrator import project as project_mod
-from orchestrator import run as run_mod
 from orchestrator.broker import Subscription
+
+if TYPE_CHECKING:                                  # pragma: no cover - types only
+    from orchestrator import run as run_mod
 from orchestrator.events import EventLog, timestamp
 from orchestrator.project import Project
 from orchestrator.watch import RunStream
@@ -235,6 +237,13 @@ class Registry:
         Every failure lands on the run rather than in a traceback nobody sees: a visitor watching a
         page needs to be told the run stopped, and why, far more than the server needs to raise.
         """
+        # Imported here rather than at module scope, so that *observing* a run does not require the
+        # driver. `orchestrator.run` pulls in the Antigravity SDK, which the ADK runtime deliberately
+        # does not ship — `src/adk_agent/requirements.in` says why — and without this the studio's
+        # read-only pages could not be served from there at all. Starting a run still needs the SDK,
+        # and still fails here if it is absent, which is correct.
+        from orchestrator import run as run_mod
+
         try:
             run.result = await run_mod.run_turn(
                 run.project,

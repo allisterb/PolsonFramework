@@ -428,6 +428,7 @@ public partial class JsDrawingEngine : Runtime
             Nib("wedge", a => api.Wedge(Num(a, 0, 14f), Num(a, 1, 1f), Count(a, 2, 64)));
             Nib("chisel", a => api.Chisel(Num(a, 0, 12f), Num(a, 1, 18f)));
             Nib("split", a => api.Split(Count(a, 0, 4), Num(a, 1, 16f), Num(a, 2, 1.3f), Count(a, 3, 40)));
+            Nib("bristle", a => api.Bristle(Count(a, 0, 24), Num(a, 1, 18f), Num(a, 2, 1f), Count(a, 3, 7)));
             Nib("fromPath", a => api.FromPath(Text(a, 0, string.Empty), Text(a, 1, "brush"), Num(a, 2, 0.75f)));
             Nib("fromElement", a => api.FromElement(
                 a.Length > 0 ? a[0].ToObject() as SnapElement ?? throw new ArgumentException(
@@ -689,7 +690,7 @@ public partial class JsDrawingEngine : Runtime
             sw.Stop();
             result.ExecutionTimeMs = sw.ElapsedMilliseconds;
             result.Success = false;
-            result.Error = Explain(jsex);
+            result.Error = Explain(jsex, jsScript);
             Runtime.Error("JavaScript execution error: {0}", result.Error);
         }
         catch (Exception ex)
@@ -858,13 +859,13 @@ public partial class JsDrawingEngine : Runtime
     [GeneratedRegex(@"Cannot access property '(?<member>[^']+)' on type '(?<type>[^']+)'?")]
     private static partial Regex MissingMemberMessage();
 
-    internal static string Explain(Exception ex)
+    internal static string Explain(Exception ex, string? script = null)
     {
         var message = ex.Message ?? string.Empty;
 
         if (ex is JavaScriptException js)
         {
-            return $"JavaScript error: {message}{Where(js)}{ArgumentHelp(message)}";
+            return $"JavaScript error: {message}{Where(js)}{ArgumentHelp(message, SourceLine(script, js.Location.Start.Line))}";
         }
 
         if (ex is MissingMemberException) return ExplainMissingMember(message);
@@ -925,14 +926,51 @@ public partial class JsDrawingEngine : Runtime
     /// that turns a located line into a fixed one.
     /// </para>
     /// </remarks>
-    private static string ArgumentHelp(string message) =>
-        message.Contains("No public methods with the specified arguments", StringComparison.OrdinalIgnoreCase)
-            ? " An argument is not a type the method accepts, and the commonest reason is that one of " +
-              "them is undefined — reading a property that does not exist yields undefined rather than " +
-              "failing, and no overload matches it. Check the spelling of every property read on that " +
-              "line: rectangles from Layout, getBBox and measureWrappedText carry width and height, " +
-              "not w and h. Logging the arguments before the call is the quickest way to see which one."
-            : string.Empty;
+    private static string ArgumentHelp(string message, string? sourceLine = null)
+    {
+        if (!message.Contains("No public methods with the specified arguments", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        // A call whose arguments are simply the wrong way round reaches the same message, and the
+        // generic advice below then sends the reader hunting for a misspelled property that is not
+        // there. A live run lost a script to `Stage.check(barW > 0, 'positive baseline')` and spent
+        // its next step looking for a typo in Layout, because that is what the message told it to do.
+        if (SwappedCheck().IsMatch(sourceLine ?? string.Empty))
+        {
+            return " Stage.check takes the claim first and the verdict second — " +
+                "Stage.check('what you are asserting', measuredValue > 0) — and this call has them " +
+                "the other way round. Written that way the boolean becomes the claim and the message " +
+                "becomes the verdict, so the check could only ever pass; the signature refuses it " +
+                "rather than recording something that cannot fail.";
+        }
+
+        return " An argument is not a type the method accepts, and the commonest reason is that one of " +
+            "them is undefined — reading a property that does not exist yields undefined rather than " +
+            "failing, and no overload matches it. Check the spelling of every property read on that " +
+            "line: rectangles from Layout, getBBox and measureWrappedText carry width and height, " +
+            "not w and h. Logging the arguments before the call is the quickest way to see which one.";
+    }
+
+    /// <summary>The source of one 1-based line, when the script is to hand.</summary>
+    private static string? SourceLine(string? script, int line)
+    {
+        if (string.IsNullOrEmpty(script) || line <= 0) return null;
+
+        var lines = script.Split('\n');
+        return line <= lines.Length ? lines[line - 1] : null;
+    }
+
+    /// <summary>
+    /// <c>Stage.check(...)</c> whose first argument is plainly not a claim string.
+    /// </summary>
+    /// <remarks>
+    /// Matches on the first argument being unquoted, which is what a boolean expression looks like.
+    /// A template literal is quoted by backtick and so is correctly left alone.
+    /// </remarks>
+    [GeneratedRegex(@"Stage\s*\.\s*check\s*\(\s*[^'""`\s)]", RegexOptions.IgnoreCase)]
+    private static partial Regex SwappedCheck();
 
     #region ASCII Table Rendering
     internal static string RenderTable(JsValue[] args)

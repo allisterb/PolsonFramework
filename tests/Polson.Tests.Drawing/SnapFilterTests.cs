@@ -153,7 +153,107 @@ public class SnapFilterTests : TestsRuntime
     }
     #endregion
 
+    #region Chain Wiring Tests
+    /// <summary>
+    /// <c>flood</c> paints the colour asked for. It painted black whatever you passed.
+    /// </summary>
+    /// <remarks>
+    /// <c>SvgFlood.FloodColor</c> is a typed <c>SvgPaintServer</c>, not a string attribute, so writing
+    /// <c>flood-color</c> through the generic attribute path serialised correctly and rendered black —
+    /// the same class of defect as the stylesheet that looked right in the file and wrong in the peek.
+    /// Found by rendering a chain copied from outside the project, not by reading the code.
+    /// </remarks>
+    [Fact]
+    public void TestFloodPaintsTheColourItWasGiven()
+    {
+        var png = Render("""
+            paper.rect(0, 0, 200, 200).attr({ fill: '#ffffff' });
+            const f = paper.filter().flood('#c9553d', 1, 'red').composite('in', 'red', 'SourceGraphic');
+            paper.rect(50, 50, 100, 100).attr({ fill: '#000000', filter: f.url });
+            """);
+
+        var pixel = PixelAt(png, 100, 100);
+        Assert.True(pixel.Red > 150 && pixel.Green < 130 && pixel.Blue < 110,
+            $"flood should paint the colour it was given, got {pixel}");
+    }
+
+    /// <summary>
+    /// An omitted <c>in</c> resolves to <c>SourceGraphic</c>, <b>not</b> to the previous primitive's
+    /// result — so every primitive in a chain must name its input.
+    /// </summary>
+    /// <remarks>
+    /// This is the single most expensive thing to not know about the filter surface, because the
+    /// symptom is a chain that renders the untouched source with no error: the noise branch is built,
+    /// never consumed, and silently discarded. A chain written to the SVG spec's own defaulting rules
+    /// therefore does nothing here. Pinned so a renderer upgrade that fixes it is noticed rather than
+    /// quietly changing every existing chain's meaning.
+    /// </remarks>
+    [Fact]
+    public void TestAnOmittedInputIsTheSourceRatherThanThePreviousResult()
+    {
+        // Turbulence replaces the source with noise. If the blur that follows consumed that noise,
+        // the frame would be a blurred noise field; if it consumed the source, it is a blurred square.
+        var png = Render("""
+            paper.rect(0, 0, 200, 200).attr({ fill: '#ffffff' });
+            const f = paper.filter().turbulence(0.9, 4, 'fractalNoise', 1, 'noise').gaussianBlur(2);
+            paper.rect(50, 50, 100, 100).attr({ fill: '#000000', filter: f.url });
+            """);
+
+        // A blurred *square* leaves the corners of the frame clean; a noise field covers them.
+        Assert.True(PixelAt(png, 8, 8).Red > 240,
+            "the second primitive consumed the turbulence, so an omitted `in` now chains — update the docs");
+    }
+    #endregion
+
     #region Rendering Tests
+    /// <summary>Noise clipped to a shape and multiplied back over it — grain, on the vector surface.</summary>
+    /// <remarks>
+    /// The recipe that closes the medium gap Manual 14 §9 describes. Two things have to be right and
+    /// both are easy to get wrong: every input is named, and there is <b>no alpha-amplifying
+    /// <c>colorMatrix</c></b> — the widely copied <c>0 0 0 19 -9</c> row, which hard-thresholds the
+    /// noise alpha, renders as nothing at all here.
+    /// </remarks>
+    [Fact]
+    public void TestNoiseCompositedIntoAShapeGivesItGrain()
+    {
+        const string stroke = "paper.rect(0, 0, 200, 200).attr({ fill: '#ffffff' });"
+            + "paper.rect(40, 80, 120, 40).attr({ fill: '#2b4c7e'{0} });";
+
+        var flat = Render(stroke.Replace("{0}", string.Empty, StringComparison.Ordinal));
+        var grainy = Render("""
+            paper.rect(0, 0, 200, 200).attr({ fill: '#ffffff' });
+            const f = paper.filter()
+                 .turbulence(0.85, 4, 'fractalNoise', 0, 'noise')
+                 .composite('in', 'noise', 'SourceGraphic', 'grain')
+                 .blend('multiply', 'SourceGraphic', 'grain');
+            paper.rect(40, 80, 120, 40).attr({ fill: '#2b4c7e', filter: f.url });
+            """);
+
+        Assert.True(Spread(flat, 100) < 12, "the control should be flat colour");
+        var flatSpread = Spread(flat, 100);
+        var grainSpread = Spread(grainy, 100);
+        Assert.True(grainSpread > 30 && grainSpread > flatSpread * 3,
+            $"expected grain across the shape: flat {flatSpread}, grainy {grainSpread}");
+    }
+
+    [Fact]
+    public void TestTheAlphaAmplifyingColorMatrixRendersNothing()
+    {
+        // Pinned because it is the failure an agent will meet: the recipe is everywhere on the web,
+        // it is valid SVG, and here it produces an empty frame rather than an error.
+        var png = Render("""
+            paper.rect(0, 0, 200, 200).attr({ fill: '#ffffff' });
+            const f = paper.filter()
+                 .turbulence(0.85, 4, 'fractalNoise', 0, 'noise')
+                 .colorMatrix('1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 19 -9', 'matrix', 'noise', 'hi')
+                 .composite('in', 'hi', 'SourceGraphic');
+            paper.rect(40, 80, 120, 40).attr({ fill: '#2b4c7e', filter: f.url });
+            """);
+
+        Assert.True(PixelAt(png, 100, 100).Red > 240,
+            "the alpha-amplifying matrix now renders — the manual's warning can be withdrawn");
+    }
+
     /// <summary>A filter that only reaches the saved file is the failure this surface invites.</summary>
     [Fact]
     public void TestGaussianBlurSoftensTheEdgeInTheRenderAndNotOnlyInTheFile()
@@ -267,6 +367,24 @@ public class SnapFilterTests : TestsRuntime
     {
         using var bitmap = SKBitmap.Decode(png);
         return bitmap.GetPixel(x, y);
+    }
+
+    /// <summary>
+    /// How much brightness varies across one row — flat colour against grain.
+    /// </summary>
+    /// <remarks>
+    /// Summed across all three channels rather than read off one. Measured on the red channel of a
+    /// dark blue (<c>#2b4c7e</c>, red 43) a real grain reported a spread of 10, because there was
+    /// almost no headroom to vary in — the measurement was weak, not the effect.
+    /// </remarks>
+    private static int Spread(byte[] png, int y)
+    {
+        using var bitmap = SKBitmap.Decode(png);
+        var samples = Enumerable.Range(0, 100)
+            .Select(i => bitmap.GetPixel(45 + i, y))
+            .Select(c => c.Red + c.Green + c.Blue)
+            .ToArray();
+        return samples.Max() - samples.Min();
     }
     #endregion
 }

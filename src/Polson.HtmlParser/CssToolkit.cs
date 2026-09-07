@@ -66,10 +66,12 @@ public class CssToolkit
 public class StyleSheetView
 {
     #region Constructors
-    private StyleSheetView(Dictionary<string, string> tokens, List<(string Selector, ICssStyleRule Rule)> rules)
+    private StyleSheetView(Dictionary<string, string> tokens, List<(string Selector, ICssStyleRule Rule)> rules,
+        Dictionary<string, Dictionary<string, string>> salvaged)
     {
         this.tokens = tokens;
         this.rules = rules;
+        this.salvaged = salvaged;
     }
     #endregion
 
@@ -92,7 +94,64 @@ public class StyleSheetView
             .Where(entry => entry.Selector.Length > 0)
             .ToList();
 
-        return new StyleSheetView(tokens, rules);
+        return new StyleSheetView(tokens, rules, ReadDroppedDeclarations(flattened));
+    }
+
+    /// <summary>
+    /// Declarations read straight from the source text, to recover the ones AngleSharp refuses to
+    /// hold.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>AngleSharp drops any declaration whose value is a <c>url(...)</c> reference</b> — measured:
+    /// <c>filter</c>, <c>clip-path</c>, <c>mask</c> and <c>marker-end</c> all vanish, and a rule
+    /// declaring five properties came back holding one. Nothing reports it; the property is simply
+    /// absent from <c>rule.Style</c>, so a stylesheet setting a filter silently set nothing while the
+    /// identical value passed through <c>attr()</c> worked.
+    /// </para>
+    /// <para>
+    /// This is the same limitation the class already works around for custom properties, and the same
+    /// remedy: read the source text, which is the only place the declaration still exists. Parsed
+    /// values still win where AngleSharp kept one, because those are normalised — a colour comes back
+    /// as <c>rgba(...)</c> rather than as whatever was typed.
+    /// </para>
+    /// </remarks>
+    private static Dictionary<string, Dictionary<string, string>> ReadDroppedDeclarations(string source)
+    {
+        var blocks = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+
+        // Only the stylesheet text, never the whole document: a selector is whatever precedes `{`,
+        // so scanning the markup captured `<!doctype html>…<style>.p` as the selector and matched
+        // nothing afterwards.
+        var sheets = StyleBlock.Matches(source).Select(m => m.Groups[1].Value).ToList();
+        if (sheets.Count == 0) sheets.Add(source);
+
+        foreach (Match block in sheets.SelectMany(s => RuleBlock.Matches(s).Cast<Match>()))
+        {
+            var selector = block.Groups[1].Value.Trim();
+            if (selector.Length == 0 || selector.StartsWith('@')) continue;
+
+            if (!blocks.TryGetValue(selector, out var declared))
+            {
+                blocks[selector] = declared = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            foreach (var part in block.Groups[2].Value.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var colon = part.IndexOf(':');
+                if (colon <= 0) continue;
+
+                var name = part[..colon].Trim();
+                var value = part[(colon + 1)..].Trim();
+
+                // Custom properties are tokens rather than something to set on an element, and they
+                // have already been substituted away by this point.
+                if (name.Length == 0 || value.Length == 0 || name.StartsWith("--", StringComparison.Ordinal)) continue;
+                declared[name] = value;
+            }
+        }
+
+        return blocks;
     }
 
     /// <summary>
@@ -129,6 +188,14 @@ public class StyleSheetView
         if (matching.Length == 0) return null;
 
         var declared = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        // Source text first, so anything AngleSharp dropped is present; its own parse then overwrites
+        // what it did keep, because those values are normalised.
+        if (salvaged.TryGetValue(wanted, out var fromSource))
+        {
+            foreach (var (name, value) in fromSource) declared[name] = value;
+        }
+
         foreach (var (_, rule) in matching)
         {
             foreach (var property in rule.Style)
@@ -284,11 +351,25 @@ public class StyleSheetView
     private readonly Dictionary<string, string> tokens;
     private readonly List<(string Selector, ICssStyleRule Rule)> rules;
 
+    /// <summary>Declarations read from source text, keyed by selector — see ReadDroppedDeclarations.</summary>
+    private readonly Dictionary<string, Dictionary<string, string>> salvaged;
+
     private const int SubstitutionPasses = 8;
     private const float DefaultFontSize = 16f;
 
     private static readonly Regex CustomProperty =
         new(@"(--[\w-]+)\s*:\s*([^;}]+)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The contents of each <c>&lt;style&gt;</c> block, so a selector cannot swallow the markup
+    /// before it.
+    /// </summary>
+    private static readonly Regex StyleBlock =
+        new(@"<style[^>]*>(.*?)</style>", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+    /// <summary>One <c>selector { declarations }</c> block. At-rules are skipped by the caller.</summary>
+    private static readonly Regex RuleBlock =
+        new(@"([^{}@][^{}]*)\{([^{}]*)\}", RegexOptions.Compiled);
 
     private static readonly Regex VarReference =
         new(@"var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*))?\)", RegexOptions.Compiled);

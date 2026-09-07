@@ -453,19 +453,65 @@ public static partial class SnapAttributes
     private static string NormalizeKey(string key) =>
         key.Trim().Replace("_", "").ToLowerInvariant();
 
-    private static float ComputeDelta(float currentVal, string input)
+    /// <summary>
+    /// Resolves a relative adjustment — <c>+=</c>, <c>-=</c>, <c>*=</c>, <c>/=</c> — against the
+    /// current value. A plain value is handed back <b>unparsed</b> so its unit survives.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It used to return a <see cref="float"/>, which meant a plain value was parsed here and the
+    /// unit thrown away before <see cref="ParseUnit"/> — which understands <c>px</c>, <c>%</c> and
+    /// <c>em</c> — ever saw it. <c>float.TryParse("40px")</c> fails, so the final branch returned the
+    /// value <i>unchanged</i> and the assignment did nothing, silently.
+    /// </para>
+    /// <para>
+    /// That reached three properties, all of them ones a stylesheet sets constantly: <c>font-size</c>,
+    /// <c>stroke-width</c> and <c>stroke-dashoffset</c>. CSS always writes units, so
+    /// <c>paper.style('.h1 { font-size: 40px }')</c> set nothing at all while
+    /// <c>attr({ 'font-size': 40 })</c> worked — the same declaration succeeding or failing on how it
+    /// happened to be spelled.
+    /// </para>
+    /// </remarks>
+    private static object ComputeDelta(float currentVal, string input)
     {
-        if (input.StartsWith("+=") && float.TryParse(input[2..], NumberStyles.Float, CultureInfo.InvariantCulture, out var add))
-            return currentVal + add;
-        if (input.StartsWith("-=") && float.TryParse(input[2..], NumberStyles.Float, CultureInfo.InvariantCulture, out var sub))
-            return currentVal - sub;
-        if (input.StartsWith("*=") && float.TryParse(input[2..], NumberStyles.Float, CultureInfo.InvariantCulture, out var mul))
-            return currentVal * mul;
-        if (input.StartsWith("/=") && float.TryParse(input[2..], NumberStyles.Float, CultureInfo.InvariantCulture, out var div) && Math.Abs(div) > 1e-6f)
-            return currentVal / div;
-        if (float.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out var direct))
-            return direct;
-        return currentVal;
+        var trimmed = input.Trim();
+
+        // `+=`, `-=`, `*=`, `/=` — the operand may itself carry a unit, which is dropped because the
+        // result is arithmetic on the current value and takes that value's unit.
+        if (trimmed.Length > 2 && trimmed[1] == '=' && trimmed[0] is '+' or '-' or '*' or '/'
+            && ParseUnit(trimmed[2..]) is { } operand)
+        {
+            var n = operand.Value;
+            return trimmed[0] switch
+            {
+                '+' => currentVal + n,
+                '-' => currentVal - n,
+                '*' => currentVal * n,
+                '/' => Math.Abs(n) > 1e-6f ? currentVal / n : currentVal,
+                _ => currentVal,
+            };
+        }
+
+        // A readable value goes on with its unit intact; anything else leaves the property alone, as
+        // before. ParseUnit answers 0 for a value it cannot read, which is indistinguishable from a
+        // legitimate zero — so an unreadable `font-size: inherit` would silently erase the type.
+        return IsUnitLike(trimmed) ? trimmed : currentVal;
+    }
+
+    /// <summary>Whether <see cref="ParseUnit"/> can read this as a number, optionally with a unit.</summary>
+    private static bool IsUnitLike(string value)
+    {
+        var span = value.AsSpan().Trim();
+        foreach (var suffix in Suffixes)
+        {
+            if (span.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                span = span[..^suffix.Length];
+                break;
+            }
+        }
+
+        return float.TryParse(span, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
     }
 
     private static float ParseFloat(string val) =>
@@ -935,6 +981,9 @@ public static partial class SnapAttributes
             _ => null
         };
     #endregion
+
+    /// <summary>Unit suffixes <see cref="ParseUnit"/> understands, longest first so `px` wins over `x`.</summary>
+    private static readonly string[] Suffixes = ["px", "em", "%"];
 
     [GeneratedRegex(@"rgba?\(\s*(\d+%?)\s*,\s*(\d+%?)\s*,\s*(\d+%?)(?:\s*,\s*([0-9.]+%?))?\s*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex RgbRegex();

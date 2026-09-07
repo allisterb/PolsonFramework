@@ -271,7 +271,39 @@ paper.rect(0, 0, 400, 300).attr({ filter: grain.url });
 
 `baseFrequency` is small: about `0.01` for broad cloud, `0.6`–`0.9` for paper grain. `type` is `'fractalNoise'` (cloudy, the default) or `'turbulence'` (wispier).
 
-**Chaining.** Each primitive takes an optional `input` naming a previous step's `result`, or a standard input such as `SourceGraphic`. Omit both for the single-step case. `merge(...)` stacks named results, last on top.
+**Chaining.** Each primitive takes an optional `input` naming a previous step's `result`, or a standard input such as `SourceGraphic`. `merge(...)` stacks named results, last on top.
+
+> [!IMPORTANT]
+> **Name every input in a chain of more than one step.** In the SVG specification an omitted `in` means *the result of the previous primitive*; in this renderer it means **`SourceGraphic`**. So a chain written to the spec's defaulting rules builds its noise branch, never consumes it, and renders the untouched source — **with no error and no warning**. This is the most expensive thing to not know about the surface, because the symptom looks like the filter being unsupported.
+>
+> ```js
+> // Wrong here: the colorMatrix sees the stroke, not the noise, and the noise is discarded.
+> paper.filter().turbulence(0.85, 4).colorMatrix('…').composite('in');
+>
+> // Right: every input named.
+> paper.filter().turbulence(0.85, 4, 'fractalNoise', 0, 'noise')
+>      .composite('in', 'noise', 'SourceGraphic', 'grain')
+>      .blend('multiply', 'SourceGraphic', 'grain');
+> ```
+
+### Grain — the medium, not just the shape
+
+Noise clipped to a shape and multiplied back over it. This is what §9 means when it says the vector surface has no *medium*: the shape comes from geometry, and the texture comes from here.
+
+```js
+const grain = paper.filter().region(-0.2, -0.5, 1.4, 2)
+     .turbulence(0.85, 4, 'fractalNoise', 0, 'noise')
+     .composite('in', 'noise', 'SourceGraphic', 'grain')
+     .blend('multiply', 'SourceGraphic', 'grain', 'inked')
+     .turbulence(0.9, 4, 'fractalNoise', 3, 'rough')
+     .displacementMap(7, 'inked', 'rough');
+paper.brushStroke(spine, Snap.brush.taper(46, 0.7)).attr({ fill: '#2b4c7e', filter: grain.url });
+```
+
+The `composite`/`blend` pair puts grain *inside* the mark; the second turbulence driving a displacement roughens its *edge*. Together with a nib from §6a1 that is a stroke with both a shape and a medium.
+
+> [!WARNING]
+> **Do not add the `0 0 0 19 -9` alpha row to the colour matrix.** It is in nearly every grain recipe on the web — it hard-thresholds the noise alpha to sharpen the speckle — and here it renders **nothing at all**: an empty frame, valid SVG, no error. Drop the `colorMatrix` entirely; the composite already clips the noise to the shape.
 
 **The roughened contour** is the recipe worth memorising, because it is the closest the vector surface comes to a drawn rather than plotted line — turbulence driving a displacement map:
 
@@ -299,7 +331,9 @@ A **nib** is a closed outline drawn along a straight backbone from `(0,0)` to `(
 paper.brushStroke('M20,150 C60,40 140,40 180,150', 'taper', 2.5).attr({ fill: '#15151a' });
 ```
 
-Presets: **taper** (nothing at both ends, fullest in the middle — the confident single stroke), **wedge** (lands full, lifts to a point), **chisel** (a flat nib held at an angle), **split** (a dry, frayed nib whose ribbons are separate contours, so the gaps are real holes). Your own nib is `Snap.brush(dString)` or `Snap.brush(element)`.
+Presets: **taper** (nothing at both ends, fullest in the middle — the confident single stroke), **wedge** (lands full, lifts to a point), **chisel** (a flat nib held at an angle), **split** (a coarse frayed nib), and **bristle** (the high-fidelity one — many bristles, unevenly spaced, frayed and broken). Your own nib is `Snap.brush(dString)` or `Snap.brush(element)`.
+
+`Snap.brush.bristle(count, width, roughness, seed)` is what reads as real brushwork, and the reason is worth knowing: a traced brush set gets its realism from contour count alone — Figma's nibs run to over 200 subpaths each, with no texture feature involved. The texture *is* the geometry. `roughness` runs 0 (loaded, bristles overlapping into a mass) through 1 (dry) to 2 (nearly spent); `seed` fixes the arrangement identically on any machine. Lay a §6a grain filter over the result and the mark has both a shape and a medium.
 
 > [!IMPORTANT]
 > **What comes back is a filled shape, not a stroked line.** Set `fill` and leave `stroke` alone — a brush mark has no constant width to give a `stroke-width`, and stroking it outlines the nib instead of drawing with it. This is also why it is *not* the same thing as `Skia.Brush`: that is canvas **state**, applied with `ctx.useBrush(...)` and paid out in pixels; this is **geometry**, and it reaches `outSvg` as a path a designer can select.
@@ -450,7 +484,9 @@ If a scene needs several of these, it is a raster scene. Decide that in §2 rath
 | `paper.style(...)` returns 0 | Nothing matched: the selector is a typo, or the elements carry no `class` | Read the count; it exists to tell a typo from an empty sheet |
 | A stylesheet works for the first half of the drawing only | It resolved against the tree as it stood when called | Call it last, or call it again |
 | A blur or displacement looks cropped on all four sides | The default filter region clips at `-10%`/`110%` of the element's box | `filter.region(-0.3, -0.3, 1.6, 1.6)`, not a smaller deviation |
-| A filter chain renders as the untouched source | A primitive's `input` names a `result` no step produced | Name the `result` on the earlier primitive; check both in the saved markup |
+| A filter chain renders as the untouched source | An omitted `in` means `SourceGraphic` here, not the previous result | Name every input explicitly (§6a) |
+| A grain filter renders an empty frame | The `0 0 0 19 -9` alpha row in the colour matrix | Drop the `colorMatrix`; the composite already clips the noise |
+| A `flood` colour comes out wrong | *(fixed 2026-09-06)* it was written as an attribute the renderer ignored, and painted black | Nothing to do; pinned by test |
 | A brush stroke is invisible, or is a thin outline | It is a *filled* path, and you set `stroke` rather than `fill` | `attr({ fill: ... })`; a brush mark has no `stroke-width` to give |
 | One brush mark bridges a gap in the target | You expected sub-paths to be joined; each gets its own stroke | Nothing to fix — that is the correct behaviour, and the join would be a mark you never drew |
 

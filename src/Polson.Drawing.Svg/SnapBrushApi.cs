@@ -46,6 +46,17 @@ public class SnapBrushApi
     public SnapBrush Split(int ribbons = 4, float width = 16f, float fullness = 1.3f, int steps = 40) =>
         SnapBrush.Split(ribbons, width, fullness, steps);
 
+    /// <summary>
+    /// A loaded brush beginning to run dry: many bristles, unevenly spaced, frayed and broken.
+    /// </summary>
+    /// <remarks>
+    /// The high-fidelity nib. <paramref name="roughness"/> 0 gives unbroken bristles, 1 ordinary dry
+    /// brush, 2 nearly spent. The same <paramref name="seed"/> gives the same nib on any machine, so
+    /// an arrangement you like is one you can keep.
+    /// </remarks>
+    public SnapBrush Bristle(int count = 24, float width = 18f, float roughness = 1f, int seed = 7) =>
+        SnapBrush.Bristle(count, width, roughness, seed);
+
     /// <summary>A nib from your own outline, as an SVG <c>d</c> string.</summary>
     public SnapBrush FromPath(string templatePathData, string name = "brush", float sampleStep = 0.75f) =>
         SnapBrush.FromPath(templatePathData, name, sampleStep);

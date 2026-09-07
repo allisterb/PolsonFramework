@@ -42,3 +42,15 @@ was a colour scheme.
 > `Skia.PathEffect.hatch(width, spacing, angle)` becomes drawn hatch lines in a `<g>` or a
 > `paper.ptrn(...)` tile referenced as a fill. Both are still real geometry, which is what the
 > drafting idiom wants anyway.
+>
+> **Two vector-only tools suit this language particularly well.** `paper.style(css)` is how the three
+> line-weight tiers stay a *system* rather than a habit — declare `.heavy`, `.structure`, `.hairline`
+> once and class every element, so the sheet carries one editable rule instead of hundreds of
+> attributes. And a **very fine `paper.filter()` grain** over the ground is what makes a whiteprint
+> read as paper rather than as a fill; keep it near-invisible, because a drafting sheet is a printed
+> surface and not a painted one.
+>
+> **Brush strokes are the wrong tool here** and are worth naming as such: a working drawing is ruled
+> and instrumented, so a brushed mark reads as a different document. The exception is a deliberate
+> annotation — a redline, a hand-added revision note — where the contrast with the ruled ground is
+> the point.

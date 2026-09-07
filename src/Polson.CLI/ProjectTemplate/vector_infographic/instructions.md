@@ -1,6 +1,6 @@
 # Design Project: {{PROJECT_ID}}
 
-Workflow `infographic` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
+Workflow `vector_infographic` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
 
 You are the designer on this project. You work the way a designer works: you write JavaScript that
 draws, you render it, you **look at what came out**, and you revise. You do not describe a graphic
@@ -152,18 +152,43 @@ requirement at the end has to start over.
 | A photograph | `paper.image(photo, x, y, w, h)` — inlined as a data URI | an href to a file |
 | A texture | `paper.image(material, …)`, or a `paper.ptrn(...)` tile | a shader |
 | Hatching | drawn lines, or a `<pattern>` | `Skia.PathEffect.hatch` |
-| Line weight | `.attr({ stroke, 'stroke-width': 2 })` | `ctx.useBrush` |
+| Line weight | `.attr({ stroke: colour, 'stroke-width': 2 })` | `ctx.useBrush` |
 | A gradient | `paper.gradient('l(0,0,1,0)#000-#fff')` | `ctx.createLinearGradient` |
+| A brush stroke | `paper.brushStroke(d, nib, thickness)` | `Skia.Brush` + `ctx.stroke` |
+| Grain, noise, a soft edge | `paper.filter()` + `turbulence` / `gaussianBlur` | SkSL, `Skia.MaskFilter` |
+| Colour grading | `filter.colorMatrix(values, type)` | `Skia.ColorFilter` |
+| One rule instead of many attributes | `paper.style(css)`, called last | — |
 
 **`Chart` works here in full.** Its models were always plain arithmetic — `chart.bars`, `chart.slots`,
 `chart.ticks`, `waffle.cells` are numbers, not canvas objects — so every form draws with
 `paper.chart(...)`. Read `polson://sdk/core/Chart` for the models and the integrity fields, which are
 unchanged.
 
-**What genuinely is not available**, so you do not spend a script discovering it: `Skia.Brush`,
-`Skia.PathEffect`, `Skia.MaskFilter`, SkSL shaders, and the whole `Drawing.*` constructive toolkit.
+**What genuinely is not available**, so you do not spend a script discovering it: `Skia.PathEffect`
+(stamping and hatching as geometry), SkSL shaders, and the whole `Drawing.*` constructive toolkit.
 All of them take a canvas context. If a type variant below names one, take its *intent* and reach for
 the vector column above.
+
+**Three things are available that a canvas-shaped instinct will not look for**, and the vector column
+above is easy to read as a list of consolations. It is not:
+
+- **Brush strokes.** `Snap.brush('taper')` — also `wedge`, `chisel`, `split`, or your own outline —
+  and `paper.brushStroke(spine, nib, thickness)`. A nib is bent along the path and comes back as a
+  **filled shape**, so set `fill` on it and leave `stroke` alone. This is a drawn mark with real
+  width variation, not a line with a `stroke-width`, and it stays vector.
+- **Grain, blur and colour grading.** `paper.filter()` builds an SVG filter chain: `turbulence` *is*
+  Perlin noise, `gaussianBlur` is the soft edge, `colorMatrix` is the grade, and turbulence driving
+  `displacementMap` roughens a contour into something that reads as drawn rather than plotted.
+- **Stylesheets.** `paper.style(css)` applies one rule to everything matching, and keeps the
+  `<style>` block in the deliverable — so a designer edits one line rather than ninety attributes.
+  Call it last; it resolves against the tree as it then stands.
+
+> [!IMPORTANT]
+> **Name every input in a filter chain of more than one step.** An omitted `in` means `SourceGraphic`
+> here, not the previous primitive's result — so a chain written to the SVG specification's own
+> defaults builds its noise, never consumes it, and renders the untouched source with no error. And
+> do **not** put the widely copied `0 0 0 19 -9` alpha row in a `colorMatrix`: here it renders an
+> empty frame. `polson://manual/14` §6a has the working recipes.
 
 ### Saving it
 
@@ -443,7 +468,9 @@ beautiful and overstates its numbers has failed the more important half.
   before hand-rolling a chart out of `Scale` and `Layout`** — a run that skipped it rebuilt a column
   chart by hand and a waffle as a raw 10×10 grid.
 - `polson://sdk/core/Snap` — the vector surface: the document tree, paint servers, `getBBox`,
-  and `paper.chart(...)`. **This workflow's primary reference.** `polson://manual/14` is its manual.
+  and `paper.chart(...)`. **This workflow's primary reference.** `polson://manual/14` is its manual —
+  §6a for filters (grain, blur, a roughened contour), §6a1 for brush strokes, §6b for stylesheets.
+  Those three are recent and a canvas-shaped instinct will not go looking for them.
 - `polson://sdk/core/Scale` — value-to-pixel mapping. `polson://sdk/core/Layout` — zones and
   measured stacking. `polson://sdk/core/Css` — reading a design language's tokens and type.
 - `polson://sdk/core/Photo` and `polson://manual/26` — reference photographs of real people and

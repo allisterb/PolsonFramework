@@ -134,7 +134,7 @@ public class SnapFilter : SnapElement
     public SnapFilter Flood(string color, float opacity = 1f, string? result = null)
     {
         var node = new SvgFlood { FloodOpacity = opacity };
-        SnapAttributes.ApplyAttribute(node, "flood-color", color);
+        node.FloodColor = new SvgColourServer(SnapAttributes.ParseColor(color));
         return Add(node, null, result);
     }
 
@@ -198,7 +198,7 @@ public class SnapFilter : SnapElement
             StdDeviation = new SvgNumberCollection { stdDeviation },
             FloodOpacity = opacity,
         };
-        SnapAttributes.ApplyAttribute(node, "flood-color", color);
+        node.FloodColor = new SvgColourServer(SnapAttributes.ParseColor(color));
         return Add(node, input, result);
     }
 

@@ -80,6 +80,52 @@ public class ExpectationRecordingTests : TestsRuntime, IDisposable
 
         Assert.False(Single("check").TryGetProperty("detail", out _));
     }
+
+    /// <summary>
+    /// Swapped arguments are refused — they always were — and the refusal now says so.
+    /// </summary>
+    /// <remarks>
+    /// Found in a live run: five calls written as <c>Stage.check(barW &gt; 0, 'positive baseline')</c>.
+    /// Jint's overload resolution rejected them, so nothing false was recorded — but the message was
+    /// the generic <i>"No public methods with the specified arguments"</i>, whose advice is to hunt
+    /// for a misspelled property, <c>"rectangles from Layout … carry width and height"</c>. The agent
+    /// went looking for a typo in <c>Layout</c> and lost the script. The check was caught and
+    /// misdiagnosed, which is the part worth fixing.
+    /// </remarks>
+    [Theory]
+    [InlineData("Stage.check(1 > 0, 'a positive baseline');")]
+    [InlineData("Stage.check(1 < 0, 'a positive baseline');")]
+    [InlineData("Stage.check( measured > 0, 'spaced out' );")]
+    public async Task TestSwappedCheckArgumentsSayWhatIsWrong(string script)
+    {
+        var result = await Run("const measured = 1; " + script);
+
+        Assert.False(result.Success);
+        Assert.Contains("claim first", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("width and height", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The generic advice still stands for the case it was written for.
+    /// </summary>
+    /// <remarks>
+    /// The swap hint reads the failing source line, so it must not swallow the <c>undefined</c>
+    /// diagnosis that the same Jint message usually means — a live run lost a 97-line composition to
+    /// <c>rect.w</c>, and that reading is what recovered it.
+    /// </remarks>
+    [Fact]
+    public async Task TestTheUndefinedArgumentAdviceSurvives()
+    {
+        var result = await Run("""
+            const canvas = createCanvas(80, 80);
+            const ctx = canvas.getContext('2d');
+            const rect = Layout.rect(0, 0, 40, 40);
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            """);
+
+        Assert.False(result.Success);
+        Assert.Contains("width and height", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
     #endregion
 
     #region Tests — the machine's half

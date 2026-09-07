@@ -41,7 +41,7 @@ public class SnapBrushTests : TestsRuntime
     public void TestAnUnknownPresetNamesTheRealOnes()
     {
         // Handing back a default nib would ship the wrong brush silently, which is worse than failing.
-        var error = Assert.Throws<ArgumentException>(() => Nib.Preset("bristle"));
+        var error = Assert.Throws<ArgumentException>(() => Nib.Preset("sable"));
         Assert.Contains("taper", error.Message, StringComparison.Ordinal);
         Assert.Contains("split", error.Message, StringComparison.Ordinal);
     }
@@ -51,6 +51,7 @@ public class SnapBrushTests : TestsRuntime
     [InlineData("wedge")]
     [InlineData("chisel")]
     [InlineData("split")]
+    [InlineData("bristle")]
     public void TestAPresetNameIsNeverMistakenForPathData(string preset)
     {
         // Found by test, and it failed in the worst direction: the first sniff asked whether the
@@ -60,6 +61,64 @@ public class SnapBrushTests : TestsRuntime
         var nib = Snap.Brush(preset);
         Assert.True(nib.PointCount > 3, $"'{preset}' was read as path data and produced an empty nib");
         Assert.NotEqual(string.Empty, nib.Deform("M0,100 L200,100"));
+    }
+
+    [Fact]
+    public void TestABristleNibIsBuiltFromManySeparateContours()
+    {
+        // The realism in a traced brush set is contour count, not a texture feature: Figma's nibs run
+        // to 208 and 229 subpaths. This generates the same order of thing, so the count is the claim.
+        var loaded = Nib.Bristle(24, 18f, 0f);
+        var spent = Nib.Bristle(40, 22f, 2f);
+
+        Assert.True(loaded.ContourCount >= 20, $"a 24-bristle nib gave {loaded.ContourCount} contours");
+        Assert.True(spent.ContourCount > loaded.ContourCount,
+            $"breaking bristles should add contours: loaded {loaded.ContourCount}, spent {spent.ContourCount}");
+        Assert.True(loaded.PointCount > 800, $"only {loaded.PointCount} points — the nib is too coarse to read as one");
+    }
+
+    /// <summary>Bristles must overlap at low roughness, or the mark reads as a rake rather than a brush.</summary>
+    /// <remarks>
+    /// The first version sized bristles against the nib's width and made them thinner than the gaps
+    /// between them, so no two ever touched and every stroke came out as separate hairs with no mass.
+    /// Thickness is set against the spacing now, following MyPaint's dab overlap (CC0) — its presets
+    /// cluster at 3.9–5.2 deposits per radius, which is what makes a mark continuous.
+    /// </remarks>
+    [Fact]
+    public void TestALoadedBristleNibHasOverlappingBristles()
+    {
+        var loaded = Nib.Bristle(24, 18f, 0f);
+        var spacing = 18f / 23f;
+
+        // HalfWidth is the outermost bristle's own half-thickness plus its offset, so compare the ink
+        // laid down against the width it is spread over: a solid mark covers most of the nib.
+        var mark = loaded.Deform("M0,100 L400,100");
+        Assert.True(Coverage(mark, 200f) > 0.55f,
+            $"a loaded nib should read as a mass, not hairs — covered {Coverage(mark, 200f):P0} of its width");
+
+        var frayed = Nib.Bristle(24, 18f, 2f).Deform("M0,100 L400,100");
+        Assert.True(Coverage(frayed, 200f) < Coverage(mark, 200f),
+            "a spent nib should cover less than a loaded one");
+        Assert.True(spacing > 0f);
+    }
+
+    [Fact]
+    public void TestTheSameSeedGivesTheSameNib()
+    {
+        // A nib is part of a design. A designer who picks seed 12 wants it again tomorrow, which is
+        // why this uses its own generator rather than System.Random.
+        Assert.Equal(Nib.Bristle(20, 16f, 1f, 12).Deform("M0,60 L300,60"),
+            Nib.Bristle(20, 16f, 1f, 12).Deform("M0,60 L300,60"));
+        Assert.NotEqual(Nib.Bristle(20, 16f, 1f, 12).Deform("M0,60 L300,60"),
+            Nib.Bristle(20, 16f, 1f, 13).Deform("M0,60 L300,60"));
+    }
+
+    [Fact]
+    public void TestASpentNibStillDrawsSomething()
+    {
+        // Every bristle can break away at high roughness; the nib must not become nothing.
+        var mark = Nib.Bristle(1, 6f, 3f, 99).Deform("M0,60 L300,60");
+        Assert.NotEqual(string.Empty, mark);
     }
 
     [Fact]
@@ -233,7 +292,7 @@ public class SnapBrushTests : TestsRuntime
     [Fact]
     public void TestABadPresetNameFailsInTheScriptRatherThanDrawingTheDefault()
     {
-        var result = Execute("paper.brushStroke('M0,100 L200,100', 'bristle');");
+        var result = Execute("paper.brushStroke('M0,100 L200,100', 'sable');");
 
         Assert.False(result.Success);
         Assert.Contains("taper", result.Error, StringComparison.OrdinalIgnoreCase);
@@ -253,7 +312,7 @@ public class SnapBrushTests : TestsRuntime
             """);
 
         Assert.True(result.Success, result.Error);
-        Assert.Contains("function,function,4,true", string.Join(" ", result.Logs), StringComparison.Ordinal);
+        Assert.Contains("function,function,5,true", string.Join(" ", result.Logs), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -302,6 +361,30 @@ public class SnapBrushTests : TestsRuntime
         }
 
         return float.IsNaN(top) ? 0f : bottom - top;
+    }
+
+    /// <summary>
+    /// What fraction of the mark's own width is actually inked at <paramref name="x"/>.
+    /// </summary>
+    /// <remarks>
+    /// The measure that separates a brush from a rake: a loaded nib fills most of the band it spans,
+    /// a spent one leaves gaps. Read from the filled path's coverage, so it is indifferent to how many
+    /// contours express it.
+    /// </remarks>
+    private static float Coverage(string pathData, float x)
+    {
+        using var path = SKPath.ParseSvgPathData(pathData);
+        if (path is null || path.IsEmpty) return 0f;
+
+        var bounds = path.Bounds;
+        int inked = 0, total = 0;
+        for (var y = bounds.Top; y <= bounds.Bottom; y += 0.2f)
+        {
+            total++;
+            if (path.Contains(x, y)) inked++;
+        }
+
+        return total == 0 ? 0f : (float)inked / total;
     }
 
     private static SKPoint[] PointsOf(string pathData)

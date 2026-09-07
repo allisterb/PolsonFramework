@@ -172,8 +172,88 @@ public class SnapBrush
         return new SnapBrush("split", contours);
     }
 
+    /// <summary>
+    /// A loaded brush that has begun to run dry: many separate bristles, each frayed and broken.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The same construction as <see cref="Split"/>, at the fidelity that actually reads as a
+    /// brush.</b> Figma's own brush set — which is what a comparison usually has in mind — reaches its
+    /// realism by tracing every bristle gap and speckle as a separate closed contour: measured, its
+    /// nibs run to <b>208 and 229 subpaths</b> and 40–64 KB of path data apiece. There is no texture
+    /// feature doing that work; the texture <i>is</i> the geometry. This generates the same kind of
+    /// thing from a formula instead, so it carries no licence and can be tuned rather than traced.
+    /// </para>
+    /// <para>
+    /// Three things separate it from a fan of ribbons, and the third is what dry brushwork actually
+    /// looks like: bristles sit at uneven intervals, they vary in thickness, and <b>they break</b> —
+    /// a bristle lifts off the paper and touches down again, leaving a gap that is a real hole rather
+    /// than a lighter patch.
+    /// </para>
+    /// <para>
+    /// Parameter shape follows MyPaint's brush settings (CC0, ledgered 2026-09-07), which are the
+    /// best-tested description available of what varies in a brush. Two of its numbers are used
+    /// directly: dab spacing clusters at <c>dabs_per_actual_radius</c> 3.9–5.2 across its presets,
+    /// which is the overlap a mark needs to read as continuous, and its dry brushes carry a very low
+    /// <c>opaque</c> — <c>rough</c> is 0.015 — so roughness there comes from many faint overlapping
+    /// deposits rather than from shape. We cannot build up opacity in one filled path, so that half
+    /// is answered by <c>paper.filter()</c> grain over the mark instead.
+    /// </para>
+    /// </remarks>
+    /// <param name="count">How many bristles. 24 is a loaded brush; 8 is a worn one.</param>
+    /// <param name="width">The nib's full width in pixels at thickness 1.</param>
+    /// <param name="roughness">0 for unbroken bristles, 1 for ordinary dry brush, 2 for nearly spent.</param>
+    /// <param name="seed">Changes the arrangement. The same seed is the same nib on any machine.</param>
+    internal static SnapBrush Bristle(int count = 24, float width = 18f, float roughness = 1f, int seed = 7)
+    {
+        var bristles = Math.Clamp(count, 1, 200);
+        var half = MathF.Max(0.01f, width) / 2f;
+        var rough = Math.Clamp(roughness, 0f, 3f);
+        var contours = new List<BrushContour>();
+        var state = (uint)(seed == 0 ? 1 : seed) * 2654435761u;
+
+        for (var b = 0; b < bristles; b++)
+        {
+            // Uneven spacing across the ferrule: evenly spaced bristles read as a comb.
+            var t = bristles == 1 ? 0.5f : (b + Next(ref state) * 0.7f - 0.35f) / (bristles - 1);
+            var centre = -half + 2f * half * Math.Clamp(t, 0f, 1f);
+
+            // Thickness is set against the *spacing*, not against the nib width, and that is what
+            // decides whether the mark reads as a brush or as a rake. MyPaint's presets cluster at
+            // `dabs_per_actual_radius` 3.9-5.2 — deposits overlapping several times over — and a
+            // first attempt here sized bristles absolutely, at roughly two thirds of the gap between
+            // them, so they never touched: every mark came out as separate hairs with no mass. A
+            // loaded brush overlaps heavily and a spent one does not, so the ratio follows roughness.
+            var spacing = 2f * half / Math.Max(1, bristles - 1);
+            var thickness = spacing * (0.75f - 0.22f * rough) * (0.7f + 0.6f * Next(ref state));
+
+            // Where this bristle is in contact at all, and how many times it lifts on the way.
+            var from = 2f + 12f * Next(ref state) * rough;
+            var to = BackboneLength - 2f - 14f * Next(ref state) * rough;
+            if (to - from < 4f) continue;
+
+            var runs = 1 + (int)(rough * Next(ref state) * 2.2f);
+            var span = (to - from) / runs;
+
+            for (var r = 0; r < runs; r++)
+            {
+                var gap = runs == 1 ? 0f : span * (0.12f + 0.4f * Next(ref state)) * rough;
+                var start = from + r * span;
+                var end = start + span - gap;
+                if (end - start < 3f) continue;
+
+                contours.Add(Ribbon(start, end, centre, thickness, Next(ref state) * 6f - 3f, ref state));
+            }
+        }
+
+        // Every bristle can break away in a spent brush; keep one so the nib still draws.
+        if (contours.Count == 0) contours.Add(Ribbon(4f, BackboneLength - 4f, 0f, MathF.Max(0.3f, half * 0.08f), 0f, ref state));
+
+        return new SnapBrush("bristle", contours);
+    }
+
     /// <summary>Every preset name, so a script can offer them without hard-coding the list.</summary>
-    internal static string[] PresetNames => ["taper", "wedge", "chisel", "split"];
+    internal static string[] PresetNames => ["taper", "wedge", "chisel", "split", "bristle"];
 
     /// <summary>Whether <paramref name="name"/> is a preset — asked before a string is read as path data.</summary>
     internal static bool HasPreset(string? name) =>
@@ -188,6 +268,7 @@ public class SnapBrush
         "wedge" => Wedge(),
         "chisel" => Chisel(),
         "split" => Split(),
+        "bristle" => Bristle(),
         _ => throw new ArgumentException(
             $"'{name}' is not a brush preset. Available: {string.Join(", ", PresetNames)}. " +
             "For your own nib use Snap.brush(dString) or SnapBrush.fromElement(element).", nameof(name)),
@@ -417,6 +498,55 @@ public class SnapBrush
 
     private static string Format(SKPoint p) =>
         p.X.ToString("0.##", CultureInfo.InvariantCulture) + "," + p.Y.ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// One bristle mark: a tapered ribbon that wanders slightly off its own centre line.
+    /// </summary>
+    /// <remarks>
+    /// The wander matters more than it sounds. A bristle drawn as a straight tapered sliver reads as
+    /// a printed rule; the same sliver with a few pixels of drift along its length reads as hair.
+    /// </remarks>
+    private static BrushContour Ribbon(float from, float to, float centre, float thickness, float drift,
+        ref uint state)
+    {
+        var steps = Math.Clamp((int)((to - from) / 3f), 6, 40);
+        var phase = Next(ref state) * MathF.PI * 2f;
+        var upper = new List<SKPoint>(steps + 1);
+        var lower = new List<SKPoint>(steps + 1);
+
+        for (var i = 0; i <= steps; i++)
+        {
+            var u = (float)i / steps;
+            var x = from + (to - from) * u;
+
+            // Ends taper to nothing, so a bristle lifts rather than stopping square.
+            var w = thickness * MathF.Pow(MathF.Sin(MathF.PI * u), 0.45f);
+            var y = centre + drift * MathF.Sin(phase + u * 2.3f);
+
+            upper.Add(new SKPoint(x, y - w));
+            lower.Add(new SKPoint(x, y + w));
+        }
+
+        lower.Reverse();
+        upper.AddRange(lower);
+        return new BrushContour(upper, true);
+    }
+
+    /// <summary>
+    /// A deterministic value in [0, 1) — xorshift32, so a seed gives the same nib on any machine.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="Random"/>: a nib is part of a design, and a designer who picks seed 12 wants
+    /// that arrangement again tomorrow and on someone else's machine. The framework's generator
+    /// guarantees neither across versions.
+    /// </remarks>
+    private static float Next(ref uint state)
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return (state & 0xFFFFFF) / (float)0x1000000;
+    }
 
     /// <summary>A nib symmetric about the centre line, from a half-width profile.</summary>
     private static SnapBrush Symmetric(string name, float width, int steps, Func<float, float> profile)

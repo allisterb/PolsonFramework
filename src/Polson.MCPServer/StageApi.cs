@@ -181,6 +181,11 @@ public sealed class StageApi
     /// </remarks>
     public bool Check(string claim, bool passed, string? detail = null)
     {
+        // No guard for swapped arguments here: Jint's overload resolution already refuses
+        // `check(boolean, string)` before the call reaches this method, so a check that could not
+        // fail never gets recorded. What was wrong was the *message* — see ArgumentHelp in
+        // JsDrawingEngine, which now names the swap instead of advising a hunt for a typo. A guard
+        // on this side would be dead code and would also refuse the legitimate claim "true".
         var clean = Clean(claim, MaxNoteLength);
         if (clean.Length == 0) return passed;
 

@@ -359,7 +359,7 @@ paper;
 - `nib.name` → `string`, `nib.contourCount` → `number`, `nib.pointCount` → `number`
 - `nib.halfWidth` → `number` — The widest half-width in pixels at `thickness` 1, so the mark is about `2 × halfWidth` across at its fattest.
 - `Snap.brush.presets` → `string[]`, `Snap.brush.hasPreset(name)` → `boolean`, `Snap.brush.preset(name)` → `SnapBrush`
-- `Snap.brush.taper(width?, fullness?, steps?)` · `Snap.brush.wedge(...)` · `Snap.brush.chisel(width?, skew?)` · `Snap.brush.split(ribbons?, width?, fullness?, steps?)` → `SnapBrush` — The generated nibs. A taper is nothing at both ends and fullest in the middle; a wedge lands full and lifts to a point; a chisel is a flat nib with skewed ends; a split is several thin ribbons with staggered ends, as separate contours so the gaps are real holes.
+- `Snap.brush.taper(width?, fullness?, steps?)` · `Snap.brush.wedge(...)` · `Snap.brush.chisel(width?, skew?)` · `Snap.brush.split(ribbons?, width?, fullness?, steps?)` · `Snap.brush.bristle(count?, width?, roughness?, seed?)` → `SnapBrush` — The generated nibs. A taper is nothing at both ends and fullest in the middle; a wedge lands full and lifts to a point; a chisel is a flat nib with skewed ends; a split is several thin ribbons with staggered ends, as separate contours so the gaps are real holes.
 - `Snap.brush.fromPath(templatePathData, name?, sampleStep?)` · `Snap.brush.fromElement(element, name?, sampleStep?)` → `SnapBrush` — Your own nib.
 
 > [!IMPORTANT]
@@ -368,6 +368,11 @@ paper;
 > **A hand-drawn template is read as a brush, not as a picture** — its horizontal extent is mapped across the whole stroke whatever it measures, and its vertical extent is taken as pixels either side of the centre line. So the aspect ratio is deliberately *not* preserved, which is what makes a longer stroke not a fatter one.
 >
 > **Not to be confused with `Skia.Brush`.** That is the raster medium — a bundle of canvas *state* applied with `ctx.useBrush(...)`. This is a template that becomes *geometry*, which is why it works on a paper where the other cannot.
+
+> [!TIP]
+> **`bristle` is the one that reads as brushwork**, and it is worth knowing why rather than only that. A traced brush set gets its realism from sheer contour count — Figma's own nibs run to **208 and 229 subpaths**, tens of kilobytes of outline apiece, with no texture feature involved at all: the texture *is* the geometry. This generates the same kind of thing from a formula, so it costs nothing and can be tuned.
+>
+> `roughness` is the dial: `0` is a loaded brush whose bristles overlap into a mass, `1` is ordinary dry brush, `2` is nearly spent and mostly gaps. `seed` fixes the arrangement, identically on any machine, so a nib you like is one you can keep. Put a `paper.filter()` grain over the mark and you have both halves of a drawn stroke — the shape from the nib, the medium from the filter.
 
 > [!TIP]
 > `thickness` multiplies the nib's width. `segmentLength` is roughly how many pixels of target each emitted segment spans — smaller is smoother and longer. `tolerance` is a Ramer–Douglas–Peucker pass in pixels, defaulting to `0.08`: it drops points that carry no shape and is close to free. Measured on a preset sheet, it took a split mark from 17.4 KB of path data to under 3 KB with no visible change. Pass `0` to keep every point.
@@ -1264,6 +1269,19 @@ Each returns the filter, so they chain. `input` names a previous step's `result`
 - `filter.morphology(radius, op?, input?, result?)` — `'dilate'` thickens, `'erode'` thins. The vector `Skia.ImageFilter.dilate`.
 - `filter.offset(dx, dy, input?, result?)` · `filter.flood(color, opacity?, result?)` · `filter.composite(op?, input?, input2?, result?)` · `filter.blend(mode?, input?, input2?, result?)` · `filter.merge(...inputs)`
 - `filter.region(x, y, width, height)` — Widens the filter region as fractions of the element's box.
+
+> [!IMPORTANT]
+> **Name every input in a chain of more than one step.** The SVG specification says an omitted `in` is the *previous primitive's result*; this renderer treats it as **`SourceGraphic`**. A chain written to the spec's defaults therefore builds its noise branch, never consumes it, and renders the untouched source — no error, no warning, and it looks exactly like the filter being unsupported.
+>
+> ```javascript
+> // Grain: noise clipped into the shape, multiplied back over it.
+> const grain = paper.filter().region(-0.2, -0.5, 1.4, 2)
+>      .turbulence(0.85, 4, 'fractalNoise', 0, 'noise')
+>      .composite('in', 'noise', 'SourceGraphic', 'grain')
+>      .blend('multiply', 'SourceGraphic', 'grain');
+> ```
+>
+> **Do not add the `0 0 0 19 -9` alpha row to a colour matrix.** It appears in nearly every grain recipe published for the web, and here it renders an **empty frame** — valid SVG, no error. Drop the `colorMatrix`; the composite already clips the noise to the shape.
 
 > [!TIP]
 > **A roughened contour is turbulence driving a displacement map**, and it is the nearest vector idiom to a drawn rather than plotted line — the closest thing the vector surface has to `Skia.PathEffect.discrete` or the jitter under `Skia.Brush.pencil`:

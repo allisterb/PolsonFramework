@@ -5,13 +5,13 @@ State after the session that **finished the motion score** and then turned the s
 competition is a diffusion model rather than another drawing tool.
 
 **Tests: 1,645 .NET at the close of the seventh session; 1,987 .NET + 39 Python as of §21;
-2,038 .NET as of §22; 2,063 as of §22.3.**
+2,038 .NET as of §22; 2,063 as of §22.3; 2,068 as of §22.4.**
 Sections are appended, never rewritten, so everything below §17 is history and remains accurate as
 such.
 
 > **§22 is the current state** — the filter and stylesheet surface, now tested and documented, which
-> closes §21.7 items 1 and 2, plus vector brushes (§22.3), which closes item 3. **§22.4 is the
-> pick-up list; start there.** Nothing is uncommitted.
+> closes §21.7 items 1 and 2, plus vector brushes (§22.3) and grain (§22.4), which close item 3.
+> **§22.5 is the pick-up list; start there.**
 >
 > Earlier: **§21** is reference photography, the raster/vector boundary, and the
 > `vector_infographic` workflow. Its §21.6 has since been committed as `591d510`.
@@ -2299,8 +2299,55 @@ vector counterpart, so this gives a mark's *shape*, not its texture. `PathEffect
 remain raster. Manual 14 §9 is narrowed accordingly. Self-intersection on a bend tighter than the
 nib's half-width is unhandled; `CanvasPath.simplify()` is the fix if it bites.
 
-### 22.4 What is still open from §21.7
+### 22.4 Grain, and two renderer traps that cost nothing to know and a session to find
+
+**2,068 .NET tests.** Prompted by a grain snippet the director brought in from Gemini. It rendered
+flat, and finding out why turned up one bug of ours and two deviations from the SVG specification.
+Both deviations are now pinned by tests that **fail if a renderer upgrade fixes them**, so a change
+in behaviour is noticed rather than silently re-meaning every chain in the codebase.
+
+**The bug was ours.** `filter.flood(colour)` painted **black whatever colour you passed**.
+`SvgFlood.FloodColor` is a typed `SvgPaintServer`, not a string attribute, so writing `flood-color`
+through the generic attribute path serialised correctly and rendered wrong — the same shape as the
+stylesheet defect in §21.6, and found the same way, by looking at a render rather than at the code.
+`dropShadow` had it too. Both now set the typed property.
+
+**Trap 1 — an omitted `in` is `SourceGraphic`, not the previous primitive's result.** The
+specification says the opposite for any primitive after the first, so a chain written correctly to
+the spec builds its noise branch, never consumes it, and renders the untouched source. No error, no
+warning, and the symptom is indistinguishable from the filter being unsupported. **Name every input.**
+This is the single most expensive thing to not know about the filter surface.
+
+**Trap 2 — the `0 0 0 19 -9` alpha row renders an empty frame.** It is in nearly every grain recipe
+published for the web, it is valid SVG, and it hard-thresholds noise alpha to sharpen speckle. Here
+it produces nothing at all. Drop the `colorMatrix`; the composite already clips the noise.
+
+**What actually works**, and it closes the *medium* half of the gap §22.3 left open:
+
+```js
+const grain = paper.filter().region(-0.2, -0.5, 1.4, 2)
+     .turbulence(0.85, 4, 'fractalNoise', 0, 'noise')
+     .composite('in', 'noise', 'SourceGraphic', 'grain')      // speckle inside the mark
+     .blend('multiply', 'SourceGraphic', 'grain', 'inked')
+     .turbulence(0.9, 4, 'fractalNoise', 3, 'rough')
+     .displacementMap(7, 'inked', 'rough');                   // ragged edge
+paper.brushStroke(spine, Snap.brush.taper(46, 0.7)).attr({ fill: '#2b4c7e', filter: grain.url });
+```
+
+A nib gives the mark its **shape**, this gives it its **medium**. Manual 14 §6a carries the recipe and
+both traps; §9's "no drawing media" bullet is narrower again as a result — what remains genuinely
+absent is `Skia.PathEffect.stamp`/`.hatch` and SkSL.
+
+⤷ **A note on provenance, since this began with pasted code.** The snippet was **read and rendered
+before it was scanned**, which is the wrong order; scanned afterwards and clean (pure ASCII, no
+concealment classes, no injection phrasing, no script, event handlers, `DOCTYPE`/`ENTITY`, external
+`href` or `data:` URIs). Its two real defects were a wrong `xmlns` — `http://w3.org`, which renders
+nothing anywhere — and a filter region *narrower* than the default, which clips the round caps square.
+**Its other two "faults" were ours, not its**: the code is correct SVG and this renderer deviates.
+Worth separating, because "the model got it wrong" was the comfortable reading and the wrong one.
+
+### 22.5 What is still open from §21.7
 
 Items **4–7 stand unchanged**: `SKSvgCanvas` parked, `Photo`'s session-only cache and absent face
 detection, the ADK instructions' silence on `Snap.load`, and the orphaned doc comment in
-`Program.cs`. Item 3, the brush question, is §22.3 above.
+`Program.cs`. Item 3, the brush question, is §22.3 and §22.4 above.

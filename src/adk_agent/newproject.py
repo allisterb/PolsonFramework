@@ -121,11 +121,17 @@ def _run_create_project(
         raise GenerateError("`dotnet` is not on PATH; the MCP server cannot be launched either.")
 
     projects_dir.mkdir(parents=True, exist_ok=True)
-    # Positional: <parent-directory> <project-id> [sdk]. `agy` selects GEMINI.md, which is what
-    # studio.py reads — ADK is Gemini, so the agy spelling is the right one here.
+    # Positional: <parent-directory> <project-id> [sdk]. `adk` takes the same GEMINI.md host files
+    # as `agy` — both runtimes are Gemini — and differs only in what the manifest then records.
+    #
+    # This said `agy` for a long time, on the reasoning that the spelling only picked the
+    # instructions file. It did more than that: `project.json` is read by the studio's observe page,
+    # which has to know *who is driving* rather than what the agent reads, because an MCP `run.start`
+    # is one session under Claude Code and one server process under ADK. Saying `agy` made an ADK run
+    # indistinguishable from an Antigravity one in the only place that needed to tell them apart.
     args = [
         "dotnet", str(CLI_DLL), "create-project",
-        str(projects_dir), project_id, "agy", "--workflow", workflow,
+        str(projects_dir), project_id, "adk", "--workflow", workflow,
     ]
     if prompt:
         args += ["--prompt", prompt]

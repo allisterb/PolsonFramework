@@ -19,9 +19,9 @@ beside the scripts that made them, and a record that survives the session.
 Two things this has to get right, and both are ways of showing a run that is not the one on screen:
 
 - **Which run.** A project's event files are appended to across every session it has ever had, so an
-  observation with no cut shows the project's whole history as though it were happening now. The cut
-  is the last `run.start` in `server.jsonl` — the server's own session boundary, which is exactly what
-  `RunReport` already splits on.
+  observation with no cut shows the project's whole history as though it were happening now. Where
+  that cut falls **depends on the SDK the project was generated for**, because the event that marks
+  a run beginning is not the same one under every host — see `CUTS`.
 - **Whether it is still going.** A driven run is live while its task is; an observed one has no task.
   Liveness here is the record still moving, which is a guess — a long thinking pause looks like an
   ended run — so it is deliberately generous, and being wrong shows a finished run as live rather
@@ -60,15 +60,51 @@ TRANSCRIPT_INTERVAL = 3.0
 IDLE_AFTER = 180.0
 
 
-def session_since(project: Project) -> str:
-    """The timestamp of the last `run.start`, which is where the current session began.
+#: Where each SDK's runs begin: the event that marks one, and the log it is written to.
+#:
+#: **`run.start` does not mean the same thing under every host, which is why this is a table rather
+#: than a constant.** It is the MCP *server* starting, and how often that happens is the host's
+#: decision, not the studio's. Claude Code and Antigravity spawn the server per session, so its
+#: start is the run's start and the two are indistinguishable. ADK spawns it once for the whole app
+#: process and then serves every invocation through it, so a project worked on twice through one
+#: running app has two runs and **one** `run.start` — cutting there replays the earlier run as part
+#: of the current one, and the page shows work the director did an hour ago as though it were
+#: happening now. Measured on `tainted`: two `run.start` events an hour and a half apart, both
+#: server boots, neither a run beginning.
+#:
+#: So ADK cuts on `run.begin`, which `adk_agent.transcript` writes per invocation — the ADK runtime
+#: is the one that knows where its own runs begin, and it is the one that says so.
+CUTS = {
+    "adk": ("run.begin", "agent_events"),
+}
 
-    Empty when the record has none, meaning read everything — a project whose server never wrote a
-    start is one session rather than none, exactly as `RunReport.Sessions` treats it.
+#: For every other host, and for a project whose manifest names one we have no table entry for.
+DEFAULT_CUT = ("run.start", "server_events")
+
+
+def session_since(project: Project) -> str:
+    """The timestamp the current run began at, in whatever the project's SDK means by that.
+
+    Falls back to the default cut when the SDK's own marker is absent, and then to empty — meaning
+    read everything, since a log carrying no start is one session rather than none, exactly as
+    `RunReport.Sessions` treats it.
+
+    **The fallback is a widening, never a narrowing**, which is what makes it safe to take
+    silently: an ADK project recorded before the transcript plugin existed, or one where
+    `make_plugin` returned None, has no `run.begin` at all, and `run.start` then scopes the page to
+    the last app boot rather than to the project's whole history. Both are wider than the run in
+    hand; neither can hide work that belongs to it.
     """
+    kind, log = CUTS.get(project.sdk, DEFAULT_CUT)
+    return _latest(project, kind, log) or (
+        _latest(project, *DEFAULT_CUT) if (kind, log) != DEFAULT_CUT else "")
+
+
+def _latest(project: Project, kind: str, log: str) -> str:
+    """The timestamp of the last `kind` event in the named log, or empty."""
     latest = ""
-    for event in merge(project.server_events):
-        if event.get("type") == "run.start" and (ts := event.get("ts")):
+    for event in merge(getattr(project, log)):
+        if event.get("type") == kind and (ts := event.get("ts")):
             latest = ts
     return latest
 

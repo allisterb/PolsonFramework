@@ -71,7 +71,17 @@ internal static class ProjectGenerator
     /// </remarks>
     readonly record struct HostFiles(string Instructions, string McpConfig, string Permissions)
     {
-        public static HostFiles For(string sdk) => sdk == "agy"
+        /// <remarks>
+        /// <b><c>adk</c> takes Antigravity's files, and recording it separately is the point.</b>
+        /// Both runtimes are Gemini and read <c>GEMINI.md</c>, so for a long while an ADK project was
+        /// generated as <c>agy</c> — <c>newproject.py</c> said so in its own comment. That made
+        /// <c>sdk</c> answer *which instructions file* while being named for *who is driving*, and a
+        /// reader downstream could not tell the two runtimes apart. The studio's observe page is the
+        /// reader that needs to: an MCP <c>run.start</c> is one session under Claude Code and one
+        /// server *process* under ADK, so the cut that scopes a page to the current run differs by
+        /// runtime and by nothing else.
+        /// </remarks>
+        public static HostFiles For(string sdk) => sdk is "agy" or "adk"
             ? new("GEMINI.md", ".agents/mcp_config.json", ".agents/settings.json")
             : new("CLAUDE.md", ".mcp.json", ".claude/settings.local.json");
     }
@@ -139,12 +149,13 @@ internal static class ProjectGenerator
         {
             sdk = DefaultSdk;
         }
-        else if (sdk is not ("agy" or "claude"))
+        else if (sdk is not ("agy" or "claude" or "adk"))
         {
             var hint = KnownWorkflows.Contains(sdk)
                 ? $" '{opts.Sdk}' is a workflow — did you mean --workflow {sdk}?"
                 : string.Empty;
-            return Fail($"Unknown SDK '{opts.Sdk}'. Use 'agy' (Google Antigravity) or 'claude' (Claude Code), "
+            return Fail($"Unknown SDK '{opts.Sdk}'. Use 'agy' (Google Antigravity), 'adk' (Google ADK) "
+                + $"or 'claude' (Claude Code), "
                 + $"or omit it for '{DefaultSdk}'.{hint}");
         }
 

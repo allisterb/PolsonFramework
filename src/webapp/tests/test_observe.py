@@ -24,7 +24,8 @@ from studio import observe as observe_mod
 from studio.runs import Registry
 
 
-def make_project(root: Path, name: str, *, sdk: str = "agy", events: list[dict] | None = None) -> Path:
+def make_project(root: Path, name: str, *, sdk: str = "agy", events: list[dict] | None = None,
+                 agent: list[dict] | None = None) -> Path:
     """A project directory as `create-project` writes one, with a record in it."""
     project = root / name
     (project / "events").mkdir(parents=True)
@@ -47,6 +48,10 @@ def make_project(root: Path, name: str, *, sdk: str = "agy", events: list[dict] 
     ]
     (project / "events" / "server.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in lines), encoding="utf-8", newline="")
+
+    if agent is not None:
+        (project / "events" / "agent.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in agent), encoding="utf-8", newline="")
     return project
 
 
@@ -111,6 +116,61 @@ class SessionCutTests(unittest.TestCase):
             {"ts": "2026-09-01T10:05:00.000Z", "seq": 1, "src": "server", "type": "render"}])
 
         self.assertEqual("", observe_mod.session_since(project_mod.read(made)))
+
+
+class PerSdkCutTests(unittest.TestCase):
+    """Where a run begins is the host's answer, not one constant.
+
+    `run.start` is the MCP *server* starting, and how often that happens is the host's decision.
+    Claude Code and Antigravity spawn it per session, so it doubles as the run's start. ADK spawns
+    it once for the whole app process and serves every invocation through it — measured on
+    `tainted`, two `run.start` events an hour and a half apart, both server boots and neither a run
+    beginning. So the cut has to ask the project which host it was generated for.
+    """
+
+    #: One server boot, then two runs through it. This is the ADK shape, and the shape that made a
+    #: `run.start` cut replay an hour-old run as though it were happening now.
+    BOOT = [{"ts": "2026-09-01T09:00:00.000Z", "seq": 1, "src": "server", "type": "run.start"},
+            {"ts": "2026-09-01T11:30:00.000Z", "seq": 2, "src": "server", "type": "render"}]
+    RUNS = [{"ts": "2026-09-01T09:00:01.000Z", "seq": 1, "src": "agent", "type": "run.begin"},
+            {"ts": "2026-09-01T11:00:00.000Z", "seq": 2, "src": "agent", "type": "run.begin"}]
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-observe-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def test_an_adk_project_cuts_at_the_last_invocation_not_the_server_boot(self):
+        made = make_project(self.root, "acme", sdk="adk", events=self.BOOT, agent=self.RUNS)
+
+        self.assertEqual("2026-09-01T11:00:00.000Z",
+                         observe_mod.session_since(project_mod.read(made)))
+
+    def test_every_other_host_still_cuts_at_the_server_start(self):
+        # The same record read as an Antigravity or Claude project: `run.begin` is not their
+        # vocabulary, and honouring it here would move the cut for hosts whose server start is
+        # already the run's start.
+        for sdk in ("agy", "claude"):
+            with self.subTest(sdk=sdk):
+                made = make_project(self.root, f"acme-{sdk}", sdk=sdk,
+                                    events=self.BOOT, agent=self.RUNS)
+
+                self.assertEqual("2026-09-01T09:00:00.000Z",
+                                 observe_mod.session_since(project_mod.read(made)))
+
+    def test_an_adk_project_with_no_invocation_marker_widens_rather_than_showing_everything(self):
+        # Recorded before the transcript plugin existed, or one where `make_plugin` returned None.
+        # The fallback is wider than the run in hand and narrower than the project's whole history,
+        # so it can show work that is not this run's but never hide work that is.
+        made = make_project(self.root, "acme", sdk="adk", events=self.BOOT, agent=[])
+
+        self.assertEqual("2026-09-01T09:00:00.000Z",
+                         observe_mod.session_since(project_mod.read(made)))
+
+    def test_an_unknown_sdk_falls_back_rather_than_failing(self):
+        made = make_project(self.root, "acme", sdk="somethingelse", events=self.BOOT)
+
+        self.assertEqual("2026-09-01T09:00:00.000Z",
+                         observe_mod.session_since(project_mod.read(made)))
 
 
 class ObserveRouteTests(unittest.TestCase):

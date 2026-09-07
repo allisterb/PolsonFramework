@@ -46,6 +46,10 @@ class McpWiring:
 #: stays as a fallback because the host reads it too and older projects put it there.
 WIRING_FILES = {
     "agy": (".agents/mcp_config.json", "mcp_config.json"),
+    # Google ADK writes Antigravity's files — both runtimes are Gemini and read `GEMINI.md` — and is
+    # recorded separately because who *drives* a project is a different question from what the agent
+    # *reads*. `session_since` is the reader that needs the distinction.
+    "adk": (".agents/mcp_config.json", "mcp_config.json"),
     "claude": (".mcp.json",),
 }
 

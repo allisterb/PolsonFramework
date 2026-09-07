@@ -39,6 +39,8 @@ from google.adk.tools import FunctionTool
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.adk.tools.mcp_tool import McpToolset
+
+import transcript
 from google.adk.tools.mcp_tool import StdioConnectionParams
 from google.genai import types
 from mcp import StdioServerParameters
@@ -1558,10 +1560,16 @@ def build_app(project_dir: str | Path, *, name: str | None = None, **kwargs) -> 
         root.name,
     )
 
+    # The conversation half of the record. Appended rather than replacing the watchdog: they observe
+    # the same run for different reasons, and a plugin that fails to build must not take the other
+    # with it — `make_plugin` returns None instead of raising, and this drops it.
+    plugins = [p for p in (transcript.make_plugin(project),) if p is not None]
+
     return App(
         name=name or project.name,
         root_agent=root,
         plugins=[
+            *plugins,
             StudioWatchdog(
                 role_seconds={agent: budget.seconds for agent, budget in plan.items()},
                 toolset=next((t for t in root.tools if isinstance(t, McpToolset)), None),

@@ -38,6 +38,11 @@ VALID_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 WORKFLOWS: dict[str, tuple[str, ...]] = {
     "logo": ("antique", "geometric", "modern"),
     "infographic": ("blueprint", "brutalist", "editorial", "specimen", "swiss"),
+    # The vector sibling of the above, offering the same five types because it ships the same five
+    # `type.*.md` files. It was absent here for as long as the template existed, so the studio's own
+    # form could not start the workflow this project develops most — and the drift test below has
+    # been red that whole time, which is the test doing its job and nobody reading it.
+    "vector_infographic": ("blueprint", "brutalist", "editorial", "specimen", "swiss"),
     "drawing": ("review", "seed"),
     "comic": ("review", "seed"),
     "painting": (),

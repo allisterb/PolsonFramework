@@ -285,6 +285,7 @@ Snap.svg-compatible retained-mode vector graphics API.
 - `Snap.load(filePath: string)` → `SnapPaper` — Reads a saved `.svg` **from disk** into an editable paper. **The reopen half of `outSvg`**, and the way a later stage picks up an earlier stage's vector file without the markup passing through your context. The path is relative to the project directory and contained exactly as `outFile` is; a missing file names where it looked. Inlined images survive, so a portrait embedded at stage one is still there at stage two.
 - `Snap.matrix(a?: number, b?: number, c?: number, d?: number, e?: number, f?: number)` → `SnapMatrix` — Constructs a 2D affine transformation matrix.
 - `Snap.path` → `SnapPathApi` — Path measurement and geometry utility namespace.
+- `Snap.brush(source?: string | SnapElement | SnapBrush, name?: string)` → `SnapBrush` — A brush nib. Pass a preset name (`'taper'`, `'wedge'`, `'chisel'`, `'split'`), your own outline as an SVG `d` string, or an element whose geometry to use. **A preset name is matched first and path data must begin with `M`/`m`** — sniffing for command letters instead reads `'taper'` as a path, because it contains `t` and `a`, and hands back an empty nib that draws nothing. See *Brush Strokes* below.
 - `Snap.rgb(r: number, g: number, b: number, a?: number)` → `string` — Returns a formatted CSS `rgb()` or `rgba()` string.
 - `Snap.hsl(h: number, s: number, l: number, a?: number)` → `string` — Returns a formatted CSS `hsl()` or `hsla()` string.
 - `Snap.format(template: string, ...args: any[])` → `string` — Replaces `{0}`, `{1}`, etc. placeholders in `template`.
@@ -339,6 +340,41 @@ Represents the root SVG canvas surface:
 
 > [!NOTE]
 > **A paper is itself a `SnapElement`**, so everything under [`SnapElement`](#snapelement) works on it — most usefully `paper.select(...)`, `paper.selectAll(...)`, `paper.children`, `paper.attr(...)`, `paper.getBBox()` and the tree-placement calls. `paper.select('#mark')` searching the whole document is the ordinary way to find something a previous stage drew.
+
+## Brush Strokes — a Nib Bent Along a Path (`SnapBrush`)
+
+The vector answer to `Skia.PathEffect.stamp(..., 'morph')`, and the one capability `polson://manual/14` §9 still lists as absent from this surface.
+
+A **nib** is a closed outline drawn along a straight *backbone* from `(0,0)` to `(100,0)`: each outline point's `x` says **where along the stroke** it sits, its `y` says **how far off the centre line**. Bending it onto a path is then one step per point. The result is a filled `d` string — real geometry, so it survives into `outSvg`, scales without resampling, and can be unioned or cut like any other path.
+
+```javascript
+const paper = Snap(200, 200);
+const nib = Snap.brush('taper');
+paper.brushStroke('M20,150 C60,40 140,40 180,150', nib, 2.5).attr({ fill: '#15151a' });
+paper;
+```
+
+- `paper.brushStroke(target: string | SnapElement, brush?: SnapBrush | string, thickness?: number, segmentLength?: number, tolerance?: number)` → `SnapPath` — Appends the deformed nib as a filled `<path>` and returns it.
+- `nib.deform(target: string | SnapElement, thickness?: number, segmentLength?: number, tolerance?: number)` → `string` — The same mark as a `d` string, for when you want to place it yourself or combine it before drawing.
+- `nib.name` → `string`, `nib.contourCount` → `number`, `nib.pointCount` → `number`
+- `nib.halfWidth` → `number` — The widest half-width in pixels at `thickness` 1, so the mark is about `2 × halfWidth` across at its fattest.
+- `Snap.brush.presets` → `string[]`, `Snap.brush.hasPreset(name)` → `boolean`, `Snap.brush.preset(name)` → `SnapBrush`
+- `Snap.brush.taper(width?, fullness?, steps?)` · `Snap.brush.wedge(...)` · `Snap.brush.chisel(width?, skew?)` · `Snap.brush.split(ribbons?, width?, fullness?, steps?)` → `SnapBrush` — The generated nibs. A taper is nothing at both ends and fullest in the middle; a wedge lands full and lifts to a point; a chisel is a flat nib with skewed ends; a split is several thin ribbons with staggered ends, as separate contours so the gaps are real holes.
+- `Snap.brush.fromPath(templatePathData, name?, sampleStep?)` · `Snap.brush.fromElement(element, name?, sampleStep?)` → `SnapBrush` — Your own nib.
+
+> [!IMPORTANT]
+> **The result is a filled shape, not a stroked line.** Set `fill` on it and leave `stroke` alone: a brush mark has no constant width to give a `stroke-width`, and stroking it outlines the nib rather than drawing with it.
+>
+> **A hand-drawn template is read as a brush, not as a picture** — its horizontal extent is mapped across the whole stroke whatever it measures, and its vertical extent is taken as pixels either side of the centre line. So the aspect ratio is deliberately *not* preserved, which is what makes a longer stroke not a fatter one.
+>
+> **Not to be confused with `Skia.Brush`.** That is the raster medium — a bundle of canvas *state* applied with `ctx.useBrush(...)`. This is a template that becomes *geometry*, which is why it works on a paper where the other cannot.
+
+> [!TIP]
+> `thickness` multiplies the nib's width. `segmentLength` is roughly how many pixels of target each emitted segment spans — smaller is smoother and longer. `tolerance` is a Ramer–Douglas–Peucker pass in pixels, defaulting to `0.08`: it drops points that carry no shape and is close to free. Measured on a preset sheet, it took a split mark from 17.4 KB of path data to under 3 KB with no visible change. Pass `0` to keep every point.
+>
+> Each **sub-path of the target gets its own stroke**, so a `d` with several `M` commands draws several marks rather than one with a bridging stroke through the gaps.
+
+---
 
 ## Paint Servers — Gradients, Masks & Patterns (`SnapPaper`)
 

@@ -393,6 +393,53 @@ public partial class JsDrawingEngine : Runtime
 
             snapFunc.Set("path", JsValue.FromObject(engine, new SnapPathApi()));
 
+            // `Snap.brush` is callable *and* a namespace, as `Snap` itself is: `Snap.brush('taper')`
+            // is the one-call form and `Snap.brush.taper(20, 1.4)` tunes the same nib. Two separate
+            // names would leave an agent guessing which of them takes arguments.
+            var brushFunc = new ClrFunction(engine, "brush", (_, args) =>
+            {
+                var source = args.Length > 0 && !args[0].IsUndefined() ? args[0].ToObject() : null;
+                var name = args.Length > 1 && !args[1].IsUndefined() ? args[1].ToString() : "brush";
+                return JsValue.FromObject(engine, Snap.Brush(source, name));
+            });
+
+            // Bound as explicit functions rather than by handing over the wrapped SnapBrushApi's own
+            // members, and both of the obvious shortcuts fail. Enumerating the wrapper's own keys
+            // yields none, because a Jint CLR wrapper resolves members lazily — the namespace half
+            // came back silently empty, so `Snap.brush('taper')` worked while `Snap.brush.taper(...)`
+            // was "not a function". Copying the members across instead reaches the trap already
+            // documented for `mina`: called as `Snap.brush.taper(...)`, JS binds `this` to
+            // `Snap.brush`, and interop takes that for the CLR receiver — "Object type SnapBrushApi
+            // does not match target type Func<...>". A ClrFunction carries its own target, so `this`
+            // never enters into it, and this is also where the JS-side defaults live.
+            var api = new SnapBrushApi();
+
+            float Num(JsValue[] a, int i, float fallback) => a.Length > i && !a[i].IsUndefined()
+                ? Convert.ToSingle(a[i].ToObject(), CultureInfo.InvariantCulture) : fallback;
+            int Count(JsValue[] a, int i, int fallback) => a.Length > i && !a[i].IsUndefined()
+                ? Convert.ToInt32(a[i].ToObject(), CultureInfo.InvariantCulture) : fallback;
+            string Text(JsValue[] a, int i, string fallback) => a.Length > i && !a[i].IsUndefined()
+                ? a[i].ToString() : fallback;
+
+            void Nib(string name, Func<JsValue[], object> make) =>
+                brushFunc.Set(name, new ClrFunction(engine, name, (_, a) => JsValue.FromObject(engine, make(a))));
+
+            Nib("taper", a => api.Taper(Num(a, 0, 14f), Num(a, 1, 1f), Count(a, 2, 64)));
+            Nib("wedge", a => api.Wedge(Num(a, 0, 14f), Num(a, 1, 1f), Count(a, 2, 64)));
+            Nib("chisel", a => api.Chisel(Num(a, 0, 12f), Num(a, 1, 18f)));
+            Nib("split", a => api.Split(Count(a, 0, 4), Num(a, 1, 16f), Num(a, 2, 1.3f), Count(a, 3, 40)));
+            Nib("fromPath", a => api.FromPath(Text(a, 0, string.Empty), Text(a, 1, "brush"), Num(a, 2, 0.75f)));
+            Nib("fromElement", a => api.FromElement(
+                a.Length > 0 ? a[0].ToObject() as SnapElement ?? throw new ArgumentException(
+                    "Snap.brush.fromElement(element) needs an element to take its geometry from.")
+                    : throw new ArgumentException("Snap.brush.fromElement(element) needs an element."),
+                Text(a, 1, "brush"), Num(a, 2, 0.75f)));
+            Nib("preset", a => api.Preset(Text(a, 0, "taper")));
+            Nib("hasPreset", a => api.HasPreset(Text(a, 0, string.Empty)));
+            brushFunc.Set("presets", JsValue.FromObject(engine, api.Presets));
+
+            snapFunc.Set("brush", brushFunc);
+
             snapFunc.Set("rgb", new ClrFunction(engine, "rgb", (_, args) =>
             {
                 var r = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToInt32(args[0].ToObject()) : 0;

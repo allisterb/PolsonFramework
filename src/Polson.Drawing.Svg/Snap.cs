@@ -66,6 +66,40 @@ public static class Snap
     public static SnapMatrix Matrix(float a = 1f, float b = 0f, float c = 0f, float d = 1f, float e = 0f, float f = 0f) =>
         new(a, b, c, d, e, f);
 
+    /// <summary>
+    /// A brush nib: a preset name, your own outline as an SVG <c>d</c> string, or an element whose
+    /// geometry to use as the nib.
+    /// </summary>
+    /// <remarks>
+    /// Presets are <c>'taper'</c>, <c>'wedge'</c>, <c>'chisel'</c> and <c>'split'</c>. A string
+    /// containing a path command is read as a template instead, so
+    /// <c>Snap.brush('M0,0 L100,-4 L100,4 Z')</c> needs no second call to distinguish the two. Bend
+    /// it onto a path with <c>nib.deform(d)</c> or <c>paper.brushStroke(d, nib)</c>.
+    /// <para>
+    /// Not to be confused with <c>Skia.Brush</c>, which is the raster medium — a bundle of canvas
+    /// <i>state</i>. This one is a template that becomes <i>geometry</i>, which is why it works on a
+    /// paper where the other cannot.
+    /// </para>
+    /// <para>
+    /// <b>A preset name is checked before path data, and path data must begin with a move.</b> The
+    /// obvious sniff — does the string contain a path command letter — is wrong in the worst
+    /// direction: <c>'taper'</c> contains <c>t</c> and <c>a</c>, so it parsed as a <c>d</c> string,
+    /// produced an <i>empty</i> nib, and drew nothing while reporting success.
+    /// </para>
+    /// </remarks>
+    public static SnapBrush Brush(object? source = null, string name = "brush") => source switch
+    {
+        SnapBrush existing => existing,
+        SnapElement element => SnapBrush.FromElement(element, name),
+        null => SnapBrush.Taper(),
+        string s when SnapBrush.HasPreset(s) => SnapBrush.Preset(s),
+        string s when s.AsSpan().TrimStart() is ['M' or 'm', ..] => SnapBrush.FromPath(s, name),
+
+        // Neither a preset nor a path: let Preset throw, so the message lists the real names.
+        string s => SnapBrush.Preset(s),
+        _ => SnapBrush.Preset(source.ToString() ?? string.Empty),
+    };
+
     public static Color Color(string colorStr) =>
         SnapAttributes.ParseColor(colorStr);
 

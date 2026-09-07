@@ -73,6 +73,11 @@ public static class JsSurface
         new("element", typeof(SnapElement), "Snap", true),
         new("matrix", typeof(SnapMatrix), "Snap", true),
         new("gradient", [typeof(SnapGradient), typeof(SnapLinearGradient), typeof(SnapRadialGradient), typeof(CanvasGradient)], "Snap", true),
+        // `nib` rather than `brush`, which the raster BrushPreset already holds. The two are
+        // genuinely different things — state against geometry — so sharing a name would be worse
+        // than an awkward one.
+        new("nib", typeof(SnapBrush), "Snap", true),
+        new("Snap.brush", typeof(SnapBrushApi), "Snap", false),
 
         new("canvas", typeof(SkiaCanvas), "Canvas2D", true),
         new("ctx", typeof(CanvasRenderingContext2D), "Canvas2D", true),

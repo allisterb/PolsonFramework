@@ -289,6 +289,29 @@ paper.rect(50, 50, 100, 100).attr({ fill: '#15151a', filter: rough.url });
 
 ---
 
+## 6a1. Brush Strokes
+
+> **Implemented by**: `Snap.brush(...)`, `paper.brushStroke(...)`, `nib.deform(...)`; the generated nibs `Snap.brush.taper(...)`, `Snap.brush.wedge(...)`, `Snap.brush.chisel(...)`, `Snap.brush.split(...)`; your own via `Snap.brush.fromPath(...)` or `Snap.brush.fromElement(...)`; and `Snap.brush.presets`, `Snap.brush.preset(...)`, `Snap.brush.hasPreset(...)` for choosing between them.
+
+A **nib** is a closed outline drawn along a straight backbone from `(0,0)` to `(100,0)`. Each of its points carries two facts: `x` is **where along the stroke** the point belongs, and `y` is **how far off the centre line**. Bending it onto a path is then one step per point — sample the path at that parameter, step off perpendicular by `y`.
+
+```js
+paper.brushStroke('M20,150 C60,40 140,40 180,150', 'taper', 2.5).attr({ fill: '#15151a' });
+```
+
+Presets: **taper** (nothing at both ends, fullest in the middle — the confident single stroke), **wedge** (lands full, lifts to a point), **chisel** (a flat nib held at an angle), **split** (a dry, frayed nib whose ribbons are separate contours, so the gaps are real holes). Your own nib is `Snap.brush(dString)` or `Snap.brush(element)`.
+
+> [!IMPORTANT]
+> **What comes back is a filled shape, not a stroked line.** Set `fill` and leave `stroke` alone — a brush mark has no constant width to give a `stroke-width`, and stroking it outlines the nib instead of drawing with it. This is also why it is *not* the same thing as `Skia.Brush`: that is canvas **state**, applied with `ctx.useBrush(...)` and paid out in pixels; this is **geometry**, and it reaches `outSvg` as a path a designer can select.
+
+A hand-drawn template is read as a brush rather than as a picture: its width maps across the whole stroke whatever it measures, its height is pixels either side of the centre. So a longer stroke is not a fatter one — which is the property that makes it a brush.
+
+A nib reports itself, which is how you size a mark before drawing it: `nib.name`, `nib.halfWidth` (the widest half-width in pixels at thickness 1, so the mark is about twice that across at its fattest), `nib.contourCount` and `nib.pointCount`. `nib.deform(target, thickness, segmentLength, tolerance)` returns the `d` string without drawing anything, for when you want to combine or measure the mark first — `paper.brushStroke(...)` is that call plus the append.
+
+Two knobs are worth knowing. `segmentLength` is roughly how many pixels of the target each emitted segment spans, so smaller is smoother and longer. `tolerance` is a simplification pass in pixels, defaulting to `0.08`: it drops points that carry no shape, and on a split mark it is the difference between 17 KB of path data and under 3 KB with no visible change. Pass `0` to keep every point.
+
+---
+
 ## 6b. Stylesheets
 
 > **Implemented by**: `paper.style(css)`.
@@ -400,7 +423,8 @@ paper.image(oak, 640, 40, 280, 300);               // a requisitioned material
 
 An honest list, because the failure mode is reaching for a raster capability halfway through a vector scene and rebuilding everything.
 
-- **No brushes or path effects.** `Skia.Brush.*` and `Skia.PathEffect.*` are canvas-side. A pencil line, a stamped bristle stroke and hatching-as-geometry are raster. This is now the *main* reason to choose the canvas, and §6a's `turbulence` → `displacementMap` covers part of even this — a roughened contour reads as drawn rather than plotted.
+- **No drawing *media*.** `Skia.Brush.*` is a bundle of canvas state — a pencil's granular deposit, a chalk's soft edge — and there is no vector equivalent, because a paper has no context to hold it. §6a1's brush strokes give you the *mark's shape*, not the medium's texture; the two together cover most of what a drawn line is, and the gap that remains is grain rather than form.
+- **No stamped or hatched path effects.** `Skia.PathEffect.stamp` and `.hatch` are canvas-side. A repeated motif along a curve, or hatching as scalable geometry, is raster.
 - **No SkSL.** A custom shader or runtime colour filter written in SkSL is canvas-side, and there is no vector equivalent.
 - **Noise, blur, colour grading and soft edges are *not* on this list, and used to be.** They are `paper.filter()` — see §6a. `feTurbulence` is the same Perlin the Skia shader wraps. Reaching for a raster canvas because a vector scene needs grain is a rebuild for nothing.
 - **No text wrapping.** `ctx.measureWrappedText` and `ctx.fillWrappedText` are canvas-only, because SVG has no flow. A paragraph broken into `<tspan>` lines is your decision, line by line.
@@ -427,6 +451,8 @@ If a scene needs several of these, it is a raster scene. Decide that in §2 rath
 | A stylesheet works for the first half of the drawing only | It resolved against the tree as it stood when called | Call it last, or call it again |
 | A blur or displacement looks cropped on all four sides | The default filter region clips at `-10%`/`110%` of the element's box | `filter.region(-0.3, -0.3, 1.6, 1.6)`, not a smaller deviation |
 | A filter chain renders as the untouched source | A primitive's `input` names a `result` no step produced | Name the `result` on the earlier primitive; check both in the saved markup |
+| A brush stroke is invisible, or is a thin outline | It is a *filled* path, and you set `stroke` rather than `fill` | `attr({ fill: ... })`; a brush mark has no `stroke-width` to give |
+| One brush mark bridges a gap in the target | You expected sub-paths to be joined; each gets its own stroke | Nothing to fix — that is the correct behaviour, and the join would be a mark you never drew |
 
 ---
 
@@ -449,6 +475,8 @@ If a scene needs several of these, it is a raster scene. Decide that in §2 rath
 | Gradient stops | `gradient.addStop(...)`, `setStops(...)`, `stops()` | `addStop` chains |
 | Mask / pattern / defs | `paper.mask(...)`, `paper.ptrn(...)`, `paper.defs` | Luminance masks: white shows |
 | Grain, blur, colour grading | `paper.filter()` then a primitive | Apply with `attr({ filter: f.url })`; §6a |
+| A brush stroke | `paper.brushStroke(d, nib, thickness)` | Returns a filled path — set `fill`, not `stroke` |
+| A nib of your own | `Snap.brush(dString)`, `Snap.brush(element)` | Backbone (0,0)→(100,0); `x` is position, `y` is width |
 | A drawn rather than plotted edge | `turbulence(...)` → `displacementMap(...)` | Widen `region` first, or it is clipped |
 | One rule instead of ninety attributes | `paper.style(css)` | Call it last; returns the count styled |
 | Measure | `element.getBBox()` | Real font metrics for `<text>`; `y` is the baseline |

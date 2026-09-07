@@ -5,12 +5,13 @@ State after the session that **finished the motion score** and then turned the s
 competition is a diffusion model rather than another drawing tool.
 
 **Tests: 1,645 .NET at the close of the seventh session; 1,987 .NET + 39 Python as of §21;
-2,038 .NET as of §22.**
+2,038 .NET as of §22; 2,063 as of §22.3.**
 Sections are appended, never rewritten, so everything below §17 is history and remains accurate as
 such.
 
 > **§22 is the current state** — the filter and stylesheet surface, now tested and documented, which
-> closes §21.7 items 1 and 2. **§22.3 is the pick-up list; start there.** Nothing is uncommitted.
+> closes §21.7 items 1 and 2, plus vector brushes (§22.3), which closes item 3. **§22.4 is the
+> pick-up list; start there.** Nothing is uncommitted.
 >
 > Earlier: **§21** is reference photography, the raster/vector boundary, and the
 > `vector_infographic` workflow. Its §21.6 has since been committed as `591d510`.
@@ -2254,9 +2255,52 @@ Added **§6a Filters** (the primitives, each named against its canvas counterpar
 absent — `Skia.Brush`, `Skia.PathEffect`, SkSL — and says so much more narrowly. Four trap rows and
 three symbol-map rows follow.
 
-### 22.3 What is still open from §21.7
+### 22.3 Vector brushes — §21.7 item 3, closed
 
-Items **3–7 stand unchanged**: the brush question (now the whole of the vector deficit, and
-`feTurbulence` + `feDisplacementMap` covers part of even that), `SKSvgCanvas` parked, `Photo`'s
-session-only cache and absent face detection, the ADK instructions' silence on `Snap.load`, and the
-orphaned doc comment in `Program.cs`.
+**2,063 .NET tests, all passing.** `src/Polson.Drawing.Svg/SnapBrush.cs` + `SnapBrushApi.cs`,
+`Snap.brush(...)`, `paper.brushStroke(...)`, 24 tests, and Manual 14 §6a1.
+
+A **nib** is a closed outline along a straight backbone from `(0,0)` to `(100,0)`: a point's `x` is
+where along the stroke it sits, its `y` is how far off the centre line. Bending it onto a path is one
+step per point. The output is a filled `d` string, so it reaches `outSvg` as geometry.
+
+**Adapted from `reference/projects/svg-brush-main` (MIT), ledgered the same day.** The approach, not
+the code — three things differ and each fixes a defect rather than a preference:
+
+- It walks a **polyline**, so its tangent is piecewise-constant and jumps at every vertex; it hides
+  that behind RDP at tolerance 0.3 plus a quadratic smoother that does not interpolate its own
+  vertices. `SKPathMeasure` gives position *and* tangent exactly on the curve, so there is nothing to
+  hide. We still run RDP, but at 0.08px and **purely for size** — 76 KB of path data to 14.5 KB on
+  the preset sheet, no visible change, and a test pins both halves of that claim.
+- It flattens the target's sub-paths into **one** point list, which draws a bridging stroke through
+  the gaps. Each contour gets its own stroke here.
+- Its template is sampled at fixed resolution, so a template edge spanning a long arc emits one
+  straight segment. Subdividing against the *target's* length makes that impossible; the source has
+  it as an opt-in flag with two binary searches and a documented performance penalty.
+
+**Its brush data is excluded and this is the part to remember**: `FigmaBrushes.ts` is 235 KB of the
+381 KB and is traced from Figma Draw. An MIT declaration covers the author's code, not another
+party's artwork — the OpenPDN row again. All four presets are generated from formulae instead.
+
+**Three defects were found by the guards, not by review**, which is the argument for them:
+
+1. `Snap.brush('taper')` returned an **empty nib and drew nothing, reporting success** — the sniff
+   asked whether the string contained a path command letter, and `taper` contains `t` and `a`.
+   Presets are now matched first and path data must begin with a move.
+2. `Snap.brush.taper(...)` was silently absent: enumerating a Jint CLR wrapper's own keys yields
+   none, because members resolve lazily. Copying members across instead reached **the `mina` trap
+   already documented** — JS binds `this` to `Snap.brush`, interop takes it for the CLR receiver.
+   Explicit `ClrFunction`s carry their own target.
+3. `ApiDocumentationTests`, `ManualCoverageTests` and `CoreReferenceExampleTests` between them caught
+   undocumented members, a manual-coverage floor breach, and a reference example that did not run.
+
+**What it does not do:** no medium — `Skia.Brush`'s grain and soft edge are canvas state and have no
+vector counterpart, so this gives a mark's *shape*, not its texture. `PathEffect.stamp`/`.hatch`
+remain raster. Manual 14 §9 is narrowed accordingly. Self-intersection on a bend tighter than the
+nib's half-width is unhandled; `CanvasPath.simplify()` is the fix if it bites.
+
+### 22.4 What is still open from §21.7
+
+Items **4–7 stand unchanged**: `SKSvgCanvas` parked, `Photo`'s session-only cache and absent face
+detection, the ADK instructions' silence on `Snap.load`, and the orphaned doc comment in
+`Program.cs`. Item 3, the brush question, is §22.3 above.

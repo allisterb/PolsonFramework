@@ -85,6 +85,38 @@ public class SnapPaper : SnapElement
         return new SnapPolygon(polygon, this);
     }
 
+    #region Brush Strokes
+    /// <summary>
+    /// Draws <paramref name="target"/> as a brush stroke: appends the deformed nib as a filled
+    /// <c>&lt;path&gt;</c> and returns it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The result is a filled shape, not a stroked line</b>, which is the whole point — set
+    /// <c>fill</c> on it and leave <c>stroke</c> alone. A brush mark has no constant width to give a
+    /// <c>stroke-width</c>, and stroking it would outline the nib rather than draw with it.
+    /// </para>
+    /// <code>
+    /// const nib = Snap.brush('taper');
+    /// paper.brushStroke('M20,120 C60,20 180,20 220,120', nib, 2.5).attr({ fill: '#15151a' });
+    /// </code>
+    /// </remarks>
+    public SnapPath BrushStroke(object? target, object? brush = null, float thickness = 1f, float segmentLength = 2f, float tolerance = 0.08f)
+    {
+        var nib = brush switch
+        {
+            SnapBrush b => b,
+            null => SnapBrush.Taper(),
+            string s => Snap.Brush(s),
+            _ => throw new ArgumentException(
+                "brushStroke's second argument must be a SnapBrush or a preset name. " +
+                $"Available presets: {string.Join(", ", SnapBrush.PresetNames)}.", nameof(brush)),
+        };
+
+        return Path(nib.Deform(target, thickness, segmentLength, tolerance));
+    }
+    #endregion
+
     #region Filters and Stylesheets
     /// <summary>
     /// Creates a <c>&lt;filter&gt;</c> in <c>&lt;defs&gt;</c> and returns it for chaining.

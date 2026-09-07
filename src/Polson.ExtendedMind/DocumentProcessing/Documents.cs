@@ -12,6 +12,15 @@ using System.Collections.Generic;
 /// </remarks>
 public static class Documents
 {
+    /// <summary>Where a director's documents live, relative to the project directory.</summary>
+    /// <remarks>
+    /// <b>A convention rather than a restriction.</b> <c>ask</c> reads any contained path, so a file
+    /// elsewhere in the project still works; what the folder buys is that <c>list</c> has somewhere
+    /// definite to look and a director has somewhere obvious to put things. Without one, an agent
+    /// told "the figures are in the attached report" has no way to find out what was attached.
+    /// </remarks>
+    public const string Folder = "documents";
+
     /// <summary>Largest document accepted inline, in bytes.</summary>
     /// <remarks>
     /// Inline data rides in the request body, and the service caps the whole request at roughly 20 MB.
@@ -44,6 +53,25 @@ public static class Documents
         [".jpeg"] = "image/jpeg",
         [".webp"] = "image/webp",
     };
+}
+
+/// <summary>One document available to be read.</summary>
+/// <remarks>
+/// Deliberately not the contents: listing is free and reading is metered, so an agent should be able
+/// to see what it has before deciding what to spend on.
+/// </remarks>
+public sealed record DocumentEntry
+{
+    /// <summary>Project-relative path, with forward slashes, ready to hand to <c>ask</c>.</summary>
+    public required string Path { get; init; }
+
+    /// <summary>File name alone, for a label.</summary>
+    public required string Name { get; init; }
+
+    public required int Bytes { get; init; }
+
+    /// <summary>What it would be sent as.</summary>
+    public required string MimeType { get; init; }
 }
 
 #region Requests

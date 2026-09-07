@@ -99,6 +99,106 @@ public class DocumentProcessorTests : TestsRuntime, IDisposable
     }
     #endregion
 
+    #region Listing Tests
+    /// <summary>
+    /// Listing is free, offline, and works with no key — it is how an agent sees what it has.
+    /// </summary>
+    /// <remarks>
+    /// Unmetered on purpose. A surface where finding out what exists costs the same as reading it
+    /// pushes an agent into guessing file names, which is the behaviour this replaces.
+    /// </remarks>
+    [Fact]
+    public void ListFindsDocumentsWithNoKeyAndNoBudget()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "documents"));
+        File.WriteAllText(Path.Combine(root, "documents", "returns.csv"), "a,b\n1,2\n");
+
+        var processor = new DocumentProcessor(null, new DocumentBudget(0), root);
+        var found = processor.List();
+
+        var entry = Assert.Single(found);
+        Assert.Equal("documents/returns.csv", entry.Path);
+        Assert.Equal("returns.csv", entry.Name);
+        Assert.Equal("text/csv", entry.MimeType);
+        Assert.True(entry.Bytes > 0);
+    }
+
+    /// <summary>A path is returned ready to hand straight back to <c>ask</c>.</summary>
+    /// <remarks>
+    /// Forward slashes and project-relative, so a nested document does not need repair on Windows —
+    /// where <c>GetRelativePath</c> would otherwise hand back a backslashed path that reads as an
+    /// escape sequence the moment it is put in a JS string.
+    /// </remarks>
+    [Fact]
+    public void AListedPathIsUsableAsGiven()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "documents", "2025"));
+        File.WriteAllText(Path.Combine(root, "documents", "2025", "q4.csv"), "a\n1\n");
+
+        var entry = Assert.Single(new DocumentProcessor(null, new DocumentBudget(0), root).List());
+
+        Assert.Equal("documents/2025/q4.csv", entry.Path);
+        Assert.DoesNotContain('\\', entry.Path);
+    }
+
+    /// <summary>The folder's own README is machinery, not source material.</summary>
+    [Fact]
+    public void ListOmitsTheFoldersOwnReadme()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "documents"));
+        File.WriteAllText(Path.Combine(root, "documents", "README.md"), "# documents");
+
+        Assert.Empty(new DocumentProcessor(null, new DocumentBudget(0), root).List());
+    }
+
+    /// <summary>A type the surface cannot declare is omitted rather than listed then refused.</summary>
+    [Fact]
+    public void ListOmitsWhatCouldNotBeRead()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "documents"));
+        File.WriteAllText(Path.Combine(root, "documents", "notes.docx"), "x");
+        File.WriteAllText(Path.Combine(root, "documents", "notes.txt"), "x");
+
+        var entry = Assert.Single(new DocumentProcessor(null, new DocumentBudget(0), root).List());
+        Assert.Equal("documents/notes.txt", entry.Path);
+    }
+
+    [Fact]
+    public void ListIsEmptyWhenThereIsNoFolder() =>
+        Assert.Empty(new DocumentProcessor(null, new DocumentBudget(0), root).List());
+
+    /// <summary>
+    /// A wrong path is told what the right ones are.
+    /// </summary>
+    /// <remarks>
+    /// An agent one character out — <c>boxoffice.pdf</c> for <c>box-office-2025.pdf</c> — otherwise
+    /// spends a turn per guess. The same move <c>peek</c> makes when it lists the artifacts folder.
+    /// </remarks>
+    [Fact]
+    public async Task AWrongPathNamesWhatIsActuallyThere()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "documents"));
+        File.WriteAllText(Path.Combine(root, "documents", "box-office-2025.csv"), "a\n1\n");
+
+        var answer = await new DocumentProcessor("k", new DocumentBudget(3), root)
+            .Ask("boxoffice.csv", "read it");
+
+        Assert.Equal("NotFound", answer.FailureName);
+        Assert.Contains("documents/box-office-2025.csv", answer.Error!, StringComparison.Ordinal);
+    }
+
+    /// <summary>With nothing staged, the message says so rather than listing an empty set.</summary>
+    [Fact]
+    public async Task AWrongPathWithNoDocumentsSaysThereAreNone()
+    {
+        var answer = await new DocumentProcessor("k", new DocumentBudget(3), root)
+            .Ask("anything.pdf", "read it");
+
+        Assert.Equal("NotFound", answer.FailureName);
+        Assert.Contains("no documents at all", answer.Error!, StringComparison.Ordinal);
+    }
+    #endregion
+
     #region Type Tests
     /// <summary>
     /// An extension with no known type is refused rather than guessed at.

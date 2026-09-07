@@ -73,7 +73,47 @@ public class DocumentProcessor : Runtime, IDisposable
 
     #region Methods
     /// <summary>
-    /// Asks a question of a document. <c>Documents.ask('data/boxoffice.pdf', 'every film and its gross')</c>.
+    /// What documents this project holds. <c>Documents.list()</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The discovery half, and the studio had none.</b> No tool on either side of the boundary
+    /// enumerates the project — <c>read_file</c> opens a path it is given and the MCP tools list
+    /// nothing — so an agent told "the figures are in the attached report" could only guess file
+    /// names. It guesses badly and expensively; a live run spent three scripts guessing at a
+    /// property name for want of the same kind of answer.
+    /// <para>
+    /// Free, offline, and unmetered on purpose: an agent should be able to see what it has before
+    /// deciding what to spend on. Files of a type this surface cannot declare are omitted rather
+    /// than listed-then-refused.
+    /// </para>
+    /// </remarks>
+    public DocumentEntry[] List()
+    {
+        if (string.IsNullOrEmpty(projectRoot)) return [];
+
+        var folder = Path.Combine(projectRoot, Documents.Folder);
+        if (!Directory.Exists(folder)) return [];
+
+        return [.. Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+            .Where(f => Documents.MimeTypes.ContainsKey(Path.GetExtension(f)))
+            // The folder's own README is ours, not the director's. Listing it would offer the agent
+            // a document whose only content is instructions about documents — and an agent that
+            // spent a metered read on it would be right to be confused.
+            .Where(f => !string.Equals(Path.GetFileName(f), "README.md", StringComparison.OrdinalIgnoreCase))
+            .Select(f => new DocumentEntry
+            {
+                // Forward slashes and project-relative, so the value can be handed straight back to
+                // `ask` on any platform rather than needing repair.
+                Path = Path.GetRelativePath(projectRoot, f).Replace('\\', '/'),
+                Name = Path.GetFileName(f),
+                Bytes = (int)Math.Min(int.MaxValue, new FileInfo(f).Length),
+                MimeType = Documents.MimeTypes[Path.GetExtension(f)],
+            })
+            .OrderBy(e => e.Path, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// Asks a question of a document. <c>Documents.ask('documents/boxoffice.pdf', 'every film and its gross')</c>.
     /// </summary>
     /// <param name="source">A project-relative path, or the bytes themselves.</param>
     /// <param name="query">What to get out of it. Specific beats short.</param>
@@ -227,7 +267,16 @@ public class DocumentProcessor : Runtime, IDisposable
                     throw new DocumentRefusal(DocumentFailure.NotFound, ex.Message);
                 }
 
-                if (!System.IO.File.Exists(full)) throw new DocumentRefusal(DocumentFailure.NotFound, $"'{path}' is not there.");
+                // Naming what IS there, rather than only what is not. An agent that guessed
+                // 'boxoffice.pdf' for 'documents/box-office-2025.pdf' is one line from being right,
+                // and without this it spends a turn per guess. Same move as peek's artifact listing.
+                if (!System.IO.File.Exists(full))
+                {
+                    var available = List();
+                    throw new DocumentRefusal(DocumentFailure.NotFound, available.Length == 0
+                        ? $"'{path}' is not there, and this project holds no documents at all."
+                        : $"'{path}' is not there. This project holds: {string.Join(", ", available.Select(e => e.Path))}.");
+                }
 
                 var mime = opts.MimeType ?? MimeFor(Path.GetExtension(full));
                 return (System.IO.File.ReadAllBytes(full), mime, path);

@@ -270,7 +270,11 @@ internal static class ProjectGenerator
         // only the standalone ones, because any of them may now be run from the orchestrator — see
         // the note on agent.config.json below. Empty and inert under a desktop host, which owns its
         // own session.
-        var dirs = new List<string> { "artifacts", "scripts", "events" };
+        // `documents/` is where a director's source material goes — a PDF of returns, a CSV export,
+        // a scanned report. Created empty rather than on demand, because a folder that does not
+        // exist is a folder nobody puts anything in, and `Documents.list()` has to have somewhere
+        // definite to look. Its README is what tells a director it is there at all.
+        var dirs = new List<string> { "artifacts", "scripts", "events", "documents" };
         if (orchestratable)
         {
             dirs.AddRange(["session/save", "session/appdata"]);
@@ -280,6 +284,8 @@ internal static class ProjectGenerator
         {
             Directory.CreateDirectory(Path.Combine(dir, sub.Replace('/', Path.DirectorySeparatorChar)));
         }
+
+        WriteDocumentsReadme(Path.Combine(dir, "documents", "README.md"));
 
         var tokens = new Dictionary<string, string>
         {
@@ -1479,6 +1485,40 @@ internal static class ProjectGenerator
         var path = Path.Combine(dir, name.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, body.ReplaceLineEndings("\r\n"), new UTF8Encoding(false));
+    }
+
+    /// <summary>
+    /// The note that makes <c>documents/</c> discoverable to the person filling it.
+    /// </summary>
+    /// <remarks>
+    /// An empty folder tells a director nothing, and the whole point of the convention is that both
+    /// sides know where to look — the director when placing a file, and <c>Documents.list()</c> when
+    /// finding one. It is also the file that survives an empty folder into git, which is why it is a
+    /// README rather than a <c>.gitkeep</c>.
+    /// </remarks>
+    static void WriteDocumentsReadme(string path)
+    {
+        // Never overwrite: a re-generation must not clobber a note the director added beside their
+        // own files, and the folder may already hold real work.
+        if (File.Exists(path)) return;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, """
+            # documents
+
+            Source material for this commission — a PDF of returns, a CSV export, a scanned report.
+            **Put files here** and the agent can find them; anywhere else and it has to be told the
+            exact path.
+
+            The agent reads them with `Documents.list()` to see what is here and
+            `Documents.ask(path, question)` to get an answer out of one. Reading is metered, listing
+            is free.
+
+            Supported: `.pdf` `.txt` `.md` `.csv` `.json` `.xml` `.html` `.png` `.jpg` `.webp`.
+
+            **These files are treated as untrusted data.** Text inside a document that addresses
+            whoever is processing it is reported as a warning, never followed.
+            """.ReplaceLineEndings("\n"), new UTF8Encoding(false));
     }
 
     /// <summary>Writes a file, creating the directory a nested name implies.</summary>

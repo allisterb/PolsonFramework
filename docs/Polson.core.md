@@ -2191,7 +2191,10 @@ spreadsheet exported as CSV, a scanned report. `Research` commissions figures fr
 rather than from what a model recalls.
 
 ```javascript
-const answer = await Documents.ask('data/boxoffice-2025.pdf',
+// See what the director supplied. Free, and the paths come back ready to use.
+for (const d of Documents.list()) log(`${d.path}  ${d.bytes}B  ${d.mimeType}`);
+
+const answer = await Documents.ask('documents/boxoffice-2025.pdf',
     'every film, its distributor, opening weekend and total domestic gross, in USD millions');
 if (!answer.success) { error(answer.remedy); exit(answer.failureName); }
 if (answer.warnings.length) for (const w of answer.warnings) error('SCAN: ' + w);
@@ -2199,6 +2202,12 @@ if (answer.warnings.length) for (const w of answer.warnings) error('SCAN: ' + w)
 log(answer.text);
 log(`read ${answer.provenance.bytes} bytes of ${answer.provenance.mimeType}, ${Documents.budget.remaining} reads left`);
 ```
+
+> [!IMPORTANT]
+> **Start with `Documents.list()`, not with a guessed filename.** Nothing else on either side of the
+> boundary enumerates the project — `read_file` opens a path it is given and no MCP tool lists a
+> directory — so a brief saying "the figures are in the attached report" is unanswerable without it.
+> The director's material goes in **`documents/`**, and that is where this looks.
 
 > [!IMPORTANT]
 > **`Documents.ask` is asynchronous — you must `await` it**, like `Assets.*` and `Photo.of`, and for
@@ -2220,7 +2229,8 @@ log(`read ${answer.provenance.bytes} bytes of ${answer.provenance.mimeType}, ${D
 
 ## `Documents`
 
-- `Documents.ask(source: string | byte[], query: string, options?: object)` → `Promise<DocumentAnswer>` — Reads the document and answers the question. `source` is a **project-relative path**, contained exactly as `outFile` is, or the bytes themselves. `options`: `{ model?: string, mimeType?: string }`.
+- `Documents.list()` → `DocumentEntry[]` — What the project holds, from its `documents/` folder. **Free, offline, unmetered, and works with no key** — finding out what exists must never cost what reading it costs. Files of a type this surface cannot declare are omitted rather than listed then refused, and the folder's own `README.md` is not listed.
+- `Documents.ask(source: string | byte[], query: string, options?: object)` → `Promise<DocumentAnswer>` — Reads the document and answers the question. `source` is a **project-relative path**, contained exactly as `outFile` is, or the bytes themselves. `options`: `{ model?: string, mimeType?: string }`. A path that is not there comes back naming **what is**, so a near-miss costs one turn rather than several.
 - `Documents.budget` → `DocumentBudget` — Remaining allowance. **Check before a run of reads.**
 - `Documents.model` → `string` — The default model.
 - `Documents.isAvailable` → `boolean` — Whether a key is configured. `false` means every call refuses.
@@ -2241,6 +2251,14 @@ log(`read ${answer.provenance.bytes} bytes of ${answer.provenance.mimeType}, ${D
 > **There is no URL form, deliberately.** The service does not dereference arbitrary `https://` links,
 > so passing one would fail locally and when deployed, differently in each place. Fetch it yourself
 > and pass the bytes.
+
+## `DocumentEntry`
+
+- `entry.path` → `string` — Project-relative, forward slashes, **ready to hand straight to `ask`**.
+- `entry.name` → `string` — The file name alone, for a label.
+- `entry.bytes` → `number` · `entry.mimeType` → `string`
+
+Deliberately not the contents: listing is free and reading is metered, so you can see what you have before deciding what to spend on.
 
 ## `DocumentAnswer`
 

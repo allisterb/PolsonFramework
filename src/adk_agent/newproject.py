@@ -181,10 +181,59 @@ def write_app(project_dir: Path, app_name: str, apps_dir: Path = APPS_DIR) -> Pa
     return package
 
 
+#: Extensions `Documents.ask` knows how to declare a type for. Mirrored from
+#: `Documents.MimeTypes` in the .NET surface, which is the authority — copying a file this list
+#: does not cover would put something in `documents/` that the agent can see and cannot read.
+DOCUMENT_SUFFIXES = {
+    ".pdf", ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm",
+    ".png", ".jpg", ".jpeg", ".webp",
+}
+
+
+def stage_documents(project: Path, documents: list[str] | None) -> list[Path]:
+    """Copies the director's source material into the project's `documents/` folder.
+
+    **Copied rather than referenced, and that is the point.** A path outside the project is not
+    readable by the agent — the MCP server contains every read to the project directory, and the
+    hosted runtime has no access to the director's disk at all. A reference would work locally and
+    fail deployed, which is the worst of the two.
+
+    Returns the staged paths, so the caller can say what was placed.
+    """
+    if not documents:
+        return []
+
+    folder = project / "documents"
+    folder.mkdir(parents=True, exist_ok=True)
+    staged: list[Path] = []
+
+    for item in documents:
+        source = Path(item).expanduser()
+        if not source.is_file():
+            raise GenerateError(f"--document {item!r} is not a file.")
+
+        if source.suffix.lower() not in DOCUMENT_SUFFIXES:
+            raise GenerateError(
+                f"--document {item!r} has no type the studio can declare. Supported: "
+                + ", ".join(sorted(DOCUMENT_SUFFIXES))
+            )
+
+        target = folder / source.name
+        # Refuse rather than overwrite: two files of one name is a mistake about which was wanted,
+        # and silently keeping the second would be found later, in a figure.
+        if target.exists():
+            raise GenerateError(f"documents/{source.name} already exists; rename one of them.")
+
+        shutil.copy2(source, target)
+        staged.append(target)
+
+    return staged
+
+
 def create(
     project_id: str, *, workflow: str = "logo", prompt: str | None = None,
     type_: str | None = None, force: bool = False, test: bool = False,
-    deadline: int | None = None,
+    deadline: int | None = None, documents: list[str] | None = None,
     projects_dir: Path = PROJECTS_DIR, apps_dir: Path = APPS_DIR,
 ) -> tuple[Path, Path]:
     """Generates the project and its app. Returns `(project_dir, app_package)`."""
@@ -195,6 +244,7 @@ def create(
         )
     project = _run_create_project(
         projects_dir, project_id, workflow, prompt, type_, force, test, deadline)
+    stage_documents(project, documents)
     return project, write_app(project, project_id, apps_dir)
 
 
@@ -220,6 +270,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="Minutes for the whole commission. Omit for the workflow default. "
                              "Set it explicitly for a test run: findings.md is written from the "
                              "remaining allowance, so a run with no clock never writes one.")
+    parser.add_argument("--document", action="append", dest="documents", metavar="PATH",
+                        help="Source material to copy into the project's documents/ folder - a PDF "
+                             "of returns, a CSV export. Repeatable. The agent finds them with "
+                             "Documents.list() and reads one with Documents.ask(path, question). "
+                             "Copied, not referenced: a path outside the project is unreadable to "
+                             "the agent and absent entirely when deployed.")
     parser.add_argument("--projects-dir", type=Path, default=PROJECTS_DIR)
     args = parser.parse_args(argv)
 
@@ -227,7 +283,8 @@ def main(argv: list[str] | None = None) -> int:
         project, package = create(
             args.project_id, workflow=args.workflow, prompt=args.prompt,
             type_=args.type_, force=args.force, test=args.test,
-            deadline=args.deadline, projects_dir=args.projects_dir)
+            deadline=args.deadline, documents=args.documents,
+            projects_dir=args.projects_dir)
     except GenerateError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

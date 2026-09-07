@@ -217,9 +217,13 @@ async def run_turn(
             try:
                 result.reply = await asyncio.wait_for(_consume(agent, transcript, echo=echo), timeout=timeout)
                 result.completed = True
+                # Before `turn_end`, so the record reads steps -> cost -> close. A turn that timed
+                # out still spent what it spent, which is why the same call sits on that path too.
+                transcript.record_turn_usage(agent.conversation)
                 transcript.turn_end("done")
             except asyncio.TimeoutError:
                 result.error = f"the turn did not complete within {timeout:.0f}s"
+                transcript.record_turn_usage(agent.conversation)
                 transcript.turn_end("timeout", result.error)
 
             result.conversation_id = getattr(agent, "conversation_id", None)
@@ -232,6 +236,12 @@ async def run_turn(
         # neither the object nor the line, and cost an afternoon that one frame would have ended.
         agent_log.append("run.error", error=result.error,
                          traceback=traceback.format_exc()[-4000:])
+
+        # A failure part-way through a turn has still been billed for whatever ran before it. `agent`
+        # is unbound when the agent itself failed to start, which is the one case with nothing spent.
+        if (conversation := getattr(locals().get("agent"), "conversation", None)) is not None:
+            transcript.record_turn_usage(conversation)
+
         transcript.turn_end("error", result.error)
 
     agent_log.append("run.end", status="ok" if result.completed else "incomplete", error=result.error)

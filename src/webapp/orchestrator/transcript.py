@@ -187,12 +187,34 @@ class Transcript:
 
     def _usage(self, step: Any) -> None:
         """Records what the step cost, when the model reported it."""
-        usage = getattr(step, "usage_metadata", None)
+        self._record_usage(getattr(step, "usage_metadata", None), scope="step")
+
+    def record_turn_usage(self, conversation: Any) -> None:
+        """
+        Records what the whole turn cost, from the conversation's own accumulator.
+
+        **This is where the numbers actually are.** `AgentStep.usage_metadata` is declared by the SDK
+        and looks like the obvious place to read, so that is what this transcriber read for months —
+        but the local harness never populates it. Measured across two complete Apollo runs: 45 tool
+        calls, three compactions, and **zero** usage events. The emitter looked correct and fired
+        never, which is why nobody noticed and why a director asking what a run cost got no answer.
+
+        `Conversation.last_turn_usage` is the accumulator behind `ExecutionTurn.usage_metadata`, and
+        it carries the turn's totals. The per-step read is kept because a harness that does fill it
+        gives finer grain for free, and a duplicate is distinguishable: every record says its `scope`.
+        """
+        self._record_usage(getattr(conversation, "last_turn_usage", None), scope="turn")
+
+    def _record_usage(self, usage: Any, *, scope: str) -> None:
         if usage is None:
             return
 
+        # Cached input bills at roughly a tenth of uncached, so a total without it is an upper bound
+        # rather than a cost. The ADK runtime learned this on a 23.7M-token run that could not be
+        # priced afterwards; the same fields are recorded here so the two runtimes stay comparable.
         self._emit(
             "usage",
+            scope=scope,
             prompt=getattr(usage, "prompt_token_count", None),
             cached=getattr(usage, "cached_content_token_count", None),
             output=getattr(usage, "candidates_token_count", None),

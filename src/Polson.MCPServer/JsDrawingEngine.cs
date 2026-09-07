@@ -865,7 +865,9 @@ public partial class JsDrawingEngine : Runtime
 
         if (ex is JavaScriptException js)
         {
-            return $"JavaScript error: {message}{Where(js)}{ArgumentHelp(message, SourceLine(script, js.Location.Start.Line))}";
+            return $"JavaScript error: {message}{Where(js)}"
+                + ArgumentHelp(message, SourceLine(script, js.Location.Start.Line))
+                + NotCallableHelp(message, script);
         }
 
         if (ex is MissingMemberException) return ExplainMissingMember(message);
@@ -971,6 +973,55 @@ public partial class JsDrawingEngine : Runtime
     /// </remarks>
     [GeneratedRegex(@"Stage\s*\.\s*check\s*\(\s*[^'""`\s)]", RegexOptions.IgnoreCase)]
     private static partial Regex SwappedCheck();
+
+    /// <summary>
+    /// "x is not a function", when <c>x</c> holds a toolkit object that is not callable.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A d3 habit, and a reasonable one.</b> Every charting library a script author has met makes
+    /// a scale <i>callable</i> — <c>scale(value)</c> — and ours returns an object whose mapping is
+    /// <c>scale.map(value)</c>. A live run wrote <c>scaleAlt(alt)</c> and lost its script, having
+    /// already used <c>scaleAlt.isZeroBased</c> correctly two lines earlier: it knew the shape and
+    /// reverted to muscle memory for the common call.
+    /// </para>
+    /// <para>
+    /// Jint answers "scaleAlt is not a function", which is true and names nothing to do about it. The
+    /// script is to hand, so the variable's producer can be found and the right member named.
+    /// </para>
+    /// </remarks>
+    private static string NotCallableHelp(string message, string? script)
+    {
+        if (string.IsNullOrEmpty(script) || NotAFunction().Match(message) is not { Success: true } m)
+        {
+            return string.Empty;
+        }
+
+        var name = m.Groups["name"].Value;
+        var assigned = Regex.Match(script,
+            @"\b(?:const|let|var)\s+" + Regex.Escape(name) + @"\s*=\s*(?<producer>Scale|Chart|Layout|Snap)\s*\.\s*(?<call>\w+)");
+        if (!assigned.Success) return string.Empty;
+
+        var producer = assigned.Groups["producer"].Value;
+        var call = assigned.Groups["call"].Value;
+        var advice = producer switch
+        {
+            "Scale" => $"`{name}.map(value)` maps a value to a pixel; `.invert(position)` goes back, and "
+                     + "`.extent(from, to)` is the distance between two values. A band scale uses "
+                     + $"`{name}.map(index)`, `{name}.center(index)` and `{name}.bandwidth`.",
+            "Chart" => $"a chart model is data: read `{name}.slots`, `{name}.ticks` and `{name}.labels`, "
+                     + $"and draw with `Chart.drawChart(ctx, {name})` or `paper.chart({name})`.",
+            "Layout" => $"a rectangle is data: read `{name}.x`, `{name}.y`, `{name}.width`, `{name}.height`, "
+                      + $"`{name}.x2`, `{name}.y2`, `{name}.cx`, `{name}.cy`.",
+            _ => $"read its members rather than calling it; see polson://sdk/core/{producer}.",
+        };
+
+        return $" `{name}` came from `{producer}.{call}(...)`, which returns an object rather than a "
+             + $"function — unlike d3, where a scale is callable. {advice}";
+    }
+
+    [GeneratedRegex(@"^(?<name>[A-Za-z_$][\w$]*) is not a function")]
+    private static partial Regex NotAFunction();
 
     #region ASCII Table Rendering
     internal static string RenderTable(JsValue[] args)

@@ -208,6 +208,18 @@ These archetypal roles divide creative labor. They are **stages of work, not nec
     - Polson.Tests.Drawing at tests/Polson.Tests.Drawing provides unit tests for the drawing toolkits and the rendering pipeline.
     - Polson.Tests.MCPServer at tests/Polson.Tests.MCPServer provides unit tests for the JS execution engine, the MCP tools, and the published SDK documentation resources.
     - Polson.Tests.ExtendedMind at tests/Polson.Tests.ExtendedMind provides unit tests for asset requisition, budgeting, caching, and classification.
+* **Run agents through `adk_agent` unless there is a reason not to. It is the runtime with a budget, and that changes how the agent works rather than only what it costs.** Both runtimes drive the same `bin/cli`, so the drawing surface is identical and the choice is about what constrains the agent around it.
+
+    ADK has three things the Antigravity path does not, and they compound:
+
+    - **A `budget_status` tool the agent can ask.** `inputTokensSpent`, `cachedInputTokens`, cap, remaining, percent, elapsed minutes, deadline. Time and tokens were asymmetric before it — `deadline.md` hands the agent a clock and nothing told it what it had spent — so a run could pace itself against the wall and not against the bill. **An agent that can see its budget spends it deliberately**; one that cannot treats it as something that happens to it.
+    - **Per-role time allowances**, each naming the role it hands to when spent, so a stage that overruns passes the work on instead of consuming the run.
+    - **A circuit breaker.** At the allowance plus a grace period, no agent in that invocation makes another model call. It is a module-level set of tripped `invocation_id`s rather than `end_invocation`, because ADK 2.8.0 shallow-copies the invocation context and `callback_context.get_invocation_context()` returns a copy — so the flag never reaches the facilitator, which simply transfers elsewhere. Read that comment before touching it; it was found by reading ADK's source, not by guessing.
+
+    The Antigravity orchestrator records a deadline in the instructions and, since 2026-09-07, the turn's token totals in the run record. **It has no cap, no breaker, and nothing the agent can ask.** Two measured Apollo runs on that path produced no usage events at all, because the transcriber read `AgentStep.usage_metadata` — declared by the SDK, never populated by the local harness — instead of `Conversation.last_turn_usage`. An emitter that looks right and fires never is how a director ends up unable to say what a run cost.
+
+    Use Antigravity when the run needs the desktop/IDE host or the director watching live. Use ADK for anything that should finish inside a budget.
+
     
 * Logging is provided by the Polson.Runtime project and is available to all other projects by either using the static Runtime methods or in a class inheriting from Runtime. Configure the logging system in a static constructor of the entry assembly.
 * Test classes should inherit from Polson.Tests.TestsRuntime from the Polson.Runtime project.

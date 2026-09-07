@@ -106,6 +106,50 @@ public class ExpectationRecordingTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// Calling a scale says to use <c>.map(...)</c>, rather than only that it is not a function.
+    /// </summary>
+    /// <remarks>
+    /// From a live run: <c>scaleAlt(alt)</c>, the d3 idiom, where every charting library a script
+    /// author has met makes a scale callable. The same script had already used
+    /// <c>scaleAlt.isZeroBased</c> correctly two lines earlier — it knew the shape and reverted to
+    /// muscle memory for the common call, and lost a 930-line script to "scaleAlt is not a function".
+    /// </remarks>
+    [Fact]
+    public async Task TestCallingAScaleNamesTheRightMember()
+    {
+        var result = await Run("""
+            const scaleAlt = Scale.linear(0, 50000, 400, 100);
+            const y = scaleAlt(25000);
+            """);
+
+        Assert.False(result.Success);
+        Assert.Contains("scaleAlt.map(value)", result.Error, StringComparison.Ordinal);
+        Assert.Contains("unlike d3", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TestCallingARectangleNamesItsFields()
+    {
+        var result = await Run("""
+            const panel = Layout.rect(0, 0, 100, 100);
+            const v = panel(4);
+            """);
+
+        Assert.False(result.Success);
+        Assert.Contains("panel.width", result.Error, StringComparison.Ordinal);
+    }
+
+    /// <summary>An ordinary undefined function must not collect a toolkit hint it has no claim to.</summary>
+    [Fact]
+    public async Task TestAnUnrelatedCallIsNotGivenScaleAdvice()
+    {
+        var result = await Run("const helper = 42; helper();");
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain("unlike d3", result.Error, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The generic advice still stands for the case it was written for.
     /// </summary>
     /// <remarks>

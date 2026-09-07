@@ -172,7 +172,7 @@ the vector column above.
 **Three things are available that a canvas-shaped instinct will not look for**, and the vector column
 above is easy to read as a list of consolations. It is not:
 
-- **Brush strokes.** `Snap.brush('taper')` — also `wedge`, `chisel`, `split`, or your own outline —
+- **Brush strokes.** `Snap.brush('taper')` — also `wedge`, `chisel`, `split`, `bristle` (many frayed bristles, the one that reads as real brushwork), or your own outline —
   and `paper.brushStroke(spine, nib, thickness)`. A nib is bent along the path and comes back as a
   **filled shape**, so set `fill` on it and leave `stroke` alone. This is a drawn mark with real
   width variation, not a line with a `stroke-width`, and it stays vector.

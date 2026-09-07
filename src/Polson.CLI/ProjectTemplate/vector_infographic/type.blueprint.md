@@ -43,12 +43,25 @@ was a colour scheme.
 > `paper.ptrn(...)` tile referenced as a fill. Both are still real geometry, which is what the
 > drafting idiom wants anyway.
 >
-> **Two vector-only tools suit this language particularly well.** `paper.style(css)` is how the three
-> line-weight tiers stay a *system* rather than a habit — declare `.heavy`, `.structure`, `.hairline`
-> once and class every element, so the sheet carries one editable rule instead of hundreds of
-> attributes. And a **very fine `paper.filter()` grain** over the ground is what makes a whiteprint
-> read as paper rather than as a fill; keep it near-invisible, because a drafting sheet is a printed
-> surface and not a painted one.
+> **Two vector-only tools suit this language particularly well, and the ruled ground is where both
+> earn their place.** A measured run drew that ground as **236 separate `<line>` elements**, each
+> carrying its own `stroke`, `stroke-width` and `opacity` — some seven hundred attribute writes for
+> what is two rules:
+>
+> ```js
+> for (let x = 0; x <= W; x += 20) grid.line(x, 0, x, H).attr({ class: x % 100 ? 'fine' : 'major' });
+> paper.style('.fine { stroke: #0A2347; stroke-width: .5; opacity: .35; } '
+>           + '.major { stroke: #133A6E; stroke-width: 1; opacity: .7; }');   // last, as always
+> ```
+>
+> That is also how the three line-weight tiers stay a *system* rather than a habit: declare `.heavy`,
+> `.structure` and `.hairline` once, class every element, and the delivered sheet carries one rule a
+> designer edits instead of hundreds of baked attributes.
+>
+> **A very fine `paper.filter()` grain over the ground is what makes it read as a printed sheet
+> rather than as a fill**, and that is true of *either* palette — a dark blueprint is as much a print
+> as a whiteprint is. Keep it near-invisible; a drafting sheet is printed, not painted. The same run
+> that drew 236 lines by hand used no filter at all and its ground reads as a flat colour.
 >
 > **Brush strokes are the wrong tool here** and are worth naming as such: a working drawing is ruled
 > and instrumented, so a brushed mark reads as a different document. The exception is a deliberate

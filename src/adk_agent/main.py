@@ -134,3 +134,15 @@ app: FastAPI = get_fast_api_app(
     logo_image_url=LOGO_IMAGE_URL,
     auto_create_session=AUTO_CREATE_SESSION,
 )
+
+# The first thing mounted on the seam this file exists to provide: `/new` takes a brief and a
+# document from a visitor and `/projects` turns them into a project the console can open. Failing
+# to mount it must not stop the agent runtime from serving — a broken intake form is a degraded
+# demo, while a server that will not start is no demo at all.
+try:
+    import intake
+
+    intake.mount(app)
+    _logger.warning("polson runtime: intake mounted at /new")
+except Exception as _e:
+    _logger.warning("polson runtime: intake not mounted (%s)", _e)

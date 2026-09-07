@@ -141,19 +141,20 @@ public class DocumentProcessor : Runtime, IDisposable
         }
         catch (DocumentRefusal refusal)
         {
-            return Refused(refusal.Failure, refusal.Message);
+            return Refused(refusal.Failure, refusal.Message, Describe(source));
         }
 
         if (bytes.Length > Documents.MaxInlineBytes)
         {
             return Refused(DocumentFailure.TooLarge,
-                $"{named} is {bytes.Length / (1024 * 1024)} MB against a {Documents.MaxInlineBytes / (1024 * 1024)} MB inline limit.");
+                $"{named} is {bytes.Length / (1024 * 1024)} MB against a {Documents.MaxInlineBytes / (1024 * 1024)} MB inline limit.",
+                named);
         }
 
         if (!budget.CanAfford())
         {
             return Refused(DocumentFailure.BudgetExhausted,
-                $"{budget.Spent} of {budget.Total} document reads already spent.");
+                $"{budget.Spent} of {budget.Total} document reads already spent.", named);
         }
 
         var useModel = opts.Model ?? Model;
@@ -183,8 +184,9 @@ public class DocumentProcessor : Runtime, IDisposable
             {
                 var finish = response.Candidates?.FirstOrDefault()?.FinishReason?.ToString();
                 var blocked = finish?.Contains("SAFETY", StringComparison.OrdinalIgnoreCase) == true;
-                return Refused(blocked ? DocumentFailure.SafetyBlocked : DocumentFailure.NoAnswer,
-                    finish is null ? "The response carried no text." : $"Finish reason: {finish}.");
+                return Attempted(blocked ? DocumentFailure.SafetyBlocked : DocumentFailure.NoAnswer,
+                    finish is null ? "The response carried no text." : $"Finish reason: {finish}.",
+                    named, useModel);
             }
 
             var tokens = response.UsageMetadata?.TotalTokenCount ?? 0;
@@ -195,6 +197,17 @@ public class DocumentProcessor : Runtime, IDisposable
             {
                 Warn("Document '{0}' produced an answer carrying {1} scan finding(s).", named, warnings.Count);
             }
+
+            // The successful read, in the record. `Reason` carries the scan verdict rather than
+            // being null: "this run read a document and the document talked back" is the one thing
+            // a reader most needs to find afterwards, and it would otherwise live only in the
+            // answer the script received and did not keep.
+            RequisitionScope.Record(new RequisitionRecord(
+                "document", named, Success: true,
+                Failure: null,
+                Reason: warnings.Count == 0 ? null : string.Join("; ", warnings),
+                Model: useModel, FromCache: false, Refused: false));
+            RecordBudgetState();
 
             return new DocumentAnswer
             {
@@ -216,11 +229,11 @@ public class DocumentProcessor : Runtime, IDisposable
         }
         catch (OperationCanceledException)
         {
-            return Refused(DocumentFailure.Cancelled, "Cancelled.");
+            return Attempted(DocumentFailure.Cancelled, "Cancelled.", named, useModel);
         }
         catch (Exception ex)
         {
-            return Refused(Classify(ex), ex.Message);
+            return Attempted(Classify(ex), ex.Message, named, useModel);
         }
     }
 
@@ -330,8 +343,68 @@ public class DocumentProcessor : Runtime, IDisposable
     private static bool Says(Exception ex, string token) =>
         ex.Message.Contains(token, StringComparison.OrdinalIgnoreCase);
 
-    private static DocumentAnswer Refused(DocumentFailure failure, string error) =>
-        new() { Success = false, Failure = failure, Error = error };
+    /// <summary>
+    /// A refusal decided here, recorded as one and charged for nothing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Recorded separately from an attempt, because they are different events for a reader.</b> A
+    /// run that spent an hour rewording a query is a different run from one the service kept turning
+    /// away, and a run that pointed at a file that was never there is a third. <c>Refused: true</c>
+    /// is what keeps them apart on the run page, exactly as it does for a classifier refusal.
+    /// </remarks>
+    private DocumentAnswer Refused(DocumentFailure failure, string error, string? descriptor = null)
+    {
+        RequisitionScope.Record(new RequisitionRecord(
+            "document", descriptor ?? "(none)", Success: false,
+            Failure: failure.ToString(), Reason: error, Model: null,
+            FromCache: false, Refused: true));
+        RecordBudgetState();
+
+        return new DocumentAnswer { Success = false, Failure = failure, Error = error };
+    }
+
+    /// <summary>
+    /// A read that reached the service and did not come back with an answer.
+    /// </summary>
+    /// <remarks>
+    /// The budget has already been spent by the time this is called, so it is an <b>attempt</b>
+    /// rather than a refusal: the distinction is the whole reason the run record carries both, and
+    /// conflating them would make a run that was rate-limited read like one that mistyped a path.
+    /// </remarks>
+    private DocumentAnswer Attempted(DocumentFailure failure, string error, string descriptor, string model)
+    {
+        RequisitionScope.Record(new RequisitionRecord(
+            "document", descriptor, Success: false,
+            Failure: failure.ToString(), Reason: error, Model: model,
+            FromCache: false, Refused: false));
+        RecordBudgetState();
+
+        return new DocumentAnswer { Success = false, Failure = failure, Error = error };
+    }
+
+    /// <summary>
+    /// What to call the source in the record when the read never got far enough to name it.
+    /// </summary>
+    /// <remarks>
+    /// A path is the useful thing to record — it is what the agent typed and what a reader would
+    /// check. Bytes have no name, and the record says so rather than inventing one.
+    /// </remarks>
+    private static string Describe(object? source) => source switch
+    {
+        string path => path,
+        byte[] raw => $"{raw.Length} bytes",
+        null => "(none)",
+        _ => source.GetType().Name,
+    };
+
+    /// <summary>Pushes this processor's allowance into the ambient scope, if one is collecting.</summary>
+    /// <remarks>
+    /// Pushed rather than read back, for the reason the asset toolkit gives: the engine substitutes a
+    /// disabled processor of its own when none is configured, so a caller reading the budget off the
+    /// statically configured one would describe an object the script never touched.
+    /// </remarks>
+    private void RecordBudgetState() => RequisitionScope.RecordBudget(
+        new BudgetSnapshot(budget.Total, budget.Spent, budget.Remaining, budget.CacheHits, budget.TokensSpent));
     #endregion
 
     #region Fields

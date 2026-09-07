@@ -827,9 +827,15 @@ public partial class DrawingMcpTools
                 ["reason"] = r.Reason
             };
 
+            // A document read is not a requisition and must not be counted as one. Both travel the
+            // same scope because both are metered surfaces whose spend a reader needs, but filing a
+            // read under `asset.requisition` would inflate `RunReport`'s requisition count — a run
+            // that read three PDFs and bought nothing would report three assets bought.
+            var document = string.Equals(r.Kind, "document", StringComparison.Ordinal);
+
             if (r.Refused)
             {
-                Events.Append("asset.refused", stage, executionId, fields);
+                Events.Append(document ? "document.refused" : "asset.refused", stage, executionId, fields);
                 continue;
             }
 
@@ -837,7 +843,7 @@ public partial class DrawingMcpTools
             fields["fromCache"] = r.FromCache;
             if (!r.Success) fields["failure"] = r.Failure;
 
-            Events.Append("asset.requisition", stage, executionId, fields);
+            Events.Append(document ? "document.read" : "asset.requisition", stage, executionId, fields);
         }
 
         if (requisitions.Budget is { } budget)

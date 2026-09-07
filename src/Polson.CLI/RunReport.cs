@@ -176,6 +176,8 @@ internal static class RunReport
             ["claimsNotMet"] = new JsonArray([.. failedClaims.Select(c => (JsonNode)c!)]),
             ["requisitions"] = Count("asset.requisition"),
             ["requisitionsRefused"] = Count("asset.refused"),
+            ["documentsRead"] = Count("document.read"),
+            ["documentsRefused"] = Count("document.refused"),
             ["artifactsRead"] = new JsonArray([.. artifactsRead.Select(a => (JsonNode)a!)]),
             ["stages"] = new JsonArray([.. stages.Select(s => (JsonNode)s!)]),
             ["scriptFilesOnDisk"] = scriptFiles.Length,

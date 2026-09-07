@@ -2235,6 +2235,16 @@ log(`read ${answer.provenance.bytes} bytes of ${answer.provenance.mimeType}, ${D
 - `Documents.model` → `string` — The default model.
 - `Documents.isAvailable` → `boolean` — Whether a key is configured. `false` means every call refuses.
 
+> [!NOTE]
+> **Every read is recorded, and so is every refusal.** A successful `ask` writes a `document.read`
+> event carrying the path, the model and any scan findings; one refused before the budget was touched
+> writes `document.refused` with the reason. They are **not** `asset.requisition` events — a run that
+> read three documents and bought no images reports three documents read and nothing requisitioned,
+> which is what `polson report` counts as `documentsRead` and `documentsRefused`.
+>
+> That record is how a director answers *"what did this read, and what did it cost?"* — the question
+> most worth answering for the one surface that sends a client's file to a third party.
+
 > [!TIP]
 > **Ask for what you will draw, in the units you will draw it in.** The question is read by a model,
 > so being specific costs nothing and being terse costs accuracy: name the fields, the units and the

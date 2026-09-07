@@ -1970,7 +1970,7 @@ canvas;
 
 # Assets (Cloud Asset Requisition)
 
-Requisitions **raw material** from a cloud image model: flat tiling textures, background plates, and single-channel mattes. Everything returned needs code to become art — there is no call that produces a finished picture, by design. The model supplies what is hard to synthesise (the look of weathered oak); the drawing toolkits supply form, lighting and composition.
+Requisitions **raw material** from a cloud image model: flat tiling textures, background plates, and single-channel mattes and stencils. Everything returned needs code to become art — there is no call that produces a finished picture, by design. The model supplies what is hard to synthesise (the look of weathered oak); the drawing toolkits supply form, lighting and composition.
 
 > [!IMPORTANT]
 > Generation is metered and takes several seconds per call. **Requisition in its own short script, then draw in the next one** — a script that requisitions three assets can exceed the {{SCRIPT_TIMEOUT_SECONDS}}-second execution limit. Results are cached by content, so re-running an identical requisition is free and instant.
@@ -1982,7 +1982,32 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 
 - `Assets.material(descriptor: string, options?: object)` → `Promise<MaterialAsset>` — A flat, seamlessly tiling swatch. Safest and most reusable: independent of geometry, so it survives any amount of redrawing. `options`: `{ size?: number (32–1024, default 512), tileable?: boolean (default true), format?: 'webp'|'png'|'jpeg', quality?: number, model?: string }`.
 - `Assets.backdrop(descriptor: string, options?: object)` → `Promise<BackdropPlate>` — A background plate composited beneath the scene. `options`: `{ width?: number, height?: number, keepQuiet?: 'lowerThird'|'upperThird'|'leftHalf'|'rightHalf'|'center'|'none', noHorizon?: boolean, noForeground?: boolean, conditionOn?: byte[], format?: string, quality?: number, model?: string }`.
-- `Assets.matte(descriptor: string, options?: object)` → `Promise<MatteAsset>` — A greyscale mask, height field, or displacement source for use as a shader input. `options`: `{ size?: number, invert?: boolean, model?: string }`.
+- `Assets.matte(descriptor: string, options?: object)` → `Promise<MatteAsset>` — A greyscale mask, height field, or displacement source for use as a shader input — **and, with `hardEdge`, a stencil.** `options`: `{ size?: number, invert?: boolean, hardEdge?: boolean, threshold?: number, model?: string }`.
+
+> [!TIP]
+> **This is the one requisition that will answer a *form*, and that is deliberate.** `material()` refuses "a rearing horse" because a material has no silhouette; a matte is nothing *but* a silhouette, so the classifier does not run here. It is therefore the route to the bold graphic form a header or a section marker wants — and it stays on the right side of the line, because what comes back is a shape rather than a picture. Colour, scale, placement and composition all stay with your code.
+>
+> ```javascript
+> const stencil = await Assets.matte('a rearing horse, side view', { hardEdge: true, size: 512 });
+> if (!stencil.success) { error(stencil.remedy); exit(stencil.failureName); }
+> if (stencil.coverage < 0.03 || stencil.coverage > 0.95) exit(`stencil is ${(stencil.coverage * 100).toFixed(1)}% ink — regenerate`);
+>
+> paper.image(stencil, 40, 40, stencil.size, stencil.size);   // square: pass size for both
+> ```
+>
+> **A matte is square, and drawing it into a non-square box distorts it.** `stencil.size` is the
+> delivered edge length and is both width and height, so pass it for both or scale it by one factor.
+>
+> **Give fine detail room.** A stencil carrying thin structure — a maze, bare branches, lettering —
+> loses it when the box is much smaller than the asset. A 512px maze placed in a 160×120 frame on a
+> 1600px canvas rendered as an empty grey panel: every line fell below a pixel. Either place it near
+> its delivered size, or requisition a simpler subject.
+>
+> **`hardEdge` is off by default** because a height field and a displacement source both want the ramp. Turn it on for a silhouette: a soft edge clips and masks with a halo. The cut level is **measured from the plate's own histogram** rather than fixed at the midpoint — the model is asked for pure white on pure black and does not deliver it, so a plate whose range is 20–110 cut at 128 comes back entirely empty. Pass `threshold` to override the measured level.
+>
+> **Check `coverage`.** A stencil near 0 or near 1 decodes, encodes and draws — as an empty frame or a solid block — and nothing downstream can tell that apart from a subject that is genuinely small or large.
+>
+> Two things it is **not**. It is not a way to buy an icon: a hexagon, a gear or a roundel is `Logo.*` and `paper.*` work, which stays vector, stays in palette and costs nothing. And it is not a way to depict a **real person** — that is `Photo`, with its identity, terms and provenance gates; a generated likeness has none of them. See the CAUTION under `polson://sdk/core/Photo`.
 
 ## `Assets` Properties
 
@@ -2023,7 +2048,10 @@ Requisition is a metered network call and can fail. Nothing throws — check `su
 
 ## `MatteAsset`
 
-- `matte.bytes` → `byte[]`, `matte.size` → `number`, `matte.id` → `string`, `matte.provenance` → `Provenance`
+- `matte.bytes` → `byte[]`, `matte.size` → `number` (the edge length — a matte is **square**), `matte.id` → `string`, `matte.provenance` → `Provenance`
+- `matte.toDataUri()` → `string` — Base64 PNG. **A method, not a property**; `matte.dataUri` reads `undefined` and lands in `image(...)` as "got null". Usually unnecessary — `paper.image(matte, …)` inlines it for you, exactly as it does a material or a photograph.
+- `matte.threshold` → `number?` — The cut level actually used, or **`null`** when the ramp was kept. Reported rather than assumed, so a measured level is a fact about the plate that came back rather than a setting you passed.
+- `matte.coverage` → `number` — Share of the frame that is "on", 0 to 1. **The only signal that a generation failed** — see the TIP under `Assets.matte`.
 
 ## `AssetBudget`
 

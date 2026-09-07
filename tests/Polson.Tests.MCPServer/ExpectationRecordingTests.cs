@@ -106,6 +106,49 @@ public class ExpectationRecordingTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// A d3-style <c>[min, max]</c> pair passed to <c>Scale</c> is named as such.
+    /// </summary>
+    /// <remarks>
+    /// Found in a live run: <c>Scale.band(n, [x0, x1], 0.25)</c> and <c>Scale.linear([0, max], [y1,
+    /// y0])</c>, which is what <c>.domain([a,b]).range([c,d])</c> becomes when the habit survives the
+    /// change of library. Nothing was undefined and the generic advice — check the spelling of every
+    /// property on the line — was therefore a dead end; the agent spent a <c>Search</c> recovering
+    /// signatures the message could have stated. The same run had already met <c>Chart</c>'s named
+    /// option refusal and recovered from it instantly, which is the standard this brings Scale to.
+    /// </remarks>
+    [Theory]
+    [InlineData("Scale.linear([0, 10], [100, 0]);")]
+    [InlineData("Scale.band(5, [0, 300], 0.25);")]
+    [InlineData("Scale.linear( [0, 10] , [100, 0] );")]
+    public async Task TestAD3StyleScalePairSaysWhatIsWrong(string script)
+    {
+        var result = await Run(script);
+
+        Assert.False(result.Success);
+        Assert.Contains("not d3-style", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Scale.linear(domainStart", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("width and height", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// An indexed argument is not a d3 pair, and is not diagnosed as one.
+    /// </summary>
+    /// <remarks>
+    /// The failure mode of the check above: <c>data[i]</c> carries a bracket and is an ordinary,
+    /// correct argument. Matching any bracket anywhere in a <c>Scale</c> call would answer a real
+    /// mistake — here an undefined element — with advice about a library the caller is not using.
+    /// </remarks>
+    [Fact]
+    public async Task TestAnIndexedArgumentIsNotMistakenForAD3Pair()
+    {
+        var result = await Run("const data = [1, 2]; Scale.linear(0, data[9], 100, 0);");
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain("d3", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("undefined", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Calling a scale says to use <c>.map(...)</c>, rather than only that it is not a function.
     /// </summary>
     /// <remarks>

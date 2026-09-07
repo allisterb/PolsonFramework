@@ -24,6 +24,7 @@ using Xunit;
 /// covered against <see cref="RequisitionScope"/> directly, which needs no network.
 /// </para>
 /// </remarks>
+[Collection(AssetsCollection.Name)]
 public class AssetEventTests : TestsRuntime, IDisposable
 {
     #region Fields
@@ -189,4 +190,25 @@ public class AssetEventTests : TestsRuntime, IDisposable
 
     private JsonElement Single(string type) => Assert.Single(Events(type));
     #endregion
+}
+
+/// <summary>
+/// Serialises the classes that install a requisition toolkit against each other.
+/// </summary>
+/// <remarks>
+/// <b>Every one of them writes <c>JsDrawingEngine.Assets</c>, which is a static, and xUnit runs test
+/// classes in parallel unless told otherwise.</b> So one class could install a disabled toolkit while
+/// another was mid-assertion against a configured one, or null it out in <c>Dispose</c> underneath a
+/// run in progress — producing a failure in whichever class happened to lose the race, in a suite
+/// that passed on the next attempt.
+/// <para>
+/// Latent for as long as three classes shared the static and rare enough to look like noise; adding a
+/// fourth that installs a <i>working</i> generator, where the others install a null one, made it
+/// surface at roughly one run in three. Same reasoning as <c>ResearchCollection</c>.
+/// </para>
+/// </remarks>
+[CollectionDefinition(Name)]
+public sealed class AssetsCollection
+{
+    public const string Name = "Assets";
 }

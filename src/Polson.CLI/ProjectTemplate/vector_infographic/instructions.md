@@ -103,11 +103,16 @@ const shared = Scale.extent(seriesA.concat(seriesB));    // one scale for small 
 Each of these fails **silently** — correct numbers, wrong picture, nothing downstream to catch it.
 Assert them rather than intending them.
 
-**3. You draw it. Nothing generates it for you.**
-Image generation is denied on this project. Charts are geometry and the toolkit is for geometry.
-`Assets.*` exists for *materials* — paper grain, a linen texture, a starfield — which a background
-may legitimately want; it does not exist for the graphic. If you find yourself wanting a generated
-image of a chart, what you actually want is to construct it.
+**3. You draw it. Nothing generates the graphic for you.**
+Charts are geometry and the toolkit is for geometry. **No generated picture may carry a number, be a
+chart, or stand in for a mark you could construct.** If you find yourself wanting a generated image
+of a chart, what you actually want is to construct it.
+
+`Assets.*` supplies *raw material* and never a finished graphic. Two routes are open, and both leave
+the form to you: `Assets.material(...)` for a surface — paper grain, linen, a starfield — and
+`Assets.matte(..., { hardEdge: true })` for a **stencil**, a black-and-white silhouette your code
+then colours and places. See the stencil entry under *What you draw with* for when a stencil is the
+right answer and, more often, when it is not.
 
 **4. Every render is written to disk, not returned as bytes.**
 Pass `outFile: 'artifacts/NN_name.webp'` to `ExecuteScript`. Bytes in the response bloat the
@@ -147,6 +152,7 @@ requirement at the end has to start over.
 | :--- | :--- | :--- |
 | A chart | `paper.chart(model, { colors: palette })` — every `Chart.create*` form | `Chart.drawChart(ctx, …)` |
 | **A quantity over time, or any series** | `Chart.createLineChart(rect, rows, { area: true })` — rows carry `x` for a real time axis | a hand-built `d` string of `Q` or `C` curves |
+| **Events or periods on a date axis** | `Chart.createTimeline(rect, events, { sides: 'alternate' })` — lanes are packed so labels cannot collide | a hand-staggered spine and a collision check after the fact |
 | Text | `paper.text(x, y, s).attr({ 'font-size': 14 })` | `ctx.fillText` |
 | Measuring text | `element.getBBox()` — real font metrics, agrees with canvas | `ctx.measureText` |
 | **Tracked / letter-spaced type** | `paper.trackedText(x, y, s, tracking, attrs)` | `.attr({ 'letter-spacing': … })` — **renders nothing** |
@@ -156,6 +162,7 @@ requirement at the end has to start over.
 | An accessible name | `paper.title(s)` and `paper.desc(s)`; any element takes its own | — |
 | A photograph | `paper.image(photo, x, y, w, h)` — inlined as a data URI | an href to a file |
 | A texture | `paper.image(material, …)`, or a `paper.ptrn(...)` tile | a shader |
+| **A pictorial silhouette you cannot construct** | `Assets.matte(subject, { hardEdge: true })`, then `paper.image(...)` | a generated *picture*; a drawn icon bought instead of built |
 | Hatching | drawn lines, or a `<pattern>` | `Skia.PathEffect.hatch` |
 | Line weight | `.attr({ stroke: colour, 'stroke-width': 2 })` | `ctx.useBrush` |
 | A gradient | `paper.gradient('l(0,0,1,0)#000-#fff')` | `ctx.createLinearGradient` |
@@ -174,7 +181,7 @@ unchanged.
 All of them take a canvas context. If a type variant below names one, take its *intent* and reach for
 the vector column above.
 
-**Five things are available that a canvas-shaped instinct will not look for**, and the vector column
+**Seven things are available that a canvas-shaped instinct will not look for**, and the vector column
 above is easy to read as a list of consolations. It is not:
 
 - **A line chart.** `Chart.createLineChart(rect, rows, options)` — a series joined into a trajectory,
@@ -194,6 +201,27 @@ above is easy to read as a list of consolations. It is not:
   spline by name, and refuses a series that cannot honestly be joined — two values at one position, or
   positions that double back. `lieFactor` is 1 until you set `area`, at which point the filled height
   becomes the quantity and the baseline is forced into the domain.
+
+- **A timeline.** `Chart.createTimeline(rect, events, options)` — events and periods on a date axis.
+  **Its work is not placing the events; it is keeping their labels apart**, by packing each into the
+  first lane on its side where its own label span is clear. A hand-staggered spine is an afternoon of
+  nudging and a collision check afterwards; this cannot collide in the first place.
+
+  ```javascript
+  const events = films.map(f => ({ time: f.year, label: f.title }));
+  events.push({ time: 1987, end: 1999, label: 'widening production gap' });   // a period, not a point
+  for (const e of events) e.width = paper.text(0, 0, e.label).getBBox().width + 18;
+  const tl = Chart.createTimeline(plot, events, { sides: 'alternate', laneHeight: 52 });
+  for (const e of tl.events) drawCard(e.x, e.y, e.axisX, e.axisY, e.leaderX1, e.leaderY1);
+  ```
+
+  **You supply `width` per event**, measured with `getBBox()` — the same division as everywhere else,
+  because measuring glyphs needs the paper and the model is closed-form arithmetic. **Time is a
+  number**, a year or `date.getTime()`, never a date object. An event with an `end` is a **period**:
+  it gets a `span` rectangle and a `duration` instead of a marker, and shares the lane packing, so a
+  phase and a milestone cannot land on top of each other. Each event comes back with `axisX`/`axisY`
+  on the spine, `x`/`y` in its lane, and `leaderX1…Y2` for the line between them — **it hands you
+  positions, so the card you draw at them is entirely yours.** Given order is kept, never sorted.
 
 - **Tracked type.** `paper.trackedText(x, y, text, tracking, attrs)`. **The `letter-spacing`
   attribute does nothing in this renderer** — it serialises into the file perfectly and moves not one
@@ -222,6 +250,43 @@ above is easy to read as a list of consolations. It is not:
 - **Stylesheets.** `paper.style(css)` applies one rule to everything matching, and keeps the
   `<style>` block in the deliverable — so a designer edits one line rather than ninety attributes.
   Call it last; it resolves against the tree as it then stands.
+- **A stencil.** `Assets.matte(subject, { hardEdge: true })` is the one requisition that will answer a
+  *form* — a rearing horse, a bare oak, a bird in flight. It returns a black-and-white silhouette, not
+  a picture, so colour, scale and placement stay yours.
+
+  ```javascript
+  const s = await Assets.matte('a rearing horse, side view', { hardEdge: true, size: 512 });
+  if (!s.success) { error(s.remedy); exit(s.failureName); }
+  if (s.coverage < 0.03 || s.coverage > 0.95) exit(`stencil is ${(s.coverage * 100).toFixed(1)}% ink - regenerate`);
+  paper.image(s, 40, 40, s.size, s.size);      // pass the asset itself; it inlines
+  ```
+
+  **Pass the asset straight to `paper.image`.** It inlines exactly as a material or a photograph
+  does. `s.dataUri` is not a property and reads `undefined`, which arrives as *"got null"*; you do
+  not need `Skia.Image.fromBytes` either.
+
+  **A matte is square, so give it a square box.** `s.size` is the delivered edge length and is both
+  width and height. **And give fine detail room**: a maze, bare branches or lettering placed much
+  smaller than the asset loses every thin line. A 512px maze drawn into a 160x120 frame on a 1600px
+  canvas rendered as an empty grey panel - the asset was perfect and nothing was visible.
+
+  **Check `coverage` every time.** A stencil that came back empty or solid still decodes, still
+  encodes and still draws — as a blank rectangle or a filled one — and nothing downstream can tell
+  that apart from a subject that is genuinely small or large. `threshold` reports the cut level, which
+  is measured from the plate rather than fixed, because the model's blacks and whites move between
+  generations.
+
+  **Reach for it last, and rarely.** It is right only for a *pictorial* subject with no constructive
+  route — an animal, a plant, an organic contour. It is wrong for anything geometric: a hexagon is
+  `paper.emblemBadge`, a gear is a polar loop, a roundel is `paper.polarGrid`, and each of those stays
+  vector, stays in palette and costs nothing. It is wrong for anything carrying a number. And it is
+  wrong for a **real person** — that is `Photo.of(...)`, which comes with identity, licence and
+  publicity-rights gates a generated likeness has none of.
+
+  **Know what it costs the deliverable.** A stencil lands as an `<image>`, so it is a raster island in
+  a vector file: it does not scale cleanly, it is not selectable, and it is not editable type. One as a
+  section marker or a header motif is a deliberate choice; several are the wrapped-bitmap failure
+  arriving piecemeal. Count them in the audit below.
 
 > [!IMPORTANT]
 > **Name every input in a filter chain of more than one step.** An omitted `in` means `SourceGraphic`
@@ -255,8 +320,12 @@ are valid SVG and both open in Illustrator:
 | a real vector page | 5 | 65 | 130 |
 
 The first opens as one flat photograph — nothing selectable, no editable type, and it pixelates the
-moment anyone scales it. **`<image>` is for photographs only.** Every mark you drew must be a drawn
-element.
+moment anyone scales it. **`<image>` is for photographs and stencils, nothing else.** Every mark you
+drew must be a drawn element.
+
+**Those two exceptions are a budget, not a licence.** Each `<image>` is a raster island that will not
+scale with the rest of the page, so a piece drifts toward the wrapped bitmap one justified exception
+at a time. Keep the count low and deliberate, and be able to say what each one is.
 
 **Check it before you call the piece done**, and record the counts:
 
@@ -265,6 +334,7 @@ const xml = paper.toString();
 const n = t => (xml.match(new RegExp('<' + t + '[ />]', 'g')) || []).length;
 Stage.check('the SVG is geometry, not a wrapped bitmap', n('text') > 5 && n('rect') + n('path') + n('circle') > 10,
     `text ${n('text')}, rect ${n('rect')}, path ${n('path')}, circle ${n('circle')}, image ${n('image')}`);
+Stage.check('every raster island is accounted for', n('image') <= 4, `${n('image')} <image> elements`);
 ```
 
 ---
@@ -416,6 +486,11 @@ as tests. Reserve `Stage.check` for what the machine can answer.
 **Run this before you deliver.** Colliding labels are the commonest defect in a finished chart, they
 are invisible to every check above, and on this surface they are *measurable* — `getBBox()` on a
 `<text>` element is a real font measurement, so the box it returns is where the ink actually lands.
+
+> **Preventing a collision beats detecting one.** On a date axis `Chart.createTimeline(...)` packs
+> events into lanes so their labels *cannot* overlap, which is the same guarantee this check verifies
+> after the fact. Use the form where one exists; keep this check regardless, because it covers every
+> label on the page rather than one chart's.
 
 ```javascript
 // Every label's box, then every pair. `tolerance` is in pixels at the document's own scale.
@@ -581,6 +656,9 @@ beautiful and overstates its numbers has failed the more important half.
 - `polson://sdk/core/Photo` and `polson://manual/26` — reference photographs of real people and
   places, with the licence and the credit that must ride with them. Read these whenever the subject
   is named individuals rather than a category.
+- `polson://sdk/core/Assets` — materials and stencils, their budget, and the failure each call
+  reports. Read the TIP under `Assets.matte` before requisitioning a stencil: it is the one call that
+  answers a form, and the constraints on that are the whole reason it is allowed to.
 
 Query them rather than recalling from memory. The API is large and specific, and a call invented
 from memory that happens to sound right will fail in ways that cost more than the lookup.

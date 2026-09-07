@@ -19,6 +19,17 @@ public static class PlateAnalysis
     /// <summary>Rec. 709 luminance.</summary>
     public static double Luminance(SKColor c) => 0.2126 * c.Red + 0.7152 * c.Green + 0.0722 * c.Blue;
 
+    /// <summary>Luminance as the 0-255 level it belongs in.</summary>
+    /// <remarks>
+    /// <b>Rounds rather than truncates, and the difference is not cosmetic.</b> The three coefficients
+    /// sum to 1 in decimal and to slightly under 1 in binary, so a neutral grey lands just below its
+    /// own value — <c>rgb(20,20,20)</c> computes to 19.999999999999996 and truncates to <b>19</b>.
+    /// Harmless where luminance is compared against a coarse cutoff, and not harmless here: the
+    /// histogram and the cut must agree exactly, and a reader checking either against a known input
+    /// finds it off by one for no reason they can see.
+    /// </remarks>
+    public static byte LuminanceByte(SKColor c) => (byte)Math.Clamp(Math.Round(Luminance(c)), 0, 255);
+
     /// <summary>
     /// Measures whether a swatch wraps, by rolling it half a frame and testing the resulting mid-frame
     /// seam as an outlier against the ordinary neighbour-step distribution.
@@ -275,16 +286,31 @@ public static class PlateAnalysis
     }
 
     /// <summary>Converts to a single-channel-looking grey bitmap for use as a matte.</summary>
-    public static SKBitmap ToMatte(SKBitmap bitmap, bool invert = false)
+    /// <param name="threshold">
+    /// Cut level in 0-255. Null keeps the luminance ramp; a value cuts every pixel to pure black or
+    /// pure white, which is what a stencil needs and what a ramp cannot supply.
+    /// </param>
+    /// <remarks>
+    /// <b>Inversion is applied after the cut, not before.</b> Doing it the other way round means the
+    /// cut is tested against a level measured on the un-inverted image, so an inverted stencil comes
+    /// back cut at <c>255 - threshold</c> — a plausible-looking picture with the wrong coverage.
+    /// </remarks>
+    public static SKBitmap ToMatte(SKBitmap bitmap, bool invert = false, int? threshold = null)
     {
         ArgumentNullException.ThrowIfNull(bitmap);
 
+        var cut = threshold is null ? -1 : Math.Clamp(threshold.Value, 0, 255);
         var output = new SKBitmap(bitmap.Width, bitmap.Height);
         for (var y = 0; y < bitmap.Height; y++)
         {
             for (var x = 0; x < bitmap.Width; x++)
             {
-                var v = (byte)Math.Clamp(Luminance(bitmap.GetPixel(x, y)), 0, 255);
+                var v = LuminanceByte(bitmap.GetPixel(x, y));
+                if (cut >= 0)
+                {
+                    v = v > cut ? (byte)255 : (byte)0;
+                }
+
                 if (invert)
                 {
                     v = (byte)(255 - v);
@@ -295,6 +321,92 @@ public static class PlateAnalysis
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// Picks a cut level from the image's own luminance histogram (Otsu's method).
+    /// </summary>
+    /// <remarks>
+    /// <b>A fixed 128 is the wrong default for a generated stencil, which is why this exists.</b> The
+    /// model is asked for pure white on pure black and does not deliver it: its blacks land anywhere
+    /// from 20 to 90 and its whites from 170 to 250, varying per generation and per subject. Cutting
+    /// a plate whose range is 35-160 at 128 keeps a sliver of the subject and reports a stencil that
+    /// is 4% white — a silent, plausible failure, and exactly the class this project treats as worst.
+    /// Choosing the level that best separates the two populations tracks whatever the model returned.
+    /// </remarks>
+    public static int OtsuThreshold(SKBitmap bitmap)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        var histogram = new long[256];
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                histogram[LuminanceByte(bitmap.GetPixel(x, y))]++;
+            }
+        }
+
+        long total = (long)bitmap.Width * bitmap.Height;
+        double sumAll = 0;
+        for (var i = 0; i < 256; i++)
+        {
+            sumAll += (double)i * histogram[i];
+        }
+
+        double sumBelow = 0, best = -1;
+        long countBelow = 0;
+        var level = 127;
+
+        for (var i = 0; i < 256; i++)
+        {
+            countBelow += histogram[i];
+            if (countBelow == 0)
+            {
+                continue;
+            }
+
+            var countAbove = total - countBelow;
+            if (countAbove == 0)
+            {
+                break;
+            }
+
+            sumBelow += (double)i * histogram[i];
+            var meanBelow = sumBelow / countBelow;
+            var meanAbove = (sumAll - sumBelow) / countAbove;
+            var between = (double)countBelow * countAbove * (meanBelow - meanAbove) * (meanBelow - meanAbove);
+
+            if (between > best)
+            {
+                best = between;
+                level = i;
+            }
+        }
+
+        return level;
+    }
+
+    /// <summary>Share of the matte that is "on", as a fraction of the frame.</summary>
+    /// <remarks>
+    /// The readback that makes a threshold checkable. A stencil that came back 2% or 98% white is a
+    /// failed generation that still decodes, still encodes, and still draws — so without a measured
+    /// coverage the caller learns nothing until a human looks at the artifact.
+    /// </remarks>
+    public static double Coverage(SKBitmap matte)
+    {
+        ArgumentNullException.ThrowIfNull(matte);
+
+        double on = 0;
+        for (var y = 0; y < matte.Height; y++)
+        {
+            for (var x = 0; x < matte.Width; x++)
+            {
+                on += matte.GetPixel(x, y).Red / 255.0;
+            }
+        }
+
+        return on / ((double)matte.Width * matte.Height);
     }
 
     /// <summary>Encodes to the delivery format. WebP q85 is ~10x smaller than the PNG the service returns.</summary>

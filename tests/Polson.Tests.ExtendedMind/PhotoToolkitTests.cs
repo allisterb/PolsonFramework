@@ -340,6 +340,56 @@ public class PhotoToolkitTests : TestsRuntime
         Assert.Contains("images.example.net", photo.Error);
     }
 
+    /// <summary>
+    /// Wikimedia's thumbnail host is fetched, not blocked.
+    /// </summary>
+    /// <remarks>
+    /// The regression this pins cost a live run its portrait. Originals come from
+    /// <c>upload.wikimedia.org</c> and rendered thumbnails from <c>thumb.wikimedia.org</c> — and
+    /// since asking for a <c>width</c> is what returns a thumbnail, that is the ordinary path rather
+    /// than an edge case. With only the first host allowed, the subject resolved, the right image was
+    /// found, and the fetcher then refused its own URL. Nothing about the descriptor could fix it,
+    /// so the agent retried twice and gave up.
+    /// </remarks>
+    [Fact]
+    public async Task WikimediaThumbnailHostIsOnTheAllowlist()
+    {
+        var handler = Wiki(
+            search: Search("Subject", "A person", pageImage: "S.jpg"),
+            imageInfo: ImageInfo("File:S.jpg", "CC0", "Someone",
+                thumbUrl: "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ad/S.jpg/960px-S.jpg"),
+            image: Png(40, 50));
+        var toolkit = Toolkit(handler);
+
+        var photo = await toolkit.Of("Subject");
+
+        Assert.True(photo.Success, photo.Error);
+        Assert.Equal(1, handler.ImageRequests);
+        Assert.Equal(40, photo.Width);
+    }
+
+    /// <summary>The allowlist stays a list of named hosts, rather than becoming a suffix rule.</summary>
+    /// <remarks>
+    /// A <c>*.wikimedia.org</c> match would have fixed the bug above in one character and admitted
+    /// every present and future subdomain of a wiki farm the public can write to. This is a security
+    /// boundary reachable from visitor-supplied text, so it is widened one observed host at a time.
+    /// </remarks>
+    [Fact]
+    public async Task AnUnlistedWikimediaSubdomainIsStillBlocked()
+    {
+        var handler = Wiki(
+            search: Search("Subject", "A person", pageImage: "S.jpg"),
+            imageInfo: ImageInfo("File:S.jpg", "CC0", "Someone",
+                thumbUrl: "https://anything.wikimedia.org/S.jpg"),
+            image: Png(40, 50));
+        var toolkit = Toolkit(handler);
+
+        var photo = await toolkit.Of("Subject");
+
+        Assert.Equal(PhotoFailure.BlockedHost, photo.Failure);
+        Assert.Equal(0, handler.ImageRequests);
+    }
+
     /// <summary>The delivered size is read from the decoded picture, not from what the source claimed.</summary>
     [Fact]
     public async Task DeliveredSizeIsMeasuredFromTheDecodedImage()
@@ -587,7 +637,12 @@ public class PhotoToolkitTests : TestsRuntime
         {
             var url = request.RequestUri!.ToString();
 
-            if (request.RequestUri.Host.Contains("upload.wikimedia", StringComparison.Ordinal)
+            // Any wikimedia.org host serves bytes here, not just upload — the media hosts are
+            // upload and thumb, and the API is wikipedia.org, so this cannot swallow an API call.
+            // Matching only "upload.wikimedia" made a thumb URL fall through to the API branch and
+            // come back as search JSON, which surfaces as "did not decode as an image" — a confusing
+            // way for a test double to say it does not know the route.
+            if (request.RequestUri.Host.EndsWith("wikimedia.org", StringComparison.OrdinalIgnoreCase)
                 || request.RequestUri.Host.Contains("example.net", StringComparison.Ordinal))
             {
                 ImageRequests += 1;

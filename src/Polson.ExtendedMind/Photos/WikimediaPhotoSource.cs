@@ -77,7 +77,22 @@ public sealed partial class WikimediaPhotoSource : Runtime, IPhotoSource, IDispo
     /// visitor-supplied text on the demo site (Milestone 6 §3). A URL is data returned by a remote
     /// service; the set of hosts we will dereference is ours.
     /// </remarks>
-    public static readonly string[] DefaultMediaHosts = ["upload.wikimedia.org"];
+    /// <remarks>
+    /// <b>Both hosts are needed, and the second was found the hard way.</b> Wikimedia serves
+    /// originals from <c>upload.wikimedia.org</c> and now serves rendered thumbnails — which is what
+    /// a <c>width</c> request returns, so it is the common case rather than the rare one — from
+    /// <c>thumb.wikimedia.org</c>. With only the first, <c>Photo.of</c> resolved the subject, found
+    /// the right image, and then refused to fetch its own URL: a live run lost its portrait and spent
+    /// two scripts retrying under different descriptors, because the block is on the host and no
+    /// change to the name can move it.
+    /// <para>
+    /// Named hosts rather than a <c>*.wikimedia.org</c> suffix match on purpose. The list is a
+    /// security boundary — this fetcher is reachable, indirectly, from visitor-supplied text
+    /// (Milestone 6 §3) — and a suffix rule would admit every present and future subdomain of a wiki
+    /// farm that lets the public name things. Add hosts as they are observed, one at a time.
+    /// </para>
+    /// </remarks>
+    public static readonly string[] DefaultMediaHosts = ["upload.wikimedia.org", "thumb.wikimedia.org"];
 
     /// <summary>Deadline for one API call or one byte fetch.</summary>
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);

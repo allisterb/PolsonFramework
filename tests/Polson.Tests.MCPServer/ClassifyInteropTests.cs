@@ -20,6 +20,7 @@ using Xunit;
 /// These exercise it through Jint, because that is the only place the bug exists.
 /// </para>
 /// </summary>
+[Collection(AssetsCollection.Name)]
 public class ClassifyInteropTests : TestsRuntime
 {
     #region Methods

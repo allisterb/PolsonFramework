@@ -20,6 +20,7 @@ using Xunit;
 /// failure is a cast before the fix and a clean <c>NotConfigured</c> after it.
 /// </para>
 /// </remarks>
+[Collection(AssetsCollection.Name)]
 public class EnumStringInteropTests : TestsRuntime
 {
     #region Methods

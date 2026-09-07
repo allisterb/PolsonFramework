@@ -275,8 +275,7 @@ public partial class AssetRequisitionToolkit : Runtime
     public async Task<MatteAsset> Matte(string descriptor, MatteOptions? options = null)
     {
         var opts = options ?? new MatteOptions();
-        var prompt = $"A flat greyscale mask of {descriptor}. Pure white where the feature is, pure black "
-                   + "elsewhere, no colour, no lighting, no shadow, no perspective, fill the whole frame.";
+        var prompt = MattePrompt(descriptor, opts);
 
         var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel, "1:1", null, "matte", descriptor);
         if (!generated.Success)
@@ -295,7 +294,11 @@ public partial class AssetRequisitionToolkit : Runtime
             };
         }
 
-        using var grey = PlateAnalysis.ToMatte(master, opts.Invert);
+        // The level is measured on the master, before resampling. Resampling reintroduces intermediate
+        // values along every edge, so thresholding afterwards would cut a ramp this pass just removed.
+        int? cut = opts.Threshold ?? (opts.HardEdge ? PlateAnalysis.OtsuThreshold(master) : null);
+
+        using var grey = PlateAnalysis.ToMatte(master, opts.Invert, cut);
         using var sized = PlateAnalysis.Resize(grey, Math.Clamp(opts.Size, 32, Requisitions.MaxDeliveredSize));
 
         return new MatteAsset
@@ -304,9 +307,26 @@ public partial class AssetRequisitionToolkit : Runtime
             Id = generated.Hash,
             Bytes = PlateAnalysis.Encode(sized, "png", 100),
             Size = sized.Width,
+            Threshold = cut,
+            Coverage = PlateAnalysis.Coverage(grey),
             Provenance = ProvenanceOf(generated, null),
         };
     }
+
+    /// <summary>
+    /// A mask asks for a field; a stencil asks for a shape. The words differ accordingly.
+    /// </summary>
+    /// <remarks>
+    /// <c>fill the whole frame</c> is right for a height field or a displacement source and wrong for
+    /// a silhouette, where it crops the subject at the edges — so the two cases cannot share a prompt.
+    /// </remarks>
+    static string MattePrompt(string descriptor, MatteOptions opts) =>
+        opts.HardEdge || opts.Threshold is not null
+            ? $"A bold black-and-white STENCIL of {descriptor}. Pure white silhouette on pure black. "
+            + "One solid shape: no interior detail, no outline, no gradient, no shading, no grey of any kind. "
+            + "The whole subject inside the frame with a small margin, centred, seen straight on."
+            : $"A flat greyscale mask of {descriptor}. Pure white where the feature is, pure black "
+            + "elsewhere, no colour, no lighting, no shadow, no perspective, fill the whole frame.";
 
     /// <summary>Cache lookup, budget check, then generation. The only path that can spend money.</summary>
     /// <remarks>

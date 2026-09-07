@@ -113,12 +113,31 @@ public sealed record BackdropOptions
 }
 
 /// <summary>Options for <c>ExtendedMind.matte(...)</c>. Returns one channel, never RGB.</summary>
+/// <remarks>
+/// <b>This is also the stencil channel, and <see cref="HardEdge"/> is what makes it one.</b> The
+/// classifier does not run here — a matte of a form is what a matte is for — so this is the one
+/// requisition that will answer "a rearing horse" or "a bare oak in winter". What comes back is a
+/// silhouette the code then owns: colour, scale and placement stay with the drawing toolkit, which
+/// is the whole difference between this and buying a finished picture.
+/// </remarks>
 public sealed record MatteOptions
 {
     public int Size { get; init; } = 512;
 
     /// <summary>Invert so that white marks the region of interest.</summary>
     public bool Invert { get; init; }
+
+    /// <summary>
+    /// Cut the luminance ramp to pure black and white at a level measured from the image itself.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, because a height field and a displacement source both want the ramp. Turn it
+    /// on for a stencil: a soft-edged silhouette clips and masks with a halo, and traces to nothing.
+    /// </remarks>
+    public bool HardEdge { get; init; }
+
+    /// <summary>Explicit cut level in 0-255. Implies <see cref="HardEdge"/>; leave unset to measure it.</summary>
+    public int? Threshold { get; init; }
 
     public string? Model { get; init; }
 }
@@ -308,11 +327,36 @@ public sealed record BackdropPlate : RequisitionResult, IDataUriSource
 }
 
 /// <summary>A single-channel mask, height field, or displacement source.</summary>
-public sealed record MatteAsset : RequisitionResult
+/// <remarks>
+/// <b>Implements <see cref="IDataUriSource"/> so that <c>paper.image(matte, …)</c> works.</b> It did
+/// not, and the omission was found by a live run: a stencil was requisitioned successfully and then
+/// took two further scripts to get onto the page, because <c>image(src, …)</c> dispatches on this
+/// interface and fell through to its generic refusal. A matte is encoded bytes exactly as a material
+/// is, so there was never a reason for it to be the one requisition you could not draw.
+/// </remarks>
+public sealed record MatteAsset : RequisitionResult, IDataUriSource
 {
     public byte[] Bytes { get; init; } = [];
 
+    /// <summary>Delivered edge length. A matte is square, so this is both width and height.</summary>
     public int Size { get; init; }
+
+    /// <summary>The cut level actually used, or null when the ramp was kept.</summary>
+    /// <remarks>Reported rather than assumed: a measured level is a fact about the plate that came back.</remarks>
+    public int? Threshold { get; init; }
+
+    /// <summary>Share of the frame that is "on", 0 to 1.</summary>
+    /// <remarks>
+    /// <b>Check this.</b> A stencil near 0 or near 1 decoded, encoded and will draw — as an empty
+    /// frame or a solid block. Nothing downstream can tell that apart from a subject that happens to
+    /// be small or large, so this is the only signal that the generation failed.
+    /// </remarks>
+    public double Coverage { get; init; }
+
+    /// <summary>Base64 data URI. A matte is delivered as PNG, which is lossless on a hard edge.</summary>
+    public string ToDataUri() => Bytes.Length > 0
+        ? $"data:image/png;base64,{Convert.ToBase64String(Bytes)}"
+        : string.Empty;
 }
 
 #endregion

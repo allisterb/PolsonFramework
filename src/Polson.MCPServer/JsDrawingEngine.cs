@@ -948,6 +948,19 @@ public partial class JsDrawingEngine : Runtime
                 "rather than recording something that cannot fail.";
         }
 
+        // The D3 reflex. `Scale` takes four scalars where d3 takes .domain([a,b]).range([c,d]), so a
+        // caller carrying that habit passes arrays and gets told to hunt for an undefined property.
+        // A live run lost a script to it and spent its next step on a Search to recover the shapes.
+        if (D3ScalePair().IsMatch(sourceLine ?? string.Empty))
+        {
+            return " Scale takes plain numbers, not d3-style [min, max] pairs — " +
+                "Scale.linear(domainStart, domainEnd, rangeStart, rangeEnd) and " +
+                "Scale.band(count, rangeStart, rangeEnd, padding), each argument its own value. " +
+                "There is no .domain(...)/.range(...) here: a scale is built in one call and the " +
+                "range may run backwards, which is how a vertical axis puts larger values higher. " +
+                "Spread the arrays into their elements.";
+        }
+
         return " An argument is not a type the method accepts, and the commonest reason is that one of " +
             "them is undefined — reading a property that does not exist yields undefined rather than " +
             "failing, and no overload matches it. Check the spelling of every property read on that " +
@@ -973,6 +986,18 @@ public partial class JsDrawingEngine : Runtime
     /// </remarks>
     [GeneratedRegex(@"Stage\s*\.\s*check\s*\(\s*[^'""`\s)]", RegexOptions.IgnoreCase)]
     private static partial Regex SwappedCheck();
+
+    /// <summary>
+    /// A <c>Scale</c> call carrying an array <i>literal</i> where a number belongs.
+    /// </summary>
+    /// <remarks>
+    /// The bracket must open an argument — directly after the <c>(</c>, or directly after a comma —
+    /// so that an ordinary <b>index</b> is not mistaken for a d3 pair. <c>Scale.linear(0, data[i], a,
+    /// b)</c> is a perfectly good call and must not be told it is d3; the character class excludes
+    /// <c>[</c>, so the match cannot run past one to find a later bracket.
+    /// </remarks>
+    [GeneratedRegex(@"Scale\s*\.\s*\w+\s*\(\s*(?:[^()\[\]]*,\s*)?\[", RegexOptions.IgnoreCase)]
+    private static partial Regex D3ScalePair();
 
     /// <summary>
     /// "x is not a function", when <c>x</c> holds a toolkit object that is not callable.

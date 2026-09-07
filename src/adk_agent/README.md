@@ -288,6 +288,27 @@ also sidesteps ADK's `.env` resolution being first-found-wins rather than layere
 python-adk/Scripts/python.exe src/adk_agent/newproject.py bookbindery --workflow logo --prompt "a mark for a bookbindery"
 ```
 
+> **A test run (`--test`) must carry both a deadline and a token budget.** They fail in opposite
+> directions and neither defaults to anything useful for an evaluation.
+>
+> - No **deadline** → no clock, and `findings.md` is written from the allowance left at the end, so it
+>   is never reached. A workflow missing from the CLI's deadline table resolves to *no deadline at
+>   all* rather than to a wrong one.
+> - No **token budget** → nothing stops a run that will not converge. Input is the whole conversation
+>   resent each turn, growing O(n²) while output stays flat.
+>
+> Measured on `apollovec3`: **2,030,346 input tokens against 30,240 of output** — 67:1 — in 30 turns
+> and 10.8 minutes, comfortably inside its 30-minute deadline. **The clock would never have caught
+> it**; the token breaker did. Set both:
+>
+> ```bash
+> python-adk/Scripts/python.exe src/adk_agent/newproject.py <id> --workflow <w> --test --deadline 30 --prompt "..."
+> POLSON_BUDGET_TOKENS=2000000 python-adk/Scripts/python.exe -m uvicorn main:app --app-dir src/adk_agent
+> ```
+>
+> The cap counts **raw** input on purpose. On that run 61% was cached and billed at about a tenth, so
+> the bill was well under the number that halted it — it is a runaway alarm, not a budget in money.
+
 **4. Serve.** Through `main.py`, which is what the container will run, so local and deployed behave
 the same:
 

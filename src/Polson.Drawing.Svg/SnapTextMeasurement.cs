@@ -27,7 +27,7 @@ internal static class SnapTextMeasurement
 {
     #region Methods
     /// <summary>The box a text element's glyphs occupy, honouring anchor, size and family.</summary>
-    internal static SnapBBox Measure(SvgText text, SnapMatrix? matrix)
+    internal static SnapBBox Measure(SvgTextBase text, SnapMatrix? matrix)
     {
         var content = text.Text ?? string.Empty;
         var size = FontSize(text);

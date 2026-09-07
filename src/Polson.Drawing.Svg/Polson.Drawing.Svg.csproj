@@ -10,6 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- So the attribute round-trip guard can enumerate the element factory rather than repeat a
+         list of its own. These stay internal deliberately: every public member of a type Jint can
+         reach becomes script surface, and ApiDocumentationTests then requires it to be documented. -->
+    <InternalsVisibleTo Include="Polson.Tests.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Svg.Skia" Version="5.2.1" />
     <PackageReference Include="Svg.Custom" Version="5.2.1" />
     <PackageReference Include="Svg.Model" Version="5.2.1" />

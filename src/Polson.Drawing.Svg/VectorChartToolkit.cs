@@ -74,6 +74,7 @@ public class VectorChartToolkit
             case "bar": Bars(group, model, style); break;
             case "dot":
             case "groupedDot": Dots(group, model, style); break;
+            case "line": Line(group, model, style); break;
             case "framedRectangle": Framed(group, model, style); break;
             case "waffle": Waffle(group, model, style); break;
             case "pictogram": Pictogram(group, model, style); break;
@@ -122,6 +123,52 @@ public class VectorChartToolkit
 
             var r = F(dot, "radius");
             style.Fill(g.Circle(F(dot, "cx"), F(dot, "cy"), r > 0 ? r : style.Radius), i++);
+        }
+    }
+
+    /// <summary>The trajectory, its optional area, and a marker per measured point.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The line is stroked and the area is filled, which is the one place this form departs from
+    /// the others.</b> Everywhere else a mark is a filled shape and <c>fill</c> is the colour that
+    /// matters; here the trajectory is a stroke, so <c>stroke</c> falls back to the fill colour rather
+    /// than to the grey used for a dot's leader — a line drawn in leader-grey reads as chrome.
+    /// </para>
+    /// <para>
+    /// <b>The points are drawn because they are the measurements.</b> A bare line invites the reader
+    /// to treat every position along it as data; a marker at each sample says where the numbers
+    /// actually are and where the segments are interpolation. Set <c>radius: 0</c> to suppress them
+    /// when the samples are dense enough that markers become noise.
+    /// </para>
+    /// </remarks>
+    private static void Line(SnapElement g, IDictionary model, Style style)
+    {
+        var stroke = style.Stroke ?? style.FillColor;
+
+        if (Str(model, "areaPath") is { Length: > 0 } areaPath)
+        {
+            g.Path(areaPath)
+             .Attr("fill", style.FillColor)
+             .Attr("fill-opacity", 0.25f)
+             .Attr("stroke", "none");
+        }
+
+        if (Str(model, "path") is { Length: > 0 } path)
+        {
+            g.Path(path)
+             .Attr("fill", "none")
+             .Attr("stroke", stroke)
+             .Attr("stroke-width", style.StrokeWidth > 1f ? style.StrokeWidth : 2f)
+             .Attr("stroke-linejoin", "round")
+             .Attr("stroke-linecap", "round");
+        }
+
+        var i = 0;
+        foreach (var point in Rows(model, "points"))
+        {
+            var r = style.Radius > 0f ? style.Radius : F(point, "radius");
+            if (r <= 0f) { i++; continue; }
+            style.Fill(g.Circle(F(point, "x"), F(point, "y"), r), i++);
         }
     }
 

@@ -310,10 +310,10 @@ public class VectorLogoToolkit
             ?.GetValue(options);
     }
 
-    static string OptionString(object? options, string name, string fallback) =>
+    internal static string OptionString(object? options, string name, string fallback) =>
         Option(options, name)?.ToString() is string s && !string.IsNullOrWhiteSpace(s) ? s : fallback;
 
-    static float OptionFloat(object? options, string name, float fallback) =>
+    internal static float OptionFloat(object? options, string name, float fallback) =>
         Option(options, name) is object v
         && float.TryParse(v.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var f)
             ? f

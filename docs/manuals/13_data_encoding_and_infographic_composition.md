@@ -168,6 +168,26 @@ the first two anti-patterns below — a one-bar bar chart and a two-slice pie bo
 reader could simply have read and convert it into a judgment. `compact: true` handles the formatting
 that makes a big number legible (`1234567` → `1.2M`).
 
+**`Chart.createLineChart(...)` — a series joined into a trajectory.** The form for a quantity over a
+continuous axis, and **rank 1** for reading a level, because a point on a line is a position on a
+common scale. Reading the *trend* is a judgment of direction, which is rank 3 — so a line is precise
+about levels and coarser about slopes, worth knowing before an argument rests on a gradient.
+
+Three things it refuses, and each is a claim a line makes that no other form does. **A series that
+cannot honestly be joined** — two values at one position, or positions that double back — is refused
+with the reason, because neither is a data error: every number is right and the picture still lies.
+**A spline** is refused by name; a smooth curve through sampled points draws values nobody measured,
+where a straight segment asserts linear interpolation and nothing more. And **a single point** is a
+callout, not a trajectory.
+
+> **Give a time series its own `x`.** Rows carrying `x` sit at their true positions; without it points
+> are evenly spaced by index. Telemetry sampled at 0, 26, 156 and 480 seconds drawn at four equal
+> steps shows a constant rate of change that never happened.
+>
+> **`lieFactor` is 1 until you fill the area.** A line's value is read as position, so cropping the
+> axis is as legitimate as it is on a dot chart. Fill the area and the height *is* the quantity — a
+> bar's claim — so the baseline is forced in and the lie factor is measured as a bar's is.
+
 **`Chart.createTimeline(...)` — events and periods on a time axis.** The brand-history form, and one
 of the few here that is **rank 1**: a reader compares *when*, and when is a position on a common
 scale. It reads easily for the same reason a dot chart does.

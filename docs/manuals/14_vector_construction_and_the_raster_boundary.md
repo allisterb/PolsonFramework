@@ -465,7 +465,14 @@ An honest list, because the failure mode is reaching for a raster capability hal
 - **No stamped or hatched path effects.** `Skia.PathEffect.stamp` and `.hatch` are canvas-side. A repeated motif along a curve, or hatching as scalable geometry, is raster.
 - **No SkSL.** A custom shader or runtime colour filter written in SkSL is canvas-side, and there is no vector equivalent.
 - **Noise, blur, colour grading and soft edges are *not* on this list, and used to be.** They are `paper.filter()` — see §6a. `feTurbulence` is the same Perlin the Skia shader wraps. Reaching for a raster canvas because a vector scene needs grain is a rebuild for nothing.
-- **No text wrapping.** `ctx.measureWrappedText` and `ctx.fillWrappedText` are canvas-only, because SVG has no flow. A paragraph broken into `<tspan>` lines is your decision, line by line.
+- **No automatic text wrapping.** `ctx.measureWrappedText` and `ctx.fillWrappedText` are canvas-only, because SVG has no flow. Breaking a paragraph into lines is your decision, line by line — measure each with `getBBox()` and place a `<tspan>` per line inside one `<text>` container, each carrying its own `x`/`y`:
+
+  ```javascript
+  const block = paper.text(0, 0, '').attr({ 'font-size': 18, fill: '#15151a' });
+  lines.forEach((line, i) => block.el('tspan', { x: 40, y: 90 + i * 26 }).attr({ text: line }));
+  ```
+
+  **Give every span an `x` and a `y`.** Without them it inherits the container's origin, and a container is conventionally made at `(0, 0)` — so the whole paragraph lands on a baseline above the top edge and reads as "spans do not work". `<textPath>` works the same way and takes `href` to the path it follows.
 - **No pixel measurement.** `bitmap.diff`, `rowProfile`, `getPixel` and `palette` operate on rendered bitmaps. To verify a vector scene, render it and measure the render.
 - **No boolean operations on elements directly.** Go through `attr('d')` → `CanvasPath` → the operation, as in §8.
 

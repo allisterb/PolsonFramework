@@ -22,7 +22,7 @@ using Xunit;
 /// prompt. Neither may be taken on trust.
 /// </para>
 /// </summary>
-public class ProjectGeneratorTests : TestsRuntime, IDisposable
+public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
 {
     #region Fields
     readonly string root = Path.Combine(Path.GetTempPath(), "polson-gen-" + Guid.NewGuid().ToString("N"));
@@ -55,6 +55,74 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
             .Select(f => Path.GetRelativePath(Path.Combine(root, name), f).Replace('\\', '/'))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToArray();
+    #endregion
+
+    #region Instruction Template Tests
+    /// <summary>
+    /// No <c>{ identifier }</c> survives into a generated instructions file, on any workflow.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>ADK reads a brace-wrapped bare identifier in an agent's instructions as a context variable
+    /// and refuses to start.</b> The whole run dies before the first model call with
+    /// <c>KeyError: 'Context variable not found: `area`.'</c> — naming the identifier and nothing about
+    /// where it came from, which is a markdown table cell in a workflow template.
+    /// </para>
+    /// <para>
+    /// It has now happened twice. Writing <c>Chart.createLineChart(rect, rows, { area })</c> as a
+    /// signature — the natural JavaScript shorthand — was enough. A brace carrying a colon
+    /// (<c>{ area: true }</c>) or a nested brace is safe; a lone identifier is not.
+    /// </para>
+    /// <para>
+    /// The check is on the <b>generated</b> file rather than the template, because the generator's own
+    /// <c>{PROJECT_ID}</c>-style placeholders are legitimate in a template and are substituted away.
+    /// Only what survives can reach ADK. Uppercase names are excluded so an unsubstituted placeholder
+    /// still fails the substitution tests that exist for it, rather than being reported here.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("logo")]
+    [InlineData("infographic")]
+    [InlineData("vector_infographic")]
+    [InlineData("drawing")]
+    [InlineData("comic")]
+    [InlineData("painting")]
+    [InlineData("comic_studio")]
+    [InlineData("harness")]
+    public void TestNoBraceVariableSurvivesIntoTheInstructions(string workflow)
+    {
+        var id = "brace-" + workflow;
+        Assert.True(ProjectGenerator.Create(Options(id, o =>
+        {
+            o.Workflow = workflow;
+            o.Test = true;
+            o.Deadline = 15;
+        })));
+
+        var dir = Path.Combine(root, id);
+        var instructions = Directory.EnumerateFiles(dir, "*.md", SearchOption.TopDirectoryOnly)
+            .Where(f => Path.GetFileName(f) is "GEMINI.md" or "CLAUDE.md" or "AGENTS.md")
+            .ToArray();
+
+        Assert.NotEmpty(instructions);
+
+        foreach (var file in instructions)
+        {
+            var found = BraceVariable().Matches(File.ReadAllText(file))
+                .Select(m => m.Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            Assert.True(found.Length == 0,
+                $"{workflow}/{Path.GetFileName(file)} carries {string.Join(", ", found)} — ADK reads a "
+                + "brace-wrapped bare identifier as a context variable and refuses to start the agent. "
+                + "Give the brace a colon, as in { area: true }.");
+        }
+    }
+
+    /// <summary>A lone lower-case identifier in braces; a colon or nesting makes it safe.</summary>
+    [GeneratedRegex(@"\{\s*[a-z_][A-Za-z0-9_]*\s*\}")]
+    private static partial Regex BraceVariable();
     #endregion
 
     #region Hook Command Tests
@@ -1729,5 +1797,47 @@ public class ProjectGeneratorTests : TestsRuntime, IDisposable
     [InlineData("Logo")]
     public void TestWorkflowNameIsCaseInsensitive(string workflow) =>
         Assert.True(ProjectGenerator.Create(Options("case-" + workflow, o => o.Workflow = workflow)));
+
+    /// <summary>
+    /// Every shipped workflow has a default deadline, so adding a template cannot silently ship one
+    /// with no clock.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>KnownWorkflows</c> is <b>discovered</b> from the embedded templates and the deadline table
+    /// is <b>hand-maintained</b>, so the two can disagree — and did. <c>vector_infographic</c> shipped
+    /// a template with no entry, and an unlisted workflow falls through to <c>0</c>, which means *no
+    /// deadline* rather than a wrong one. Two Apollo runs got a deadline only because
+    /// <c>--deadline</c> happened to be passed by hand; nothing would have reported its absence.
+    /// </para>
+    /// <para>
+    /// <c>harness</c> is the deliberate exception and is asserted as such rather than skipped: it is a
+    /// test fixture measured on what it exercises, so a deadline would only add a failure mode. If it
+    /// ever gains one, this test should be the thing that asks why.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestEveryWorkflowHasADeadline()
+    {
+        var missing = ProjectGenerator.KnownWorkflows
+            .Where(w => !string.Equals(w, "harness", StringComparison.OrdinalIgnoreCase))
+            .Where(w => ProjectGenerator.DeadlineFor(w, null) <= 0)
+            .ToArray();
+
+        Assert.True(missing.Length == 0,
+            $"these workflows ship a template but have no entry in WorkflowDeadlines, so they default "
+            + $"to no deadline at all: {string.Join(", ", missing)}");
+
+        Assert.Equal(0, ProjectGenerator.DeadlineFor("harness", null));
+    }
+
+    /// <summary>An explicit <c>--deadline</c> still wins, including for a workflow that now has a default.</summary>
+    [Fact]
+    public void TestAnExplicitDeadlineOverridesTheDefault()
+    {
+        Assert.Equal(30, ProjectGenerator.DeadlineFor("vector_infographic", null));
+        Assert.Equal(45, ProjectGenerator.DeadlineFor("vector_infographic", 45));
+        Assert.Equal(0, ProjectGenerator.DeadlineFor("vector_infographic", 0));
+    }
     #endregion
 }

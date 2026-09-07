@@ -495,6 +495,15 @@ internal static class ProjectGenerator
     /// a deadline that cannot be met teaches an agent to ignore deadlines.
     /// </para>
     /// <para>
+    /// <b>This table is the one hand-maintained list beside a discovered one, and it drifted.</b>
+    /// <see cref="KnownWorkflows"/> registers a workflow by the presence of its template, and its
+    /// own remarks warn against a list that must be edited in lockstep — which is exactly what this
+    /// is. <c>vector_infographic</c> shipped a template and no entry here, so it silently defaulted
+    /// to <b>no deadline at all</b> rather than to a wrong one, and two Apollo runs got thirty
+    /// minutes only because <c>--deadline</c> was passed by hand. Pinned now by
+    /// <c>ProjectGeneratorTests.TestEveryWorkflowHasADeadline</c>.
+    /// </para>
+    /// <para>
     /// These are starting points, not measurements. The only figure behind them is that a
     /// single-agent logo brief has run end to end in about three minutes, and one Inker alone has
     /// spent 58.8 on a pass it never finished. Tune them as real runs accumulate, and pass
@@ -505,6 +514,9 @@ internal static class ProjectGenerator
     {
         ["logo"] = 15,
         ["infographic"] = 30,
+        // Same allowance as `infographic`: the vector discipline changes what is built, not how long
+        // it takes. Two Apollo vector runs finished inside it, the longer at 18.6 minutes.
+        ["vector_infographic"] = 30,
         ["drawing"] = 45,
         ["comic"] = 60,
         ["painting"] = 120,

@@ -61,6 +61,10 @@ public class ChartToolkit
     private static readonly string[] GroupedDotOptions =
         [.. DotOptions, "groupGap", "headingHeight"];
 
+    private static readonly string[] LineOptions =
+        ["min", "max", "xMin", "xMax", "baseline", "tickCount", "xTickCount", "labels",
+         "labelGap", "tickGap", "area", "curve", "radius"];
+
     private static readonly string[] FramedOptions =
         ["min", "max", "tickCount", "labels", "frameWidth", "frameHeight", "columns", "gap"];
 
@@ -80,7 +84,8 @@ public class ChartToolkit
     /// </remarks>
     private static readonly string[] PanelOptions =
         ["baseline", "padding", "tickCount", "labelGap", "tickGap", "radius", "sort",
-         "groupGap", "headingHeight", "frameWidth", "frameHeight", "labels"];
+         "groupGap", "headingHeight", "frameWidth", "frameHeight", "labels",
+         "area", "curve", "xTickCount", "xMin", "xMax"];
 
     private static readonly string[] SmallMultipleOptions =
         ["form", "columns", "gap", "rowGap", "titleHeight", "min", "max", .. PanelOptions];
@@ -267,6 +272,225 @@ public class ChartToolkit
             // Position encodes differences, and a linear mapping preserves their ratios wherever the
             // axis starts — so this is 1 whether or not the axis is cropped. See the remarks above.
             ["lieFactor"] = 1d
+        };
+    }
+
+    /// <summary>
+    /// A line chart: a series joined into a trajectory, value as <b>position on a common scale</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Added because its absence was doing damage.</b> An Apollo descent-profile run searched the
+    /// toolkit for a line form, found none among the thirteen, and hand-built the trajectory out of
+    /// quadratic curves whose control point took the previous x with the new y — a rounded <i>step</i>,
+    /// which between two telemetry samples asserts the vehicle dropped to the new altitude and then
+    /// held flat. The data was correct and sourced; the mark was not. The same run called
+    /// <see cref="ScaleToolkit.CheckSeries"/> first, so the SDK was shipping the integrity check for a
+    /// form it could not draw.
+    /// </para>
+    /// <para>
+    /// <b>Straight segments between measured points, and no spline option.</b> A smooth curve through
+    /// sampled data draws values that were never measured and cannot be checked; a straight segment
+    /// asserts linear interpolation and nothing more, which is the weakest honest claim available.
+    /// <c>curve: 'step'</c> is offered because it is the truthful mark for a quantity that genuinely
+    /// holds and jumps — a tariff, a policy rate — and is wrong for anything continuous.
+    /// </para>
+    /// <para>
+    /// <b>The series is checked, not merely checkable.</b> Positions are run through
+    /// <c>Scale.checkSeries</c> and a series that cannot honestly be joined — two values at one
+    /// position, or positions that double back — is <b>refused</b> with the reason. A line is a claim
+    /// about a trajectory, and neither fault is a data error: every value is correct and the picture
+    /// still lies, so nothing downstream would catch it.
+    /// </para>
+    /// <para>
+    /// <b>Position, so the axis need not start at zero — unless you fill the area.</b> A line's value
+    /// is read as position, exactly as a dot's is, so cropping the axis preserves the ratios of
+    /// differences and <c>lieFactor</c> is 1. Turn on <c>area</c> and that changes: the filled height
+    /// becomes the quantity, which is a bar's claim rather than a dot's, so the baseline is forced
+    /// into the domain and <c>lieFactor</c> is measured the way a bar chart's is.
+    /// </para>
+    /// </remarks>
+    /// <param name="rect">The plot area, as any <c>{ x, y, width, height }</c>.</param>
+    /// <param name="data">
+    /// Numbers, or objects carrying <c>value</c>, optionally <c>label</c>, and optionally <c>x</c>.
+    /// With <c>x</c> the points sit at their own positions on a linear axis — which is what a time
+    /// series needs; without it they are evenly spaced by index.
+    /// </param>
+    /// <param name="options">
+    /// <c>min</c>/<c>max</c> and <c>xMin</c>/<c>xMax</c> to force a shared scale, <c>baseline</c>
+    /// (default 0, used when <c>area</c> is on), <c>area</c>, <c>curve</c> (<c>'linear'</c> or
+    /// <c>'step'</c>), <c>radius</c> for the point markers, <c>tickCount</c>/<c>xTickCount</c>,
+    /// <c>labels</c>, <c>labelGap</c> and <c>tickGap</c>.
+    /// </param>
+    public Dictionary<string, object?> CreateLineChart(object rect, object data, object? options = null)
+    {
+        var plot = JsInterop.AsDict(rect)
+            ?? throw new ArgumentException(
+                "A chart needs a { x, y, width, height } plot area; a Layout rectangle fits.", nameof(rect));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownOptions(opt, LineOptions);
+
+        var (values, labels) = ReadData(data, opt);
+        if (values.Length < 2)
+        {
+            throw new ArgumentException(
+                $"A line needs at least two points to join; got {values.Length}. One value is a callout "
+                + "(Chart.createCallout), not a trajectory.", nameof(data));
+        }
+
+        var positions = ReadSeriesPositions(data, values.Length);
+
+        // Checked here rather than left to the caller: a line is a claim about a trajectory, and both
+        // ways of breaking it — two values at one position, positions that double back — leave every
+        // individual number correct. Nothing downstream can see the fault.
+        var scaleTk = new ScaleToolkit();
+        var check = scaleTk.CheckSeries(positions);
+        if (!Convert.ToBoolean(check["ok"], CultureInfo.InvariantCulture))
+        {
+            // CheckSeries already names the fault and the remedy, so this adds the reason a line in
+            // particular cannot carry it rather than repeating the advice.
+            throw new ArgumentException(
+                "A line asserts one value at each position, moving one way. " + check["message"],
+                nameof(data));
+        }
+
+        var px = Num(plot, "x");
+        var py = Num(plot, "y");
+        var pw = Num(plot, "width");
+        var ph = Num(plot, "height");
+
+        var area = Truthy(opt, "area");
+        var curve = (opt?["curve"]?.ToString() ?? "linear").ToLowerInvariant();
+        if (curve is not ("linear" or "step"))
+        {
+            throw new ArgumentException(
+                $"'{curve}' is not a curve. Supported: 'linear' (straight segments between measured "
+                + "points) and 'step' (holds, then jumps). There is deliberately no spline: a smooth "
+                + "curve through sampled data draws values nobody measured.", nameof(options));
+        }
+
+        var tickCount = (int)Opt(opt, "tickCount", 5d);
+        var xTickCount = (int)Opt(opt, "xTickCount", 5d);
+        var labelGap = Opt(opt, "labelGap", 8d);
+        var tickGap = Opt(opt, "tickGap", 8d);
+        var baseline = Opt(opt, "baseline", 0d);
+
+        // An area fill makes the height the quantity, which is a bar's claim — so the baseline has to
+        // be in the domain or the ink overstates the difference.
+        var lo = values.Min();
+        var hi = values.Max();
+        if (area) { lo = Math.Min(lo, baseline); hi = Math.Max(hi, baseline); }
+
+        var niced = scaleTk.Nice(lo, hi, tickCount);
+        var min = Opt(opt, "min", Convert.ToDouble(niced["min"], CultureInfo.InvariantCulture));
+        var max = Opt(opt, "max", Convert.ToDouble(niced["max"], CultureInfo.InvariantCulture));
+
+        var xMin = Opt(opt, "xMin", positions.Min());
+        var xMax = Opt(opt, "xMax", positions.Max());
+
+        // y runs bottom-to-top, so a larger value sits higher up the canvas.
+        var scale = scaleTk.Linear(min, max, py + ph, py);
+        var xScale = scaleTk.Linear(xMin, xMax, px, px + pw);
+        var radius = Opt(opt, "radius", 3d);
+
+        var points = new List<Dictionary<string, object>>(values.Length);
+        var slots = new List<Dictionary<string, object>>(values.Length);
+        var labelList = new List<Dictionary<string, object>>(values.Length);
+        var baseY = scale.Clamp(baseline);
+
+        for (var i = 0; i < values.Length; i++)
+        {
+            var cx = xScale.Map(positions[i]);
+            var cy = scale.Map(values[i]);
+
+            points.Add(new Dictionary<string, object>
+            {
+                ["index"] = i,
+                ["value"] = values[i],
+                ["position"] = positions[i],
+                ["label"] = labels[i],
+                ["x"] = cx,
+                ["y"] = cy,
+                ["radius"] = radius
+            });
+
+            // A point's mark grows upward from the baseline, so the same custom-mark routine that
+            // works on a column chart works here — a rocket, a droplet, a milestone flag.
+            slots.Add(Slot(i, labels[i], values[i], Fraction(values[i], min, max),
+                cx - radius, Math.Min(cy, baseY), radius * 2d, Math.Abs(baseY - cy),
+                cx, baseY, cx, cy, radius * 2d, 0d));
+
+            labelList.Add(new Dictionary<string, object>
+            {
+                ["text"] = labels[i],
+                ["x"] = cx,
+                ["y"] = py + ph + labelGap,
+                ["align"] = "center",
+                ["baseline"] = "top",
+                ["index"] = i
+            });
+        }
+
+        var path = BuildPath(points, curve);
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "line",
+            ["plot"] = Rect(px, py, pw, ph),
+            ["bounds"] = Rect(px, py, pw, ph),
+            ["scale"] = scale,
+            ["xScale"] = xScale,
+            ["points"] = points.ToArray(),
+            ["slots"] = slots.ToArray(),
+
+            // The trajectory as an SVG `d` string, ready for paper.path(...) or new CanvasPath(...).
+            ["path"] = path,
+            ["areaPath"] = area ? path + FormattableString.Invariant(
+                $" L {points[^1]["x"]:0.###} {baseY:0.###} L {points[0]["x"]:0.###} {baseY:0.###} Z") : null,
+            ["area"] = area,
+            ["curve"] = curve,
+            ["baseline"] = baseline,
+            ["baselinePosition"] = baseY,
+
+            ["ticks"] = scale.Ticks(tickCount).Select(t => new Dictionary<string, object>
+            {
+                ["value"] = t,
+                ["position"] = scale.Map(t),
+                ["label"] = Format(t),
+                ["x"] = px - tickGap,
+                ["y"] = scale.Map(t)
+            }).ToArray(),
+
+            ["xTicks"] = xScale.Ticks(xTickCount).Select(t => new Dictionary<string, object>
+            {
+                ["value"] = t,
+                ["position"] = xScale.Map(t),
+                ["label"] = Format(t),
+                ["x"] = xScale.Map(t),
+                ["y"] = py + ph + tickGap
+            }).ToArray(),
+
+            ["labels"] = labelList.ToArray(),
+            ["min"] = min,
+            ["max"] = max,
+            ["xMin"] = xMin,
+            ["xMax"] = xMax,
+            ["radius"] = radius,
+
+            // What the series check found, kept so an audit can cite it rather than re-run it.
+            ["series"] = check,
+
+            // Rank 1 for reading a value off the axis. Reading the *trend* is a judgment of direction,
+            // which Cleveland and McGill tie with length and angle at rank 3 — so a line is precise
+            // about levels and coarser about slopes, which is worth knowing before leaning on a slope.
+            ["encoding"] = "position",
+            ["encodingRank"] = 1,
+            ["isZeroBased"] = scale.IsZeroBased,
+
+            // Position preserves the ratios of differences wherever the axis starts — until the area
+            // is filled, at which point the height is the quantity and a cropped baseline overstates it.
+            ["lieFactor"] = area ? LieFactor(baseline, values) : 1d
         };
     }
 
@@ -2240,10 +2464,11 @@ public class ChartToolkit
             "column" => CreateColumnChart(plot, data, options),
             "bar" => CreateBarChart(plot, data, options),
             "dot" => CreateDotChart(plot, data, options),
+            "line" => CreateLineChart(plot, data, options),
             "groupeddot" => CreateGroupedDotChart(plot, data, options),
             "framedrectangle" => CreateFramedRectangleChart(plot, data, options),
             _ => throw new ArgumentException(
-                $"form must be 'column', 'bar', 'dot', 'groupedDot' or 'framedRectangle'; got '{form}'.",
+                $"form must be 'column', 'bar', 'line', 'dot', 'groupedDot' or 'framedRectangle'; got '{form}'.",
                 nameof(form))
         };
 
@@ -2268,6 +2493,80 @@ public class ChartToolkit
         }
 
         return found.Count == count ? [.. found] : null;
+    }
+
+    /// <summary>Each point's position on the x axis: its own <c>x</c>, or its index.</summary>
+    /// <remarks>
+    /// <b>A time series needs its own positions, and evenly spacing it is a quiet distortion.</b>
+    /// Telemetry sampled at 0, 26, 156 and 480 seconds drawn at four equal steps shows a constant
+    /// rate of change that did not happen. Falling back to the index is right only when the data has
+    /// no position of its own — twelve months, five products — where the spacing is the ordering and
+    /// nothing more.
+    /// </remarks>
+    static double[] ReadSeriesPositions(object data, int count)
+    {
+        if (data is IEnumerable items and not string)
+        {
+            var found = new List<double>(count);
+            var any = false;
+
+            foreach (var item in items)
+            {
+                var row = JsInterop.AsDict(item);
+                if (row is not null && row.Contains("x")) { found.Add(Num(row, "x")); any = true; }
+                else found.Add(found.Count);
+            }
+
+            if (any && found.Count == count) return [.. found];
+        }
+
+        return [.. Enumerable.Range(0, count).Select(i => (double)i)];
+    }
+
+    /// <summary>The trajectory as an SVG path: straight segments, or holds and jumps.</summary>
+    /// <remarks>
+    /// There is no spline here on purpose. A smooth curve through sampled points draws values nobody
+    /// measured, and it cannot be checked against anything — where a straight segment asserts linear
+    /// interpolation, which is the weakest claim the mark can make and the only one the data supports.
+    /// </remarks>
+    static string BuildPath(List<Dictionary<string, object>> points, string curve)
+    {
+        var sb = new System.Text.StringBuilder();
+        var x0 = Convert.ToDouble(points[0]["x"], CultureInfo.InvariantCulture);
+        var y0 = Convert.ToDouble(points[0]["y"], CultureInfo.InvariantCulture);
+        sb.Append(FormattableString.Invariant($"M {x0:0.###} {y0:0.###}"));
+
+        for (var i = 1; i < points.Count; i++)
+        {
+            var x = Convert.ToDouble(points[i]["x"], CultureInfo.InvariantCulture);
+            var y = Convert.ToDouble(points[i]["y"], CultureInfo.InvariantCulture);
+
+            // A step holds the previous value across the interval and then jumps, which is two
+            // segments and an explicit claim; the rounded corner a quadratic would give asserts a
+            // transition shape that no sampled series contains.
+            if (curve == "step")
+            {
+                var yPrev = Convert.ToDouble(points[i - 1]["y"], CultureInfo.InvariantCulture);
+                sb.Append(FormattableString.Invariant($" L {x:0.###} {yPrev:0.###}"));
+            }
+
+            sb.Append(FormattableString.Invariant($" L {x:0.###} {y:0.###}"));
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Reads a boolean option, accepting the spellings a script may send.</summary>
+    static bool Truthy(IDictionary? opt, string key)
+    {
+        var raw = opt?[key];
+        if (raw is null) return false;
+        if (raw is bool b) return b;
+
+        var text = raw.ToString();
+        return !string.IsNullOrWhiteSpace(text)
+            && !string.Equals(text, "false", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(text, "0", StringComparison.Ordinal);
     }
 
     /// <summary>Each row's group name, defaulting to one unnamed group when the data has none.</summary>

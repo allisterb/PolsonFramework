@@ -138,6 +138,56 @@ public class SnapPaper : SnapElement
         return new SnapFilter(filter, this);
     }
 
+    /// <summary>A line ending in <c>&lt;defs&gt;</c>: an arrowhead, dot or bar, referenced by <c>marker.url</c>.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>style</c> is <c>'arrow'</c>, <c>'barb'</c>, <c>'open'</c>, <c>'dot'</c> or <c>'bar'</c>;
+    /// an unknown one throws and lists them rather than drawing a shape nobody asked for.
+    /// </para>
+    /// <code>
+    /// const head = paper.marker('arrow', { color: '#15151a', size: 7 });
+    /// paper.line(40, 40, 300, 40).attr({ stroke: '#15151a', 'marker-end': head.url });
+    /// </code>
+    /// <para>
+    /// <b><c>orient: 'auto'</c> is the default and is what makes a head follow its line.</b> Without
+    /// it the marker keeps the document's rotation and every arrow on a fan of dimension lines points
+    /// the same way — which looks like a drawing mistake rather than a missing attribute.
+    /// <c>markerUnits</c> is <c>strokeWidth</c>, so a head drawn on a 2px rule is twice the one on a
+    /// 1px rule; pass <c>markerUnits: 'userSpaceOnUse'</c> in <paramref name="options"/> to size it
+    /// absolutely instead.
+    /// </para>
+    /// </remarks>
+    public SnapMarker Marker(string style = "arrow", object? options = null)
+    {
+        var size = VectorLogoToolkit.OptionFloat(options, "size", 6f);
+        var (path, refX, refY, filled) = SnapMarkerShapes.For(style ?? "arrow", size);
+        var colour = VectorLogoToolkit.OptionString(options, "color", "#15151a");
+        var id = VectorLogoToolkit.OptionString(options, "id", string.Empty);
+
+        var marker = new SvgMarker
+        {
+            ID = string.IsNullOrWhiteSpace(id) ? "marker_" + Guid.NewGuid().ToString("N")[..8] : id,
+            MarkerWidth = new SvgUnit(size),
+            MarkerHeight = new SvgUnit(size),
+            RefX = new SvgUnit(refX),
+            RefY = new SvgUnit(refY),
+            Orient = new SvgOrient { IsAuto = true },
+            MarkerUnits = SvgMarkerUnits.StrokeWidth,
+            Overflow = SvgOverflow.Visible
+        };
+        Defs.Node.Children.Add(marker);
+
+        var wrapped = new SnapMarker(marker, this);
+        var shape = wrapped.Path(path);
+        shape.Attr(filled
+            ? new Dictionary<string, object?> { ["fill"] = colour, ["stroke"] = "none" }
+            : new Dictionary<string, object?> { ["fill"] = "none", ["stroke"] = colour, ["stroke-width"] = 1 });
+
+        // Last, so a caller can override refX, orient, markerUnits or anything else the shape chose.
+        SnapAttributes.ApplyAttributes(marker, options);
+        return wrapped;
+    }
+
     /// <summary>
     /// Applies a CSS stylesheet to everything drawn so far, and keeps the <c>&lt;style&gt;</c> block.
     /// </summary>
@@ -451,61 +501,95 @@ public class SnapPaper : SnapElement
     /// </para>
     /// </summary>
     internal static SvgElement CreateElementByName(string name) =>
-        name.ToLowerInvariant() switch
-        {
-            "rect" => new SvgRectangle(),
-            "circle" => new SvgCircle(),
-            "ellipse" => new SvgEllipse(),
-            "path" => new SvgPath(),
-            "g" or "group" => new SvgGroup(),
-            "image" => new SvgImage(),
-            "text" => new SvgText(),
-            "tspan" => new SvgTextSpan(),
-            "textpath" or "text-path" => new SvgTextPath(),
-            "line" => new SvgLine(),
-            "polyline" => new SvgPolyline(),
-            "polygon" => new SvgPolygon(),
-            "mask" => new SvgMask(),
-            "clippath" or "clip-path" => new SvgClipPath(),
-            "pattern" => new SvgPatternServer(),
-            "use" => new SvgUse(),
-            "defs" => new SvgDefinitionList(),
-            "lineargradient" or "linear-gradient" => new SvgLinearGradientServer(),
-            "radialgradient" or "radial-gradient" => new SvgRadialGradientServer(),
-            "stop" => new SvgGradientStop(),
-            "symbol" => new SvgSymbol(),
-            "marker" => new SvgMarker(),
-            
-            "svg" => new SvgFragment(),
+        ElementFactories.TryGetValue(name ?? string.Empty, out var make)
+            ? make()
+            : throw new ArgumentException(
+                $"'{name}' is not an SVG element this adapter can create. Supported: "
+                + string.Join(", ", CanonicalElementNames) + ". "
+                + "For filters prefer paper.filter(...); for gradients prefer "
+                + "paper.gradient(...), paper.gradientLinear(...) or paper.gradientRadial(...).",
+                nameof(name));
 
-            // The filter chain. Absent until now, which made the standing conclusion — that grain,
-            // soft edges and colour grading were unavailable in a vector deliverable — true of the
-            // API rather than of the renderer. Svg.Skia draws all of these; only the factory was
+    /// <summary>Every tag name <see cref="CreateElementByName"/> accepts, aliases included.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A table rather than a switch so the supported-name list has one source.</b> It was a switch
+    /// beside a hand-written sentence listing the same names, and the two had to be edited in lockstep
+    /// — the pattern that had already gone wrong twice elsewhere in this project. Adding
+    /// <c>title</c> and <c>desc</c> meant editing both; the next person would have edited one.
+    /// </para>
+    /// <para>
+    /// It is also what makes the round-trip guard total: a test can enumerate this rather than repeat
+    /// a list of its own, so an element added here is checked without anyone remembering to check it.
+    /// </para>
+    /// </remarks>
+    internal static readonly IReadOnlyDictionary<string, Func<SvgElement>> ElementFactories =
+        new Dictionary<string, Func<SvgElement>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["rect"] = () => new SvgRectangle(),
+            ["circle"] = () => new SvgCircle(),
+            ["ellipse"] = () => new SvgEllipse(),
+            ["path"] = () => new SvgPath(),
+            ["g"] = () => new SvgGroup(),
+            ["group"] = () => new SvgGroup(),
+            ["image"] = () => new SvgImage(),
+            ["text"] = () => new SvgText(),
+            ["tspan"] = () => new SvgTextSpan(),
+            ["textPath"] = () => new SvgTextPath(),
+            ["text-path"] = () => new SvgTextPath(),
+            ["line"] = () => new SvgLine(),
+            ["polyline"] = () => new SvgPolyline(),
+            ["polygon"] = () => new SvgPolygon(),
+            ["mask"] = () => new SvgMask(),
+            ["clipPath"] = () => new SvgClipPath(),
+            ["clip-path"] = () => new SvgClipPath(),
+            ["pattern"] = () => new SvgPatternServer(),
+            ["use"] = () => new SvgUse(),
+            ["defs"] = () => new SvgDefinitionList(),
+            ["linearGradient"] = () => new SvgLinearGradientServer(),
+            ["linear-gradient"] = () => new SvgLinearGradientServer(),
+            ["radialGradient"] = () => new SvgRadialGradientServer(),
+            ["radial-gradient"] = () => new SvgRadialGradientServer(),
+            ["stop"] = () => new SvgGradientStop(),
+            // The accessible name and long description. Without these an SVG has no name at all —
+            // the equivalent of an unlabelled button — and there was previously no way to emit one.
+            ["title"] = () => new SvgTitle(),
+            ["desc"] = () => new SvgDescription(),
+            ["description"] = () => new SvgDescription(),
+            ["symbol"] = () => new SvgSymbol(),
+            ["marker"] = () => new SvgMarker(),
+            ["svg"] = () => new SvgFragment(),
+
+            // The filter chain. Absent until 2026-09-06, which made the standing conclusion — that
+            // grain, soft edges and colour grading were unavailable in a vector deliverable — true of
+            // the API rather than of the renderer. Svg.Skia draws all of these; only the factory was
             // missing. `feTurbulence` in particular *is* Perlin noise.
-            "filter" => new global::Svg.FilterEffects.SvgFilter(),
-            "feturbulence" => new global::Svg.FilterEffects.SvgTurbulence(),
-            "fegaussianblur" => new global::Svg.FilterEffects.SvgGaussianBlur(),
-            "fecolormatrix" or "fecolourmatrix" => new global::Svg.FilterEffects.SvgColourMatrix(),
-            "fedisplacementmap" => new global::Svg.FilterEffects.SvgDisplacementMap(),
-            "feoffset" => new global::Svg.FilterEffects.SvgOffset(),
-            "feflood" => new global::Svg.FilterEffects.SvgFlood(),
-            "fecomposite" => new global::Svg.FilterEffects.SvgComposite(),
-            "feblend" => new global::Svg.FilterEffects.SvgBlend(),
-            "femerge" => new global::Svg.FilterEffects.SvgMerge(),
-            "femergenode" => new global::Svg.FilterEffects.SvgMergeNode(),
-            "fedropshadow" => new global::Svg.FilterEffects.SvgDropShadow(),
-            "femorphology" => new global::Svg.FilterEffects.SvgMorphology(),
-            "fetile" => new global::Svg.FilterEffects.SvgTile(),
-            _ => throw new ArgumentException(
-                $"'{name}' is not an SVG element this adapter can create. Supported: rect, circle, ellipse, path, " +
-                "g, image, text, tspan, textPath, line, polyline, polygon, mask, clipPath, pattern, use, defs, " +
-                "linearGradient, radialGradient, stop, symbol, marker, svg, filter, feTurbulence, "
-                + "feGaussianBlur, feColorMatrix, feDisplacementMap, feOffset, feFlood, feComposite, "
-                + "feBlend, feMerge, feMergeNode, feDropShadow, feMorphology, feTile. "
-                + "For filters prefer paper.filter(...); for gradients prefer " +
-                "paper.gradient(...), paper.gradientLinear(...) or paper.gradientRadial(...).",
-                nameof(name))
+            ["filter"] = () => new global::Svg.FilterEffects.SvgFilter(),
+            ["feTurbulence"] = () => new global::Svg.FilterEffects.SvgTurbulence(),
+            ["feGaussianBlur"] = () => new global::Svg.FilterEffects.SvgGaussianBlur(),
+            ["feColorMatrix"] = () => new global::Svg.FilterEffects.SvgColourMatrix(),
+            ["feColourMatrix"] = () => new global::Svg.FilterEffects.SvgColourMatrix(),
+            ["feDisplacementMap"] = () => new global::Svg.FilterEffects.SvgDisplacementMap(),
+            ["feOffset"] = () => new global::Svg.FilterEffects.SvgOffset(),
+            ["feFlood"] = () => new global::Svg.FilterEffects.SvgFlood(),
+            ["feComposite"] = () => new global::Svg.FilterEffects.SvgComposite(),
+            ["feBlend"] = () => new global::Svg.FilterEffects.SvgBlend(),
+            ["feMerge"] = () => new global::Svg.FilterEffects.SvgMerge(),
+            ["feMergeNode"] = () => new global::Svg.FilterEffects.SvgMergeNode(),
+            ["feDropShadow"] = () => new global::Svg.FilterEffects.SvgDropShadow(),
+            ["feMorphology"] = () => new global::Svg.FilterEffects.SvgMorphology(),
+            ["feTile"] = () => new global::Svg.FilterEffects.SvgTile(),
         };
+
+    /// <summary>The names an author should see, with the lower-case aliases folded away.</summary>
+    /// <remarks>
+    /// An alias exists so a mis-cased spelling still works; listing both spellings in the error would
+    /// only make the sentence twice as long and no more useful.
+    /// </remarks>
+    internal static IEnumerable<string> CanonicalElementNames =>
+        ElementFactories.Keys.Where(k => !k.Contains('-') && !string.Equals(k, "group", StringComparison.Ordinal)
+                                      && !string.Equals(k, "description", StringComparison.Ordinal)
+                                      && !string.Equals(k, "feColourMatrix", StringComparison.Ordinal));
     #endregion
 
     #region Fields

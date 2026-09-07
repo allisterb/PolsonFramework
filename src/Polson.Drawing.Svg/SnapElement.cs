@@ -81,16 +81,68 @@ public class SnapElement
         return this;
     }
 
+    /// <summary>Appends <paramref name="el"/> as a child of this element.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A text node needs more than <c>Children.Add</c>, and without it a <c>&lt;tspan&gt;</c>
+    /// vanishes.</b> <see cref="SvgTextBase"/> serialises its <c>Nodes</c> and ignores <c>Children</c>
+    /// entirely whenever <c>Nodes</c> is non-empty — and setting <c>Text</c> puts a content node
+    /// there, <b>including when the text is empty</b>. So <c>paper.text(x, y, '')</c>, which is the
+    /// natural way to make a container for spans, left an empty content node that suppressed every
+    /// child: the span was in the tree, <c>children.length</c> reported it, and the document
+    /// serialised as <c>&lt;text /&gt;</c> with no markup and no ink, reporting success throughout.
+    /// </para>
+    /// <para>
+    /// Two cases, and both are handled here rather than at the call sites. An <b>empty</b> content
+    /// node carries nothing and is simply dropped, which lets the writer fall through to
+    /// <c>Children</c>. <b>Real</b> content is kept and the child is mirrored into <c>Nodes</c>, so
+    /// mixed content — a run of text followed by a span — writes in document order.
+    /// </para>
+    /// </remarks>
     public virtual SnapElement Append(SnapElement el)
     {
         ArgumentNullException.ThrowIfNull(el);
         if (el.Node.Parent != null)
         {
             el.Node.Parent.Children.Remove(el.Node);
+            RemoveFromNodes(el.Node.Parent, el.Node);
         }
+
+        if (Node is SvgTextBase)
+        {
+            for (var i = Node.Nodes.Count - 1; i >= 0; i--)
+            {
+                if (string.IsNullOrWhiteSpace(Node.Nodes[i].Content)) Node.Nodes.RemoveAt(i);
+            }
+        }
+
         Node.Children.Add(el.Node);
+
+        // Only once it is a child: mirroring an element the writer would not reach anyway would put
+        // it in the output twice.
+        if (Node is SvgTextBase && Node.Nodes.Count > 0 && el.Node is ISvgNode node)
+        {
+            Node.Nodes.Add(node);
+        }
+
         el.Paper = Paper;
         return this;
+    }
+
+    /// <summary>Drops <paramref name="child"/> from <paramref name="parent"/>'s mixed content, if it is there.</summary>
+    /// <remarks>
+    /// The counterpart of the mirroring in <see cref="Append"/>. Without it a span moved from one
+    /// text element to another is written by both, because <c>Children.Remove</c> does not touch
+    /// <c>Nodes</c>.
+    /// </remarks>
+    private static void RemoveFromNodes(SvgElement parent, SvgElement child)
+    {
+        if (parent is not SvgTextBase) return;
+
+        for (var i = parent.Nodes.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(parent.Nodes[i], child)) parent.Nodes.RemoveAt(i);
+        }
     }
 
     public virtual SnapElement Add(SnapElement el) => Append(el);
@@ -359,11 +411,68 @@ public class SnapElement
         return new SnapUse(use, Paper);
     }
 
+    /// <summary>Sets this element's accessible name — its <c>&lt;title&gt;</c> — replacing any existing one.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A title is what a screen reader announces, and on the root it names the whole graphic.</b>
+    /// An SVG without one is an unlabelled image however carefully it is drawn, and until now there
+    /// was no way to emit one at all: <c>el('title')</c> threw.
+    /// </para>
+    /// <para>
+    /// <b>Inserted first, which is not cosmetic.</b> The accessible name is taken from the first
+    /// <c>&lt;title&gt;</c> child, so one appended after the artwork is the title of nothing in
+    /// particular. Calling it twice replaces rather than appends, because two titles on one element
+    /// is not a richer description — it is an ambiguity resolved by document order.
+    /// </para>
+    /// <code>
+    /// paper.title('Apollo 11 descent stage fuel budget');
+    /// paper.desc('Mass distribution, propulsion metrics and the 752-second powered descent.');
+    /// </code>
+    /// </remarks>
+    public virtual SnapElement Title(string text)
+    {
+        SetDescriptive<SvgTitle>(text, first: true);
+        return this;
+    }
+
+    /// <summary>Sets this element's long description — its <c>&lt;desc&gt;</c> — replacing any existing one.</summary>
+    /// <remarks>
+    /// The paragraph a title cannot carry: what the graphic shows, for a reader who cannot see it.
+    /// Placed after the title and before the artwork, for the same document-order reason.
+    /// </remarks>
+    public virtual SnapElement Desc(string text)
+    {
+        SetDescriptive<SvgDescription>(text, first: false);
+        return this;
+    }
+
+    /// <summary>Replaces the single descriptive child of type <typeparamref name="T"/>.</summary>
+    private void SetDescriptive<T>(string text, bool first) where T : SvgElement, new()
+    {
+        for (var i = Node.Children.Count - 1; i >= 0; i--)
+        {
+            if (Node.Children[i] is T) Node.Children.RemoveAt(i);
+        }
+
+        var node = new T { Content = text ?? string.Empty };
+
+        // A title goes first; a description goes after whatever title there is, and before the
+        // artwork either way.
+        var at = first ? 0 : Node.Children.Count > 0 && Node.Children[0] is SvgTitle ? 1 : 0;
+        Node.Children.Insert(Math.Min(at, Node.Children.Count), node);
+    }
+
+    /// <summary>Creates and appends a child element by SVG tag name.</summary>
+    /// <remarks>
+    /// Placed through <see cref="Append"/> rather than straight into <c>Children</c>, because a text
+    /// element needs its mixed content maintained as well — see <see cref="Append"/>. Adding here
+    /// directly is what made <c>el('tspan')</c> and <c>el('textPath')</c> silently produce nothing.
+    /// </remarks>
     public virtual SnapElement El(string name, IDictionary<string, object?>? attrs = null)
     {
         var element = SnapPaper.CreateElementByName(name);
-        Node.Children.Add(element);
         var snapEl = Wrap(element, Paper);
+        Append(snapEl);
         if (attrs != null)
         {
             snapEl.Attr(attrs);
@@ -380,7 +489,13 @@ public class SnapElement
 
     public virtual SnapElement Remove()
     {
-        Node.Parent?.Children.Remove(Node);
+        if (Node.Parent is { } parent)
+        {
+            parent.Children.Remove(Node);
+            // Mixed content holds a second reference; without this the span keeps serialising from a
+            // parent it is no longer a child of. See Append.
+            RemoveFromNodes(parent, Node);
+        }
         return this;
     }
 
@@ -591,7 +706,14 @@ public class SnapElement
             w = img.Width.Value;
             h = img.Height.Value;
         }
-        else if (element is SvgText text && !string.IsNullOrEmpty(text.Text))
+        // SvgTextBase, not SvgText: a <tspan> or <textPath> is a sibling of <text>, not a subclass, so
+        // matching the concrete type sent every span to the children branch — where, having no element
+        // children of its own, it measured 0x0. A paragraph built from spans was therefore invisible to
+        // getBBox(), and so to anything built on it: the label-collision check in the vector workflow
+        // measures exactly these, and would have reported a clean sheet for a page of overlapping spans.
+        // A container whose own Text is empty still falls through to the children union below, which is
+        // what makes a multi-span paragraph measure as the box around its lines.
+        else if (element is SvgTextBase text && !string.IsNullOrEmpty(text.Text))
         {
             return SnapTextMeasurement.Measure(text, matrix);
         }

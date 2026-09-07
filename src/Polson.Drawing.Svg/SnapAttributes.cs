@@ -152,12 +152,21 @@ public static partial class SnapAttributes
                 {
                     use.ReferencedElement = new Uri(valStr.StartsWith('#') ? valStr : "#" + valStr, UriKind.RelativeOrAbsolute);
                 }
+                else if (element is SvgTextPath textPath)
+                {
+                    // Without this the reference is dropped and <textPath> serialises with no href —
+                    // valid markup that lays its glyphs along nothing.
+                    textPath.ReferencedPath = new Uri(valStr.StartsWith('#') ? valStr : "#" + valStr, UriKind.RelativeOrAbsolute);
+                }
                 break;
 
             case "text":
-                if (element is SvgText svgText)
+                // SvgTextBase, not SvgText: <tspan> and <textPath> are text nodes too, and matching
+                // only SvgText left them permanently contentless — el('tspan') then attr({ text })
+                // built a span that carried nothing and reported success.
+                if (element is SvgTextBase textNode)
                 {
-                    svgText.Text = valStr;
+                    textNode.Text = valStr;
                 }
                 break;
 
@@ -278,7 +287,7 @@ public static partial class SnapAttributes
             "width" => GetWidth(element),
             "height" => GetHeight(element),
             "d" => (element as SvgPath)?.PathData?.ToString(),
-            "text" => (element as SvgText)?.Text,
+            "text" => (element as SvgTextBase)?.Text,
             // Settable through attr(), so it must be readable through it. Without this the setter
             // succeeded and the getter answered null, which reads as "the transform did not take".
             "transform" => element.Transforms is { Count: > 0 } t ? t.ToString() : null,
@@ -686,12 +695,22 @@ public static partial class SnapAttributes
     }
 
     #region Element Coordinate Setters/Getters
+    // `use`, `pattern` and `symbol` all carry x/y/width/height and were all missing here, so
+    // `attr({ x })` on any of them did nothing and said nothing. Positioning a <use> by x/y is the
+    // ordinary way to place a reused motif — without it a caller has to reach for `transform`, which
+    // works but is not what the documentation of either SVG or this SDK suggests.
     private static void SetX(SvgElement el, string val)
     {
         var unit = ParseUnit(val);
         if (el is SvgRectangle rect) rect.X = unit;
         else if (el is SvgImage img) img.X = unit;
-        else if (el is SvgText text) text.X = new SvgUnitCollection { unit };
+        else if (el is SvgTextBase text) text.X = new SvgUnitCollection { unit };
+        else if (el is SvgUse use) use.X = unit;
+        else if (el is SvgPatternServer ptrn) ptrn.X = unit;
+        else if (el is SvgSymbol sym) sym.X = unit;
+        else if (el is SvgMask mask) mask.X = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilter filter) filter.X = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilterPrimitive fe) fe.X = unit;
         else if (el is SvgFragment frag) frag.X = unit;
     }
 
@@ -700,7 +719,13 @@ public static partial class SnapAttributes
         var unit = ParseUnit(val);
         if (el is SvgRectangle rect) rect.Y = unit;
         else if (el is SvgImage img) img.Y = unit;
-        else if (el is SvgText text) text.Y = new SvgUnitCollection { unit };
+        else if (el is SvgTextBase text) text.Y = new SvgUnitCollection { unit };
+        else if (el is SvgUse use) use.Y = unit;
+        else if (el is SvgPatternServer ptrn) ptrn.Y = unit;
+        else if (el is SvgSymbol sym) sym.Y = unit;
+        else if (el is SvgMask mask) mask.Y = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilter filter) filter.Y = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilterPrimitive fe) fe.Y = unit;
         else if (el is SvgFragment frag) frag.Y = unit;
     }
 
@@ -746,6 +771,12 @@ public static partial class SnapAttributes
         var unit = ParseUnit(val);
         if (el is SvgRectangle rect) rect.Width = unit;
         else if (el is SvgImage img) img.Width = unit;
+        else if (el is SvgUse use) use.Width = unit;
+        else if (el is SvgPatternServer ptrn) ptrn.Width = unit;
+        else if (el is SvgSymbol sym) sym.Width = unit;
+        else if (el is SvgMask mask) mask.Width = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilter filter) filter.Width = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilterPrimitive fe) fe.Width = unit;
         else if (el is SvgFragment frag) frag.Width = unit;
     }
 
@@ -754,6 +785,12 @@ public static partial class SnapAttributes
         var unit = ParseUnit(val);
         if (el is SvgRectangle rect) rect.Height = unit;
         else if (el is SvgImage img) img.Height = unit;
+        else if (el is SvgUse use) use.Height = unit;
+        else if (el is SvgPatternServer ptrn) ptrn.Height = unit;
+        else if (el is SvgSymbol sym) sym.Height = unit;
+        else if (el is SvgMask mask) mask.Height = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilter filter) filter.Height = unit;
+        else if (el is global::Svg.FilterEffects.SvgFilterPrimitive fe) fe.Height = unit;
         else if (el is SvgFragment frag) frag.Height = unit;
     }
 
@@ -837,10 +874,15 @@ public static partial class SnapAttributes
             float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var w) &&
             float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var h))
         {
-            if (el is SvgFragment frag)
-            {
-                frag.ViewBox = new SvgViewBox(x, y, w, h);
-            }
+            var box = new SvgViewBox(x, y, w, h);
+
+            // A symbol's viewBox is what makes an icon library scale to each <use>, and a pattern's
+            // is what makes a tile independent of the box it fills. Both were dropped here, so the
+            // documented icon-library idiom silently had no viewBox at all.
+            if (el is SvgFragment frag) frag.ViewBox = box;
+            else if (el is SvgSymbol sym) sym.ViewBox = box;
+            else if (el is SvgPatternServer ptrn) ptrn.ViewBox = box;
+            else if (el is SvgMarker marker) marker.ViewBox = box;
         }
     }
 
@@ -849,7 +891,14 @@ public static partial class SnapAttributes
         {
             SvgRectangle r => r.X.Value,
             SvgImage img => img.X.Value,
-            SvgText t => t.X?.Count > 0 ? t.X[0].Value : 0f,
+            SvgTextBase t => t.X?.Count > 0 ? t.X[0].Value : 0f,
+            SvgUse use => use.X.Value,
+            SvgPatternServer ptrn => ptrn.X.Value,
+            SvgSymbol sym => sym.X.Value,
+            SvgMask mask => mask.X.Value,
+            SvgFragment f => f.X.Value,
+            global::Svg.FilterEffects.SvgFilter flt => flt.X.Value,
+            global::Svg.FilterEffects.SvgFilterPrimitive fe => fe.X.Value,
             _ => null
         };
 
@@ -858,7 +907,14 @@ public static partial class SnapAttributes
         {
             SvgRectangle r => r.Y.Value,
             SvgImage img => img.Y.Value,
-            SvgText t => t.Y?.Count > 0 ? t.Y[0].Value : 0f,
+            SvgTextBase t => t.Y?.Count > 0 ? t.Y[0].Value : 0f,
+            SvgUse use => use.Y.Value,
+            SvgPatternServer ptrn => ptrn.Y.Value,
+            SvgSymbol sym => sym.Y.Value,
+            SvgMask mask => mask.Y.Value,
+            SvgFragment f => f.Y.Value,
+            global::Svg.FilterEffects.SvgFilter flt => flt.Y.Value,
+            global::Svg.FilterEffects.SvgFilterPrimitive fe => fe.Y.Value,
             _ => null
         };
 
@@ -909,6 +965,12 @@ public static partial class SnapAttributes
         {
             SvgRectangle r => r.Width.Value,
             SvgImage img => img.Width.Value,
+            SvgUse use => use.Width.Value,
+            SvgPatternServer ptrn => ptrn.Width.Value,
+            SvgSymbol sym => sym.Width.Value,
+            SvgMask mask => mask.Width.Value,
+            global::Svg.FilterEffects.SvgFilter flt => flt.Width.Value,
+            global::Svg.FilterEffects.SvgFilterPrimitive fe => fe.Width.Value,
             SvgFragment f => f.Width.Value,
             _ => null
         };
@@ -918,6 +980,12 @@ public static partial class SnapAttributes
         {
             SvgRectangle r => r.Height.Value,
             SvgImage img => img.Height.Value,
+            SvgUse use => use.Height.Value,
+            SvgPatternServer ptrn => ptrn.Height.Value,
+            SvgSymbol sym => sym.Height.Value,
+            SvgMask mask => mask.Height.Value,
+            global::Svg.FilterEffects.SvgFilter flt => flt.Height.Value,
+            global::Svg.FilterEffects.SvgFilterPrimitive fe => fe.Height.Value,
             SvgFragment f => f.Height.Value,
             _ => null
         };
@@ -968,10 +1036,23 @@ public static partial class SnapAttributes
 
     // SvgViewBox.ToString() is the inherited object one — it answers "Svg.SvgViewBox" — so the four
     // numbers are formatted here, invariantly, in the order SetViewBox reads them.
-    private static object? GetViewBox(SvgElement el) =>
-        el is SvgFragment frag && frag.ViewBox != SvgViewBox.Empty
-            ? string.Create(CultureInfo.InvariantCulture, $"{frag.ViewBox.MinX} {frag.ViewBox.MinY} {frag.ViewBox.Width} {frag.ViewBox.Height}")
+    private static object? GetViewBox(SvgElement el)
+    {
+        // Whatever the setter accepts, the getter must answer for — otherwise a value that took
+        // reads back as null, which is indistinguishable from one that was ignored.
+        var box = el switch
+        {
+            SvgFragment frag => frag.ViewBox,
+            SvgSymbol sym => sym.ViewBox,
+            SvgPatternServer ptrn => ptrn.ViewBox,
+            SvgMarker marker => marker.ViewBox,
+            _ => SvgViewBox.Empty
+        };
+
+        return box != SvgViewBox.Empty
+            ? string.Create(CultureInfo.InvariantCulture, $"{box.MinX} {box.MinY} {box.Width} {box.Height}")
             : null;
+    }
 
     private static object? GetHref(SvgElement el) =>
         el switch

@@ -146,9 +146,14 @@ requirement at the end has to start over.
 | You want | On a paper | Not |
 | :--- | :--- | :--- |
 | A chart | `paper.chart(model, { colors: palette })` — every `Chart.create*` form | `Chart.drawChart(ctx, …)` |
+| **A quantity over time, or any series** | `Chart.createLineChart(rect, rows, { area: true })` — rows carry `x` for a real time axis | a hand-built `d` string of `Q` or `C` curves |
 | Text | `paper.text(x, y, s).attr({ 'font-size': 14 })` | `ctx.fillText` |
 | Measuring text | `element.getBBox()` — real font metrics, agrees with canvas | `ctx.measureText` |
-| A paragraph | measure each line with `getBBox`, place `<tspan>`s yourself | `ctx.measureWrappedText` |
+| **Tracked / letter-spaced type** | `paper.trackedText(x, y, s, tracking, attrs)` | `.attr({ 'letter-spacing': … })` — **renders nothing** |
+| A paragraph | measure each line with `getBBox`, then one `<tspan>` per line — **each with its own `x` and `y`** | `ctx.measureWrappedText` |
+| Text along a curve | `text.el('textPath', { href: '#pathId' }).attr({ text: s })` | — |
+| An arrowhead or dimension tick | `paper.marker('arrow')`, then `attr({ 'marker-end': m.url })` | hand-built `<marker>` in defs |
+| An accessible name | `paper.title(s)` and `paper.desc(s)`; any element takes its own | — |
 | A photograph | `paper.image(photo, x, y, w, h)` — inlined as a data URI | an href to a file |
 | A texture | `paper.image(material, …)`, or a `paper.ptrn(...)` tile | a shader |
 | Hatching | drawn lines, or a `<pattern>` | `Skia.PathEffect.hatch` |
@@ -169,8 +174,43 @@ unchanged.
 All of them take a canvas context. If a type variant below names one, take its *intent* and reach for
 the vector column above.
 
-**Three things are available that a canvas-shaped instinct will not look for**, and the vector column
+**Five things are available that a canvas-shaped instinct will not look for**, and the vector column
 above is easy to read as a list of consolations. It is not:
+
+- **A line chart.** `Chart.createLineChart(rect, rows, options)` — a series joined into a trajectory,
+  value as position on a common scale. Rows carrying `x` sit at their **own** positions, which is what
+  a time axis needs; without it they are evenly spaced by index.
+
+  ```javascript
+  const rows = [{ x: 0, value: 50000 }, { x: 156, value: 44934 }, { x: 752, value: 0 }];
+  const chart = Chart.createLineChart(plot, rows, { area: true });
+  paper.chart(chart, { fill: '#48cae4' });
+  for (const t of chart.xTicks) paper.text(t.x, t.y, t.label).attr({ 'font-size': 10 });
+  ```
+
+  **Do not hand-build the path from `Q` or `C` curves.** A live run did, with each control point taking
+  the previous x and the new y — a rounded *step*, which between two telemetry samples asserts the
+  value dropped and then held flat. The form draws straight segments between measured points, refuses a
+  spline by name, and refuses a series that cannot honestly be joined — two values at one position, or
+  positions that double back. `lieFactor` is 1 until you set `area`, at which point the filled height
+  becomes the quantity and the baseline is forced into the domain.
+
+- **Tracked type.** `paper.trackedText(x, y, text, tracking, attrs)`. **The `letter-spacing`
+  attribute does nothing in this renderer** — it serialises into the file perfectly and moves not one
+  pixel, so a tracked label is correct on canvas and untracked here, silently. Small caps, a spaced
+  rule label, a drafting-sheet header: all of them want this call.
+
+  ```javascript
+  const style = { 'font-family': 'monospace', 'font-size': 11, fill: '#38E8FF', 'text-anchor': 'middle' };
+  paper.trackedText(400, 40, 'SECTION 02 - DESCENT PROFILE', '0.18em', style);
+  ```
+
+  `tracking` takes what `ctx.letterSpacing` takes — a number or `'2px'` is pixels, `'0.18em'` is a
+  fraction of the font size — and the two surfaces measure a tracked run to **the same width**, so a
+  lockup designed on canvas transfers. A `text-anchor` in `attrs` anchors the whole run. Use
+  `VectorLogo.measureTrackedText(text, tracking, attrs)` to get `{ width, height, … }` before placing
+  it. The run arrives as one `<text>` per glyph, which is what converting tracking to positions means
+  in any tool; kerning is lost, as it is on canvas, so leave `tracking` at `0` for body text.
 
 - **Brush strokes.** `Snap.brush('taper')` — also `wedge`, `chisel`, `split`, `bristle` (many frayed bristles, the one that reads as real brushwork), or your own outline —
   and `paper.brushStroke(spine, nib, thickness)`. A nib is bent along the path and comes back as a
@@ -365,10 +405,75 @@ These are the calls that produce evidence. Reach for one before writing a claim,
 | a layer separated from its background | `bitmap.palette(n)` | the dominant colours and their shares |
 | an edge lands where intended | `bitmap.rowProfile(colour)` | where that colour starts and ends, per row |
 | a revision changed what you meant | `bitmap.diff(previous)` | the similarity, and the rectangle that changed |
+| **no two labels overlap** | `paper.selectAll('text')` + `getBBox()` | every colliding pair, and by how much |
 
 **A claim you cannot measure is not a check — write it as a `Stage.note` instead.** Taste, tone and
 composition are judgments, and recording them honestly as judgments is worth more than dressing them
 as tests. Reserve `Stage.check` for what the machine can answer.
+
+#### Labels must not collide, and you can prove it
+
+**Run this before you deliver.** Colliding labels are the commonest defect in a finished chart, they
+are invisible to every check above, and on this surface they are *measurable* — `getBBox()` on a
+`<text>` element is a real font measurement, so the box it returns is where the ink actually lands.
+
+```javascript
+// Every label's box, then every pair. `tolerance` is in pixels at the document's own scale.
+// Measure LEAVES: the spans where a text has spans, the text itself where it does not. A container's
+// box is the union of its spans, so comparing both would report every paragraph as colliding with
+// its own lines, and comparing only containers would never see two lines overlap.
+const labels = [];
+const texts = paper.selectAll('text');
+for (let i = 0; i < texts.length; i++) {
+    const kids = texts[i].children.filter(c => c.type === 'tspan' || c.type === 'textPath');
+    const parts = kids.length > 0 ? kids : [texts[i]];
+    for (let j = 0; j < parts.length; j++) {
+        const b = parts[j].getBBox();
+        if (b && b.width > 0 && b.height > 0) labels.push({ b: b, s: String(parts[j].attr('text') || '') });
+    }
+}
+
+const tolerance = 4;
+const hits = [];
+for (let i = 0; i < labels.length; i++) {
+    for (let j = i + 1; j < labels.length; j++) {
+        const A = labels[i].b, B = labels[j].b;
+        const ox = Math.min(A.x2, B.x2) - Math.max(A.x, B.x);
+        const oy = Math.min(A.y2, B.y2) - Math.max(A.y, B.y);
+        if (ox > tolerance && oy > tolerance) {
+            hits.push(`"${labels[i].s.slice(0, 22)}" / "${labels[j].s.slice(0, 22)}" ${ox.toFixed(0)}x${oy.toFixed(0)}px`);
+        }
+    }
+}
+for (const h of hits) Stage.note('label collision: ' + h);
+Stage.check('no labels collide', hits.length === 0, `${hits.length} of ${labels.length} labels overlap`);
+```
+
+The detail carries a count out of a total, so a passing check still says how much was examined — a
+run reporting `0 of 124` has measured something, and one reporting `0 of 0` has found no labels and
+should say why.
+
+> [!IMPORTANT]
+> **Two things this cannot tell you, and both have caused a wrong conclusion.**
+>
+> **A rotated label over-reports.** `getBBox()` returns an *axis-aligned* box, so a `rotate(-90)`
+> axis title becomes a tall thin rectangle that clips the corner of every tick label beside it
+> without a pixel of ink touching. Measured on a real plate: at `tolerance: 1` this check reported
+> **five** collisions, four of which were one rotated axis title brushing four tick labels by 3px. At
+> `tolerance: 4` the four vanished and the one genuine 55x9px collision remained. **Raise the
+> tolerance before believing a cluster of near-misses**, and look at the pair before fixing it.
+>
+> **Passing is not legibility.** Boxes that merely fail to overlap can still be unreadable once the
+> piece is reduced — two labels 1px apart pass this and print as one word. Boxes are geometry; the
+> reduction test is your eye on `bitmap.resize(w/2, h/2)`. Run both, and do not let a green check
+> here stand in for looking at the thing.
+
+> [!NOTE]
+> **Do not judge label spacing from a half-scale peek.** A draft rendered at half the document's size
+> shows a 4px gap as 2px and a crowded axis reads as mush that the geometry says is clear. That
+> misreading has been made on this very workflow: a finished plate looked collided near its right-hand
+> edge and measured **clean** there — the only real collision was elsewhere, at the top left, where it
+> was less obvious. The check is the authority on overlap; the peek is the authority on legibility.
 
 **Every failing check is settled before you deliver.** Fix the fault and re-run the check — the pass
 is the only evidence the correction landed — or, if the check itself was wrong, correct it and say so

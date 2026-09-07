@@ -395,6 +395,24 @@ paper;
 - `paper.gradient(descriptor: string)` → `SnapGradient` — Snap.svg shorthand. `l(x1,y1,x2,y2)` for linear, `r(cx,cy,r)` for radial, followed by `-`-separated stops. Coordinates are fractions of the bounding box (`0`–`1`). A stop may carry an explicit offset with `:` — `'l(0,0,1,0)#000-#f00:30%-#fff'`; without one, stops are spaced evenly.
 - `paper.gradientLinear(x1: number, y1: number, x2: number, y2: number)` → `SnapLinearGradient` — Explicit linear gradient; coordinates are fractions of the bounding box.
 - `paper.gradientRadial(cx: number, cy: number, r: number, fx?: number, fy?: number)` → `SnapRadialGradient` — Explicit radial gradient with optional focal point.
+- `paper.marker(style?: 'arrow' | 'barb' | 'open' | 'dot' | 'bar', options?: { size?: number, color?: string, id?: string })` → `SnapMarker` — A line ending in `<defs>`. Apply it with `attr({ 'marker-end': marker.url })` — also `marker-start` and `marker-mid`. `marker.url` is the ready-made `url(#id)`, as on a filter.
+
+  ```javascript
+  const head = paper.marker('arrow', { color: '#15151a', size: 7 });
+  paper.line(40, 40, 300, 40).attr({ stroke: '#15151a', 'marker-end': head.url });
+  ```
+
+  `orient` is `auto`, which is what makes each head follow its own line — without it every arrow on a fan of dimension lines points the same way. `markerUnits` is `strokeWidth`, so a head on a 2px rule is twice the one on a 1px rule; pass `markerUnits: 'userSpaceOnUse'` in `options` to size it absolutely. Anything else in `options` is applied to the `<marker>` as an attribute, so `refX`, `refY` and `orient` can be overridden. An unknown style is refused by name.
+
+- `element.title(text: string)` → `SnapElement` — The element's **accessible name**, as a `<title>`. On the paper it names the whole graphic; on a shape it names that shape. **Inserted first and replacing any existing one**, because the accessible name is taken from the first `<title>` child — one appended after the artwork names nothing.
+- `element.desc(text: string)` → `SnapElement` — The long description, as a `<desc>`. Placed after the title and before the artwork.
+
+  ```javascript
+  paper.title('Apollo 11 descent stage fuel budget');
+  paper.desc('Mass distribution, propulsion metrics and the 752-second powered descent.');
+  paper.rect(20, 20, 100, 60).title('Descent propellant, 8,212 kg');
+  ```
+
 - `paper.mask(...elements: SnapElement[])` → `SnapMask` — Creates a `<mask>` in `<defs>`; reference it with `attr({ mask: 'url(#id)' })`.
 - `paper.ptrn(x: number, y: number, width: number, height: number, vx?: number, vy?: number, vw?: number, vh?: number)` → `SnapPattern` — Creates a tiling `<pattern>`.
 - `paper.defs` → `SnapElement` — The document's `<defs>` container, created on demand. Append to it directly for anything the helpers above do not cover.
@@ -466,7 +484,7 @@ Represents any SVG node in the document hierarchy:
 > paper.line(40, box.y2 + 12, 40 + box.width, box.y2 + 12);   // a rule under the measured width
 > ```
 >
-> `ctx.measureWrappedText(...)` remains canvas-only: SVG has no wrapping, so a paragraph broken into `<tspan>` lines is the caller's decision rather than the toolkit's.
+> `ctx.measureWrappedText(...)` remains canvas-only: SVG has no wrapping, so a paragraph broken into `<tspan>` lines is the caller's decision rather than the toolkit's. Build one with a `<text>` container and one span per line — `text.el('tspan', { x, y }).attr({ text: line })` — and **give every span an explicit `x` and `y`**, or it inherits the container's origin and the whole block stacks on one baseline. `<textPath>` is created the same way and takes `href` to the path its glyphs follow.
 - `element.getTotalLength()` → `number` — Measures path total length (paths only).
 - `element.getPointAtLength(length: number)` → `SnapPoint` — Computes coordinates at `length` (paths only).
 - `element.toSkPath()` → `SKPath` — Converts the element's geometry to a Skia path, for measurement or raster compositing.
@@ -1341,7 +1359,7 @@ for (const t of chart.ticks) paper.text(t.x, t.y, t.label).attr({ 'font-size': 1
 paper;
 ```
 
-Every form is handled: column, bar, dot, groupedDot, framedRectangle, waffle, pictogram, proportionalShapes, progressMeter (bar **and** arc), timeline, callout, and smallMultiples, which recurses into each panel's own model. An unrecognised `type` falls back to `slots`, which every model carries, so a form added later still draws.
+Every form is handled: column, bar, line, dot, groupedDot, framedRectangle, waffle, pictogram, proportionalShapes, progressMeter (bar **and** arc), timeline, callout, and smallMultiples, which recurses into each panel's own model. An unrecognised `type` falls back to `slots`, which every model carries, so a form added later still draws.
 
 > [!NOTE]
 > **Ticks and labels are not drawn**, exactly as `Chart.drawChart` leaves them on canvas. They are data — `chart.ticks` and `chart.labels` carry positions and text — and their typography is yours. Declining to draw them is the erasing pass of `polson://manual/13` §3 rather than an omission.
@@ -1646,6 +1664,19 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 
 - `Chart.createColumnChart(rect, data, options?)` → `object` — Categories across, values up.
 - `Chart.createBarChart(rect, data, options?)` → `object` — Categories down, values across. Usually the better of the two: horizontal bars give category labels room to be words.
+- `Chart.createLineChart(rect, data, options?)` → `object` — A series joined into a **trajectory**: value as position on a common scale, across a continuous x axis. `data` rows may carry `x` for a true series (a time axis); without it points are evenly spaced by index. Adds `area`, `curve`, `xMin`/`xMax`, `xTickCount` and `radius` to the options. Carries `points`, `path` (an SVG `d` string), `areaPath`, `xScale`, `xTicks` and `series` — the `Scale.checkSeries` verdict.
+
+> [!IMPORTANT]
+> **Three things this form refuses, because a line makes a claim the other forms do not.**
+>
+> - **A series that cannot honestly be joined.** Positions are run through `Scale.checkSeries` and two values at one position, or positions that double back, are **refused with the reason**. Neither is a data error — every value is correct and the picture still lies — so nothing downstream would catch it. That check already existed; the form that needed it did not.
+> - **A spline.** `curve` is `'linear'` (default) or `'step'`, and asking for anything else is refused by name. A smooth curve through sampled points draws values nobody measured and cannot be checked against anything; a straight segment asserts linear interpolation and nothing more. `'step'` is the truthful mark for a quantity that genuinely holds and jumps — a tariff, a policy rate — and wrong for anything continuous.
+> - **A single point.** That is a `createCallout`, not a trajectory.
+>
+> **Give a time series its own `x`.** Sampling at 0, 26, 156 and 480 seconds and drawing four equal steps shows a constant rate of change that never happened. Index spacing is right only when the data has no position of its own — twelve months, five products.
+>
+> **`lieFactor` is 1 until you fill the area.** A line's value is read as *position*, exactly as a dot's is, so cropping the axis preserves the ratios of differences. Turn on `area` and the filled height becomes the quantity — a bar's claim — so the baseline is forced into the domain and the lie factor is measured the way a bar chart's is.
+
 - `Chart.createDotChart(rect, data, options?)` → `object` — Value as **position on one shared axis**, categories down. The most accurately decoded form there is, and the one Cleveland & McGill offer in place of a bar chart. Adds `radius` and `sort` (`'none'`, `'asc'`, `'desc'`) to the options.
 - `Chart.createGroupedDotChart(rect, data, options?)` → `object` — The same, with rows gathered into labelled groups from a `group` field, **still against one axis**. Adds `groupGap` and `headingHeight`.
 - `Chart.createFramedRectangleChart(rect, data, options?)` → `object` — A value as a **level inside an identical box**, placed anywhere. What Cleveland & McGill offer in place of a **shaded map**. Rows carry `x` and `y` in the plot's own coordinate space; rows without them are laid out on a grid. Adds `frameWidth`, `frameHeight`, `columns` and `gap`.
@@ -1655,7 +1686,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 - `Chart.createProportionalShapes(rect, data, options?)` → `object` — A value as the **area** of a mark. `layout` is `'row'`, `'nested'`, or `'free'` (taken automatically when rows carry `x` and `y`). Options: `shape` (`'circle'`/`'square'`), `layout`, `maxSize`, `max`, `gap`, `labels`, `labelGap`, `align`, `legendCount`.
 - `Chart.createProgressMeter(rect, value, options?)` → `object` — One value against a target, as a track with a filled part. `shape: 'bar'` (default) or `'arc'` for a ring or gauge; `segments` divides the track into blocks. Options: `min`, `target`/`max`, `shape`, `thickness`, `segments`, `gap`, `startAngleDeg`, `sweepDeg`, `decimals`, `compact`, `prefix`, `suffix`/`unit`.
 - `Chart.createPictogram(rect, data, options?)` → `object` — A value as a row of **repeated identical icons**, one per `unit`. The isotype idiom: 47,000 people as five little figures at 10,000 each. Options: `unit`, `iconSize`, `gap`, `rowGap`, `labels`, `labelGap`, `partial` (`'clip'` or `'whole'`), `max`.
-- `Chart.createSmallMultiples(rect, series, options?)` → `object` — A grid of panels **sharing one scale**, computed across every series before any panel is built. `series` is `[{ label, data }]` or an array of arrays; `form` picks what each panel is (`'column'`, `'bar'`, `'dot'`, `'groupedDot'`, `'framedRectangle'`). Adds `columns`, `gap`, `rowGap`, `titleHeight`.
+- `Chart.createSmallMultiples(rect, series, options?)` → `object` — A grid of panels **sharing one scale**, computed across every series before any panel is built. `series` is `[{ label, data }]` or an array of arrays; `form` picks what each panel is (`'column'`, `'bar'`, `'line'`, `'dot'`, `'groupedDot'`, `'framedRectangle'`). Adds `columns`, `gap`, `rowGap`, `titleHeight`.
 - `Chart.createChartGeometry(chartModel)` → `{ marks: CanvasPath[], frames: CanvasPath[], silhouette: CanvasPath, bounds: Rect }` — The marks as real geometry. `frames` is populated for framed rectangles and empty otherwise.
 - `Chart.drawChart(ctx, chartModel)` → the same geometry — Fills the marks with the context's current `fillStyle` and returns what it drew.
 
@@ -1672,6 +1703,7 @@ Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one
 | `scale` · `band` | the `LinearScale` and `BandScale` used, so you can place anything else against them |
 | **`slots`** | **the armature — one per mark, in every form.** The box (`x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`), where it stands (`baseX`, `baseY`), where it reaches (`tipX`, `tipY`), `length`, `thickness`, `angleDeg` (0 up, 90 right), and `fraction` — its position on the scale, 0 to 1 |
 | `bars` | *(bar/column)* one rectangle per datum, each with `x`, `y`, `width`, `height`, `x2`, `y2`, `cx`, `cy`, plus `index`, `value` and `label` |
+| `points` · `path` · `areaPath` | *(line)* each measured point with `x`, `y`, `value`, `label`; the trajectory as an SVG `d` string; and the closed area when `area` is on |
 | `dots` | *(dot)* one per datum with `cx`, `cy`, `radius`, `value`, `label`, `index`, `sourceIndex`, and `leaderX1/Y1/X2/Y2` for the line from the axis; grouped charts add `group` and `groupIndex` |
 | `groups` | *(grouped dot)* `{ name, index, count, y, y2, height, headingX, headingY, min, max, mean }` — the block each group occupies, and its own summary |
 | `items` | *(framed rectangle)* `{ label, value, anchorX, anchorY, frame, fill, fraction, index }` — the reference box, the filled part, and how full it is from 0 to 1 |

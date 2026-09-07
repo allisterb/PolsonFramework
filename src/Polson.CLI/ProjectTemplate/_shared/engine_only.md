@@ -21,6 +21,36 @@ document in the tool result. Do not grep the filesystem for the implementation, 
 and do not work from memory of a similar library. The API is large and specific, and a call invented
 from memory that happens to sound plausible fails in ways that cost more than the lookup.
 
+> **`Search` first, `ReadDoc` second, and often not at all.** They are not two ways of doing the same
+> thing. `Search` answers *"what is this call, and does it exist"* in a few hundred tokens. `ReadDoc`
+> answers *"teach me this whole subject"* and costs tens of thousands. Reach for the first, and escalate
+> only when the first did not answer.
+>
+> **Ask three questions before every `ReadDoc`:**
+>
+> 1. **Did `Search` already answer it?** A dotted name comes back `confidence: 'direct'` with the exact
+>    signature. That *is* the answer — reading the document afterwards adds nothing.
+> 2. **Do I need the subject, or one call?** One call is a `Search`. A subject you are about to work
+>    in for several stages is a `ReadDoc`.
+> 3. **Will I consult it more than twice?** If yes, read it whole and keep it. If no, do not read it.
+>
+> **Why this matters more than it looks.** Input is the whole conversation resent every turn, so a
+> document read once is paid for again on every turn that follows. Measured on `apollovec3`: four full
+> documents read back to back took the per-turn input from **32,703 to 130,429**, and it stayed there
+> for the rest of the run — **2,030,346 input tokens against 30,240 of output**, and the run was halted
+> by the token breaker at 30 turns with one stage finished. It had read `polson://sdk/core/Chart` and
+> `polson://manual/14` in full *before* its first `Search`; the one `Search` it did run returned a
+> direct hit, and it read that area's whole document anyway.
+>
+> **This is not "read less".** A document you genuinely consult repeatedly is *cheaper* read whole and
+> carried, because carried content sits in the cached prefix and bills at about a tenth — break-even is
+> roughly two and a half reads. Fragmenting a subject you are working in into many small reads can cost
+> more than reading it once. The waste is the read you did not need at all, not the one you did.
+>
+> **Read late rather than early where you can.** The same documents read at turn 10 instead of turn 3
+> cost roughly half, because they are carried for fewer turns. Do the framing, the data and the
+> arithmetic that need no API knowledge first.
+
 > **Name the tool, because "read `polson://sdk/*`" does not say how, and on some hosts the obvious
 > route answers with nothing.** A host may offer `load_mcp_resource`, which replies *"resource
 > contents temporarily inserted and removed"* and no text — the document is real and reaches the

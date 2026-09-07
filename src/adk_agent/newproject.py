@@ -7,6 +7,24 @@ Run it::
 
 Or call `create(...)` from the web layer, which is where this is headed.
 
+**A test run must carry both a deadline and a token budget.** Pass ``--deadline`` and set
+``POLSON_BUDGET_TOKENS`` on the serving process; neither defaults to anything useful for an
+evaluation, and they fail in opposite directions.
+
+* Without a **deadline** there is no clock, so ``findings.md`` — which is written from the allowance
+  left at the end — is never reached. A workflow with no entry in the CLI's deadline table silently
+  resolves to *no deadline at all* rather than to a wrong one.
+* Without a **token budget** nothing stops a run that will not converge. Input is the whole
+  conversation resent every turn, so it grows as O(n²) while output stays flat. Measured on
+  ``apollovec3``: input plateaued at ~140K per turn after five ``ReadDoc`` calls and the run spent
+  **2,030,346** input tokens against **30,240** of output — a 67:1 ratio — in 30 turns and under
+  eleven minutes, comfortably inside its 30-minute deadline. **The clock would never have caught
+  it.** The token breaker did, which is the whole reason to set both rather than either.
+
+Neither constraint is a cost estimate. The cap counts *raw* input deliberately: on that same run 61%
+was served from cache and billed at about a tenth, so the bill was far below the number that halted
+it. It is a runaway alarm, not a budget in money.
+
 **Why an app per project rather than an app per workflow.** ADK scopes everything by app name —
 `/apps/{app_name}/users/{user_id}/sessions/{session_id}` — and one app means one `McpToolset`, built
 once and cached, so one studio server and one project directory for every session that app serves.
@@ -183,16 +201,25 @@ def create(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("project_id", help="Project id, and the ADK app name it is served under.")
+    # Mirrored from the CLI's embedded templates, which are the authority — an unknown name is
+    # refused there and the error lists what is actually available. This list has already gone
+    # stale once (`vector_infographic` shipped a template and appeared in no help text), so treat a
+    # refusal from the CLI as correct and this string as the thing to update.
     parser.add_argument("--workflow", default="logo",
-                        help="logo, infographic, drawing, comic, painting, comic_studio, harness.")
+                        help="logo, infographic, vector_infographic, drawing, comic, painting, "
+                             "comic_studio, harness. The CLI's templates are the authority.")
     parser.add_argument("--prompt", help="The subject, in a line. Treated as untrusted data.")
     parser.add_argument("--type", dest="type_", help="Narrows the workflow's direction.")
     parser.add_argument("--force", action="store_true", help="Overwrite an existing project.")
     parser.add_argument("--test", action="store_true",
                         help="Run the workflow as an evaluation of the framework as well as a "
-                             "commission: the agent reports friction and gaps in findings.md.")
+                             "commission: the agent reports friction and gaps in findings.md. "
+                             "ALWAYS pair with --deadline and POLSON_BUDGET_TOKENS - see the "
+                             "module docstring for why both are needed.")
     parser.add_argument("--deadline", type=int,
-                        help="Minutes for the whole commission. Omit for the workflow default.")
+                        help="Minutes for the whole commission. Omit for the workflow default. "
+                             "Set it explicitly for a test run: findings.md is written from the "
+                             "remaining allowance, so a run with no clock never writes one.")
     parser.add_argument("--projects-dir", type=Path, default=PROJECTS_DIR)
     args = parser.parse_args(argv)
 

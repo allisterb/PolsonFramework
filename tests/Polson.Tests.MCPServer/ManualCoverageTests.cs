@@ -93,6 +93,11 @@ public class ManualCoverageTests : TestsRuntime
         // than where it climbed to. Every member is named in the reference.
         ["Research"] = 100,
         ["Photo"] = 100,
+
+        // Documented as it was built, like Chart and Research, so it starts at the top rather than
+        // being brought up to it. No manual yet — the SDK reference is its only prose, which is why
+        // the floor is what holds it reachable.
+        ["Documents"] = 100,
         ["Snap"] = 82,
         ["Canvas2D"] = 75,
         ["VectorLogo"] = 74,

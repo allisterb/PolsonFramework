@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
+using Polson.ExtendedMind.DocumentProcessing;
 using Polson.ExtendedMind.ImageGeneration;
 using Polson.ExtendedMind.ParallelSearch;
 using Polson.ExtendedMind.Photos;
@@ -103,6 +104,10 @@ public static class JsSurface
         new("matte", typeof(MatteAsset), "Assets", true),
         new("budget", typeof(AssetBudget), "Assets", true),
 
+        new("Documents", typeof(DocumentProcessor), "Documents", false),
+        new("answer", typeof(DocumentAnswer), "Documents", true),
+        new("documentBudget", typeof(DocumentBudget), "Documents", true),
+
         new("Photo", typeof(PhotoToolkit), "Photo", false),
         new("photo", typeof(PhotoAsset), "Photo", true),
         new("subject", typeof(SubjectMatch), "Photo", true),
@@ -170,6 +175,7 @@ public static class JsSurface
             ["paper.ensureDefs"] = "internal defs bootstrap; paper.defs is the documented accessor",
             ["paper.snapPaper"] = "constructor artifact, not a callable",
             ["element.wrap"] = "internal element wrapper factory",
+            ["Documents.dispose"] = "host lifetime: releases the model client, not a script's to call",
             // Aliases of a documented member; documenting both spellings invites drift.
             ["paper.toDataURL"] = "alias of paper.toDataUri",
             ["bitmap.toDataURL"] = "alias of bitmap.toDataUri",

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommandLine;
 using Microsoft.Extensions.Configuration;
+using Polson.ExtendedMind.DocumentProcessing;
 using Polson.ExtendedMind.ImageGeneration;
 using Polson.ExtendedMind.ParallelSearch;
 using Polson.ExtendedMind.Photos;
@@ -50,6 +51,9 @@ internal class Program : Runtime
     /// </para>
     /// </remarks>
     const int DefaultAssetBudget = 120;
+
+    /// <summary>Document reads allowed per session when nothing is configured.</summary>
+    const int DefaultDocumentBudget = 40;
 
     /// <summary>
     /// Reference photographs allowed per run. Far smaller than the asset budget because the unit is
@@ -202,6 +206,43 @@ internal class Program : Runtime
     }
 
     /// <summary>
+    /// Wires document reading, so a script can ask a question of a file in the project directory.
+    /// </summary>
+    /// <remarks>
+    /// The project directory is passed through and is the whole containment: a document is read from
+    /// inside it or not at all, exactly as <c>outFile</c> writes inside it or not at all.
+    /// </remarks>
+    static void ConfigureDocuments(string projectDir)
+    {
+        var apiKey = Setting("ApiKeys:GoogleAgentPlatform");
+        var model = Setting("Documents:Model") ?? DocumentProcessor.DefaultModel;
+        var budget = ResolveDocumentBudget(Setting("Documents:Budget"));
+
+        JsDrawingEngine.Documents = new DocumentProcessor(
+            apiKey, new DocumentBudget(budget), projectDir, model);
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            Warn("Document reading disabled: no ApiKeys:GoogleAgentPlatform in {0}.",
+                Path.Combine(AssemblyLocation, "appsettings.json"));
+        }
+        else
+        {
+            Info("Document reading enabled (model: {0}, budget: {1} reads).", model, budget);
+        }
+    }
+
+    internal static int ResolveDocumentBudget(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured)) return DefaultDocumentBudget;
+        if (int.TryParse(configured, out var parsed) && parsed >= 0) return parsed;
+
+        Warn("Documents:Budget '{0}' is not a non-negative integer; using {1}.",
+            configured, DefaultDocumentBudget);
+        return DefaultDocumentBudget;
+    }
+
+    /// <summary>
     /// Wires the reference-photograph surface.
     /// </summary>
     /// <remarks>
@@ -325,6 +366,7 @@ internal class Program : Runtime
             : Directory.GetCurrentDirectory();
 
         ConfigureAssetRequisition(projectDir);
+        ConfigureDocuments(projectDir);
         ConfigurePhotos();
         ConfigureResearch();
 

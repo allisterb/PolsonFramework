@@ -18,6 +18,7 @@ using Jint.Native;
 using Jint.Runtime;
 using Jint.Runtime.Interop;
 
+using Polson.ExtendedMind.DocumentProcessing;
 using Polson.ExtendedMind.ImageGeneration;
 using Polson.ExtendedMind.ParallelSearch;
 using Polson.ExtendedMind.Photos;
@@ -56,6 +57,14 @@ public partial class JsDrawingEngine : Runtime
     /// configured" refusal instead of a ReferenceError it cannot interpret.
     /// </summary>
     public static AssetRequisitionToolkit? Assets { get; set; }
+
+    /// <summary>
+    /// Document reading, configured once at startup. Registered on the same terms as
+    /// <see cref="Assets"/>, and for the same reason a photograph surface is: a script that cannot
+    /// read the document it was pointed at must be *told* so, because the failure it would otherwise
+    /// reach for is answering from recall and presenting it as sourced.
+    /// </summary>
+    public static DocumentProcessor? Documents { get; set; }
 
     /// <summary>
     /// Reference-photograph surface, configured once at startup. Null means the same thing it means
@@ -306,6 +315,10 @@ public partial class JsDrawingEngine : Runtime
             // reason: a script that cannot fetch a likeness must be told so, because the failure it
             // would otherwise reach for is inventing an image URL.
             engine.SetValue("Photo", Photos ?? new PhotoToolkit(null, new PhotoBudget(0), "agent"));
+
+            // Reading a supplied document. Same terms again: an unconfigured surface refuses with a
+            // remedy rather than being absent.
+            engine.SetValue("Documents", Documents ?? new DocumentProcessor(null, new DocumentBudget(0)));
 
             // Sourced research, read-only. Commissioning is the Research MCP tool's job because a run
             // takes far longer than ScriptTimeoutSeconds allows; by the time a script sees a task the

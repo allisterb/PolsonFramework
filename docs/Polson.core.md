@@ -1360,7 +1360,24 @@ Every form is handled: column, bar, dot, groupedDot, framedRectangle, waffle, pi
 - `paper.squircle(x: number, y: number, width: number, height: number, exponent?: number)` → `SnapPath` — Appends a Lamé superellipse squircle path element to the paper.
 - `paper.goldenSpiral(startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `SnapPath` — Appends a logarithmic golden spiral path ($r = a \cdot e^{b\theta}$) to the paper.
 - `paper.emblemBadge(cx: number, cy: number, width: number, height: number, style?: 'shield' | 'hexagon' | 'diamond' | 'scallop' | 'circle')` → `SnapPath` — Appends a geometric badge outline to the paper.
+- `paper.trackedText(x: number, y: number, text: string, tracking?: number | string, attrs?: object)` → `SnapGroup` — A **tracked** run of type, as one positioned `<text>` per glyph inside a group.
 - `paper.goldenCircles(cx: number, cy: number, baseRadius: number, count?: number, options?: { lineColor?: string, lineWidth?: number, opacity?: number })` → `SnapGroup` — Appends a group containing $\Phi$-scaled concentric circles.
+
+> [!IMPORTANT]
+> **`trackedText` exists because SVG's own `letter-spacing` does nothing in this renderer.** Setting it on a `<text>` serialises perfectly and changes not one pixel, so a wordmark tracked that way is correct on canvas and **untracked as vector** — on the surface a wordmark is most likely to ship on, with no error anywhere. This converts the tracking into the one thing the renderer does honour: positions.
+>
+> ```javascript
+> const style = { 'font-family': 'Arial', 'font-size': 48, fill: '#15151a', 'text-anchor': 'middle' };
+> paper.trackedText(400, 90, 'AURELIA', LogoType.computeWordmarkTracking(48, true) + 'em', style);
+> ```
+>
+> `tracking` takes exactly what `ctx.letterSpacing` takes — a bare number or `px` string is pixels, `em` is a fraction of the resolved font size — so the em fraction from `computeWordmarkTracking(...)` applies unchanged on either surface. **The two measure a tracked run to the same width**, which is what lets a lockup designed on canvas be delivered as vector; it is asserted equal, not merely non-zero, by `VectorTrackedTextTests`.
+>
+> `attrs` is an ordinary attribute dictionary applied to every glyph. A `text-anchor` in it anchors the **run** — the glyphs are placed individually, so anchoring each of them would scatter the line.
+>
+> Two consequences worth knowing. **Kerning is lost**, as it is on canvas and in every tool that tracks type: the pairs are no longer adjacent to kern, so leave tracking at `0` for body text. And the run arrives in the deliverable as **one `<text>` element per glyph** rather than one string — the price of the renderer honouring positions and not spacing. Tracked display type is what this is for; a paragraph is not.
+
+- `VectorLogo.measureTrackedText(text: string, tracking?: number | string, attrs?: object)` → `{ width, height, ascent, descent, tracking, glyphCount }` — What `trackedText` **would** occupy, without drawing it. The tracked counterpart of `ctx.measureText`, and what lets a lockup be laid out before it is committed. `tracking` comes back resolved to pixels.
 - `paper.isometricGrid(width: number, height: number, spacing?: number, options?: { lineColor?: string, lineWidth?: number, opacity?: number })` → `SnapGroup` — Appends a group containing 30°/60° isometric construction grid lines.
 - `paper.polarGrid(cx: number, cy: number, maxRadius: number, ringCount?: number, rayCount?: number, options?: { lineColor?: string, lineWidth?: number, opacity?: number })` → `SnapGroup` — Appends a group containing polar concentric rings and radial spokes.
 - `paper.monogramMatrix(x: number, y: number, width: number, height: number, type?: '2x2' | '3x3' | '4x4', options?: { lineColor?: string, lineWidth?: number, opacity?: number, nodeColor?: string })` → `SnapGroup` — Appends monogram matrix grid guides and node anchor circles.
@@ -1387,6 +1404,7 @@ The same constructions as `paper.*` above, but called on the global `VectorLogo`
 - `VectorLogo.goldenSpiral(paper: SnapPaper, startX: number, startY: number, initialRadius: number, turns?: number, segmentsPerTurn?: number)` → `SnapPath` — Appends a logarithmic golden spiral.
 - `VectorLogo.ogeeCurve(paper: SnapPaper, x1: number, y1: number, x2: number, y2: number, amplitude?: number, inflectionT?: number)` → `SnapPath` — Appends an Ogee S-curve.
 - `VectorLogo.emblemBadge(paper: SnapPaper, cx: number, cy: number, width: number, height: number, style?: 'shield' | 'hexagon' | 'diamond' | 'scallop' | 'circle')` → `SnapPath` — Appends a geometric badge outline.
+- `VectorLogo.trackedText(paper: SnapPaper, x: number, y: number, text: string, tracking?: number | string, attrs?: object)` → `SnapGroup` — Appends a tracked run of type as one positioned `<text>` per glyph. Identical to `paper.trackedText(...)`; see the note under *SnapPaper Vector Methods* for why the `letter-spacing` attribute cannot do this.
 - `VectorLogo.goldenCircles(paper: SnapPaper, cx: number, cy: number, baseRadius: number, count?: number)` → `SnapGroup` — Appends $\Phi$-scaled concentric circles.
 - `VectorLogo.isometricGrid(paper: SnapPaper, width: number, height: number, spacing?: number)` → `SnapGroup` — Appends 30°/60° isometric construction guides.
 - `VectorLogo.polarGrid(paper: SnapPaper, cx: number, cy: number, maxRadius: number, ringCount?: number, rayCount?: number)` → `SnapGroup` — Appends polar rings and radial spokes.
@@ -1417,6 +1435,8 @@ Also accessible via `Skia.LogoType` and global `LogoType`.
 > The two spacing calls return **different units**. `computeWordmarkTracking` is an em fraction and scales with the size you apply it at; `computeOpticalKerning` is already in **pixels** at the size you passed it. `tracking * fontSize` is comparable to a kerning value; `tracking` alone is not.
 >
 > Apply tracking with `ctx.letterSpacing`, which takes either unit — so the em fraction goes on as it comes back, with no multiplication to get wrong: `ctx.letterSpacing = LogoType.computeWordmarkTracking(48, true) + 'em'`.
+>
+> **On a vector paper use `paper.trackedText(...)`, which takes the same value.** SVG's `letter-spacing` attribute is inert in this renderer, so `text.attr({ 'letter-spacing': … })` is the one spelling that looks right and does nothing.
 
 ## Typographic Scale & Font Harmony
 - `LogoType.calculateTypographicScale(baseSize?: number, ratio?: 'goldenRatio' | 'perfectFifth' | 'augmentedFourth' | 'perfectFourth' | 'majorThird' | 'minorThird', stepsDown?: number, stepsUp?: number)` → `object` — Generates harmonic font size ladder (`micro`, `caption`, `body`, `h4`, `h3`, `h2`, `h1`, `display`).

@@ -144,6 +144,80 @@ public class SnapPaintServerTests : TestsRuntime
     }
     #endregion
 
+    #region Reuse Tests
+    /// <summary>
+    /// A <c>&lt;use&gt;</c> can only paint what the referenced element leaves unset.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Standard SVG cascade, and the single thing most likely to be got wrong about reuse: the
+    /// reference clones the source <i>including its presentation attributes</i>, so a <c>fill</c> on
+    /// the source wins and a <c>fill</c> on the <c>use</c> is inert. Every instance then comes out
+    /// identical, silently — the drawing is right in structure and wrong in colour, with nothing to
+    /// report.
+    /// </para>
+    /// <para>
+    /// Pinned because it defeated the worked example in <c>polson://manual/27</c> §10 on the day it was
+    /// written: a five-star rating whose fifth star was meant to be dimmed rendered five gold stars,
+    /// because the source star carried the fill. The remedy is the second half of this test — park the
+    /// motif in <c>&lt;defs&gt;</c> with no fill of its own, where it also does not draw, and let each
+    /// instance carry its own paint.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestAUseRecoloursOnlyWhatTheSourceLeavesUnset()
+    {
+        // The source carries the fill, so the instance cannot override it.
+        var bound = Execute("""
+            const s = paper.path('M22,0 L28,15 L44,15 L32,25 L37,41 L22,32 L7,41 L12,25 L0,15 L16,15 Z');
+            s.id = 'star';
+            s.attr({ fill: '#e5a93c' });
+            paper.use(s).attr({ transform: 't100,0', fill: '#e6e8ec' });
+            const bmp = Skia.Image.fromBytes(paper.toImageBytes(200, 200, 'png', 100));
+            log(bmp.getPixel(122, 20));
+            """);
+        Assert.True(bound.Success, bound.Error);
+        Assert.Contains("#E5A93C", string.Join(" ", bound.Logs), StringComparison.Ordinal);
+
+        // The source leaves it unset, so each instance paints itself.
+        var free = Execute("""
+            const s = paper.defs.path('M22,0 L28,15 L44,15 L32,25 L37,41 L22,32 L7,41 L12,25 L0,15 L16,15 Z');
+            s.id = 'star';
+            paper.use(s).attr({ fill: '#e5a93c' });
+            paper.use(s).attr({ transform: 't100,0', fill: '#e6e8ec' });
+            const bmp = Skia.Image.fromBytes(paper.toImageBytes(200, 200, 'png', 100));
+            log(bmp.getPixel(22, 20) + ' ' + bmp.getPixel(122, 20));
+            """);
+        Assert.True(free.Success, free.Error);
+        var line = string.Join(" ", free.Logs);
+        Assert.Contains("#E5A93C", line, StringComparison.Ordinal);
+        Assert.Contains("#E6E8EC", line, StringComparison.Ordinal);
+    }
+
+    /// <summary>An element parked in <c>&lt;defs&gt;</c> does not draw where it is defined.</summary>
+    /// <remarks>
+    /// The other half of the recolourable-motif idiom. Leaving the source's <c>fill</c> unset so that
+    /// instances can paint it makes the source itself render in SVG's default black — so it has to go
+    /// somewhere that does not draw, or the drawing gains a stray black shape at the origin.
+    /// </remarks>
+    [Fact]
+    public void TestAnElementInDefsDoesNotDraw()
+    {
+        var result = Execute("""
+            const s = paper.defs.path('M0,0 L40,0 L40,40 L0,40 Z');
+            s.id = 'box';
+            paper.use(s).attr({ transform: 't120,0', fill: '#1f6f8b' });
+            const bmp = Skia.Image.fromBytes(paper.toImageBytes(200, 200, 'png', 100));
+            log(bmp.getPixel(20, 20) + ' ' + bmp.getPixel(140, 20));
+            """);
+
+        Assert.True(result.Success, result.Error);
+        var line = string.Join(" ", result.Logs);
+        Assert.Contains("#00000000", line, StringComparison.Ordinal);
+        Assert.Contains("#1F6F8B", line, StringComparison.Ordinal);
+    }
+    #endregion
+
     #region Methods
     private static DrawingExecutionResult Execute(string body) =>
         new JsDrawingEngine().Execute($"const paper = Snap(200, 200); {body} paper;", 200, 200, null, "png", 100);

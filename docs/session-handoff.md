@@ -5,13 +5,17 @@ State after the session that **finished the motion score** and then turned the s
 competition is a diffusion model rather than another drawing tool.
 
 **Tests: 1,645 .NET at the close of the seventh session; 1,987 .NET + 39 Python as of §21;
-2,038 .NET as of §22; 2,063 as of §22.3; 2,068 as of §22.4.**
+2,038 .NET as of §22; 2,110 as of §23.**
 Sections are appended, never rewritten, so everything below §17 is history and remains accurate as
 such.
 
-> **§22 is the current state** — the filter and stylesheet surface, now tested and documented, which
+> **§23 is the current state** — CSS support measured and two silent bugs fixed, the bristle nib, and
+> the finding that a capability table does not change agent behaviour but advice at the point of
+> decision might. **§23.7 is the pick-up list; start there.**
+>
+> Earlier: **§22** is the filter and stylesheet surface, tested and documented, which
 > closes §21.7 items 1 and 2, plus vector brushes (§22.3) and grain (§22.4), which close item 3.
-> **§22.5 is the pick-up list; start there.**
+> §22.5 was its pick-up list, now superseded by §23.7.
 >
 > Earlier: **§21** is reference photography, the raster/vector boundary, and the
 > `vector_infographic` workflow. Its §21.6 has since been committed as `591d510`.
@@ -2346,8 +2350,149 @@ nothing anywhere — and a filter region *narrower* than the default, which clip
 **Its other two "faults" were ours, not its**: the code is correct SVG and this renderer deviates.
 Worth separating, because "the model got it wrong" was the comfortable reading and the wrong one.
 
-### 22.5 What is still open from §21.7
+### 22.5 What was still open from §21.7 at that point
 
 Items **4–7 stand unchanged**: `SKSvgCanvas` parked, `Photo`'s session-only cache and absent face
 detection, the ADK instructions' silence on `Snap.load`, and the orphaned doc comment in
-`Program.cs`. Item 3, the brush question, is §22.3 and §22.4 above.
+`Program.cs`. Item 3, the brush question, is §22.3 and §22.4 above. §23 continues from here.
+
+---
+
+## 23. CSS, the bristle nib, and two runs that would not use any of it — 2026-09-07
+
+**2,110 .NET tests.** The vector surface is now close to complete, but **not complete, and the
+distinction matters for planning**: `Skia.PathEffect.stamp`/`.hatch` and SkSL have no vector
+counterpart and will not get one, because all three need a canvas context. What closed this session
+is grain, blur, colour grading, stylesheets, brush strokes and a high-fidelity nib. Manual 14 §9 is
+accurate about the remainder; read it rather than assuming parity.
+
+### 23.1 Two CSS bugs, both silent, both ours
+
+Found by **measuring the whole surface** rather than by suspicion: every property rendered twice, with
+and without, and the frames diffed. An unsupported property still serialises, so reading the markup
+proves nothing.
+
+- **A value carrying a unit was silently discarded.** `ComputeDelta` parsed to a `float` *before*
+  `ParseUnit` — which understands `px`, `%` and `em` — ever saw it, and its fallback for an
+  unparseable value was to leave the property **unchanged**. CSS always writes units, so
+  `paper.style('.h1 { font-size: 40px }')` set nothing while `attr({ 'font-size': 40 })` worked: the
+  same declaration succeeding or failing on how it happened to be spelled. It reached `font-size`,
+  `stroke-width` and `stroke-dashoffset`.
+- **AngleSharp drops any declaration whose value is `url(...)`.** A rule declaring five properties
+  came back holding one. `filter`, `clip-path`, `mask` and `marker-end` all vanish, silently. They
+  are recovered from the source text now — the same remedy the class already used for custom
+  properties, and for the same reason.
+
+**`CssSupportMatrixTests` pins the result, and half its cases assert a property *is* ignored.** That
+is deliberate: `fill-rule`, `mix-blend-mode`, `font-style`, `letter-spacing`, `dominant-baseline`,
+`vector-effect` and `stroke-miterlimit` are renderer limits nobody had written down, so an agent
+reaching for `font-style: italic` got silence with no way to tell a typo from an unsupported feature.
+A renderer upgrade that starts honouring one now **fails the suite** and gets documented, instead of
+quietly changing what every existing sheet means.
+
+⤷ **`letter-spacing` is the one whose absence changes a deliverable.** `ctx.letterSpacing` works and
+is documented, so a tracked wordmark is correct on canvas and loses its tracking as vector — which is
+the surface a wordmark is most likely to be delivered on.
+
+⤷ Two of the test's own cases were wrong and taught something. A **unitless `font-size` now applies**
+though strict CSS rejects it — a consequence of reading from source text, and the right one here: a
+sheet produces an *SVG presentation attribute*, and `font-size="40"` is valid SVG. And **`em` font
+sizes parse but do not render**, dropped in Svg.Skia rather than by us; pinned separately because from
+outside the two look identical.
+
+### 23.2 The bristle nib, and where the realism in a brush actually lives
+
+`Snap.brush.bristle(count, width, roughness, seed)` — 24 contours and 1,584 points at `roughness` 0,
+81 contours when spent, against `split(4)`'s four.
+
+**A traced brush set gets its realism from contour count alone.** Measured on `svg-brush`'s bundled
+Figma nibs: **229 and 208 subpaths**, 40–64 KB of outline apiece. There is no texture feature in that
+library at all — the texture *is* the geometry, and every bristle gap and speckle is a traced
+contour. This generates the same order of thing from a formula, so it carries no licence.
+
+**MyPaint fixed the first version.** `reference/projects/mypaint-brushes-master` is CC0 for
+`brushes/*` and its `.myb` files are parameters for a dab-stamping engine — no geometry, and nothing
+loadable into anything we have. What transferred was the vocabulary and two numbers:
+`dabs_per_actual_radius` clusters at **3.9–5.2**, deposits overlapping four or five times over, which
+is the overlap a mark needs to read as continuous. The first version sized bristles against the nib
+width rather than their spacing, so no two ever touched and every stroke came out as a rake. A
+coverage test pins it now. Its `opaque` figures — **0.015 on `rough`, 1.0 on `brush`** — say a dry
+brush is many faint overlapping deposits rather than a rough shape; one filled path cannot build up
+opacity, so that half is answered by a `paper.filter()` grain over the mark. **Shape from the nib,
+medium from the filter.**
+
+### 23.3 Two error messages that cost a script each
+
+Both found by reading what a live run actually got, not by review.
+
+- **`Stage.check(barW > 0, 'positive baseline')`.** I first reported that swapped arguments passed
+  silently. **That was wrong** — Jint's overload resolution always refused them, and nothing false was
+  ever recorded. What failed was the *message*: the generic *"No public methods with the specified
+  arguments… rectangles from Layout carry width and height"*, which sent the agent hunting for a typo
+  in `Layout`. `ArgumentHelp` reads the failing source line now and names the swap.
+- **`scaleAlt(alt)` — the d3 habit.** `Scale.linear(...)` returns an object whose mapping is
+  `.map(value)`; every charting library a script author has met makes a scale *callable*. The run had
+  used `scaleAlt.isZeroBased` correctly five lines earlier — it knew the shape and reverted to muscle
+  memory — and lost a 930-line script to *"scaleAlt is not a function"*. The message now finds the
+  variable's producer in the script and names the right member, for `Scale`, `Chart` and `Layout`.
+
+### 23.4 The Antigravity path could not say what a run cost
+
+`transcript._usage` read `AgentStep.usage_metadata` — declared by the SDK, **never populated by the
+local harness**. Zero usage events across two complete runs. `transcript.record_turn_usage` reads
+`Conversation.last_turn_usage` instead, on all three paths out of a turn, because a turn that timed
+out still spent what it spent. **Unverified: proving it works needs a run, and `RunReport` has no row
+for it yet, so the data currently lands where nobody looks.** Both are pick-up items.
+
+`CLAUDE.md` §7 now carries the rule this produced: **run agents through `adk_agent` unless there is a
+reason not to**, because it has a `budget_status` tool the agent can ask, per-role allowances, and a
+circuit breaker — and the Antigravity path has none of those. The breaker's implementation note is
+worth reading before touching it: it is a set of tripped `invocation_id`s rather than
+`end_invocation`, because ADK 2.8.0 shallow-copies the invocation context.
+
+### 23.5 The finding worth carrying forward: placement, not emphasis
+
+**Two Apollo runs on `vector_infographic`/`blueprint` used none of the new surface — zero
+`paper.filter`, `paper.style`, `brushStroke` or `bristle` — with the capabilities corrected in the
+instructions *and* working.** But the reason is locatable rather than "the agent ignored them":
+
+- **Grain was scoped to a variant it did not pick.** The blueprint note tied grain to the
+  *whiteprint*; the run chose cyan-on-deep-ink, so the sentence never applied to what it was building.
+- **`paper.style` was stated as a capability, never attached to a case.** The run drew its ruled
+  ground as **236 separate `<line>` elements**, each with its own `stroke`, `stroke-width` and
+  `opacity` — some seven hundred attribute writes for what is two CSS rules.
+
+What it *did* follow was the concrete instruction at the point of decision: the ruled ground, the
+drafting border, the registration marks, all exactly as `type.blueprint.md` describes them. So the
+lever appears to be **advice next to the thing being decided, not a capability table**. That doc now
+carries the runnable two-class grid replacement and states grain for either palette. **Untested** —
+it wants one run to confirm, and that is the cheapest experiment left.
+
+⤷ Also corrected: I reported that the `scriptFile` lesson had not taken. **It had** — eight
+executions of a ~930-line file the agent edited between runs, which is the intended workflow. The
+failure mode is not re-typing but keeping 930 lines coherent: one failure was a variable used 140
+lines before a declaration that did not exist.
+
+⤷ And a real bug found in passing: **the `vector_infographic` template's header said
+`Workflow \`infographic\``** — the raster name, copy-pasted. Every project generated from it,
+`vectest` included, told its agent it was running the wrong workflow.
+
+### 23.6 Artifacts
+
+`projects/apollovec` is a complete blueprint run whose title block carries a **computed** lie factor —
+the non-negotiable worked. `projects/apollovec2` was killed mid-flight but reached a better-composed
+`final.svg`; keep it as the evidence for §23.5 or delete it. `artifacts/apollo-brush.{js,png,svg}` is
+an editorial treatment of the same sourced figures, written by hand rather than by a run, and is what
+the bristle nib and the grain filter look like when actually used — **and it could not have been made
+before this session**, because its masthead depends on the `font-size: 66px` that §23.1 unblocked.
+
+### 23.7 Where to pick up
+
+1. **Verify the usage capture and give `RunReport` a row for it.** One run proves both.
+2. **Test the placement hypothesis** (§23.5) with a single `vector_infographic` blueprint run, on
+   **ADK** rather than Antigravity, per the new CLAUDE.md rule — which also exercises the budget path.
+3. **`looked before drawing: never`** on all three vector runs to date. Nothing this session touched
+   it, and it is the oldest unaddressed quality gap in the record.
+4. Items **4–7 of §21.7 still stand**: `SKSvgCanvas` parked, `Photo`'s session-only cache and absent
+   face detection, the ADK instructions' silence on `Snap.load`, the orphaned doc comment in
+   `Program.cs`.

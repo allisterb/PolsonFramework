@@ -223,6 +223,38 @@ public class SnapStylesheetTests : TestsRuntime
         Assert.True(result.Success, result.Error);
         Assert.Equal("0", Logged(result));
     }
+
+    /// <summary>
+    /// The count is <b>rule-to-element applications</b>, not distinct elements styled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One element matched by two rules counts <b>2</b>, exactly as two elements matched by one rule
+    /// do. That is the honest reading of what the method does — it applies declarations, and reports
+    /// how many times it applied them — but it is not what "how many elements were styled" suggests,
+    /// and the difference only appears once a sheet has more than one rule.
+    /// </para>
+    /// <para>
+    /// Pinned because it produced a wrong assertion in a manual example on the day it was written: a
+    /// five-star mark styled by three rules returned <b>10</b>, and a check of <c>styled === 5</c>
+    /// failed while every star was in fact correctly styled. An author sanity-checking a sheet against
+    /// an element count will reach for exactly that comparison.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestTheCountIsRuleApplicationsNotDistinctElements()
+    {
+        var twoRulesOneElement = Execute(
+            "paper.rect(0, 0, 40, 40).attr({ class: 'x y' }); log(String(paper.style('.x { fill: red; } .y { stroke: blue; }')));");
+        Assert.True(twoRulesOneElement.Success, twoRulesOneElement.Error);
+        Assert.Equal("2", Logged(twoRulesOneElement));
+
+        var oneRuleTwoElements = Execute(
+            "paper.rect(0, 0, 40, 40).attr({ class: 'x' }); paper.rect(50, 0, 40, 40).attr({ class: 'x' }); "
+            + "log(String(paper.style('.x { fill: red; }')));");
+        Assert.True(oneRuleTwoElements.Success, oneRuleTwoElements.Error);
+        Assert.Equal("2", Logged(oneRuleTwoElements));
+    }
     #endregion
 
     #region Methods

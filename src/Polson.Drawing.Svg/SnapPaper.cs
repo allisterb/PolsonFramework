@@ -161,7 +161,10 @@ public class SnapPaper : SnapElement
     /// rather than silently matching nothing.
     /// </para>
     /// </remarks>
-    /// <returns>How many elements were styled, so an empty sheet is distinguishable from a typo.</returns>
+    /// <returns>
+    /// How many rule-to-element applications happened, so an empty sheet is distinguishable from a
+    /// typo. <b>Not an element count</b> — one element matched by two rules counts twice.
+    /// </returns>
     public int Style(string css)
     {
         var styled = SnapStylesheet.Apply(this, css);
@@ -197,6 +200,18 @@ public class SnapPaper : SnapElement
 
     public SnapPath EmblemBadge(float cx, float cy, float width, float height, string style = "shield") =>
         VectorLogo.EmblemBadge(this, cx, cy, width, height, style);
+
+    /// <summary>
+    /// A tracked run of type, as one positioned <c>&lt;text&gt;</c> per glyph inside a group.
+    /// </summary>
+    /// <remarks>
+    /// SVG's <c>letter-spacing</c> is inert in this renderer, so this converts tracking into the one
+    /// thing it does honour — positions. Units and spacing arithmetic match <c>ctx.letterSpacing</c>,
+    /// so the same wordmark tracks identically on either surface. See
+    /// <see cref="VectorLogoToolkit.TrackedText"/>.
+    /// </remarks>
+    public SnapGroup TrackedText(float x, float y, string text, object? tracking = null, object? attrs = null) =>
+        VectorLogo.TrackedText(this, x, y, text, tracking, attrs);
 
     public SnapGroup GoldenCircles(float cx, float cy, float baseRadius, int count = 5, object? options = null) =>
         VectorLogo.GoldenCircles(this, cx, cy, baseRadius, count, options);

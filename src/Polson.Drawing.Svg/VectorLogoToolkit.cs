@@ -319,6 +319,129 @@ public class VectorLogoToolkit
             ? f
             : fallback;
 
+    #region Tracked Type
+    /// <summary>
+    /// A tracked run of type, as one positioned <c>&lt;text&gt;</c> per glyph inside a group.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>SVG's own <c>letter-spacing</c> does not render here</b>, so a wordmark tracked with it is
+    /// correct on canvas and loses its tracking the moment the same design is built as vector — the
+    /// surface a wordmark is most likely to ship on. This converts the tracking into geometry the
+    /// renderer does honour: positions.
+    /// </para>
+    /// <para>
+    /// Spacing goes <b>between</b> glyphs and not after the last, and each glyph is measured on its
+    /// own, which is the same arithmetic <c>ctx.letterSpacing</c> performs — so a run tracked by the
+    /// same amount occupies the same width on either surface. Kerning is lost, as it is on canvas and
+    /// in every tool that tracks type: the pairs are no longer adjacent to kern.
+    /// </para>
+    /// <para>
+    /// <paramref name="tracking"/> takes the units <c>ctx.letterSpacing</c> takes — a bare number or
+    /// <c>px</c> string is pixels, <c>em</c> is a fraction of the resolved font size — so the em
+    /// fraction from <c>LogoType.computeWordmarkTracking(...)</c> applies unchanged.
+    /// <paramref name="attrs"/> is an ordinary attribute dictionary applied to every glyph; a
+    /// <c>text-anchor</c> in it positions the <b>run</b>, since the glyphs are placed individually.
+    /// </para>
+    /// </remarks>
+    public SnapGroup TrackedText(SnapPaper paper, float x, float y, string text, object? tracking = null, object? attrs = null)
+    {
+        ArgumentNullException.ThrowIfNull(paper);
+
+        var group = paper.Group();
+        if (string.IsNullOrEmpty(text)) return group;
+
+        // A detached node carrying the caller's attributes, so the face is resolved once and the
+        // measurement uses exactly the font the glyphs will be drawn in.
+        var probe = new SvgText();
+        SnapAttributes.ApplyAttributes(probe, attrs);
+
+        var spacing = ResolveTracking(tracking, SnapTextMeasurement.SizeOf(probe));
+        var glyphs = SnapTextMeasurement.Graphemes(text);
+        var advances = new float[glyphs.Count];
+        var total = 0f;
+        for (var i = 0; i < glyphs.Count; i++)
+        {
+            advances[i] = SnapTextMeasurement.Advance(probe, glyphs[i]);
+            total += advances[i];
+        }
+        total += spacing * Math.Max(0, glyphs.Count - 1);
+
+        // The anchor applies to the whole run; each glyph is then drawn from its own left edge.
+        var cursor = probe.TextAnchor switch
+        {
+            SvgTextAnchor.Middle => x - total / 2f,
+            SvgTextAnchor.End => x - total,
+            _ => x
+        };
+
+        for (var i = 0; i < glyphs.Count; i++)
+        {
+            var glyph = group.Text(cursor, y, glyphs[i]);
+            SnapAttributes.ApplyAttributes(glyph.Node, attrs);
+            SnapAttributes.ApplyAttribute(glyph.Node, "text-anchor", "start");
+            cursor += advances[i] + spacing;
+        }
+
+        return group;
+    }
+
+    /// <summary>What <see cref="TrackedText"/> would occupy, without drawing it.</summary>
+    /// <remarks>
+    /// The counterpart of <c>ctx.measureText</c> for a tracked run, and the reason a lockup can be
+    /// laid out before it is committed. Drawing first and measuring the group's box works too, but
+    /// leaves the run to be moved after the fact.
+    /// </remarks>
+    public Dictionary<string, object?> MeasureTrackedText(string text, object? tracking = null, object? attrs = null)
+    {
+        var probe = new SvgText();
+        SnapAttributes.ApplyAttributes(probe, attrs);
+
+        var spacing = ResolveTracking(tracking, SnapTextMeasurement.SizeOf(probe));
+        var glyphs = SnapTextMeasurement.Graphemes(text ?? string.Empty);
+        var width = 0f;
+        foreach (var g in glyphs) width += SnapTextMeasurement.Advance(probe, g);
+        width += spacing * Math.Max(0, glyphs.Count - 1);
+
+        var (ascent, descent) = SnapTextMeasurement.Metrics(probe);
+
+        return new Dictionary<string, object?>
+        {
+            ["width"] = width,
+            ["height"] = descent - ascent,
+            ["ascent"] = -ascent,
+            ["descent"] = descent,
+            ["tracking"] = spacing,
+            ["glyphCount"] = glyphs.Count
+        };
+    }
+
+    /// <summary>Tracking in pixels, resolving <c>em</c> against the size in force.</summary>
+    /// <remarks>
+    /// Deliberately the same parsing <c>ctx.letterSpacing</c> performs, including treating an
+    /// unrecognised unit as pixels: two surfaces that read the same tracking string differently would
+    /// be worse than one of them not accepting it.
+    /// </remarks>
+    private static float ResolveTracking(object? tracking, float fontSize)
+    {
+        if (tracking is null) return 0f;
+
+        var raw = tracking.ToString();
+        if (string.IsNullOrWhiteSpace(raw)) return 0f;
+
+        var t = raw.Trim();
+        var split = t.Length;
+        while (split > 0 && (char.IsLetter(t[split - 1]) || t[split - 1] == '%')) split--;
+
+        if (!float.TryParse(t[..split].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
+        {
+            return 0f;
+        }
+
+        return t[split..].ToLowerInvariant() is "em" or "rem" ? n * fontSize : n;
+    }
+    #endregion
+
     public SnapGroup GoldenCircles(SnapPaper paper, float cx, float cy, float baseRadius, int count = 5, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(paper);

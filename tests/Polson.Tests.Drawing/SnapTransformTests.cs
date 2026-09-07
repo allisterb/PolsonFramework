@@ -121,5 +121,43 @@ public class SnapTransformTests : TestsRuntime
         Assert.NotEqual(untransformed.X, transformed.X, 3);
         Assert.True(transformed.Width > untransformed.Width, "scaling must widen the measured box");
     }
+
+    /// <summary>
+    /// <c>getBBox()</c> does not see a <c>&lt;use&gt;</c>, though the renderer draws one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A referenced copy paints — that is separately pinned by the render — but it contributes
+    /// <b>nothing</b> to the measured extent, while a <c>clone()</c> at the same distance contributes
+    /// fully. So the two ways of repeating a shape measure differently despite drawing identically.
+    /// </para>
+    /// <para>
+    /// This is a trap rather than a curiosity because of what it combines with. Cropping a document to
+    /// its own content — <c>paper.attr({ viewBox: … })</c> built from <c>getBBox()</c>, which is how a
+    /// mark becomes a file with no dead margin — will <b>silently crop away every reused instance</b>,
+    /// leaving a deliverable showing one star of five. Both halves are recommended technique in
+    /// <c>polson://manual/27</c>, which is why their interaction is pinned here rather than left to be
+    /// rediscovered. Measure the extent yourself when a document contains <c>use</c> elements.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestGetBBoxIgnoresUseButCountsAClone()
+    {
+        var paper = Snap.Create(400, 100);
+        var source = paper.Rect(0, 0, 40, 40);
+        source.Id = "s";
+        var alone = paper.GetBBox().Width;
+
+        paper.Use(source).Attr("transform", "t200,0");
+        Assert.Equal(alone, paper.GetBBox().Width, 3);
+
+        var copy = source.Clone();
+        copy.Id = "c";
+        copy.AppendTo(paper);
+        copy.Attr("transform", "t300,0");
+        Assert.True(paper.GetBBox().Width > alone,
+            "a clone must widen the measured box — if this fails, use and clone now measure alike "
+            + "and manual 27 §2/§6 needs revisiting");
+    }
     #endregion
 }

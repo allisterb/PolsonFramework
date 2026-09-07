@@ -34,6 +34,18 @@ public class CssSupportMatrixTests : TestsRuntime
     [InlineData("text-decoration", "words", "'text-decoration': 'underline'")]
     [InlineData("marker-end", "line", "'marker-end': 'url(#arrow)'")]
     [InlineData("stroke-dasharray", "box", "'stroke-dasharray': '8 6'")]
+    [InlineData("fill-opacity", "box", "'fill-opacity': 0.2")]
+    [InlineData("stroke-opacity", "box", "'stroke-opacity': 0.1")]
+    [InlineData("fill paint server", "box", "fill: 'url(#grad)'")]
+    [InlineData("stroke-dashoffset", "dashed", "'stroke-dashoffset': 4")]
+    [InlineData("stroke-linecap", "line", "'stroke-linecap': 'square'")]
+    [InlineData("stroke-linejoin", "vee", "'stroke-linejoin': 'round'")]
+    [InlineData("text-anchor", "words", "'text-anchor': 'middle'")]
+    [InlineData("alignment-baseline", "words", "'alignment-baseline': 'hanging'")]
+    [InlineData("clip-path polygon()", "box", "'clip-path': 'polygon(0px 0px, 60px 0px, 60px 130px, 0px 130px)'")]
+    [InlineData("visibility", "box", "visibility: 'hidden'")]
+    [InlineData("display", "box", "display: 'none'")]
+    [InlineData("transform", "box", "transform: 'translate(30,0)'")]
     public void TestPropertyReachesTheRenderViaAttr(string property, string shape, string declaration)
     {
         Assert.True(Changes(shape, declaration, null),
@@ -41,6 +53,15 @@ public class CssSupportMatrixTests : TestsRuntime
     }
 
     /// <summary>Renderer limits. A failure here is good news that needs writing down.</summary>
+    /// <remarks>
+    /// <b><c>stroke-miterlimit</c> was re-checked against the obvious confound and the limit is real.</b>
+    /// The suspicion is that the harness simply cannot see it — a 4px stroke on a filled shape hides
+    /// the miter under the fill. Measured separately at <c>stroke-width: 20</c> with <c>fill: none</c>
+    /// on the same <c>vee</c>, against a baseline already carrying <c>stroke-linejoin: miter</c> so that
+    /// only the limit varies: still no change, where <c>miterlimit: 1</c> should bevel every join.
+    /// Recorded because the confounded version of that experiment says the opposite — vary
+    /// <c>stroke-width</c> alongside the limit and the frame changes for the width alone.
+    /// </remarks>
     [Theory]
     [InlineData("fill-rule", "holed", "'fill-rule': 'evenodd'")]
     [InlineData("mix-blend-mode", "box", "'mix-blend-mode': 'multiply'")]
@@ -49,6 +70,7 @@ public class CssSupportMatrixTests : TestsRuntime
     [InlineData("dominant-baseline", "words", "'dominant-baseline': 'hanging'")]
     [InlineData("vector-effect", "box", "'vector-effect': 'non-scaling-stroke'")]
     [InlineData("stroke-miterlimit", "vee", "'stroke-miterlimit': 1")]
+    [InlineData("baseline-shift", "words", "'baseline-shift': 'super'")]
     public void TestPropertyIsIgnoredByTheRenderer(string property, string shape, string declaration)
     {
         Assert.False(Changes(shape, declaration, null),
@@ -60,16 +82,25 @@ public class CssSupportMatrixTests : TestsRuntime
     /// <c>letter-spacing</c> is the one whose absence changes a deliverable rather than a detail.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <c>ctx.letterSpacing</c> works and is documented, so a tracked wordmark is correct on canvas
     /// and loses its tracking the moment the same design is built as vector — which is the surface a
     /// wordmark is most likely to be delivered on. Called out separately so it is not just one row in
     /// a table of seven.
+    /// </para>
+    /// <para>
+    /// <b>The property is still inert; the gap is not.</b> <c>paper.trackedText(...)</c> converts
+    /// tracking into per-glyph positions, which the renderer does honour, and measures identically to
+    /// the canvas — see <c>VectorTrackedTextTests</c>. This case stays because the property itself is
+    /// what an author will reach for first, and it still fails silently.
+    /// </para>
     /// </remarks>
     [Fact]
     public void TestTrackingIsCanvasOnly()
     {
         Assert.False(Changes("words", "'letter-spacing': '12px'", null),
-            "SVG letter-spacing now renders — the vector/canvas tracking gap is closed, so say so in Manual 14");
+            "SVG letter-spacing now renders natively — paper.trackedText's per-glyph placement is no "
+            + "longer the only route, so say so in Manual 27 §4a");
     }
     #endregion
 
@@ -81,9 +112,41 @@ public class CssSupportMatrixTests : TestsRuntime
     [InlineData("stroke-dasharray", "box", "stroke: #c9553d; stroke-width: 6; stroke-dasharray: 8 6;")]
     [InlineData("font-family", "words", "font-family: Georgia;")]
     [InlineData("font-weight", "words", "font-weight: bold;")]
+    [InlineData("fill-opacity", "box", "fill-opacity: 0.2;")]
+    [InlineData("stroke-opacity", "box", "stroke-opacity: 0.1;")]
+    [InlineData("fill paint server", "box", "fill: url(#grad);")]
+    [InlineData("stroke-dashoffset", "dashed", "stroke-dashoffset: 4;")]
+    [InlineData("stroke-linecap", "line", "stroke-linecap: square;")]
+    [InlineData("stroke-linejoin", "vee", "stroke-linejoin: round;")]
+    [InlineData("text-anchor", "words", "text-anchor: middle;")]
+    [InlineData("alignment-baseline", "words", "alignment-baseline: hanging;")]
+    [InlineData("clip-path polygon()", "box", "clip-path: polygon(0px 0px, 60px 0px, 60px 130px, 0px 130px);")]
+    [InlineData("visibility", "box", "visibility: hidden;")]
+    [InlineData("display", "box", "display: none;")]
+    [InlineData("transform", "box", "transform: translate(30px, 0px);")]
     public void TestPropertyReachesTheRenderViaStylesheet(string property, string shape, string css)
     {
         Assert.True(Changes(shape, null, css), $"'{property}' no longer reaches the render through paper.style()");
+    }
+
+    /// <summary>
+    /// <c>alignment-baseline</c> renders and <c>dominant-baseline</c> does not, on the same shape.
+    /// </summary>
+    /// <remarks>
+    /// The pair is the trap, which is why it is a case of its own rather than one row in each theory
+    /// above. Every reference presents the two together — Larsen, <i>Mastering SVG</i> ch. 5 introduces
+    /// them in one breath — and <c>dominant-baseline</c> is the one usually recommended, being the
+    /// property that shifts a <c>text</c> element's own baseline. Here it is the one that does nothing.
+    /// An author who reaches for the documented-everywhere spelling gets silence, and the working
+    /// spelling is the sibling nobody reaches for.
+    /// </remarks>
+    [Fact]
+    public void TestAlignmentBaselineRendersButDominantBaselineDoesNot()
+    {
+        Assert.True(Changes("words", "'alignment-baseline': 'hanging'", null),
+            "alignment-baseline stopped rendering — the vertical-alignment story in Manual 27 changes");
+        Assert.False(Changes("words", "'dominant-baseline': 'hanging'", null),
+            "dominant-baseline now renders — the pair no longer disagrees, so drop the warning from Manual 27");
     }
 
     /// <summary>
@@ -190,6 +253,10 @@ public class CssSupportMatrixTests : TestsRuntime
                 p.defs.el('clipPath', { id: 'halfClip' }).rect(0, 0, 60, 130);
                 p.mask(p.rect(0, 0, 60, 130).attr({ fill: '#ffffff' })).attr({ id: 'halfMask' });
                 p.filter('softEdge').gaussianBlur(4);
+                const grad = p.gradientLinear(0, 0, 1, 0);
+                grad.attr({ id: 'grad' });
+                grad.addStop('#00ff00', 5);
+                grad.addStop('#ffcc00', 95);
                 const mk = p.defs.el('marker', { id: 'arrow', markerWidth: 8, markerHeight: 8,
                                                  refX: 4, refY: 4, orient: 'auto' });
                 mk.path('M0,0 L8,4 L0,8 Z').attr({ fill: '#c9553d' });
@@ -200,10 +267,13 @@ public class CssSupportMatrixTests : TestsRuntime
                     words: () => p.text(10, 70, 'Handgloves'),
                     line:  () => p.path('M10,60 L100,60'),
                     vee:   () => p.path('M10,100 L60,20 L110,100'),
-                    holed: () => p.path('M10,10 L110,10 L110,110 L10,110 Z M40,40 L80,40 L80,80 L40,80 Z')
+                    holed: () => p.path('M10,10 L110,10 L110,110 L10,110 Z M40,40 L80,40 L80,80 L40,80 Z'),
+                    // Carries the dash pattern already, so a dash-offset case varies the offset alone.
+                    dashed: () => p.path('M10,60 L100,60')
                 };
                 const el = shapes['{{shape}}']();
                 el.attr({ fill: '#1f6f8b', 'font-size': 30, stroke: '#c9553d', 'stroke-width': 4 });
+                if ('{{shape}}' === 'dashed') el.attr({ fill: 'none', 'stroke-width': 6, 'stroke-dasharray': '8 6' });
                 if (apply) apply(p, el);
                 return Skia.Image.fromBytes(p.toImageBytes(130, 130, 'png', 100));
             }

@@ -2,6 +2,7 @@
 
 > **Credits & Theoretical Foundation**: The reproduction argument is distilled from *Graphic Design and Print Production Fundamentals* (BCcampus / Graphic Communications Open Textbook Collective, CC BY 4.0), Chapter 5 **Pre-press** — §5.2 *Raster Image Processing* for the RIP model and the resolution rule, §5.5 *Transparency* for the rasterisation trade-off. Ledger entry 2026-08-31. The vector surface itself is Snap.svg-compatible and is documented at `polson://sdk/core/Snap`.
 > **Purpose**: Decides when a deliverable must be vector rather than raster, teaches construction in the retained-mode SVG document tree — the tree, transforms, paint servers and path measurement — and shows how to get an actual `.svg` file out of the engine.
+> **Companion**: `polson://manual/27` picks up where this stops — what happens to the file once it *leaves*. Read it before delivering: the viewport and `viewBox`, the self-containment rule that decides whether a file survives being loaded as an `<img>`, which CSS properties actually reach the render, and reuse through `<use>`. Two of its findings contradict what is natural to assume here, so they are worth knowing before you build rather than after.
 
 ---
 
@@ -361,7 +362,7 @@ log(paper.style(`.mark { fill: #1f6f8b; stroke: #0d4a5e; stroke-width: 3; }
 
 Selectors are `.class`, `#id`, a bare tag name, `*` or `:root`, singly or comma-separated. Anything more — descendants, attributes — is left to `.attr(...)` rather than silently matching nothing. Source order decides ties; there is no specificity and no inheritance, which is the right model for a script-built SVG because such a document is flat and class-per-element anyway.
 
-The return value is **how many elements were styled**, which is what distinguishes an empty sheet from a typo'd selector. Check it.
+The return value is **how many rule-to-element applications happened**, which is what distinguishes an empty sheet from a typo'd selector. Check it — but do not read it as an element count. One element matched by two rules counts 2, exactly as two elements matched by one rule do, so three rules over five elements can return 10 with nothing wrong. See `polson://manual/27` §4.
 
 > [!IMPORTANT]
 > **Call it last.** The rules resolve against the tree as it stands at that moment, so elements drawn afterwards are not styled. Call it again to pick up later work; applying the same sheet twice is harmless.
@@ -456,6 +457,9 @@ paper.image(oak, 640, 40, 280, 300);               // a requisitioned material
 ## 9. What the Vector Surface Cannot Do
 
 An honest list, because the failure mode is reaching for a raster capability halfway through a vector scene and rebuilding everything.
+
+> [!NOTE]
+> This section is about capabilities the *surface* lacks. There is a second list — properties the **renderer** accepts and then ignores, so the declaration reaches the file and changes nothing — in `polson://manual/27` §4. `letter-spacing` is the one worth carrying in your head here: it works on canvas and does nothing in SVG, so a tracked wordmark loses its tracking on exactly the surface a wordmark ships on.
 
 - **No drawing *media*.** `Skia.Brush.*` is a bundle of canvas state — a pencil's granular deposit, a chalk's soft edge — and there is no vector equivalent, because a paper has no context to hold it. §6a1's brush strokes give you the *mark's shape*, not the medium's texture; the two together cover most of what a drawn line is, and the gap that remains is grain rather than form.
 - **No stamped or hatched path effects.** `Skia.PathEffect.stamp` and `.hatch` are canvas-side. A repeated motif along a curve, or hatching as scalable geometry, is raster.

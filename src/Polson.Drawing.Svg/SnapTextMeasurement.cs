@@ -1,6 +1,7 @@
 namespace Polson.Drawing.Svg;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using global::Svg;
@@ -54,6 +55,49 @@ internal static class SnapTextMeasurement
 
         return Transformed(left, top, width, height, matrix);
     }
+
+    /// <summary>Advance width of <paramref name="content"/> in <paramref name="style"/>'s face and size.</summary>
+    /// <remarks>
+    /// The advance, not the ink extent, because it is what a cursor moves by — the number tracking is
+    /// added to. Resolved through the same <see cref="Typeface"/> and <see cref="FontSize"/> the box
+    /// measurement uses, so a tracked run and a plain one agree about the glyphs they share.
+    /// </remarks>
+    internal static float Advance(SvgTextBase style, string content)
+    {
+        if (string.IsNullOrEmpty(content)) return 0f;
+
+        using var typeface = Typeface(style);
+        using var font = new SKFont(typeface, FontSize(style));
+        return font.MeasureText(content);
+    }
+
+    /// <summary>Resolved font size in pixels, which is what an <c>em</c> tracking is a fraction of.</summary>
+    internal static float SizeOf(SvgTextBase style) => FontSize(style);
+
+    /// <summary>Vertical metrics of <paramref name="style"/>'s face at its size.</summary>
+    internal static (float Ascent, float Descent) Metrics(SvgTextBase style)
+    {
+        using var typeface = Typeface(style);
+        using var font = new SKFont(typeface, FontSize(style));
+        font.GetFontMetrics(out var metrics);
+        return (metrics.Ascent, metrics.Descent);
+    }
+
+    /// <summary>Text elements — a grapheme cluster at a time, so a combining mark stays with its base.</summary>
+    /// <remarks>
+    /// Matches the canvas's own splitting. Iterating <see cref="char"/> would separate a surrogate
+    /// pair and place half a codepoint, and would push a combining accent away from the letter it
+    /// belongs to by exactly the tracking.
+    /// </remarks>
+    internal static List<string> Graphemes(string text)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrEmpty(text)) return result;
+
+        var walker = StringInfo.GetTextElementEnumerator(text);
+        while (walker.MoveNext()) result.Add((string)walker.Current);
+        return result;
+    }
     #endregion
 
     #region Methods (private)
@@ -65,7 +109,7 @@ internal static class SnapTextMeasurement
     /// missing first choice should reach the next one and not the platform default. Skia substitutes
     /// silently, so a candidate is only accepted when it resolves to itself.
     /// </remarks>
-    private static SKTypeface Typeface(SvgText text)
+    private static SKTypeface Typeface(SvgTextBase text)
     {
         // Mapped member by member rather than cast: SvgFontWeight.W700 is an enum whose *ordinal*
         // is not 700, so casting it to a numeric weight silently measures everything as regular.
@@ -106,7 +150,7 @@ internal static class SnapTextMeasurement
     }
 
     /// <summary>Font size in pixels, defaulting to the SVG initial value when unset.</summary>
-    private static float FontSize(SvgText text)
+    private static float FontSize(SvgTextBase text)
     {
         var size = text.FontSize;
         if (size == SvgUnit.None || size.Value <= 0f) return DefaultFontSize;

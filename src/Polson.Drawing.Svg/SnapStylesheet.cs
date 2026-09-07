@@ -38,7 +38,11 @@ public static class SnapStylesheet
     /// <summary>
     /// Resolves <paramref name="css"/> against the tree under <paramref name="root"/> and applies it.
     /// </summary>
-    /// <returns>How many elements were styled, so a caller can tell a typo from an empty sheet.</returns>
+    /// <returns>
+    /// How many rule-to-element applications happened, so a caller can tell a typo from an empty
+    /// sheet. <b>Not a count of distinct elements</b> — one element matched by two rules counts twice,
+    /// which is what the loop below actually measures.
+    /// </returns>
     public static int Apply(SnapElement root, string css)
     {
         ArgumentNullException.ThrowIfNull(root);

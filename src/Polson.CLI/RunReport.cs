@@ -178,6 +178,12 @@ internal static class RunReport
             ["requisitionsRefused"] = Count("asset.refused"),
             ["documentsRead"] = Count("document.read"),
             ["documentsRefused"] = Count("document.refused"),
+
+            // Served from cache, so read but not sent and not billed. Counted separately because the
+            // question this row answers is "what left the machine, and what did it cost" — and four
+            // reads of which three were cached is a different answer from four that were not.
+            ["documentsCached"] = events.Count(e => Type(e) == "document.read"
+                && e["fromCache"]?.GetValue<bool>() == true),
             ["artifactsRead"] = new JsonArray([.. artifactsRead.Select(a => (JsonNode)a!)]),
             ["stages"] = new JsonArray([.. stages.Select(s => (JsonNode)s!)]),
             ["scriptFilesOnDisk"] = scriptFiles.Length,
@@ -522,6 +528,16 @@ internal static class RunReport
             ("requisitions", Num("requisitions") == 0 && Num("requisitionsRefused") == 0
                 ? "none"
                 : $"{Num("requisitions")} attempted, {Num("requisitionsRefused")} refused as form"),
+
+            // Beside requisitions because they are the two metered outward-facing surfaces, and this
+            // is the one that sends a *client's own file* to a third party. It was computed and never
+            // rendered: a run that read four documents printed "requisitions none" and nothing else,
+            // so the report a director reads to answer "what did this send away" said nothing at all.
+            ("documents read", Num("documentsRead") == 0 && Num("documentsRefused") == 0
+                ? "none"
+                : $"{Num("documentsRead")} read"
+                  + (Num("documentsCached") > 0 ? $" ({Num("documentsCached")} from cache)" : "")
+                  + (Num("documentsRefused") > 0 ? $", {Num("documentsRefused")} refused" : "")),
 
             // Concatenated across sessions this row is the misleading one, so it says so and hands
             // the reader to the breakdown instead of printing four runs as one stage sequence.

@@ -614,4 +614,81 @@ public class RunReportTests : TestsRuntime, IDisposable
     #region Fields
     private readonly string root;
     #endregion
+
+    #region Tests (documents)
+    /// <summary>A run that read a document says so in the table, not only in the JSON.</summary>
+    /// <remarks>
+    /// <b>The regression this guards.</b> <c>documentsRead</c> and <c>documentsRefused</c> were
+    /// computed and rendered nowhere, so a live run that sent a client's PDF to a third-party model
+    /// four times printed <c>requisitions none</c> and said nothing else. The JSON was right the
+    /// whole time, which is exactly the case <c>Printed()</c> exists for: what is <em>shown</em> is a
+    /// separate decision from what is counted, and the table is what a director actually reads.
+    /// <para>
+    /// It matters more here than for any other row, because this is the one surface that sends the
+    /// director's own file somewhere else. A record that cannot answer "what left the machine" fails
+    /// at the thing it is for.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestDocumentReadsReachThePrintedTable()
+    {
+        Events(RunStart, DocReadFresh, DocReadFresh);
+
+        Assert.Equal(2, Report()["documentsRead"]!.GetValue<int>());
+        Assert.Contains("documents read", Printed(), StringComparison.Ordinal);
+        Assert.Contains("2 read", Printed(), StringComparison.Ordinal);
+    }
+
+    /// <summary>A cached read is reported apart from a billed one.</summary>
+    /// <remarks>
+    /// "3 read" and "3 read (2 from cache)" are different answers to what the run cost, and only the
+    /// second is true when the cache did the work. The first overstates what was sent away.
+    /// </remarks>
+    [Fact]
+    public void TestCachedReadsAreDistinguishedFromBilledOnes()
+    {
+        Events(RunStart, DocReadFresh, DocReadCached, DocReadCached);
+
+        Assert.Equal(3, Report()["documentsRead"]!.GetValue<int>());
+        Assert.Equal(2, Report()["documentsCached"]!.GetValue<int>());
+        Assert.Contains("3 read (2 from cache)", Printed(), StringComparison.Ordinal);
+    }
+
+    /// <summary>A refusal is shown too, because a refused read is a fact about the run.</summary>
+    [Fact]
+    public void TestRefusedReadsAreShown()
+    {
+        Events(RunStart, DocReadFresh, DocRefused);
+
+        Assert.Contains("1 refused", Printed(), StringComparison.Ordinal);
+    }
+
+    /// <summary>A run that read nothing says none rather than omitting the row.</summary>
+    /// <remarks>
+    /// An absent row and a zero look identical to a reader who does not know the row exists — and a
+    /// row nobody knew was missing is the whole defect here. "none" is a statement; silence is not.
+    /// </remarks>
+    [Fact]
+    public void TestARunThatReadNoDocumentsSaysNone()
+    {
+        Events(RunStart, ScriptOk);
+
+        Assert.Equal(0, Report()["documentsRead"]!.GetValue<int>());
+        Assert.Matches(@"documents read\s+none", Printed());
+    }
+    #endregion
+
+    #region Fields (document fixtures)
+    private const string RunStart = """{"type":"run.start"}""";
+    private const string ScriptOk = """{"type":"script.ok","script":"scripts/0001.js"}""";
+
+    private const string DocReadFresh =
+        """{"type":"document.read","kind":"document","descriptor":"documents/a.pdf","fromCache":false}""";
+
+    private const string DocReadCached =
+        """{"type":"document.read","kind":"document","descriptor":"documents/a.pdf","fromCache":true}""";
+
+    private const string DocRefused =
+        """{"type":"document.refused","kind":"document","descriptor":"documents/missing.pdf"}""";
+    #endregion
 }

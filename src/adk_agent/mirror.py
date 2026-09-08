@@ -62,18 +62,27 @@ MIRRORED_DIRS = ("artifacts", "scripts", "events", ".polson/research")
 
 #: Files at the project root, by exact name.
 #:
-#: **An allowlist, so a file appearing later is not copied by default.** The root also holds
-#: `.agents/`, which carries tool policy and MCP command lines, and `agent.config.json`. Neither is
-#: work, and neither is ours to scatter. `GEMINI.md` is excluded for a duller reason: it is ~75 KB of
-#: workflow instructions, identical in every project, and re-uploading it per sweep would be most of
-#: the traffic for none of the value.
+#: **An allowlist, so a file appearing later is not copied by default.** `.agents/` carries MCP
+#: command lines built for the machine that generated them, and `agent.config.json` is the
+#: Antigravity tool policy; neither is read by this runtime, and a restored copy of the first would
+#: point at paths that do not exist here.
+#:
+#: **`GEMINI.md` is copied, and excluding it was a mistake worth recording.** The comment here used
+#: to justify leaving it out on the grounds that it is ~75 KB "identical in every project", so
+#: copying it would be most of the traffic for none of the value. Both halves were wrong: across
+#: forty archived projects it is **forty distinct files**, because it is generated per workflow and
+#: per brief — and the sweep only sends what changed, so a file written once at project creation is
+#: uploaded once and never again. The cost was a single upload; the price was that every recovered
+#: project was missing the one file ADK reads as the agent's instructions, which is the difference
+#: between a run that can be continued and a run that can only be read.
 #:
 #: Related to `studio.app.DELIVERABLES` but deliberately not shared with it. That list answers "what
-#: may be served over HTTP"; this answers "what is worth preserving", and they differ — this one also
-#: takes `project.json`, which is not a deliverable but is what identifies the run.
+#: may be served over HTTP" — and `GEMINI.md` must never be, it is the studio's own instructions.
+#: This answers "what is needed to have this run again", which is a different question.
 MIRRORED_FILES = (
     "brief.md", "artwork.js", "accuracy.md", "findings.md",
     "critique_log.md", "materials.md", "turns.md", "project.json",
+    "GEMINI.md", "CLAUDE.md",
 )
 
 #: Never copied, at any depth. `documents/` is the director's own supplied material — a client's

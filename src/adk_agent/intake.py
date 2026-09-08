@@ -270,6 +270,7 @@ async def observe(app: FastAPI, name: str) -> str | None:
 
 
 FORM = """<!doctype html>
+<meta charset="utf-8">
 <title>Polson — new commission</title>
 <style>
  body { font: 15px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem;
@@ -280,6 +281,8 @@ FORM = """<!doctype html>
         border: 1px solid #cdc7bb; border-radius: 3px; background: #fff; }
  textarea { min-height: 6rem; }
  small { color: #6b7280; font-weight: 400; }
+ .note { margin-top: 1.2rem; padding: .7rem .9rem; font-size: .88rem; color: #4b5563;
+        background: #f3f0ea; border-left: 3px solid #cdc7bb; border-radius: 3px; }
  button { margin-top: 1.5rem; padding: .6rem 1.4rem; font: inherit; font-weight: 600;
         background: #1f6f8b; color: #fff; border: 0; border-radius: 3px; cursor: pointer; }
 </style>
@@ -307,6 +310,11 @@ FORM = """<!doctype html>
     <input type="checkbox" name="start" value="1" checked style="width:auto; margin-right:.4rem">
     Start the agent straight away, and open the studio on it
   </label>
+
+  <p class="note">If this host restarts while your project is running, the run stops and you will
+     need to start it again. <b>The work it had already done is kept</b> &mdash; the project comes
+     back under <b>Archived projects</b> in the studio, with its renders, its scripts and its
+     documents.</p>
 
   <button type="submit">Create</button>
 </form>

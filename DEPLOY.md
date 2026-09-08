@@ -291,9 +291,16 @@ material — is excluded from the mirror by two independent rules; see the modul
 is gone appears on the index under **Recover a run**. Choosing it downloads the project back onto the
 container and opens it as an observation: the trace, the curve, the renders, the scripts and the
 delivered documents all work, because the restore puts the files exactly where every existing route
-already looks. It is a record rather than a runnable project — the mirror does not copy `GEMINI.md`,
-`.agents/` or `agent.config.json`, so a recovered run can be read and not driven, which is the right
-shape for one that is over.
+already looks.
+
+**What a recovered run can and cannot do.** The mirror copies the project's instructions along with
+its work, so the restored directory is complete enough to point an agent at again — it lacks only
+`.agents/` and `agent.config.json`, which this runtime does not read. What is gone is the
+**conversation**: ADK sessions are in-memory here, so a replaced instance takes the dialogue with it
+and `POLSON_SESSION_SERVICE_URI` would need a real external store to change that (`sqlite://` does
+not help — it would sit on the same ephemeral disk). So *continuing the work* from the artifacts is
+possible and *resuming the session* is not, and the deployed studio offers neither verb, being mounted
+observing-only.
 
 Restoring lands it on the same ephemeral disk, deliberately: that copy is a **cache**, and if the
 instance is replaced again the archive is still the archive. By hand, if the page is not available:

@@ -176,6 +176,41 @@ class ConfigurationTests(unittest.TestCase):
                               f"{workflow} never tells the agent to look for a document")
 
 
+class RestartWarningTests(unittest.TestCase):
+    """What the form says about the failure a visitor cannot otherwise see coming.
+
+    A Cloud Run instance can be replaced mid-run — it happened twice on 2026-09-08, the second time
+    twenty minutes into a live run — and the run dies with it. That is not recoverable: the caps and
+    the deadline are keyed on `invocation_id`, so resuming would reset the token budget and un-trip
+    the breaker, and a run's own clock would report minutes for work that took an hour.
+
+    So the honest thing is to say so *before* the twenty minutes are spent, which means here rather
+    than on the run page.
+    """
+
+    def test_the_form_warns_that_a_restart_ends_a_run(self):
+        self.assertIn("restarts while your project is running", intake.FORM)
+        self.assertIn("start it again", intake.FORM)
+
+    def test_it_says_the_work_survives_and_where_to_find_it(self):
+        """A warning that only names the loss reads worse than the situation is.
+
+        The mirror copies the project out while the run happens, so the work *is* kept — and the
+        sentence has to carry that, or a visitor concludes a restart costs them everything.
+        """
+        self.assertIn("work it had already done is kept", intake.FORM)
+        self.assertIn("Archived projects", intake.FORM)
+
+    def test_the_warning_sits_with_the_control_that_commits_to_a_run(self):
+        """Beside the start checkbox, not at the top: it is about to be acted on, not read past."""
+        start = intake.FORM.index('name="start"')
+        note = intake.FORM.index('class="note"')
+        submit = intake.FORM.index("<button type=\"submit\"")
+
+        self.assertLess(start, note, "the note should follow the start control")
+        self.assertLess(note, submit, "and precede the button it is warning about")
+
+
 class WorkflowTypeTests(unittest.TestCase):
     """The type control, and the table behind it.
 

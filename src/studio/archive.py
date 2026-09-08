@@ -18,10 +18,20 @@ instance is replaced again, the archive is still the archive and the next visito
 What must never be true is that the *only* copy is on the container, and after `mirror.py` that is no
 longer true.
 
-**A restored run is a record, not a runnable project.** It arrives without `GEMINI.md`, `.agents/` or
-`agent.config.json`, because the mirror deliberately does not copy them — so it can be read, replayed
-and observed, and it cannot be driven. That is the correct shape for a finished run and it is not
-worth pretending otherwise.
+**A restored run can be read here, and what stops it being resumed is not the files.** The mirror
+copies the project's own instructions along with its work, so a restored directory is complete enough
+for the agent to be pointed at again — it lacks only `.agents/` and `agent.config.json`, which this
+runtime does not read and which describe the machine that generated them.
+
+What is genuinely gone is the **conversation**. ADK sessions are in-memory on Cloud Run, so a replaced
+instance takes the dialogue with it, and no amount of restored files brings that back; resuming *the
+same session* needs an external session store, which is infrastructure rather than a file.
+
+That leaves the distinction worth being clear about. **Continuing the *work*** — an agent reading back
+`artwork.js`, the renders and the notes and carrying on — needs none of that, and is what `CLAUDE.md`
+§2 calls stigmergy: coordination through the environment rather than through recall. **Resuming the
+*conversation*** is a different thing and is not offered. This page does neither: the studio is
+mounted observing-only where it is deployed, so it has no verb for starting a run at all.
 
 Configured by `POLSON_MIRROR_URI` — deliberately the *same* variable the mirror writes with. Two
 variables that must agree is a defect waiting for the day they do not.

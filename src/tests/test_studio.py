@@ -1021,6 +1021,23 @@ class MountPrefixTests(unittest.TestCase):
             self.assertNotIn('href="/"', source,
                              f"{name} links to the server root; mounted, that leaves the studio")
 
+    def test_every_request_the_page_makes_carries_the_prefix(self):
+        """The class of bug, not the instance — and it had two live members.
+
+        `/say` and `/answer` were posted to a bare `/runs/...`. Mounted at /studio that reaches the
+        ADK runtime's root instead, which answers **Not Found** — so the director's box and the
+        answer buttons, the whole human-in-the-loop surface, failed with a message about a missing
+        page. It works perfectly standalone, where the prefix is empty, which is why it survived.
+        """
+        import re
+        source = self._template("run.html")
+        calls = re.findall(r'(?:fetch|post)\(\s*`([^`]*)`', source)
+
+        self.assertTrue(calls, "no request URLs found; this test has stopped watching anything")
+        for url in calls:
+            self.assertTrue(url.startswith("${base}"),
+                            f"{url} is missing the mount prefix and will 404 under /studio")
+
     def test_the_run_page_goes_back_to_the_studio_root(self):
         self.assertIn('href="{{ base }}/"', self._template("run.html"))
 

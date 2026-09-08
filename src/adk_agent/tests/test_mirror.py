@@ -97,17 +97,36 @@ class MirrorSelectionTests(unittest.TestCase):
             self.assertNotIn("documents", key)
         self.assertNotIn(b"secret,numbers", b"".join(self.bucket.uploaded.values()))
 
-    def test_configuration_and_instructions_are_not_copied(self):
-        """`.agents/` carries tool policy and MCP command lines; neither is work.
+    def test_machine_specific_configuration_is_not_copied(self):
+        """`.agents/` holds MCP command lines built for the machine that generated them.
 
-        `GEMINI.md` is excluded for a duller reason — identical in every project, ~75 KB, and it
-        would be most of the traffic for none of the value.
+        Restoring those elsewhere would point the agent at paths that do not exist, and this runtime
+        does not read them anyway — it builds its own toolset. `agent.config.json` is the Antigravity
+        tool policy, likewise unread here.
         """
         asyncio.run(self.mirror.sweep())
         copied = " ".join(self.bucket.uploaded)
 
-        for absent in ("GEMINI.md", "agent.config.json", "mcp_config.json", ".agents"):
+        for absent in ("agent.config.json", "mcp_config.json", ".agents"):
             self.assertNotIn(absent, copied, absent)
+
+    def test_the_instructions_are_preserved_so_a_run_can_be_continued(self):
+        """**The file that decides whether a recovered run is readable or runnable.**
+
+        ADK reads `GEMINI.md` as the agent's instruction, so without it a restored project is a
+        record and nothing more. It was excluded at first on the belief that it is identical in every
+        project and would dominate the traffic — measured across forty archived projects it is forty
+        distinct files, and the sweep only sends what changed, so it costs exactly one upload.
+        """
+        asyncio.run(self.mirror.sweep())
+
+        self.assertIn("mirror/acme/GEMINI.md", self.bucket.uploaded)
+        self.assertEqual(self.bucket.uploaded["mirror/acme/GEMINI.md"], b"x" * 5000)
+
+    def test_the_instructions_are_uploaded_once_rather_than_every_sweep(self):
+        """The traffic objection, tested rather than argued: unchanged is unsent."""
+        asyncio.run(self.mirror.sweep())
+        self.assertEqual(asyncio.run(self.mirror.sweep()), 0)
 
     def test_a_file_appearing_later_at_the_root_is_not_copied_by_default(self):
         """The root list is an allowlist, so a new file is not published by accident."""

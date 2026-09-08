@@ -895,7 +895,7 @@
       const body = new FormData(card);
       body.append('question', event.id);
       if (e.submitter && e.submitter.name) body.append(e.submitter.name, e.submitter.value);
-      post(`/runs/${runId}/answer`, body, card.querySelector('.why'),
+      post(`${base}/runs/${runId}/answer`, body, card.querySelector('.why'),
            () => card.classList.add('sent'));
     });
 
@@ -912,7 +912,7 @@
     e.preventDefault();
     const field = document.getElementById('say');
     if (!field.value.trim()) return;
-    post(`/runs/${runId}/say`, new FormData(interject),
+    post(`${base}/runs/${runId}/say`, new FormData(interject),
          document.getElementById('sayerror'), () => { field.value = ''; });
   });
 

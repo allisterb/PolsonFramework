@@ -569,7 +569,7 @@ These are the calls that produce evidence. Reach for one before writing a claim,
 | an edge lands where intended | `bitmap.rowProfile(colour)` | where that colour starts and ends, per row |
 | a revision changed what you meant | `bitmap.diff(previous)` | the similarity, and the rectangle that changed |
 | **no two labels overlap** | `paper.selectAll('text')` + `getBBox()` | every colliding pair, and by how much |
-| **a drawn rate follows from the operands drawn beside it** | the division, in script | the number a reader would get, against the number you drew |
+| **a drawn total or rate follows from the operands drawn beside it** | the sum or division, in script | the number a reader would get, against the number you drew |
 | **no two leader lines cross** | the segment test below | every crossing pair, by index |
 
 **A claim you cannot measure is not a check — write it as a `Stage.note` instead.** Taste, tone and
@@ -611,40 +611,59 @@ Stage.check(`no leaders cross`, tangled.length === 0, tangled.length ? tangled.j
 segments cannot cross, so drawing them straight down means never having to run the check at all.
 Slant when the design wants it, and pay for it with the check.
 
-#### A derived figure must survive the division a reader would do
+#### A derived figure must survive the arithmetic a reader would do
 
-**Do this for every rate, average, share or per-unit figure the piece states.** `lieFactor` and
-`isZeroBased` audit an *encoding* — whether the ink is proportional to the numbers. They say nothing
-about a **label**, and a label is where this fails, because the number is drawn as text and no mark
-is wrong.
+**Do this for every figure the piece computes from other figures it also shows** — a total, a rate, an
+average, a share, a per-unit or a count. `lieFactor` and `isZeroBased` audit an *encoding*, whether
+the ink is proportional to the numbers. They say nothing about a **label**, and a label is where this
+fails, because the number is drawn as text and no mark is wrong.
 
 The test is mechanical: **recompute the figure from the operands that appear on the canvas beside
 it**, not from the ones in `brief.md`. Those are different sets, and the gap between them is the
 defect.
 
+**A total must sum from the parts you drew.** The commonest version, and the easiest to miss, because
+the headline is written once at the start and the parts are edited afterwards:
+
+```javascript
+// Drawn: a headline "27 / 10" over eight cards carrying each film's nominations and wins.
+const cards = films.map(f => ({ nom: f.oscarN, win: f.oscarW }));
+const nom = cards.reduce((a, c) => a + c.nom, 0);
+const win = cards.reduce((a, c) => a + c.win, 0);
+
+Stage.check('headline awards sum from the cards',
+    nom === headline.nom && win === headline.win,
+    'cards give ' + nom + '/' + win + ', headline says ' + headline.nom + '/' + headline.win);
+```
+
+**A rate must divide.** Same rule, different operator:
+
 ```javascript
 // Drawn: "6.2 yrs / film" over "6 films in 31 yrs". A reader divides. So do you.
 const shown = { rate: 6.2, count: 6, span: 31 };
 const readerGets = shown.span / shown.count;
-Stage.check(`${shown.span}/${shown.count} reads as ${readerGets.toFixed(1)}`,
-    Math.abs(readerGets - shown.rate) < 0.05, `drawn ${shown.rate}, divides to ${readerGets.toFixed(1)}`);
+Stage.check('the drawn rate is what the drawn operands give',
+    Math.abs(readerGets - shown.rate) < 0.05,
+    'drawn ' + shown.rate + ', divides to ' + readerGets.toFixed(1));
 ```
 
-**Measured, on a previous run of this brief, and it passed every other check.** `brief.md` derived it
-correctly — *"average release gap … `(1999 - 1968) / 5 intervals` → 6.20"* — and the canvas rendered
-**6.2 yrs / film** over **6 films in 31 yrs**, which divides to 5.2. The word *intervals* is what made
-the arithmetic true and it never reached the page. The footer said `HONESTY AUDIT · ALL 13 FEATURES
-VERIFIED` underneath.
+**Both failures are measured, on previous runs of this brief, and both passed every other check.**
 
-**So the rule is about the qualifier, not the number.** *Gaps between releases* is one fewer than
-*releases*; a *per-year* rate over an inclusive span is one fewer than the years listed; a percentage
-*of the total* is not a percentage *of the subset*. **If the arithmetic needs a word to be true, that
-word belongs on the canvas.** `brief.md` is where you show your working; the piece is what a reader
-checks, and they can only check what is in front of them.
+A run derived the gap correctly in `brief.md` — *"average release gap … `(1999 - 1968) / 5 intervals`
+→ 6.20"* — and rendered **6.2 yrs / film** over **6 films in 31 yrs**, which divides to 5.2. The word
+*intervals* is what made the arithmetic true and it never reached the page.
 
-The neighbouring cell in that same box divided correctly — by coincidence, because its interval count
-happened to equal the film count it claimed. **One cell right for the wrong reason is why this is a
-per-figure check and not a spot check.**
+A later run stated **`ACADEMY AWARDS 27 / 10`** while its own eight cards summed to **27 nominations
+and 9 wins**. The nominations reconciled exactly; the wins were out by one. Its audit checked the
+career span, the average gap, the runtime sum, both zero baselines and 518 labels for collisions —
+and never checked the headline against the cards. Both pieces carried an `HONESTY AUDIT` line in the
+footer, directly beneath the error.
+
+**Where a rate is concerned the rule is about the qualifier, not the number.** *Gaps between
+releases* is one fewer than *releases*; a *per-year* rate over an inclusive span is one fewer than the
+years listed; a percentage *of the total* is not a percentage *of the subset*. **If the arithmetic
+needs a word to be true, that word belongs on the canvas.** `brief.md` is where you show your working;
+the piece is what a reader checks, and they can only check what is in front of them.
 
 #### Labels must not collide, and you can prove it
 

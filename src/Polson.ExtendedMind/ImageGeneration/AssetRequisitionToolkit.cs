@@ -275,6 +275,31 @@ public partial class AssetRequisitionToolkit : Runtime
     public async Task<MatteAsset> Matte(string descriptor, MatteOptions? options = null)
     {
         var opts = options ?? new MatteOptions();
+
+        // Refused before any network call, and recorded the way a form refusal is: nothing spent,
+        // nothing reached, and the remedy is a different call rather than a retry.
+        if (NamedLikeness(descriptor) is { } who)
+        {
+            var reason =
+                who + " reads as a real person, and a matte cannot depict one. A generated face " +
+                "carries none of the identity, licence or publicity-rights checks Photo applies, and " +
+                "it renders perfectly whether or not it resembles anybody — so nothing downstream can " +
+                "catch it. Use Photo.of('" + who + "') for the likeness. If you meant a shape rather " +
+                "than a person, name the shape and drop the name.";
+
+            RequisitionScope.Record(new RequisitionRecord(
+                "matte", descriptor, Success: false, Failure: nameof(ImageGenerationFailure.RefusedLikeness),
+                Reason: reason, Model: null, FromCache: false, Refused: true));
+            RecordBudgetState();
+
+            return new MatteAsset
+            {
+                Success = false,
+                Failure = ImageGenerationFailure.RefusedLikeness,
+                Error = reason,
+            };
+        }
+
         var prompt = MattePrompt(descriptor, opts);
 
         var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel, "1:1", null, "matte", descriptor);
@@ -707,6 +732,53 @@ public partial class AssetRequisitionToolkit : Runtime
     readonly string requester;
     readonly List<MaterialAsset> library = [];
     #endregion
+    /// <summary>Words that make a descriptor about somebody's face rather than about a shape.</summary>
+    /// <remarks>
+    /// A name alone is not enough to refuse on: "Golden Gate", "Art Deco" and "Ben Day" are all
+    /// name-shaped and none is a person. A face word alone is not enough either — "bearded film
+    /// director portrait" is a generic figure and a legitimate graphic. It is the pair that means
+    /// somebody in particular, and the pair is what a caption then presents as real.
+    /// </remarks>
+    static readonly string[] FaceWords =
+        ["portrait", "likeness", "headshot", "face", "bust", "head", "profile", "selfie"];
+
+    /// <summary>
+    /// The name in a descriptor that asks a matte for a real person's likeness, or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why this is a refusal rather than a paragraph.</b> That a matte is not the route to a real
+    /// person is already written in <c>polson://sdk/core/Assets</c> and in the vector infographic
+    /// instructions. A live run read "a stencil of the author" in its brief and went round the
+    /// guidance three times — <c>Assets.matte('Stanley Kubrick bearded director portrait with
+    /// camera')</c> and two rewordings — until one came back. The finished piece carried an invented
+    /// face under the heading "STANLEY KUBRICK (1928 — 1999)", with a dated caption and a source line
+    /// beneath it, and every other integrity check on the page passed.
+    /// <para>
+    /// The form-versus-substance classifier deliberately does not run here, because a matte <i>is</i>
+    /// a silhouette — so nothing refused it. This is the missing rung.
+    /// </para>
+    /// <para>
+    /// <b>Both signals are required.</b> Refusing on a name alone would turn away "Art Deco fan
+    /// motif"; refusing on a face word alone would turn away the anonymous figure a section marker
+    /// legitimately wants. Requiring the pair keeps the check narrow enough to be worth obeying, and
+    /// the message says how to proceed either way.
+    /// </para>
+    /// </remarks>
+    internal static string? NamedLikeness(string descriptor)
+    {
+        if (string.IsNullOrWhiteSpace(descriptor)) return null;
+
+        var match = PersonalName().Match(descriptor);
+        if (!match.Success) return null;
+
+        return FaceWords.Any(w => descriptor.Contains(w, StringComparison.OrdinalIgnoreCase))
+            ? match.Value
+            : null;
+    }
+
+    /// <summary>Two or more adjacent capitalised words: the shape a personal name takes.</summary>
+    [GeneratedRegex(@"\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+)+")]
+    private static partial Regex PersonalName();
 }
 
 /// <summary>

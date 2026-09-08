@@ -2031,6 +2031,10 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > **Check `coverage`.** A stencil near 0 or near 1 decodes, encodes and draws — as an empty frame or a solid block — and nothing downstream can tell that apart from a subject that is genuinely small or large.
 >
 > Two things it is **not**. It is not a way to buy an icon: a hexagon, a gear or a roundel is `Logo.*` and `paper.*` work, which stays vector, stays in palette and costs nothing. And it is not a way to depict a **real person** — that is `Photo`, with its identity, terms and provenance gates; a generated likeness has none of them. See the CAUTION under `polson://sdk/core/Photo`.
+>
+> **That second one is refused rather than asked.** A descriptor that both names somebody and asks for a face — `Assets.matte('Stanley Kubrick bearded director portrait')` — comes back `RefusedLikeness` before any network call, naming the person and pointing at `Photo.of(...)`. It became a refusal because the paragraph did not hold: a live run read *"a stencil of the author"* in its brief and reworded past this guidance three times until a face came back, then captioned it with his name and dates. Every other integrity check on that page passed, because a wrong face renders perfectly.
+>
+> **Both signals are needed, so the check stays narrow.** A name alone is style vocabulary — `Art Deco`, `Golden Gate Bridge` — and a face alone is an anonymous figure, which is a legitimate graphic form. Only the pair claims a particular person. If you meant a shape, name the shape and drop the name.
 
 ## `Assets` Properties
 
@@ -2043,7 +2047,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 Requisition is a metered network call and can fail. Nothing throws — check `success`, then act on `remedy`:
 
 - `result.success` → `boolean`
-- `result.failureName` → `string` — the failure as a readable name: `'None'`, `'NotConfigured'`, `'BudgetExhausted'`, `'RefusedFormRequest'`, `'SafetyBlocked'`, `'Recitation'`, `'RateLimited'`, `'Quota'`, `'ConstraintNotMet'`, `'Network'`, `'Timeout'`, `'Auth'`, `'ModelNotFound'`, `'NoImageReturned'`, `'ServiceError'`, `'InvalidRequest'`, `'Cancelled'`. (`result.failure` is the same value as a number — prefer `failureName`.)
+- `result.failureName` → `string` — the failure as a readable name: `'None'`, `'NotConfigured'`, `'BudgetExhausted'`, `'RefusedFormRequest'`, `'RefusedLikeness'`, `'SafetyBlocked'`, `'Recitation'`, `'RateLimited'`, `'Quota'`, `'ConstraintNotMet'`, `'Network'`, `'Timeout'`, `'Auth'`, `'ModelNotFound'`, `'NoImageReturned'`, `'ServiceError'`, `'InvalidRequest'`, `'Cancelled'`. (`result.failure` is the same value as a number — prefer `failureName`.)
 - `result.remedy` → `string` — What to do next, in words. Read this before retrying anything.
 - `result.retryable` → `boolean` — Whether repeating the identical request could succeed. `false` means reword or give up.
 - `result.error` → `string?` — The underlying message.

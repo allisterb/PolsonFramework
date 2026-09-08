@@ -1048,11 +1048,169 @@ public partial class JsDrawingEngine : Runtime
                 "Spread the arrays into their elements.";
         }
 
+        // Wrong *count* reaches the same message as wrong *type*, and the advice below is about type.
+        // Checked before it, because when the count is wrong that advice is not merely unhelpful but
+        // misdirecting — see the remark on ArityHelp.
+        if (ArityHelp(sourceLine) is { Length: > 0 } arity) return arity;
+
         return " An argument is not a type the method accepts, and the commonest reason is that one of " +
             "them is undefined — reading a property that does not exist yields undefined rather than " +
             "failing, and no overload matches it. Check the spelling of every property read on that " +
             "line: rectangles from Layout, getBBox and measureWrappedText carry width and height, " +
-            "not w and h. Logging the arguments before the call is the quickest way to see which one.";
+            "not w and h. Logging the arguments before the call is the quickest way to see which one. " +
+            "If nothing on the line is undefined, count the arguments — the same message covers a " +
+            "call given the wrong number of them.";
+    }
+
+    /// <summary>A member call on this line given a number of arguments no overload accepts.</summary>
+    /// <remarks>
+    /// <b>The generic advice is about the wrong thing when the count is wrong, and a run followed it
+    /// into a wall.</b> A script wrote <c>paper.line(cx, cy - 10, cx, cy + 10, cy)</c> — five
+    /// arguments to a four-argument method, a stray trailing value — and was told to check the
+    /// spelling of every property on the line and to watch for <c>w</c> and <c>h</c> on Layout
+    /// rectangles. There was no property, no misspelling and no Layout rectangle. The agent checked
+    /// what it was told to check, found nothing, and <b>re-ran the byte-identical script</b>; four
+    /// scripts went that way before it moved on.
+    /// <para>
+    /// So this reports the one thing the message never carries: how many arguments the line actually
+    /// passes, against how many the surface accepts. The expected count is read from
+    /// <see cref="JsSymbolManifest"/> — the same index <c>suggest</c> searches — so it cannot drift
+    /// from the real signatures.
+    /// </para>
+    /// <para>
+    /// <b>Member calls only.</b> A bare <c>draw(a, b, c)</c> is far more likely to be the script's own
+    /// helper than an SDK global of the same name, and reporting a stranger's arity at it would be
+    /// the same confident wrong answer this exists to remove.
+    /// </para>
+    /// </remarks>
+    private static string ArityHelp(string? sourceLine)
+    {
+        if (string.IsNullOrWhiteSpace(sourceLine)) return string.Empty;
+
+        for (var i = 0; i < sourceLine.Length; i++)
+        {
+            if (sourceLine[i] != '(') continue;
+
+            var end = i;
+            while (end > 0 && char.IsWhiteSpace(sourceLine[end - 1])) end--;
+
+            var start = end;
+            while (start > 0 && (char.IsLetterOrDigit(sourceLine[start - 1]) || sourceLine[start - 1] == '_'))
+            {
+                start--;
+            }
+
+            if (start == end || start == 0 || sourceLine[start - 1] != '.') continue;
+
+            var passed = CountArguments(sourceLine, i);
+            if (passed < 0) continue;
+
+            var name = sourceLine[start..end];
+            var accepted = AcceptedArities(name);
+            if (accepted.Count == 0 || accepted.Any(a => passed >= a.Min && passed <= a.Max)) continue;
+
+            var shapes = string.Join(" or ", accepted
+                .Select(a => a.Min == a.Max
+                    ? a.Min.ToString(CultureInfo.InvariantCulture)
+                    : $"{a.Min}-{a.Max}")
+                .Distinct(StringComparer.Ordinal));
+
+            return $" This line passes {passed} arguments to '{name}', which accepts {shapes}. " +
+                "A call given the wrong number of arguments reports the same failure as one given the " +
+                "wrong type, so count them before hunting for a misspelled property — a stray " +
+                "trailing value is the usual cause, and it reads perfectly.";
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>How many arguments the call opening at <paramref name="open"/> is given, or -1.</summary>
+    /// <remarks>
+    /// Depth-aware, because an argument may itself be a call, an array, an object literal or a string
+    /// holding commas — counting every comma would report a nested literal as extra arguments, which
+    /// is exactly the confident wrong answer this file is trying to stop making. -1 when the call does
+    /// not close on this line, since a count over a fragment is worse than no count at all.
+    /// </remarks>
+    private static int CountArguments(string line, int open)
+    {
+        const char Apostrophe = (char)39;
+        const char Backtick = (char)96;
+
+        var depth = 0;
+        var commas = 0;
+        var anything = false;
+        var quote = (char)0;
+
+        for (var i = open; i < line.Length; i++)
+        {
+            var c = line[i];
+
+            if (quote != (char)0)
+            {
+                if (c == quote) quote = (char)0;
+                continue;
+            }
+
+            if (c == '"' || c == Apostrophe || c == Backtick)
+            {
+                quote = c;
+                anything = true;
+                continue;
+            }
+
+            if (c is '(' or '[' or '{')
+            {
+                depth++;
+                if (depth > 1) anything = true;
+                continue;
+            }
+
+            if (c is ')' or ']' or '}')
+            {
+                depth--;
+                if (depth == 0) return anything ? commas + 1 : 0;
+                continue;
+            }
+
+            if (c == ',' && depth == 1) { commas++; continue; }
+            if (!char.IsWhiteSpace(c)) anything = true;
+        }
+
+        return -1;
+    }
+
+    /// <summary>The argument counts every documented overload of <paramref name="member"/> accepts.</summary>
+    /// <remarks>
+    /// Read from the manifest's own signatures rather than a table kept here, so a method that gains a
+    /// parameter cannot leave this advertising the old arity. Optionality is marked before the colon,
+    /// which is what separates the minimum from the maximum.
+    /// </remarks>
+    private static List<(int Min, int Max)> AcceptedArities(string member)
+    {
+        var shapes = new List<(int Min, int Max)>();
+
+        foreach (var symbol in JsSymbolManifest.Symbols)
+        {
+            if (!string.Equals(symbol.Member, member, StringComparison.Ordinal)) continue;
+
+            var open = symbol.Signature.IndexOf('(');
+            var close = symbol.Signature.LastIndexOf(')');
+            if (open < 0 || close <= open) continue;
+
+            var inside = symbol.Signature[(open + 1)..close].Trim();
+            if (inside.Length == 0) { shapes.Add((0, 0)); continue; }
+
+            var parts = inside.Split(',');
+            var required = parts.Count(part =>
+            {
+                var colon = part.IndexOf(':');
+                return !(colon < 0 ? part : part[..colon]).Contains('?');
+            });
+
+            shapes.Add((required, parts.Length));
+        }
+
+        return [.. shapes.Distinct()];
     }
 
     /// <summary>The source of one 1-based line, when the script is to hand.</summary>

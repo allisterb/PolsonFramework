@@ -210,6 +210,14 @@ public enum ImageGenerationFailure
     RefusedFormRequest = 13,
 
     /// <summary>
+    /// The descriptor asked a matte for the likeness of a named person. Refused before any network
+    /// call, because a generated face carries none of the identity, licence or publicity-rights
+    /// checks <c>Photo</c> exists to apply — and unlike a wrong number, a wrong face renders
+    /// perfectly and nothing downstream can detect it.
+    /// </summary>
+    RefusedLikeness = 17,
+
+    /// <summary>
     /// This studio has no image-generation credentials configured, so requisition is unavailable for
     /// the whole session. Distinct from an exhausted budget: no amount of waiting or rewording helps.
     /// </summary>

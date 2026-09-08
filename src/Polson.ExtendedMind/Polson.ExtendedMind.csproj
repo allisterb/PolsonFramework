@@ -9,6 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- `NamedLikeness` decides whether a descriptor is asking a matte for a real person's face.
+         It is the predicate the refusal turns on, and the cases worth pinning are the ones it must
+         *not* fire on — "Art Deco", "Golden Gate Bridge", an anonymous figure — which cost a
+         network call each to exercise through the public call. -->
+    <InternalsVisibleTo Include="Polson.Tests.ExtendedMind" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Google.Cloud.AIPlatform.V1" Version="3.76.0" />
     <PackageReference Include="Google.Cloud.AIPlatform.V1Beta1" Version="1.0.0-beta85" />
     <PackageReference Include="Google.GenAI" Version="1.20.0" />

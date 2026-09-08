@@ -1,12 +1,16 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>{{ run.id }} — Polson Studio</title>
-<link rel="stylesheet" href="{{ base }}/static/studio.css">
+<link rel="stylesheet" href="{{ base }}/static/studio.css?v={{ asset_version }}">
 <link rel="stylesheet" href="{{ base }}/code.css">
 
 <main class="run" data-base="{{ base }}" data-run="{{ run.id }}" data-live="{{ 'yes' if run.live else 'no' }}">
   <header>
-    <a class="back" href="/">← projects</a>
+    {#- `{{ base }}` and not a bare `/`. Mounted on the ADK runtime the studio lives at
+        /studio, and the root belongs to the dev console — so this link took a visitor out of
+        the studio altogether and into a developer tool. Every other URL on these pages
+        already carries the prefix; this one was written by hand and missed it. -#}
+    <a class="back" href="{{ base }}/">← projects</a>
     <h1>{{ run.project }}</h1>
     <span class="status {{ run.status }}" id="status">{{ run.status }}</span>
     <span class="hint">{{ run.workflow }} · started {{ run.started }}{% if run.resumed %} · continuing an earlier session{% endif %}</span>
@@ -144,7 +148,7 @@
       most workflows write their report last but not all of them do. -#}
   <section class="delivered" id="delivered" hidden>
     <h2>Delivered
-      <span class="hint">the documents beside the picture — click to read one</span>
+      <span class="hint">the documents beside the picture — click to read, or copy a link to share one</span>
     </h2>
     <ul id="deliverables"></ul>
   </section>
@@ -1046,6 +1050,19 @@
   // reading. The backdrop still closes it, which is what the cursor promises.
   lightboxCode.addEventListener('click', (e) => e.stopPropagation());
 
+  // The last resort when neither clipboard route is available: put the URL where it can be read and
+  // selected by hand.
+  function showUrl(url) {
+    lightboxImg.hidden = true;
+    lightboxImg.removeAttribute('src');
+    lightboxCode.hidden = false;
+    lightboxCode.classList.add('prose');
+    lightboxCode.innerHTML = `<p class="empty">This browser would not let the page copy for you.</p>`
+      + `<pre class="url">${esc(url)}</pre>`;
+    lightboxCaption.textContent = 'select the address and copy it';
+    lightbox.hidden = false;
+  }
+
   function closeLightbox() {
     if (lightbox.hidden) return;
     lightbox.hidden = true;
@@ -1089,19 +1106,127 @@
 
     if (!items.length) { delivered.hidden = true; return; }
 
-    deliverables.innerHTML = items.map((d) =>
-      `<li><button type="button" class="doc" data-name="${esc(d.name)}">` +
+    deliverables.innerHTML = items.map(
+      (d) => d.kind === 'render' ? finalRow(d) : docRow(d)).join('');
+    delivered.hidden = false;
+  }
+
+  // **A real `<a href>`, not a button, and that is the point of this row.** The overlay is for
+  // reading here; a link is what someone copies into a submission, a chat or a bug report. As an
+  // anchor the browser gives all of that for free — right-click to copy, ctrl-click for a new tab,
+  // a status-bar preview on hover — and a button gives none of it, which is what made the panel look
+  // like it held no links at all.
+  function docRow(d) {
+    const href = `${base}/runs/${runId}/deliverables/${encodeURIComponent(d.name)}?raw=1`;
+    return `<li class="row">` +
+      // An explicit name: the row's text lives in spans, and a link a screen reader announces as
+      // "link" with no name is one nobody can act on.
+      `<a class="doc" href="${href}" data-name="${esc(d.name)}" ` +
+      `aria-label="${esc(d.name)} — ${esc(d.what)}" title="open ${esc(d.name)}">` +
       `<span class="docname">${esc(d.name)}</span>` +
       `<span class="hint">${esc(d.what)}</span>` +
-      `<span class="docsize">${size(d.bytes)}</span></button></li>`).join('');
-    delivered.hidden = false;
+      `<span class="docsize">${size(d.bytes)}</span></a>` +
+      copyButton(href) + `</li>`;
+  }
+
+  // Explicit as well as implicit: right-click works, and is not discoverable. This is.
+  function copyButton(href) {
+    return `<button type="button" class="copy" data-href="${href}" title="copy link">link</button>`;
+  }
+
+  // The picture, as **one** row however many formats it came in. A raster and a vector of the same
+  // artwork are one deliverable in two forms, and two rows would read as two pieces.
+  //
+  // Not a `.doc`: those open the text overlay, and this opens the image one. Keeping the class off
+  // it is what lets one delegated listener serve both without testing for the exception.
+  function finalRow(d) {
+    const buttons = d.formats.map((f) =>
+      `<a class="fmt" href="${base}/runs/${runId}/artifact/${f.path}" ` +
+      `data-src="${esc(f.path)}" data-format="${esc(f.format)}">` +
+      `${esc(f.format)} · ${size(f.bytes)}</a>`).join('');
+
+    // Only a *recorded* ending is asserted. `unknown` says nothing rather than implying the run was
+    // cut short — see `run_state`, and the archived runs that predate `run.end` entirely.
+    const state = d.state === 'halted' ? ' — the run was halted before it finished'
+                : d.state === 'failed' ? ' — the run failed; this is the last render it made'
+                : '';
+
+    // Built as a `.doc` like every other row, so the finished piece sits in the same card rather
+    // than floating above the list looking like a caption. Its right-hand cell holds one control per
+    // format instead of a single size.
+    const primary = `${base}/runs/${runId}/artifact/${d.formats[0].path}`;
+    return `<li class="row">` +
+      `<span class="doc final">` +
+      `<span class="docname">${esc(d.name)}</span>` +
+      `<span class="hint">${esc(d.what)}${esc(state)}</span>` +
+      `<span class="formats">${buttons}</span></span>` +
+      copyButton(primary) + `</li>`;
   }
 
   // Into the overlay rather than into a pane. A pane is sized for following a run along; a report is
   // read whole, and `accuracy.md` is a table nobody can read in a third of a column.
   deliverables.addEventListener('click', async (e) => {
+    // The picture first: it is served by the artifact route as a file, not by the deliverables route
+    // as highlighted text, so it goes to the image half of the overlay rather than the code half.
+    const copy = e.target.closest('.copy');
+    if (copy) {
+      e.preventDefault();
+      // Absolute, because the point of copying it is to paste it somewhere else.
+      const url = new URL(copy.dataset.href, location.href).href;
+      const said = (word) => {
+        copy.textContent = word;
+        setTimeout(() => (copy.textContent = 'link'), 1400);
+      };
+
+      // `navigator.clipboard` is not always there to be used: it needs a secure context, and it
+      // rejects without a real user gesture. Neither is exotic — a studio served over plain http on
+      // a LAN has no secure context at all — and a control that answers "copy failed" and leaves you
+      // with nothing is worse than one that never claimed to work.
+      const fallback = () => {
+        const field = document.createElement('textarea');
+        field.value = url;
+        field.setAttribute('readonly', '');
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+        field.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+        field.remove();
+        // Still nothing? Then show the URL rather than a shrug: it is selectable, and that is a
+        // worse experience than a copy and a far better one than a dead end.
+        if (ok) said('copied');
+        else { lightboxImg.hidden = true; showUrl(url); }
+      };
+
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(url).then(() => said('copied'), fallback);
+      } else {
+        fallback();
+      }
+      return;
+    }
+
+    const format = e.target.closest('.fmt');
+    if (format) {
+      // Plain left-click reads it here; every modified click is left to the browser, so ctrl-click
+      // and middle-click still open the artifact in a tab as any link would.
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+      e.preventDefault();
+      lightboxCode.hidden = true;
+      lightboxCode.innerHTML = '';
+      lightboxImg.hidden = false;
+      lightboxImg.src = `${base}/runs/${runId}/artifact/${format.dataset.src}`;
+      lightboxImg.alt = format.dataset.src;
+      lightboxCaption.textContent = `${format.dataset.src} — right-click to save`;
+      lightbox.hidden = false;
+      return;
+    }
+
     const button = e.target.closest('.doc');
-    if (!button) return;
+    if (!button || !button.dataset.name) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
     const name = button.dataset.name;
 
     lightboxImg.hidden = true;

@@ -436,6 +436,34 @@ public class SkiaBitmapWrapper : IDisposable, IDataUriSource
         return palette;
     }
 
+    /// <summary>Traces this bitmap into path geometry. See <see cref="BitmapTracer"/>.</summary>
+    /// <remarks>
+    /// <para>
+    /// The raster-to-vector crossing, and the reason a requisitioned matte can reach an SVG
+    /// deliverable as geometry rather than as base64. Returns <c>d</c> (every contour as one path
+    /// string, in this bitmap's own pixel coordinates), <c>paths</c>, <c>count</c>, <c>width</c>,
+    /// <c>height</c>, <c>threshold</c> and <c>bilevel</c>.
+    /// </para>
+    /// <para>
+    /// <b>Check <c>bilevel</c> before trusting the shape.</b> It is the share of pixels sitting at
+    /// one extreme or the other: a stencil measures around 0.98, and anything much lower means the
+    /// plate is a ramp, where a single cut is a guess rather than a reading. Requisition it with
+    /// <c>hardEdge: true</c>, or pass an explicit <c>threshold</c>.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object> Trace(object? options = null) =>
+        BitmapTracer.Trace(Bitmap, new TraceOptions
+        {
+            SubjectIsLight = !OptionString(options, "subject", "light")
+                .StartsWith("dark", StringComparison.OrdinalIgnoreCase),
+            Threshold = AsOptions(options)?.Contains("threshold") == true
+                ? OptionInt(options, "threshold", 128)
+                : null,
+            Despeckle = OptionInt(options, "despeckle", 2),
+            Smoothness = OptionDouble(options, "smoothness", 1.0),
+            Tolerance = OptionDouble(options, "tolerance", 0.2)
+        });
+
     public void Dispose()
     {
         Bitmap.Dispose();
@@ -495,6 +523,14 @@ public class SkiaBitmapWrapper : IDisposable, IDataUriSource
         var dict = AsOptions(options);
         return dict is not null && dict.Contains(name) && dict[name] is not null
             ? Convert.ToBoolean(dict[name], CultureInfo.InvariantCulture)
+            : fallback;
+    }
+
+    private static double OptionDouble(object? options, string name, double fallback)
+    {
+        var dict = AsOptions(options);
+        return dict is not null && dict.Contains(name) && dict[name] is not null
+            ? Convert.ToDouble(dict[name], CultureInfo.InvariantCulture)
             : fallback;
     }
 

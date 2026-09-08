@@ -1,11 +1,12 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Polson Studio</title>
-<link rel="stylesheet" href="{{ base }}/static/studio.css">
+<link rel="stylesheet" href="{{ base }}/static/studio.css?v={{ asset_version }}">
 
 <main>
   <h1>Polson Studio</h1>
-  <p class="sub">Projects in <code>{{ root }}</code></p>
+  {#- The projects directory used to be printed here. It is a container path a visitor cannot act
+      on — `/app/projects` tells a judge nothing and reads as debug output left in by mistake. -#}
 
   {% if refused %}
     <p class="refused">{{ refused }}</p>
@@ -16,14 +17,16 @@
   {% endif %}
 
   {% if observe_only %}
-    <h2>New brief</h2>
-    <p class="hint">
-      Projects are made <a href="{{ create_at or '/new' }}">over here</a> in this runtime, where the
-      form can also attach a document and start the agent for you. This page reads the record; it
-      does not drive one.
-    </p>
+    {#- A heading and a button, rather than a sentence with a link buried in it. The old copy
+        explained the architecture — which runtime owns the form, what this page does and does not
+        drive — to a reader who wanted to start a project. -#}
+    <h2>New project</h2>
+    <p class="hint">The brief form can attach a document and start the agent for you.</p>
+    <div class="actions">
+      <a class="cta" href="{{ create_at or '/new' }}">Create</a>
+    </div>
   {% else %}
-  <h2>New brief</h2>
+  <h2>New project</h2>
   <form method="post" action="{{ base }}/projects" class="brief">
     <div class="row">
       <div>
@@ -63,37 +66,7 @@
   </form>
   {% endif %}
 
-  {#- Runs that are archived and no longer on this machine. Its own section rather than rows in the
-      table below, because it is a different verb: those projects are here and this one has to be
-      fetched back first. Absent entirely when there is no archive, which is every local checkout. -#}
-  {% if archived %}
-  <h2>Recover a run</h2>
-  <p class="hint">
-    These finished on a container that no longer exists — their work was copied out while it ran.
-    Opening one fetches it back and shows the record: the trace, the renders, the scripts and the
-    documents. It cannot be started again, only read.
-  </p>
-  <form method="post" action="{{ base }}/observe" class="archived">
-    <table>
-      <thead><tr><th></th><th>project</th><th></th></tr></thead>
-      <tbody>
-        {% for name in archived %}
-          <tr>
-            <td><input type="radio" name="project" value="{{ name }}" {{ 'checked' if loop.first }}></td>
-            <td><code>{{ name }}</code></td>
-            <td class="hint">archived</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <div class="actions">
-      <button type="submit">Recover and read</button>
-      <span class="hint">fetching a run takes a moment</span>
-    </div>
-  </form>
-  {% endif %}
-
-  <h2>{% if observe_only %}Watch a project{% else %}Start an existing project{% endif %}</h2>
+  <h2>Existing projects</h2>
   {% if projects %}
     <form method="post" action="{{ base }}/runs" id="existing">
       <table>
@@ -146,10 +119,44 @@
         get "it is already done".
       </p>
     </form>
+
   {% else %}
     <p class="empty">Nothing here yet — write a brief above, or generate one with
       <code>create-project</code>.</p>
   {% endif %}
+
+  {#- Runs that were copied out of a container that no longer exists. Its own section rather than
+      rows in the table above, because the verb differs: those projects are here, and one of these
+      has to be fetched back before it can be opened. Same heading, table and actions shape as the
+      others, so it reads as a third list rather than a different kind of thing.
+
+      Absent entirely when there is no archive, which is every local checkout. -#}
+  {% if archived %}
+  <h2>Archived projects</h2>
+  <form method="post" action="{{ base }}/observe" class="archived">
+    <table>
+      <thead><tr><th></th><th>project</th><th>workflow</th><th>state</th><th></th></tr></thead>
+      <tbody>
+        {% for name in archived %}
+          <tr>
+            <td><input type="radio" name="project" value="{{ name }}" {{ 'checked' if loop.first }}></td>
+            <td><code>{{ name }}</code></td>
+            {#- The workflow is in the archive's own `project.json`, and reading it would be one
+                fetch per project on every render of the front page. Not worth that to fill a cell. -#}
+            <td class="hint">—</td>
+            <td>archived</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="actions">
+      <button type="submit">Recover</button>
+      <span class="hint">fetched back from storage, then read-only — a recovered run cannot be started again</span>
+    </div>
+  </form>
+  {% endif %}
+
 
   {% if runs %}
     <h2>This session</h2>

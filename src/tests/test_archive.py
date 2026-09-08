@@ -244,13 +244,32 @@ class ArchiveRouteTests(unittest.TestCase):
             page = self.client.get("/")
 
         self.assertIn("kubrick1", page.text)
-        self.assertIn("Recover", page.text)
+        self.assertIn("Archived projects", page.text)
+        self.assertIn("Recover", page.text)      # the button
+
+    def test_archived_projects_show_even_when_the_machine_holds_none(self):
+        """The case the feature exists for, and the one a careless template hides.
+
+        The archived list was first written inside the `{% if projects %}` branch, so a machine with
+        no local projects — a fresh container that has not seeded one, which is precisely a machine
+        whose projects went with the last instance — offered no way back to any of them.
+        """
+        empty = Path(tempfile.mkdtemp(prefix='polson-noprojects-'))
+        try:
+            client = TestClient(app_mod.create_app(empty, Registry()))
+            with mock.patch.object(app_mod.archive, 'restorable', return_value=['kubrick1']):
+                page = client.get('/')
+
+            self.assertIn('Archived projects', page.text)
+            self.assertIn('kubrick1', page.text)
+        finally:
+            shutil.rmtree(empty, ignore_errors=True)
 
     def test_the_index_says_nothing_about_recovery_when_there_is_no_archive(self):
         with mock.patch.object(app_mod.archive, "restorable", return_value=[]):
             page = self.client.get("/")
 
-        self.assertNotIn("Recover a run", page.text)
+        self.assertNotIn("Archived projects", page.text)
 
     def test_observing_a_missing_project_restores_it_first(self):
         """The project must be genuinely absent when the request arrives — that is the whole case.

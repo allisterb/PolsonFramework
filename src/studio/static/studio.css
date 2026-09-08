@@ -44,12 +44,30 @@ th { text-align: left; font-size: .78rem; text-transform: uppercase; letter-spac
 td { padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
 tr.unrunnable td { opacity: .55; }
 
+/* The project lists are separate tables one above the other, and a table sizes its columns to its
+   own content — so "Existing" and "Archived" drifted out of alignment by a dozen pixels and read
+   as two different kinds of list. Fixed widths make them columns of one page rather than of one
+   table. */
+form.brief ~ form table, form.archived table, form#existing table { table-layout: fixed; }
+form.archived td, form.archived th, form#existing td, form#existing th { overflow: hidden; text-overflow: ellipsis; }
+form.archived th:nth-child(1), form#existing th:nth-child(1) { width: 2.6rem; }
+form.archived th:nth-child(2), form#existing th:nth-child(2) { width: 16rem; }
+form.archived th:nth-child(3), form#existing th:nth-child(3) { width: 13rem; }
+form.archived th:nth-child(4), form#existing th:nth-child(4) { width: 10rem; }
+
 label { display: block; font-size: .85rem; color: var(--dim); margin-bottom: .3rem; }
 textarea { width: 100%; font: inherit; padding: .6rem; border: 1px solid var(--line);
            border-radius: 3px; background: var(--panel); }
 button { margin-top: .8rem; font: inherit; padding: .5rem 1.2rem; border: 0; border-radius: 3px;
          background: var(--accent); color: #fff; cursor: pointer; }
 button[disabled] { background: var(--dim); cursor: not-allowed; }
+
+/* A link that acts as the primary control. An anchor rather than a button because it navigates to
+   another runtime's form — so it must open in a tab, be copyable, and survive a middle-click, none
+   of which a button does. */
+.cta { display: inline-block; margin-top: .8rem; padding: .5rem 1.2rem; border-radius: 3px;
+       background: var(--accent); color: #fff; text-decoration: none; }
+.cta:hover { background: #18596f; }
 
 ul.runs { list-style: none; padding: 0; }
 ul.runs li { padding: .35rem 0; border-bottom: 1px solid var(--line); display: flex; gap: .7rem;
@@ -352,13 +370,46 @@ label.modebox .swatch { width: 9px; height: 9px; border-radius: 2px; display: in
    and seven of them, they are read one at a time, and the name is what a reader is scanning for. */
 .delivered ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
 
+/* Every row is the card plus its copy control, so the finished piece and the documents line up
+   rather than one of them floating above the list. */
+.delivered .row { display: grid; grid-template-columns: 1fr auto; gap: .4rem; align-items: stretch; }
+
 .delivered .doc {
   display: grid; grid-template-columns: 11rem 1fr auto; gap: .8rem; align-items: baseline;
   width: 100%; text-align: left; padding: .55rem .8rem; cursor: pointer;
   background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
-  color: inherit; font: inherit;
+  color: inherit; font: inherit; text-decoration: none;
 }
 
 .delivered .doc:hover { background: #f6f9fb; border-color: var(--accent); }
+.delivered .doc:hover .docname { text-decoration: underline; }
 .delivered .docname { font-family: var(--mono); font-size: .85rem; color: var(--accent); }
+
+/* The finished piece is an ordinary row with a marker, not a different kind of thing. Its own
+   element rather than a button, because a control cannot legally nest inside another one and each
+   format needs to be its own link. */
+.delivered .final { border-left: 3px solid var(--good); cursor: default; }
+.delivered .final:hover { background: var(--panel); border-color: var(--line); border-left-color: var(--good); }
+
+.delivered .formats { display: flex; gap: .4rem; }
+
+/* `font: inherit` first: the generic `button` rule sets a background, a colour and a `margin-top`,
+   and an unreset control here reads as a solid teal slab pushed half a line down the row. */
+.delivered .fmt {
+  font: inherit; font-family: var(--mono); font-size: .78rem; cursor: pointer;
+  padding: .15rem .5rem; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--ground); color: var(--accent); text-decoration: none; margin: 0;
+}
+
+.delivered .fmt:hover { background: #eef5f8; border-color: var(--accent); text-decoration: underline; }
 .delivered .docsize { color: var(--dim); font-size: .78rem; font-family: var(--mono); }
+
+/* Discoverable copying. Right-click already works on every row now that they are anchors, and
+   nobody discovers right-click. */
+.delivered .copy {
+  margin: 0; font: inherit; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+  padding: 0 .6rem; cursor: pointer; border: 1px dashed var(--line); border-radius: 3px;
+  background: transparent; color: var(--dim);
+}
+
+.delivered .copy:hover { color: var(--accent); border-color: var(--accent); border-style: solid; }

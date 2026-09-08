@@ -454,6 +454,56 @@ paper.image(oak, 640, 40, 280, 300);               // a requisitioned material
 
 ---
 
+## 8b. Bringing a Requisitioned Shape In as Geometry
+
+§8a is about a **photograph**, which has to be inlined because there is nothing else it could be: a
+likeness is pixels. A **stencil** is different. `Assets.matte(..., { hardEdge: true })` is the one
+*form* the studio can ask a model for, and inlining it wastes what it is — a silhouette is a contour,
+and a contour is geometry.
+
+`bitmap.trace(...)` makes it one.
+
+```js
+if (!Skia.tracer.available) Stage.note('no tracer here — the stencil will ship as base64');
+
+const stencil = await Assets.matte('a rearing horse, side view', { hardEdge: true, size: 512 });
+if (!stencil.success) { error(stencil.remedy); exit(stencil.failureName); }
+
+const traced = Skia.Image.fromDataUrl(stencil.toDataUri()).trace();
+Stage.check(`stencil traced, bilevel ${traced.bilevel}`, traced.count > 0, `${traced.count} contours`);
+
+paper.path(traced.d).attr({ fill: tokens['--ink'] });
+```
+
+**What changes, and it is not only file size.** A traced stencil scales, takes a gradient, can be
+`subtract`ed from or unioned with anything in §8, and arrives in the deliverable as a path a designer
+can select and edit. An inlined one is a rectangle of pixels that happens to look like a horse.
+
+**The size difference is large enough to change decisions.** Measured on two real requisitioned
+mattes: a 341 KB hedge-maze plate became **17 KB** of geometry, and a 119 KB motif became **4.7 KB**.
+Against the base64 those would occupy inside the SVG (§8a's +33.5%), roughly **26×**. Note this cuts
+the other way from §8a's conclusion, and both are right: base64 is nearly free for a *photograph*,
+because a photograph does not compress into contours. A stencil does.
+
+> [!IMPORTANT]
+> **Check `bilevel`, and check `Skia.tracer.available` before you plan around it.**
+>
+> `bilevel` is the share of pixels sitting at one extreme or the other. A stencil measures about
+> 0.98. Much lower means the plate is a **ramp**, and a single threshold through a gradient is a
+> guess — requisition it with `hardEdge: true`, or pass an explicit `threshold`.
+>
+> Tracing needs the `potrace` program, which is not part of the build. Where it is missing,
+> `bitmap.trace(...)` **throws** rather than returning a failure object, because it is an environment
+> to fix rather than an outcome to handle — so ask `Skia.tracer.available` first and say in
+> `findings.md` if the deliverable had to carry a raster because of it.
+
+**`subject` says which tone to trace, and the default is `'light'`** because that is what a matte is:
+a white subject on a black ground. Pass `'dark'` for ink on paper. Getting it backwards traces the
+*ground* and returns a rectangle the size of the frame — which is a plausible-looking path, not an
+error, so it is worth a `Stage.check` on the bounds rather than a glance.
+
+---
+
 ## 9. What the Vector Surface Cannot Do
 
 An honest list, because the failure mode is reaching for a raster capability halfway through a vector scene and rebuilding everything.
@@ -474,6 +524,7 @@ An honest list, because the failure mode is reaching for a raster capability hal
 
   **Give every span an `x` and a `y`.** Without them it inherits the container's origin, and a container is conventionally made at `(0, 0)` — so the whole paragraph lands on a baseline above the top edge and reads as "spans do not work". `<textPath>` works the same way and takes `href` to the path it follows.
 - **No pixel measurement.** `bitmap.diff`, `rowProfile`, `getPixel` and `palette` operate on rendered bitmaps. To verify a vector scene, render it and measure the render.
+- **Tracing a raster into paths is *not* on this list, and used to be.** `bitmap.trace(...)` crosses back the other way — see §8b — so a requisitioned stencil reaches the deliverable as geometry rather than as base64. It needs `potrace` on the machine; `Skia.tracer.available` says whether this one has it.
 - **No boolean operations on elements directly.** Go through `attr('d')` → `CanvasPath` → the operation, as in §8.
 
 If a scene needs several of these, it is a raster scene. Decide that in §2 rather than at the point of frustration.

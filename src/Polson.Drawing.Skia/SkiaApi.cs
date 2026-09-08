@@ -36,6 +36,7 @@ public class SkiaApi
     public SkiaImageApi Image { get; }
     public SkiaBitmapFactoryApi Bitmap { get; } = new();
     public SkiaFontApi Font { get; } = new();
+    public SkiaTracerApi Tracer { get; } = new();
     public ConstructiveDrawingToolkit Drawing { get; } = new();
     public LogoDesignToolkit Logo { get; } = new();
     public LogoTypeToolkit LogoType { get; } = new();
@@ -580,6 +581,33 @@ public class SkiaColorFilterApi
 /// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
 /// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
 /// </remarks>
+/// <summary>The <c>Skia.tracer</c> sub-namespace — whether this machine can turn a raster into paths.</summary>
+/// <remarks>
+/// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS
+/// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
+/// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
+/// <para>
+/// Asked for the same reason <c>Skia.Font.has(...)</c> is: tracing depends on a program that may not
+/// be installed, and a script that commits to a vector deliverable and only then discovers it cannot
+/// trace has spent its passes. This answers before anything is drawn.
+/// </para>
+/// </remarks>
+public class SkiaTracerApi
+{
+    #region Properties
+    /// <summary>Whether <c>bitmap.trace(...)</c> will work here.</summary>
+    public bool Available => BitmapTracer.Available;
+
+    /// <summary>The program that would be used, or null. Useful in a run record.</summary>
+    public string? Path => BitmapTracer.Executable;
+    #endregion
+
+    #region Methods
+    /// <summary>What that program reports about itself, or null when there is none.</summary>
+    public string? Version() => BitmapTracer.Version();
+    #endregion
+}
+
 /// <summary>The <c>Skia.Font</c> sub-namespace — which typefaces this machine can actually render.</summary>
 /// <remarks>
 /// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS

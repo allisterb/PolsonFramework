@@ -990,6 +990,94 @@ class ArtifactRouteTests(unittest.TestCase):
             self.assertNotIn(b"never", page.content)
 
 
+class MountPrefixTests(unittest.TestCase):
+    """Every link a page emits has to survive being mounted under a prefix.
+
+    Standalone the studio is the whole server and a bare `/` is correct; mounted on the ADK runtime
+    it lives at `/studio` and the root belongs to the dev console. So a hardcoded root link works
+    perfectly in every test and every local run, and takes a deployed visitor out of the studio
+    entirely — which is what it did.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-mount-"))
+        self.registry = Registry()
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _template(self, name: str) -> str:
+        return (Path(app_mod.__file__).parent / "templates" / name).read_text(encoding="utf-8")
+
+    def test_no_page_links_to_a_bare_root(self):
+        """The regression: `<a class="back" href="/">` on the run page.
+
+        Checked against the template rather than a rendered page, because rendering with an empty
+        prefix — which is what a plain `TestClient` does — is exactly the case where the bug is
+        invisible.
+        """
+        for name in ("index.html", "run.html"):
+            source = self._template(name)
+            self.assertNotIn('href="/"', source,
+                             f"{name} links to the server root; mounted, that leaves the studio")
+
+    def test_the_run_page_goes_back_to_the_studio_root(self):
+        self.assertIn('href="{{ base }}/"', self._template("run.html"))
+
+    def test_the_back_link_carries_the_prefix_when_mounted(self):
+        """Rendered through an actual mount, which is the only place the difference shows."""
+        from fastapi import FastAPI
+
+        project = project_dir(self.root, "acme")
+        self.registry._runs["acme-1"] = Run(
+            id="acme-1", project=_loaded(project), prompt="", stream=None,
+            started="2026-09-08T00:00:00+00:00", status="done")
+
+        host = FastAPI()
+        host.mount("/studio", app_mod.create_app(self.root, self.registry, observe_only=True))
+        page = TestClient(host).get("/studio/runs/acme-1")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('href="/studio/"', page.text)
+        self.assertNotIn('href="/"', page.text)
+
+
+class IndexPresentationTests(unittest.TestCase):
+    """What the front page actually offers a visitor who is not a developer."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-index-"))
+        self.registry = Registry()
+        project_dir(self.root, "acme")
+        self.client = TestClient(
+            app_mod.create_app(self.root, self.registry, observe_only=True, create_at="/new"))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_container_path_is_not_printed_at_a_visitor(self):
+        """`Projects in /app/projects` is a path nobody outside the container can act on."""
+        page = self.client.get("/")
+
+        self.assertNotIn("Projects in", page.text)
+        self.assertNotIn(str(self.root), page.text)
+
+    def test_creating_is_a_heading_and_a_control_rather_than_a_paragraph(self):
+        page = self.client.get("/")
+
+        self.assertIn("New project", page.text)
+        self.assertIn('class="cta"', page.text)
+        self.assertIn('href="/new"', page.text)
+        # The old copy explained which runtime owned the form to someone who wanted to press a button.
+        self.assertNotIn("over here", page.text)
+
+    def test_the_list_is_headed_by_what_it_holds(self):
+        page = self.client.get("/")
+
+        self.assertIn("Existing projects", page.text)
+        self.assertIn("Watch", page.text)
+
+
 class DeliverableRouteTests(unittest.TestCase):
     """The documents a run delivers, as distinct from the pictures it rendered.
 
@@ -1081,6 +1169,56 @@ class DeliverableRouteTests(unittest.TestCase):
         self.assertIn("linenos", script)
         self.assertNotIn("linenos", report)
 
+    def test_raw_serves_the_document_itself_for_a_link_worth_sharing(self):
+        """What a copied link has to resolve to.
+
+        The overlay wants highlighted markup; a link pasted into a submission wants the document. The
+        fragment is neither a page nor a file — pasted anywhere it opens as unstyled markup with no
+        page around it — so the row links to this and "copy link" copies it.
+        """
+        page = self.client.get("/runs/acme-1/deliverables/accuracy.md?raw=1")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.text, "| figure | source |\n| --- | --- |\n")
+        self.assertIn("text/plain", page.headers["content-type"])
+        self.assertNotIn("<span", page.text)
+
+    def test_raw_carries_the_filename_so_a_browser_names_the_save(self):
+        page = self.client.get("/runs/acme-1/deliverables/artwork.js?raw=1")
+
+        self.assertIn("artwork.js", page.headers.get("content-disposition", ""))
+
+    def test_raw_is_refused_for_everything_the_styled_route_refuses(self):
+        """The allowlist is the boundary, and a second entry point must not widen it."""
+        for attempt in ("GEMINI.md", "project.json", "documents/brief.md"):
+            page = self.client.get(f"/runs/acme-1/deliverables/{attempt}?raw=1")
+            self.assertEqual(page.status_code, 404, attempt)
+            self.assertNotIn(b"confidential", page.content)
+
+    def test_the_page_links_to_the_raw_form_rather_than_the_fragment(self):
+        source = (Path(app_mod.__file__).parent / "templates" / "run.html").read_text(encoding="utf-8")
+
+        self.assertIn("deliverables/${encodeURIComponent(d.name)}?raw=1", source)
+
+    def test_every_row_is_an_anchor_so_a_link_can_be_copied(self):
+        """The defect: the panel held no links, so there was nothing to copy or open in a tab.
+
+        As buttons the rows gave no right-click menu, no ctrl-click, and no hover preview — which
+        read, correctly, as a panel with no links in it.
+        """
+        source = (Path(app_mod.__file__).parent / "templates" / "run.html").read_text(encoding="utf-8")
+
+        self.assertIn('<a class="doc" href=', source)
+        self.assertIn('<a class="fmt" href=', source)
+        self.assertNotIn('<button type="button" class="doc"', source)
+        self.assertIn('class="copy"', source)
+
+    def test_a_modified_click_is_left_to_the_browser(self):
+        """Ctrl-click and middle-click must open a tab, or the anchors are anchors in name only."""
+        source = (Path(app_mod.__file__).parent / "templates" / "run.html").read_text(encoding="utf-8")
+
+        self.assertIn("e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0", source)
+
     def test_a_deliverable_this_run_did_not_write_is_a_404(self):
         self.assertEqual(self.client.get("/runs/acme-1/deliverables/findings.md").status_code, 404)
 
@@ -1140,6 +1278,120 @@ class DeliverableRouteTests(unittest.TestCase):
         self.assertEqual(page.status_code, 404)
         self.assertNotIn(b"not ours", page.content)
         self.assertNotIn("turns.md", self.client.get("/runs/acme-1/deliverables").text)
+    # endregion
+
+    # region The finished piece
+    def _render_events(self, *events) -> None:
+        """Writes `server.jsonl` the way the MCP server does."""
+        lines = [json.dumps(e) for e in events]
+        (self.root / "acme" / "events" / "server.jsonl").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8")
+
+    def _made(self, name: str, body: bytes = b"pretend") -> None:
+        path = self.root / "acme" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+
+    def test_the_finished_piece_is_one_row_carrying_both_formats(self):
+        """A raster and a vector of the same artwork are one deliverable, not two pieces."""
+        self._made("artifacts/final.webp")
+        self._made("artifacts/final.svg", b"<svg/>")
+        self._render_events(
+            {"type": "render", "ts": "2026-09-08T10:00:00Z", "artifact": "artifacts/draft.webp",
+             "format": "webp"},
+            {"type": "render", "ts": "2026-09-08T10:01:00Z", "artifact": "artifacts/final.webp",
+             "format": "webp"},
+            {"type": "render", "ts": "2026-09-08T10:02:00Z", "artifact": "artifacts/final.svg",
+             "format": "svg"})
+
+        body = self.client.get("/runs/acme-1/deliverables").json()["deliverables"]
+        pictures = [d for d in body if d["kind"] == "render"]
+
+        self.assertEqual(len(pictures), 1, "the picture must be one row")
+        self.assertEqual([f["format"] for f in pictures[0]["formats"]], ["webp", "svg"])
+        self.assertEqual([f["path"] for f in pictures[0]["formats"]],
+                         ["artifacts/final.webp", "artifacts/final.svg"])
+
+    def test_the_last_render_of_a_format_wins_over_the_drafts(self):
+        self._made("artifacts/draft.webp")
+        self._made("artifacts/final.webp")
+        self._render_events(
+            {"type": "render", "ts": "2026-09-08T10:00:00Z", "artifact": "artifacts/draft.webp",
+             "format": "webp"},
+            {"type": "render", "ts": "2026-09-08T10:05:00Z", "artifact": "artifacts/final.webp",
+             "format": "webp"})
+
+        picture = self._picture()
+        self.assertEqual([f["path"] for f in picture["formats"]], ["artifacts/final.webp"])
+
+    def test_the_name_is_read_from_the_record_not_from_a_convention(self):
+        """Three of the eight workflows prescribe no final filename, so the agent invents one.
+
+        `vector_infographic` is one of them, and a measured run of it delivered `artifacts/final.svg`
+        where the convention elsewhere is `output.svg`. A name allowlist would miss the deliverable on
+        exactly the workflow whose deliverable is the point.
+        """
+        self._made("artifacts/whatever-it-felt-like.svg", b"<svg/>")
+        self._render_events({"type": "render", "ts": "2026-09-08T10:00:00Z",
+                             "artifact": "artifacts/whatever-it-felt-like.svg", "format": "svg"})
+
+        self.assertEqual(self._picture()["formats"][0]["path"],
+                         "artifacts/whatever-it-felt-like.svg")
+
+    def test_the_picture_comes_before_the_documents(self):
+        """It is the work; the documents are what the studio says about the work."""
+        self._made("artifacts/final.webp")
+        self._render_events({"type": "render", "ts": "2026-09-08T10:00:00Z",
+                             "artifact": "artifacts/final.webp", "format": "webp"})
+
+        body = self.client.get("/runs/acme-1/deliverables").json()["deliverables"]
+        self.assertEqual(body[0]["kind"], "render")
+
+    def test_a_render_whose_file_is_gone_is_not_offered(self):
+        """The record says it was made; the disk says it is not there. Offering it links to a 404."""
+        self._render_events({"type": "render", "ts": "2026-09-08T10:00:00Z",
+                             "artifact": "artifacts/vanished.webp", "format": "webp"})
+
+        self.assertIsNone(self._picture())
+
+    def test_a_render_the_artifact_route_would_refuse_is_not_offered(self):
+        """The two lists have to agree, or the row is a link to a refusal."""
+        self._made("artifacts/notes.txt", b"text")
+        self._render_events({"type": "render", "ts": "2026-09-08T10:00:00Z",
+                             "artifact": "artifacts/notes.txt", "format": "txt"})
+
+        self.assertIsNone(self._picture())
+
+    def test_a_run_with_no_renders_offers_no_picture(self):
+        body = self.client.get("/runs/acme-1/deliverables").json()["deliverables"]
+        self.assertEqual([d for d in body if d["kind"] == "render"], [])
+
+    def test_a_run_with_no_recorded_ending_is_unknown_rather_than_incomplete(self):
+        """Chiefly the live case: a run still drawing has no `run.end` yet.
+
+        The panel fills as the work proceeds, so treating absence as "did not finish" would put *the
+        run was halted* under the picture of a run that is at that moment still going. It also covers
+        runs older than `run.end` itself, which is the lesser reason.
+        """
+        self._made("artifacts/final.webp")
+        self._render_events({"type": "render", "ts": "2026-09-08T10:00:00Z",
+                             "artifact": "artifacts/final.webp", "format": "webp"})
+
+        self.assertEqual(self._picture()["state"], "unknown")
+
+    def test_a_recorded_ending_is_reported_as_given(self):
+        self._made("artifacts/final.webp")
+        self._render_events({"type": "render", "ts": "2026-09-08T10:00:00Z",
+                             "artifact": "artifacts/final.webp", "format": "webp"})
+        (self.root / "acme" / "events" / "agent.jsonl").write_text(
+            json.dumps({"type": "run.end", "ts": "2026-09-08T10:09:00Z", "reason": "halted"}) + "\n",
+            encoding="utf-8")
+
+        self.assertEqual(self._picture()["state"], "halted")
+
+    def _picture(self):
+        body = self.client.get("/runs/acme-1/deliverables").json()["deliverables"]
+        return next((d for d in body if d["kind"] == "render"), None)
     # endregion
 
     # region The page

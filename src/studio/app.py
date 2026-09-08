@@ -21,13 +21,15 @@ side — resolve, then verify the result is still inside — and it has tests be
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse, PlainTextResponse,
+                               RedirectResponse)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
@@ -37,6 +39,7 @@ from pygments.lexers import JavascriptLexer, MarkdownLexer
 from sse_starlette.sse import EventSourceResponse
 
 from orchestrator import csm
+from orchestrator.events import read_events
 
 from . import archive
 from . import projects
@@ -62,6 +65,33 @@ SOURCE_URL = os.environ.get("POLSON_SOURCE_URL") or "https://github.com/allister
 
 # A global rather than a context entry, so a page added later cannot quietly ship without the offer.
 TEMPLATES.env.globals["source_url"] = SOURCE_URL
+
+
+def asset_version() -> str:
+    """A token that changes when the stylesheet does, for the `?v=` on its URL.
+
+    **The bug this fixes wasted a reader's time before it was found.** `/static` is served by
+    `StaticFiles`, which sets an ETag and a Last-Modified and *no* `Cache-Control` — so a browser
+    applies heuristic caching and may hold a stylesheet for hours. After a deploy that adds a rule,
+    the page then renders new markup against old CSS: the deliverables panel came back with the
+    generic `button` styling on its format controls, complete with that rule's `margin-top`, which
+    reads exactly like a layout bug in code that is in fact correct. A stale stylesheet does not look
+    like a stale stylesheet; it looks like your CSS not working.
+
+    Content rather than mtime, because a container image's file timestamps are a property of the
+    build rather than of the file: two builds of the same stylesheet should not bust the cache, and
+    the same mtime on changed content must not fail to.
+    """
+    try:
+        data = (Path(__file__).parent / "static" / "studio.css").read_bytes()
+    except OSError:
+        return "0"
+    return hashlib.sha256(data).hexdigest()[:12]
+
+
+# Read once at import: the file does not change under a running server, and hashing it per request
+# would be a file read on every page for a value that cannot have moved.
+TEMPLATES.env.globals["asset_version"] = asset_version()
 
 #: Line numbers because the record refers to scripts by path and a reader refers to them by line.
 FORMATTER = HtmlFormatter(style="friendly", cssclass="code", linenos="table", lineanchors="L")
@@ -434,6 +464,13 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
         run = found(app.state.registry, run_id)
 
         written = []
+
+        # The picture first, because it is the work. Everything under it is what the studio *says*
+        # about the work, which is worth less to a reader who has not yet seen it.
+        picture = final_render(run)
+        if picture:
+            written.append(picture)
+
         for name, what in DELIVERABLES:
             try:
                 path = contain(run.project.root, name)
@@ -443,12 +480,13 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
                 continue
             if not path.is_file():
                 continue
-            written.append({"name": name, "what": what, "bytes": path.stat().st_size})
+            written.append({"kind": "document", "name": name, "what": what,
+                            "bytes": path.stat().st_size})
 
         return JSONResponse({"deliverables": written})
 
-    @app.get("/runs/{run_id}/deliverables/{name}", response_class=HTMLResponse)
-    async def serve_deliverable(run_id: str, name: str) -> HTMLResponse:
+    @app.get("/runs/{run_id}/deliverables/{name}")
+    async def serve_deliverable(run_id: str, name: str, raw: int = 0) -> Response:
         """One delivered document, highlighted, as a fragment the page drops into the overlay.
 
         This is the half of a finished run that neither the render nor the trace carries. The render
@@ -488,6 +526,16 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
 
         source = path.read_text(encoding="utf-8", errors="replace")
         code = name.endswith(".js")
+
+        # `?raw=1` is what a *shared* link needs to be. The page fetches the highlighted fragment for
+        # its overlay, which is right there and useless anywhere else: pasted into a chat or a
+        # submission it opens as unstyled markup with no page around it. The raw form is the document
+        # itself — readable in a browser, saveable, and diffable — so that is what the row links to
+        # and what "copy link" copies.
+        if raw:
+            return PlainTextResponse(source, media_type="text/plain; charset=utf-8",
+                                     headers={"Content-Disposition": f'inline; filename="{name}"'})
+
         return HTMLResponse(highlight(source, JavascriptLexer() if code else MarkdownLexer(),
                                       FORMATTER if code else PROSE))
     # endregion
@@ -514,6 +562,88 @@ def contain(root: Path, name: str) -> Path:
         raise StudioError(f"that path is outside {root.name}: {name}")
 
     return candidate
+
+
+#: Rasters before vector in the finished-piece row. The first entry is what the page shows when a
+#: reader clicks, and a raster is the one that always displays; the SVG is the file they want *after*
+#: seeing it. Not a claim about which is the real deliverable — for a vector piece that is the SVG.
+FORMAT_ORDER = ("webp", "png", "jpeg", "jpg", "svg")
+
+
+def final_render(run: Run) -> dict[str, Any] | None:
+    """The finished piece: the last render of each format this run produced, as **one** entry.
+
+    **Read from the run record rather than from a filename, because the filename is not knowable.**
+    Three of the eight workflows prescribe no name for the final image at all — `vector_infographic`
+    among them — so the agent invents one, and a measured run of it delivered `artifacts/final.svg`
+    where the convention elsewhere is `output.svg`. A closed list of names would therefore have
+    missed the deliverable on exactly the workflow whose deliverable is the point, which is the same
+    failure that would have dropped `findings.md` from `DELIVERABLES`.
+
+    Every `render` event names its artifact and its format, so the last of each is the delivered
+    picture wherever it was put and whatever it was called.
+
+    **One entry, not one per format.** A raster and a vector of the same artwork are one deliverable
+    in two forms; listing them as two rows invites a reader to think the run produced two pieces.
+    """
+    latest: dict[str, str] = {}
+    for event in read_events(run.project.server_events):
+        if event.get("type") != "render":
+            continue
+        # Scoped to this run exactly as the curve is: the event files belong to the project and
+        # outlive any one run, so without this an observation shows the previous run's picture.
+        if run.since and (event.get("ts") or "") < run.since:
+            continue
+        fmt, artifact = (event.get("format") or "").lower(), event.get("artifact")
+        if fmt and artifact:
+            latest[fmt] = artifact                  # later events win, so this ends up the last
+
+    formats = []
+    for fmt in sorted(latest, key=lambda f: (FORMAT_ORDER.index(f) if f in FORMAT_ORDER else 99, f)):
+        artifact = latest[fmt]
+        if Path(artifact).suffix.lower() not in ARTIFACT_SUFFIXES:
+            # The artifact route would refuse it, so offering it here would be a link to a 404.
+            continue
+        try:
+            path = contain(run.project.root, artifact)
+        except StudioError:
+            continue
+        if path.is_file():
+            formats.append({"format": fmt, "path": artifact, "bytes": path.stat().st_size})
+
+    if not formats:
+        return None
+
+    # Named by the stem when the formats share one — `final`, not `final.webp` beside an `svg`
+    # button, which reads as though the row were the raster and the vector something else. They
+    # usually do share it, because one script writes both with `outFile` and `outSvg`.
+    stems = {Path(f["path"]).stem for f in formats}
+    name = stems.pop() if len(stems) == 1 else Path(formats[0]["path"]).name
+
+    return {"kind": "render", "name": name, "what": "the finished piece",
+            "state": run_state(run), "formats": formats}
+
+
+def run_state(run: Run) -> str:
+    """How this run ended, from `run.end`: `completed`, `halted`, `failed`, or `unknown`.
+
+    **`unknown` is mostly about live runs, not old ones.** A run still in progress has no `run.end`
+    either, and this panel fills as the work proceeds — so reading a missing ending as "did not
+    finish" would put *the run was halted* under the picture of a run that is at that moment still
+    drawing. Absence is the normal mid-run state.
+
+    It also covers runs recorded before `run.end` existed, which is every archived run older than
+    2026-09-08. That case matters less; the live one is why the value is here.
+
+    Only a recorded ending is ever asserted, and the page says nothing at all for `unknown`.
+    """
+    for event in reversed(read_events(run.project.agent_events)):
+        if event.get("type") != "run.end":
+            continue
+        if run.since and (event.get("ts") or "") < run.since:
+            continue
+        return str(event.get("reason") or "unknown")
+    return "unknown"
 
 
 def discover(root: Path) -> list[dict[str, str]]:

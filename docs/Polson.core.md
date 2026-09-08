@@ -950,6 +950,22 @@ const usable = wanted.filter(f => Skia.Font.has(f));
 log(`usable serifs: ${usable.join(', ')}`);   // pick from these, not from what you hoped for
 ```
 
+## `Skia.tracer`
+
+Whether this machine can turn a raster into paths. Asked for the same reason `Skia.Font.has(...)` is:
+tracing depends on a program that may not be installed, and a script that commits to a vector
+deliverable and only then finds it cannot trace has spent its passes for nothing.
+
+- `Skia.tracer.available` → `boolean` — Whether `bitmap.trace(...)` will work here.
+- `Skia.tracer.path` → `string?` — The program that would be used. Worth putting in a `Stage.note`.
+- `Skia.tracer.version()` → `string?` — What that program reports about itself.
+
+```js
+if (!Skia.tracer.available) {
+    Stage.note('no tracer here — the stencil ships as a raster, and the SVG carries it as base64');
+}
+```
+
 ## `SkiaBitmapWrapper`
 
 - `bitmap.width` → `number` — Width in pixels.
@@ -968,6 +984,45 @@ log(`usable serifs: ${usable.join(', ')}`);   // pick from these, not from what 
 - `bitmap.toDataUrl()` → `string` — Returns `data:image/png;base64,...` URL.
 - `bitmap.clone()` → `SkiaBitmapWrapper` — Deep clones bitmap.
 - `bitmap.dispose()` — Releases native bitmap memory.
+- `bitmap.trace(options?)` → `object` — **Turns this bitmap into real path geometry.** Returns `{ d, paths, count, width, height, threshold, bilevel }`. `d` is every contour as one path string, `paths` is one string per traced element, and both are in **this bitmap's own pixel coordinates**. `options`: `{ subject?: 'light' | 'dark', threshold?: number, despeckle?: number, smoothness?: number, tolerance?: number }`.
+
+> [!IMPORTANT]
+> **This is how a requisitioned shape reaches a vector deliverable as geometry rather than as base64.**
+> `Assets.matte(...)` is the one *form* the studio can ask a model for, and it comes back as a raster —
+> so on an SVG it inlines as a data URI, renders correctly, and is not vector: it cannot be scaled,
+> filled per region, `subtract`ed, or edited by a designer. Traced, it is an ordinary path.
+>
+> It is also far smaller. Measured on two real mattes: a 341 KB hedge-maze plate became **17 KB** of
+> geometry and a 119 KB motif became **4.7 KB** — and against the base64 those rasters would occupy
+> inside an SVG (+33.5%), about **26×**.
+>
+> ```javascript
+> const stencil = await Assets.matte('a rearing horse, side view', { hardEdge: true, size: 512 });
+> if (!stencil.success) { error(stencil.remedy); exit(stencil.failureName); }
+>
+> const plate = Skia.Image.fromDataUrl(stencil.toDataUri());
+> const traced = plate.trace();
+> log(`${traced.count} contour(s), bilevel ${traced.bilevel}`);
+>
+> paper.path(traced.d).attr({ fill: '#15151a' });     // real geometry, scales, survives outSvg
+> ```
+>
+> **Check `bilevel` before trusting the shape.** It is the share of pixels sitting at one extreme or
+> the other: a stencil measures around 0.98, and anything much lower means the plate is a *ramp*,
+> where one cut is a guess rather than a reading. Requisition with `hardEdge: true`, or pass an
+> explicit `threshold`.
+>
+> **`subject` says which tone to trace, and `'light'` is the default because that is what a matte is** —
+> a white subject on black. Pass `'dark'` for ink on paper. Getting it backwards traces the *ground*,
+> which comes back as a rectangle the size of the frame rather than as an error.
+>
+> The path is filled **non-zero**, and potrace winds holes the opposite way from outlines, so counters
+> are real holes without a fill-rule argument.
+>
+> **Needs the `potrace` program** — check `Skia.tracer.available` first. Without it this throws rather
+> than returning a failure object, because unlike a requisition it is an environment to fix rather than
+> an outcome to handle. On Debian it is `apt-get install potrace`; otherwise set `Tools:Potrace` in
+> `appsettings.json`.
 
 ### Measuring an Image
 

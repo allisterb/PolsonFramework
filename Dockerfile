@@ -224,6 +224,7 @@ RUN apt-get update \
         libicu-dev \
         libfontconfig1 \
         fontconfig \
+        potrace \
         fonts-recommended \
         fonts-dejavu-core \
         fonts-liberation2 \

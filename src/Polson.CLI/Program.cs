@@ -362,6 +362,32 @@ internal class Program : Runtime
             processor, TaskSchema.CapacityOf(processor), budget);
     }
 
+    /// <summary>Points <c>bitmap.trace(...)</c> at a tracer, and says which one it found.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Tools:Potrace</c> is an override, not a requirement: the tracer discovers a copy under
+    /// <c>bin/</c> and then falls back to the PATH, which is where a Debian package lands. The setting
+    /// exists for the case neither is true.
+    /// </para>
+    /// <para>
+    /// Announced either way, because tracing is the one capability here that depends on something
+    /// outside the build. A run that quietly could not trace looks identical to one that never tried,
+    /// and the difference only surfaces as a deliverable full of base64.
+    /// </para>
+    /// </remarks>
+    static void ConfigureTracing()
+    {
+        if (Setting("Tools:Potrace") is { Length: > 0 } configured)
+            BitmapTracer.ExecutableOverride = configured;
+
+        if (BitmapTracer.Executable is { } exe)
+            Info("Tracing enabled ({0}).", exe);
+        else
+            Warn("Tracing unavailable: no 'potrace' found. bitmap.trace() will refuse, and a "
+                 + "requisitioned matte can only reach an SVG as base64. Install it "
+                 + "(Debian: apt-get install potrace) or set Tools:Potrace.");
+    }
+
     static async Task HandleServerArgs(ServerOptions opts)
     {
         if (opts.Timeout.HasValue && opts.Timeout.Value > 0)
@@ -372,6 +398,8 @@ internal class Program : Runtime
         {
             JsDrawingEngine.ScriptTimeoutSeconds = cfgTimeout;
         }
+
+        ConfigureTracing();
 
         var projectDir = !string.IsNullOrWhiteSpace(opts.ProjectDir)
             ? Path.GetFullPath(opts.ProjectDir)

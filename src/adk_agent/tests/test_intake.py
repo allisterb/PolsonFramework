@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -330,6 +331,125 @@ class SessionUserTests(unittest.TestCase):
         """ADK's console requests `/apps/<app>/users/user/sessions` and offers no way to change it,
         so any other id shows an empty session list for a run that is happily going."""
         self.assertEqual("user", intake.USER)
+
+
+class SpendCapTests(unittest.TestCase):
+    """The brake on a public URL.
+
+    Every per-run budget bounds *one* run — `POLSON_BUDGET_TOKENS`, `POLSON_BUDGET_MINUTES`, the
+    circuit breaker. None of them bounds how many runs a stranger starts, which on an
+    `--allow-unauthenticated` service is an open door onto a metered model and a metered image
+    service. This is that bound, and it is a spend brake rather than a security control: global
+    rather than per visitor, and defeated by restarting the container.
+    """
+
+    def setUp(self) -> None:
+        self.runs, self.day = intake.MAX_CONCURRENT_RUNS, intake.MAX_RUNS_PER_DAY
+        self.addCleanup(setattr, intake, "MAX_CONCURRENT_RUNS", self.runs)
+        self.addCleanup(setattr, intake, "MAX_RUNS_PER_DAY", self.day)
+        intake._started.clear()
+        self.addCleanup(intake._started.clear)
+        intake._running.clear()
+        self.addCleanup(intake._running.clear)
+
+    def test_an_idle_host_starts_a_run(self):
+        self.assertIsNone(intake._too_many())
+
+    def test_the_day_is_a_rolling_window_not_a_calendar_one(self):
+        """Yesterday's runs must not hold today's allowance down, and an hour ago's must still count.
+
+        A calendar day would let a visitor spend the whole allowance at 23:59 and the whole of it
+        again at 00:01, which is the failure a daily cap exists to prevent.
+        """
+        intake.MAX_RUNS_PER_DAY = 3
+        intake._started.extend([time.time() - 90_000] * 5)      # yesterday — expired
+        self.assertIsNone(intake._too_many())
+
+        intake._started.extend([time.time() - 3_600] * 3)       # an hour ago — still counts
+        self.assertIsNotNone(intake._too_many())
+
+    def test_the_refusal_says_it_is_deliberate(self):
+        intake.MAX_RUNS_PER_DAY = 1
+        intake._started.append(time.time())
+
+        full = intake._too_many()
+        self.assertIn("real money", full)
+        self.assertIn("still readable", full, "a refused visitor should be told what they can do")
+
+    def test_expired_entries_are_dropped_rather_than_accumulating(self):
+        intake.MAX_RUNS_PER_DAY = 5
+        intake._started.extend([time.time() - 90_000] * 4)
+        intake._too_many()
+
+        self.assertEqual(0, len(intake._started))
+
+    def test_runs_in_flight_are_capped_separately_from_the_day(self):
+        """One instance serving several visitors at once is contention, not throughput."""
+        intake.MAX_CONCURRENT_RUNS, intake.MAX_RUNS_PER_DAY = 1, 100
+        intake._running.add(object())
+
+        self.assertIn("already going", intake._too_many())
+
+    def test_a_cap_of_zero_is_no_cap(self):
+        """So a local developer, or a deployment that wants none, can turn it off outright."""
+        intake.MAX_CONCURRENT_RUNS, intake.MAX_RUNS_PER_DAY = 0, 0
+        intake._running.update({object(), object(), object()})
+        intake._started.extend([time.time()] * 500)
+
+        self.assertIsNone(intake._too_many())
+
+
+class CapEnforcementTests(unittest.TestCase):
+    """That the check is on the door, and that it refuses before it spends."""
+
+    def setUp(self) -> None:
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        app = FastAPI()
+        intake.mount(app)
+        self.client = TestClient(app)
+        self.day = intake.MAX_RUNS_PER_DAY
+        self.addCleanup(setattr, intake, "MAX_RUNS_PER_DAY", self.day)
+        intake._started.clear()
+        self.addCleanup(intake._started.clear)
+
+    def test_a_commission_past_the_cap_is_refused_with_429(self):
+        intake.MAX_RUNS_PER_DAY = 1
+        intake._started.append(time.time())
+
+        answer = self.client.post("/projects", data={
+            "name": "capped", "brief": "chart it", "workflow": "vector_infographic", "start": "1"})
+
+        self.assertEqual(429, answer.status_code,
+                         "429 says 'later', where 400 would say the commission was wrong")
+
+    def test_nothing_is_created_when_the_cap_refuses(self):
+        """Checked before the project is written and before the upload is staged, so a refusal costs
+        nothing and leaves no half-made project behind."""
+        intake.MAX_RUNS_PER_DAY = 1
+        intake._started.append(time.time())
+
+        called = []
+        original, intake.create = intake.create, lambda *a, **k: called.append(k)
+        self.addCleanup(setattr, intake, "create", original)
+
+        self.client.post("/projects", data={
+            "name": "capped", "brief": "chart it", "workflow": "vector_infographic", "start": "1"})
+
+        self.assertEqual([], called, "the generator ran for a commission that was refused")
+
+    def test_creating_without_starting_is_not_capped(self):
+        """The cap is on *spending*, and an unstarted project spends nothing. Refused later for a
+        reason of its own, which is past this check."""
+        intake.MAX_RUNS_PER_DAY = 1
+        intake._started.append(time.time())
+
+        answer = self.client.post("/projects", data={
+            "name": "capped", "brief": "   ", "workflow": "vector_infographic"})
+
+        self.assertEqual(400, answer.status_code)
+        self.assertIn("brief is required", answer.text)
 
 
 if __name__ == "__main__":

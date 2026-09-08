@@ -47,6 +47,30 @@ public class ImageData : IDataUriSource
 
     #region Methods
     /// <summary>PNG shorthand for <see cref="ToImageBytes"/>, the spelling the SDK reference documents.</summary>
+    /// <summary>
+    /// What <c>JSON.stringify(imageData)</c> serialises — the dimensions and the buffer's size,
+    /// never the buffer.
+    /// </summary>
+    /// <remarks>
+    /// <b>The worst case of the lot, by an order of magnitude.</b> <see cref="Data"/> is
+    /// <c>width × height × 4</c> and <b>uncompressed</b>, so a 1600 × 1200 canvas is 7.7 million
+    /// bytes — which <c>JSON.stringify</c> would transcribe as a decimal array of roughly
+    /// <b>30 MB of text</b>. And this is the object someone reaches for precisely when they are
+    /// debugging pixels, which is when a 30 MB log line does the most damage.
+    /// <para>
+    /// <c>data</c> itself is untouched; a script that wants the pixels still reads
+    /// <c>imageData.data</c>. See <c>PhotoAsset.ToJSON</c> for the measured cost of getting this
+    /// wrong — it is not a one-off charge, because a payload this size changes the prompt prefix and
+    /// collapses caching for every turn that follows.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["width"] = Width,
+        ["height"] = Height,
+        ["byteLength"] = Data.Length,
+    };
+
     public byte[] ToPngBytes(int quality = 100) => ToImageBytes("png", quality);
 
     public byte[] ToImageBytes(string format = "webp", int quality = 85)

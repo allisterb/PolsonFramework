@@ -100,6 +100,12 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
   >
   > So once a piece is more than a screenful, keep it in a file: write `artwork.js` with your ordinary editor, change the layer you are working on, and run `ExecuteScript(scriptFile: 'artwork.js', outFile: 'artifacts/stage3.webp')`. The record is unaffected — the server still copies **what actually ran** into `scripts/`, so a later edit to the file never rewrites the history of an earlier execution.
 - **Logging & Output:** Output via `console.log(...)`, `log(...)`, `error(...)`, or `table(...)`.
+  > [!IMPORTANT]
+  > **`JSON.stringify` on an SDK result is safe, and gives you the documented names.** A result carrying an image — `PhotoAsset`, `MaterialAsset`, `BackdropPlate`, `MatteAsset`, `ImageData` — serialises its pixels as a **`byteLength`** rather than transcribing them, and every key comes back in the camelCase spelling this reference uses, so `JSON.parse(JSON.stringify(photo)).aspectRatio` is the number you expect. The real buffer is untouched: `photo.bytes` and `imageData.data` are unchanged.
+  >
+  > **This was not true before 2026-09-08 and the failure was expensive.** Stringifying walked the object behind the API, so it emitted the raw bytes as a decimal array under PascalCase keys — one 960px photograph measured **523,295 characters**, about six times the file's own size, and a 1600 × 1200 `ImageData` would have produced roughly **30 MB of text**.
+  >
+  > **The cost was not paid once.** On a live run a stringified asset took one turn's input from ~32k tokens to ~555k — and because it changed the prompt prefix, prompt caching collapsed to zero and *stayed* there, so every later turn re-paid the full amount. Four turns later the run hit a 2,000,000-token breaker and stopped. If you are ever tempted to log a whole result, log the fields you want instead; and if a run's `cached` count suddenly drops to zero, something large entered the conversation and everything after it is being re-billed.
 - **Early Termination:** Use `exit(message)` to terminate execution immediately and cleanly return the specified message without a failure status.
 
 ---

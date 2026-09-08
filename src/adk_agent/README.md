@@ -331,6 +331,55 @@ gcloud run deploy polson-studio --source . \
   --set-secrets POLSON_AGENT_PLATFORM_KEY=polson-agent-key:latest
 ```
 
+> [!IMPORTANT]
+> **The engine's settings are configured through `POLSON_*` variables, which the entrypoint writes
+> into `appsettings.json` at start.** The .NET side reads that file and nothing else —
+> `Runtime.LoadConfigFile` uses `AddJsonFile` with no `AddEnvironmentVariables` — so this is the only
+> route, and until 2026-09-08 the entrypoint wrote the credential alone. Everything below was
+> therefore *unreachable* on a deployment rather than merely defaulted, which is a failure that looks
+> exactly like a working configuration.
+>
+> | variable | setting | note |
+> | :--- | :--- | :--- |
+> | `POLSON_AGENT_PLATFORM_KEY` | `ApiKeys:GoogleAgentPlatform` | the secret; also feeds the Python half |
+> | `POLSON_PARALLEL_KEY` | `ApiKeys:Parallel` | **without it research is silently disabled** |
+> | `POLSON_ASSETS_BUDGET` | `Assets:Budget` | generations **per server run** — one container, every project |
+> | `POLSON_ASSETS_MODEL` · `POLSON_ASSETS_CACHE_DIR` | `Assets:*` | |
+> | `POLSON_DOCUMENTS_BUDGET` · `_MODEL` · `_CACHE_DIR` | `Documents:*` | |
+> | `POLSON_PHOTOS_BUDGET` · `_ALLOWED_HOSTS` · `_USER_AGENT` | `Photos:*` | |
+> | `POLSON_RESEARCH_BUDGET` · `_PROCESSOR` · `_ARCHIVE_DIR` | `Research:*` | |
+> | `POLSON_SERVER_TIMEOUT_SECONDS` | `Server:DefaultTimeoutSeconds` | |
+>
+> An unset variable writes no key, so defaults still apply. A numeric one that is not a number is
+> **reported to stderr and dropped** rather than written through — `int.TryParse` would leave zero,
+> and a budget of zero disables the surface outright, so a typo would present as "requisition is
+> broken" with nothing saying why. `test_entrypoint.py` runs the real generator extracted from the
+> script, and fails if the engine gains a setting the container cannot set.
+
+> [!IMPORTANT]
+> **If you reach a private service through `gcloud run services proxy`, set `POLSON_ALLOW_ORIGINS`
+> or every form submission is refused.** ADK's CSRF middleware compares the request's `Origin`
+> against the allowed list, and through the proxy the browser's origin is `http://127.0.0.1:8080` —
+> genuinely a different origin from the service's own host, so it is refused with
+> `Forbidden: origin not allowed`.
+>
+> **It looks like a broken deploy rather than a config gap**, because a *browser* only sends `Origin`
+> on the POST: the form loads perfectly at `/new`, and submitting it fails. Nothing in the log
+> explains it, because the refusal happens in middleware before any of our handlers run.
+>
+> ```bash
+> gcloud run services update polson-studio --project <project> --region <region> \
+>   --update-env-vars "^;^POLSON_ALLOW_ORIGINS=http://127.0.0.1:8080,http://localhost:8080"
+> ```
+>
+> **`^;^` is not decoration.** `--update-env-vars` splits on commas, so without it this value becomes
+> one variable holding `http://127.0.0.1:8080` and a second bogus one named `http://localhost:8080`.
+> The prefix makes `;` the separator for the whole argument, leaving commas inside the value alone.
+>
+> A public deployment reached at its own `run.app` URL needs none of this — the origin is then the
+> service's own host. This is a proxy-only requirement, which is why it is easy to meet for the first
+> time long after the deploy that "worked".
+
 > [!WARNING]
 > **`POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>` does not work yet, and would stop the container
 > starting.** `GcsArtifactService.__init__` does `from google.cloud import storage`, and

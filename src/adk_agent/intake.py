@@ -23,10 +23,13 @@ cannot escape the directory it is written to.
 from __future__ import annotations
 
 import asyncio
+import os
+import time
 import logging
 import re
 import shutil
 import tempfile
+from collections import deque
 from pathlib import Path
 
 import httpx
@@ -167,6 +170,43 @@ OPENING = "Begin. Read brief.md and work the project through to a finished deliv
 #: Runs in flight, held so the event loop does not collect a task nobody is awaiting. A run outlives
 #: the request that started it by many minutes, which is the whole reason it is a task at all.
 _running: set[asyncio.Task] = set()
+
+#: How many runs this host will start in a rolling 24 hours, and how many at once.
+#:
+#: **The per-run budgets do not add up to a limit.** `POLSON_BUDGET_TOKENS`, `POLSON_BUDGET_MINUTES`
+#: and the circuit breaker each bound *one* run; nothing bounded how many runs a stranger could
+#: start. On a public URL that is an open door onto a metered image service and a metered model —
+#: the cost surface `CLAUDE.md` Milestone 6 §4 names and nothing implemented.
+#:
+#: A spend brake, **not a security control**: it is global rather than per visitor, because behind
+#: Cloud Run the only per-visitor key is an IP, and rate-limiting by IP is both easy to evade and a
+#: kind of fingerprinting this project has no reason to do. One number, applied to everyone.
+MAX_RUNS_PER_DAY = int(os.environ.get("POLSON_MAX_RUNS_PER_DAY", "25"))
+MAX_CONCURRENT_RUNS = int(os.environ.get("POLSON_MAX_CONCURRENT_RUNS", "2"))
+
+#: When each run was started, newest last. In memory on purpose — the deployment runs one instance
+#: and its projects are ephemeral, so a counter that outlived them would be describing runs whose
+#: record is already gone. A restart clears it, which is the honest failure mode for a brake whose
+#: subject is the container's own work: it can be defeated by crashing the service, and anyone who
+#: can do that has a better lever than this one anyway.
+_started: deque[float] = deque(maxlen=1000)
+
+
+def _too_many() -> str | None:
+    """Why this run may not start, or None. Checked before anything is created or staged."""
+    if MAX_CONCURRENT_RUNS > 0 and len(_running) >= MAX_CONCURRENT_RUNS:
+        return (f"{len(_running)} run(s) already going, which is the limit for this host. "
+                "Watch one of those, or come back when it has finished — a run takes a few minutes.")
+
+    if MAX_RUNS_PER_DAY > 0:
+        cutoff = time.time() - 86_400
+        while _started and _started[0] < cutoff:
+            _started.popleft()
+        if len(_started) >= MAX_RUNS_PER_DAY:
+            return (f"This host has started its {MAX_RUNS_PER_DAY} runs for today. The studio spends "
+                    "real money on every run, so the daily allowance is deliberate rather than a "
+                    "fault. Finished runs are still readable in the studio.")
+    return None
 
 
 def observing_only(method: str, path: str, root_path: str = "") -> bool:
@@ -346,6 +386,12 @@ def mount(app: FastAPI) -> None:
         if not brief.strip():
             raise HTTPException(400, "A brief is required — say what you want made.")
 
+        # Before the upload is staged and before the project is written, so a refused commission
+        # leaves nothing behind and costs nothing. 429 rather than 400: the request is fine, the
+        # host is not willing right now, and a client should read it as "later" rather than "wrong".
+        if start and (full := _too_many()):
+            raise HTTPException(429, full)
+
         # Staged into a scratch directory *before* the project exists, so a refused upload leaves
         # nothing behind and no half-made project. Its own directory rather than the shared temp
         # folder, so the file can keep its real name without colliding with a concurrent upload of
@@ -377,6 +423,10 @@ def mount(app: FastAPI) -> None:
         #
         # Fired as a task rather than awaited: a run takes minutes and the response has to come back
         # now. Nothing reads its result, so a failure is logged rather than raised.
+        # Recorded at the moment of starting rather than of asking, so a commission refused above or
+        # one that never reached here does not consume the day's allowance.
+        _started.append(time.time())
+
         run = asyncio.create_task(launch(request_app, name))
         _running.add(run)
         run.add_done_callback(_running.discard)

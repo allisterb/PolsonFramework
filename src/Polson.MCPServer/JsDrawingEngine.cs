@@ -229,8 +229,20 @@ public partial class JsDrawingEngine : Runtime
                 //     preventing it, and every one lands in the run record as an `absent` probe.
                 options.SetMemberAccessor((_, target, member) =>
                 {
-                    if (InteropProtocolMembers.Contains(member)) return JsValue.Undefined;
+                    // `then` is answered undefined *unconditionally*, because `await` probes it on
+                    // every value it resolves — a type that happened to carry a `Then` would
+                    // silently hijack awaiting, which is not a trade worth any convenience.
+                    if (member is "then") return JsValue.Undefined;
+
+                    // Everything else that really exists answers for itself — **including
+                    // `toJSON`**, which is a hook a type is *meant* to be able to implement.
+                    // Returning undefined for it unconditionally, as this did, meant a `ToJSON()`
+                    // written on a result type could never be reached: `JSON.stringify` went on
+                    // walking the CLR object, emitting raw `Bytes` as a decimal array under
+                    // PascalCase keys. The exemption exists so an *absent* hook reads as absent
+                    // rather than throwing, and that is all it should do.
                     if (MemberIndex.Has(target, member)) return null;
+                    if (InteropProtocolMembers.Contains(member)) return JsValue.Undefined;
 
                     // Only the misses, and only ones with a real receiver — cheap because a script
                     // that spells everything correctly never reaches this line.

@@ -177,6 +177,20 @@ public static class JsSurface
             ["paper.snapPaper"] = "constructor artifact, not a callable",
             ["element.wrap"] = "internal element wrapper factory",
             ["Documents.dispose"] = "host lifetime: releases the model client, not a script's to call",
+            // A JS *protocol* hook rather than a call an agent types. `JSON.stringify` looks for
+            // `toJSON` the way `await` looks for `then`; what matters to a reader is the behaviour —
+            // stringifying a result is cheap and gives the documented camelCase names — and that is
+            // stated once in prose under the execution model rather than seven times as a member.
+            // Documenting it per type would also invite exactly the wrong call: `photo.toJSON()`
+            // instead of `JSON.stringify(photo)`.
+            ["photo.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["subject.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["licence.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["material.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["plate.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["matte.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["imageData.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+
             // Aliases of a documented member; documenting both spellings invites drift.
             ["paper.toDataURL"] = "alias of paper.toDataUri",
             ["bitmap.toDataURL"] = "alias of bitmap.toDataUri",

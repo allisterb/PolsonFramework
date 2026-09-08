@@ -173,6 +173,18 @@ public sealed record Provenance
 
     /// <summary>Verbatim prompt sent upstream. Logged for audit; prompts leave the machine.</summary>
     public required string Prompt { get; init; }
+
+    /// <summary>The documented surface, for <c>JSON.stringify</c>. See <see cref="RequisitionResult.ToJSON"/>.</summary>
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["model"] = Model,
+        ["hash"] = Hash,
+        ["blockingHash"] = BlockingHash,
+        ["requester"] = Requester,
+        ["generatedUtc"] = GeneratedUtc,
+        ["fromCache"] = FromCache,
+        ["prompt"] = Prompt,
+    };
 }
 
 /// <summary>Measured tiling behaviour of a material swatch.</summary>
@@ -205,6 +217,17 @@ public sealed record TilingMetrics
 
     /// <summary>Set when the swatch did not wrap and this layer repaired it.</summary>
     public bool Repaired { get; init; }
+
+    /// <summary>The documented surface, for <c>JSON.stringify</c>. See <see cref="RequisitionResult.ToJSON"/>.</summary>
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["horizontalSeamStep"] = HorizontalSeamStep,
+        ["verticalSeamStep"] = VerticalSeamStep,
+        ["neighbourMedian"] = NeighbourMedian,
+        ["neighbourMax"] = NeighbourMax,
+        ["wraps"] = Wraps,
+        ["repaired"] = Repaired,
+    };
 }
 
 /// <summary>
@@ -244,6 +267,34 @@ public abstract record RequisitionResult
 
     /// <summary>Whether repeating the identical requisition could plausibly succeed.</summary>
     public bool Retryable => ImageGenerationResult.IsRetryable(Failure);
+
+    /// <summary>
+    /// What <c>JSON.stringify</c> serialises: the documented surface, in the documented spelling,
+    /// with any image reported as a size rather than transcribed as numbers.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="Polson.ExtendedMind.Photos.PhotoAsset.ToJSON"/> for the measurements behind
+    /// this. In short: without the hook <c>JSON.stringify</c> walks the CLR object and emits raw
+    /// bytes as a decimal array under PascalCase keys — and because that lands in the conversation
+    /// and changes the prompt prefix, it also collapses prompt caching, so the cost repeats on
+    /// every later turn instead of being paid once.
+    /// <para>
+    /// <paramref name="key"/> is the property name <c>JSON.stringify</c> passes. It is unused, but
+    /// the parameter has to exist or no overload matches and the call fails with <i>"No public
+    /// methods with the specified arguments were found"</i> — which is what a parameterless first
+    /// attempt at this did.
+    /// </para>
+    /// </remarks>
+    public virtual Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["success"] = Success,
+        ["id"] = Id,
+        ["provenance"] = Provenance?.ToJSON(),
+        ["failureName"] = FailureName,
+        ["error"] = Error,
+        ["remedy"] = Remedy,
+        ["retryable"] = Retryable,
+    };
 }
 
 /// <summary>A flat material swatch. Geometry-independent, reusable, and cheap to re-derive at any size.</summary>
@@ -263,6 +314,17 @@ public sealed record MaterialAsset : RequisitionResult, IDataUriSource
     public string ToDataUri() => Bytes.Length > 0
         ? $"data:{MimeType};base64,{Convert.ToBase64String(Bytes)}"
         : string.Empty;
+
+    /// <inheritdoc/>
+    public override Dictionary<string, object?> ToJSON(string? key = null)
+    {
+        var json = base.ToJSON(key);
+        json["byteLength"] = Bytes.Length;
+        json["size"] = Size;
+        json["mimeType"] = MimeType;
+        json["tiling"] = Tiling?.ToJSON();
+        return json;
+    }
 }
 
 /// <summary>Measurements taken from a returned backdrop, so the foreground reads the plate rather than guessing.</summary>
@@ -296,6 +358,20 @@ public sealed record PlateMetrics
     /// region of pure black. Detected by thresholding; the mask is exactly recoverable.
     /// </summary>
     public required bool HasBakedMask { get; init; }
+
+    /// <summary>The documented surface, for `JSON.stringify`. See <see cref="RequisitionResult.ToJSON"/>.</summary>
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["keyLightX"] = KeyLightX,
+        ["keyLightY"] = KeyLightY,
+        ["bandLuminance"] = BandLuminance,
+        ["quietX"] = QuietX,
+        ["quietY"] = QuietY,
+        ["quietWidth"] = QuietWidth,
+        ["quietHeight"] = QuietHeight,
+        ["quietRegionHonoured"] = QuietRegionHonoured,
+        ["hasBakedMask"] = HasBakedMask,
+    };
 }
 
 /// <summary>A background plate. Composited beneath the scene; never handed back as a drawable-over layer.</summary>
@@ -324,6 +400,20 @@ public sealed record BackdropPlate : RequisitionResult, IDataUriSource
     public string ToDataUri() => Bytes.Length > 0
         ? $"data:{MimeType};base64,{Convert.ToBase64String(Bytes)}"
         : string.Empty;
+
+    /// <inheritdoc/>
+    public override Dictionary<string, object?> ToJSON(string? key = null)
+    {
+        var json = base.ToJSON(key);
+        json["byteLength"] = Bytes.Length;
+        json["width"] = Width;
+        json["height"] = Height;
+        json["mimeType"] = MimeType;
+        json["metrics"] = Metrics?.ToJSON();
+        json["boundTo"] = BoundTo;
+        json["isReusable"] = IsReusable;
+        return json;
+    }
 }
 
 /// <summary>A single-channel mask, height field, or displacement source.</summary>
@@ -357,6 +447,17 @@ public sealed record MatteAsset : RequisitionResult, IDataUriSource
     public string ToDataUri() => Bytes.Length > 0
         ? $"data:image/png;base64,{Convert.ToBase64String(Bytes)}"
         : string.Empty;
+
+    /// <inheritdoc/>
+    public override Dictionary<string, object?> ToJSON(string? key = null)
+    {
+        var json = base.ToJSON(key);
+        json["byteLength"] = Bytes.Length;
+        json["size"] = Size;
+        json["threshold"] = Threshold;
+        json["coverage"] = Coverage;
+        return json;
+    }
 }
 
 #endregion

@@ -139,6 +139,23 @@ public sealed record PhotoLicence
 
     /// <summary>True when the source stated a licence at all.</summary>
     public bool IsStated => !string.IsNullOrWhiteSpace(Name);
+
+    /// <summary>The documented surface, for `JSON.stringify`. See <see cref="PhotoAsset.ToJSON"/>.</summary>
+    /// <remarks>
+    /// Nested types need this too, or a half-done job emits camelCase at the top level and
+    /// PascalCase one level down — which is harder to work with than being uniformly wrong.
+    /// </remarks>
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["name"] = Name,
+        ["usageTerms"] = UsageTerms,
+        ["artist"] = Artist,
+        ["credit"] = Credit,
+        ["attributionRequired"] = AttributionRequired,
+        ["restrictions"] = Restrictions,
+        ["descriptionUrl"] = DescriptionUrl,
+        ["isStated"] = IsStated,
+    };
 }
 
 /// <summary>A subject resolved to a page and a lead photograph, before any bytes are fetched.</summary>
@@ -196,6 +213,26 @@ public sealed record SubjectMatch
     public string Remedy => PhotoFailures.RemedyFor(Failure);
 
     public bool Retryable => PhotoFailures.IsRetryable(Failure);
+
+    /// <summary>The documented surface, for `JSON.stringify`. See <see cref="PhotoAsset.ToJSON"/>.</summary>
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["success"] = Success,
+        ["query"] = Query,
+        ["title"] = Title,
+        ["description"] = Description,
+        ["isDisambiguation"] = IsDisambiguation,
+        ["alternatives"] = Alternatives,
+        ["file"] = File,
+        ["licence"] = Licence?.ToJSON(),
+        ["imageUrl"] = ImageUrl,
+        ["sourceWidth"] = SourceWidth,
+        ["sourceHeight"] = SourceHeight,
+        ["failureName"] = FailureName,
+        ["error"] = Error,
+        ["remedy"] = Remedy,
+        ["retryable"] = Retryable,
+    };
 }
 
 /// <summary>A reference photograph and the terms it arrived with.</summary>
@@ -263,6 +300,54 @@ public sealed record PhotoAsset : IDataUriSource
     #endregion
 
     #region Methods
+    /// <summary>
+    /// What <c>JSON.stringify(photo)</c> serialises: the documented surface, in the documented
+    /// spelling, with the image reported as a size rather than transcribed as numbers.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two faults, one hook.</b> Without this, <c>JSON.stringify</c> walks the CLR object, so it
+    /// emits the raw <c>Bytes</c> as a decimal array and names every field in PascalCase. Measured
+    /// on one 960px photograph: <b>523,295 characters</b> — about six times the file's own size,
+    /// because a byte becomes up to four digits and a comma — and
+    /// <c>JSON.parse(JSON.stringify(p)).aspectRatio</c> reads <c>undefined</c> while
+    /// <c>p.aspectRatio</c> works, since the camelCase spelling is Jint's *access* mapping and does
+    /// not survive serialisation.
+    /// <para>
+    /// <b>The cost is recurring, not one-off, which is what makes it worth fixing.</b> On the
+    /// 2026-09-08 deployed run a stringified asset took one turn's input from ~32k tokens to
+    /// ~555k — and because it changed the prompt prefix, <c>cached</c> fell from 27,590 to
+    /// <b>zero and stayed there</b>. Every later turn re-paid the full 555k, and four of them
+    /// tripped the 2,000,000-token breaker.
+    /// </para>
+    /// <para>
+    /// <c>byteLength</c> rather than silently dropping the image: a reader asking what is in this
+    /// object should still learn that there is one and how big it is. <c>photo.bytes</c> is
+    /// untouched — only serialisation changes.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["success"] = Success,
+        ["id"] = Id,
+        ["byteLength"] = Bytes.Length,
+        ["width"] = Width,
+        ["height"] = Height,
+        ["mimeType"] = MimeType,
+        ["aspectRatio"] = AspectRatio,
+        ["subject"] = Subject.ToJSON(),
+        ["licence"] = Licence?.ToJSON(),
+        ["source"] = Source,
+        ["sourceUrl"] = SourceUrl,
+        ["requester"] = Requester,
+        ["fetchedUtc"] = FetchedUtc,
+        ["fromCache"] = FromCache,
+        ["failureName"] = FailureName,
+        ["error"] = Error,
+        ["remedy"] = Remedy,
+        ["retryable"] = Retryable,
+        ["creditLine"] = CreditLine(),
+    };
+
     /// <summary>Base64 data URI, for handing straight to <c>Skia.Image.fromDataUrl</c>.</summary>
     public string ToDataUri() => Bytes.Length > 0
         ? $"data:{MimeType};base64,{Convert.ToBase64String(Bytes)}"

@@ -23,15 +23,110 @@ set -eu
 # both halves and they cannot disagree.
 CLI_SETTINGS="/app/bin/cli/appsettings.json"
 
+# ---------------------------------------------------------------------------------------------
+# 1a. Credentials, normalised before anything reads them.
+# ---------------------------------------------------------------------------------------------
+# **Secret Manager stores bytes verbatim and neither it nor gcloud trims anything**, so a secret
+# created interactively very often carries a trailing newline: `polson-agent-key` measured **55
+# bytes for a 54-character key**, because the console recipe is paste, Enter, Ctrl-Z, Enter — and
+# that Enter is in the value. It has always worked only because the model client happens to tolerate
+# trailing whitespace, which is not a guarantee anyone gave us.
+#
+# Normalised **once, here**, rather than at each use, because the two halves of the studio read the
+# credential by different routes: the engine gets it from the JSON written below, the agent gets it
+# from `GOOGLE_API_KEY` exported further down. Trimming in only one of those is worse than trimming
+# in neither — it produces a container where the engine authenticates and the agent does not, which
+# looks like a broken model rather than a malformed secret.
+#
+# All whitespace rather than just the trailing newline: an API key contains none, so this also
+# covers a CRLF from a Windows-written file and a stray leading space from a copy-paste.
+for _credential in POLSON_AGENT_PLATFORM_KEY POLSON_PARALLEL_KEY; do
+    eval "_value=\${$_credential:-}"
+    [ -n "$_value" ] || continue
+
+    _trimmed="$(printf '%s' "$_value" | tr -d '[:space:]')"
+    if [ "$_trimmed" != "$_value" ]; then
+        echo "entrypoint: trimmed whitespace from $_credential" >&2
+    fi
+    eval "$_credential=\$_trimmed"
+    export "$_credential"
+done
+unset _credential _value _trimmed
+
 if [ -n "${POLSON_AGENT_PLATFORM_KEY:-}" ]; then
     umask 077
-    # Written with printf rather than a heredoc so the key cannot be word-split or globbed, and
-    # via python so it is JSON-escaped rather than pasted between quotes.
+    # Written via python so every value is JSON-escaped rather than pasted between quotes, which is
+    # what stops a key or a prompt containing a quote from producing an unparseable file.
+    #
+    # **This writes every setting the engine reads, not just the credential.** It used to write the
+    # key alone, and the consequence was invisible: `Runtime.LoadConfigFile` builds configuration
+    # from `AddJsonFile` and nothing else — there is no `AddEnvironmentVariables` anywhere — so a
+    # deployed container had *no way at all* to set the asset budget, the models, the cache
+    # directories or the research key. They were not overridden; they were unreachable, sitting at
+    # their compiled defaults while a deployment looked fully configured.
+    #
+    # Two things that cost real money followed. `Assets:Budget` stayed at 120 generations *per
+    # server run* — and under ADK the server is spawned once per container, so that ceiling is
+    # shared by every project anyone commissions until the instance recycles. And `ApiKeys:Parallel`
+    # was never written at all, so research was silently disabled on every deploy: the one
+    # difference most likely to make a hosted run behave unlike the same workflow run locally.
+    #
+    # The single-file rule is kept deliberately. `orchestrator/credentials.py` argues the engine
+    # should have exactly one credential home so the two halves of the studio cannot authenticate as
+    # different identities; the fix is to widen what the *writer* knows about, not to teach the
+    # reader a second source.
     python - "$CLI_SETTINGS" <<'PYTHON'
 import json, os, sys
-key = os.environ["POLSON_AGENT_PLATFORM_KEY"]
+
+# env var -> dotted configuration key. Every key here is one `Program.Setting(...)` actually reads;
+# adding a setting to the engine means adding it here, or it cannot be set on a deployment.
+SETTINGS = [
+    ("POLSON_AGENT_PLATFORM_KEY",     "ApiKeys:GoogleAgentPlatform", str),
+    ("POLSON_PARALLEL_KEY",           "ApiKeys:Parallel",            str),
+    ("POLSON_ASSETS_MODEL",           "Assets:Model",                str),
+    ("POLSON_ASSETS_BUDGET",          "Assets:Budget",               int),
+    ("POLSON_ASSETS_CACHE_DIR",       "Assets:CacheDir",             str),
+    ("POLSON_DOCUMENTS_MODEL",        "Documents:Model",             str),
+    ("POLSON_DOCUMENTS_BUDGET",       "Documents:Budget",            int),
+    ("POLSON_DOCUMENTS_CACHE_DIR",    "Documents:CacheDir",          str),
+    ("POLSON_PHOTOS_BUDGET",          "Photos:Budget",               int),
+    ("POLSON_PHOTOS_ALLOWED_HOSTS",   "Photos:AllowedHosts",         str),
+    ("POLSON_PHOTOS_USER_AGENT",      "Photos:UserAgent",            str),
+    ("POLSON_RESEARCH_PROCESSOR",     "Research:Processor",          str),
+    ("POLSON_RESEARCH_BUDGET",        "Research:Budget",             int),
+    ("POLSON_RESEARCH_ARCHIVE_DIR",   "Research:ArchiveDir",         str),
+    ("POLSON_SERVER_TIMEOUT_SECONDS", "Server:DefaultTimeoutSeconds", int),
+]
+
+settings, skipped = {}, []
+for variable, key, kind in SETTINGS:
+    raw = os.environ.get(variable, "").strip()
+    if not raw:
+        continue
+
+    if kind is int:
+        try:
+            value = int(raw)
+        except ValueError:
+            # Reported and dropped rather than written through. A non-numeric budget would reach
+            # `int.TryParse`, leave 0, and a budget of zero disables the surface entirely — so a
+            # typo would present as "asset requisition is broken" with nothing saying why.
+            skipped.append(f"{variable}={raw!r} is not a number")
+            continue
+    else:
+        value = raw
+
+    section, _, leaf = key.partition(":")
+    settings.setdefault(section, {})[leaf] = value
+
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
-    json.dump({"ApiKeys": {"GoogleAgentPlatform": key}}, handle)
+    json.dump(settings, handle, indent=2)
+
+# Names only. The values include a credential, and this goes to a log aggregator.
+print("entrypoint: settings written -> " + ", ".join(
+    f"{section}:{leaf}" for section, leaves in settings.items() for leaf in leaves))
+for problem in skipped:
+    print(f"entrypoint: WARNING - ignored {problem}", file=sys.stderr)
 PYTHON
     # The Python half of the studio wants the same credential under google-genai's own names.
     export GOOGLE_API_KEY="${GOOGLE_API_KEY:-$POLSON_AGENT_PLATFORM_KEY}"

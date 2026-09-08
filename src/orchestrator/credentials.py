@@ -25,8 +25,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-#: Repository root, from `src/webapp/orchestrator/credentials.py`.
-REPO_ROOT = Path(__file__).resolve().parents[3]
+#: Repository root, from `src/orchestrator/credentials.py` — two levels up, not three.
+#:
+#: This package moved out of `src/webapp/` so the ADK runtime does not depend on the Antigravity
+#: tree; the depth moved with it. A wrong count here does not raise — it resolves to a directory
+#: that simply has no `bin/cli`, so the CLI reads as *not built* and every test that needs it skips.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CLI_DIR = REPO_ROOT / "bin" / "cli"
 CLI_DLL = CLI_DIR / "Polson.CLI.dll"

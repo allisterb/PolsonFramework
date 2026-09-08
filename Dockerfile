@@ -255,7 +255,7 @@ WORKDIR /app
 
 # Python dependencies, hash-locked exactly as the install scripts do it.
 #
-# `src/webapp/pip.ini` is deliberately NOT copied to `/etc/pip.conf`: it sets
+# `tools/python/pip.ini` is deliberately NOT copied to `/etc/pip.conf`: it sets
 # `require-virtualenv = true`, which is correct on a developer's machine and would refuse every
 # install in a container that has no virtualenv. The two flags that matter are passed explicitly.
 COPY src/adk_agent/requirements.txt ./requirements.txt
@@ -268,17 +268,17 @@ COPY src/adk_agent/ ./adk_agent/
 # The studio's web layer, which `main.py` mounts at /studio so one container serves the agent and
 # the pages a visitor watches it through.
 #
-# **Only the two packages it actually imports.** Not `src/webapp/` wholesale: that directory also
-# holds the Antigravity orchestrator's entry points, its own venv marker files and an install
-# script, none of which this image runs — and `orchestrator/run.py` imports an SDK deliberately
-# absent from `requirements.txt`, so copying the tree and *appearing* to offer the driver would be
-# worse than not copying it. The lazy imports in `orchestrator/__init__.py` are what make the
-# observing half work without it; see the note beside the mount in `main.py`.
+# **Only the two packages it actually imports**, named one by one rather than copying `src/`
+# wholesale — that tree is the .NET solution, already built in the engine stage, and none of its
+# sources belong in the runtime image. `orchestrator/run.py` also imports an SDK deliberately absent
+# from `requirements.txt`, so copying more and *appearing* to offer the driver would be worse than
+# copying less. The lazy imports in `orchestrator/__init__.py` are what make the observing half work
+# without it; see the note beside the mount in `main.py`.
 #
 # `main.py` looks for this beside `adk_agent/`, so the layout has to mirror the repository: a flat
 # copy here would import locally and 404 in the container.
-COPY src/webapp/studio/ ./webapp/studio/
-COPY src/webapp/orchestrator/ ./webapp/orchestrator/
+COPY src/studio/ ./studio/
+COPY src/orchestrator/ ./orchestrator/
 COPY docker-entrypoint.sh /usr/local/bin/polson-entrypoint
 RUN chmod +x /usr/local/bin/polson-entrypoint
 

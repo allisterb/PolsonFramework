@@ -310,7 +310,7 @@ The record is already shaped for it and the runner is not yet.
 
 ## 10. Implementation
 
-`src/webapp/orchestrator/csm.py` — the coder, the curve, and the summary. Spine-only by default;
+`src/orchestrator/csm.py` — the coder, the curve, and the summary. Spine-only by default;
 `enrich=True` merges the standalone transcript.
 
 `src/Polson.Runtime/ProbeScope.cs` — the probe instrumentation the *inspect* column depends on.

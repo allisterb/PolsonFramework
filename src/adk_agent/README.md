@@ -170,7 +170,7 @@ before changing either, because the differences are structural rather than cosme
 | Tool wiring | `.agents/mcp_config.json` | `McpToolset` objects in code |
 | Permissions | `.agents/settings.json` | not a concept; ADK has no tool-policy file |
 | Discovery | the host reads the wiring files | `<agents_dir>/<name>/agent.py` exporting `root_agent` |
-| Who owns the loop | the host (Desktop/IDE, or `src/webapp/orchestrator`) | ADK's `Runner` |
+| Who owns the loop | the host (Desktop/IDE, or `src/orchestrator`) | ADK's `Runner` |
 | Config | JSON files in the project | environment variables and `.env` |
 | Serving | our orchestrator + FastAPI app | `adk web` / `adk api_server` / `get_fast_api_app` |
 | Deploy | not a deployment target | `adk deploy cloud_run\|agent_engine\|gke`, or our own image |

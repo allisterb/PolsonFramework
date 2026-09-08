@@ -277,7 +277,7 @@ class WorkflowCatalogueTests(unittest.TestCase):
     """
 
     #: The generator discovers a workflow by the presence of this file, and its types by `type.*.md`.
-    TEMPLATES = Path(__file__).resolve().parents[3] / "src" / "Polson.CLI" / "ProjectTemplate"
+    TEMPLATES = Path(__file__).resolve().parents[2] / "src" / "Polson.CLI" / "ProjectTemplate"
 
     def shipped(self) -> dict[str, tuple[str, ...]]:
         """What `create-project` would offer, read the way the generator reads it."""

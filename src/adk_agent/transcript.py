@@ -19,7 +19,7 @@ second dialect for one reader to reconcile, so this writes the same events with 
 **What it deliberately does not do:**
 
 - *No `EventLog` of its own.* It imports the one `orchestrator` already has, so the format has a
-  single implementation. That is also why `src/webapp/orchestrator/` is copied into the image.
+  single implementation. That is also why `src/orchestrator/` is copied into the image.
 - *No failure that reaches the agent.* Every callback returns `None` and swallows what it catches.
   A transcript is a record of the work, and a recorder that can stop the work is worse than no
   recorder — this is the same reasoning `EventLog.append` applies to its own writes.
@@ -39,13 +39,13 @@ from typing import Any
 
 _logger = logging.getLogger("polson.transcript")
 
-#: `orchestrator` lives in the webapp tree, which is not on the path by default in this runtime.
+#: `orchestrator` lives at `src/orchestrator/`, which is not on the path by default in this runtime.
 #: Added here rather than relying on the studio mount having run: the transcript is worth writing
 #: even when the pages are not being served, and a writer that only works when a UI is mounted is a
 #: writer that silently stops the day someone disables the UI.
-_WEBAPP = Path(__file__).resolve().parent.parent / "webapp"
-if _WEBAPP.is_dir() and str(_WEBAPP) not in sys.path:
-    sys.path.insert(0, str(_WEBAPP))
+_SHARED = Path(__file__).resolve().parent.parent
+if (_SHARED / "orchestrator").is_dir() and str(_SHARED) not in sys.path:
+    sys.path.insert(0, str(_SHARED))
 
 #: How much of one text block is kept. Matches `hostlog.clip`'s intent: a record is for reading, and
 #: a model's whole reply is not what a reader wants in a timeline entry.

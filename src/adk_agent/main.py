@@ -13,7 +13,7 @@ wrappers around `get_fast_api_app(...)` — the same function called below. They
 `google/adk/cli/browser/`) alongside the REST API; `adk api_server` serves the API alone.
 
 Calling the function ourselves buys the one thing the CLI cannot give: **the returned object is an
-ordinary `FastAPI`**, so `src/webapp`'s studio UI can be mounted on the same app and the same port.
+ordinary `FastAPI`**, so `src/studio`'s UI can be mounted on the same app and the same port.
 ADK's own Cloud Run guide names this as the reason to take this route — *"particularly if you want to
 embed your agent within a custom FastAPI application."* That collapses the hackathon's hosted-URL
 requirement and the agent runtime into one container instead of two deployments.
@@ -166,12 +166,15 @@ try:
     from fastapi.responses import HTMLResponse as _HTML
     from fastapi.responses import JSONResponse as _JSON
 
-    _webapp = _Path(__file__).resolve().parent.parent / "webapp"
-    if _webapp.is_dir():
-        _sys.path.insert(0, str(_webapp))
+    # `src/`, which is where `studio/` and `orchestrator/` now live. They were under
+    # `src/webapp/`, which meant this runtime could not be shipped without the Antigravity tree
+    # beside it — see `tools/python/README.md` for the same argument applied to the installers.
+    _shared = _Path(__file__).resolve().parent.parent
+    if (_shared / "studio").is_dir():
+        _sys.path.insert(0, str(_shared))
 
         # **Two packages in this tree are called `studio`.** `src/adk_agent/studio.py` is the agent
-        # factory every generated `agent.py` imports by that name, and `src/webapp/studio/` is the
+        # factory every generated `agent.py` imports by that name, and `src/studio/` is the
         # web layer. This process has the ADK one first on `sys.path` (uvicorn's `--app-dir`), so a
         # plain `import studio.app` finds the module and reports that `studio` is not a package.
         #
@@ -181,7 +184,7 @@ try:
         # resolves against it, and `from orchestrator import …` finds the path added above.
         import importlib.util as _ilu
 
-        _pkg = _webapp / "studio"
+        _pkg = _shared / "studio"
         _spec = _ilu.spec_from_file_location(
             "polson_studio", _pkg / "__init__.py", submodule_search_locations=[str(_pkg)])
         _mod = _ilu.module_from_spec(_spec)
@@ -235,6 +238,6 @@ try:
         app.mount("/studio", _studio)
         _logger.warning("polson runtime: studio mounted at /studio (observing only, enforced)")
     else:
-        _logger.warning("polson runtime: studio not mounted — no webapp at %s", _webapp)
+        _logger.warning("polson runtime: studio not mounted — no studio package at %s", _shared)
 except Exception as _e:
     _logger.warning("polson runtime: studio not mounted (%s)", _e)

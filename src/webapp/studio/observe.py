@@ -119,9 +119,28 @@ class Observation:
         self.since = since
         self.interval = max(0.5, interval)
         self.broker = Broker(history=HISTORY, backlog=BACKLOG)
-        self.transcript = HostTranscript(project, sink=self.broker.publish)
-        self.tailer = Tailer(project.server_events, self.broker.publish)
-        self._tail: asyncio.Task | None = None
+
+        # **No sink.** The transcript writes `agent.jsonl`, and that file is now followed below — so
+        # publishing here as well would deliver every host-transcribed turn twice. One publisher per
+        # file, and the file is the one that decides.
+        self.transcript = HostTranscript(project)
+
+        # **All three logs, not just the server's.** The record is three files and the page is one
+        # timeline; following only `server.jsonl` meant everything in `agent.jsonl` reached a watcher
+        # on a refresh, through `_replay`, and never live.
+        #
+        # Under Antigravity that was nearly invisible, because `HostTranscript` published the agent
+        # side into the broker as it transcribed. Under **ADK nothing did** — the transcript plugin
+        # writes `agent.jsonl` itself, so there was no transcribing to publish from. Measured on the
+        # kubrick8 run: 86 events in that file and **none** of them on the page, which is every model
+        # turn, every tool call, and both `run.begin` and `run.end`.
+        #
+        # That is what a director sees as a run that stalls at the start and never says it finished:
+        # the two stretches with no `server.jsonl` traffic are exactly the stretches where the agent
+        # is thinking, waiting on research, or already done.
+        self.tailers = [Tailer(path, self.broker.publish) for path in
+                        (project.server_events, project.agent_events, project.director_events)]
+        self._tail: list[asyncio.Task] = []
         self._sync: asyncio.Task | None = None
         self._stopped = asyncio.Event()
     # endregion
@@ -129,7 +148,7 @@ class Observation:
     # region Methods
     def start(self) -> None:
         """Replays what is already recorded, then follows. Idempotent."""
-        if self._tail is not None and not self._tail.done():
+        if self._tail and not all(task.done() for task in self._tail):
             return
 
         # Transcribed before the replay rather than after, so the conversation is already in the
@@ -141,16 +160,18 @@ class Observation:
         # The tailer starts from the end because the replay above has already delivered everything on
         # disk. Skipping is what stops each render arriving twice — once from the replay and once
         # from the follow.
-        self.tailer.skip_existing()
-        self._tail = asyncio.create_task(self.tailer.run())
+        for tailer in self.tailers:
+            tailer.skip_existing()
+        self._tail = [asyncio.create_task(tailer.run()) for tailer in self.tailers]
         self._sync = asyncio.create_task(self._resync())
 
     async def stop(self) -> None:
         """Stops following and ends every subscription."""
         self._stopped.set()
-        self.tailer.stop()
+        for tailer in self.tailers:
+            tailer.stop()
 
-        for task in (self._tail, self._sync):
+        for task in (*self._tail, self._sync):
             if task is None:
                 continue
             try:
@@ -160,7 +181,7 @@ class Observation:
             except asyncio.CancelledError:
                 pass
 
-        self._tail = self._sync = None
+        self._tail, self._sync = [], None
         self.broker.close()
 
     def attach(self, *, replay: bool = True) -> Subscription:

@@ -116,5 +116,113 @@ class RunBeginTests(unittest.TestCase):
             invocation_context=object(), user_message=object())))
 
 
+
+
+class RunEndTests(unittest.TestCase):
+    """That the record says a run is over, and which of the three ways it ended.
+
+    `run.begin` was written and nothing ever closed it, so a finished run, one the circuit breaker
+    halted, and one wedged mid-turn were the same picture to a reader: a log that stops. That is the
+    state a director is looking at when they ask whether a run is still going.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-transcript-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        transcript_mod._halted.clear()
+        self.addCleanup(transcript_mod._halted.clear)
+        self.plugin = transcript_mod.make_plugin(self.root)
+        if self.plugin is None:
+            self.skipTest("google.adk or orchestrator.events is not importable here")
+
+    def ends(self) -> list[dict]:
+        return [e for e in events(self.root, "agent.jsonl") if e["type"] == "run.end"]
+
+    def test_a_run_that_finishes_normally_says_completed(self):
+        run(self.plugin.after_run_callback(invocation_context=context()))
+
+        self.assertEqual(1, len(self.ends()))
+        self.assertEqual("completed", self.ends()[0]["reason"])
+        self.assertEqual("inv-1", self.ends()[0]["invocation"])
+        self.assertEqual("facilitator", self.ends()[0]["agent"])
+
+    def test_a_halted_run_says_halted_and_carries_the_breakers_numbers(self):
+        """The whole point: a halt reaches ADK's success path, so without the note it reads as a
+        normal finish — the one confusion this event exists to prevent."""
+        transcript_mod.note_halt("inv-1", limit="tokens", used=10_500, cap=10_000)
+        run(self.plugin.after_run_callback(invocation_context=context()))
+
+        end = self.ends()[0]
+        self.assertEqual("halted", end["reason"])
+        self.assertEqual("tokens", end["limit"])
+        self.assertEqual(10_500, end["used"])
+        self.assertEqual(10_000, end["cap"])
+
+    def test_the_time_breaker_is_distinguishable_from_the_token_one(self):
+        transcript_mod.note_halt("inv-1", limit="time", used=7200.0, cap=6300.0)
+        run(self.plugin.after_run_callback(invocation_context=context()))
+
+        self.assertEqual("time", self.ends()[0]["limit"])
+
+    def test_a_halt_belongs_to_one_run_and_is_not_inherited(self):
+        """Spent on the ending that consumes it. A later invocation reusing the id — which happens
+        across a long-lived app process — must not report a halt it never had."""
+        transcript_mod.note_halt("inv-1", limit="tokens", used=10_500, cap=10_000)
+        run(self.plugin.after_run_callback(invocation_context=context("inv-1")))
+        run(self.plugin.after_run_callback(invocation_context=context("inv-1")))
+
+        self.assertEqual(["halted", "completed"], [e["reason"] for e in self.ends()])
+
+    def test_one_runs_halt_does_not_end_another(self):
+        transcript_mod.note_halt("inv-1", limit="tokens", used=10_500, cap=10_000)
+        run(self.plugin.after_run_callback(invocation_context=context("inv-2")))
+
+        self.assertEqual("completed", self.ends()[0]["reason"])
+
+    def test_a_run_that_raises_says_failed_and_names_the_error(self):
+        """ADK skips after_run_callback entirely on this path, so it needs its own hook."""
+        run(self.plugin.on_run_error_callback(
+            invocation_context=context(), error=ValueError("model refused")))
+
+        end = self.ends()[0]
+        self.assertEqual("failed", end["reason"])
+        self.assertIn("ValueError", end["error"])
+        self.assertIn("model refused", end["error"])
+
+    def test_a_failure_outranks_a_pending_halt(self):
+        """Both can be true — the breaker fires, then something throws on the way out. What killed
+        the run is the more useful of the two, and `reason` carries only one."""
+        transcript_mod.note_halt("inv-1", limit="tokens", used=10_500, cap=10_000)
+        run(self.plugin.on_run_error_callback(
+            invocation_context=context(), error=RuntimeError("boom")))
+
+        self.assertEqual("failed", self.ends()[0]["reason"])
+
+    def test_the_record_opens_and_closes(self):
+        run(self.plugin.before_run_callback(invocation_context=context()))
+        run(self.plugin.after_run_callback(invocation_context=context()))
+
+        kinds = [e["type"] for e in events(self.root, "agent.jsonl")]
+        self.assertEqual(["run.begin", "run.end"], kinds)
+
+    def test_held_reasons_are_bounded(self):
+        """An entry is normally spent moments later, but a run that trips and then dies never
+        collects its own, and the app process outlives every run it serves."""
+        for i in range(transcript_mod.HALT_MEMORY + 20):
+            transcript_mod.note_halt(f"inv-{i}", limit="tokens", used=1, cap=1)
+
+        self.assertEqual(transcript_mod.HALT_MEMORY, len(transcript_mod._halted))
+        self.assertNotIn("inv-0", transcript_mod._halted)
+        self.assertIn(f"inv-{transcript_mod.HALT_MEMORY + 19}", transcript_mod._halted)
+
+    def test_an_ending_callback_never_fails_the_run(self):
+        self.assertIsNone(run(self.plugin.after_run_callback(invocation_context=object())))
+        self.assertIsNone(run(self.plugin.on_run_error_callback(
+            invocation_context=object(), error=ValueError("x"))))
+
+    def test_noting_a_halt_never_raises(self):
+        transcript_mod.note_halt("", limit="tokens", used=1, cap=1)
+        self.assertEqual(0, len(transcript_mod._halted))
+
 if __name__ == "__main__":
     unittest.main()

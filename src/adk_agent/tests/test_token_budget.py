@@ -23,6 +23,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import studio
+import transcript
 
 
 class _Ctx:
@@ -317,6 +318,62 @@ class BudgetStatusTests(unittest.IsolatedAsyncioTestCase):
         _spend(ctx, 1_500_000)
         status = await studio._make_budget_status(1_000_000, None)(ctx)
         self.assertEqual(status["inputTokensRemaining"], 0)
+
+
+class HaltNoteTests(unittest.TestCase):
+    """That a halted run leaves the record able to say so.
+
+    The breaker already wrote a line to the server's own log, which is the wrong reader: a director
+    watching a run page sees `run.begin` and then nothing, and cannot tell a halt from a hang. The
+    note left here is what the transcript's `run.end` spends to say *why* the run stopped.
+    """
+
+    def setUp(self):
+        for state in (studio._invocation_input, studio._invocation_cached, studio._token_warned,
+                      studio._invocation_started, studio._turn_started, studio._role_clock):
+            state.clear()
+        studio._tripped.clear()
+        transcript.__dict__["_halted"].clear()
+        self.addCleanup(transcript.__dict__["_halted"].clear)
+
+    def test_the_token_breaker_leaves_its_numbers(self):
+        ctx, before = _Ctx(), studio._make_before_model(None, None, token_cap=10_000)
+        _spend(ctx, 10_500)
+        before(ctx, _Request())
+
+        self.assertEqual({"limit": "tokens", "used": 10_500, "cap": 10_000},
+                         transcript._halted["inv-1"])
+
+    def test_the_time_breaker_leaves_seconds_and_says_it_was_time(self):
+        studio._trip_breaker(_Ctx(), elapsed=7200.0, cap=6300.0)
+
+        note = transcript._halted["inv-1"]
+        self.assertEqual("time", note["limit"])
+        self.assertEqual(7200.0, note["used"])
+        self.assertEqual(6300.0, note["cap"])
+
+    def test_the_note_records_the_halt_not_the_last_refusal(self):
+        """The breaker fires again for every agent that turns up after the halt, and on the time
+        path each re-trip carries a larger `elapsed` — so without the first-trip guard the note
+        drifts, and `run.end` reports when the run gave up rather than when it was stopped.
+
+        Asserted on the time path deliberately. The token path re-trips with an identical `spent`,
+        so a test written there passes whether or not the guard is present — which is what an
+        earlier version of this test did.
+        """
+        studio._trip_breaker(_Ctx(agent="penciler"), elapsed=6400.0, cap=6300.0)
+        studio._trip_breaker(_Ctx(agent="inker"), elapsed=9999.0, cap=6300.0)
+
+        self.assertEqual(1, len(transcript._halted))
+        self.assertEqual(6400.0, transcript._halted["inv-1"]["used"],
+                         "the re-trip overwrote the moment the run was actually halted")
+
+    def test_a_run_under_its_cap_leaves_nothing(self):
+        ctx, before = _Ctx(), studio._make_before_model(None, None, token_cap=10_000)
+        _spend(ctx, 500)
+        before(ctx, _Request())
+
+        self.assertEqual(0, len(transcript._halted))
 
 
 if __name__ == "__main__":

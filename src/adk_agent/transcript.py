@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import sys
 import uuid as _uuid
-from collections import deque
+from collections import OrderedDict, deque
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +55,36 @@ MAX_TEXT = 4000
 #: one `run.begin`, so only the invocation in flight really matters; the rest is slack for a server
 #: holding several sessions at once.
 BEGUN_MEMORY = 64
+
+#: How many halt reasons to hold waiting for their run to unwind. Same slack as `BEGUN_MEMORY`, and
+#: bounded for the same reason: an entry is normally consumed by the `run.end` moments later, but a
+#: run that trips and then dies before `after_run_callback` would leave one behind for the life of
+#: the process.
+HALT_MEMORY = 64
+
+#: Why an invocation was halted, keyed by invocation id, waiting to be spent by its `run.end`.
+#: Written by the circuit breaker in `studio`, which already imports this module — the note travels
+#: the way the dependency already runs, so neither file needs a lazy import to reach the other.
+_halted: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+
+def note_halt(invocation: str, *, limit: str, used: float, cap: float) -> None:
+    """Records that the circuit breaker halted `invocation`, for its `run.end` to report.
+
+    A halt and an ending are different moments: the breaker fires on a turn that is refused, and the
+    run then unwinds through ADK's ordinary success path. So this only leaves the *reason* where the
+    terminal event will find it, rather than writing an event of its own.
+
+    Never raises. A recorder that can take down the run it is recording is worse than a gap.
+    """
+    try:
+        if not invocation:
+            return
+        _halted[invocation] = {"limit": limit, "used": used, "cap": cap}
+        while len(_halted) > HALT_MEMORY:
+            _halted.popitem(last=False)
+    except Exception as exc:                                    # pragma: no cover - defensive
+        _logger.debug("polson transcript: halt not noted (%s)", exc)
 
 
 def clip(text: str) -> tuple[str, bool]:
@@ -160,6 +190,36 @@ def make_plugin(project_dir: str | Path):
             except Exception as exc:
                 _logger.debug("polson transcript: turn not recorded (%s)", exc)
             return None
+
+        async def after_run_callback(self, *, invocation_context):
+            """The run ending, on the path that is not an exception.
+
+            **This is the event the record had no way to express.** `run.begin` was written and
+            nothing closed it, so a finished run, a halted one and one wedged mid-turn were the same
+            picture to anyone reading the log — which is exactly the question a director asks of a
+            run page that has stopped moving.
+
+            A breaker halt arrives here too, because tripping unwinds the invocation normally rather
+            than raising; the reason left by `note_halt` is what tells the two apart.
+            """
+            try:
+                self._end(invocation_context, timestamp())
+            except Exception as exc:
+                _logger.debug("polson transcript: run end not recorded (%s)", exc)
+            return None
+
+        async def on_run_error_callback(self, *, invocation_context, error):
+            """The run ending badly. ADK skips `after_run_callback` entirely on this path.
+
+            Notification-only in ADK: the exception is re-raised once every plugin has been told, so
+            recording it here changes nothing about how the run fails — it only means the record
+            says so rather than simply stopping.
+            """
+            try:
+                self._end(invocation_context, timestamp(), failure=error)
+            except Exception as exc:
+                _logger.debug("polson transcript: run failure not recorded (%s)", exc)
+            return None
         # endregion
 
         # region Methods
@@ -173,6 +233,31 @@ def make_plugin(project_dir: str | Path):
             agent = getattr(getattr(invocation_context, "agent", None), "name", None)
             self.agent.append("run.begin", at=at, uuid=_id(),
                               invocation=invocation or None, agent=agent)
+
+        def _end(self, invocation_context, at: str, failure: Exception | None = None) -> None:
+            """Writes `run.end`, saying which of the three ways this run finished.
+
+            `reason` is `completed`, `halted` or `failed` — one field, because a reader scanning for
+            *did this finish* should not have to infer it from the presence or absence of others.
+            The breaker's numbers ride alongside when there are any, so the event answers "why did it
+            stop" without a second lookup.
+            """
+            invocation = getattr(invocation_context, "invocation_id", None) or ""
+            agent = getattr(getattr(invocation_context, "agent", None), "name", None)
+
+            # Popped rather than read: the reason belongs to this run, and leaving it behind would
+            # let a later invocation that happened to reuse the id inherit a halt it never had.
+            halt = _halted.pop(invocation, None) if invocation else None
+
+            if failure is not None:
+                reason, extra = "failed", {"error": f"{type(failure).__name__}: {failure}"[:MAX_TEXT]}
+            elif halt:
+                reason, extra = "halted", halt
+            else:
+                reason, extra = "completed", {}
+
+            self.agent.append("run.end", at=at, uuid=_id(),
+                              invocation=invocation or None, agent=agent, reason=reason, **extra)
 
         def _record(self, callback_context, llm_response, at: str) -> None:
             turn = _id()

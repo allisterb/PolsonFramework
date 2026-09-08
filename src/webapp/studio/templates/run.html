@@ -177,14 +177,20 @@
   const unpin = document.getElementById('unpin');
 
   const LABEL = {
-    'run.start': 'run started', 'run.end': 'run ended',
+    'run.start': 'run started', 'run.begin': 'run started', 'run.end': 'run ended',
     'stage.begin': 'stage', 'stage.end': 'stage ended', 'stage.continue': 'stage continues',
     'note': 'note', 'script.start': 'executing', 'script.ok': 'executed', 'script.error': 'failed',
     'render': 'rendered', 'inspect': 'looked', 'artifact.read': 'read back',
     'thinking': 'thinking', 'text': 'said', 'tool.call': 'tool',
     'question.open': 'asking', 'question.closed': 'answered', 'message': 'director',
     'stream.lag': 'gap', 'stream.truncated': 'earlier events not kept',
-    'run.error': 'run failed'
+    'run.error': 'run failed',
+    // The longest silence in a run is the research wait, and it was arriving unlabelled — so the one
+    // row that explains why nothing is happening read as raw `research.started`.
+    'research.started': 'researching', 'research.completed': 'research done',
+    'asset.requisition': 'requisitioned', 'asset.refused': 'requisition refused',
+    'document.read': 'read document', 'document.refused': 'document refused',
+    'budget': 'budget', 'check': 'checked', 'observe': 'measured', 'usage': 'tokens'
   };
 
   // What each mode is, in this medium. The *values* are not here on purpose — they come from the
@@ -843,6 +849,30 @@
     if (kind === 'stage.begin' || kind === 'stage.end') return e.stage || '';
     if (kind === 'question.open') return e.text || '';
     if (kind === 'stream.lag' || kind === 'stream.truncated') return `${e.dropped} not shown`;
+    // The row that has to earn its place: what follows it is minutes of nothing, and a reader who
+    // does not know that is watching a run they think has died. The server already measured the
+    // wait — `expectSeconds` — so the page says how long rather than implying it will be quick.
+    if (kind === 'research.started') {
+      const wait = e.expectSeconds ? ` — up to about ${Math.round(e.expectSeconds / 60)} min, and the record stays quiet until it returns` : '';
+      return (e.description || '') + wait;
+    }
+    if (kind === 'research.completed') return e.description || '';
+    // Labelled but empty is worse than unlabelled: forty rows saying `tokens` and nothing else is
+    // noise a reader has to scroll past. The counts are what the event is for — and `cached` is the
+    // one worth seeing, because cached input bills at roughly a tenth and is most of a long run.
+    if (kind === 'usage') {
+      const bits = [];
+      if (e.inputTokens != null) bits.push(`in ${e.inputTokens.toLocaleString()}`);
+      if (e.cacheReadTokens) bits.push(`cached ${e.cacheReadTokens.toLocaleString()}`);
+      if (e.outputTokens != null) bits.push(`out ${e.outputTokens.toLocaleString()}`);
+      if (e.thinkingTokens) bits.push(`thinking ${e.thinkingTokens.toLocaleString()}`);
+      return bits.join(' · ');
+    }
+    if (kind === 'run.end') {
+      return e.reason === 'halted'
+        ? `halted — ${e.limit === 'tokens' ? `${e.used} input tokens` : `${(e.used / 60).toFixed(0)} min`} against a cap of ${e.limit === 'tokens' ? e.cap : (e.cap / 60).toFixed(0) + ' min'}`
+        : (e.reason === 'failed' ? e.error || 'failed' : 'completed');
+    }
     return (e.text || e.script || e.message || '').toString();
   }
 

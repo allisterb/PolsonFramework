@@ -59,12 +59,35 @@ CHUNK = 64 * 1024
 MAX_NAME = 48
 
 #: Whose sessions these are. One director per host; ADK scopes sessions by user id.
-USER = "director"
+#:
+#: **`user` rather than `director`, because that is what the dev UI looks under.** ADK's own console
+#: requests `/apps/<app>/users/user/sessions` with no way to change it from the page, so a session
+#: created under any other id is invisible there — the app appears with an empty session list while
+#: the run is going, which reads as a run that never started. Measured on kubrick8: the run was five
+#: turns in and the console showed nothing.
+#:
+#: The descriptive name cost more than it bought. Nothing keys off the value — `launch` writes it and
+#: reads it back, and that is all — so the studio page, the record and the transcript are unaffected.
+USER = "user"
 
-#: Workflows offered on the form. Not the full set: these are the ones whose instructions tell an
-#: agent to look for documents, and offering a workflow that ignores an upload would be worse than
-#: not offering it.
-WORKFLOWS = ("vector_infographic", "infographic")
+#: Workflows offered on the form, each with the types it offers. Not the full set: these are the
+#: ones whose instructions tell an agent to look for documents, and offering a workflow that ignores
+#: an upload would be worse than not offering it.
+#:
+#: **A type is a `type.<name>.md` file in the workflow's template**, so this table mirrors a set that
+#: lives somewhere else — and hardcoding it is deliberate, because no visitor string should ever
+#: select a template by name. A mirror drifts silently, though: a type added to the template simply
+#: never appears here and nobody finds out. `WorkflowCatalogueTests` compares the two and names the
+#: difference. It cannot be read from disk at runtime — the templates are *embedded resources* in
+#: `Polson.CLI.dll`, so a container has the DLL and no `ProjectTemplate/` tree at all.
+WORKFLOWS: dict[str, tuple[str, ...]] = {
+    "vector_infographic": ("blueprint", "brutalist", "editorial", "specimen", "swiss"),
+    "infographic": ("blueprint", "brutalist", "editorial", "specimen", "swiss"),
+}
+
+#: Every type any offered workflow has, for building the form's one type control. Derived rather
+#: than listed, so the control and the table above cannot disagree about what exists.
+ALL_TYPES: tuple[str, ...] = tuple(sorted({t for types in WORKFLOWS.values() for t in types}))
 
 
 def safe_filename(raw: str | None) -> str:
@@ -228,7 +251,10 @@ FORM = """<!doctype html>
   <input name="name" required pattern="[a-zA-Z][a-zA-Z0-9_]{0,47}" placeholder="boxoffice2025">
 
   <label>Workflow</label>
-  <select name="workflow">__WORKFLOWS__</select>
+  <select id="workflow" name="workflow">__WORKFLOWS__</select>
+
+  <label>Type <small>optional &mdash; the direction the workflow takes</small></label>
+  <select id="kind" name="kind">__TYPES__</select>
 
   <label>Brief</label>
   <textarea name="brief" required
@@ -244,6 +270,28 @@ FORM = """<!doctype html>
 
   <button type="submit">Create</button>
 </form>
+<script>
+// The option list holds every type any offered workflow has; this hides the ones the selected
+// workflow does not offer, and disables the control entirely when it offers none. Convenience only
+// — the server refuses a bad pairing whether or not this ran. Same guard idiom as the studio form:
+// a missing element returns rather than throwing, so one absent control cannot take the page down.
+(function () {
+  const workflow = document.getElementById('workflow');
+  const kind = document.getElementById('kind');
+  if (!workflow || !kind) return;
+
+  function sync() {
+    const types = (workflow.selectedOptions[0].dataset.types || '').split(',').filter(Boolean);
+    kind.disabled = types.length === 0;
+    if (kind.disabled) kind.value = '';
+    for (const option of kind.options) {
+      option.hidden = option.value !== '' && !types.includes(option.value);
+    }
+  }
+  workflow.addEventListener('change', sync);
+  sync();
+})();
+</script>
 """
 
 
@@ -253,15 +301,24 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/new", response_class=HTMLResponse)
     async def form() -> str:
-        options = "".join(f'<option value="{w}">{w}</option>' for w in WORKFLOWS)
+        # `data-types` is what lets the type control narrow itself to the chosen workflow without a
+        # round trip, and it is the same list the POST validates against, so the two cannot disagree.
+        options = "".join(
+            f'<option value="{w}" data-types="{",".join(types)}">{w}</option>'
+            for w, types in WORKFLOWS.items())
+        types_options = '<option value="">&mdash;</option>' + "".join(
+            f'<option value="{t}">{t}</option>' for t in ALL_TYPES)
         accept = ",".join(sorted(DOCUMENT_SUFFIXES))
-        return FORM.replace("__WORKFLOWS__", options).replace("__ACCEPT__", accept)
+        return (FORM.replace("__WORKFLOWS__", options)
+                    .replace("__TYPES__", types_options)
+                    .replace("__ACCEPT__", accept))
 
     @app.post("/projects")
     async def make(
         name: str = Form(...),
         brief: str = Form(...),
         workflow: str = Form("vector_infographic"),
+        kind: str = Form(""),
         document: UploadFile | None = File(None),
         start: str = Form(""),
     ):
@@ -275,6 +332,16 @@ def mount(app: FastAPI) -> None:
 
         if workflow not in WORKFLOWS:
             raise HTTPException(400, f"{workflow!r} is not offered here. Choose: {', '.join(WORKFLOWS)}.")
+
+        # Checked against *this* workflow's list rather than the union: every type here happens to be
+        # offered by both, but a type the chosen workflow lacks would reach the generator as a
+        # `--type` naming a `type.<name>.md` that is not in its template, and the agent would be sent
+        # a direction nothing describes.
+        kind = kind.strip()
+        if kind and kind not in WORKFLOWS[workflow]:
+            offered = ", ".join(WORKFLOWS[workflow]) or "none"
+            raise HTTPException(400,
+                f"The {workflow} workflow does not offer a type {kind!r}. It offers: {offered}.")
 
         if not brief.strip():
             raise HTTPException(400, "A brief is required — say what you want made.")
@@ -290,7 +357,7 @@ def mount(app: FastAPI) -> None:
                 scratch = Path(tempfile.mkdtemp(prefix="polson-intake-"))
                 staged = await stage_upload(document, scratch)
 
-            create(name, workflow=workflow, prompt=brief,
+            create(name, workflow=workflow, prompt=brief, type_=kind or None,
                    documents=[str(staged)] if staged else None)
         except GenerateError as exc:
             raise HTTPException(400, str(exc)) from exc

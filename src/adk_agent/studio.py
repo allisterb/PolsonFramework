@@ -696,8 +696,18 @@ RETRY_STATUS_CODES = [429, 500, 502, 503, 504]
 
 
 def _retry_config() -> types.GenerateContentConfig:
-    """Client-side backoff, applied to every agent this module builds."""
+    """Client-side backoff and thought summaries, applied to every agent this module builds."""
     return types.GenerateContentConfig(
+        # **Thinking is billed whether or not it is returned, and it was being billed silently.**
+        # Gemini emits a thought *part* only when summaries are asked for; without this the model
+        # reasons, `thoughts_token_count` climbs, and `part.thought` is never true — so the
+        # transcript's `thinking` branch could not fire and the record held none. Measured on the
+        # kubrick8 run: 771 thinking tokens in a single turn, **zero** thinking events across all 40.
+        #
+        # That is the half of the record that says *why* the agent did something, missing from the
+        # one place built to show it — and it is the deliberation half of the sense-making curve,
+        # which reads a run with no thinking as pure action.
+        thinking_config=types.ThinkingConfig(include_thoughts=True),
         http_options=types.HttpOptions(
             retry_options=types.HttpRetryOptions(
                 attempts=RETRY_ATTEMPTS,
@@ -1088,6 +1098,13 @@ def _trip_breaker(callback_context, elapsed: float, cap: float, limit: str = "ti
         callback_context._invocation_context.end_invocation = True
     except AttributeError:  # pragma: no cover - depends on ADK internals
         pass
+
+    # Left for the transcript's `run.end` to spend, on the first trip only — the breaker fires again
+    # on every agent that turns up afterwards, and a halted run ended once. Without this the record
+    # shows a run that simply stops: `run.begin` written, the halt visible only in the server's own
+    # log, and nothing on the page a director is watching to say the run is over rather than stuck.
+    if first:
+        transcript.note_halt(invocation, limit=limit, used=elapsed, cap=cap)
 
     if limit == "tokens":
         _TURN_LOG.log(

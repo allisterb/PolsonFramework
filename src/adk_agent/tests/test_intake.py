@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi import HTTPException
 
 import intake
+import studio
 import newproject
 
 
@@ -172,6 +173,163 @@ class ConfigurationTests(unittest.TestCase):
                 body = (templates / workflow / "instructions.md").read_text(encoding="utf-8")
                 self.assertIn("Documents.list()", body,
                               f"{workflow} never tells the agent to look for a document")
+
+
+class WorkflowTypeTests(unittest.TestCase):
+    """The type control, and the table behind it.
+
+    A type is a `type.<name>.md` file in the workflow's template, so this table mirrors a set that
+    lives somewhere else. It cannot be read at runtime — the templates are embedded resources in
+    `Polson.CLI.dll`, so a container has the DLL and no template tree — which leaves a hardcoded
+    mirror, and a mirror drifts silently: a type added to the template simply never appears on the
+    form. These compare the two.
+    """
+
+    TEMPLATES = Path(__file__).resolve().parents[3] / "src" / "Polson.CLI" / "ProjectTemplate"
+
+    def test_each_workflow_offers_exactly_the_types_its_template_ships(self):
+        if not self.TEMPLATES.is_dir():
+            self.skipTest("template tree not present; running outside a source checkout")
+
+        for workflow, offered in intake.WORKFLOWS.items():
+            with self.subTest(workflow=workflow):
+                shipped = sorted(f.name[len("type."):-len(".md")]
+                                 for f in (self.TEMPLATES / workflow).glob("type.*.md"))
+                self.assertEqual(shipped, sorted(offered))
+
+    def test_all_types_is_the_union_of_every_offered_workflows_types(self):
+        union = sorted({t for types in intake.WORKFLOWS.values() for t in types})
+        self.assertEqual(union, list(intake.ALL_TYPES))
+
+
+class TypeSelectionTests(unittest.TestCase):
+    """What the form renders, and what the endpoint accepts.
+
+    The POST cases stop inside the handler's own checks, before anything is generated, so nothing
+    here spawns the CLI or writes a project.
+    """
+
+    def setUp(self) -> None:
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        app = FastAPI()
+        intake.mount(app)
+        self.client = TestClient(app)
+
+    def test_the_form_carries_a_type_control(self):
+        body = self.client.get("/new").text
+
+        self.assertIn('id="kind"', body)
+        self.assertIn('name="kind"', body)
+        for kind in intake.ALL_TYPES:
+            self.assertIn(f'<option value="{kind}">{kind}</option>', body)
+
+    def test_every_workflow_option_declares_the_types_it_offers(self):
+        """`data-types` is what lets the control narrow itself without a round trip. Without it the
+        script reads an empty list and disables a control the workflow does in fact offer."""
+        body = self.client.get("/new").text
+
+        for workflow, types in intake.WORKFLOWS.items():
+            self.assertIn(f'<option value="{workflow}" data-types="{",".join(types)}">', body)
+
+    def test_a_type_the_workflow_does_not_offer_is_refused(self):
+        answer = self.client.post("/projects", data={
+            "name": "typecheck", "brief": "chart it", "workflow": "vector_infographic",
+            "kind": "antique"})
+
+        self.assertEqual(400, answer.status_code)
+        self.assertIn("antique", answer.text)
+        self.assertIn("blueprint", answer.text, "the refusal should say what is on offer")
+
+    def test_no_type_is_a_legitimate_answer(self):
+        """The control is optional, so an empty one must pass rather than being read as a bad type.
+
+        Sent with an empty *brief*, which is the check immediately after this one — so a 400 naming
+        the brief proves the type check was reached and let the blank through. Asserting on some
+        earlier failure would prove nothing, and nothing is generated either way.
+        """
+        answer = self.client.post("/projects", data={
+            "name": "typecheck", "brief": "   ", "workflow": "vector_infographic", "kind": ""})
+
+        self.assertEqual(400, answer.status_code)
+        self.assertIn("brief is required", answer.text)
+        self.assertNotIn("does not offer a type", answer.text)
+
+
+
+    def test_the_chosen_type_reaches_the_generator(self):
+        """The end of the wire. Everything above proves the control renders and validates; this is
+        the only check that the value actually arrives, and a wrong keyword here would be silent —
+        the project would generate perfectly, in the workflow's default direction."""
+        seen = {}
+
+        def fake_create(name, **kwargs):
+            seen.update(kwargs, name=name)
+            raise intake.GenerateError("stopped before anything was written")
+
+        original, intake.create = intake.create, fake_create
+        self.addCleanup(setattr, intake, "create", original)
+
+        self.client.post("/projects", data={
+            "name": "typecheck", "brief": "chart it", "workflow": "vector_infographic",
+            "kind": "swiss"})
+
+        self.assertEqual("swiss", seen.get("type_"))
+        self.assertEqual("vector_infographic", seen.get("workflow"))
+
+    def test_a_blank_type_reaches_the_generator_as_none(self):
+        """Not as `''`. An empty string would become `--type ''` on the command line, which names a
+        `type..md` that does not exist."""
+        seen = {}
+
+        def fake_create(name, **kwargs):
+            seen.update(kwargs, name=name)
+            raise intake.GenerateError("stopped before anything was written")
+
+        original, intake.create = intake.create, fake_create
+        self.addCleanup(setattr, intake, "create", original)
+
+        self.client.post("/projects", data={
+            "name": "typecheck", "brief": "chart it", "workflow": "vector_infographic", "kind": ""})
+
+        self.assertIsNone(seen.get("type_", "missing"))
+
+class ThoughtSummaryTests(unittest.TestCase):
+    """That the model is asked for the thinking it is already being billed for.
+
+    Gemini returns a thought *part* only when summaries are requested. Without that the model
+    reasons, `thoughts_token_count` climbs, and `part.thought` is never true — so the transcript's
+    `thinking` branch cannot fire and the record holds none. Measured on the kubrick8 run: 771
+    thinking tokens in one turn, zero thinking events across all forty.
+    """
+
+    def test_every_agent_asks_for_thought_summaries(self):
+        config = studio._retry_config()
+
+        self.assertIsNotNone(config.thinking_config, "thinking is billed either way")
+        self.assertTrue(config.thinking_config.include_thoughts)
+
+    def test_the_thinking_budget_is_left_alone(self):
+        """Asking to *see* the reasoning must not change how much of it happens. A budget set here
+        would silently re-tune every agent while looking like a logging change."""
+        self.assertIsNone(studio._retry_config().thinking_config.thinking_budget)
+
+    def test_the_retry_options_survived(self):
+        """The config had one job before this and still has it."""
+        retry = studio._retry_config().http_options.retry_options
+
+        self.assertIn(429, retry.http_status_codes)
+        self.assertEqual(studio.RETRY_ATTEMPTS, retry.attempts)
+
+
+class SessionUserTests(unittest.TestCase):
+    """The id sessions are created under, which decides whether ADK's own console can see them."""
+
+    def test_sessions_are_created_under_the_id_the_dev_ui_reads(self):
+        """ADK's console requests `/apps/<app>/users/user/sessions` and offers no way to change it,
+        so any other id shows an empty session list for a run that is happily going."""
+        self.assertEqual("user", intake.USER)
 
 
 if __name__ == "__main__":

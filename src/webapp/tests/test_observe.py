@@ -314,5 +314,95 @@ class ObservedRecordTests(unittest.TestCase):
         self.assertEqual(agent_log, (made / "events" / "director.jsonl").read_text(encoding="utf-8"))
 
 
+class LiveTailTests(unittest.TestCase):
+    """What reaches a watcher **while the run is happening**, as opposed to on a refresh.
+
+    `_replay` merges all three logs, so everything already on disk when the page loads arrives. The
+    live tail is a separate path, and it followed `server.jsonl` alone — so anything written to
+    `agent.jsonl` afterwards reached a watcher only if they reloaded.
+
+    Under Antigravity that was nearly hidden: `HostTranscript` published each turn into the broker as
+    it transcribed one, so the agent side arrived by a second route. **Under ADK nothing did** — the
+    transcript plugin writes that file itself, so there was nothing transcribing and nothing
+    publishing. Measured on the kubrick8 run: 86 events in `agent.jsonl`, none of them on the page,
+    including every model turn, every tool call, and both `run.begin` and `run.end`.
+
+    Polled rather than slept: `Tailer.poll()` is the same read `run()` performs on its timer, so this
+    tests the wiring and the file reading without a timing window.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-livetail-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def observation(self, sdk: str = "adk") -> tuple[observe_mod.Observation, Path]:
+        made = make_project(self.root, "acme", sdk=sdk, agent=[])
+        project = project_mod.read(made)
+        obs = observe_mod.Observation(project)
+        for tailer in obs.tailers:
+            tailer.skip_existing()
+        return obs, made / "events"
+
+    def append(self, events: Path, name: str, event: dict) -> None:
+        with open(events / name, "a", encoding="utf-8", newline="") as handle:
+            handle.write(json.dumps(event) + "\n")
+
+    def delivered(self, obs) -> list[str]:
+        for tailer in obs.tailers:
+            tailer.poll()
+        return [e.get("type") for e in obs.broker.history()]
+
+    def test_every_log_is_followed_not_only_the_servers(self):
+        obs, _ = self.observation()
+        followed = {t.path.name for t in obs.tailers}
+
+        self.assertEqual({"server.jsonl", "agent.jsonl", "director.jsonl"}, followed)
+
+    def test_an_agent_turn_written_after_the_page_loaded_arrives(self):
+        obs, events = self.observation()
+        self.append(events, "agent.jsonl", {
+            "ts": "2026-09-01T10:01:00.000Z", "seq": 3, "src": "agent", "type": "tool.call",
+            "tool": "ExecuteScript"})
+
+        self.assertIn("tool.call", self.delivered(obs))
+
+    def test_the_run_ending_arrives_without_a_reload(self):
+        """The event a director is waiting for, on the path they are waiting on it."""
+        obs, events = self.observation()
+        self.append(events, "agent.jsonl", {
+            "ts": "2026-09-01T10:30:00.000Z", "seq": 9, "src": "agent", "type": "run.end",
+            "reason": "completed"})
+
+        self.assertIn("run.end", self.delivered(obs))
+
+    def test_the_director_speaking_arrives_too(self):
+        obs, events = self.observation()
+        self.append(events, "director.jsonl", {
+            "ts": "2026-09-01T10:02:00.000Z", "seq": 1, "src": "director", "type": "message",
+            "text": "make it bolder"})
+
+        self.assertIn("message", self.delivered(obs))
+
+    def test_the_server_spine_still_arrives(self):
+        """The path that already worked, kept honest while the other two were added."""
+        obs, events = self.observation()
+        self.append(events, "server.jsonl", {
+            "ts": "2026-09-01T10:03:00.000Z", "seq": 3, "src": "server", "type": "render",
+            "artifact": "artifacts/x.webp"})
+
+        self.assertIn("render", self.delivered(obs))
+
+    def test_a_transcribed_turn_is_published_once_not_twice(self):
+        """`HostTranscript` used to publish as it wrote, and the file is now followed — so keeping
+        both would deliver every Antigravity turn twice. The file is the single publisher."""
+        obs, events = self.observation(sdk="agy")
+        self.append(events, "agent.jsonl", {
+            "ts": "2026-09-01T10:04:00.000Z", "seq": 4, "src": "agent", "type": "text",
+            "uuid": "u1", "text": "hello"})
+
+        self.assertEqual(1, self.delivered(obs).count("text"))
+        self.assertIsNone(obs.transcript.agent.sink)
+
+
 if __name__ == "__main__":
     unittest.main()

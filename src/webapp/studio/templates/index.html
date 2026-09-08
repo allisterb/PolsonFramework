@@ -15,6 +15,14 @@
     <p class="active">A run is going — <a href="{{ base }}/runs/{{ active }}">watch it</a>. One at a time.</p>
   {% endif %}
 
+  {% if observe_only %}
+    <h2>New brief</h2>
+    <p class="hint">
+      Projects are made <a href="{{ create_at or '/new' }}">over here</a> in this runtime, where the
+      form can also attach a document and start the agent for you. This page reads the record; it
+      does not drive one.
+    </p>
+  {% else %}
   <h2>New brief</h2>
   <form method="post" action="{{ base }}/projects" class="brief">
     <div class="row">
@@ -53,8 +61,9 @@
       {% if active %}<span class="hint">A run is already going, so this will create without starting.</span>{% endif %}
     </div>
   </form>
+  {% endif %}
 
-  <h2>Start an existing project</h2>
+  <h2>{% if observe_only %}Watch a project{% else %}Start an existing project{% endif %}</h2>
   {% if projects %}
     <form method="post" action="{{ base }}/runs" id="existing">
       <table>
@@ -71,18 +80,22 @@
               <td><code>{{ p.name }}</code></td>
               <td>{{ p.workflow }}</td>
               <td>{{ 'has a session' if p.session else 'not started' }}</td>
-              <td class="why">{{ p.why }}</td>
+              <td class="why">{% if not observe_only %}{{ p.why }}{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
 
+      {% if not observe_only %}
       <label for="prompt">What should it do <span class="hint" id="prompthint">(blank begins the project)</span></label>
       <textarea id="prompt" name="prompt" rows="2"
                 placeholder="Read GEMINI.md, then brief.md, and begin."></textarea>
+      {% endif %}
 
       <div class="actions">
+        {% if not observe_only %}
         <button type="submit" id="startbtn" {{ 'disabled' if active }}>Start</button>
+        {% endif %}
 
         {# Same selection, different verb. Watching starts no agent and spends nothing: it reads the
            record a host is already writing, which is why it is never blocked by a run in progress. #}
@@ -146,6 +159,12 @@
   const startBtn = document.getElementById('startbtn');
   const watchOnly = document.getElementById('watchonly');
   const runsHere = {{ 'false' if active else 'true' }};
+
+  // Everything below belongs to *starting* a run, and a page mounted for observation does not
+  // render those controls. Without this guard `sync()` throws on the first null and the listener
+  // never binds — taking Watch, which does work here, down with it. Same guard the workflow/type
+  // pair uses further down.
+  if (!form || !prompt || !hint || !fresh || !startBtn) return;
 
   function sync() {
     const chosen = form.querySelector('input[name=project]:checked');

@@ -72,6 +72,23 @@ That column is the point of this table. It is what lets a reader tell what the c
 what the studio decided, and it means a director who disagrees can correct one line instead of the
 whole piece.
 
+**Silence is not the only thing worth recording. What the brief *said* and you read differently is
+the more consequential half, and it is the easier one to leave out** — because a choice you made in
+a gap feels like a decision, and a choice you made over an instruction feels like understanding it.
+Both are decisions the director did not make.
+
+Measured, on a run of this workflow: a brief asked for *"a stencil of the movie title"*, and the
+piece carried a generic cinema emblem — one motif for the whole graphic rather than lettering per
+film. A defensible reading, and nothing anywhere said it was a reading. That same run recorded its
+other two departures faithfully, because each had somewhere to go: the period mismatch fell under
+*subject, metric and period*, and the missing genres were figures with rows of their own. **A
+substituted motif had no home, so it went unrecorded** — which is what the last row is for.
+
+Fill it in whenever the brief named something and the piece does not contain that thing: a form, a
+motif, a colour, a comparison, a subject. Write what was asked, what you made instead, and why. If
+you followed the brief literally throughout, say *none* — that is a statement, and an empty cell is
+not.
+
 | Parameter | Value | Given, or chosen — and why |
 | :--- | :--- | :--- |
 | The one sentence a reader should leave with | | |
@@ -82,3 +99,4 @@ whole piece.
 | Where the reader is standing (Manual 13 §4) | | |
 | Tone, and anything explicitly ruled out | | |
 | Attribution required for the data | | |
+| **Anything the brief asked for that you read rather than followed** | | |

@@ -153,15 +153,18 @@ except Exception as _e:
 # both drive a run and watch one; driving needs `orchestrator.run`, which needs the Antigravity SDK,
 # which this environment deliberately does not ship (`requirements.in` says why). Every module on the
 # *observing* path was decoupled from the driver so this import succeeds — see the lazy imports in
-# `studio.runs`, `orchestrator.watch` and `orchestrator/__init__.py`. So `/studio/observe` works and
-# `/studio/runs` raises, which is the honest split: a page here is a window onto the record, and
-# direction happens where the agent actually is.
+# `studio.runs`, `orchestrator.watch` and `orchestrator/__init__.py`. Decoupling let it *mount*; it
+# did not stop it *offering* to drive, so the mount below refuses every mutation but the one that
+# registers a watch. A page here is a window onto the record, and direction happens at `/new`.
 #
 # Mounted rather than merged so its routes cannot collide with ADK's own, and wrapped because a
 # missing UI must not stop the agent runtime from serving.
 try:
     import sys as _sys
     from pathlib import Path as _Path
+
+    from fastapi.responses import HTMLResponse as _HTML
+    from fastapi.responses import JSONResponse as _JSON
 
     _webapp = _Path(__file__).resolve().parent.parent / "webapp"
     if _webapp.is_dir():
@@ -191,8 +194,46 @@ try:
         # would let the page list a different directory from the one projects are created in.
         from newproject import PROJECTS_DIR as _projects
 
-        app.mount("/studio", _create_studio(root=_Path(_projects)))
-        _logger.warning("polson runtime: studio mounted at /studio (observe only)")
+        # `observe_only` is what stops the page *offering* what the middleware below refuses.
+        # A form a visitor fills in and is then told cannot work is worse than no form: the
+        # refusal arrives after the effort, and a director hit exactly that.
+        _studio = _create_studio(root=_Path(_projects), observe_only=True, create_at="/new")
+
+        # **"Observe only" was a sentence in this comment and nothing enforced it.** The mounted app
+        # still served `POST /projects`, `POST /runs`, `/answer` and `/say` — and its create path
+        # hardcodes the `agy` SDK, so a director who used the studio's own form got an Antigravity
+        # project with no ADK app, which this runtime cannot serve and cannot drive: the driver needs
+        # a package `python-adk` deliberately does not ship. It returned 303, the run page returned
+        # 200, and the event stream stayed open forever with nothing to send. No error anywhere.
+        #
+        # So the boundary is enforced here rather than described. Reading is every GET; the one
+        # mutation that belongs to reading is registering a watch.
+        @_studio.middleware("http")
+        async def _observe_only(request, call_next):                # noqa: ANN001, ANN202
+            if intake.observing_only(request.method, request.scope["path"],
+                                     request.scope.get("root_path") or ""):
+                return await call_next(request)
+            why = ("This studio is mounted for observation. It cannot create or drive a project "
+                   "here, because its driver is the Antigravity SDK and this runtime does not ship "
+                   "it. Make an ADK project at /new — that form attaches a document, starts the "
+                   "agent, and brings you back here to watch it.")
+
+            # A backstop rather than the common path: the page no longer offers these. Still worth
+            # answering in the visitor's own medium — a browser that posts a form and receives raw
+            # JSON on a black page has been given a stack trace by another name.
+            if "text/html" in request.headers.get("accept", ""):
+                return _HTML(
+                    "<!doctype html><title>Not here</title>"
+                    "<style>body{font:15px/1.6 system-ui,sans-serif;max-width:34rem;margin:5rem auto;"
+                    "padding:0 1rem;color:#1c2733;background:#faf8f4}"
+                    "a{color:#1f6f8b}</style>"
+                    f"<h1>Not from this page</h1><p>{why}</p>"
+                    '<p><a href="/new">Make one at /new</a> &middot; '
+                    '<a href="/studio/">back to the studio</a></p>', status_code=409)
+            return _JSON({"detail": why}, status_code=409)
+
+        app.mount("/studio", _studio)
+        _logger.warning("polson runtime: studio mounted at /studio (observing only, enforced)")
     else:
         _logger.warning("polson runtime: studio not mounted — no webapp at %s", _webapp)
 except Exception as _e:

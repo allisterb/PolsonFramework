@@ -22,16 +22,18 @@ cannot escape the directory it is written to.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import shutil
 import tempfile
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from newproject import DOCUMENT_SUFFIXES, GenerateError, create
+from newproject import DOCUMENT_SUFFIXES, VALID_APP_NAME, GenerateError, create
 
 _logger = logging.getLogger("polson.intake")
 
@@ -46,10 +48,18 @@ MAX_UPLOAD_BYTES = 16 * 1024 * 1024
 #: Read size for the streaming copy. Small enough that an oversized upload is abandoned early.
 CHUNK = 64 * 1024
 
-#: A project id, and therefore an ADK app name and a directory name. Mirrors `VALID_APP_NAME` in
-#: `newproject`, which refuses anything else — checked here too so the message is about the form
-#: field rather than about an app name the visitor never typed.
-VALID_NAME = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{0,48}$")
+#: A length bound, and nothing else. **What a name may *contain* is `VALID_APP_NAME`'s business** —
+#: it is an ADK constraint, so it belongs with the code that writes the app.
+#:
+#: This module used to keep its own copy, described as mirroring that rule. It did not: the copy
+#: allowed a dash, ADK does not, and ADK refuses at **run** time rather than at load time — so the
+#: form accepted `boxoffice-2`, staged the visitor's uploaded PDF into it, served it in
+#: `/list-apps`, opened it in the console, and answered the first message with a 404. Importing the
+#: rule rather than restating it is what stops the two drifting again.
+MAX_NAME = 48
+
+#: Whose sessions these are. One director per host; ADK scopes sessions by user id.
+USER = "director"
 
 #: Workflows offered on the form. Not the full set: these are the ones whose instructions tell an
 #: agent to look for documents, and offering a workflow that ignores an upload would be worse than
@@ -127,6 +137,75 @@ async def stage_upload(upload: UploadFile, into: Path) -> Path:
     return staged
 
 
+#: What the agent is told first. The brief is already in `brief.md`; this only points at it, so the
+#: director's words reach the agent by reference rather than by being restated here.
+OPENING = "Begin. Read brief.md and work the project through to a finished deliverable."
+
+#: Runs in flight, held so the event loop does not collect a task nobody is awaiting. A run outlives
+#: the request that started it by many minutes, which is the whole reason it is a task at all.
+_running: set[asyncio.Task] = set()
+
+
+def observing_only(method: str, path: str, root_path: str = "") -> bool:
+    """Whether a request to the mounted studio is one an observer may make.
+
+    Reading is every GET; the single mutation that belongs to reading is registering a watch.
+    Everything else — creating a project, starting or answering a run — needs a driver this runtime
+    does not ship, and used to be offered anyway.
+
+    **The subtlety is the path.** Middleware on a mounted app sees the *whole* path with `root_path`
+    beside it — `/studio/observe`, not `/observe`; only route matching strips the prefix afterwards.
+    Comparing the raw path refuses the one mutation this exists to allow, which is what the first
+    version did.
+    """
+    if method in ("GET", "HEAD"):
+        return True
+
+    if root_path and path.startswith(root_path):
+        path = path[len(root_path):]
+    return path.rstrip("/") == "/observe"
+
+
+async def launch(app: FastAPI, name: str, message: str = OPENING) -> None:
+    """Starts the agent on `name`, by driving this very app.
+
+    **In-process rather than over the network.** `ASGITransport` calls the app directly, so there is
+    no port to discover, no second connection to the machine, and nothing to configure differently
+    when this is deployed behind a proxy. It is how the tests drive it too.
+    """
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://intake", timeout=None) as web:
+        made = await web.post(f"/apps/{name}/users/{USER}/sessions", json={})
+        made.raise_for_status()
+        session = made.json()["id"]
+
+        answer = await web.post("/run_sse", json={
+            "appName": name, "userId": USER, "sessionId": session,
+            "newMessage": {"role": "user", "parts": [{"text": message}]},
+            "streaming": False,
+        })
+        answer.raise_for_status()
+    _logger.info("intake: %s ran to completion", name)
+
+
+async def observe(app: FastAPI, name: str) -> str | None:
+    """Registers a watch on `name` and returns the studio path, or None if there is no studio.
+
+    Registered *after* the run is started rather than before: the ADK cut is the last `run.begin`,
+    and a project with earlier work would otherwise replay it as though it were this run.
+    """
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://intake") as web:
+        try:
+            seen = await web.post("/studio/observe", data={"project": name})
+        except Exception as exc:                                # noqa: BLE001 - studio is optional
+            _logger.info("intake: no studio to observe %s with (%s)", name, exc)
+            return None
+
+    location = seen.headers.get("location")
+    return location if seen.status_code == 303 and location else None
+
+
 FORM = """<!doctype html>
 <title>Polson — new commission</title>
 <style>
@@ -145,8 +224,8 @@ FORM = """<!doctype html>
 <p>Describe what you want made. Attach a document and the studio will read its figures
    rather than researching them.</p>
 <form method="post" action="/projects" enctype="multipart/form-data">
-  <label>Project name <small>letters, digits, dashes</small></label>
-  <input name="name" required pattern="[a-zA-Z][a-zA-Z0-9_-]{0,48}" placeholder="boxoffice-2025">
+  <label>Project name <small>letters, digits and underscores &mdash; no dashes</small></label>
+  <input name="name" required pattern="[a-zA-Z][a-zA-Z0-9_]{0,47}" placeholder="boxoffice2025">
 
   <label>Workflow</label>
   <select name="workflow">__WORKFLOWS__</select>
@@ -158,6 +237,11 @@ FORM = """<!doctype html>
   <label>Document <small>optional — PDF, CSV, TXT, MD, JSON, or an image</small></label>
   <input type="file" name="document" accept="__ACCEPT__">
 
+  <label style="font-weight:400; margin-top:1.4rem">
+    <input type="checkbox" name="start" value="1" checked style="width:auto; margin-right:.4rem">
+    Start the agent straight away, and open the studio on it
+  </label>
+
   <button type="submit">Create</button>
 </form>
 """
@@ -165,6 +249,7 @@ FORM = """<!doctype html>
 
 def mount(app: FastAPI) -> None:
     """Adds the intake form and its endpoint to an existing app."""
+    request_app = app
 
     @app.get("/new", response_class=HTMLResponse)
     async def form() -> str:
@@ -178,13 +263,15 @@ def mount(app: FastAPI) -> None:
         brief: str = Form(...),
         workflow: str = Form("vector_infographic"),
         document: UploadFile | None = File(None),
+        start: str = Form(""),
     ):
         """Creates a project, stages the upload into its `documents/`, opens the console on it."""
         name = name.strip()
-        if not VALID_NAME.match(name):
+        if not VALID_APP_NAME.match(name) or len(name) > MAX_NAME:
             raise HTTPException(400,
-                f"{name!r} cannot be a project name — start with a letter, then letters, digits, "
-                "dashes or underscores.")
+                f"{name!r} cannot be a project name — start with a letter, then letters, digits or "
+                f"underscores, up to {MAX_NAME} characters. No dashes: the name becomes an ADK app "
+                "name, which must be a Python identifier.")
 
         if workflow not in WORKFLOWS:
             raise HTTPException(400, f"{workflow!r} is not offered here. Choose: {', '.join(WORKFLOWS)}.")
@@ -211,6 +298,25 @@ def mount(app: FastAPI) -> None:
             if scratch is not None:
                 shutil.rmtree(scratch, ignore_errors=True)
 
-        # Into ADK's console, on the app just created. It appears without a restart — `list_agents`
-        # re-reads the directory on every call, which `newproject` relies on too.
-        return RedirectResponse(f"/dev-ui/?app={name}", status_code=303)
+        # The app appears without a restart — `list_agents` re-reads the directory on every call,
+        # which `newproject` relies on too.
+        if not start:
+            return RedirectResponse(f"/dev-ui/?app={name}", status_code=303)
+
+        # **Creating a project is not starting one, and that gap is what this closes.** The form used
+        # to end at a redirect into ADK's console, where the visitor had to know to type a message
+        # before anything happened. Two directors in a row read the empty studio as a failure — which
+        # it was, of the flow rather than of the run.
+        #
+        # Fired as a task rather than awaited: a run takes minutes and the response has to come back
+        # now. Nothing reads its result, so a failure is logged rather than raised.
+        run = asyncio.create_task(launch(request_app, name))
+        _running.add(run)
+        run.add_done_callback(_running.discard)
+        run.add_done_callback(lambda t: t.cancelled() or t.exception() is None
+                              or _logger.error("intake: %s failed to run: %r", name, t.exception()))
+
+        # Straight to the record, which is the thing worth looking at while it works. Falls back to
+        # the console when there is no studio mounted, so this never strands a visitor.
+        watching = await observe(request_app, name)
+        return RedirectResponse(watching or f"/dev-ui/?app={name}", status_code=303)

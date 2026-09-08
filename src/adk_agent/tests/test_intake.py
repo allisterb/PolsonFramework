@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi import HTTPException
 
 import intake
+import newproject
 
 
 class _Upload:
@@ -175,3 +176,92 @@ class ConfigurationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProjectNameTests(unittest.TestCase):
+    """What a project may be called, which is an ADK constraint rather than a form preference."""
+
+    def test_a_dash_is_refused_because_adk_will_not_run_it(self):
+        """The defect this exists for, found by a director uploading a real file.
+
+        `intake` kept its own copy of the name rule, described in a comment as mirroring
+        `newproject.VALID_APP_NAME`. It did not mirror it: the copy allowed a dash. ADK requires an
+        app name to be a Python identifier and — the part that made this expensive — enforces it
+        when the agent is **run**, not when it is loaded. So `boxoffice-2` was accepted by the form,
+        had the visitor's PDF staged into it, appeared in `/list-apps`, opened in the console,
+        accepted a session, and answered the first message with a 404.
+        """
+        self.assertIsNone(newproject.VALID_APP_NAME.match("boxoffice-2"))
+        self.assertIsNone(newproject.VALID_APP_NAME.match("box-office"))
+
+    def test_a_dot_is_refused_for_the_same_reason(self):
+        """The dot was already excluded, correctly. Kept as a test so the pair stay together."""
+        self.assertIsNone(newproject.VALID_APP_NAME.match("box.office"))
+
+    def test_ordinary_names_survive(self):
+        for name in ("boxoffice2", "box_office", "Kubrick3", "a"):
+            with self.subTest(name=name):
+                self.assertIsNotNone(newproject.VALID_APP_NAME.match(name))
+
+    def test_a_name_must_start_with_a_letter(self):
+        for name in ("2boxoffice", "_private", ""):
+            with self.subTest(name=name):
+                self.assertIsNone(newproject.VALID_APP_NAME.match(name))
+
+    def test_the_form_and_the_app_writer_share_one_rule(self):
+        """The regression guard proper.
+
+        Two copies of a rule is how this happened, so what is asserted is that there is **one** —
+        `intake` must be reading `newproject`'s pattern object, not a pattern of its own that
+        happens to agree today.
+        """
+        self.assertIs(intake.VALID_APP_NAME, newproject.VALID_APP_NAME)
+        self.assertFalse(hasattr(intake, "VALID_NAME"),
+                         "intake should no longer carry its own name rule")
+
+
+class ObservingOnlyTests(unittest.TestCase):
+    """What the mounted studio may do here, and the path subtlety that decides it."""
+
+    def test_a_watch_may_be_registered(self):
+        """The one mutation reading needs, and the case the first version broke.
+
+        Middleware on a mounted app sees `/studio/observe` with `root_path` of `/studio`, not the
+        `/observe` the route sees. Comparing the raw path refused exactly the request this boundary
+        exists to permit — caught by trying it against a live server rather than by reasoning.
+        """
+        self.assertTrue(intake.observing_only("POST", "/studio/observe", "/studio"))
+        self.assertTrue(intake.observing_only("POST", "/observe", ""))
+        self.assertTrue(intake.observing_only("POST", "/studio/observe/", "/studio"))
+
+    def test_creating_or_driving_is_refused(self):
+        """Each of these needs the Antigravity driver, which this runtime does not ship."""
+        for path in ("/studio/projects", "/studio/runs", "/studio/runs/x-1/answer",
+                     "/studio/runs/x-1/say"):
+            with self.subTest(path=path):
+                self.assertFalse(intake.observing_only("POST", path, "/studio"))
+
+    def test_reading_is_always_allowed(self):
+        for method in ("GET", "HEAD"):
+            for path in ("/studio/", "/studio/runs/x-1", "/studio/runs/x-1/curve"):
+                with self.subTest(method=method, path=path):
+                    self.assertTrue(intake.observing_only(method, path, "/studio"))
+
+    def test_a_path_that_merely_starts_with_observe_is_not_a_watch(self):
+        """`/observed` is not `/observe`, and a prefix test would have said it was."""
+        self.assertFalse(intake.observing_only("POST", "/studio/observed", "/studio"))
+        self.assertFalse(intake.observing_only("POST", "/studio/observe/x", "/studio"))
+
+
+class OpeningMessageTests(unittest.TestCase):
+    """Creating a project is not starting one, and the form now does both."""
+
+    def test_the_opening_message_points_at_the_brief_rather_than_restating_it(self):
+        """The director's words reach the agent by reference, not by being copied into a prompt.
+
+        That boundary is the whole reason `brief.md` is a file: instructions we wrote on one side,
+        text a stranger typed on the other. An opening message carrying the brief inline would erase
+        it.
+        """
+        self.assertIn("brief.md", intake.OPENING)
+        self.assertNotIn("{", intake.OPENING, "the opening must not interpolate anything")

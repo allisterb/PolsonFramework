@@ -1112,3 +1112,65 @@ def _loaded(project: Path):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ObserveOnlyPageTests(unittest.TestCase):
+    """What the page offers where it can read a record but not drive one.
+
+    **The fix this guards is about the page, not the routes.** Refusing a POST after the visitor has
+    filled the form in is a refusal that arrives too late — and when the mounted studio first grew a
+    boundary, a director filled in the brief form, submitted it, and got raw JSON on a black page.
+    The routes were right and the page was still lying about what it could do.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-observe-only-"))
+        project_dir(self.root, "acme", workflow="infographic")
+        self.client = TestClient(app_mod.create_app(
+            self.root, Registry(), observe_only=True, create_at="/new"))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def page(self) -> str:
+        response = self.client.get("/")
+        self.assertEqual(200, response.status_code, response.text[:300])
+        return response.text
+
+    def test_the_brief_form_is_not_offered(self):
+        self.assertNotIn('action="/projects"', self.page())
+
+    def test_it_says_where_projects_are_made_instead(self):
+        """Removing the form without saying where to go replaces one dead end with another."""
+        self.assertIn('href="/new"', self.page())
+
+    def test_starting_a_run_is_not_offered(self):
+        self.assertNotIn('id="startbtn"', self.page())
+
+    def test_watching_still_is(self):
+        """The whole point of the mount. Reading is what this page is for."""
+        page = self.page()
+        self.assertIn('id="watchbtn"', page)
+        self.assertIn("/observe", page)
+        self.assertIn("acme", page)
+
+
+class DrivingPageTests(unittest.TestCase):
+    """The ordinary deployment, where the studio does drive — the paired half of the above.
+
+    Without this, a change that hid the forms unconditionally would pass every test above and break
+    the runtime the studio was built for.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-driving-"))
+        project_dir(self.root, "acme", workflow="infographic")
+        self.client = TestClient(app_mod.create_app(self.root, Registry()))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_brief_form_and_the_start_button_are_both_there(self):
+        page = self.client.get("/").text
+        self.assertIn('action="/projects"', page)
+        self.assertIn('id="startbtn"', page)

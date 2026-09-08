@@ -87,11 +87,21 @@ def base(request: Request) -> str:
     return request.scope.get("root_path", "")
 
 
-def create_app(root: Path | None = None, registry: Registry | None = None) -> FastAPI:
-    """Builds the app. Takes its collaborators so a test can supply its own."""
+def create_app(root: Path | None = None, registry: Registry | None = None,
+               observe_only: bool = False, create_at: str | None = None) -> FastAPI:
+    """Builds the app. Takes its collaborators so a test can supply its own.
+
+    `observe_only` is for a host that can read a record but not drive one — the ADK runtime, whose
+    environment deliberately does not ship the Antigravity SDK this studio drives with. **It changes
+    what the page offers, not only what the routes accept**: a form that cannot work is worse than a
+    missing one, because a visitor fills it in before finding out. `create_at` is where projects are
+    made instead, and is shown in its place.
+    """
     app = FastAPI(title="Polson Studio", docs_url=None, redoc_url=None)
     app.state.root = Path(root or DEFAULT_ROOT).resolve()
     app.state.registry = registry or Registry()
+    app.state.observe_only = observe_only
+    app.state.create_at = create_at
 
     # The stylesheet, and nothing else. Serving a directory of our own files needs no containment
     # check because no visitor-supplied name reaches it — unlike the artifact route below.
@@ -109,6 +119,8 @@ def create_app(root: Path | None = None, registry: Registry | None = None) -> Fa
             "workflows": projects.WORKFLOWS,
             "all_types": projects.ALL_TYPES,
             "form": {},
+            "observe_only": app.state.observe_only,
+            "create_at": app.state.create_at,
         })
 
     @app.post("/runs")

@@ -287,6 +287,30 @@ what happened to `kubrick1`.
 They may share a bucket and must not share a prefix. `documents/` — the director's own supplied
 material — is excluded from the mirror by two independent rules; see the module docstring.
 
+**Getting a lost run back.** The studio reads the same `POLSON_MIRROR_URI`, so a run whose directory
+is gone appears on the index under **Recover a run**. Choosing it downloads the project back onto the
+container and opens it as an observation: the trace, the curve, the renders, the scripts and the
+delivered documents all work, because the restore puts the files exactly where every existing route
+already looks. It is a record rather than a runnable project — the mirror does not copy `GEMINI.md`,
+`.agents/` or `agent.config.json`, so a recovered run can be read and not driven, which is the right
+shape for one that is over.
+
+Restoring lands it on the same ephemeral disk, deliberately: that copy is a **cache**, and if the
+instance is replaced again the archive is still the archive. By hand, if the page is not available:
+
+```bash
+gcloud storage cp -r "gs://polson-artifacts/mirror/<project>" ./projects/ --project <project-id>
+```
+
+> [!NOTE]
+> **The mirror needs Application Default Credentials, which the container has and a workstation
+> usually does not.** On Cloud Run the metadata server supplies them and nothing has to be set up. Run
+> the same code locally with `POLSON_MIRROR_URI` set and it fails at `storage.Client()` with
+> `DefaultCredentialsError` — `gcloud auth login` is not enough, since that authenticates the CLI
+> rather than the libraries. `gcloud auth application-default login` is the one that does. Leaving
+> `POLSON_MIRROR_URI` unset locally is the ordinary case and costs nothing: the plugin is simply not
+> registered and the index offers no recovery section.
+
 **What `max-instances=1` actually guarantees, which is less than it sounds.** It caps steady state,
 not the transition. During the replacement above the service reported **two active instances** for
 several minutes: the new one served the browser while the old one drained with the agent still

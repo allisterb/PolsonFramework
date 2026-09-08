@@ -63,6 +63,36 @@
   </form>
   {% endif %}
 
+  {#- Runs that are archived and no longer on this machine. Its own section rather than rows in the
+      table below, because it is a different verb: those projects are here and this one has to be
+      fetched back first. Absent entirely when there is no archive, which is every local checkout. -#}
+  {% if archived %}
+  <h2>Recover a run</h2>
+  <p class="hint">
+    These finished on a container that no longer exists — their work was copied out while it ran.
+    Opening one fetches it back and shows the record: the trace, the renders, the scripts and the
+    documents. It cannot be started again, only read.
+  </p>
+  <form method="post" action="{{ base }}/observe" class="archived">
+    <table>
+      <thead><tr><th></th><th>project</th><th></th></tr></thead>
+      <tbody>
+        {% for name in archived %}
+          <tr>
+            <td><input type="radio" name="project" value="{{ name }}" {{ 'checked' if loop.first }}></td>
+            <td><code>{{ name }}</code></td>
+            <td class="hint">archived</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="actions">
+      <button type="submit">Recover and read</button>
+      <span class="hint">fetching a run takes a moment</span>
+    </div>
+  </form>
+  {% endif %}
+
   <h2>{% if observe_only %}Watch a project{% else %}Start an existing project{% endif %}</h2>
   {% if projects %}
     <form method="post" action="{{ base }}/runs" id="existing">

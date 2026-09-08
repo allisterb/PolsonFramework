@@ -30,6 +30,7 @@ from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import JavascriptLexer, MarkdownLexer
@@ -37,6 +38,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from orchestrator import csm
 
+from . import archive
 from . import projects
 from . import observe as observe_mod
 from .runs import DEFAULT_PROMPT, Registry, Run, StudioError
@@ -155,6 +157,10 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
             "base": base(request),
             "root": app.state.root,
             "projects": discover(app.state.root),
+            # Archived runs whose directory is no longer here. Usually empty, and never empty for
+            # the reason that matters: a Cloud Run instance is replaced and takes the projects with
+            # it, so this is the only route back to work that was already done and paid for.
+            "archived": archive.restorable(app.state.root),
             "runs": [r.summary() for r in app.state.registry.runs],
             "active": (a := app.state.registry.active) and a.id,
             "workflows": projects.WORKFLOWS,
@@ -229,7 +235,17 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
         """
         try:
             chosen = contain(app.state.root, project)
+
+            # **Restore before observing, not instead of it.** A project that vanished with its
+            # instance is exactly the one someone is trying to open, and the alternative is a
+            # refusal naming a directory that used to exist. Only when it is genuinely absent: a
+            # project on disk is never overwritten by an older copy of itself.
+            if not (chosen / "project.json").is_file() and archive.available():
+                chosen = await run_in_threadpool(archive.restore, chosen.name, app.state.root)
+
             run = await observe_mod.observe(app.state.registry, chosen)
+        except archive.ArchiveError as exc:
+            return refuse(request, str(exc))
         except StudioError as exc:
             return refuse(request, str(exc))
 
@@ -552,15 +568,24 @@ def refuse(request: Request, why: str, form: dict[str, str] | None = None) -> An
 
     `form` gives back what they typed. A refused brief that clears the textarea is a refusal that
     costs the visitor their work, which is a worse outcome than whatever was wrong with it.
+
+    **It has to build the same context the index does, and it did not.** `observe_only` and
+    `create_at` were missing, and Jinja renders an undefined name as falsy rather than complaining —
+    so on the ADK runtime, where `observe_only` is True, any refusal re-rendered this page with the
+    Start button and the prompt box that host cannot honour. A visitor's next click then failed for a
+    second, unrelated reason. Add a key to the index and add it here.
     """
     return TEMPLATES.TemplateResponse(request, "index.html", {
         "base": base(request),
         "root": request.app.state.root,
         "projects": discover(request.app.state.root),
+        "archived": archive.restorable(request.app.state.root),
         "runs": [r.summary() for r in request.app.state.registry.runs],
         "active": (a := request.app.state.registry.active) and a.id,
         "workflows": projects.WORKFLOWS,
         "all_types": projects.ALL_TYPES,
+        "observe_only": request.app.state.observe_only,
+        "create_at": request.app.state.create_at,
         "refused": why,
         "form": form or {},
     }, status_code=409)

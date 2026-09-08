@@ -307,7 +307,12 @@ class BudgetStatusTests(unittest.IsolatedAsyncioTestCase):
         status = await studio._make_budget_status(100_000, None)(ctx)
         self.assertEqual(status["inputTokensSpent"], 80_000)
         self.assertLessEqual(status["cachedInputTokens"], status["inputTokensSpent"])
-        self.assertEqual(status["inputTokensRemaining"], 20_000)
+
+        # 5,000 fresh + 75,000 cached at a tenth. **`remaining` is measured against the billable
+        # figure, not the raw one** — this used to assert 20,000, which was the raw arithmetic and
+        # the reason a well-cached run was cut off having spent a fraction of its allowance.
+        self.assertEqual(status["billableTokensSpent"], 12_500)
+        self.assertEqual(status["inputTokensRemaining"], 87_500)
 
     async def test_cache_share_is_zero_before_any_turn(self):
         status = await studio._make_budget_status(1_000_000, None)(_Ctx())
@@ -374,6 +379,183 @@ class HaltNoteTests(unittest.TestCase):
         before(ctx, _Request())
 
         self.assertEqual(0, len(transcript._halted))
+
+
+class BillableAccountingTests(unittest.TestCase):
+    """What the cap actually measures.
+
+    The breaker counted **raw** input, and input is cumulative — the whole conversation is resent
+    every turn — so the counter climbed at full rate even for tokens billing at a tenth. Measured on
+    the kubrick1 deployed run: halted at 2,005,223 raw tokens with the final turns reporting 83,737
+    cached of 87,975, around 95%. Cache-adjusted it had spent roughly 300,000 tokens' worth, so it
+    was stopped as though it had spent seven times what it did — for doing the thing that makes a
+    run cheap.
+    """
+
+    def setUp(self):
+        for state in (studio._invocation_input, studio._invocation_cached, studio._token_warned,
+                      studio._invocation_started, studio._turn_started, studio._role_clock):
+            state.clear()
+        studio._tripped.clear()
+
+    def test_an_uncached_run_is_unchanged(self):
+        """The whole point of weighting is that it costs nothing when there is no caching."""
+        studio._invocation_input["inv-1"] = 50_000
+
+        self.assertEqual(50_000, studio._billable("inv-1"))
+
+    def test_a_cached_token_counts_a_tenth(self):
+        studio._invocation_input["inv-1"] = 80_000
+        studio._invocation_cached["inv-1"] = 75_000
+
+        self.assertEqual(12_500, studio._billable("inv-1"))
+
+    def test_cached_is_subtracted_not_added(self):
+        """`cached` is a subset of the raw count. Treating it as extra would inflate rather than
+        discount, and the breaker would fire sooner than before rather than later."""
+        studio._invocation_input["inv-1"] = 100_000
+        studio._invocation_cached["inv-1"] = 100_000
+
+        self.assertEqual(10_000, studio._billable("inv-1"))
+
+    def test_an_inconsistent_report_cannot_produce_a_negative_allowance(self):
+        """The two counters come from separate fields of separate responses. A provider reporting
+        more cached than prompt must not hand the run an infinite budget."""
+        studio._invocation_input["inv-1"] = 1_000
+        studio._invocation_cached["inv-1"] = 5_000
+
+        self.assertGreaterEqual(studio._billable("inv-1"), 0)
+
+    def test_the_breaker_fires_on_billable_not_raw(self):
+        """The regression. Raw is over the cap, billable is not, and the run must continue."""
+        ctx, before = _Ctx(), studio._make_before_model(None, None, token_cap=100_000)
+        studio._invocation_input[ctx.invocation_id] = 900_000
+        studio._invocation_cached[ctx.invocation_id] = 890_000      # billable = 99,000
+
+        self.assertIsNone(before(ctx, _Request()),
+                          "halted a run that had spent 99,000 of a 100,000 allowance")
+
+    def test_the_breaker_still_fires_when_the_spend_is_real(self):
+        """The other half: weighting must not make the cap unreachable."""
+        ctx, before = _Ctx(), studio._make_before_model(None, None, token_cap=100_000)
+        studio._invocation_input[ctx.invocation_id] = 150_000
+        studio._invocation_cached[ctx.invocation_id] = 10_000       # billable = 141,000
+
+        self.assertIsNotNone(before(ctx, _Request()))
+        self.assertIn(ctx.invocation_id, studio._tripped)
+
+    def test_the_halt_message_reports_both_figures(self):
+        """They differ several-fold on a cached run, and the turn log has been showing the raw one
+        all along — a halt naming only one of them would look wrong against those lines."""
+        ctx = _Ctx()
+        studio._invocation_input[ctx.invocation_id] = 900_000
+        studio._invocation_cached[ctx.invocation_id] = 800_000
+
+        with self.assertLogs("polson.turn", level="ERROR") as caught:
+            studio._trip_breaker(ctx, elapsed=180_000, cap=100_000, limit="tokens")
+
+        line = "\n".join(caught.output)
+        self.assertIn("billable", line)
+        self.assertIn("900000", line.replace(",", ""))
+        self.assertIn("800000", line.replace(",", ""))
+
+    def test_the_warning_thresholds_use_the_same_measure_as_the_cap(self):
+        """A warning at 80% of the raw figure would fire while the run is at 10% of its allowance,
+        and an agent told it is nearly out of budget starts cutting the work short."""
+        ctx, before = _Ctx(), studio._make_before_model(None, None, token_cap=100_000)
+        studio._invocation_input[ctx.invocation_id] = 800_000
+        studio._invocation_cached[ctx.invocation_id] = 790_000      # billable = 89,000
+
+        before(ctx, _Request())
+
+        self.assertEqual({0.75}, studio._token_warned.get(ctx.invocation_id, set()),
+                         "warned against the raw count rather than the billable one")
+
+
+class TwoLimitTests(unittest.TestCase):
+    """Spend and runaway, measured separately, because one number cannot see both.
+
+    Weighting the cap by cost alone would have been a straight trade of one failure mode for the
+    other. A stuck agent resends a near-identical prefix, which is the **best-cached** traffic there
+    is — so a cost-weighted count discounts a loop by tenfold at exactly the moment it is most out
+    of control. The module docstring above records that reasoning, and it is why the raw count did
+    not simply go away.
+    """
+
+    def setUp(self):
+        for state in (studio._invocation_input, studio._invocation_cached, studio._token_warned,
+                      studio._invocation_started, studio._turn_started, studio._role_clock):
+            state.clear()
+        studio._tripped.clear()
+
+    def test_a_well_cached_run_of_real_work_is_not_halted(self):
+        """kubrick1: 2,005,223 raw at ~95% cached, halted under the old counting having spent
+        roughly 300,000 tokens' worth."""
+        ctx = _Ctx()
+        before = studio._make_before_model(None, None, token_cap=2_000_000, raw_cap=8_000_000)
+        studio._invocation_input[ctx.invocation_id] = 2_005_223
+        studio._invocation_cached[ctx.invocation_id] = 1_900_000    # billable ≈ 295,223
+
+        self.assertIsNone(before(ctx, _Request()))
+
+    def test_a_cached_loop_is_still_stopped_by_the_runaway_guard(self):
+        """The failure the raw count exists for, and the one cost-weighting alone would have let
+        run ten times longer. Under the spend cap this is only 15% spent."""
+        ctx = _Ctx()
+        before = studio._make_before_model(None, None, token_cap=2_000_000, raw_cap=8_000_000)
+        studio._invocation_input[ctx.invocation_id] = 8_200_000
+        studio._invocation_cached[ctx.invocation_id] = 8_100_000    # billable = 910,000
+
+        halted = before(ctx, _Request())
+
+        self.assertIsNotNone(halted, "a loop that caches well ran past the runaway guard")
+        self.assertIn("runaway", halted.content.parts[0].text)
+
+    def test_real_spend_still_trips_the_cost_cap_first(self):
+        """Uncached work reaches the spend cap long before the raw guard, which is the ordinary
+        case and must not be changed by adding a second limit."""
+        ctx = _Ctx()
+        before = studio._make_before_model(None, None, token_cap=2_000_000, raw_cap=8_000_000)
+        studio._invocation_input[ctx.invocation_id] = 2_100_000
+        studio._invocation_cached[ctx.invocation_id] = 0
+
+        halted = before(ctx, _Request())
+
+        self.assertIsNotNone(halted)
+        self.assertIn("billable", halted.content.parts[0].text)
+
+    def test_the_two_halts_say_different_things(self):
+        """An agent that has run out of money and one that is not converging need different
+        remedies, so the message has to tell them apart."""
+        spend = studio._make_halt_response(2_000_000, 2_000_000, "tokens").content.parts[0].text
+        runaway = studio._make_halt_response(8_000_000, 8_000_000, "raw").content.parts[0].text
+
+        self.assertIn("billable", spend)
+        self.assertNotIn("runaway", spend)
+        self.assertIn("without the work converging", runaway)
+
+    def test_the_runaway_guard_is_derived_when_not_configured(self):
+        """So an existing deployment gains it without setting anything new."""
+        self.assertEqual(4, studio.RAW_CAP_MULTIPLE)
+        self.assertGreater(studio.RAW_CAP_MULTIPLE * studio.CACHED_TOKEN_SHARE, 0)
+        self.assertLess(studio.RAW_CAP_MULTIPLE, 1 / studio.CACHED_TOKEN_SHARE,
+                        "a guard at or above 1/CACHED_TOKEN_SHARE can never fire before the "
+                        "spend cap, which would make it decorative")
+
+    def test_neither_limit_means_no_breaker(self):
+        ctx = _Ctx()
+        before = studio._make_before_model(None, None, token_cap=None, raw_cap=None)
+        studio._invocation_input[ctx.invocation_id] = 50_000_000
+
+        self.assertIsNone(before(ctx, _Request()))
+
+    def test_a_raw_guard_alone_still_works(self):
+        """A deployment may want the loop defence without a spend ceiling."""
+        ctx = _Ctx()
+        before = studio._make_before_model(None, None, token_cap=None, raw_cap=1_000_000)
+        studio._invocation_input[ctx.invocation_id] = 1_200_000
+
+        self.assertIsNotNone(before(ctx, _Request()))
 
 
 if __name__ == "__main__":

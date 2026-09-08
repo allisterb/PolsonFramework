@@ -21,9 +21,9 @@
 
 | | |
 | :--- | :--- |
-| Service | `polson-studio`, project `polson`, region `us-east4` |
-| URL | `https://polson-studio-yhijv6wbxq-uk.a.run.app` |
-| Revision | `polson-studio-00019-rql` — deployed and **dormant** (scales to zero, no idle cost) |
+| Service | the Cloud Run service, its project and its region — **not written down here**; see `DEPLOY.md` for the placeholders and read them back with `gcloud run services list` |
+| URL | `gcloud run services describe <service> --format='value(status.url)'` |
+| Revision | deployed and **dormant** (scales to zero, no idle cost); `gcloud run revisions list` for the current one |
 | Access | **Private.** `-H "Authorization: Bearer $(gcloud auth print-identity-token)"` |
 | Config | `--timeout=3600 --memory=2Gi --cpu=2 --concurrency=4 --max-instances=1` |
 | Env | `ADK_MAX_LLM_CALLS=500`, `POLSON_SEED_PROJECT=cstest`, `POLSON_SEED_WORKFLOW=comic_studio`, `POLSON_SEED_TEST=1`, `POLSON_SEED_DEADLINE=40`, `POLSON_SEED_PROMPT=<a night-market chase>` |
@@ -32,7 +32,7 @@
 alias intercepts it and every command dies with *"Python was not found"*:
 
 ```bash
-export CLOUDSDK_PYTHON=/c/DevTools/gcloud/google-cloud-sdk/platform/bundledpython/python.exe
+export CLOUDSDK_PYTHON=<your gcloud install>/platform/bundledpython/python.exe
 ```
 
 Redeploy with:

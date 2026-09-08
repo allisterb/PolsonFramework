@@ -256,6 +256,16 @@
   const clock = (d) => d.toTimeString().slice(0, 8);
   let lastAt = null;
 
+  // The previous row, so an identical one can fold into it instead of being added.
+  //
+  // **Waiting is not doing something six times.** A `Research` task takes minutes — far longer than
+  // a script may run — so the tool starts it and re-enters to collect it, and each poll is its own
+  // `tool.call` carrying the same `runId`. One piece of research therefore drew six identical rows,
+  // which reads exactly like a retry loop: a director watching kubrick3 reasonably concluded the
+  // provider was rate-limiting them, when nothing had failed at all.
+  let lastRow = null;
+  let lastRowKey = null;
+
   const atwork = document.getElementById('atwork');
   const atworkWho = document.getElementById('atwork-who');
   const atworkDid = document.getElementById('atwork-did');
@@ -402,7 +412,45 @@
       }
     }
 
+    // Fold an identical repeat into the row above rather than adding another. Keyed on what the
+    // row *says* — its kind and its rendered detail — because that is what a reader compares; two
+    // polls of one task produce the same text, and two genuinely different calls never do.
+    //
+    // Deliberately only consecutive repeats, and deliberately not for rows that open a pass: a
+    // second render or a second script is a real event with its own artifact, and folding those
+    // would hide work rather than noise.
+    // **Tool calls only**, and never a row that opens a pass. Folding on 'same rendered text'
+    // alone was wrong, and the run data said so: an `observe` event carries its measurements in
+    // fields `detail` does not read, so two *different* measurements both render empty and would
+    // have folded into one - hiding a check rather than a repeat, which is the opposite of the
+    // point. A repeated tool call is the only case where identical text reliably means identical
+    // work.
+    const rowKey = (kind === 'tool.call' && !li.classList.contains('opens'))
+      ? kind + ' ' + detail(kind, event)
+      : null;
+    if (rowKey && rowKey === lastRowKey && lastRow) {
+      const seen = (Number(lastRow.dataset.repeats) || 1) + 1;
+      lastRow.dataset.repeats = seen;
+
+      // The clock moves to the latest of them, because what a reader wants from a fold is how long
+      // the waiting has been going on, not when it started.
+      const at = lastRow.querySelector('.at');
+      if (at && event.ts) at.textContent = clock(new Date(event.ts));
+
+      let badge = lastRow.querySelector('.repeats');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'repeats';
+        lastRow.querySelector('.detail').appendChild(badge);
+      }
+      badge.textContent = `  ×${seen}`;
+      if (follow.checked) list.scrollTop = list.scrollHeight;
+      return;
+    }
+
     list.appendChild(li);
+    lastRow = li;
+    lastRowKey = rowKey;
     if (follow.checked) list.scrollTop = list.scrollHeight;
 
     // A new render takes over the pane only while nobody has chosen otherwise. Pinning an earlier

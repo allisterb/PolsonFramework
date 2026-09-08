@@ -335,3 +335,8 @@ label.modebox { display: inline-flex; align-items: center; gap: .3rem; margin: 0
                 color: var(--ink); cursor: pointer; text-transform: none; letter-spacing: 0; }
 label.modebox input { width: auto; margin: 0; cursor: pointer; }
 label.modebox .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* Consecutive identical rows fold into one, and this is the count. Dim rather than accented: a
+   repeat is the absence of news — a task being awaited — and should read as quieter than the row
+   it sits on, not louder. */
+.ev .repeats { color: var(--dim); font-family: var(--mono); font-size: .76rem; }

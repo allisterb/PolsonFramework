@@ -490,9 +490,18 @@ def _make_budget_status(token_cap: int | None, budget_minutes: float | None):
                     "model has answered.",
         }
         if token_cap:
+            # **The cap is measured against the cache-adjusted figure, not `inputTokensSpent`.**
+            # Reporting the raw number against the cap would tell an agent it is far closer to the
+            # ceiling than it is — on a well-cached run the two differ several-fold — and an agent
+            # that believes it is nearly out of budget starts cutting the work short.
+            billable = _billable(invocation)
             status["inputTokenCap"] = token_cap
-            status["inputTokensRemaining"] = max(0, token_cap - spent)
-            status["inputTokensUsedPercent"] = round(spent / token_cap * 100, 1)
+            status["billableTokensSpent"] = billable
+            status["inputTokensRemaining"] = max(0, token_cap - billable)
+            status["inputTokensUsedPercent"] = round(billable / token_cap * 100, 1)
+            status["note"] += (" The cap counts billable tokens: a cached token is charged at "
+                               f"{CACHED_TOKEN_SHARE:.0%} of a fresh one, so billableTokensSpent is "
+                               "what the ceiling is measured against.")
         if budget_minutes:
             status["deadlineMinutes"] = budget_minutes
             status["minutesRemaining"] = round(max(0.0, budget_minutes - elapsed), 1)
@@ -860,6 +869,48 @@ _invocation_input: dict[str, int] = {}
 _invocation_cached: dict[str, int] = {}
 _token_warned: dict[str, set[float]] = {}
 
+#: What a cached input token costs relative to a fresh one, as a fraction.
+#:
+#: Approximate and provider-specific — a tenth is the figure this project has used since token
+#: accounting went in. It is named rather than inlined so it is visibly an assumption rather than
+#: arithmetic, and so a change of provider is one edit.
+CACHED_TOKEN_SHARE = 0.1
+
+#: How much raw input the runaway guard allows, as a multiple of the spend cap.
+#:
+#: Derived rather than configured so an existing deployment gains the guard without setting anything
+#: new, and set by what separates the two cases rather than by taste: a cached token is charged at
+#: `CACHED_TOKEN_SHARE`, so a *perfectly* cached run could reach ten times its spend cap in raw
+#: tokens. Four leaves a well-cached run of real work comfortable — kubrick1's 2,005,223 raw against
+#: a 2,000,000 spend cap sits at 0.25 of an 8,000,000 guard — while still bounding a loop.
+#: `POLSON_BUDGET_RAW_TOKENS` overrides it outright.
+RAW_CAP_MULTIPLE = 4
+
+
+def _billable(invocation: str) -> int:
+    """Input tokens weighted by what they actually cost, which is what the cap should measure.
+
+    **The breaker used to count raw input, and that is the wrong quantity.** Input is cumulative —
+    the whole conversation is resent every turn — so the counter climbs whether or not the run is
+    achieving anything, and cached tokens climb it at full rate while billing at a tenth.
+
+    Measured on the kubrick1 deployed run: halted at **2,005,223** raw input tokens after ~25 turns,
+    with the last turns reporting **83,737 cached of 87,975** — around 95%. Cache-adjusted, that run
+    had spent closer to 300,000 tokens' worth. It was stopped as though it had spent seven times
+    what it did, for doing the thing that makes a run cheap.
+
+    Derived from the two counters rather than accumulated separately, so it cannot drift from them
+    and `budget_status` keeps reporting the raw figures a reader recognises from the turn log.
+    """
+    raw = _invocation_input.get(invocation, 0)
+    cached = _invocation_cached.get(invocation, 0)
+
+    # `cached` is a *subset* of `raw`, never an addition, so the fresh part is the difference.
+    # Clamped because the two are accumulated from separate fields of separate responses, and a
+    # provider that reported them inconsistently should not produce a negative allowance.
+    fresh = max(0, raw - cached)
+    return int(fresh + cached * CACHED_TOKEN_SHARE)
+
 
 # --------------------------------------------------------------------------------------------
 # The circuit breaker.
@@ -906,7 +957,14 @@ def _make_halt_response(elapsed: float, cap: float, limit: str = "time"):
 
     if limit == "tokens":
         breached = (
-            f"spent {elapsed:,.0f} input tokens against a limit of {cap:,.0f}"
+            f"spent {elapsed:,.0f} billable input tokens against a limit of {cap:,.0f}"
+        )
+    elif limit == "raw":
+        # Worded so the agent can tell this apart from running out of money: reaching the runaway
+        # guard means the conversation grew without converging, which is a different thing to fix.
+        breached = (
+            f"resent {elapsed:,.0f} raw input tokens against a runaway limit of {cap:,.0f} — the "
+            "conversation kept growing without the work converging"
         )
     else:
         breached = f"passed its hard limit of {cap / 60:.0f} minutes ({elapsed / 60:.0f} used)"
@@ -1106,11 +1164,19 @@ def _trip_breaker(callback_context, elapsed: float, cap: float, limit: str = "ti
     if first:
         transcript.note_halt(invocation, limit=limit, used=elapsed, cap=cap)
 
-    if limit == "tokens":
+    if limit in ("tokens", "raw"):
+        # Both figures on either path, because they differ several-fold on a well-cached run and the
+        # raw one is what the turn log has been showing all along. A halt reported only as the
+        # billable number would look wrong against those lines; only as the raw number, it would
+        # misstate a spend cap. Which limit was hit is named, since the two mean different things:
+        # "spend" is this run costing too much, "runaway" is it not converging.
         _TURN_LOG.log(
             logging.ERROR if first else logging.WARNING,
-            "BREAKER %s/%s halted at %.0f input tokens (cap %.0f)%s",
-            callback_context.agent_name, invocation, elapsed, cap,
+            "BREAKER %s/%s halted on %s at %.0f (cap %.0f; %.0f raw, %.0f cached, %.0f billable)%s",
+            callback_context.agent_name, invocation,
+            "spend" if limit == "tokens" else "runaway", elapsed, cap,
+            _invocation_input.get(invocation, 0), _invocation_cached.get(invocation, 0),
+            _billable(invocation),
             "" if first else " [already tripped]",
         )
     else:
@@ -1124,7 +1190,7 @@ def _trip_breaker(callback_context, elapsed: float, cap: float, limit: str = "ti
 
 
 def _make_before_model(budget: _RoleBudget | None, cap: float | None = None,
-                       token_cap: int | None = None):
+                       token_cap: int | None = None, raw_cap: int | None = None):
     """The per-turn clock, the budget warning, and the circuit breaker.
 
     A closure per agent rather than one shared function: the allowance and the successor differ by
@@ -1146,13 +1212,23 @@ def _make_before_model(budget: _RoleBudget | None, cap: float | None = None,
             if now - started >= cap:
                 return _trip_breaker(callback_context, now - started, cap)
 
-        # The token cap shares the trip set with the clock, so whichever fires first halts the
-        # invocation and the other cannot un-halt it. Checked even when there is no time cap: a run
-        # can be given one budget without the other.
-        if token_cap:
-            spent = _invocation_input.get(invocation, 0)
-            if invocation in _tripped or spent >= token_cap:
+        # Both token limits share the trip set with the clock, so whichever fires first halts the
+        # invocation and none of the others can un-halt it. Checked even when there is no time cap:
+        # a run can be given one budget without the other.
+        #
+        # **Spend first, then runaway.** They measure different things — billable tokens against the
+        # cost ceiling, raw against the loop guard — and a halt has to name which one it was, or a
+        # reader comparing the number against the turn log finds it does not match either count.
+        if token_cap or raw_cap:
+            if invocation in _tripped:
+                return _trip_breaker(callback_context, _billable(invocation),
+                                     token_cap or raw_cap or 0, "tokens")
+
+            if token_cap and (spent := _billable(invocation)) >= token_cap:
                 return _trip_breaker(callback_context, spent, token_cap, "tokens")
+
+            if raw_cap and (raw := _invocation_input.get(invocation, 0)) >= raw_cap:
+                return _trip_breaker(callback_context, raw, raw_cap, "raw")
 
         _turn_started[invocation] = now
         _prune_role_clocks(now)
@@ -1161,7 +1237,7 @@ def _make_before_model(budget: _RoleBudget | None, cap: float | None = None,
         # the latter is the head of the cache prefix, and cached input bills at roughly a tenth, so
         # warning that way can cost more than the overrun it prevents.
         if token_cap:
-            spent = _invocation_input.get(invocation, 0)
+            spent = _billable(invocation)
             share = spent / token_cap
             seen = _token_warned.setdefault(invocation, set())
             crossed = [t for t in BUDGET_WARN_AT if share >= t and t not in seen]
@@ -1483,8 +1559,29 @@ def build(
     token_cap = budget_tokens if budget_tokens is not None else _env_tokens("POLSON_BUDGET_TOKENS")
     if token_cap is not None and token_cap <= 0:
         token_cap = None
+
+    # **Two limits, because there are two failure modes and one number cannot see both.**
+    #
+    # `token_cap` is the *spend* ceiling and is measured in billable tokens, so a well-cached run is
+    # not punished for the thing that makes it cheap. `raw_cap` is the *runaway* guard and counts
+    # raw input, because a loop resending an identical prefix caches beautifully — it is the
+    # best-cached traffic there is — so a cost-weighted count discounts a stuck agent by tenfold at
+    # exactly the moment it is most out of control.
+    #
+    # Weighting alone would have been a straight trade of one failure for the other: kubrick1 was
+    # halted at 2,005,223 raw tokens while ~95% cached, having spent perhaps 300,000 tokens' worth,
+    # and cost-weighting would have let a genuine loop run ten times longer. Whichever trips first
+    # wins, and each is named in the halt so a reader knows which one it was.
+    raw_cap = _env_tokens("POLSON_BUDGET_RAW_TOKENS")
+    if raw_cap is None and token_cap:
+        raw_cap = token_cap * RAW_CAP_MULTIPLE
+    if raw_cap is not None and raw_cap <= 0:
+        raw_cap = None
+
     if token_cap:
-        _TURN_LOG.warning("token budget: %s input tokens per invocation", f"{token_cap:,}")
+        _TURN_LOG.warning("token budget: %s billable input tokens per invocation (runaway guard: "
+                          "%s raw)", f"{token_cap:,}",
+                          f"{raw_cap:,}" if raw_cap else "none")
 
     # Appended here rather than with the other project tools because it needs the caps, and those
     # are resolved below the perception list — the resolution reads in the order the values are
@@ -1524,7 +1621,7 @@ def build(
             instruction=prompt + role_deadline_note(plan.get(name), allowance),
             tools=[toolset, *perception, *advice],
             generate_content_config=_retry_config(),
-            before_model_callback=_make_before_model(plan.get(name), cap, token_cap),
+            before_model_callback=_make_before_model(plan.get(name), cap, token_cap, raw_cap),
             after_model_callback=_after_model,
             disallow_transfer_to_peers=not transfer_between_roles,
         )
@@ -1544,7 +1641,7 @@ def build(
         # multi-agent case the Facilitator still needs to look at what the roles produced.
         tools=[toolset, *perception],
         generate_content_config=_retry_config(),
-        before_model_callback=_make_before_model(plan.get(root_name), cap, token_cap),
+        before_model_callback=_make_before_model(plan.get(root_name), cap, token_cap, raw_cap),
         after_model_callback=_after_model,
         sub_agents=sub_agents,
     )

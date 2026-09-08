@@ -1110,6 +1110,13 @@ public partial class DrawingMcpTools
                     ["runId"] = task.Id,
                     ["description"] = description,
                     ["processor"] = task.Processor,
+
+                    // **How long this will look like nothing happening.** Between this event and
+                    // research.completed the server writes nothing at all, so a reader watching the
+                    // record sees a run that has stopped. A director called a healthy run broken on
+                    // exactly that: it was 132 seconds into a task that took 292.
+                    ["expectSeconds"] = ResearchTypicalSeconds,
+                    ["expectNote"] = ResearchWaitNote,
                 });
         }
 
@@ -1126,6 +1133,30 @@ public partial class DrawingMcpTools
 
         return DescribeTask(task, response, session);
     });
+
+    /// <summary>
+    /// How long a research run typically takes, in seconds. Measured, not predicted.
+    /// </summary>
+    /// <remarks>
+    /// <b>The reference used to say "about a minute" and that was wrong by two to five times.</b> Two
+    /// runs measured on the <c>base</c> tier took <b>143.5s</b> for a single field and <b>292.3s</b>
+    /// for sixteen — so a richer schema costs more, which is the only shape two points support. The
+    /// number here is the upper measurement rather than the average, because its job is to say when
+    /// waiting stops being normal, and an average would call half of all healthy runs late.
+    /// </remarks>
+    internal const int ResearchTypicalSeconds = 300;
+
+    /// <summary>What to tell a reader who is watching a research wait and seeing nothing.</summary>
+    /// <remarks>
+    /// Written for two audiences at once: the agent, which otherwise polls a task that cannot
+    /// possibly have finished, and whoever is watching the run page, where the gap between
+    /// <c>research.started</c> and <c>research.completed</c> is the longest silence in a run.
+    /// </remarks>
+    internal const string ResearchWaitNote =
+        "Research is slow on purpose: a model is reading sources, not a lookup. Measured on this "
+        + "tier: 143s for one field, 292s for sixteen. Nothing is written to the record in between, "
+        + "so a run that looks stopped during this window is usually working. Do the parts of the "
+        + "piece that need no figures while you wait.";
 
     /// <summary>Null for anything blank, so an empty argument reads as absent rather than as "".</summary>
     private static string? Trimmed(string? value) =>
@@ -1262,6 +1293,14 @@ public partial class DrawingMcpTools
         response["ok"] = task.IsComplete;
         response["runId"] = task.Id;
         response["status"] = task.Status;
+
+        // Said on every describe rather than only at the start: an agent that polls a task reads
+        // this response, and "how long should this take" is exactly the question it is asking.
+        if (task.IsActive)
+        {
+            response["expectSeconds"] = ResearchTypicalSeconds;
+            response["waiting"] = ResearchWaitNote;
+        }
         response["processor"] = task.Processor;
         response["elapsedSeconds"] = task.ElapsedSeconds;
         response["description"] = task.Description;
@@ -1730,6 +1769,74 @@ public partial class DrawingMcpTools
                 ["width"] = Convert.ToDouble(box["width"]),
                 ["height"] = Convert.ToDouble(box["height"])
             };
+        }
+
+        return response;
+    });
+
+
+    [McpServerTool(Name = "VerifyFigures")]
+    [Description("Checks the figures drawn on a saved SVG against the research they are tagged to. Reads the markup here and returns only a verdict, so nothing large reaches your context. Tag a figure when you draw it: .attr({ 'data-basis': 'trun_abc:films.3.runtime' }).")]
+    public JsonObject VerifyFigures(
+        [Description("Path of the saved SVG, relative to the project directory.")] string path)
+    => Recorded(nameof(VerifyFigures), () =>
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var full = ProjectPath.Resolve(ProjectRoot, path, nameof(path), "Read");
+        if (!File.Exists(full))
+        {
+            throw new FileNotFoundException(
+                $"No SVG at '{path}' (resolves to '{full}'). Paths are relative to the project directory.",
+                full);
+        }
+
+        var archive = new ResearchArchive(
+            SessionContext.ResearchArchiveDir ?? Path.Combine(ProjectRoot, ".polson", "research"));
+
+        var verdict = FigureVerifier.Verify(File.ReadAllText(full), archive);
+
+        var response = new JsonObject
+        {
+            ["checked"] = verdict.Checked,
+            ["verified"] = verdict.Verified,
+            ["findings"] = verdict.Findings.Count,
+        };
+
+        // **Nothing tagged is not the same answer as everything verified**, and reporting `0 of 0`
+        // as a pass is how a piece with no tags at all would come back clean. The distinction is the
+        // one the run report's own `documents read` row got wrong for a day: an absent thing and a
+        // zero look identical to a reader who does not know the thing exists.
+        if (verdict.Checked == 0)
+        {
+            response["verdict"] = "nothing to check";
+            response["advice"] =
+                "No figure on this page carries a data-basis tag, so none of them was checked. Tag "
+                + "each number as you draw it with the run and field it came from — "
+                + "paper.text(x, y, '1,636').attr({ 'data-basis': 'trun_abc:totalRuntimeMinutes' }) — "
+                + "and run this again.";
+            return response;
+        }
+
+        response["verdict"] = verdict.Findings.Count == 0 ? "all tagged figures reconcile" : "figures do not reconcile";
+
+        if (verdict.Findings.Count > 0)
+        {
+            var findings = new JsonArray();
+            foreach (var finding in verdict.Findings)
+            {
+                var entry = new JsonObject
+                {
+                    ["basis"] = finding.Basis,
+                    ["drawn"] = finding.Drawn,
+                    ["reason"] = finding.Reason,
+                };
+
+                if (finding.Expected is not null) entry["expected"] = finding.Expected;
+                findings.Add(entry);
+            }
+
+            response["notReconciled"] = findings;
         }
 
         return response;

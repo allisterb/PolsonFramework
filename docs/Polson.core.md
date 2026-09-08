@@ -77,6 +77,11 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
   - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. **Both are relative to the project directory, and a path resolving outside it is refused** — an absolute path or a `..` traversal fails with a message naming the project root rather than writing somewhere unexpected. Missing intermediate directories are created for you. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
     > [!IMPORTANT]
     > **`outSvg` needs a vector document to write.** It saves the markup of the `SnapPaper` the script built, so a script that built none has nothing to save. A script that draws entirely on a raster canvas has no markup to save, so `outSvg` writes **no file** and the run still reports success — the response carries a `[WARN] outSvg … wrote nothing` line, but by then the stage is drawn. **If the brief asks for an SVG, build the scene on `Snap(width, height)` from the first script.** Read `polson://manual/14` before choosing the surface.
+
+    > [!IMPORTANT]
+    > **The raster is rendered at the paper's own size, so the peek and the deliverable are the same shape.** `width` and `height` on `ExecuteScript` are the *default viewport* — what a bare `Snap()` or `createCanvas()` gets — not a render target, and a paper built at `Snap(900, 1350)` is written out at 900 × 1350 whatever they say.
+    >
+    > **This was wrong until 2026-09-07 and it was wrong invisibly.** The defaults were passed to the rasteriser as well, and the pipeline scales each axis on its own, so a portrait paper arrived in the peek **anamorphically squashed** — 0.89× across against 0.44× down — rather than letterboxed. On the kubrick7 run `final.svg` was 900 × 1350 and `final.webp` was 800 × 600, and every visual judgment the agent made about crowding and balance was made against a picture that was not the deliverable. **If you are auditing a vector piece by looking at the render, check that the two agree**: `bitmap.width` against `paper.width` costs nothing.
   - **The markup itself never comes back in the response.** `outSvg` writes it and `result.SvgFilePath` names the file; to read it again use `Snap.load(path)` in a later script, or `RenderSvg(file: path)` to re-render it. A mixed script — one that builds a paper, then composites it onto a canvas and returns the canvas — still saves the last paper it made, so a mark built in vector and presented on a raster board still delivers the mark.
 
     > [!IMPORTANT]
@@ -2343,7 +2348,7 @@ Facts commissioned from the web, with a citation and a confidence for **every fi
 > [!CAUTION]
 > **Never invent a figure, and never draw a placeholder number.** A plausible-looking invented value is the worst thing this studio can produce — the layout puts a source line under it, and the graphic then asserts something nobody checked. If research failed or was never commissioned, say so in the artifact and to the director. A chart that admits a missing figure is worth more than one that fabricates it.
 
-There is deliberately **no way to start research from a script**, and no way to write a result. A run takes around a minute — far longer than the {{SCRIPT_TIMEOUT_SECONDS}}-second script limit allows — so commissioning belongs to the tool, which blocks outside the sandbox. The one-way door is the point: an agent that could author its own `basis` could produce a cited number it made up.
+There is deliberately **no way to start research from a script**, and no way to write a result. A run takes **two to five minutes** — far longer than the {{SCRIPT_TIMEOUT_SECONDS}}-second script limit allows — so commissioning belongs to the tool, which blocks outside the sandbox. The one-way door is the point: an agent that could author its own `basis` could produce a cited number it made up.
 
 ```javascript
 // The Research tool has already run. The script only reads.
@@ -2411,6 +2416,13 @@ ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA �
 - `task.citeField(field: string)` → `string?` — A caption-ready source line for one output field, or **null when that field has no sources** — which is not the same as an empty string, and is worth checking before printing it. Array elements are addressed with a dot index as the service reports them: `missions.0`.
 - `task.basisFor(field: string)` → `FieldBasis?` — The full basis for one field, or null.
 - `task.sources()` → `string[]` — Every distinct source across the whole result, for a combined credit line.
+> [!NOTE]
+> **Every finished run is filed to `.polson/research/<runId>.json`, and that file is what makes a figure checkable after the session.** The registry holds its tasks in memory and the run record carries only the run id, the processor and the elapsed seconds — so before this, the moment a session ended the only surviving account of where a number came from was whatever the agent had transcribed into `brief.md`. A reader was left holding the name of a citation with no way to read it.
+>
+> The file carries the **objective and the processor** as well as the result, because *what was it asked* is where a wrong figure usually starts — a right answer to a question about the wrong period reads perfectly. And it carries **`basis`**, which is the half that matters: the result alone proves a number was transcribed faithfully and says nothing about whether it was ever true.
+>
+> Filed under the run id rather than a content hash, and in its own folder rather than beside `assets/` and `documents/` — those are caches, and exist so a call is not paid for twice. This exists to be read.
+
 
 ## `FieldBasis`
 
@@ -2427,7 +2439,9 @@ ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA �
 - `citation.cite()` → `string` — `Title — publisher`, omitting whatever the source did not supply.
 
 > [!TIP]
-> **Ask for research before the work that needs it, not after.** A run takes about a minute, and the layout grid, the type scale, the palette and the panel structure need none of the figures — so commission first, do the work that does not depend on the numbers, then place them. That is not drawing placeholders; nothing false enters the artifact.
+> **Ask for research before the work that needs it, not after.** A run takes **two to five minutes** — measured at 143s for a single field and 292s for sixteen, so a richer schema costs more — and the layout grid, the type scale, the palette and the panel structure need none of the figures — so commission first, do the work that does not depend on the numbers, then place them. That is not drawing placeholders; nothing false enters the artifact.
+>
+> **Nothing is written to the record while you wait**, so a run in this window looks stopped to anyone watching it — a director called a healthy run broken 132 seconds into a task that took 292. The `research.started` event now carries `expectSeconds` and a note saying as much, and the tool repeats both on every poll.
 
 ---
 

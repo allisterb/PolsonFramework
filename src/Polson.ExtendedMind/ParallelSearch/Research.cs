@@ -261,7 +261,16 @@ public sealed class ResearchRegistry
 {
     #region Constructors
     /// <param name="budget">Runs allowed. Defaults to <see cref="DefaultBudget"/>.</param>
-    public ResearchRegistry(int budget = DefaultBudget) => Budget = new ResearchBudget(budget);
+    /// <param name="budget">Runs allowed. Defaults to <see cref="DefaultBudget"/>.</param>
+    /// <param name="archive">
+    /// Where a finished run is filed so its figures stay checkable after the session. Null keeps the
+    /// old behaviour — nothing written — which is what an ad-hoc registry with no project wants.
+    /// </param>
+    public ResearchRegistry(int budget = DefaultBudget, ResearchArchive? archive = null)
+    {
+        Budget = new ResearchBudget(budget);
+        Archive = archive;
+    }
     #endregion
 
     #region Properties
@@ -300,6 +309,16 @@ public sealed class ResearchRegistry
     public const int DefaultBudget = 2;
 
     public ResearchBudget Budget { get; }
+
+    /// <summary>
+    /// Where a finished run is filed, or null when nothing is archived.
+    /// </summary>
+    /// <remarks>
+    /// Null is the ad-hoc case — a registry with no project directory behind it. A run that draws
+    /// from research and files nothing leaves its figures unverifiable once the session ends, which
+    /// is why the engine supplies one whenever a project is present.
+    /// </remarks>
+    public ResearchArchive? Archive { get; }
 
     /// <summary>In the order they were started, which is the order a reader wants them.</summary>
     public IReadOnlyList<ResearchTask> All
@@ -365,6 +384,10 @@ public sealed class ResearchRegistry
         task.Status = status ?? "completed";
         task.Result = result;
         task.Basis = basis;
+
+        // Filed here because this is the one place a run acquires its data, and because the figures
+        // drawn from it outlive the session that fetched them. Never throws — see ResearchArchive.
+        Archive?.Save(task);
     }
 
     /// <summary>

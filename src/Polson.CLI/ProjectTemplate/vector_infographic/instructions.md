@@ -65,6 +65,33 @@ under it. A plausible number is worse than a gap: a gap is visible and a plausib
 unavailable"* is a stronger artifact than one that quietly fills the hole, and it is the honest
 version of the same page. Say it to the director as well.
 
+**Tag a sourced figure where you draw it, so it can be checked without you.** One attribute, carrying
+the run and the field the number came from:
+
+```javascript
+paper.text(x, y, '1,636').attr({ 'data-basis': 'trun_4beb03…:totalRuntimeMinutes' });
+paper.text(x, y, '197m').attr({ 'data-basis': 'trun_4beb03…:films.4.runtime' });
+```
+
+The path is addressed the way a citation addresses one — `films.4.runtime`, with a dot index for a
+list element — so the tag names exactly what `basisFor(...)` names. The tag travels into the saved
+SVG and costs nothing at render.
+
+**Then `VerifyFigures('artifacts/final.svg')` at the audit**, which reads the markup on the server's
+side, resolves every tag against the archived research in `.polson/research/`, and hands back counts
+and any figure that did not reconcile. **It never returns the markup** — an agent reading SVG is the
+thing `outSvg` exists to prevent, and one page measured 109,045 characters of it.
+
+**This is the only check in the run you do not write.** Everything under `Stage.check` is composed by
+you, which means it tests what you thought to test: a live run recorded seventeen passing checks
+beneath a headline of **27 / 10** whose own cards summed to 27 and **9**. This one compares the
+drawn glyphs against a file you did not author, so its answer is not a matter of your judgment.
+Formatting is not disagreement — `$171.9M` reconciles against `171.9` — so tag the figure as you
+present it.
+
+**Tag what is sourced, not everything.** An axis tick, a year on a spine, a panel number and a page
+title are structure rather than data; tagging them would make the check noisy enough to ignore.
+
 **Creativity chooses the question; research answers it.** A thin brief — *"computer progress over the
 years"* — does not say which metric, and choosing transistor count over cost-per-FLOP is yours to
 decide and worth deciding well. The *values* for whatever you chose are not yours to decide at all.
@@ -515,6 +542,16 @@ surface and the budget.
 Write what comes back into the tables in `brief.md`, with the run id as the source, so every figure
 on the canvas traces to a row and every row traces to a citation.
 
+**A research run takes two to five minutes, so start it and go and do something else.** Measured on
+this tier: 143 seconds for a single field, 292 for sixteen — a richer schema costs more. The layout
+grid, the type scale, the palette, the panel structure and the masthead need none of the figures, so
+that time is free if you spend it and lost if you sit in it.
+
+**Nothing is written to the record while you wait.** Between `research.started` and
+`research.completed` the run log is silent, so anyone watching the studio page sees a run that has
+stopped — a director called a healthy run broken 132 seconds into a task that took 292. Say what you
+are waiting for in a `Stage.note` before you call, and the record will explain its own quiet.
+
 **Fifth, ask whether the subject is a set of specific people or places** — a ranking of named
 individuals, a comparison of particular cities, a timeline anchored to one building. If it is, a
 reference photograph is available: `Photo.of('name', { expect: 'actress' })` returns a portrait with
@@ -569,6 +606,7 @@ These are the calls that produce evidence. Reach for one before writing a claim,
 | an edge lands where intended | `bitmap.rowProfile(colour)` | where that colour starts and ends, per row |
 | a revision changed what you meant | `bitmap.diff(previous)` | the similarity, and the rectangle that changed |
 | **no two labels overlap** | `paper.selectAll('text')` + `getBBox()` | every colliding pair, and by how much |
+| **a sourced figure is what the research returned** | `VerifyFigures('artifacts/final.svg')` | counts, and every tagged figure that did not reconcile — **the one check you do not write** |
 | **a drawn total or rate follows from the operands drawn beside it** | the sum or division, in script | the number a reader would get, against the number you drew |
 | **no two leader lines cross** | the segment test below | every crossing pair, by index |
 
@@ -761,6 +799,57 @@ cannot tell which of the two to believe.
 
 ---
 
+#### Write `accuracy.md`, and make it honest about what you could not check
+
+**This ships with the piece.** A director receives the graphic and this file, and the file is what
+lets them trust the graphic without re-deriving it — or know precisely where not to.
+
+Write it at the end of the audit, into the project root beside `brief.md`. **Do not create it
+earlier.** Its presence means an audit happened; an empty one written at the start would say a run
+was checked when it was abandoned.
+
+```markdown
+# Accuracy report — <project>
+
+## Checked, and reconciled
+Figures verified against their source, and how. Give the `VerifyFigures` counts, and name the
+derived figures you recomputed from the operands drawn beside them.
+
+## Not reconciled
+Anything that disagreed with its source, with both values. Say whether you fixed it and what you
+changed. If it is still on the canvas, say that too.
+
+## Could not be checked
+Figures with no archived source, values a reader must take on trust, and anything the checks do not
+reach. **This section is the point of the document.**
+
+## Known limitations
+What the piece asserts that is weaker than it looks: a stand-in image, an approximate label, a
+category the source did not define, a period the data covers less well than the headline implies.
+
+## What was not audited
+Say plainly what you did not examine.
+```
+
+**The third and fourth sections are where the value is, and the temptation is to leave them empty.**
+A report listing only successes is the same artifact as a footer reading `HONESTY AUDIT · ALL VALUES
+SOURCED` above a wrong total — and that is a real page from a real run, not a hypothetical. If every
+section but the first is blank, you have almost certainly written a summary of your confidence
+rather than an audit.
+
+**Some faults cannot be fixed and must still be recorded.** A run asked for "a stencil of the author"
+and put a generated silhouette under the heading *STANLEY KUBRICK (1928 — 1999)*, with dates and a
+source line beneath it. Nothing about that image is numerically wrong; no check catches it; and the
+honest remedies — remove it, replace it with a licensed photograph, or label it as a decorative
+motif rather than a likeness — may not be available inside the run. **Then say so under Known
+limitations, in the client's terms:** what the piece appears to claim, what it actually rests on, and
+what would settle it.
+
+The same goes for a figure you could not source, a genre the ledger never recorded, or a total you
+could not reconcile against its parts. **A stated limitation is a finished piece of work. A silent
+one is a defect with a delivery date.**
+
+
 ## Verifying, rather than hoping
 
 You can see your renders, but seeing is not measuring. When a colour, an alpha, or "is it drawn at
@@ -814,6 +903,13 @@ describe.
 7. **Every number printed on the canvas is computed**, including numbers about the graphic itself —
    a lie factor or an integrity stamp is rendered from the value that was measured, never typed.
 8. A final render in `artifacts/`, with `outSvg` alongside it if the piece is vector.
+
+9. **Every sourced figure carries a `data-basis` tag, and `VerifyFigures` has been run over the saved
+   SVG.** A verdict of *nothing to check* means the figures were never tagged, not that they passed.
+
+10. **`accuracy.md` is written, and its later sections are not empty.** What could not be checked and
+    what the piece still overstates are the parts a client cannot get anywhere else — and the parts a
+    run that audited itself will be most tempted to leave blank.
 
 A graphic that is accurate and looks like a dashboard has failed half the brief; one that is
 beautiful and overstates its numbers has failed the more important half.

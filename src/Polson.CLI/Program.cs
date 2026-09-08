@@ -332,7 +332,7 @@ internal class Program : Runtime
         return processor;
     }
 
-    static void ConfigureResearch()
+    static void ConfigureResearch(string projectDir)
     {
         var apiKey = Setting("ApiKeys:Parallel");
 
@@ -351,6 +351,13 @@ internal class Program : Runtime
         DrawingMcpTools.ResearchClient = new ParallelClient(apiKey);
         DrawingMcpTools.ResearchProcessor = processor;
         SessionContext.ResearchBudget = budget;
+
+        // Beside the asset and document caches, and inside the project for the same reason: the run
+        // that commissioned this research is the run whose figures rest on it. Without it the data
+        // dies with the session and every number drawn from it becomes unverifiable — the record
+        // keeps the run id and nobody keeps what it returned.
+        SessionContext.ResearchArchiveDir =
+            Setting("Research:ArchiveDir") ?? Path.Combine(projectDir, ".polson", "research");
         Info("Research enabled (processor: {0}, ~{1} fields, budget: {2} runs per session).",
             processor, TaskSchema.CapacityOf(processor), budget);
     }
@@ -373,7 +380,7 @@ internal class Program : Runtime
         ConfigureAssetRequisition(projectDir);
         ConfigureDocuments(projectDir);
         ConfigurePhotos();
-        ConfigureResearch();
+        ConfigureResearch(projectDir);
 
         if (opts.Http)
         {

@@ -55,7 +55,9 @@ public sealed class SessionContext
     /// and read by a later one, so it has to outlive a single execution. Keyed by the service's run
     /// id, which is durable — a task can be recovered after a session drop by asking for it again.
     /// </remarks>
-    public ResearchRegistry Research { get; } = new(ResearchBudget);
+    public ResearchRegistry Research { get; } = new(
+        ResearchBudget,
+        string.IsNullOrWhiteSpace(ResearchArchiveDir) ? null : new ResearchArchive(ResearchArchiveDir));
 
     /// <summary>
     /// Runs allowed per session, set once at startup from <c>Research:Budget</c>.
@@ -68,6 +70,21 @@ public sealed class SessionContext
     /// otherwise let the first of them spend everyone's allowance.
     /// </remarks>
     public static int ResearchBudget { get; set; } = Polson.ExtendedMind.ParallelSearch.ResearchRegistry.DefaultBudget;
+
+    /// <summary>
+    /// Where a finished research run is filed, or null to file nothing.
+    /// </summary>
+    /// <remarks>
+    /// Static for the reason <see cref="ResearchBudget"/> is: a session is built on demand inside a
+    /// tool call, with no route for configuration to reach it.
+    /// <para>
+    /// Null means a run's figures become unverifiable the moment the session ends — the registry
+    /// holds its tasks in memory and the run record carries only the run id — so the CLI sets this
+    /// whenever a project is present. It stays nullable for the ad-hoc engine, which has no project
+    /// to file into.
+    /// </para>
+    /// </remarks>
+    public static string? ResearchArchiveDir { get; set; }
 
     /// <summary>
     /// The stage of work the agent says it is in, e.g. "Blocking". Null until it declares one.

@@ -100,6 +100,37 @@ public partial class JsDrawingEngine : Runtime
         ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality, default, executionId, render).GetAwaiter().GetResult();
 
     /// <summary>
+    /// Rasterises a returned paper at <b>its own</b> size, falling back to the default viewport only
+    /// when the document states none.
+    /// </summary>
+    /// <remarks>
+    /// <c>defaultWidth</c>/<c>defaultHeight</c> are the size a script gets from a bare
+    /// <c>Snap()</c> or <c>createCanvas()</c> — a default <i>viewport</i>, not a render target. They
+    /// were being handed to <c>ToImageBytes</c> as well, so a paper built at <c>Snap(900, 1350)</c>
+    /// was squeezed into 800x600; and because the pipeline scales each axis separately, the result
+    /// was not letterboxed but <b>anamorphic</b> — 0.89x across against 0.44x down.
+    /// <para>
+    /// That is worse than a mismatched thumbnail, because the raster peek is how an agent sees its
+    /// own work: on the kubrick7 run every visual judgment — crowding, balance, whether a label fit —
+    /// was made against a picture that was not the deliverable. The canvas branch never had the
+    /// fault, since it encodes at the canvas's own size; this makes the paper branch agree with it,
+    /// and with the file <c>outSvg</c> writes.
+    /// </para>
+    /// <para>
+    /// The size is read from the document rather than left to the pipeline's <c>null</c> default,
+    /// which measures the rendered picture's bounds — a mark drawn outside the viewport would then
+    /// change the peek's dimensions while the deliverable's stayed put, which is the same class of
+    /// disagreement in a smaller size.
+    /// </para>
+    /// </remarks>
+    private static byte[] RenderPaper(SnapPaper paper, int defaultWidth, int defaultHeight, string format, int quality)
+    {
+        var width = paper.Width > 0 ? (int)MathF.Ceiling(paper.Width) : defaultWidth;
+        var height = paper.Height > 0 ? (int)MathF.Ceiling(paper.Height) : defaultHeight;
+        return paper.ToImageBytes(width, height, format, quality);
+    }
+
+    /// <summary>
     /// Executes a script, awaiting any promises it creates.
     /// </summary>
     /// <remarks>
@@ -663,7 +694,7 @@ public partial class JsDrawingEngine : Runtime
             if (finalPaper != null)
             {
                 result.SvgXml = finalPaper.ToString();
-                result.ImageBytes = Encode(() => finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality));
+                result.ImageBytes = Encode(() => RenderPaper(finalPaper, defaultWidth, defaultHeight, format, quality));
             }
             else if (papers.Count > 0)
             {
@@ -695,7 +726,7 @@ public partial class JsDrawingEngine : Runtime
             {
                 var finalPaper = papers.Last();
                 result.SvgXml = finalPaper.ToString();
-                result.ImageBytes = Encode(() => finalPaper.ToImageBytes(defaultWidth, defaultHeight, format, quality));
+                result.ImageBytes = Encode(() => RenderPaper(finalPaper, defaultWidth, defaultHeight, format, quality));
             }
         }
         catch (PromiseRejectedException prex)

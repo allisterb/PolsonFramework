@@ -18,6 +18,7 @@ import os
 import importlib
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -988,6 +989,119 @@ class ArtifactRouteTests(unittest.TestCase):
             page = self.client.get(f"/runs/acme-1/artifact/{attempt}")
             self.assertEqual(page.status_code, 404, attempt)
             self.assertNotIn(b"never", page.content)
+
+
+class InterjectionTests(unittest.TestCase):
+    """Speaking to a run that is already going.
+
+    Two things had to be true for the director's box to work and neither was: the request has to
+    reach the studio at all (it was posted without the mount prefix, so it 404'd), and an observed
+    run has to have somewhere to put the words (it did not, and always answered False).
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-say-"))
+        self.registry = Registry()
+        self.client = TestClient(app_mod.create_app(self.root, self.registry, observe_only=True))
+        self.project = project_dir(self.root, "acme")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _observed(self, *, live: bool = True):
+        """An observed run, with `live` forced rather than inferred from a tailer's clock."""
+        from studio import observe as observe_mod
+
+        run = observe_mod.ObservedRun(
+            id="acme-watch-1", project=_loaded(self.project), prompt="", stream=None,
+            started="2026-09-08T00:00:00+00:00", since="", status="watching")
+        run.observation = None
+        type(run).live = property(lambda self: live)
+        self.registry._runs["acme-watch-1"] = run
+        return run
+
+    def test_without_the_runtime_present_there_is_no_channel_and_it_says_so(self):
+        """A studio watching another host's record must not pretend it can reach the agent."""
+        run = self._observed()
+        try:
+            with mock.patch.dict(sys.modules, {"interject": None}):
+                self.assertFalse(run.say("make it red"))
+        finally:
+            del type(run).live
+
+    def test_with_the_runtime_present_the_words_reach_the_queue(self):
+        run = self._observed()
+        offered = []
+        fake = mock.MagicMock()
+        fake.offer.side_effect = lambda project, text: (offered.append((project, text)), True)[1]
+
+        try:
+            with mock.patch.dict(sys.modules, {"interject": fake}):
+                self.assertTrue(run.say("make the background red"))
+        finally:
+            del type(run).live
+
+        self.assertEqual(offered, [("acme", "make the background red")])
+
+    def test_the_interjection_is_recorded_when_it_is_said(self):
+        """Not when the agent picks it up — those are seconds apart.
+
+        A director who typed something and saw nothing appear in the trace would reasonably conclude
+        it had gone nowhere, which is the situation this whole feature exists to end.
+        """
+        run = self._observed()
+        fake = mock.MagicMock()
+        fake.offer.return_value = True
+
+        try:
+            with mock.patch.dict(sys.modules, {"interject": fake}):
+                run.say("make the background red")
+        finally:
+            del type(run).live
+
+        written = (self.project / "events" / "director.jsonl").read_text(encoding="utf-8")
+        self.assertIn("make the background red", written)
+        self.assertIn('"message"', written)
+
+    def test_the_queue_the_studio_fills_is_the_one_the_agent_drains(self):
+        """**The failure with no symptom.**
+
+        A plain `import interject` resolves against `sys.path`. Were it ever to find a second copy
+        of the file, the studio would fill one queue and the agent's plugin would drain another —
+        every interjection accepted, none delivered, and nothing anywhere saying so. Taking the
+        module the runtime already imported makes that impossible instead of unlikely.
+        """
+        from studio import observe as observe_mod
+
+        sentinel = mock.MagicMock()
+        with mock.patch.dict(sys.modules, {"interject": sentinel}):
+            self.assertIs(observe_mod._channel(), sentinel)
+
+    def test_a_finished_run_is_refused_rather_than_queued(self):
+        """Nothing is listening, and queueing for an agent that has stopped is a silent loss."""
+        run = self._observed(live=False)
+        try:
+            page = self.client.post("/runs/acme-watch-1/say", data={"text": "hello"})
+        finally:
+            del type(run).live
+
+        self.assertEqual(page.status_code, 409)
+        self.assertIn("nothing is listening", page.text.lower())
+
+    def test_the_route_answers_when_the_channel_takes_it(self):
+        run = self._observed()
+        fake = mock.MagicMock()
+        fake.offer.return_value = True
+
+        try:
+            with mock.patch.dict(sys.modules, {"interject": fake}):
+                page = self.client.post("/runs/acme-watch-1/say",
+                                        data={"text": "make the background red"})
+        finally:
+            del type(run).live
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()["said"], "make the background red")
 
 
 class MountPrefixTests(unittest.TestCase):

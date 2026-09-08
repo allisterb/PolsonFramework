@@ -176,6 +176,40 @@ class ConfigurationTests(unittest.TestCase):
                               f"{workflow} never tells the agent to look for a document")
 
 
+class ObservingOnlyBoundaryTests(unittest.TestCase):
+    """What an observer may do to a mounted studio, now that one verb has changed sides.
+
+    The blanket refusal was right when written — the studio's whole write side went through the
+    Antigravity SDK, which this runtime does not ship. `adk_agent.interject` gives an ADK run its own
+    channel, so speaking to a run needs no driver and is no longer driving.
+    """
+
+    def test_reading_is_always_allowed(self):
+        self.assertTrue(intake.observing_only("GET", "/studio/runs/x", "/studio"))
+        self.assertTrue(intake.observing_only("HEAD", "/studio/", "/studio"))
+
+    def test_registering_a_watch_is_allowed(self):
+        self.assertTrue(intake.observing_only("POST", "/studio/observe", "/studio"))
+
+    def test_speaking_to_a_run_is_allowed(self):
+        """The change. Without it the box 409s before `say` is ever reached."""
+        self.assertTrue(intake.observing_only("POST", "/studio/runs/acme-watch-1/say", "/studio"))
+
+    def test_answering_is_still_refused(self):
+        """It settles a question the host asked, and the host owns that conversation."""
+        self.assertFalse(intake.observing_only("POST", "/studio/runs/acme-watch-1/answer", "/studio"))
+
+    def test_creating_and_starting_are_still_refused(self):
+        self.assertFalse(intake.observing_only("POST", "/studio/projects", "/studio"))
+        self.assertFalse(intake.observing_only("POST", "/studio/runs", "/studio"))
+
+    def test_a_path_that_merely_contains_say_is_refused(self):
+        """Anchored at both ends, so `say` cannot be a prefix onto something else."""
+        for attempt in ("/studio/runs/x/say/../../projects", "/studio/runs/x/say/more",
+                        "/studio/saying", "/studio/runs/say"):
+            self.assertFalse(intake.observing_only("POST", attempt, "/studio"), attempt)
+
+
 class RestartWarningTests(unittest.TestCase):
     """What the form says about the failure a visitor cannot otherwise see coming.
 
@@ -548,9 +582,14 @@ class ObservingOnlyTests(unittest.TestCase):
         self.assertTrue(intake.observing_only("POST", "/studio/observe/", "/studio"))
 
     def test_creating_or_driving_is_refused(self):
-        """Each of these needs the Antigravity driver, which this runtime does not ship."""
-        for path in ("/studio/projects", "/studio/runs", "/studio/runs/x-1/answer",
-                     "/studio/runs/x-1/say"):
+        """Each of these needs the Antigravity driver, which this runtime does not ship.
+
+        **`/say` was on this list and has moved off it**, which is a change of fact rather than of
+        policy: `adk_agent.interject` gives an ADK run a channel of its own, so speaking to one no
+        longer needs a driver. `/answer` stays, because it settles a question the *host* asked and
+        the host still owns that conversation. See `ObservingOnlyBoundaryTests`.
+        """
+        for path in ("/studio/projects", "/studio/runs", "/studio/runs/x-1/answer"):
             with self.subTest(path=path):
                 self.assertFalse(intake.observing_only("POST", path, "/studio"))
 

@@ -40,6 +40,7 @@ from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.adk.tools.mcp_tool import McpToolset
 
+import interject
 import mirror
 import transcript
 from google.adk.tools.mcp_tool import StdioConnectionParams
@@ -1682,7 +1683,8 @@ def build_app(project_dir: str | Path, *, name: str | None = None, **kwargs) -> 
     #
     # `mirror` returns None whenever `POLSON_MIRROR_URI` is unset, so a local checkout registers
     # nothing and behaves exactly as it did before.
-    plugins = [p for p in (transcript.make_plugin(project), mirror.make_plugin(project))
+    plugins = [p for p in (transcript.make_plugin(project), mirror.make_plugin(project),
+                           interject.make_plugin(project))
                if p is not None]
 
     return App(

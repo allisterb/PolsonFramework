@@ -31,6 +31,7 @@ Two things this has to get right, and both are ways of showing a run that is not
 from __future__ import annotations
 
 import asyncio
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,12 +39,16 @@ from typing import Any
 
 from orchestrator import project as project_mod
 from orchestrator.broker import BACKLOG, HISTORY, Broker, Subscription
-from orchestrator.events import merge
+from orchestrator.events import EventLog, merge, timestamp
 from orchestrator.hostlog import HostTranscript
 from orchestrator.project import Project
 from orchestrator.tail import Tailer
 
 from .runs import Run, StudioError
+
+import logging
+
+_logger = logging.getLogger("polson.observe")
 
 #: How often to re-read the host transcript. The hook rewrites it once per agent turn, so anything
 #: below a few seconds is polling a file that has not changed; anything above makes the conversation
@@ -260,12 +265,62 @@ class ObservedRun(Run):
         return False
 
     def say(self, text: str) -> bool:
-        """Always false, for the same reason `answer` is."""
-        return False
+        """Hands the director's words to the agent, when the agent is in this process.
+
+        **`answer` above stays false and this one does not, and the difference is real.** Answering
+        settles a question the *host* asked and is owned by whatever is driving the conversation;
+        this only has to reach the agent, and on the deployed runtime the agent is right here — the
+        studio is mounted on the ADK app, so `adk_agent.interject` is a queue in the same process
+        rather than something across a boundary.
+
+        False where that is not true: a studio watching a record another host is writing has no
+        channel and must not pretend otherwise, which is what the import guard decides.
+        """
+        channel = _channel()
+        if channel is None or not channel.offer(self.project.id, text):
+            return False
+
+        # Into the record at the moment it was *said*, not when the agent happens to pick it up.
+        # Those are seconds apart, and the trace is a record of what happened rather than of what
+        # was consumed — a director who typed something and saw nothing appear would reasonably
+        # conclude it had not gone anywhere.
+        try:
+            EventLog(self.project.director_events, "director").append(
+                "message", at=timestamp(), text=text.strip()[:2000])
+        except Exception as exc:
+            _logger.debug("polson observe: interjection not recorded (%s)", exc)
+
+        return True
 
     def summary(self) -> dict[str, Any]:
         return {**super().summary(), "observed": True}
     # endregion
+
+
+def _channel():
+    """The ADK runtime's interjection queue, or None when this studio is not mounted on one.
+
+    **`sys.modules` first, and that is the whole point of this function.** A plain `import interject`
+    resolves against `sys.path`, and if it ever resolved to a *second* copy of the file the studio
+    would be filling one queue while the agent's plugin drained another — a failure with no symptom
+    except that nothing is ever delivered. Taking the module the runtime already imported makes that
+    impossible rather than unlikely.
+
+    The fallback import is for the case where the studio is asked first, which does not happen on the
+    deployed runtime — `main.py` loads the agent app, and that imports this module long before any
+    page is served — but costs one dictionary miss to be safe about.
+    """
+    module = sys.modules.get("interject")
+    if module is not None:
+        return module
+
+    try:
+        import interject                                        # noqa: PLC0415 - deliberately late
+        return interject
+    except ImportError:
+        # A studio watching a record another host is writing. There is no channel, and saying so is
+        # the honest answer — see `ObservedRun.say`.
+        return None
 
 
 async def observe(registry: Any, root: Path) -> ObservedRun:

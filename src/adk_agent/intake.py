@@ -209,12 +209,27 @@ def _too_many() -> str | None:
     return None
 
 
+#: `POST /runs/<id>/say` — the director interrupting a run that is already going.
+SAY = re.compile(r"^/runs/[^/]+/say$")
+
+
 def observing_only(method: str, path: str, root_path: str = "") -> bool:
     """Whether a request to the mounted studio is one an observer may make.
 
-    Reading is every GET; the single mutation that belongs to reading is registering a watch.
-    Everything else — creating a project, starting or answering a run — needs a driver this runtime
-    does not ship, and used to be offered anyway.
+    Reading is every GET. Two mutations belong to it: registering a watch, and **speaking to a run
+    that is already going**.
+
+    **Why `say` is allowed and `answer` is not, when both look like driving.** The blanket refusal
+    was right when it was written — the studio's whole write side went through the Antigravity SDK,
+    which this runtime does not ship — but it is no longer true of this one verb. `adk_agent.interject`
+    gives an ADK run its own channel: the studio queues the words and a plugin hands them to the agent
+    at its next tool call, all in this process. Nothing about that needs a driver.
+
+    `answer` still does. It settles a question the *host* asked and belongs to whatever owns the
+    conversation, which here is the runner rather than the page — `ObservedRun.answer` returns False
+    and this keeps the request from arriving to be refused twice.
+
+    Creating a project and starting a run also still do, and are still refused.
 
     **The subtlety is the path.** Middleware on a mounted app sees the *whole* path with `root_path`
     beside it — `/studio/observe`, not `/observe`; only route matching strips the prefix afterwards.
@@ -226,7 +241,9 @@ def observing_only(method: str, path: str, root_path: str = "") -> bool:
 
     if root_path and path.startswith(root_path):
         path = path[len(root_path):]
-    return path.rstrip("/") == "/observe"
+
+    path = path.rstrip("/")
+    return path == "/observe" or bool(SAY.match(path))
 
 
 async def launch(app: FastAPI, name: str, message: str = OPENING) -> None:

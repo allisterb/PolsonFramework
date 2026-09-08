@@ -380,16 +380,14 @@ gcloud run deploy polson-studio --source . \
 > service's own host. This is a proxy-only requirement, which is why it is easy to meet for the first
 > time long after the deploy that "worked".
 
-> [!WARNING]
-> **`POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>` does not work yet, and would stop the container
-> starting.** `GcsArtifactService.__init__` does `from google.cloud import storage`, and
-> `google-cloud-storage` is **not** in `requirements.txt` — we install `google-adk[mcp]`, while GCS
-> lives in the `[gcp]` extra. The import is lazy, so the failure arrives at service construction
-> during startup rather than at image build, as `ModuleNotFoundError`.
+> [!NOTE]
+> **`POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>` works, and on Cloud Run it should be set.**
+> `GcsArtifactService.__init__` does a lazy `from google.cloud import storage`, so this used to be a
+> `ModuleNotFoundError` at service construction — during startup, not at image build. It is no longer:
+> `google-cloud-storage` is pinned in `requirements.in` and in the lock.
 >
-> Add `google-cloud-storage` to `requirements.in` and recompile the lock before passing a `gs://`
-> URI. Until then the artifact store falls back to `file://` on the container's ephemeral disk, and
-> version history dies with the instance.
+> Left `file://` on Cloud Run, the version history dies with the instance, and instances are replaced
+> without warning — see `mirror.py`, which exists because that happened twice in one day.
 >
 > Note also that only the **bucket name** is read — `bucket_name = parsed_uri.netloc` — so any path
 > after it (`gs://bucket/prefix`) is silently discarded rather than honoured.
@@ -444,10 +442,22 @@ deploy should not look like a broken image.
 > it, the native load fails at startup rather than at the first render.
 
 > [!WARNING]
-> **`/app/projects` and `/app/adk_agent/apps` are ephemeral.** A project created by a visitor dies
-> with the instance. Fine for a demo where one session serves one brief; wrong for anything that
-> must persist. Pass `POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>` so at least the version history
-> outlives the container, and `POLSON_SESSION_SERVICE_URI` for sessions.
+> **`/app/projects` and `/app/adk_agent/apps` are ephemeral, and the instance can be replaced
+> mid-run.** This is not a scale-to-zero-between-sessions problem: on 2026-09-08 a run twenty minutes
+> in was cut when Cloud Run recycled the instance under it, with memory at 19% and CPU under 4%. It
+> happened twice that day. A project created by a visitor dies with the instance, and so does
+> everything the agent made in it.
+>
+> Three settings, each saving something different:
+>
+> | | |
+> | :--- | :--- |
+> | `POLSON_ARTIFACT_SERVICE_URI=gs://<bucket>` | ADK's versioned blobs — the renders the model is shown |
+> | `POLSON_MIRROR_URI=gs://<bucket>/mirror` | the project directory a person opens, swept every `POLSON_MIRROR_SECONDS` **while the run is still going** |
+> | `POLSON_SESSION_SERVICE_URI` | sessions, which are otherwise in-memory on Cloud Run and cannot be resumed |
+>
+> The middle one is `mirror.py`. It sweeps rather than hooking the writers because the largest writer
+> is the .NET engine — `outFile` and `outSvg` land on disk without this process seeing the write.
 
 `POLSON_SEED_PROJECT` seeds one project at startup so a visitor handed the URL finds something
 rather than an empty app picker. Off by default, since a deployment driven by its own web layer

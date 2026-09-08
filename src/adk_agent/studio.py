@@ -40,6 +40,7 @@ from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.adk.tools.mcp_tool import McpToolset
 
+import mirror
 import transcript
 from google.adk.tools.mcp_tool import StdioConnectionParams
 from google.genai import types
@@ -1674,10 +1675,15 @@ def build_app(project_dir: str | Path, *, name: str | None = None, **kwargs) -> 
         root.name,
     )
 
-    # The conversation half of the record. Appended rather than replacing the watchdog: they observe
-    # the same run for different reasons, and a plugin that fails to build must not take the other
-    # with it — `make_plugin` returns None instead of raising, and this drops it.
-    plugins = [p for p in (transcript.make_plugin(project),) if p is not None]
+    # The conversation half of the record, and the copy that survives the machine. Appended rather
+    # than replacing the watchdog: they observe the same run for different reasons, and a plugin that
+    # fails to build must not take the others with it — both `make_plugin`s return None instead of
+    # raising, and this drops them.
+    #
+    # `mirror` returns None whenever `POLSON_MIRROR_URI` is unset, so a local checkout registers
+    # nothing and behaves exactly as it did before.
+    plugins = [p for p in (transcript.make_plugin(project), mirror.make_plugin(project))
+               if p is not None]
 
     return App(
         name=name or project.name,

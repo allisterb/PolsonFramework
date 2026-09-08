@@ -266,11 +266,45 @@ gcloud secrets versions access latest --secret=<secret-name> --project <project>
 `Ctrl-D` ends it in bash; `Ctrl-Z` then Enter in PowerShell — and Ctrl-Z in bash *suspends* the
 process instead, which looks exactly like a hang. Using a file avoids the question entirely.
 
-**A run's record dies with the container.** Projects live on the instance's ephemeral disk, so a
-deployed run that misbehaves leaves nothing to examine afterwards, and its `accuracy.md` is
-unreadable once the instance recycles. `POLSON_ARTIFACT_SERVICE_URI=gs://…` is the intended fix and is
-currently blocked on `google-cloud-storage` missing from `requirements.txt` — see the warning in
-`src/adk_agent/README.md`.
+**A run's record dies with the container, and this is not hypothetical.** Projects live on the
+instance's ephemeral disk. Two runs were lost this way on 2026-09-08 — the second, `kubrick1`, was
+mid-flight and roughly twenty minutes in when Cloud Run replaced the instance underneath it.
+
+Both fixes are now in place and both are needed, because they save different things:
+
+```bash
+--update-env-vars POLSON_ARTIFACT_SERVICE_URI=gs://polson-artifacts        # ADK's versioned blobs
+--update-env-vars POLSON_MIRROR_URI=gs://polson-artifacts/mirror          # the project directory
+```
+
+The first is ADK's own artifact store — the versioned renders the *model* is shown, under ADK's key
+layout. Without it that store is `file://` and dies with the instance. The second is `mirror.py`,
+which copies the project directory a *person* opens — `artifacts/`, `scripts/`, `events/`, the
+authored `.md` and `.js` files — every `POLSON_MIRROR_SECONDS` (default 20) for as long as a run is in
+flight. **Continuously rather than at the end, because the end may never arrive**, which is exactly
+what happened to `kubrick1`.
+
+They may share a bucket and must not share a prefix. `documents/` — the director's own supplied
+material — is excluded from the mirror by two independent rules; see the module docstring.
+
+**What `max-instances=1` actually guarantees, which is less than it sounds.** It caps steady state,
+not the transition. During the replacement above the service reported **two active instances** for
+several minutes: the new one served the browser while the old one drained with the agent still
+running on it. There is no session affinity, so requests split between them, and the run page 404'd
+for three minutes while the run itself was alive and working. If a deployed run vanishes from the
+project list, that is the first thing to check — and the mirror is what makes it recoverable rather
+than merely explicable.
+
+**Diagnosing one of these afterwards.** The instance is gone, so the logs are all there is:
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name=<service> AND textPayload:"Starting new instance"' --project <project> --freshness=1d
+```
+
+Check memory and CPU before blaming the container — for `kubrick1` they were 19% and under 4%, so it
+was the platform recycling the instance rather than anything the run did. The per-turn `turn polson/…`
+lines survive in Cloud Logging and are the only trace of a lost run: they carry the timings and the
+token counts and nothing of the work.
 
 **There is no `exec`.** A Cloud Run *job* on the same image runs arbitrary commands, but it is a
 separate ephemeral container: it can answer "what is in this image" and never "what is in the running
@@ -278,7 +312,8 @@ instance's project directory".
 
 **One instance, deliberately.** `max-instances=1`, because projects live in the container and a
 second instance would serve an empty app list. Normally Cloud Run answers saturation by scaling out;
-here it cannot, so concurrency is the only dial.
+here it cannot, so concurrency is the only dial. Read it together with the note above on what that
+setting does *not* guarantee during a replacement.
 
 **The container seeds a project but does not run it.** `POLSON_SEED_*` calls `newproject.py` at boot,
 so a fresh container shows one unstarted project rather than an empty picker. Nothing is spent until

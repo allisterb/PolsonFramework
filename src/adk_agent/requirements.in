@@ -40,3 +40,4 @@ google-adk[mcp]==2.8.0
 # markupsafe, which is jinja2's sole dependency — check the lock diff and refuse anything more.
 jinja2==3.1.6
 pygments==2.19.2
+google-cloud-storage>=2.18,<4

@@ -17,6 +17,7 @@ repo_root=$(cd -- "${script_dir}/../.." && pwd)
 venv_pip="${repo_root}/python/bin/pip"
 venv_python="${repo_root}/python/bin/python"
 venv_config="${repo_root}/python/pip.conf"
+tools_dir="${repo_root}/tools/python"
 requirements="${script_dir}/requirements.txt"
 
 if [[ ! -x "${venv_pip}" ]]; then
@@ -41,7 +42,7 @@ fi
 # Is this environment new enough for the lock about to be installed into it? Asked with the venv's
 # own interpreter, and against the floor recorded in the lock's header, so neither half is a constant
 # kept in step by hand. See check_python.py for why it is worth asking before pip does.
-"${venv_python}" "${script_dir}/check_python.py" "${requirements}"
+"${venv_python}" "${tools_dir}/check_python.py" "${requirements}"
 
 # The settings, into the venv where pip reads them. Copied on every install rather than once by
 # hand: `python -m venv` rewrites this directory on every rebuild, so a copy that lives only here is
@@ -50,7 +51,7 @@ fi
 #
 # After the checks above, deliberately. Copying first means a missing venv fails on `cp` rather than
 # on the message that says how to make one — the error the check exists to give.
-cp "${script_dir}/pip.ini" "${venv_config}"
+cp "${tools_dir}/pip.ini" "${venv_config}"
 
 # Both flags are passed explicitly even though the settings just copied set only-binary. The copy is
 # one `rm` from being gone, and the by-hand pip invocation the README documents has no such step —

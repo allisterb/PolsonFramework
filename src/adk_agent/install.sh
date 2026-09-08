@@ -23,10 +23,13 @@ venv_pip="${repo_root}/python-adk/bin/pip"
 venv_python="${repo_root}/python-adk/bin/python"
 venv_config="${repo_root}/python-adk/pip.conf"
 requirements="${script_dir}/requirements.txt"
-# check_python.py and pip.ini are generic and security-relevant; they live in src/webapp as the one
-# canonical copy rather than being duplicated here, so the wheels-only / single-index defaults and
-# the interpreter-floor check cannot drift between the two runtimes.
-shared_dir="${repo_root}/src/webapp"
+# check_python.py and pip.ini are generic and security-relevant, so they live in tools/python as the
+# one canonical copy rather than being duplicated per runtime - the wheels-only / single-index
+# defaults and the interpreter-floor check cannot then drift apart.
+#
+# Neutral rather than inside either runtime: this venv must be installable without src/webapp present
+# at all, which is what lets an ADK-only checkout stand on its own.
+tools_dir="${repo_root}/tools/python"
 
 if [[ ! -x "${venv_pip}" ]]; then
     echo "error: no virtual environment at ${repo_root}/python-adk" >&2
@@ -49,8 +52,8 @@ fi
 
 # Is this environment new enough for the lock about to be installed into it? Asked with the venv's
 # own interpreter, and against the floor recorded in the lock's header, so neither half is a constant
-# kept in step by hand. See src/webapp/check_python.py for why it is worth asking before pip does.
-"${venv_python}" "${shared_dir}/check_python.py" "${requirements}"
+# kept in step by hand. See tools/python/check_python.py for why it is worth asking before pip does.
+"${venv_python}" "${tools_dir}/check_python.py" "${requirements}"
 
 # The settings, into the venv where pip reads them. Copied on every install rather than once by
 # hand: `python -m venv` rewrites this directory on every rebuild, so a copy that lives only here is
@@ -58,7 +61,7 @@ fi
 #
 # After the checks above, deliberately. Copying first means a missing venv fails on `cp` rather than
 # on the message that says how to make one — the error the check exists to give.
-cp "${shared_dir}/pip.ini" "${venv_config}"
+cp "${tools_dir}/pip.ini" "${venv_config}"
 
 # Both flags are passed explicitly even though the settings just copied set only-binary. The copy is
 # one `rm` from being gone, and the by-hand pip invocation the README documents has no such step —

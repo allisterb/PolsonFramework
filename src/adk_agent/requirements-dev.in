@@ -1,0 +1,21 @@
+# Tooling for working ON the ADK agent, as opposed to running it.
+#
+# **Separate from requirements.in because that file is the container's.** The Dockerfile installs
+# `requirements.txt` and nothing else, so anything added there ships to Cloud Run — and a lock
+# compiler has no business in a production image. Keeping the two apart is what lets the runtime
+# manifest stay exactly as small as what the agent imports.
+#
+# It is also what makes `python-adk/` self-contained. `uv` previously existed only in the *other*
+# venv, so compiling this runtime's own lock meant installing the Antigravity environment first;
+# an ADK-only checkout could not regenerate its own manifest. Now it can.
+#
+# Compile it the same way as the runtime lock, to its own output:
+#
+#   python-adk\Scripts\uv.exe pip compile src\adk_agent\requirements-dev.in --universal \
+#       --python-version 3.13 --generate-hashes -o src\adk_agent\requirements-dev.txt
+#
+# Bootstrapping note: the first install of `uv` into a fresh venv necessarily comes from pip
+# (`python-adk\Scripts\pip.exe install uv`), because compiling this file requires the thing it
+# installs. Afterwards the pinned lock is what everyone uses.
+
+uv==0.12.7

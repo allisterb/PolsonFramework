@@ -13,6 +13,7 @@ rem pip.conf on Linux and macOS. Same contents, so install.sh copies the same fi
 set "VENV_PIP=%REPO_ROOT%\python\Scripts\pip.exe"
 set "VENV_PYTHON=%REPO_ROOT%\python\Scripts\python.exe"
 set "VENV_CONFIG=%REPO_ROOT%\python\pip.ini"
+set "TOOLS_DIR=%REPO_ROOT%\tools\python"
 set "REQUIREMENTS=%SCRIPT_DIR%requirements.txt"
 
 if not exist "%VENV_PIP%" (
@@ -34,7 +35,7 @@ if not exist "%REQUIREMENTS%" (
 rem Is this environment new enough for the lock about to be installed into it? Asked with the venv's
 rem own interpreter, and against the floor recorded in the lock's header, so neither half is a
 rem constant kept in step by hand. See check_python.py for why it is worth asking before pip does.
-"%VENV_PYTHON%" "%SCRIPT_DIR%check_python.py" "%REQUIREMENTS%"
+"%VENV_PYTHON%" "%TOOLS_DIR%\check_python.py" "%REQUIREMENTS%"
 if errorlevel 1 exit /b 1
 
 rem The settings, into the venv where pip reads them. Copied on every install rather than once by
@@ -44,7 +45,7 @@ rem The repo's pip.ini is the canonical one; this copy is derived and is overwri
 rem
 rem After the checks above, deliberately. Copying first means a missing venv fails on the copy rather
 rem than on the message that says how to make one - the error the check exists to give.
-copy /y "%SCRIPT_DIR%pip.ini" "%VENV_CONFIG%" >nul
+copy /y "%TOOLS_DIR%\pip.ini" "%VENV_CONFIG%" >nul
 if errorlevel 1 (
     echo error: could not write %VENV_CONFIG% 1>&2
     exit /b 1

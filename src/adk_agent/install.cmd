@@ -19,10 +19,13 @@ set "VENV_PIP=%REPO_ROOT%\python-adk\Scripts\pip.exe"
 set "VENV_PYTHON=%REPO_ROOT%\python-adk\Scripts\python.exe"
 set "VENV_CONFIG=%REPO_ROOT%\python-adk\pip.ini"
 set "REQUIREMENTS=%SCRIPT_DIR%requirements.txt"
-rem check_python.py and pip.ini are generic and security-relevant; they live in src\webapp as the one
-rem canonical copy rather than being duplicated here, so the wheels-only / single-index defaults and
-rem the interpreter-floor check cannot drift between the two runtimes.
-set "SHARED_DIR=%REPO_ROOT%\src\webapp"
+rem check_python.py and pip.ini are generic and security-relevant, so they live in tools\python as
+rem the one canonical copy rather than being duplicated per runtime - the wheels-only / single-index
+rem defaults and the interpreter-floor check cannot then drift apart.
+rem
+rem Neutral rather than inside either runtime: this venv must be installable without src\webapp
+rem present at all, which is what lets an ADK-only checkout stand on its own.
+set "TOOLS_DIR=%REPO_ROOT%\tools\python"
 
 if not exist "%VENV_PIP%" (
     echo error: no virtual environment at %REPO_ROOT%\python-adk 1>&2
@@ -34,7 +37,7 @@ if not exist "%VENV_PIP%" (
 if not exist "%REQUIREMENTS%" (
     echo error: %REQUIREMENTS% does not exist. 1>&2
     echo        it is generated, not written by hand. compile it first: 1>&2
-    echo        "%REPO_ROOT%\python\Scripts\uv.exe" pip compile "%SCRIPT_DIR%requirements.in" --universal --python-version 3.13 --generate-hashes -o "%REQUIREMENTS%" 1>&2
+    echo        "%REPO_ROOT%\python-adk\Scripts\uv.exe" pip compile "%SCRIPT_DIR%requirements.in" --universal --python-version 3.13 --generate-hashes -o "%REQUIREMENTS%" 1>&2
     echo        --universal keeps the environment markers; without it the lock only installs 1>&2
     echo        on the platform it was compiled on. 1>&2
     exit /b 1
@@ -42,8 +45,8 @@ if not exist "%REQUIREMENTS%" (
 
 rem Is this environment new enough for the lock about to be installed into it? Asked with the venv's
 rem own interpreter, and against the floor recorded in the lock's header, so neither half is a
-rem constant kept in step by hand. See src\webapp\check_python.py for why it is worth asking before pip does.
-"%VENV_PYTHON%" "%SHARED_DIR%\check_python.py" "%REQUIREMENTS%"
+rem constant kept in step by hand. See tools\python\check_python.py for why it is worth asking before pip does.
+"%VENV_PYTHON%" "%TOOLS_DIR%\check_python.py" "%REQUIREMENTS%"
 if errorlevel 1 exit /b 1
 
 rem The settings, into the venv where pip reads them. Copied on every install rather than once by
@@ -52,7 +55,7 @@ rem destroyed by the next one - silently taking the wheels-only and single-index
 rem
 rem After the checks above, deliberately. Copying first means a missing venv fails on the copy rather
 rem than on the message that says how to make one - the error the check exists to give.
-copy /y "%SHARED_DIR%\pip.ini" "%VENV_CONFIG%" >nul
+copy /y "%TOOLS_DIR%\pip.ini" "%VENV_CONFIG%" >nul
 if errorlevel 1 (
     echo error: could not write %VENV_CONFIG% 1>&2
     exit /b 1

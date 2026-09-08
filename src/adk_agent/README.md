@@ -484,15 +484,29 @@ See [`src/webapp/README.md`](../webapp/README.md) — its dependency layout, vul
 upgrade procedure all apply here unchanged, only with `src/adk_agent/` and `python-adk/` in place of
 `src/webapp/` and `python/`.
 
-The install scripts deliberately **reuse** `src/webapp/check_python.py` and `src/webapp/pip.ini`
-rather than keeping their own copies. Both are generic and security-relevant — the interpreter-floor
-check and the wheels-only / single-index pip defaults — and a duplicated copy is one that can drift.
+The install scripts read `check_python.py` and `pip.ini` from **`tools/python/`** — one canonical
+copy, shared with the webapp's installer, because both are generic and security-relevant (the
+interpreter-floor check, and the wheels-only / single-index pip defaults) and a duplicate is one that
+can drift. See `tools/python/README.md`.
 
-`uv` lives in the *original* venv, so compile this lock from there:
+> [!NOTE]
+> **They are in a neutral directory so this venv stands alone.** They used to live in `src/webapp/`,
+> which meant `python-adk/` could not be installed without the Antigravity tree present — an ADK-only
+> checkout had to fetch a runtime it never uses in order to install the one it does. The same applied
+> to `uv`, which existed only in the other venv, so this runtime could not even regenerate its own
+> lock. Both are fixed; nothing here now reaches into `src/webapp/`.
+
+`uv` is pinned in `requirements-dev.in` — tooling for working *on* the agent, kept out of
+`requirements.in` because the Dockerfile installs that file into the image and a lock compiler has no
+place in a production container. Compile this runtime's lock with this runtime's `uv`:
 
 ```bash
-python\Scripts\uv.exe pip compile src\adk_agent\requirements.in --universal --python-version 3.13 --generate-hashes -o src\adk_agent\requirements.txt
+python-adk\Scripts\uv.exe pip compile src\adk_agent\requirements.in --universal --python-version 3.13 --generate-hashes -o src\adk_agent\requirements.txt
 ```
+
+On a brand-new venv `uv` is not there yet — compiling its own lock would require the thing that lock
+installs — so bootstrap it once with `python-adk\Scripts\pip.exe install uv`, then use the pinned
+lock from then on.
 
 `--universal` keeps the environment markers so the one lock installs on every platform. Commit the
 result and review its diff — that diff is the supply chain.

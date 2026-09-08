@@ -990,6 +990,230 @@ class ArtifactRouteTests(unittest.TestCase):
             self.assertNotIn(b"never", page.content)
 
 
+class DeliverableRouteTests(unittest.TestCase):
+    """The documents a run delivers, as distinct from the pictures it rendered.
+
+    The interesting tests here are the refusals. This route opens files at the project root by a name
+    a visitor supplies, and the project root is not a deliverables folder — it is also where the
+    workflow instructions, the manifest and the tool policy live, and it is the parent of
+    `documents/`, which holds whatever the director attached to the brief.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-deliverables-"))
+        self.registry = Registry()
+        self.client = TestClient(app_mod.create_app(self.root, self.registry))
+
+        project = project_dir(self.root, "acme", workflow="vector_infographic")
+        (project / "brief.md").write_text("# The commission\n\nDraw a thing.", encoding="utf-8")
+        (project / "artwork.js").write_text("const paper = Snap(900, 1350);\n", encoding="utf-8")
+        (project / "accuracy.md").write_text("| figure | source |\n| --- | --- |\n", encoding="utf-8")
+
+        # `findings.md`, `critique_log.md`, `materials.md` and `turns.md` are deliberately absent:
+        # they stand for the deliverables this particular run did not produce.
+
+        # The director's own material. Never published, whatever it is called.
+        (project / "documents").mkdir(exist_ok=True)
+        (project / "documents" / "brief.md").write_text("client confidential", encoding="utf-8")
+        (project / "documents" / "returns.csv").write_text("secret,numbers", encoding="utf-8")
+
+        self.registry._runs["acme-1"] = Run(
+            id="acme-1", project=_loaded(project), prompt="", stream=None,
+            started="2026-09-08T00:00:00+00:00", status="done")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    # region The listing
+    def test_the_listing_offers_only_what_was_actually_written(self):
+        """A run writes some of the seven, never all, and which ones depends on the workflow.
+
+        This is why the page asks rather than hardcoding names: a hardcoded list shows four dead
+        links on every run, and the dead one is usually the workflow-specific document that is the
+        most worth reading.
+        """
+        body = self.client.get("/runs/acme-1/deliverables").json()["deliverables"]
+
+        self.assertEqual([d["name"] for d in body], ["brief.md", "artwork.js", "accuracy.md"])
+
+    def test_the_listing_is_in_reading_order_not_alphabetical(self):
+        """What was asked, what was made, then what it is worth."""
+        names = [d["name"] for d in self.client.get("/runs/acme-1/deliverables").json()["deliverables"]]
+
+        self.assertEqual(names[0], "brief.md")
+        self.assertLess(names.index("artwork.js"), names.index("accuracy.md"))
+
+    def test_the_listing_carries_the_size_so_the_page_can_say_what_it_offers(self):
+        body = self.client.get("/runs/acme-1/deliverables").json()["deliverables"]
+
+        artwork = next(d for d in body if d["name"] == "artwork.js")
+        # Measured from the file rather than from the string written to it: on Windows the two
+        # differ by the newline translation, which is a fact about the platform rather than
+        # about this route.
+        self.assertEqual(artwork["bytes"], (self.root / "acme" / "artwork.js").stat().st_size)
+        self.assertGreater(artwork["bytes"], 0)
+        self.assertTrue(artwork["what"])
+
+    def test_the_listing_reads_no_contents(self):
+        """Finding out what exists must not cost what reading it costs, nor leak what it says."""
+        body = self.client.get("/runs/acme-1/deliverables").text
+
+        self.assertNotIn("Snap(900", body)
+        self.assertNotIn("The commission", body)
+
+    def test_an_unknown_run_is_a_404_rather_than_an_empty_list(self):
+        self.assertEqual(self.client.get("/runs/nope/deliverables").status_code, 404)
+    # endregion
+
+    # region Serving one
+    def test_a_written_deliverable_is_served_highlighted(self):
+        page = self.client.get("/runs/acme-1/deliverables/artwork.js")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Snap", page.text)
+        self.assertIn("<span", page.text)
+
+    def test_a_report_is_served_without_line_numbers(self):
+        """A drawing script is cited by line; a report is prose and numbering it is noise."""
+        script = self.client.get("/runs/acme-1/deliverables/artwork.js").text
+        report = self.client.get("/runs/acme-1/deliverables/accuracy.md").text
+
+        self.assertIn("linenos", script)
+        self.assertNotIn("linenos", report)
+
+    def test_a_deliverable_this_run_did_not_write_is_a_404(self):
+        self.assertEqual(self.client.get("/runs/acme-1/deliverables/findings.md").status_code, 404)
+
+    def test_a_file_at_the_project_root_that_is_not_a_deliverable_is_refused(self):
+        """Containment says *inside the project*; the name list says *and it is a deliverable*.
+
+        `GEMINI.md` is the one worth naming: 75 KB of the studio's own workflow instructions, sitting
+        beside the reports and matching any rule written on the suffix rather than on the name.
+        """
+        for attempt in ("GEMINI.md", "project.json", "agent.config.json", "README.md"):
+            page = self.client.get("/runs/acme-1/deliverables/" + attempt)
+            self.assertEqual(page.status_code, 404, attempt)
+
+    def test_the_directors_own_documents_are_unreachable(self):
+        """The folder the deliverables route must never open.
+
+        `documents/` holds what the director attached to the brief — a client's unpublished figures,
+        whatever they supplied — and none of it is ours to publish. The first attempt is the pointed
+        one: it names a file that *is* on the allowlist, so any rule written on the suffix or on the
+        basename rather than on the whole string would find it, resolve it inside the project, and
+        serve the client's confidential copy under the name of the run's own brief.
+
+        **This asserts the property, not the mechanism, and does not isolate either guard.** Mutating
+        the route from `{name}` to `{name:path}` leaves it passing, because the exact-name check
+        refuses `documents/brief.md` on its own. That is the honest state of it: two independent
+        guards, and this test says the door is shut without saying which lock did it.
+        """
+        for attempt in ("documents/brief.md", "documents/returns.csv"):
+            page = self.client.get("/runs/acme-1/deliverables/" + attempt)
+            self.assertEqual(page.status_code, 404, attempt)
+            self.assertNotIn(b"confidential", page.content)
+            self.assertNotIn(b"secret", page.content)
+
+    def test_traversal_out_of_the_project_is_refused(self):
+        (self.root / "brief.md").write_text("outside", encoding="utf-8")
+
+        for attempt in ("../brief.md", "..%2Fbrief.md", "%2e%2e/brief.md"):
+            page = self.client.get("/runs/acme-1/deliverables/" + attempt)
+            self.assertEqual(page.status_code, 404, attempt)
+            self.assertNotIn(b"outside", page.content)
+
+    def test_a_symlinked_deliverable_pointing_out_of_the_project_is_refused(self):
+        """`contain` resolves before it verifies, which is what makes this the same check.
+
+        Testing the string for `..` would pass this and serve the target.
+        """
+        outside = self.root / "elsewhere.md"
+        outside.write_text("not ours", encoding="utf-8")
+        link = self.root / "acme" / "turns.md"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            self.skipTest("this platform does not permit symlinks without elevation")
+
+        page = self.client.get("/runs/acme-1/deliverables/turns.md")
+
+        self.assertEqual(page.status_code, 404)
+        self.assertNotIn(b"not ours", page.content)
+        self.assertNotIn("turns.md", self.client.get("/runs/acme-1/deliverables").text)
+    # endregion
+
+    # region The page
+    def test_the_page_carries_the_panel_and_asks_the_route_for_its_contents(self):
+        """The panel is on the page, and it populates itself from the listing rather than from names.
+
+        Asserted on the template because the panel is filled by JavaScript that no unit test here
+        runs. What can be checked is that the page contains the container and fetches the endpoint —
+        the two halves whose absence would leave a working route delivering to nobody.
+        """
+        source = (Path(app_mod.__file__).parent / "templates" / "run.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="deliverables"', source)
+        self.assertIn("/deliverables`", source,
+                      "the page must ask the listing route rather than assume the filenames")
+
+    def test_the_page_names_no_deliverable_in_its_code(self):
+        """A hardcoded name is the defect the listing route exists to prevent.
+
+        Which documents exist is per workflow, so a name written into the page is either a dead link
+        on most runs or a document silently never offered on the rest.
+
+        **Comments are stripped first, and that is not a loophole.** The page explains why it asks
+        rather than assumes, and explaining it means naming the documents — the first draft of this
+        test read the whole file and failed on its own rationale. What must not contain a name is the
+        code, so that is what is checked.
+        """
+        source = (Path(app_mod.__file__).parent / "templates" / "run.html").read_text(encoding="utf-8")
+        code = "\n".join(line for line in source.splitlines()
+                         if not line.lstrip().startswith(("//", "{#", "*", "<!--")))
+
+        for name in app_mod.DELIVERABLE_NAMES:
+            self.assertNotIn(name, code, f"the page hardcodes {name}; it should ask the listing")
+
+    def test_a_rate_limit_is_not_reported_as_a_missing_file(self):
+        """The regression: every non-200 read "that script is not on disk".
+
+        A 429 is the one that made it wrong. Cloud Run rate-limits at the frontend, so the request
+        never reaches the container and the file is sitting perfectly well on disk — a visitor was
+        told it was missing, and a director went looking for an artifact nothing had deleted.
+        """
+        source = (Path(app_mod.__file__).parent / "templates" / "run.html").read_text(encoding="utf-8")
+
+        self.assertNotIn("That script is not on disk", source)
+        self.assertIn("function whyFailed(status)", source)
+        self.assertIn("status === 429", source,
+                      "a rate limit has to be distinguished from a missing file by name")
+    # endregion
+
+    def test_every_document_the_workflows_prescribe_is_on_the_list(self):
+        """The list is closed, so a workflow naming a new document has to be added to it.
+
+        Guarded here rather than trusted to the reading: these names come from
+        `src/Polson.CLI/ProjectTemplate/*/instructions.md`, and a workflow that starts asking for a
+        document nobody added would write it to disk and deliver it nowhere — which is exactly the
+        gap this route was built to close.
+        """
+        templates = Path(__file__).resolve().parents[2] / "src" / "Polson.CLI" / "ProjectTemplate"
+        if not templates.is_dir():
+            self.skipTest("the CLI templates are not in this checkout")
+
+        named = set()
+        for instructions in templates.glob("*/*.md"):
+            named.update(re.findall(r"`([a-zA-Z0-9_-]+\.(?:md|js))`",
+                                    instructions.read_text(encoding="utf-8", errors="replace")))
+
+        # Named by the instructions and not deliverables: the studio's own reference documents, and
+        # the workflow file the agent is reading when it sees them.
+        named -= {"GEMINI.md", "CLAUDE.md", "README.md", "Polson.core.md", "Polson.schema.md"}
+
+        self.assertEqual(named - app_mod.DELIVERABLE_NAMES, set(),
+                         "a workflow names a document the deliverables route will not serve")
+
+
 class StreamTests(unittest.TestCase):
     """The record, as it is written, over SSE."""
 

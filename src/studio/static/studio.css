@@ -310,6 +310,13 @@ label.inline input { width: auto; }
                  box-shadow: 0 2px 24px rgba(0,0,0,.35); font-size: .82rem; }
 #lightbox-code[hidden] { display: none; }
 #lightbox-code pre { margin: 0; font-family: var(--mono); line-height: 1.45; white-space: pre; }
+
+/* A delivered report is prose in the same overlay a drawing script uses, and the two want
+   opposite things: code must not wrap, because a wrapped line stops matching the number beside
+   it, while an unwrapped report is read by scrolling sideways a sentence at a time. Measured on
+   `accuracy.md` from the kubrick7 run, whose lines run past 200 characters. */
+#lightbox-code.prose { max-width: 78ch; }
+#lightbox-code.prose pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 #lightbox-code .codetable { border-collapse: collapse; min-width: max-content; }
 #lightbox-code .linenos { text-align: right; padding: 0 .5rem 0 .6rem; user-select: none;
                           color: var(--dim); background: #f7f8f9; vertical-align: top; }
@@ -340,3 +347,18 @@ label.modebox .swatch { width: 9px; height: 9px; border-radius: 2px; display: in
    repeat is the absence of news — a task being awaited — and should read as quieter than the row
    it sits on, not louder. */
 .ev .repeats { color: var(--dim); font-family: var(--mono); font-size: .76rem; }
+
+/* What the run delivered. A list of documents rather than a grid of cards: there are between one
+   and seven of them, they are read one at a time, and the name is what a reader is scanning for. */
+.delivered ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+
+.delivered .doc {
+  display: grid; grid-template-columns: 11rem 1fr auto; gap: .8rem; align-items: baseline;
+  width: 100%; text-align: left; padding: .55rem .8rem; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+  color: inherit; font: inherit;
+}
+
+.delivered .doc:hover { background: #f6f9fb; border-color: var(--accent); }
+.delivered .docname { font-family: var(--mono); font-size: .85rem; color: var(--accent); }
+.delivered .docsize { color: var(--dim); font-size: .78rem; font-family: var(--mono); }

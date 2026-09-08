@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
-from pygments.lexers import JavascriptLexer
+from pygments.lexers import JavascriptLexer, MarkdownLexer
 from sse_starlette.sse import EventSourceResponse
 
 from orchestrator import csm
@@ -70,6 +70,47 @@ FORMATTER = HtmlFormatter(style="friendly", cssclass="code", linenos="table", li
 #: else is reachable by a visitor-supplied name — see `serve_artifact`, which resolves against the
 #: project root rather than a single directory and needs this to keep that boundary narrow.
 ARTIFACT_SUFFIXES = frozenset({".webp", ".png", ".jpg", ".jpeg", ".svg"})
+
+#: Prose, so no line numbers. A drawing script is cited by line and a report is not.
+PROSE = HtmlFormatter(style="friendly", cssclass="code")
+
+#: What a run *delivers*, as opposed to what it rendered: the documents beside the picture.
+#:
+#: **Exact filenames rather than a suffix rule, and that is the whole of the boundary here.** The
+#: project root is not a deliverables folder — it also holds `GEMINI.md`, which is 75 KB of the
+#: studio's own workflow instructions, plus `project.json`, `agent.config.json` and `.agents/`. A
+#: `.md` rule would serve the first and read as a deliverable to anyone who found it; a broader one
+#: reaches configuration. The image route next door needs containment *plus* a suffix allowlist
+#: because it resolves a visitor-supplied path; this needs neither, because a deliverable has no path
+#: to resolve.
+#:
+#: **`documents/` is the case this shape exists to make unreachable.** That folder is the director's
+#: own supplied material — a client's unpublished figures, whatever they attached to the brief — and
+#: it must never be served to a visitor. Declaring the route with `{name}` rather than `{name:path}`
+#: means a name carrying a separator does not match the route at all, so `documents/anything.md` is
+#: refused by the router before a handler sees it. That is a stronger guarantee than a check we could
+#: forget to write.
+#:
+#: The names are taken from what the workflows actually ask for, counted across
+#: `src/Polson.CLI/ProjectTemplate/*/instructions.md` rather than guessed: `brief.md` and
+#: `findings.md` are asked for by every workflow, `artwork.js` by most, and the remaining four by one
+#: or two each. A workflow that names a new one has to be added here — deliberately, since the point
+#: is that this list is closed.
+#:
+#: Ordered for reading rather than alphabetically: what was asked, what was made, then what it is
+#: worth. That is the order a judge wants them in, and the page shows them in the order given.
+DELIVERABLES: tuple[tuple[str, str], ...] = (
+    ("brief.md", "the commission, as the agent received it"),
+    ("artwork.js", "the drawing itself, as code"),
+    ("accuracy.md", "what was checked against a source, and what could not be"),
+    ("findings.md", "the agent's own account of friction, gaps and surprise"),
+    ("critique_log.md", "the studio's critique of its own passes"),
+    ("materials.md", "the materials requisitioned, and what each was for"),
+    ("turns.md", "the turn-by-turn record the drawing workflow keeps"),
+)
+
+#: The same list as a set, for the membership test the route makes.
+DELIVERABLE_NAMES = frozenset(name for name, _ in DELIVERABLES)
 
 
 def base(request: Request) -> str:
@@ -355,6 +396,84 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
             raise HTTPException(status_code=404, detail=f"no such artifact: {name}")
 
         return FileResponse(path)
+
+    @app.get("/runs/{run_id}/deliverables")
+    async def deliverables(run_id: str) -> JSONResponse:
+        """Which documents this run has actually produced, in reading order.
+
+        **A listing rather than a set of names the page hardcodes**, because the names differ per
+        workflow: `accuracy.md` is the vector-infographic audit, `critique_log.md` is the comic
+        studio's, `turns.md` is the drawing workflow's, and no run writes all seven. A page that
+        guessed would either show dead links for six of them or show none of the workflow-specific
+        ones, and the workflow-specific one is usually the interesting document.
+
+        It is also a listing rather than a bundle: the sizes let the page say what it is offering
+        before a visitor spends a request on it, and a document the agent has not written yet is
+        simply absent rather than a link that 404s. That distinction matters mid-run — these appear
+        as the work proceeds, and `findings.md` is conventionally written last.
+
+        Free, and it reads no contents. `Documents.list()` on the SDK side makes the same split for
+        the same reason: finding out what exists must not cost what reading it costs.
+        """
+        run = found(app.state.registry, run_id)
+
+        written = []
+        for name, what in DELIVERABLES:
+            try:
+                path = contain(run.project.root, name)
+            except StudioError:
+                # Unreachable for a bare filename, and kept anyway: `contain` resolves before it
+                # verifies, so this is also what catches a symlink pointing out of the project.
+                continue
+            if not path.is_file():
+                continue
+            written.append({"name": name, "what": what, "bytes": path.stat().st_size})
+
+        return JSONResponse({"deliverables": written})
+
+    @app.get("/runs/{run_id}/deliverables/{name}", response_class=HTMLResponse)
+    async def serve_deliverable(run_id: str, name: str) -> HTMLResponse:
+        """One delivered document, highlighted, as a fragment the page drops into the overlay.
+
+        This is the half of a finished run that neither the render nor the trace carries. The render
+        is what the work looks like and the trace is how it got there; these are what the studio
+        *says about it* — which figure came from which source, what the brief asked for that could
+        not be done, where the agent found the environment wanting. A run whose documents are on disk
+        and unreachable from the page has done the work and not delivered it.
+
+        **The exact-name check below is what refuses everything; `{name}` rather than `{name:path}`
+        is a second guard behind it, and neither is redundant.** The check alone already refuses
+        `documents/brief.md`, because that string is not one of the seven names — verified by
+        mutating this route to `{name:path}` and finding the tests still passed. What the bare
+        parameter adds is that the refusal does not depend on the *shape* of the check: widen the
+        list to a suffix rule some day, as the artifact route next door already is, and a path
+        parameter would immediately reach `documents/` while this one still cannot route to it.
+
+        Worth saying plainly because the tempting version of this comment is the one that was written
+        first, claiming the route shape is what keeps the director's material private. It is not, and
+        a guard credited with work it does not do is the kind that gets removed as decoration.
+        """
+        run = found(app.state.registry, run_id)
+
+        if name not in DELIVERABLE_NAMES:
+            # On the name alone, before the disk is touched — as `serve_artifact` does, and for the
+            # same reason: whether a file we would never serve exists is not a visitor's to learn.
+            raise HTTPException(status_code=404, detail=f"not a deliverable: {name}")
+
+        try:
+            path = contain(run.project.root, name)
+        except StudioError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if not path.is_file():
+            # Distinct from "not a deliverable" in wording only — both are 404, since the difference
+            # is not something worth publishing. The listing is how the page avoids asking at all.
+            raise HTTPException(status_code=404, detail=f"not written yet: {name}")
+
+        source = path.read_text(encoding="utf-8", errors="replace")
+        code = name.endswith(".js")
+        return HTMLResponse(highlight(source, JavascriptLexer() if code else MarkdownLexer(),
+                                      FORMATTER if code else PROSE))
     # endregion
 
     return app

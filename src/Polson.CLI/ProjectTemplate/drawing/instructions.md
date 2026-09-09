@@ -182,8 +182,19 @@ page rather than a failure of judgement.
 
 **Construct in non-repro blue, draw over it in graphite, then let the construction go.** That is the
 classical order and it is what these calls are for — the wireframe is scaffolding for your line, not
-the drawing. `polson://manual/08` is the figure manual and `polson://manual/19` is the hand; read the
-one you need **before** the turn that puts a person on the surface, not after the proportions fail.
+the drawing.
+
+> [!IMPORTANT]
+> **How much construction a figure deserves depends on how the frame will be read, and getting that
+> backwards is expensive.** A study read close up wants the full apparatus. **A boarded frame does
+> not**: a figure at panel size is a silhouette, a line of action and a direction of gaze, and the
+> face is the animator's problem rather than the boarder's. `createMannequinFigure` posed and its
+> `silhouette` filled will out-read a carefully constructed anatomy at that size, in a fraction of
+> the turns.
+>
+> Read `polson://manual/24` for the line of action and the extremes before you build, and
+> `polson://manual/23` if a head has to carry an expression at that size. `polson://manual/08` is
+> for the close read.
 
 ---
 
@@ -296,8 +307,20 @@ There is no fixed endpoint; the director decides. When they call it, produce:
 - `polson://manual/05` — observation, measurement, plumb lines, CSI contour language. **This is your
   manual.** §3's CSI vocabulary is the one to reach for when a line is not working.
 - `polson://manual/06` — perspective, if the subject has any.
-- `polson://manual/08` — **the figure. Read it before you draw a person**, and see the construction calls under *Your repertoire*; freehand figures are where this workflow most often falls down.
-- `polson://manual/19` — the hand, on the same footing.
+- **A person in the frame? Read by *idiom*, and the two idioms are not interchangeable.**
+  - **A panel or a boarded frame** — `polson://manual/20` for staging (where the camera is, how far
+    away, what the frame's shape says before its contents are read), then `polson://manual/23` for
+    the head and `polson://manual/24` for what the figure is *doing*. Manual 23 exists because the
+    comic idiom differs from the portrait one **measurably**: a head that reads instantly at panel
+    size, rather than a head that could be a person. `polson://manual/21` joins a frame to its
+    neighbours.
+  - **A study, a portrait, anything read close up** — `polson://manual/08` for the figure and
+    `polson://manual/19` for hands, with the construction calls under *Your repertoire*.
+
+  Reaching for `08` on a boarded frame is the commonest wrong turn here, and it costs the whole run:
+  it sends you to build a convincing anatomy where the frame needed a silhouette that reads at a
+  glance. Measured — a two-figure over-the-shoulder built that way took 95 model turns and 81% of a
+  three-million-token budget, and the faces are still the weakest thing in it.
 - `polson://manual/09` — composition armatures and value hierarchy, for the `Ground` turn.
 - `polson://manual/17` — **your media.** The five brushes, the three layers each decomposes into,
   and `PathEffect.discrete` for putting the hand back into a plotted line.

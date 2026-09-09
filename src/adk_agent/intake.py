@@ -303,13 +303,13 @@ STARTERS: tuple[dict[str, str], ...] = (
                  "perspective and the darks; I will steer the mood.",
     },
     {
-        "label": "Character study",
-        "name": "castingstudy",
+        "label": "Empty room, after",
+        "name": "emptyroom",
         "workflow": "drawing",
         "kind": "review",
-        "brief": "A head-and-shoulders study of a weathered detective — a type rather than a "
-                 "likeness of anyone real. Construction first, then ink the lines that matter. Ask "
-                 "me before you commit to the expression.",
+        "brief": "A room a moment after whoever was in it left: the chair pushed back, the lamp "
+                 "still swinging, one door open onto dark. No people in frame. Tell the story with "
+                 "the objects and the light, and I will steer what happened here.",
     },
     {
         "label": "Establishing: the approach",
@@ -321,13 +321,13 @@ STARTERS: tuple[dict[str, str], ...] = (
                  "and I will tell you how much sky to give it.",
     },
     {
-        "label": "Over-the-shoulder",
-        "name": "overshoulder",
+        "label": "Two figures, one lit",
+        "name": "twofigures",
         "workflow": "drawing",
         "kind": "review",
-        "brief": "An over-the-shoulder two-hander: one person holding back what they know, the "
-                 "listener's face carrying the scene. Near shoulder heavy and simplified, the "
-                 "detail saved for the eyes. Ask me who is lying before you fix the expressions.",
+        "brief": "Two figures in a doorway, one in the light and one a silhouette against it. We "
+                 "read the situation from their shapes and the gap between them, not from their "
+                 "faces. Stage it and I will tell you which of them we should be worried about.",
     },
     {
         "label": "Insert: the hand",

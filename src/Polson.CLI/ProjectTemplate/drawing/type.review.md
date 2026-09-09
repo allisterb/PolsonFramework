@@ -12,6 +12,22 @@ should catch more wind" introduces content you did not have; you can accept it, 
 back on it, and which you did is exactly what the `Stage.begin(...)` move records. A run in this type
 is a genuine two-party trajectory in which one party contributes in language.
 
+### A figure in a boarded frame is a silhouette, not a portrait
+
+**If the brief reads as a shot — a frame, an angle, a moment — draw people the way a boarder does.**
+The frame's job is staging: where the camera is, what the eye does, what the shapes read as at a
+glance. A figure in it is a silhouette, a line of action and a direction of gaze. **The face is the
+animator's problem, not the boarder's**, and a back, a profile lost in shadow or a figure small in
+frame is not a dodge — it is the idiom, and it is usually the stronger image.
+
+Measured across four runs of this workflow: the two that spent their turns on faces produced the
+weakest drawings and the largest bills, and the strongest and cheapest put its single figure with its
+back to us. Spend what you save on the staging — the light, the depth, the marks that say where the
+camera is.
+
+`polson://manual/20` is the staging manual and `polson://manual/24` is the line of action. Read those
+before `polson://manual/08`, which is for a study read close up.
+
 ### Every turn ends by handing the turn back
 
 **This is the rule that makes the session a collaboration rather than a delivery.** After you render

@@ -197,7 +197,47 @@ Using AI to execute code is always fraught with problems. The Polson JavaScript 
 
 
 
+### Workflows
+
+A workflow is the set of steps, resources and guardrails an agent uses for one kind of production. It is not a prompt template — it is a generated project directory carrying the instructions, the manuals to consult, the house styles available, the deadline, and the definition of done. Polson currently ships : `vector_infographic`, `infographic`, and `drawing_partner`,
+
+The one worth walking through is **`vector_infographic`**, because it is the one where being wrong is cheapest to hide. A drawing that misses is visibly a miss. An infographic that misstates a number renders perfectly.
+
+![The vector_infographic workflow](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/vector-infographic-workflow.svg)
+
+The deliverable is an `.svg` that opens in Illustrator with its shapes selectable, its type editable and its geometry scalable — which is why the surface is not a choice: the agent builds on `Snap(width, height)` from the first script and never touches a raster canvas, because a raster canvas cannot become vector afterwards. There is no tracing step. The run is one agent on a 30-minute wall-clock deadline, with a token cap and a circuit breaker behind it, in one of five house styles: `blueprint`, `brutalist`, `editorial`, `specimen`, `swiss`.
+
+
+
+#### Vector Infographic Workflow Stages
+
+| Stage | `Stage.begin(...)` | What it settles |
+|---|---|---|
+| 1 | `Data` | What the piece is for, what the brief left open, where every figure comes from |
+| 2 | `Forms` | Which form answers each question — compare, count, follow, locate, what share |
+| 3 | `Composition` | The named pattern, the zones, where the reader is standing |
+| 4 | `Encode` | Scales, baselines, ticks — the geometry that carries the numbers |
+| 5 | `Palette & Type` | The design language applied |
+| 6 | `Detail` | Ground, texture, the small deliberate marks separating crafted from generated |
+| 7 | `Audit` | The litmus tests, read back off the render |
+
+`Stage.begin(...)` persists across scripts and files every script, render and note that follows under that heading — so the record is grouped by intent rather than by call order.
+
+The loop is the part that makes this agentic rather than a pipeline. If the audit sends the agent back to a form choice, it declares `Forms` again rather than carrying on under `Audit`. A stage that re-opens is exactly what a reader wants to see, and it is invisible unless declared.
+
+#### The standing rules
+
+- **Every figure is given or sourced. None is remembered.** There is no third route — nothing recalled, rounded into a nicer number, carried over from an example, or held by a placeholder. *A placeholder that survives one revision is indistinguishable from a figure*, because by then the layout has put a source line under it. A figure that cannot be sourced is **stated in the piece**: a chart saying *"2024 figure unavailable"* is a stronger artifact than one that quietly fills the hole.
+- **Every number printed on the canvas is computed — including numbers about the graphic itself.** A lie factor or an integrity stamp is rendered from the value that was measured, never typed. This rule is scar tissue: a blueprint once carried a hardcoded `LIE FACTOR: 1.000 (TRUE)` in its title block while the run's own audit recorded 1.2477 for the same bar.
+- **The agent draws it. Nothing generates the graphic.** `Assets.*` supplies raw material only — a paper grain, or a hard-edged stencil the code then colours and places. No generated image may carry a number or be a chart.
+- **At least three genuinely different forms, chosen by question rather than habit.** A piece where every section is a bar chart is a design failure, not a house style.
+- **Creativity chooses the question; research answers it.** Inventing the framing, sub-selecting the scope and picking the comparison are the agent's to decide and worth deciding well. The *values* for whatever it chose are not its to decide at all.
+
+The agent can also stop and ask. `ask_director` puts a question with two to four clickable options in front of the director, and the wait is bounded and not charged against the deadline. But this workflow's instruction is *never depend on an answer*: choose the defensible option, record it as an `INFERRED` line, carry on. An unanswered question is a director who stepped away, not a reason to stop. (`drawing` is the workflow built the other way round, with the conversation at its centre.)
+
+
 ## How we built it
+![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/polson-architecture.svg)
 The Polson JavaScript procedural drawing engine, extended mind MCP tools, and CLI launcher and project scaffolding are implemented in .NET 10 and C#. The standalone Google ADK agent orchestrator and web interface is implemented in Python. There are 7 key projects:
 
 | Project | Responsibility |
@@ -301,9 +341,17 @@ paper.text(x, y, '1,636').attr({ 'data-basis': 'trun_abc:totalRuntimeMinutes' })
 
 
 ## Key Cloud Service Dependencies 
-| Google Cloud Service | Responsibility |
+| Product | How it's used |
 |---|---|
-| Parallel | Polson Graphics Studio using  |
+| **Cloud Run** | Hosts the whole studio as one container — the ADK agent runtime, the .NET Code Mode MCP server and drawing engine, the SDK/manual docs, and the web interface. `/` serves ADK's dev console, `/studio` the Polson UI. |
+| **Cloud Build** | Builds the custom container from source (`gcloud run deploy --source .`) — compiles the .NET 10 engine, then layers the Python ADK image. ADK's generated `python:3.11-slim` template can't carry a .NET runtime, so we supply our own image. |
+| **Artifact Registry** | Stores the built image (the `cloud-run-source-deploy` repository a `--source` deploy creates and pushes to). |
+| **Cloud Storage** | Two buckets, one for ADK's own versioned artifact blobs, and one  for the `mirror` plugin, which sweeps each project directory to GCS every 20s while the run is happening. A Cloud Run instance can be replaced mid-run and its filesystem does not outlive it.
+| **Secret Manager** | Holds the two credentials: the Gemini platform key and the research API key
+| **Cloud Logging** | Run diagnostics; how a cold start, a container replacement or a startup failure is actually diagnosed (`gcloud logging read` against the revision). |
+| **Gemini models via the Agent Platform** | The agent loop runs on gemini-3.7-flash.|
+| **Parallel (Task API)** | The research surface — an objective in prose plus a JSON Schema, returning data with a citation, reasoning and confidence per field. This is what lets an infographic state a number that is checkable rather than recalled. |
+| **Wikimedia / Wikipedia API** | `Photo.of(...)` — reference photographs of real people and places, with the license, photographer and any non-copyright restriction (e.g. `personality`) delivered alongside the bytes. Chosen because it states terms machine-readably; a file with no stated license is refused by default. |
 
 
 ### Deployment

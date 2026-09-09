@@ -118,6 +118,25 @@ class AttachTests(unittest.TestCase):
         self.assertIsNone(interject.attach("a string", ["red"]))
         self.assertIsNone(interject.attach(None, ["red"]))
 
+    def test_a_question_is_told_where_the_answer_has_to_go(self):
+        """**Measured on the first live run of this feature.**
+
+        The director asked "what is your budget?". The agent received it, called `budget_status` —
+        the right tool, unprompted, mid-research — and then said nothing. Finding the answer and
+        giving it are different acts, and the first wording only asked it to *act*, which is right
+        for "make the background red" and wrong for a question.
+        """
+        text = interject.attach({"ok": True}, ["what is your budget?"])["director_says"]
+
+        self.assertIn("Stage.note", text)
+        self.assertIn("only place", text)
+
+    def test_it_is_told_to_carry_on_afterwards(self):
+        """An aside, not a new brief. The first run got this right on its own; say it anyway."""
+        text = interject.attach({"ok": True}, ["make it red"])["director_says"]
+
+        self.assertIn("carry on", text.lower())
+
     def test_the_text_says_who_is_speaking(self):
         """The agent has to be able to tell this from a tool's own output."""
         amended = interject.attach({"ok": True}, ["make it red"])

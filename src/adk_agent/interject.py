@@ -68,7 +68,7 @@ def offer(project: str, text: str) -> bool:
         _pending[project].append(said[:MAX_CHARS])
         depth = len(_pending[project])
 
-    _logger.info("polson interject: queued for %s (%d waiting)", project, depth)
+    _logger.warning("polson interject: queued for %s (%d waiting)", project, depth)
     return True
 
 
@@ -127,7 +127,7 @@ def make_plugin(project_dir: str | Path):
                     _pending[project].extendleft(reversed(lines))
                 return None
 
-            _logger.info("polson interject: delivered %d line(s) to %s via %s",
+            _logger.warning("polson interject: delivered %d line(s) to %s via %s",
                          len(lines), project, getattr(tool, "name", "?"))
             return amended
 
@@ -148,8 +148,15 @@ def attach(result: Any, lines: list[str]) -> Any:
 
     body = " ".join(f"[director] {line}" for line in lines)
     text = (f"{body}\n\nThis is the director speaking to you mid-run, not a tool result and not an "
-            f"answer to a question you asked. Take it as a contribution: say in a `Stage.note` how "
-            f"you are taking it, then act on it in your next pass.")
+            f"answer to a question you asked.\n\n"
+            f"**If they asked you something, answer it in a `Stage.note` — that is the only place "
+            f"they can read your reply.** Finding the answer is not the same as giving it: a live "
+            f"run put this exact message in front of an agent, which called `budget_status` and "
+            f"never said what it found, so the director asked a question and watched nothing come "
+            f"back.\n\n"
+            f"If they asked for a change, take it as a contribution rather than a correction: say "
+            f"in a `Stage.note` how you are taking it, then act on it in your next pass. Either "
+            f"way, carry on with what you were doing afterwards — this is an aside, not a new brief.")
 
     amended = dict(result)
     content = amended.get("content")

@@ -144,7 +144,7 @@ def make_plugin(project_dir: str | Path):
             await mirror.finish()
             return None
 
-    _logger.info("polson mirror: %s every %.0fs -> %s", Path(project_dir).name,
+    _logger.warning("polson mirror: %s every %.0fs -> %s", Path(project_dir).name,
                  SWEEP_SECONDS, MIRROR_URI)
     return MirrorPlugin()
 # endregion
@@ -228,7 +228,7 @@ class ProjectMirror:
                 _logger.debug("polson mirror: %s not copied (%s)", rel, exc)
 
         if sent:
-            _logger.info("polson mirror: %d file(s) -> gs://%s/%s", sent, self.bucket.name,
+            _logger.warning("polson mirror: %d file(s) -> gs://%s/%s", sent, self.bucket.name,
                          self.prefix)
         return sent
     # endregion

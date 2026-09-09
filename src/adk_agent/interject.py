@@ -9,6 +9,14 @@ the novice's **disruptions** acting as creative catalysts — contributions that
 expert would not have reached alone. So an interruption belongs in the record as a contribution
 rather than as a correction, which is how `transcript` files it.
 
+**Contribution cuts both ways, and the second way is the one worth stating.** A suggestion taken as a
+correction is an override — and the studio holds craft the director did not bring: the manuals, the
+measured integrity rules, the form a deliverable has to take. *"Start the bars at 50 so the gap looks
+bigger"* is a lie factor, whoever asked for it. So the agent is told to take the **intent** rather
+than the letter where the two conflict, and to say in the same note what it took and what it did
+instead. That is not a licence to ignore the director: an unrecorded departure is exactly the failure
+this channel exists to prevent, and the note is what makes it a conversation rather than a refusal.
+
 **The ADK half of `orchestrator/interject.py`, and the mechanism is completely different.** That one
 rides the Antigravity SDK's trigger surface: a coroutine lives for the agent's lifetime and may
 `ctx.send(...)` at any moment. ADK offers no equivalent — an invocation is a single `run_async`, and
@@ -150,13 +158,14 @@ def attach(result: Any, lines: list[str]) -> Any:
     text = (f"{body}\n\nThis is the director speaking to you mid-run, not a tool result and not an "
             f"answer to a question you asked.\n\n"
             f"**If they asked you something, answer it in a `Stage.note` — that is the only place "
-            f"they can read your reply.** Finding the answer is not the same as giving it: a live "
-            f"run put this exact message in front of an agent, which called `budget_status` and "
-            f"never said what it found, so the director asked a question and watched nothing come "
-            f"back.\n\n"
+            f"they can read your reply.** Finding the answer is not the same as giving it, and the "
+            f"director can see neither your tool results nor your reasoning.\n\n"
             f"If they asked for a change, take it as a contribution rather than a correction: say "
-            f"in a `Stage.note` how you are taking it, then act on it in your next pass. Either "
-            f"way, carry on with what you were doing afterwards — this is an aside, not a new brief.")
+            f"in a `Stage.note` how you are taking it, then act on it in your next pass. Where it "
+            f"cuts against something the studio knows — a manual, an integrity rule, the form the "
+            f"deliverable has to take — **take the intent rather than the letter**, and say in that "
+            f"note what you took and what you did instead. Either way, carry on with what you were "
+            f"doing afterwards — this is an aside, not a new brief.")
 
     amended = dict(result)
     content = amended.get("content")

@@ -119,17 +119,41 @@ class AttachTests(unittest.TestCase):
         self.assertIsNone(interject.attach(None, ["red"]))
 
     def test_a_question_is_told_where_the_answer_has_to_go(self):
-        """**Measured on the first live run of this feature.**
+        """Guidance that makes a good behaviour explicit, **not** a fix for an observed failure.
 
-        The director asked "what is your budget?". The agent received it, called `budget_status` —
-        the right tool, unprompted, mid-research — and then said nothing. Finding the answer and
-        giving it are different acts, and the first wording only asked it to *act*, which is right
-        for "make the background red" and wrong for a question.
+        The distinction matters, because the first version of this docstring claimed the second and
+        was wrong. On the first live run the director asked "what is your budget?" and the agent
+        received it, called `budget_status` unprompted mid-research, and then answered — in a
+        `Stage.note` reading *"Budget status: 25.5 min remaining, 2.5% token cap spent. Answering
+        director query."* It did the right thing with no instruction to.
+
+        What was mistaken for silence was the gap: the tool call came at 23:01:49 and the note at
+        23:05:17, because the agent finished collecting its research first. Reading the trace before
+        the answer arrived is not the same as the answer not arriving.
+
+        So this sentence is kept for a weaker and honest reason — one run is not evidence that every
+        model will volunteer the reply, and saying where the answer has to go costs nothing.
         """
         text = interject.attach({"ok": True}, ["what is your budget?"])["director_says"]
 
         self.assertIn("Stage.note", text)
         self.assertIn("only place", text)
+
+    def test_a_suggestion_does_not_override_what_the_studio_knows(self):
+        """The half that makes "contribution rather than correction" mean something in both directions.
+
+        A suggestion taken as a correction is an override, and the studio holds craft the director did
+        not bring — the manuals, the integrity rules, the form the deliverable has to take. "Start the
+        bars at 50 so the gap looks bigger" is a lie factor whoever asked for it.
+
+        So the agent takes the **intent** rather than the letter where the two conflict, and records
+        what it took and what it did instead. Without that sentence its only options were to comply or
+        to quietly not comply, and the second leaves the director nothing to read.
+        """
+        text = interject.attach({"ok": True}, ["start the bars at 50"])["director_says"]
+
+        self.assertIn("intent rather than the letter", text)
+        self.assertIn("what you did instead", text)
 
     def test_it_is_told_to_carry_on_afterwards(self):
         """An aside, not a new brief. The first run got this right on its own; say it anyway."""

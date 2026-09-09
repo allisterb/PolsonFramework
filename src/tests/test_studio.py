@@ -1077,6 +1077,59 @@ class InterjectionTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"interject": sentinel}):
             self.assertIs(observe_mod._channel(), sentinel)
 
+    def test_without_the_runtime_present_a_question_cannot_be_answered(self):
+        """A studio watching another host's record holds no future to settle."""
+        run = self._observed()
+        try:
+            with mock.patch.dict(sys.modules, {"ask": None}):
+                self.assertFalse(run.answer("q1", text="warm"))
+        finally:
+            del type(run).live
+
+    def test_with_the_runtime_present_the_answer_settles_the_question(self):
+        """**This returned False unconditionally until `adk_agent.ask` existed.**
+
+        The click reached the route, the route called this, and the honest answer then was that no
+        host on this runtime could have asked a question. Now one can, and the future is in this
+        process.
+        """
+        run = self._observed()
+        settled = []
+        fake = mock.MagicMock()
+        fake.reply.side_effect = lambda project, qid, **kw: (settled.append((project, qid, kw)), True)[1]
+
+        try:
+            with mock.patch.dict(sys.modules, {"ask": fake}):
+                self.assertTrue(run.answer("q1", selected=["Warm"], skipped=False))
+        finally:
+            del type(run).live
+
+        self.assertEqual(settled, [("acme", "q1", {"selected": ["Warm"], "skipped": False})])
+
+    def test_a_question_already_settled_is_refused_rather_than_answered_twice(self):
+        """The second window's click, and the route turns this into a 409 rather than a 404."""
+        run = self._observed()
+        fake = mock.MagicMock()
+        fake.reply.return_value = False
+
+        try:
+            with mock.patch.dict(sys.modules, {"ask": fake}):
+                self.assertFalse(run.answer("q1", text="warm"))
+        finally:
+            del type(run).live
+
+    def test_the_channel_the_studio_answers_on_is_the_one_the_agent_awaits(self):
+        """Same failure as the interjection case above, and worse in its symptom.
+
+        A second copy of `ask` means settling a future nothing is waiting on: the click succeeds, the
+        page clears the card, and the agent waits out its whole timeout as though nobody was there.
+        """
+        from studio import observe as observe_mod
+
+        sentinel = mock.MagicMock()
+        with mock.patch.dict(sys.modules, {"ask": sentinel}):
+            self.assertIs(observe_mod._ask_channel(), sentinel)
+
     def test_a_finished_run_is_refused_rather_than_queued(self):
         """Nothing is listening, and queueing for an agent that has stopped is a silent loss."""
         run = self._observed(live=False)

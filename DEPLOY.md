@@ -114,7 +114,7 @@ setting the container cannot write.
 
 **The Python half reads environment variables directly** and never opens that file:
 `POLSON_MODEL`, `POLSON_BUDGET_TOKENS`, `POLSON_BUDGET_RAW_TOKENS`, `ADK_MAX_LLM_CALLS`,
-`POLSON_MAX_RUNS_PER_DAY`, `POLSON_ALLOW_ORIGINS`, `POLSON_SEED_*`.
+`POLSON_MAX_RUNS_PER_DAY`, `POLSON_ALLOW_ORIGINS`, `POLSON_SEED_*`, `POLSON_ASK_SECONDS`.
 
 ### Changing a value
 
@@ -135,6 +135,12 @@ Worth setting deliberately rather than leaving at defaults:
   beautifully, so a cost-weighted count alone would discount a loop exactly when it is worst.
 - **`POLSON_MAX_RUNS_PER_DAY`** / **`POLSON_MAX_CONCURRENT_RUNS`** — the intake brake, default 25 and
   2. Only relevant if the service is ever made public.
+- **`POLSON_ASK_SECONDS`** — how long the agent waits on a question it asked the director, default
+  120. The wait is credited back to the token deadline and the role clock, so raising it does not
+  cost the agent budget — but it **cannot** be credited back to the sandbox's own
+  `Stage.elapsedMinutes`, which the .NET side anchors on its session start. Raise it for a demo
+  somebody is actually watching; leave it low for an unattended run, where the only effect of a long
+  timeout is a run that sits still.
 
 ---
 

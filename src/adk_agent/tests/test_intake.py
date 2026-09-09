@@ -19,10 +19,13 @@ No network, no ADK, no model - these run in milliseconds and can be run on every
 
 from __future__ import annotations
 
+import re
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
+from html import escape, unescape
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -195,9 +198,21 @@ class ObservingOnlyBoundaryTests(unittest.TestCase):
         """The change. Without it the box 409s before `say` is ever reached."""
         self.assertTrue(intake.observing_only("POST", "/studio/runs/acme-watch-1/say", "/studio"))
 
-    def test_answering_is_still_refused(self):
-        """It settles a question the host asked, and the host owns that conversation."""
-        self.assertFalse(intake.observing_only("POST", "/studio/runs/acme-watch-1/answer", "/studio"))
+    def test_answering_a_question_is_allowed(self):
+        """**This assertion used to be the opposite, and both versions were right when written.**
+
+        Answering settles a question the *host* asked, and while no host on this runtime could ask
+        one, refusing here merely saved the request a second refusal at `ObservedRun.answer`. Now
+        `adk_agent.ask` holds the future in this process, so the host is the page's own process and
+        the refusal would strand the agent for its whole timeout with a click that reached nothing.
+        """
+        self.assertTrue(intake.observing_only("POST", "/studio/runs/acme-watch-1/answer", "/studio"))
+
+    def test_a_path_that_merely_contains_answer_is_refused(self):
+        """Anchored at both ends, as `say` is — a verb must not be a prefix onto something else."""
+        for attempt in ("/studio/runs/x/answer/../../projects", "/studio/runs/x/answer/more",
+                        "/studio/answering", "/studio/runs/answer"):
+            self.assertFalse(intake.observing_only("POST", attempt, "/studio"), attempt)
 
     def test_creating_and_starting_are_still_refused(self):
         self.assertFalse(intake.observing_only("POST", "/studio/projects", "/studio"))
@@ -270,6 +285,107 @@ class WorkflowTypeTests(unittest.TestCase):
     def test_all_types_is_the_union_of_every_offered_workflows_types(self):
         union = sorted({t for types in intake.WORKFLOWS.values() for t in types})
         self.assertEqual(union, list(intake.ALL_TYPES))
+
+
+from fastapi.testclient import TestClient
+
+
+def _app():
+    """A bare app with the intake mounted, for the cases that only read the form."""
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    intake.mount(app)
+    return app
+
+
+class StarterTests(unittest.TestCase):
+    """The one-click commissions on the form.
+
+    They exist because a visitor handed a URL and an empty textarea has to invent a brief before
+    they can see anything, and because the demo is aimed at advertising, film and television — so
+    the subjects steer there while the field stays free.
+    """
+
+    def test_every_starter_is_a_commission_the_endpoint_would_accept(self):
+        """**The failure this prevents is a chip that 400s in front of a judge.**
+
+        A starter fills the same controls a person would, so an unoffered workflow or a type its
+        workflow does not ship is refused by the POST handler exactly as a hand-typed one would be —
+        and the chip would look broken rather than wrong.
+        """
+        for starter in intake.STARTERS:
+            with self.subTest(starter=starter["label"]):
+                self.assertIn(starter["workflow"], intake.WORKFLOWS)
+                self.assertIn(starter["kind"], intake.WORKFLOWS[starter["workflow"]],
+                              "the type control hides types the workflow does not offer")
+                self.assertTrue(intake.VALID_APP_NAME.match(starter["name"]))
+                self.assertLessEqual(len(starter["name"]), intake.MAX_NAME)
+                self.assertTrue(starter["brief"].strip())
+
+    def test_no_starter_hands_the_agent_a_figure(self):
+        """**A brief carrying invented numbers is what the research apparatus exists to prevent.**
+
+        A starter that supplied them would be teaching the agent to draw a sourced-looking graphic
+        from nothing, which is the one failure a reader cannot detect — a wrong number renders
+        perfectly. Each of these asks for something to be researched or read from a document.
+        """
+        money = re.compile(r"[$£€]\s?\d|\d+(\.\d+)?\s?(m|bn|million|billion|per ?cent|%)", re.I)
+        for starter in intake.STARTERS:
+            with self.subTest(starter=starter["label"]):
+                self.assertIsNone(money.search(starter["brief"]),
+                                  "state the question, not an answer nobody sourced")
+
+    def test_the_names_are_distinct(self):
+        """Two chips writing one name is a collision the second click discovers."""
+        names = [s["name"] for s in intake.STARTERS]
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_the_chips_reach_the_page_with_their_commission_attached(self):
+        page = TestClient(_app()).get("/new").text
+
+        self.assertNotIn("__STARTERS__", page, "the placeholder was not substituted")
+        for starter in intake.STARTERS:
+            with self.subTest(starter=starter["label"]):
+                # Escaped, so an apostrophe in a label arrives as `&#x27;` rather than verbatim.
+                self.assertIn(escape(starter["label"]), page)
+                self.assertIn(f'data-workflow="{starter["workflow"]}"', page)
+
+    def test_a_brief_carrying_a_quotation_mark_does_not_end_its_attribute(self):
+        """Prose acquires quotes the moment anyone edits one, and an unescaped quote in an attribute
+        ends the attribute — filling half a brief, which is worse than not working at all.
+        """
+        awkward = ({"label": "Quote & <script>", "name": "quoted", "workflow": "infographic",
+                    "kind": "swiss", "brief": 'A "platform" release & what it costs'},)
+        with mock.patch.object(intake, "STARTERS", awkward):
+            page = TestClient(_app()).get("/new").text
+
+        # Scoped to the chips: the page has a `<script>` of its own, so asserting on the whole
+        # document would pass for the wrong reason today and fail for the wrong reason tomorrow.
+        chips = page.split('class="chips"')[1].split("</div>")[0]
+        self.assertIn("&lt;script&gt;", chips, "the label is escaped")
+        self.assertNotIn("<script>", chips)
+
+        # `quoteattr` switches to single-quote delimiters rather than emitting `&quot;`, which is
+        # equally valid and is why the escaping is delegated rather than hand-rolled: the two cases
+        # a hand-rolled version gets wrong are a value containing one kind of quote and a value
+        # containing both.
+        self.assertIn("""data-brief='A "platform" release &amp; what it costs'""", page)
+
+        found = re.search(r"data-brief=(\"[^\"]*\"|'[^']*')", page)
+        self.assertIsNotNone(found)
+        self.assertEqual(unescape(found.group(1)[1:-1]), 'A "platform" release & what it costs',
+                         "what the browser reads back is what the starter said")
+
+    def test_the_chips_do_not_submit_the_form(self):
+        """They fill it. One button on this page commissions a run and the rest must not look
+        like it, or a visitor exploring the starters starts five.
+        """
+        page = TestClient(_app()).get("/new").text
+        chips = page.split('class="chips"')[1].split("</div>")[0]
+
+        self.assertEqual(chips.count('type="button"'), len(intake.STARTERS))
+        self.assertNotIn("submit", chips)
 
 
 class TypeSelectionTests(unittest.TestCase):
@@ -584,12 +700,12 @@ class ObservingOnlyTests(unittest.TestCase):
     def test_creating_or_driving_is_refused(self):
         """Each of these needs the Antigravity driver, which this runtime does not ship.
 
-        **`/say` was on this list and has moved off it**, which is a change of fact rather than of
-        policy: `adk_agent.interject` gives an ADK run a channel of its own, so speaking to one no
-        longer needs a driver. `/answer` stays, because it settles a question the *host* asked and
-        the host still owns that conversation. See `ObservingOnlyBoundaryTests`.
+        **`/say` and `/answer` were both on this list and have moved off it**, which is a change of
+        fact rather than of policy: `adk_agent.interject` and `adk_agent.ask` give an ADK run both
+        directions of the director's conversation in this process, so neither needs a driver any
+        more. Creating a project and starting a run still do. See `ObservingOnlyBoundaryTests`.
         """
-        for path in ("/studio/projects", "/studio/runs", "/studio/runs/x-1/answer"):
+        for path in ("/studio/projects", "/studio/runs"):
             with self.subTest(path=path):
                 self.assertFalse(intake.observing_only("POST", path, "/studio"))
 

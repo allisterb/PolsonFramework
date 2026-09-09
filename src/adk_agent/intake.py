@@ -30,7 +30,9 @@ import re
 import shutil
 import tempfile
 from collections import deque
+from html import escape
 from pathlib import Path
+from xml.sax.saxutils import quoteattr
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -91,6 +93,84 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
 #: Every type any offered workflow has, for building the form's one type control. Derived rather
 #: than listed, so the control and the table above cannot disagree about what exists.
 ALL_TYPES: tuple[str, ...] = tuple(sorted({t for types in WORKFLOWS.values() for t in types}))
+
+
+#: Ready-made commissions, offered on the form as one-click starters.
+#:
+#: **Why they exist.** A visitor handed a URL and an empty textarea has to invent a brief before they
+#: can see anything, and inventing one is the slowest part — the old standalone webapp got this right
+#: by letting a director click through a workflow rather than type it. These restore that, and steer
+#: the demo toward the industries it is aimed at, without narrowing what anyone may ask for: the
+#: field stays free and nothing is refused.
+#:
+#: **Every one is a subject these two workflows can actually do.** That is the constraint that
+#: matters and it is easy to get wrong — `vector_infographic` and `infographic` make *graphics that
+#: encode quantities*, so a title card or a key-art comp would be a starter that reliably produces a
+#: poor run. The industry is in the **subject**, not in the form.
+#:
+#: **None of them states a figure.** A brief carrying invented numbers is the one thing the whole
+#: research and document apparatus exists to prevent — `polson://manual/13` and the `Research`
+#: CAUTION both say so — and a starter that supplied them would be teaching the agent to draw a
+#: sourced-looking graphic from nothing. Each asks for something the agent must research, or read out
+#: of a document the director attaches.
+STARTERS: tuple[dict[str, str], ...] = (
+    {
+        "label": "Box office, 2025",
+        "name": "boxoffice2025",
+        "workflow": "vector_infographic",
+        "kind": "editorial",
+        "brief": "The 2025 theatrical box office: how the year's ten highest-grossing films earned, "
+                 "by studio and by release window. Show opening weekend against total domestic "
+                 "gross, and make the difference between a wide opening and a platform release "
+                 "legible at a glance.",
+    },
+    {
+        "label": "Where a TV spot's budget goes",
+        "name": "spotbudget",
+        "workflow": "vector_infographic",
+        "kind": "swiss",
+        "brief": "Where the money goes in a national 30-second television commercial: production, "
+                 "director and talent, post and grade, music licensing, and the media buy, as shares "
+                 "of the total. Research typical splits and cite them. Call out the two line items "
+                 "clients are most often surprised by.",
+    },
+    {
+        "label": "How a film earns out",
+        "name": "earnout",
+        "workflow": "infographic",
+        "kind": "blueprint",
+        "brief": "How a mid-budget feature earns out over eighteen months across theatrical, "
+                 "premium video on demand, streaming licence and television. One timeline, with the "
+                 "break-even point marked and each window's contribution shown against it.",
+    },
+    {
+        "label": "A launch campaign, week by week",
+        "name": "campaign",
+        "workflow": "vector_infographic",
+        "kind": "brutalist",
+        "brief": "An eight-week campaign for a streaming series launch: teaser, full trailer, "
+                 "out-of-home, paid social, press junket and premiere. Show what runs when and how "
+                 "the spend is weighted across channels.",
+    },
+    {
+        "label": "Genre share, ten years apart",
+        "name": "genreshare",
+        "workflow": "infographic",
+        "kind": "specimen",
+        "brief": "Genre share of the hundred highest-grossing films, 2015 against 2025. One plate, "
+                 "one cell per film, arranged so the shift between the two years reads without a "
+                 "caption explaining it.",
+    },
+    {
+        "label": "The shape of a shoot day",
+        "name": "shootday",
+        "workflow": "vector_infographic",
+        "kind": "blueprint",
+        "brief": "The shape of a commercial shoot day, call time to wrap: which departments are on "
+                 "set when, where the waiting happens, and how the hours actually distribute across "
+                 "camera, grip and electric, art, wardrobe and talent.",
+    },
+)
 
 
 def safe_filename(raw: str | None) -> str:
@@ -212,24 +292,28 @@ def _too_many() -> str | None:
 #: `POST /runs/<id>/say` — the director interrupting a run that is already going.
 SAY = re.compile(r"^/runs/[^/]+/say$")
 
+#: `POST /runs/<id>/answer` — the director settling a question the agent stopped to ask.
+ANSWER = re.compile(r"^/runs/[^/]+/answer$")
+
 
 def observing_only(method: str, path: str, root_path: str = "") -> bool:
     """Whether a request to the mounted studio is one an observer may make.
 
-    Reading is every GET. Two mutations belong to it: registering a watch, and **speaking to a run
-    that is already going**.
+    Reading is every GET. Three mutations belong to it: registering a watch, **speaking to a run that
+    is already going**, and **answering a question that run asked**.
 
-    **Why `say` is allowed and `answer` is not, when both look like driving.** The blanket refusal
-    was right when it was written — the studio's whole write side went through the Antigravity SDK,
-    which this runtime does not ship — but it is no longer true of this one verb. `adk_agent.interject`
-    gives an ADK run its own channel: the studio queues the words and a plugin hands them to the agent
-    at its next tool call, all in this process. Nothing about that needs a driver.
+    **Why these are allowed when they look like driving.** The blanket refusal was right when it was
+    written — the studio's whole write side went through the Antigravity SDK, which this runtime does
+    not ship — but it stopped being true one verb at a time. `adk_agent.interject` gives an ADK run a
+    channel for words the director volunteered; `adk_agent.ask` gives it the other direction, holding
+    the future the agent is awaiting. Both live in this process, because the studio is mounted on the
+    ADK app, so neither needs a driver.
 
-    `answer` still does. It settles a question the *host* asked and belongs to whatever owns the
-    conversation, which here is the runner rather than the page — `ObservedRun.answer` returns False
-    and this keeps the request from arriving to be refused twice.
+    `answer` was the last to change and this comment used to say why it could not: it settles a
+    question the *host* asked, and with no host that could ask one, `ObservedRun.answer` returned
+    False and refusing here merely saved the request a second refusal. Now the host is this process.
 
-    Creating a project and starting a run also still do, and are still refused.
+    Creating a project and starting a run still need a driver, and are still refused.
 
     **The subtlety is the path.** Middleware on a mounted app sees the *whole* path with `root_path`
     beside it — `/studio/observe`, not `/observe`; only route matching strips the prefix afterwards.
@@ -243,7 +327,7 @@ def observing_only(method: str, path: str, root_path: str = "") -> bool:
         path = path[len(root_path):]
 
     path = path.rstrip("/")
-    return path == "/observe" or bool(SAY.match(path))
+    return path == "/observe" or bool(SAY.match(path)) or bool(ANSWER.match(path))
 
 
 async def launch(app: FastAPI, name: str, message: str = OPENING) -> None:
@@ -302,10 +386,25 @@ FORM = """<!doctype html>
         background: #f3f0ea; border-left: 3px solid #cdc7bb; border-radius: 3px; }
  button { margin-top: 1.5rem; padding: .6rem 1.4rem; font: inherit; font-weight: 600;
         background: #1f6f8b; color: #fff; border: 0; border-radius: 3px; cursor: pointer; }
+ .starters { margin: 1.4rem 0 .4rem; }
+ .starters p { margin: 0 0 .5rem; font-size: .88rem; color: #6b7280; }
+ .chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+ /* Not the submit button: these fill the form, they do not send it. Stated in the styling as well
+    as in `type="button"`, so the one that commissions a run never looks like the five that do not. */
+ .chips button { margin: 0; padding: .35rem .7rem; font-size: .86rem; font-weight: 500;
+        background: #fff; color: #1f6f8b; border: 1px solid #cdc7bb; border-radius: 999px; }
+ .chips button:hover { background: #f3f0ea; }
+ .chips button[aria-pressed="true"] { background: #1f6f8b; color: #fff; border-color: #1f6f8b; }
 </style>
 <h1>New commission</h1>
 <p>Describe what you want made. Attach a document and the studio will read its figures
    rather than researching them.</p>
+
+<div class="starters">
+  <p>Or start from one of these &mdash; every field stays editable.</p>
+  <div class="chips">__STARTERS__</div>
+</div>
+
 <form method="post" action="/projects" enctype="multipart/form-data">
   <label>Project name <small>letters, digits and underscores &mdash; no dashes</small></label>
   <input name="name" required pattern="[a-zA-Z][a-zA-Z0-9_]{0,47}" placeholder="boxoffice2025">
@@ -355,6 +454,35 @@ FORM = """<!doctype html>
   }
   workflow.addEventListener('change', sync);
   sync();
+
+  // The starters. Each chip carries its whole commission as data attributes, so filling the form is
+  // four assignments and no round trip — and because they write into the ordinary controls, every
+  // field stays editable afterwards and the server validates exactly what it would have anyway.
+  //
+  // **`sync()` runs between the workflow and the type**, not after both. The type control hides the
+  // options the chosen workflow does not offer, so setting a type before its workflow has been
+  // synced assigns a value to a hidden option — which the browser keeps, and the server then refuses
+  // with a message about a type that is not offered. Order is load-bearing here.
+  for (const chip of document.querySelectorAll('.chips button')) {
+    chip.addEventListener('click', () => {
+      const form = document.querySelector('form');
+      if (!form) return;
+
+      workflow.value = chip.dataset.workflow;
+      sync();
+      kind.value = chip.dataset.kind;
+      form.name.value = chip.dataset.name;
+      form.brief.value = chip.dataset.brief;
+
+      for (const other of document.querySelectorAll('.chips button')) {
+        other.setAttribute('aria-pressed', String(other === chip));
+      }
+      form.brief.focus();
+      // The end, not the start: this is a draft to edit rather than a value to accept, and a cursor
+      // sitting after the last word says so without a line of instruction.
+      form.brief.setSelectionRange(form.brief.value.length, form.brief.value.length);
+    });
+  }
 })();
 </script>
 """
@@ -374,8 +502,22 @@ def mount(app: FastAPI) -> None:
         types_options = '<option value="">&mdash;</option>' + "".join(
             f'<option value="{t}">{t}</option>' for t in ALL_TYPES)
         accept = ",".join(sorted(DOCUMENT_SUFFIXES))
+
+        # Escaped with `quoteattr` rather than by hand. These are our own strings, so nothing here is
+        # untrusted — but a brief is prose, prose acquires apostrophes and quotation marks the moment
+        # anyone edits one, and an unescaped quote in an attribute ends the attribute. The failure is
+        # a chip that silently fills half a brief, which is worse than one that does not work at all.
+        chips = "".join(
+            f'<button type="button" aria-pressed="false"'
+            f' data-name={quoteattr(s["name"])}'
+            f' data-workflow={quoteattr(s["workflow"])}'
+            f' data-kind={quoteattr(s["kind"])}'
+            f' data-brief={quoteattr(s["brief"])}>{escape(s["label"])}</button>'
+            for s in STARTERS)
+
         return (FORM.replace("__WORKFLOWS__", options)
                     .replace("__TYPES__", types_options)
+                    .replace("__STARTERS__", chips)
                     .replace("__ACCEPT__", accept))
 
     @app.post("/projects")

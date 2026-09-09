@@ -183,6 +183,39 @@ behaves the same under either runtime, and the prompt work in
 `src/Polson.CLI/ProjectTemplate/*/instructions.md` — including its untrusted-brief boundary — is
 inherited rather than reimplemented.
 
+### The director's conversation, and why it is two modules
+
+The Antigravity path gets both directions from the SDK: a trigger coroutine can `ctx.send(...)` into
+a running agent, and `OnInteractionHook` lets the agent stop and ask. **ADK offers neither**, so both
+are built here — and they are separate modules because they are different mechanisms, not because
+the code is long.
+
+| | `interject.py` | `ask.py` |
+| :--- | :--- | :--- |
+| Who speaks first | the director | the agent |
+| Mechanism | `after_tool_callback` returns a **replacement tool result** | a plain tool **awaits a future** |
+| Delivered | at the agent's next tool call | as soon as somebody clicks |
+| If nobody is there | nothing to deliver; harmless | the agent waits, then is told to decide |
+| Blocks the run | no | yes, for at most `POLSON_ASK_SECONDS` |
+
+Both work for one reason: `main.py` mounts the studio **on the ADK app**, so the page and the agent
+are in one process and the queue and the future are ordinary local objects. The studio's HTTP routes
+(`POST /runs/<id>/say` and `/answer`) and the run page's question cards were already there from
+Milestone 6 and are runtime-agnostic — the page draws a card from a `question.open` line in
+`events/director.jsonl` without knowing who wrote it. **So the whole ADK side of this was publishing
+the event and holding the future**; nothing in the browser changed.
+
+> **`ask_director` is on the root agent only.** A question suspends whoever calls it, so four roles
+> holding it is four cards in front of one director. The Facilitator holds the brief and knows what
+> is genuinely unsettled; a role that wants a ruling transfers to it.
+
+> **Waiting is credited back.** `studio.credit_wait` pushes `_invocation_started` and the role clock
+> forward by the wait, so a director thinking for ninety seconds does not spend ninety seconds of the
+> agent's deadline — otherwise asking is a tool with a cost the agent cannot control, which teaches
+> it to guess. It cannot reach `Stage.elapsedMinutes`, which the .NET side anchors on its own
+> `StartedUtc`, so the sandbox clock reads higher than `budget_status` on a run that asked. That is
+> the reason the timeout is 120s rather than the Antigravity path's 600.
+
 Two ADK details worth knowing, both of which fail *quietly* if you get them wrong:
 
 - **MCP resources are off by default.** Polson serves the studio manuals as `polson://manual/*`

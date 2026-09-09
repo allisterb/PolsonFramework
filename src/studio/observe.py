@@ -31,6 +31,7 @@ Two things this has to get right, and both are ways of showing a run that is not
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -261,8 +262,23 @@ class ObservedRun(Run):
         return self.observation.attach(replay=replay)
 
     def answer(self, question_id: str, **reply: Any) -> bool:
-        """Always false. The host owns the conversation; this page only reads the record."""
-        return False
+        """Settles a question the agent asked, when the agent is in this process.
+
+        **This used to be unconditionally false, and the comment explaining why is worth keeping
+        because it was right at the time**: answering settles a question the *host* asked, and on
+        the Antigravity path the host is a runner this page cannot reach. That has stopped being the
+        whole story for the same reason `say` did — `adk_agent.ask` holds the pending future in this
+        very process, because the studio is mounted on the ADK app.
+
+        Still false where that is not true: a studio watching a record some other host is writing
+        has no channel, and the import guard is what decides which case this is. Also false for a
+        question that has already been settled — by a timeout, or in another window — which the
+        route turns into a `409` rather than a `404`.
+        """
+        channel = _ask_channel()
+        if channel is None:
+            return False
+        return channel.reply(self.project.id, question_id, **reply)
 
     def say(self, text: str) -> bool:
         """Hands the director's words to the agent, when the agent is in this process.
@@ -297,30 +313,41 @@ class ObservedRun(Run):
     # endregion
 
 
-def _channel():
-    """The ADK runtime's interjection queue, or None when this studio is not mounted on one.
+def _runtime_module(name: str):
+    """One of the ADK runtime's director channels, or None when this studio is not mounted on one.
 
     **`sys.modules` first, and that is the whole point of this function.** A plain `import interject`
     resolves against `sys.path`, and if it ever resolved to a *second* copy of the file the studio
     would be filling one queue while the agent's plugin drained another — a failure with no symptom
     except that nothing is ever delivered. Taking the module the runtime already imported makes that
-    impossible rather than unlikely.
+    impossible rather than unlikely. It matters more for `ask` than for `interject`, because a second
+    copy there means answering a future nothing is awaiting: the click succeeds, the page clears the
+    card, and the agent waits out its full timeout as though nobody was there.
 
     The fallback import is for the case where the studio is asked first, which does not happen on the
-    deployed runtime — `main.py` loads the agent app, and that imports this module long before any
+    deployed runtime — `main.py` loads the agent app, and that imports both modules long before any
     page is served — but costs one dictionary miss to be safe about.
     """
-    module = sys.modules.get("interject")
+    module = sys.modules.get(name)
     if module is not None:
         return module
 
     try:
-        import interject                                        # noqa: PLC0415 - deliberately late
-        return interject
+        return importlib.import_module(name)                    # noqa: PLC0415 - deliberately late
     except ImportError:
         # A studio watching a record another host is writing. There is no channel, and saying so is
         # the honest answer — see `ObservedRun.say`.
         return None
+
+
+def _channel():
+    """The interjection queue: words the director volunteered."""
+    return _runtime_module("interject")
+
+
+def _ask_channel():
+    """The question channel: the future an agent is waiting on."""
+    return _runtime_module("ask")
 
 
 async def observe(registry: Any, root: Path) -> ObservedRun:

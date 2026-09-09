@@ -40,6 +40,7 @@ from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.load_artifacts_tool import LoadArtifactsTool
 from google.adk.tools.mcp_tool import McpToolset
 
+import ask
 import interject
 import mirror
 import transcript
@@ -889,6 +890,39 @@ CACHED_TOKEN_SHARE = 0.1
 RAW_CAP_MULTIPLE = 4
 
 
+def credit_wait(invocation: str | None, agent_name: str | None, seconds: float) -> bool:
+    """Gives back time the agent spent waiting on a person. False when there was nothing to credit.
+
+    **Both clocks are wall-clock, and waiting is not working.** `_invocation_started` anchors the
+    circuit breaker and `budget_status`'s `minutesRemaining`; `_role_clock` anchors the per-role
+    allowance. A director thinking for ninety seconds moves both, and charging that to the agent
+    would make `ask_director` a tool with a cost the agent cannot control — which is the surest way
+    to teach it to guess instead of asking. Pushing the start forward by the wait is the whole fix:
+    every later reading of `now - started` then excludes it.
+
+    **It does not reach `Stage.elapsedMinutes`**, which the .NET side anchors on the session's own
+    `StartedUtc` and this process cannot move. So a run that asks several questions will see the
+    sandbox clock and `budget_status` disagree, the sandbox one reading higher. That is a real
+    limitation rather than a rounding difference, and it is the reason `ask.TIMEOUT` is 120s and not
+    the Antigravity path's 600.
+    """
+    if not invocation or seconds <= 0:
+        return False
+
+    credited = False
+    if invocation in _invocation_started:
+        _invocation_started[invocation] += seconds
+        credited = True
+
+    if agent_name and (clock := _role_clock.get((invocation, agent_name))) is not None:
+        clock.started += seconds
+        credited = True
+
+    if credited:
+        _TURN_LOG.warning("polson budget: %.0fs of waiting credited back to %s", seconds, invocation)
+    return credited
+
+
 def _billable(invocation: str) -> int:
     """Input tokens weighted by what they actually cost, which is what the cap should measure.
 
@@ -1376,7 +1410,7 @@ RUNTIME_ADDENDUM = """
 
 ## This runtime (ADK)
 
-Two tools exist here that the instructions above do not mention, because they replace what a
+These tools exist here that the instructions above do not mention, because they replace what a
 desktop host would otherwise provide.
 
 - **`read_file(path)` — read a text file in the project.** Start with `brief.md`: it is the
@@ -1389,9 +1423,33 @@ desktop host would otherwise provide.
 - **`edit_script(path, old_text, new_text)` — change part of it.** Use this for every revision
   after the first save. Send only the lines you are changing, then re-run the file. Re-sending a
   whole program in order to change part of it is the single largest cost in a run.
+- **`ask_director(question, options)` — put a question to the director and wait.** They answer by
+  clicking, so offer options wherever you can and put the one you would take first.
 
-Both keep numbered versions, so nothing you overwrite is lost.
+`write_script` and `edit_script` keep numbered versions, so nothing you overwrite is lost.
+
+### Asking, and when not to
+
+**The brief you were given may say "where the brief is silent, decide". That was written for a
+runtime with nobody to ask, and this is not one.** A director is watching this run and can settle a
+direction with one click, which is often what they came to do — most briefs are a sentence, and the
+rest of the commission is in their head rather than in the file.
+
+So: **ask about the few decisions that shape everything after them** — the subject's treatment, the
+palette's temperament, which of two readings of the brief to take — and decide the rest yourself, as
+you were told to. A pass is cheap and the record makes it reversible, so anything you can settle by
+drawing it and looking is not worth a question. Do not ask permission to proceed.
+
+Nobody may be there. An unanswered question comes back after __ASK_TIMEOUT__ seconds saying so, and
+the answer is then to choose, say in a `Stage.note` which you chose and why, and carry on — exactly
+as if you had never asked. The waiting time is not charged against your deadline.
 """
+
+# **Substituted rather than interpolated, and this is not a style preference.** ADK resolves `{name}`
+# in an instruction against session state, so a stray brace here does not render as a literal — it
+# kills the agent at startup with a missing-key error, which is a failure this project has already
+# had once from a workflow template. A placeholder with no braces in it cannot.
+RUNTIME_ADDENDUM = RUNTIME_ADDENDUM.replace("__ASK_TIMEOUT__", f"{ask.TIMEOUT:.0f}")
 
 
 # --------------------------------------------------------------------------------------------
@@ -1590,6 +1648,16 @@ def build(
     # decided, which is worth more than having every tool in one literal.
     perception.append(FunctionTool(_make_budget_status(
         token_cap, deadline_in(project) or _env_minutes("POLSON_BUDGET_MINUTES"))))
+
+    # **Only the root agent may ask, which is why this is its own list rather than another entry in
+    # `perception`.** A question suspends whoever calls it until a person answers, so giving it to
+    # every role in a multi-agent run is how four agents come to queue four questions at one
+    # director — and the Facilitator is the role holding the brief, so it is the one that knows what
+    # is genuinely unsettled rather than merely locally ambiguous. A role that wants a ruling asks
+    # the Facilitator, which is what `transfer` is already for.
+    asking = []
+    if (ask_tool := ask.make_tool(project)) is not None:
+        asking.append(FunctionTool(ask_tool))
     # Environment is the fallback here for the same reason it is for the model: an allowance is a
     # deployment fact, and the container is where a run's deadline is actually known.
     # Explicit argument, then the project's own deadline, then the deployment-wide default.
@@ -1640,8 +1708,9 @@ def build(
         ),
         instruction=instruction,
         # The root holds the toolset too: in the single-agent case it is the only worker, and in the
-        # multi-agent case the Facilitator still needs to look at what the roles produced.
-        tools=[toolset, *perception],
+        # multi-agent case the Facilitator still needs to look at what the roles produced. `asking`
+        # is here and nowhere else — see where it is built.
+        tools=[toolset, *perception, *asking],
         generate_content_config=_retry_config(),
         before_model_callback=_make_before_model(plan.get(root_name), cap, token_cap, raw_cap),
         after_model_callback=_after_model,

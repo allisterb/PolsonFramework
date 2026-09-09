@@ -212,55 +212,6 @@ Using AI to execute code is always fraught with problems. The Polson JavaScript 
 * No access to shell commands or local or network I/O. All API methods are just proxies to regular .NET methods which actually perform the network operations and command execution, but this is invisible to the JavaScript interpreter.  
 * No access to ‘eval’ or other potentially unsafe JavaScript features.  
 
-### Google ADK Agent Orchestration
-
-Polson Graphics Studio runs on Google ADK 2.8.0. ADK owns each project's generation, artifacts, and agent loop, and gives every run a set of lifecycle callbacks that fire outside any single agent. The Polson agent orchestration is implemented as follows
-
-#### One ADK app per project
-
-ADK scopes sessions, artifacts and toolsets by **app name**, and one app means one `McpToolset`, built once and cached, so one drawing engine process and one project directory for every session it
-serves. 
-
-#### The generated project is the agent definition
-
-Polson does not follow the ADK idiom and restate the instructions and the MCP launch command in Python, which is duplication and could drift. Instead `agent.py` reads the generated project: its `GEMINI.md` becomes the agent's `instruction`, and the stdio launch command mirrors `ProjectGenerator.McpConfig` exactly. A workflow with a `roles/` directory becomes a root agent plus one ADK sub-agent per role file, parsed by the same code that generates them, so the multi-agent and single-agent cases cannot disagree about what a role is. All of the prompt work in
-`ProjectTemplate/*/instructions.md`,  including its untrusted-brief boundary, is inherited rather than reimplemented.
-
-#### Plugins
-
-`BasePlugin` callbacks fire for every agent in an app, outside any of them, so one instance sees a whole run without each agent opting in. That is the seam Polson builds the studio on.
-
-| Plugin | Callbacks | What it does |
-|---|---|---|
-| `transcript` | `before_run`, `after_run`, `on_run_error`, `after_model` | Writes the run record — `thinking`, `text`, `tool.call`, `usage`, `budget` — into `events/agent.jsonl`, the same vocabulary the web UI, the replay and the sense-making curve already read. |
-| `mirror` | `before_run`, `after_run`, `on_run_error` | Sweeps the project directory to Cloud Storage every 20s **while the run is happening**, because a Cloud Run instance can be replaced mid-run and its filesystem does not outlive it. |
-| `interject` | `after_tool_callback` | The director's words, mid-run. ADK has no way to push a message into a running invocation, but `after_tool_callback` may return a **replacement tool result** — so the interjection is appended to the next tool result the agent receives, never substituted for it. |
-| `StudioWatchdog` | `after_tool_callback` | Puts a directive in front of a role that has stopped making progress. |
-| budget / breaker | `before_model_callback` | Below. |
-
-
-#### Tools
-
-ADK artifacts are not file paths but **versioned entities**  `save_artifact` returns an integer, and successive saves under one name accumulate. `peek` is an ADK `FunctionTool` that reads a render from the project, saves it as an ADK artifact, and lets `LoadArtifactsTool` inject it as a real `inline_data` part. `write_script` and `edit_script` exist for the same reason: `ExecuteScript` accepts a `scriptFile`,
-and until an ADK tool could author one, the agent could *run* a file it had no way to create.
-
-#### Budget
-
-All human creators work under time and budget constraints. Every Polson project carries a wall-clock deadline, per-role time allowances, and a token cap measured in billable tokens with cached input tokens charged at a fraction of rgular input
-
-The circuit breaker is a module-level set of tripped `invocation_id`s rather than ADK's `end_invocation`
-
-
-#### Web Interface
-
-`get_fast_api_app(...)` returns an ordinary `FastAPI`, so the Polson studio interface is mounted onto ADK's own app.
-
-### Extended Mind
-The Polson extended mind tools use Google's GenAI SDK and the Parallel API to create extended cognition tools for demanding tasks like document processing and web research. The tools are exposed to the agent via MCP. The agent can write a search quer
-
-
-When creating an infographic
-
 
 
 ## How we built it
@@ -283,7 +234,89 @@ The Polson JavaScript procedural drawing engine, extended mind MCP tools, and CL
 * [Google GenAI .NET SDK](https://github.com/googleapis/dotnet-genai/) .NET interface to Google's generative models used by the Polson extended mind implementation. 
 * [Google Agent Development Kit](https://github.com/google/adk-python) Python SDK used to orchestrate Polson agents.
 
-The entire system is deployed on Google Cloud Run.
+### Google ADK Agent Orchestration
+
+Polson Graphics Studio runs on Google ADK 2.8.0. ADK owns each project's generation, artifacts, and agent loop, and gives every run a set of lifecycle callbacks that fire outside any single agent. The Polson agent orchestration is [implemented](https://github.com/allisterb/Polson/tree/master/src/adk_agent) as follows:
+
+#### One ADK app per project
+
+ADK scopes sessions, artifacts and toolsets by **app name**, and one app means one `McpToolset`, built once and cached, so one drawing engine process and one project directory for every session it
+serves. 
+
+#### The generated project is the agent definition
+`agent.py` reads the generated project: its `GEMINI.md` becomes the agent's `instruction`, and the stdio launch command mirrors `ProjectGenerator.McpConfig` exactly. A workflow with a `roles/` directory becomes a root agent plus one ADK sub-agent per role file, parsed by the same code that generates them, so the multi-agent and single-agent cases cannot disagree about what a role is. All of the prompt work in
+`ProjectTemplate/*/instructions.md`,  including its untrusted-brief boundary, is inherited rather than reimplemented.
+
+#### Plugins
+
+`BasePlugin` callbacks fire for every agent in an app, outside any of them, so one instance sees a whole run without each agent opting in. That is the seam Polson builds the studio on.
+
+| Plugin | Callbacks | What it does |
+|---|---|---|
+| `transcript` | `before_run`, `after_run`, `on_run_error`, `after_model` | Writes the run record — `thinking`, `text`, `tool.call`, `usage`, `budget` — into `events/agent.jsonl`, the same vocabulary the web UI, the replay and the sense-making curve already read. |
+| `mirror` | `before_run`, `after_run`, `on_run_error` | Sweeps the project directory to Cloud Storage every 20s **while the run is happening**, because a Cloud Run instance can be replaced mid-run and its filesystem does not outlive it. |
+| `interject` | `after_tool_callback` | The director's words, mid-run. ADK has no way to push a message into a running invocation, but `after_tool_callback` may return a **replacement tool result** — so the interjection is appended to the next tool result the agent receives, never substituted for it. |
+| `StudioWatchdog` | `after_tool_callback` | Puts a directive in front of a role that has stopped making progress. |
+| budget / breaker | `before_model_callback` | Below. |
+
+
+#### Tools
+
+ADK artifacts are not file paths but versioned entities.  `save_artifact` returns an integer, and successive saves under one name accumulate. `peek` is an ADK `FunctionTool` that reads a render from the project, saves it as an ADK artifact, and lets `LoadArtifactsTool` inject it as a real `inline_data` part. `write_script` and `edit_script` exist for the same reason: `ExecuteScript` accepts and runs a `scriptFile`.
+
+#### Budget
+
+All human creators work under time and budget constraints. Every Polson project carries a wall-clock deadline, per-role time allowances, and a token cap measured in billable tokens with cached input tokens charged at a fraction of rgular input
+
+The circuit breaker is a module-level set of tripped `invocation_id`s rather than ADK's `end_invocation`
+
+
+#### Web Interface
+
+`get_fast_api_app(...)` returns an ordinary `FastAPI`, so the Polson studio interface is mounted onto ADK's own app.
+
+### Research using Gemini Document Processing and the Parallel Task API
+
+The extended mind thesis says cognitive load can be offloaded to the environment — so an agent should query the world rather than recall it. Two surfaces in `Polson.ExtendedMind` do that, and they answer different questions. **Gemini document processing** reads what the director actually supplied; the **Parallel Task API** commissions what nobody supplied, from the open web, with a citation attached. Both are exposed to the agent through the same Code Mode MCP server as the drawing engine, so a figure and the shape that carries it are produced by one program.
+
+The rule both are built around is the one this studio is least willing to break:
+
+> **Never invent a figure, and never draw a placeholder number.** A plausible-looking invented value is the worst thing this system can produce, because the layout puts a source line under it and the graphic then asserts something nobody checked. A chart that admits a missing figure is worth more than one that fabricates it.
+
+
+A commission usually arrives with material attached — a box-office table, a treatment, a shot list, a scanned report. The intake form takes that upload and writes it into the project's `documents/` folder before the agent research, with a basis for every field
+
+An infographic that states a number needs a source for it. The `Research` MCP tool commissions one from the Parallel Task API: an `objective` in prose — read by a model, not a keyword lookup — and a JSON Schema whose field descriptions are the instructions. What comes back is the data plus a `basis` per field: the reasoning, the citations, and a confidence.
+
+```javascript
+const data = Research.latest;
+if (!data || !data.isComplete) exit('figures not available — do not draw invented ones');
+
+for (const m of data.result.missions) ctx.fillText(`${m.mission}: ${m.duration_hours} h`, x, y);
+ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA — nasa.gov"
+```
+
+Three important architectural guardrails for research:
+* A script can read research but cannot start it, and that one-way door is the point. An agent that could author its own `basis` could produce a cited number it made up. Commissioning happens in the MCP tool, outside the JavaScript sandbox, where a blocking call is safe — which it has to be anyway, since a run takes minutes and the script timeout is 30 seconds.
+
+* The allowance is two runs, and they are not equal. The first must carry the entire data requirement in one schema; the second exists only to *correct* it; a field that came back empty, wrong, or at a confidence too low to draw. That is not parsimony for its own sake: one long objective with a rich schema is both faster and more accurate than several small ones, because it pays the latency once and the model reconciles every field against the others in a single pass. 
+
+* A document is the sharpest injection surface in the studio: a PDF can carry a paragraph addressed to whoever is processing it, and a model will faithfully relay it into the agent's context. Research prose has the same shape — a page that talks to whoever is processing it is not behaving like a source. Every string either surface brings back is run through `Polson.TextScan`, a C# port of a codepoint scanner, also exposed as the `ScanText` MCP tool. The concealment classes — bidirectional overrides, zero-width characters, the Unicode Tag block — are **stripped on the way in**, and what was found travels with the answer as `answer.warnings` / `task.warnings` rather than being quietly removed. A finding is not proof the answer is wrong; it is a reason to open the source before citing it, and to report what was found rather than following it.
+
+
+A run using the Parallel Task API takes two to five minutes measured at 143s for one field and 292s for sixteen, and nothing is written to the record while it waits. The `research.started` event now carries `expectSeconds` and a note saying as much, the tool repeats both on every poll, and the guidance to the agent is to commission first and do the grid, the type scale and the palette while it waits. If the *transport* times out the research is still running and has still cost a run, so the tool hands back a `runId` to resume with rather than letting a retry spend the whole allowance on one question.
+
+A finished run is filed to `.polson/research/<runId>.json`, and that file is what makes a drawn figure checkable after the session. The registry holds tasks in memory and the run record carries only the run id, the processor and the elapsed seconds so before this, the moment a session ended the only surviving account of where a number came from was whatever the agent had transcribed into `brief.md`, and a reader was left holding the *name* of a citation with no way to read it. The file carries the objective and the processor as well as the result, because *what was it asked* is where a wrong figure usually starts — a right answer to a question about the wrong period reads perfectly — and it carries the `basis`, which is the half that matters: the result alone proves a number was transcribed faithfully and says nothing about whether it was ever true.
+
+That archive is also machine-readable, which closes the loop. An agent tags each number as it draws it —
+
+```javascript
+paper.text(x, y, '1,636').attr({ 'data-basis': 'trun_abc:totalRuntimeMinutes' });
+```
+
+— and the `VerifyFigures` tool reads the saved SVG and reconciles every tagged figure against the run it claims, returning only a verdict so nothing large reaches the agent's context. 
+
+
 ## Key Cloud Service Dependencies 
 | Google Cloud Service | Responsibility |
 |---|---|
@@ -293,19 +326,6 @@ The entire system is deployed on Google Cloud Run.
 ### Deployment
 PGS and its MCP server and SDK docs and web interface et.al is built as a custom ADK container using Google Cloud Build and deployed to Google Cloud Run. The path `/` brings up the ADK dev-ui console while `/studio` brings up the Polson custom web interface.
 
-## How it works
-
-### Workflows
-![](https://imgur.com/a7h7tJK.png)
-Worflows are well-defined steps and resources an agent uses for a particular graphic production. Polson 
-
-
-![](https://imgur.com/8BF7TSN.png)
-
-
-Polson Graphics Studio is an agentic co-creative studio for creating static and animated infographics for.
-
-PGS creates precise, production-ready vector infographics in .SVG format using cited data.
 
 ## What we learned
 Working on this project make made a committed believer in cognitive science principles like enactive cognition and stigmergic collaboration. As I worked I could read the traces agents This is the classic example of vertical stigmergic collaboration: workers leaving traces that builders then use to improve the tools and foundations the builders rely on.

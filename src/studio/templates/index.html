@@ -107,9 +107,16 @@
            record a host is already writing, which is why it is never blocked by a run in progress. #}
         <button type="submit" formaction="{{ base }}/observe" formnovalidate id="watchbtn">Watch</button>
 
+        {#- This belongs to Start and was rendered beside Watch on every host, which on an
+            observe-only one is a control that cannot do anything: `POST /observe` reads only
+            `project`, so the field was submitted with Watch and discarded. It also cannot be
+            *right* there — on the ADK runtime a killed run has no session to decline to resume, as
+            the state column above says. Inside the guard, with the button it modifies. -#}
+        {% if not observe_only %}
         <label class="inline" id="freshwrap" hidden>
           <input type="checkbox" name="fresh" value="1" id="fresh"> start a fresh session
         </label>
+        {% endif %}
         {% if active %}<span class="hint">A run is already going.</span>{% endif %}
       </div>
       <p class="hint" id="watchonly" hidden>
@@ -161,8 +168,17 @@
   {% endif %}
 
 
+  {#- **This is the server's list, not the browser's.** It comes from `Registry.runs`, which is one
+      in-memory dictionary per container — so every visitor sees the same entries, and on a public
+      host that includes runs and watches somebody else opened. Calling it "this session" invited
+      exactly the wrong reading: that it was yours, and that another machine should not have it.
+
+      Named for what the entries actually are, which differs by host: an observe-only runtime cannot
+      start anything, so all of them are watches. -#}
   {% if runs %}
-    <h2>This session</h2>
+    <h2>{{ 'Recently watched projects' if observe_only else 'Recent runs' }}</h2>
+    <p class="hint">Everyone using this host sees the same list — it is the server's, not this
+      browser's, and it is cleared when the container restarts.</p>
     <ul class="runs">
       {% for r in runs %}
         <li>

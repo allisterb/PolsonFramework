@@ -303,6 +303,10 @@ form#interject button, .question .actions button { margin-top: 0; white-space: n
 
 label.inline { display: inline-flex; align-items: center; gap: .35rem; margin: 0;
                font-size: .85rem; color: var(--dim); }
+/* The same trap #lightbox is spelled out for, and this one fell into it: a `display` here beats the
+   `hidden` attribute's own `display: none`, so `#freshwrap`, written `hidden` and revealed by JS,
+   was visible on every page that never ran that JS. Silent — a control that looks live and is not. */
+label.inline[hidden] { display: none; }
 label.inline input { width: auto; }
 #continuing { margin: .6rem 0 0; max-width: 60ch; }
 

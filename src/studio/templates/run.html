@@ -101,6 +101,12 @@
         <span class="ago" id="atwork-ago"></span>
       </p>
 
+      {#- A dropped connection and a slow agent look identical: both are an absence of new rows. This
+          is the only one of the two the page can actually detect, so it says so rather than sitting
+          silent. Measured: a proxy died three times in one afternoon and each time read as a hung
+          run. -#}
+      <p class="offline" id="offline" hidden></p>
+
       <details class="legend">
         <summary>what these mean</summary>
         <dl>
@@ -258,6 +264,33 @@
   let n = 0;
   const stream = new EventSource(`${base}/runs/${runId}/events`);
   stream.onmessage = () => {};
+
+  // **Silence has two causes and the page can only tell them apart here.** An agent thinking, or
+  // waiting out a `Research` task, looks exactly like a connection that has gone away — no new rows
+  // either way. `EventSource` reconnects on its own, so this is a status line rather than an error:
+  // it says what is happening and disappears when the stream comes back.
+  //
+  // It cannot fire after a normal finish, because `run.closed` calls `stream.close()` and a closed
+  // stream never retries.
+  const offline = document.getElementById('offline');
+  let everOpen = false;
+
+  stream.onopen = () => {
+    everOpen = true;
+    offline.hidden = true;
+  };
+
+  stream.onerror = () => {
+    // CONNECTING means the browser is retrying by itself; CLOSED means it has given up and only a
+    // reload will help. Saying which spares a reader from reloading a page that is about to recover.
+    offline.textContent = stream.readyState === EventSource.CLOSED
+      ? 'Connection lost, and the page has stopped retrying — reload to pick the run back up. ' +
+        'Nothing is missed: the stream replays from the beginning.'
+      : (everOpen
+          ? 'Connection lost — reconnecting. The run is unaffected; this is the page, not the agent.'
+          : 'Cannot reach the studio — retrying. If you are on a local proxy, it may need restarting.');
+    offline.hidden = false;
+  };
 
   for (const kind of Object.keys(LABEL).concat(['run.closed'])) {
     stream.addEventListener(kind, (e) => show(kind, JSON.parse(e.data)));

@@ -1235,6 +1235,32 @@ class MountPrefixTests(unittest.TestCase):
             self.assertTrue(url.startswith("${base}"),
                             f"{url} is missing the mount prefix and will 404 under /studio")
 
+    def test_a_dropped_stream_is_reported_rather_than_left_silent(self):
+        """**Silence has two causes and the page can only detect one of them.**
+
+        An agent thinking, or waiting out a `Research` task, looks exactly like a connection that has
+        gone away: no new rows either way. Measured over one afternoon, a local proxy died three
+        times and each time read as a hung run — and once the same silence really was a research
+        window. `EventSource` fires `onerror` on a drop, so the one the page *can* know about is
+        worth saying.
+        """
+        page = self._template("run.html")
+
+        self.assertIn("stream.onerror", page)
+        self.assertIn('id="offline"', page)
+        # CLOSED means the browser has given up and only a reload helps; CONNECTING means it is
+        # retrying by itself. Telling them apart spares a reader reloading a page about to recover.
+        self.assertIn("EventSource.CLOSED", page)
+
+    def test_the_disconnect_notice_cannot_fire_on_a_run_that_simply_ended(self):
+        """`run.closed` calls `stream.close()`, and a closed stream never retries — so a finished run
+        cannot raise a false alarm. If that close were ever removed, this notice would appear on
+        every completed run and mean nothing."""
+        page = self._template("run.html")
+        closed = page.split("if (kind === 'run.closed')")[1].split("return;")[0]
+
+        self.assertIn("stream.close();", closed)
+
     def test_the_run_page_goes_back_to_the_studio_root(self):
         self.assertIn('href="{{ base }}/"', self._template("run.html"))
 

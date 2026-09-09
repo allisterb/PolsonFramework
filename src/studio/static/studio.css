@@ -85,6 +85,11 @@ ul.runs li { padding: .35rem 0; border-bottom: 1px solid var(--line); display: f
 .run header h1 { margin: 0; }
 .back { font-size: .85rem; }
 
+/* The way out to the agent console. Pushed to the far end of the header rather than sitting after
+   the status, so it does not read as another fact about the run. */
+a.console { font-size: .85rem; margin-left: auto; white-space: nowrap; }
+p.console { max-width: 68ch; margin: .2rem 0 1rem; }
+
 /* The made pass on top — the render beside the script that produced it, which are the two halves of
    one thing — and the trace beneath at the page's full width.
 

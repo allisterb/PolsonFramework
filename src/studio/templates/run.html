@@ -14,6 +14,18 @@
     <h1>{{ run.project }}</h1>
     <span class="status {{ run.status }}" id="status">{{ run.status }}</span>
     <span class="hint">{{ run.workflow }} · started {{ run.started }}{% if run.resumed %} · continuing an earlier session{% endif %}</span>
+    {#- **`?app=` and not `?session=`, and the difference is worth stating.** ADK's console does
+        read a `session` query parameter, but only to pre-fill the session-list filter box — and
+        `isSessionFilteringEnabled()` returns false in the console bundle shipped with 2.8.0, so it
+        is inert. `?app=` is the deep link that works: it opens the console on this project's own
+        app, whose session list is the next thing on the page. The app name IS the project id —
+        `write_app` passes one as the other — so there is nothing to look up. -#}
+    {#- `console_app` and not `run.project`: a recovered archive has a run page and no app behind
+        it, so the deep link is offered only where there is something to open. -#}
+    {% if console_at and console_app %}
+      <a class="console" href="{{ console_at }}?app={{ console_app | urlencode }}"
+         title="This project's ADK app, in the agent console">in ADK console →</a>
+    {% endif %}
   </header>
 
   {% if run.error %}<p class="refused">{{ run.error }}</p>{% endif %}

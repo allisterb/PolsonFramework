@@ -8,6 +8,15 @@
   {#- The projects directory used to be printed here. It is a container path a visitor cannot act
       on — `/app/projects` tells a judge nothing and reads as debug output left in by mistake. -#}
 
+  {#- The agent console this studio is mounted beside. Absent on a local checkout, where there is
+      none — `console_at` is passed in by the host rather than assumed, so the link cannot point at a
+      404. Root-relative on purpose: the console is the studio's sibling, not a page inside it. -#}
+  {% if console_at %}
+    <p class="hint console">Driven by <a href="{{ console_at }}">Google ADK</a> — the agent, its
+      sessions, its tools and its artifacts are all live in ADK's own console, which is served from
+      this same container.</p>
+  {% endif %}
+
   {% if refused %}
     <p class="refused">{{ refused }}</p>
   {% endif %}

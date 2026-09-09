@@ -160,8 +160,27 @@ def base(request: Request) -> str:
     return request.scope.get("root_path", "")
 
 
+def console_app(apps: Path | None, project: str) -> str | None:
+    """The console app for `project`, or `None` when there is not one to link to.
+
+    A name rather than a boolean, so the template has nothing to reassemble. `Path(project).name`
+    is the containment: the value reaches this from a run's own project id, which is a directory
+    name — but this builds a filesystem path and then a URL from it, and a check written here costs
+    a line where a check omitted here is the kind that is noticed later.
+    """
+    if not apps or not project or Path(project).name != project:
+        return None
+    try:
+        return project if (apps / project).is_dir() else None
+    except OSError:
+        # A name the filesystem itself rejects is simply not an app. Refusing to render the whole
+        # run page over a link that would have been omitted anyway is the wrong trade.
+        return None
+
+
 def create_app(root: Path | None = None, registry: Registry | None = None,
-               observe_only: bool = False, create_at: str | None = None) -> FastAPI:
+               observe_only: bool = False, create_at: str | None = None,
+               console_at: str | None = None, console_apps: Path | None = None) -> FastAPI:
     """Builds the app. Takes its collaborators so a test can supply its own.
 
     `observe_only` is for a host that can read a record but not drive one — the ADK runtime, whose
@@ -169,12 +188,26 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
     what the page offers, not only what the routes accept**: a form that cannot work is worse than a
     missing one, because a visitor fills it in before finding out. `create_at` is where projects are
     made instead, and is shown in its place.
+
+    `console_at` is the agent console this studio is mounted beside, or `None` where there is none —
+    which is every local checkout, and is why it is passed in rather than assumed. **Root-relative,
+    not `base`-relative**: the studio lives at `/studio` and the console is its sibling on the parent
+    app, so prefixing it would point at a page inside the studio that does not exist.
+
+    `console_apps` is the directory whose child names are that console's app names, and it is what
+    makes the per-run deep link honest. **A project is not always an app.** `archive.restore` fetches
+    a project directory back from storage and writes no app package, so on the ADK runtime every
+    recovered project — which is most of what a visitor opens — has a run page and no app behind it.
+    Linking to `?app=<name>` regardless would send exactly those visitors to a console opening an app
+    that is not there. Only the directory knows, so the directory is asked.
     """
     app = FastAPI(title="Polson Studio", docs_url=None, redoc_url=None)
     app.state.root = Path(root or DEFAULT_ROOT).resolve()
     app.state.registry = registry or Registry()
     app.state.observe_only = observe_only
     app.state.create_at = create_at
+    app.state.console_at = console_at
+    app.state.console_apps = Path(console_apps).resolve() if console_apps else None
 
     # The stylesheet, and nothing else. Serving a directory of our own files needs no containment
     # check because no visitor-supplied name reaches it — unlike the artifact route below.
@@ -198,6 +231,7 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
             "form": {},
             "observe_only": app.state.observe_only,
             "create_at": app.state.create_at,
+            "console_at": app.state.console_at,
         })
 
     @app.post("/runs")
@@ -284,7 +318,13 @@ def create_app(root: Path | None = None, registry: Registry | None = None,
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     async def show(request: Request, run_id: str) -> Any:
         run = found(app.state.registry, run_id)
-        return TEMPLATES.TemplateResponse(request, "run.html", {"run": run.summary(), "base": base(request)})
+        summary = run.summary()
+        return TEMPLATES.TemplateResponse(request, "run.html", {
+            "run": summary,
+            "base": base(request),
+            "console_at": app.state.console_at,
+            "console_app": console_app(app.state.console_apps, summary["project"]),
+        })
     # endregion
 
     # region Stream
@@ -749,6 +789,7 @@ def refuse(request: Request, why: str, form: dict[str, str] | None = None) -> An
         "all_types": projects.ALL_TYPES,
         "observe_only": request.app.state.observe_only,
         "create_at": request.app.state.create_at,
+        "console_at": request.app.state.console_at,
         "refused": why,
         "form": form or {},
     }, status_code=409)

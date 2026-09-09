@@ -200,7 +200,12 @@ try:
         # `observe_only` is what stops the page *offering* what the middleware below refuses.
         # A form a visitor fills in and is then told cannot work is worse than no form: the
         # refusal arrives after the effort, and a director hit exactly that.
-        _studio = _create_studio(root=_Path(_projects), observe_only=True, create_at="/new")
+        #
+        # `console_at` is conditional on SERVE_CONSOLE for the same reason: with the console off,
+        # `web=False` above means /dev-ui/ is not routed at all, and a link to it would 404.
+        _studio = _create_studio(root=_Path(_projects), observe_only=True, create_at="/new",
+                                 console_at="/dev-ui/" if SERVE_CONSOLE else None,
+                                 console_apps=_Path(AGENTS_DIR))
 
         # **"Observe only" was a sentence in this comment and nothing enforced it.** The mounted app
         # still served `POST /projects`, `POST /runs`, `/answer` and `/say` — and its create path

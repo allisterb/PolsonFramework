@@ -16,7 +16,7 @@ To enable true computational creativtiy for agents in the visual arts fields req
 Polson Graphics Studio is an agentic co-creative graphic design firm for drawing and infographics for advertising, TV, and film. PGS provides a completely autonomous way to create raster drawings like storyboards, and professional-grade, vector-based infographics that uses cited, sourced facts only, and produces the same deliverables that clients expect from human art and graphic design projects. 
 
 ![](https://i.imgur.com/isBlYIm.png)
-![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/007_blocking_annotations.webp)
+![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/blocking2.webp)
 ![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/004_horror_shadows.webp)
 Polson Graphics Studio is built using the Polson framework, a framework for agentic co-creative visual art and graphic design collaboration, built on the principles of [Enactive Co-Creative AI](https://www.co-creativeai.com/).  The agentic orchestration and collaboration for the Polson Graphics Studio web application is built using Google ADK:
 ![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/shootaday1.png)
@@ -95,21 +95,6 @@ for (let i = 0; i < texts.length; i++) {
     }
   }
 }
-
-const tolerance = 4;
-const hits = [];
-for (let i = 0; i < labels.length; i++) {
-  for (let j = i + 1; j < labels.length; j++) {
-    const A = labels[i].b, B = labels[j].b;
-    const ox = Math.min(A.x2, B.x2) - Math.max(A.x, B.x);
-    const oy = Math.min(A.y2, B.y2) - Math.max(A.y, B.y);
-    if (ox > tolerance && oy > tolerance) {
-      hits.push(`"${labels[i].s.slice(0, 22)}" / "${labels[j].s.slice(0, 22)}" ${ox.toFixed(0)}x${oy.toFixed(0)}px`);
-    }
-  }
-}
-for (const h of hits) Stage.note('label collision: ' + h);
-Stage.check('no labels collide', hits.length === 0, `${hits.length} of ${labels.length} labels overlap`);
 ```
 Polson leverages for the visual arts the massive amounts of program generation and instruction data LLMs like Gemini 3.7 Flash are trained on by providing a typed SDK and constrained code execution environment for vector- and canvas-based procedural drawing and experimenting and analysis  .
 
@@ -144,7 +129,7 @@ each other’s creative intentions and enact or bring forth meaning in the envir
 
 * The agent remembers its experience, storing the interaction history and utilizing that to inform the creative trajectory of the interaction.” 
 
-from (Davis et al., 2024)
+(from [Davis et al., 2024](https://computationalcreativity.net/iccc24/papers/ICCC24_paper_58.pdf))
 
 ![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/drawing_partner.png)
 
@@ -152,11 +137,9 @@ from (Davis et al., 2024)
 
 
 ![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/chatlog3.png)
-Polson is an implementation of Enactive Co-creative AI and  provides
-an agentic co-creative environment for visual arts and graphics design using a code-based procedural drawing engine and Google Cloud based services for memory which mirrors the success of code-based environment for software development:
 
 
-### How Polson implements enactive co-creative AI
+### How Polson implements Enactive Co-Creative AI
 
 #### Atomic Mutability of Externalized State
 
@@ -178,7 +161,7 @@ Instead of acting "in the dark," a Polson agent operates in a closed loop:
 1. **Actuate:** Modify the JS script.
 2. **Execute:** Run the code through the interpreter.
 3. **Perceive:** Capture runtime errors, test results, or if script execution is successful, the rendered image.
-4. **Regulate:** Tweak the code based on direct environmental feedback before returning control to the user.
+4. **Regulate:** Tweak the code based on direct environmental and human feedback before returning control to the user.
 
 #### Semantic Drift Regulation
 
@@ -277,14 +260,14 @@ The circuit breaker is a module-level set of tripped `invocation_id`s rather tha
 
 ### Research using Gemini Document Processing and the Parallel Task API
 
-The extended mind thesis says cognitive load can be offloaded to the environment — so an agent should query the world rather than recall it. Two surfaces in `Polson.ExtendedMind` do that, and they answer different questions. **Gemini document processing** reads what the director actually supplied; the **Parallel Task API** commissions what nobody supplied, from the open web, with a citation attached. Both are exposed to the agent through the same Code Mode MCP server as the drawing engine, so a figure and the shape that carries it are produced by one program.
+The extended mind thesis says cognitive load can be offloaded to the environment — so an agent should query the world rather than recall it. Two surfaces in `Polson.ExtendedMind` do that, and they answer different questions. Gemini Document Processing reads what the director actually supplied; the [Parallel Task API](https://parallel.ai) commissions what nobody supplied, from the open web, with a citation attached. Both are exposed to the agent through the same Code Mode MCP server as the drawing engine, so a figure and the shape that carries it are produced by one program.
 
 The rule both are built around is the one this studio is least willing to break:
 
 > **Never invent a figure, and never draw a placeholder number.** A plausible-looking invented value is the worst thing this system can produce, because the layout puts a source line under it and the graphic then asserts something nobody checked. A chart that admits a missing figure is worth more than one that fabricates it.
 
 
-A commission usually arrives with material attached — a box-office table, a treatment, a shot list, a scanned report. The intake form takes that upload and writes it into the project's `documents/` folder before the agent research, with a basis for every field
+A commission may arrive with material attached — a box-office table, a treatment, a shot list, a scanned report. The intake form takes that upload and writes it into the project's `documents/` folder before the agent research, with a basis for every field
 
 An infographic that states a number needs a source for it. The `Research` MCP tool commissions one from the Parallel Task API: an `objective` in prose — read by a model, not a keyword lookup — and a JSON Schema whose field descriptions are the instructions. What comes back is the data plus a `basis` per field: the reasoning, the citations, and a confidence.
 
@@ -329,4 +312,3 @@ PGS and its MCP server and SDK docs and web interface et.al is built as a custom
 
 ## What we learned
 Working on this project make made a committed believer in cognitive science principles like enactive cognition and stigmergic collaboration. As I worked I could read the traces agents This is the classic example of vertical stigmergic collaboration: workers leaving traces that builders then use to improve the tools and foundations the builders rely on.
-

@@ -65,8 +65,10 @@ arithmetic written out, so a reader can check the step rather than trust it.
 
 **Where the brief is silent, decide — and write down that you did.** Most briefs are a sentence or
 two, and filling what they leave open is the work rather than a blocker. Ask the director where one
-is present and the choice is genuinely not yours, but never wait on an answer: take the defensible
-option, record it in the last column, and carry on.
+is present and the choice is genuinely not yours — and where your host gives you a way to ask, the
+wait is bounded and is not charged against your deadline, so a choice that shapes everything after
+it is worth one question. Never *depend* on an answer: if none comes, take the defensible option,
+record it in the last column, and carry on.
 
 That column is the point of this table. It is what lets a reader tell what the client asked for from
 what the studio decided, and it means a director who disagrees can correct one line instead of the

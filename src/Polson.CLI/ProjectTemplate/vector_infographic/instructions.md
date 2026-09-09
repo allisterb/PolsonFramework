@@ -486,8 +486,10 @@ half of the studio's judgment**, and a reader who disagrees can correct one line
 piece. `Stage.note(...)` each one.
 
 Ask the director too where a director is present and the question is one you genuinely cannot decide
-— but **never wait on an answer.** Choose the defensible option, record it, carry on; an unanswered
-question is a director who stepped away, not a reason to stop.
+— and where your host gives you a way to ask, the wait is bounded and is not charged against your
+deadline, so one such question is worth asking. But **never depend on an answer.** Choose the
+defensible option, record it, carry on; an unanswered question is a director who stepped away, not a
+reason to stop.
 
 **Third, look at what the director already gave you — before commissioning anything.**
 `Documents.list()` is free, offline and unmetered, and it is the only way to find out: nothing else

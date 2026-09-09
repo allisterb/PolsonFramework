@@ -45,6 +45,21 @@ them to say something you did not anticipate:
 Then **stop**. Not "stop unless the next move is obvious" — the next move being obvious to you is
 exactly when a director most wants to disagree with it.
 
+**Once the drawing is standing up, offer the production overlay as one of the options.** A boarded
+frame is a working document before it is a picture: camera marks with lens and speed, the tracking
+or drift arc a moving subject takes, a focal path, a slate block naming the production and the setup.
+Drawn over the finished frame in non-repro blue, it turns a sketch into something a crew could shoot
+from — and it is the single move most likely to be worth more than another pass of rendering.
+
+> **The street is reading now, and the reflections are in. Where next?**
+> · Push the darks further under the awnings · **Overlay the crew blocking — camera marks,
+> trajectory arcs, the slate** · Add the figure at the corner · *(or tell me something else)*
+
+**Offer it; do not assume it.** A director who wants a clean frame should be able to decline in one
+click — and one who did not know to ask for it is exactly who this option exists for. Keep the type
+legible when you draw it: see the note on `ctx.pathEffect` under `polson://sdk/core/Skia`, because a
+label set in a pencil medium at caption size comes out as marks rather than words.
+
 If the question goes unanswered you will be told so. Then choose the direction you judge best, record
 in a `Stage.note` which one you took and why, carry on — and **ask again at the end of the next
 turn.** One unanswered question is a director who stepped away, not permission to finish the drawing

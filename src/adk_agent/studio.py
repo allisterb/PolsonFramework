@@ -838,6 +838,18 @@ _role_clock: dict[tuple[str, str], _RoleClock] = {}
 _invocation_started: dict[str, float] = {}
 _tripped: set[str] = set()
 
+#: Seconds of director-waiting already credited back, per invocation. See `credit_wait`.
+_credited: dict[str, float] = {}
+
+#: How much waiting an invocation may have back before the clock starts running again. Five minutes
+#: is generous for a run where somebody is answering — a click is seconds — and bounds the drift
+#: between the breaker's anchor and the wall for a run where nobody is. `POLSON_MAX_CREDIT_SECONDS`
+#: overrides it; zero disables crediting entirely, which is what a fully unattended deployment wants.
+try:
+    MAX_CREDIT_SECONDS = max(0.0, float(os.environ.get("POLSON_MAX_CREDIT_SECONDS", "300")))
+except ValueError:
+    MAX_CREDIT_SECONDS = 300.0
+
 # --------------------------------------------------------------------------------------------
 # The token budget.
 # --------------------------------------------------------------------------------------------
@@ -905,8 +917,30 @@ def credit_wait(invocation: str | None, agent_name: str | None, seconds: float) 
     sandbox clock and `budget_status` disagree, the sandbox one reading higher. That is a real
     limitation rather than a rounding difference, and it is the reason `ask.TIMEOUT` is 120s and not
     the Antigravity path's 600.
+
+    **Capped in total, and the cap is the part that matters on this host.** Crediting moves the
+    breaker's anchor but not the wall, so an invocation that waits repeatedly drifts away from real
+    time — and Cloud Run kills a request at **3600s** whatever the breaker thinks. The `drawing`
+    workflow is where that bites: it asks at every turn boundary by design, its default deadline is
+    45 minutes, and 45 plus the 15-minute breaker grace already *is* the 3600s ceiling with nothing
+    to spare. Uncapped, a run nobody answers takes 120s of credit per turn and is killed mid-flight
+    by the platform instead of being halted cleanly by the breaker — the exact failure the breaker
+    exists to replace.
+
+    So the first `MAX_CREDIT_SECONDS` of waiting are free and the rest is charged. Past the ceiling
+    an agent that keeps asking into an empty room pays for it, which is the right incentive: the
+    tool is for the few decisions that shape everything after them, not for every turn.
     """
     if not invocation or seconds <= 0:
+        return False
+
+    # Clamped rather than refused: a wait that straddles the ceiling is credited up to it. Refusing
+    # the whole wait would make one long question cost more than two short ones summing to the same.
+    already = _credited.get(invocation, 0.0)
+    seconds = min(seconds, max(0.0, MAX_CREDIT_SECONDS - already))
+    if seconds <= 0:
+        _TURN_LOG.warning("polson budget: %s has spent its %.0fs of free waiting; the clock runs",
+                          invocation, MAX_CREDIT_SECONDS)
         return False
 
     credited = False
@@ -919,7 +953,11 @@ def credit_wait(invocation: str | None, agent_name: str | None, seconds: float) 
         credited = True
 
     if credited:
-        _TURN_LOG.warning("polson budget: %.0fs of waiting credited back to %s", seconds, invocation)
+        # Counted only when it was actually applied, so an invocation with no clock yet — a tool
+        # called before the first model call — does not silently burn its allowance on nothing.
+        _credited[invocation] = already + seconds
+        _TURN_LOG.warning("polson budget: %.0fs of waiting credited back to %s (%.0fs of %.0fs used)",
+                          seconds, invocation, _credited[invocation], MAX_CREDIT_SECONDS)
     return credited
 
 
@@ -1157,7 +1195,7 @@ def _prune_role_clocks(now: float) -> None:
     There is no invocation-end hook to clean up on, so this is the only thing that bounds them.
     """
     if max(len(_role_clock), len(_invocation_started), len(_invocation_input),
-           len(_invocation_cached)) < 64:
+           len(_invocation_cached), len(_credited)) < 64:
         return
     stale = {
         key for key, clock in _role_clock.items() if now - clock.started > _ROLE_CLOCK_TTL
@@ -1171,6 +1209,7 @@ def _prune_role_clocks(now: float) -> None:
             _invocation_input.pop(invocation, None)
             _invocation_cached.pop(invocation, None)
             _token_warned.pop(invocation, None)
+            _credited.pop(invocation, None)
 
 
 def _trip_breaker(callback_context, elapsed: float, cap: float, limit: str = "time"):

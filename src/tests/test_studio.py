@@ -766,7 +766,7 @@ class ContinuationRouteTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def test_the_page_says_which_projects_have_a_session(self):
+    def test_the_page_says_which_projects_have_run_before(self):
         project_dir(self.root, "started", conversation="conv-1")
         project_dir(self.root, "untouched")
 
@@ -774,8 +774,38 @@ class ContinuationRouteTests(unittest.TestCase):
         self.assertEqual(found, {"started": True, "untouched": False})
 
         page = self.client.get("/")
-        self.assertIn("has a session", page.text)
+        self.assertIn("has run before", page.text)
         self.assertIn("not started", page.text)
+
+    def test_a_project_that_ran_on_a_runtime_with_no_conversation_id_still_says_so(self):
+        """**The bug this fixes, seen on the deployed studio.**
+
+        `conversationId` is written by the Antigravity orchestrator and by nothing else, so on the
+        ADK runtime it is never populated. Three projects that had run, drawn, and been killed by a
+        container restart sat in the list reading "not started" while their artifacts and all three
+        event logs were in the bucket — the page contradicting the record it was serving.
+        """
+        ran = project_dir(self.root, "ran")
+        (ran / "events").mkdir(exist_ok=True)
+        (ran / "events" / "agent.jsonl").write_text(
+            '{"ts":"2026-09-09T00:00:00.000Z","type":"run.begin"}\n', encoding="utf-8")
+
+        found = {p["name"]: p["session"] for p in app_mod.discover(self.root)}
+        self.assertTrue(found["ran"], "the record says it ran; the page must not say otherwise")
+
+    def test_a_generated_project_that_never_ran_is_not_mistaken_for_one_that_did(self):
+        """The generator creates `events/` up front, so its presence proves nothing.
+
+        A zero-byte file is treated the same way — that is what an interrupted create leaves behind,
+        and calling it a run would put the error back in the other direction.
+        """
+        fresh = project_dir(self.root, "fresh")
+        (fresh / "events").mkdir(exist_ok=True)
+
+        self.assertFalse(app_mod.has_record(fresh), "an empty events directory is not a run")
+
+        (fresh / "events" / "agent.jsonl").write_text("", encoding="utf-8")
+        self.assertFalse(app_mod.has_record(fresh), "a zero-byte log is not a run")
 
     def test_the_refusal_reaches_the_page_rather_than_a_traceback(self):
         project_dir(self.root, "started", conversation="conv-1")

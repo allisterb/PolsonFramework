@@ -224,7 +224,19 @@ class AskChannelTests(unittest.IsolatedAsyncioTestCase):
 
 
 class CreditTests(unittest.TestCase):
-    """That waiting is not billed as working."""
+    """That waiting is not billed as working — and that the giving back is bounded."""
+
+    def setUp(self) -> None:
+        import studio
+
+        studio._credited.pop("inv1", None)
+
+    def tearDown(self) -> None:
+        import studio
+
+        studio._invocation_started.pop("inv1", None)
+        studio._role_clock.pop(("inv1", "polson"), None)
+        studio._credited.pop("inv1", None)
 
     def test_the_wait_is_given_back_to_both_clocks(self):
         """**Otherwise `ask_director` is a tool whose cost the agent cannot control**, which teaches
@@ -234,13 +246,10 @@ class CreditTests(unittest.TestCase):
 
         studio._invocation_started["inv1"] = 1000.0
         studio._role_clock[("inv1", "polson")] = studio._RoleClock(1000.0, set())
-        try:
-            self.assertTrue(studio.credit_wait("inv1", "polson", 90.0))
-            self.assertEqual(studio._invocation_started["inv1"], 1090.0)
-            self.assertEqual(studio._role_clock[("inv1", "polson")].started, 1090.0)
-        finally:
-            studio._invocation_started.pop("inv1", None)
-            studio._role_clock.pop(("inv1", "polson"), None)
+
+        self.assertTrue(studio.credit_wait("inv1", "polson", 90.0))
+        self.assertEqual(studio._invocation_started["inv1"], 1090.0)
+        self.assertEqual(studio._role_clock[("inv1", "polson")].started, 1090.0)
 
     def test_nothing_to_credit_is_not_an_error(self):
         import studio
@@ -248,6 +257,66 @@ class CreditTests(unittest.TestCase):
         self.assertFalse(studio.credit_wait(None, "polson", 90.0))
         self.assertFalse(studio.credit_wait("nosuch", "polson", 90.0))
         self.assertFalse(studio.credit_wait("inv1", "polson", 0.0))
+
+    def test_the_credit_runs_out(self):
+        """**Cloud Run kills a request at 3600s whatever the breaker thinks.**
+
+        Crediting moves the breaker's anchor and not the wall, so an invocation that waits over and
+        over drifts away from real time. `drawing` is where that bites — it asks at every turn by
+        design, and its 45-minute deadline plus the 15-minute grace already *is* the 3600s ceiling.
+        Uncapped, a run nobody answers is killed mid-flight by the platform rather than halted
+        cleanly by the breaker.
+        """
+        import studio
+
+        studio._invocation_started["inv1"] = 1000.0
+        for _ in range(int(studio.MAX_CREDIT_SECONDS // 100)):
+            self.assertTrue(studio.credit_wait("inv1", "polson", 100.0))
+
+        self.assertFalse(studio.credit_wait("inv1", "polson", 100.0), "past the ceiling, it is not")
+        self.assertEqual(studio._invocation_started["inv1"], 1000.0 + studio.MAX_CREDIT_SECONDS)
+
+    def test_a_wait_straddling_the_ceiling_is_clamped_not_refused(self):
+        """Otherwise one long question costs more than two short ones summing to the same."""
+        import studio
+
+        studio._invocation_started["inv1"] = 1000.0
+        studio._credited["inv1"] = studio.MAX_CREDIT_SECONDS - 20.0
+
+        self.assertTrue(studio.credit_wait("inv1", "polson", 90.0))
+        self.assertEqual(studio._invocation_started["inv1"], 1020.0, "20 credited, 70 charged")
+        self.assertEqual(studio._credited["inv1"], studio.MAX_CREDIT_SECONDS)
+
+    def test_an_uncredited_wait_does_not_burn_the_allowance(self):
+        """A tool called before the first model call has no clock to move.
+
+        Counting it anyway would spend the ceiling on nothing, and the run would then be charged for
+        waits it was never given back.
+        """
+        import studio
+
+        self.assertFalse(studio.credit_wait("inv1", "polson", 120.0))
+        self.assertEqual(studio._credited.get("inv1", 0.0), 0.0)
+
+    def test_the_counter_is_pruned_with_the_rest(self):
+        """There is no invocation-end hook, so the size guard is the only thing bounding these."""
+        import studio
+
+        studio._invocation_started["inv1"] = 1000.0
+        studio.credit_wait("inv1", "polson", 60.0)
+        self.assertIn("inv1", studio._credited)
+
+        # Far enough past the TTL that the entry is stale, and over the 64-entry size guard. The
+        # margin is generous on purpose: crediting has just moved this invocation's own anchor
+        # forward, so measuring from where it started is off by exactly the credit.
+        filler = {f"f{i}": 1000.0 for i in range(70)}
+        studio._invocation_started.update(filler)
+        try:
+            studio._prune_role_clocks(1000.0 + studio._ROLE_CLOCK_TTL + 3600)
+            self.assertNotIn("inv1", studio._credited)
+        finally:
+            for key in filler:
+                studio._invocation_started.pop(key, None)
 
 
 class AskWiringTests(unittest.TestCase):

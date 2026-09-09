@@ -646,8 +646,30 @@ def run_state(run: Run) -> str:
     return "unknown"
 
 
+def has_record(project: Path) -> bool:
+    """Whether anything has ever run in this project, judged by its own event record.
+
+    **The one signal that works on both runtimes.** `conversationId` in `project.json` is written by
+    the Antigravity orchestrator and by nothing else, so asking it on an ADK project always answers
+    no — see the note in `discover`. A generated project has an events directory and no files in it;
+    the first thing any run writes, on either path, is a line into one of them.
+
+    Deliberately checks for a non-empty *file* rather than for the directory: the generator creates
+    `events/` up front, so its presence says only that the project was made properly. A zero-byte
+    file is treated as no record for the same reason — it is what an interrupted create leaves.
+    """
+    try:
+        return any(path.stat().st_size > 0 for path in (project / "events").glob("*.jsonl"))
+    except OSError:
+        # A project directory that cannot be read is a worse problem than this answer, and
+        # `discover` reports it separately from the row's own `why`.
+        return False
+
+
 def discover(root: Path) -> list[dict[str, str]]:
     """Every runnable project under `root`, shallowly.
+
+    See `has_record` for why a project's state is read off the record rather than off `project.json`.
 
     A project is a directory with a `project.json`. Unreadable ones are listed with the reason rather
     than hidden, because a project that cannot be run is exactly what someone needs to see.
@@ -662,7 +684,18 @@ def discover(root: Path) -> list[dict[str, str]]:
 
             # A project that has run before will *continue* rather than start over, which changes
             # what a useful opening prompt is. The form has to say so before the turn is spent.
-            entry["session"] = bool(data.get("conversationId"))
+            #
+            # **`conversationId` alone answered this for the wrong runtime.** It is written by
+            # `orchestrator/project.py` and by nothing else — `ProjectGenerator` sets it to null for
+            # an orchestratable project and omits it entirely otherwise — so on the ADK runtime it is
+            # never populated and every project read "not started" for ever, including ones that had
+            # run, drawn, and been killed by a container restart mid-flight. Three of them were
+            # sitting on the deployed studio saying they had never begun while their artifacts and
+            # all three event logs were in the bucket.
+            #
+            # The record answers it for both runtimes: a generated project has an **empty** events
+            # directory, and the first thing any run writes is a line into one of those files.
+            entry["session"] = bool(data.get("conversationId")) or has_record(manifest.parent)
 
             # Runnability is decided by the same things `project.load` decides it by, and not by the
             # `profile` label, which since every Antigravity project carries a tool policy records

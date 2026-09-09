@@ -114,7 +114,7 @@ setting the container cannot write.
 
 **The Python half reads environment variables directly** and never opens that file:
 `POLSON_MODEL`, `POLSON_BUDGET_TOKENS`, `POLSON_BUDGET_RAW_TOKENS`, `ADK_MAX_LLM_CALLS`,
-`POLSON_MAX_RUNS_PER_DAY`, `POLSON_ALLOW_ORIGINS`, `POLSON_SEED_*`, `POLSON_ASK_SECONDS`.
+`POLSON_MAX_RUNS_PER_DAY`, `POLSON_ALLOW_ORIGINS`, `POLSON_SEED_*`, `POLSON_ASK_SECONDS`, `POLSON_MAX_CREDIT_SECONDS`.
 
 ### Changing a value
 
@@ -141,6 +141,14 @@ Worth setting deliberately rather than leaving at defaults:
   `Stage.elapsedMinutes`, which the .NET side anchors on its session start. Raise it for a demo
   somebody is actually watching; leave it low for an unattended run, where the only effect of a long
   timeout is a run that sits still.
+- **`POLSON_MAX_CREDIT_SECONDS`** — how much director-waiting an invocation may have back in total
+  before its clock starts running again, default 300. **The ceiling exists because crediting moves
+  the breaker's anchor and not the wall, and Cloud Run kills a request at 3600s whatever the breaker
+  thinks.** Uncapped, a workflow that asks at every turn into an empty room drifts far enough that
+  the platform kills the run mid-flight rather than the breaker halting it cleanly — the exact
+  failure the breaker exists to replace. `drawing` is the case to watch: 45-minute default plus the
+  15-minute grace already *is* the 3600s ceiling. Set it to `0` for a fully unattended deployment,
+  where nobody will answer and every wait is real time spent.
 
 ---
 

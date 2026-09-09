@@ -82,7 +82,10 @@
                          {{ 'checked' if loop.first and not p.why }}></td>
               <td><code>{{ p.name }}</code></td>
               <td>{{ p.workflow }}</td>
-              <td>{{ 'has a session' if p.session else 'not started' }}</td>
+              {# "has run before", not "has a session". On the ADK runtime a killed run cannot be
+                 resumed at all, so promising a session would be the more misleading of the two —
+                 what the record actually establishes is that work happened here. #}
+              <td>{{ 'has run before' if p.session else 'not started' }}</td>
               <td class="why">{% if not observe_only %}{{ p.why }}{% endif %}</td>
             </tr>
           {% endfor %}

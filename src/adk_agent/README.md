@@ -209,12 +209,20 @@ the event and holding the future**; nothing in the browser changed.
 > holding it is four cards in front of one director. The Facilitator holds the brief and knows what
 > is genuinely unsettled; a role that wants a ruling transfers to it.
 
-> **Waiting is credited back.** `studio.credit_wait` pushes `_invocation_started` and the role clock
-> forward by the wait, so a director thinking for ninety seconds does not spend ninety seconds of the
-> agent's deadline — otherwise asking is a tool with a cost the agent cannot control, which teaches
+> **Waiting is credited back, up to a ceiling.** `studio.credit_wait` pushes `_invocation_started`
+> and the role clock forward by the wait, so a director thinking for ninety seconds does not spend
+> ninety seconds of the agent's deadline — otherwise asking is a tool with a cost the agent cannot control, which teaches
 > it to guess. It cannot reach `Stage.elapsedMinutes`, which the .NET side anchors on its own
 > `StartedUtc`, so the sandbox clock reads higher than `budget_status` on a run that asked. That is
 > the reason the timeout is 120s rather than the Antigravity path's 600.
+>
+> **The ceiling is `MAX_CREDIT_SECONDS`, 300 by default, and it guards a platform kill rather than a
+> budget.** Crediting moves the breaker's anchor and not the wall, so an invocation that waits over
+> and over drifts away from real time — and Cloud Run ends a request at 3600s whatever the breaker
+> thinks. `drawing` is the case to watch: it asks at every turn boundary by design, and its
+> 45-minute default plus the 15-minute grace already *is* that ceiling. Past the cap the clock runs
+> again, which is the right incentive: `ask_director` is for the few decisions that shape everything
+> after them, not for every turn.
 
 Two ADK details worth knowing, both of which fail *quietly* if you get them wrong:
 

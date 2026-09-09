@@ -1321,6 +1321,11 @@ def _make_before_model(budget: _RoleBudget | None, cap: float | None = None,
                 _TURN_LOG.warning(
                     "budget %s/%s %.0f%% of token cap (%.0f of %.0f input tokens)",
                     callback_context.agent_name, invocation, share * 100, spent, token_cap)
+                # And to the *page*. The container log and the agent's own context were the only
+                # two places this went, so a director watching a run spend its allowance saw
+                # nothing until it stopped.
+                transcript.note_budget(invocation, limit="tokens", share=share,
+                                       spent=spent, cap=token_cap)
                 llm_request.contents.append(types.Content(role="user", parts=[types.Part(
                     text=(f"[studio runtime] You have used {share * 100:.0f}% of this run's input-token "
                           f"budget ({spent:,.0f} of {token_cap:,.0f}). Input is the whole conversation "
@@ -1360,6 +1365,10 @@ def _make_before_model(budget: _RoleBudget | None, cap: float | None = None,
             budget.seconds / 60,
             budget.hand_off_to or "nobody",
         )
+        # The clock's warning reaches the page for the same reason the token one does: a director is
+        # the only party who can act on "this role is running out of time", and they were not told.
+        transcript.note_budget(callback_context.invocation_id, limit="time", share=share,
+                               spent=elapsed / 60, cap=budget.seconds / 60)
         llm_request.contents.append(
             types.Content(
                 role="user",

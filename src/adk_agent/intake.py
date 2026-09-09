@@ -23,11 +23,13 @@ cannot escape the directory it is written to.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import os
 import time
 import logging
 import re
 import shutil
+import sys
 import tempfile
 from collections import deque
 from html import escape
@@ -310,6 +312,28 @@ STARTERS: tuple[dict[str, str], ...] = (
                  "me before you commit to the expression.",
     },
 )
+
+
+def archived_names() -> list[str]:
+    """Projects already in the archive, or empty when there is no archive or it cannot be read.
+
+    **Reached through `sys.modules` and never imported by a bare name.** The web layer is loaded by
+    `main.py` under the alias `polson_studio`, because two modules in this tree are called `studio`;
+    `import studio.archive` from here would find this package's agent factory and fail. Empty on any
+    failure, deliberately: this guards against overwriting an archive, and a guard that cannot read
+    the archive must not also stop a visitor creating a project.
+    """
+    module = sys.modules.get("polson_studio.archive")
+    if module is None:
+        try:
+            module = importlib.import_module("polson_studio.archive")
+        except Exception:                                        # noqa: BLE001 - no archive here
+            return []
+    try:
+        return module.names()
+    except Exception as exc:                                     # noqa: BLE001 - never fatal
+        _logger.warning("polson intake: archive not listed (%s)", exc)
+        return []
 
 
 def safe_filename(raw: str | None) -> str:
@@ -713,6 +737,19 @@ def mount(app: FastAPI) -> None:
                 f"{name!r} cannot be a project name — start with a letter, then letters, digits or "
                 f"underscores, up to {MAX_NAME} characters. No dashes: the name becomes an ADK app "
                 "name, which must be a Python identifier.")
+
+        # **A name free on this container is not necessarily a name free in the archive.**
+        # The CLI refuses a non-empty project directory, which covers a collision with a project
+        # still on disk. It cannot see the archive — and after a restart that is where every earlier
+        # project lives. `mirror` keys its prefix on the project's directory name, so a second run
+        # under an archived name sweeps into the first one's prefix and overwrites its event logs,
+        # its brief and any artifact sharing a filename: the two runs interleave and neither is
+        # readable afterwards. Easy to reach by accident, because the starters offer fixed names.
+        if name in archived_names():
+            raise HTTPException(409, (
+                f"There is already an archived project called {name!r}, and a new run under that "
+                f"name would be written over it. Choose another name — or open the archived one "
+                f"from the studio, where its renders, scripts and documents are kept."))
 
         if workflow not in WORKFLOWS:
             raise HTTPException(400, f"{workflow!r} is not offered here. Choose: {', '.join(WORKFLOWS)}.")

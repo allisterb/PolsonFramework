@@ -917,6 +917,32 @@ Applies a medium: its colour or grain, its width and cap, its path texture and i
 preset leaves null is **cleared** rather than left standing, so switching media never inherits the
 previous one's texture. Wrap it in `save()`/`restore()` to scope a medium to one passage.
 
+> [!IMPORTANT]
+> **A medium applies to *type* as well as to marks, and at label sizes that makes it illegible.**
+> `useBrush` sets `ctx.pathEffect`, and `fillText` runs every glyph outline through it — so a 13px
+> annotation set after `Skia.Brush.pencil(...)` comes back as marks rather than as words.
+>
+> **Measured on a live run.** A storyboard's camera notes were written correctly —
+> `CAM A: 24mm LOW TRACKING`, `SETUP: WET DOWN / NIGHT EXT.` — and rendered as unreadable squiggles;
+> the shopfront lettering lost the D from `DINER`. Nothing was wrong with the text, and a reader
+> seeing the picture would reasonably conclude the studio had invented the labels.
+>
+> **`save()`/`restore()` does not help if the brush was applied first**, because it restores *to* the
+> brushed state. Clear the effect where you set type:
+>
+> ```javascript
+> ctx.save();
+> ctx.pathEffect = null;          // and maskFilter = null for a soft-edged medium
+> ctx.font = '700 13px sans-serif';
+> ctx.fillStyle = '#1c4a85';
+> ctx.fillText('CAM A: 24mm LOW TRACKING', x, y);
+> ctx.restore();
+> ```
+>
+> Lettering *in* the medium is a legitimate choice — a hand-lettered slate belongs on a storyboard —
+> but it is a choice rather than a default, and it needs size to survive: 24px and up. Anything at
+> caption size wants a clean path.
+
 ```js
 ctx.save();
 ctx.useBrush(Skia.Brush.pencil());     // construction lines

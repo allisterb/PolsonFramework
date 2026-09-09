@@ -358,6 +358,69 @@ def _app():
     return app
 
 
+class ArchivedNameTests(unittest.TestCase):
+    """That a new run cannot be written over an archived one.
+
+    **The CLI's own check does not reach this.** It refuses a non-empty project *directory*, which
+    covers a collision with a project still on this container — but after a restart every earlier
+    project lives only in the archive, and the directory is gone. `mirror` keys its prefix on the
+    project's directory name, so a second run under an archived name sweeps into the first one's
+    prefix: same `events/agent.jsonl`, same `brief.md`, same `artwork.js`. The two runs interleave
+    and neither is readable afterwards.
+
+    Easy to reach by accident, because the starters offer fixed names — clicking *Wet street, night*
+    twice either side of a restart is enough.
+    """
+
+    def setUp(self) -> None:
+        self.client = TestClient(_app())
+
+    def make(self, name):
+        return self.client.post("/projects", data={
+            "name": name, "brief": "draw a street", "workflow": "drawing"})
+
+    def test_a_name_already_in_the_archive_is_refused(self):
+        with mock.patch.object(intake, "archived_names", return_value=["nightstreet", "earnout1"]):
+            answer = self.make("nightstreet")
+
+        self.assertEqual(409, answer.status_code, "409: the request is fine, the name is taken")
+        self.assertIn("archived project", answer.text)
+        self.assertIn("nightstreet", answer.text)
+
+    def test_a_free_name_is_not_refused_by_this_check(self):
+        """It must fail *later*, on something else — never here."""
+        with mock.patch.object(intake, "archived_names", return_value=["earnout1"]):
+            answer = self.make("brandnew")
+
+        self.assertNotEqual(409, answer.status_code)
+
+    def test_an_unreadable_archive_does_not_block_creation(self):
+        """A guard that cannot read the archive must not also stop a visitor working.
+
+        Losing the check degrades to the behaviour that existed before it; refusing every name
+        because a bucket is unreachable takes the whole form down.
+        """
+        self.assertEqual([], intake.archived_names())
+
+    def test_the_archive_is_reached_by_alias_never_by_a_bare_import(self):
+        """**Two modules in this tree are called `studio`.**
+
+        `main.py` loads the web layer as `polson_studio` for exactly that reason, and a bare
+        `import studio.archive` from here finds this package's agent factory instead. The same
+        mistake took the whole intake form down at import time once already.
+        """
+        import ast, inspect
+
+        tree = ast.parse(inspect.getsource(intake.archived_names).lstrip())
+        # The docstring names the mistake it is avoiding, so a plain substring search finds
+        # "import studio" in the prose and fails a passing function. Read the code instead.
+        code = ast.dump(ast.parse(ast.unparse(
+            [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)][0].body[1:])))
+
+        self.assertIn("polson_studio.archive", code)
+        self.assertNotIn("'studio'", code, "a bare `studio` import finds the agent factory")
+
+
 class StarterTests(unittest.TestCase):
     """The one-click commissions on the form.
 

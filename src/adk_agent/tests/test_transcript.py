@@ -118,6 +118,80 @@ class RunBeginTests(unittest.TestCase):
 
 
 
+class BudgetWarningTests(unittest.TestCase):
+    """That a director is told the run is running out, before it stops.
+
+    **The gap this closes.** The breaker's 75% and 90% warnings went to `_TURN_LOG` — the container
+    log, reachable with `gcloud logging read` and nowhere else — and into the agent's own `contents`.
+    Neither is the page. On `nightstreet2` the two warnings landed twelve and four minutes before the
+    halt, and the one person who could have said "wrap up now" saw a trace that mentioned neither,
+    then a run that stopped.
+
+    The run page has carried a `budget` label since Milestone 6 and nothing on this runtime ever
+    produced one.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-transcript-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        transcript_mod._budget.clear()
+        self.addCleanup(transcript_mod._budget.clear)
+        self.plugin = transcript_mod.make_plugin(self.root)
+        if self.plugin is None:
+            self.skipTest("google.adk or orchestrator.events is not importable here")
+
+    def turn(self):
+        """One model turn that said something, which is when usage and budget are written."""
+        run(self.plugin.after_model_callback(
+            callback_context=context(), llm_response=SimpleNamespace(
+                content=message("drawing"), usage_metadata=None, model_version="gemini-3.7-flash",
+                partial=False, turn_complete=True)))
+
+    def written(self) -> list[dict]:
+        return [e for e in events(self.root, "agent.jsonl") if e["type"] == "budget"]
+
+    def test_a_crossed_threshold_reaches_the_record(self):
+        transcript_mod.note_budget("inv-1", limit="tokens", share=0.9008,
+                                   spent=1_801_505, cap=2_000_000)
+        self.turn()
+
+        self.assertEqual(1, len(self.written()))
+        note = self.written()[0]
+        self.assertEqual("tokens", note["limit"])
+        self.assertEqual(0.901, note["share"])
+        self.assertEqual(1_801_505, note["spent"])
+        self.assertEqual(2_000_000, note["cap"])
+
+    def test_the_time_budget_warns_the_same_way(self):
+        transcript_mod.note_budget("inv-1", limit="time", share=0.75, spent=26.3, cap=35)
+        self.turn()
+
+        self.assertEqual("time", self.written()[0]["limit"])
+
+    def test_a_warning_is_written_once_rather_than_on_every_later_turn(self):
+        """It is a threshold crossing, not a running state — repeating it is noise in a trace whose
+        whole value is that a reader can scan it."""
+        transcript_mod.note_budget("inv-1", limit="tokens", share=0.75, spent=1_500_000, cap=2_000_000)
+        self.turn()
+        self.turn()
+
+        self.assertEqual(1, len(self.written()))
+
+    def test_both_thresholds_survive_when_one_turn_crosses_both(self):
+        transcript_mod.note_budget("inv-1", limit="tokens", share=0.75, spent=1_500_000, cap=2_000_000)
+        transcript_mod.note_budget("inv-1", limit="tokens", share=0.90, spent=1_800_000, cap=2_000_000)
+        self.turn()
+
+        self.assertEqual([0.75, 0.9], [n["share"] for n in self.written()])
+
+    def test_a_note_for_another_invocation_is_not_taken(self):
+        transcript_mod.note_budget("inv-2", limit="tokens", share=0.9, spent=1, cap=2)
+        self.turn()
+
+        self.assertEqual([], self.written())
+        self.assertIn("inv-2", transcript_mod._budget)
+
+
 class RunEndTests(unittest.TestCase):
     """That the record says a run is over, and which of the three ways it ended.
 

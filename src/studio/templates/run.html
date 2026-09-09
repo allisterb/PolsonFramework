@@ -962,6 +962,16 @@
     if (kind === 'run.error') return (e.error || '') + (e.traceback ? '\n\n' + e.traceback : '');
     if (kind === 'stage.begin' || kind === 'stage.end') return e.stage || '';
     if (kind === 'question.open') return e.text || '';
+    // **The row that says the run is going to stop.** Spelt out rather than left as numbers,
+    // because a director reading `spent 1801505 cap 2000000` has to do arithmetic to learn the one
+    // thing that matters — and on the run this was written for, the two warnings arrived twelve
+    // and four minutes before the halt with nobody able to see either of them.
+    if (kind === 'budget') {
+      const pct = Math.round((e.share || 0) * 100);
+      return e.limit === 'time'
+        ? `${pct}% of the time budget — ${(+e.spent).toFixed(1)} of ${(+e.cap).toFixed(0)} min`
+        : `${pct}% of the token budget — ${(+e.spent).toLocaleString()} of ${(+e.cap).toLocaleString()}`;
+    }
     if (kind === 'stream.lag' || kind === 'stream.truncated') return `${e.dropped} not shown`;
     // The row that has to earn its place: what follows it is minutes of nothing, and a reader who
     // does not know that is watching a run they think has died. The server already measured the

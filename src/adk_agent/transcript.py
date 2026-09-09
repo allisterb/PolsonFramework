@@ -67,6 +67,40 @@ HALT_MEMORY = 64
 #: the way the dependency already runs, so neither file needs a lazy import to reach the other.
 _halted: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
+#: Budget thresholds crossed and not yet written, keyed by invocation id. Same courier as `_halted`.
+_budget: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+
+
+def note_budget(invocation: str, *, limit: str, share: float, spent: float, cap: float) -> None:
+    """Records that a budget threshold was crossed, for the next turn's record to carry.
+
+    **The director was told nothing, and that is what this fixes.** The breaker's 75% and 90%
+    warnings went to two places and neither was the page: `_TURN_LOG`, which is the container's log
+    and reachable only with `gcloud logging read`, and an appended message in `contents`, which is
+    the *agent*. So a run could spend its whole allowance with the one person able to intervene
+    watching a trace that said nothing about it — and then stop, which reads as a crash.
+
+    Measured on `nightstreet2`: 75% crossed at 11:10:35 and 90% at 11:14:46, four minutes apart, and
+    the halt four minutes after that. Twelve minutes of notice existed and none of it was shown.
+
+    The run page has had a `budget` label and a handler for it since Milestone 6 — the vocabulary was
+    there and nothing on this runtime ever produced one.
+    """
+    try:
+        if not invocation:
+            return
+        _budget.setdefault(invocation, []).append(
+            {"limit": limit, "share": round(share, 3), "spent": int(spent), "cap": int(cap)})
+        while len(_budget) > HALT_MEMORY:
+            _budget.popitem(last=False)
+    except Exception as exc:                                    # pragma: no cover - defensive
+        _logger.debug("polson transcript: budget note not recorded (%s)", exc)
+
+
+def _take_budget(invocation: str) -> list[dict[str, Any]]:
+    """Everything queued for `invocation`, removed. Empty when there is nothing."""
+    return _budget.pop(invocation, []) if invocation else []
+
 
 def note_halt(invocation: str, *, limit: str, used: float, cap: float) -> None:
     """Records that the circuit breaker halted `invocation`, for its `run.end` to report.
@@ -293,6 +327,12 @@ def make_plugin(project_dir: str | Path):
 
             # Attached once per turn and only when the turn said something, so an empty response
             # does not appear as a cost with nothing to show for it.
+            # Before the usage line, so a reader scanning the trace meets the warning and then the
+            # number it is about. Written here rather than by the breaker itself because
+            # `agent.jsonl` has one writer — see the module docstring — and this is it.
+            for note in _take_budget(getattr(callback_context, "invocation_id", "")):
+                self.agent.append("budget", at=at, **common, **note)
+
             usage = getattr(llm_response, "usage_metadata", None)
             if usage is not None and wrote:
                 self.agent.append(

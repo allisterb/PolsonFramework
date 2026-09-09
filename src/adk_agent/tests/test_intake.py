@@ -558,10 +558,23 @@ class StarterTests(unittest.TestCase):
         like it, or a visitor exploring the starters starts five.
         """
         page = TestClient(_app()).get("/new").text
-        chips = page.split('class="chips"')[1].split("</div>")[0]
+        chips = "".join(block.split("</div>")[0] for block in page.split('class="chips"')[1:])
 
         self.assertEqual(chips.count('type="button"'), len(intake.STARTERS))
         self.assertNotIn("submit", chips)
+
+    def test_the_starters_are_grouped_by_workflow(self):
+        """Thirteen chips in one row reads as a wall, and hides the distinction that matters most:
+        one of these sets makes a graphic on its own, the other needs somebody at the keyboard.
+        """
+        page = TestClient(_app()).get("/new").text
+
+        groups = [w for w in intake.WORKFLOWS if any(e["workflow"] == w for e in intake.STARTERS)]
+        self.assertEqual(page.count('class="chips"'), len(groups))
+        for workflow in groups:
+            with self.subTest(workflow=workflow):
+                self.assertIn(f'<p class="group">{escape(intake.LABELS.get(workflow, workflow))}</p>',
+                              page)
 
 
 class TypeSelectionTests(unittest.TestCase):

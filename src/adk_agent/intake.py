@@ -311,6 +311,42 @@ STARTERS: tuple[dict[str, str], ...] = (
                  "likeness of anyone real. Construction first, then ink the lines that matter. Ask "
                  "me before you commit to the expression.",
     },
+    {
+        "label": "Establishing: the approach",
+        "name": "establishing",
+        "workflow": "drawing",
+        "kind": "review",
+        "brief": "An establishing frame: a lone figure crossing open ground toward a building that "
+                 "dwarfs them. Wide, low horizon, the architecture doing the intimidating. Block it "
+                 "and I will tell you how much sky to give it.",
+    },
+    {
+        "label": "Over-the-shoulder",
+        "name": "overshoulder",
+        "workflow": "drawing",
+        "kind": "review",
+        "brief": "An over-the-shoulder two-hander: one person holding back what they know, the "
+                 "listener's face carrying the scene. Near shoulder heavy and simplified, the "
+                 "detail saved for the eyes. Ask me who is lying before you fix the expressions.",
+    },
+    {
+        "label": "Insert: the hand",
+        "name": "insertshot",
+        "workflow": "drawing",
+        "kind": "review",
+        "brief": "An insert frame, close on hands: one setting something down that the other is not "
+                 "meant to see. Tight crop, the object reading instantly, everything else falling "
+                 "away. Choose the object and tell me what you chose, or ask.",
+    },
+    {
+        "label": "Car interior, night",
+        "name": "carnight",
+        "workflow": "drawing",
+        "kind": "review",
+        "brief": "Inside a car at night: the driver lit from below by the dash, headlights raking "
+                 "across as another vehicle passes. Everything beyond the glass is suggestion "
+                 "rather than detail. Start with where the light falls and I will steer the mood.",
+    },
 )
 
 
@@ -551,7 +587,9 @@ FORM = """<!doctype html>
         background: #1f6f8b; color: #fff; border: 0; border-radius: 3px; cursor: pointer; }
  .starters { margin: 1.4rem 0 .4rem; }
  .starters p { margin: 0 0 .5rem; font-size: .88rem; color: #6b7280; }
- .chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+ .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .7rem; }
+ .group { margin: 0 0 .25rem; font-size: .75rem; font-weight: 600; letter-spacing: .06em;
+        text-transform: uppercase; color: #8a94a0; }
  /* Not the submit button: these fill the form, they do not send it. Stated in the styling as well
     as in `type="button"`, so the one that commissions a run never looks like the five that do not. */
  .chips button { margin: 0; padding: .35rem .7rem; font-size: .86rem; font-weight: 500;
@@ -572,7 +610,7 @@ FORM = """<!doctype html>
 
 <div class="starters">
   <p>Or start from one of these &mdash; every field stays editable.</p>
-  <div class="chips">__STARTERS__</div>
+  __STARTERS__
 </div>
 
 <form method="post" action="/projects" enctype="multipart/form-data">
@@ -705,13 +743,23 @@ def mount(app: FastAPI) -> None:
         # untrusted — but a brief is prose, prose acquires apostrophes and quotation marks the moment
         # anyone edits one, and an unescaped quote in an attribute ends the attribute. The failure is
         # a chip that silently fills half a brief, which is worse than one that does not work at all.
-        chips = "".join(
-            f'<button type="button" aria-pressed="false"'
-            f' data-name={quoteattr(s["name"])}'
-            f' data-workflow={quoteattr(s["workflow"])}'
-            f' data-kind={quoteattr(s["kind"])}'
-            f' data-brief={quoteattr(s["brief"])}>{escape(s["label"])}</button>'
-            for s in STARTERS)
+        # Grouped by workflow, in the order the workflows are offered. Thirteen chips in one row
+        # reads as a wall and hides the distinction that matters most — that one of these sets makes
+        # a graphic on its own and the other needs somebody at the keyboard.
+        def chip(entry: dict[str, str]) -> str:
+            return (f'<button type="button" aria-pressed="false"'
+                    f' data-name={quoteattr(entry["name"])}'
+                    f' data-workflow={quoteattr(entry["workflow"])}'
+                    f' data-kind={quoteattr(entry["kind"])}'
+                    f' data-brief={quoteattr(entry["brief"])}>{escape(entry["label"])}</button>')
+
+        chips = ""
+        for workflow in WORKFLOWS:
+            group = [e for e in STARTERS if e["workflow"] == workflow]
+            if not group:
+                continue
+            chips += (f'<p class="group">{escape(LABELS.get(workflow, workflow))}</p>'
+                      f'<div class="chips">{"".join(chip(e) for e in group)}</div>')
 
         return (FORM.replace("__WORKFLOWS__", options)
                     .replace("__TYPES__", types_options)

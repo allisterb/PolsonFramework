@@ -238,6 +238,15 @@ def toolset_for(project: Path, cli_dll: Path | None = None) -> McpToolset:
 # replayable record a human opens and the web app serves as URLs; the ADK artifact service holds
 # versioned blobs the *model* can be shown. Neither substitutes for the other.
 
+#: Save every peek under one artifact name per file type, rather than under the file's own path.
+#:
+#: **Off by default, and the default is the cautious one rather than the right one.** It is the whole
+#: perception path: if `peek` breaks, every run breaks. Switch it on with `POLSON_PEEK_STABLE_NAME`,
+#: watch one run, and switch it off again in seconds if anything looks wrong. See `_make_peek` for
+#: what it does and what it measurably saves.
+PEEK_STABLE_NAME = os.environ.get("POLSON_PEEK_STABLE_NAME", "").strip().lower() in {
+    "1", "true", "yes", "on"}
+
 #: What a script can render, and so what `peek` can show. An `.svg` is not here and is not readable
 #: either: see `read_file`, which turns one away with the route that actually produces a picture.
 PEEKABLE = {
@@ -311,11 +320,32 @@ def _make_peek(project: Path):
 
         # The artifact name keeps the path so successive renders of *different* stages stay
         # distinct, while re-renders of the same stage become versions of one artifact.
-        filename = artifact_path.replace("\\", "/").lstrip("./")
+        #
+        # **Unless the stable name is switched on, because that distinctness is expensive.** ADK's
+        # `LoadArtifactsTool` writes `json.dumps(list_artifacts())` into the *instructions*, which is
+        # the head of the prompt-cache prefix — so every new artifact **name** rewrites the prefix and
+        # the whole conversation is re-billed at full price. Measured on two live drawing runs: 25 of
+        # 95 turns missed cache and cost 1,501,528 tokens, 62% of the run's entire budget, and 13 of
+        # 16 misses on the earlier run land exactly on a new name appearing.
+        #
+        # A *version* of an existing name changes nothing in that list, so collapsing to one name per
+        # file type keeps the cache warm. Nothing is lost that mattered: the disk keeps the real
+        # names — `artifacts/001_ground.webp` is still there for `Skia.Image.load` and `bitmap.diff`,
+        # which is the comparison path Manual 15 prescribes — and peeking an *older* file re-reads it
+        # from disk and saves it as the newest version, so `load_artifacts` still brings it into view.
+        source = artifact_path.replace("\\", "/").lstrip("./")
+        filename = f"peek{candidate.suffix.lower()}" if PEEK_STABLE_NAME else source
         version = await tool_context.save_artifact(
             filename, types.Part.from_bytes(data=data, mime_type=mime))
 
+        # Which render a version actually holds. Anonymous versions would be a regression from the
+        # self-describing names above, so the mapping goes into the record where it can be read back.
+        if filename != source:
+            transcript.note_artifact(getattr(tool_context, "invocation_id", ""),
+                                     name=filename, version=version, source=source)
+
         return {"ok": True, "filename": filename, "version": version, "bytes": len(data),
+                "source": source,
                 "note": "Loaded. Call load_artifacts to bring it into view, then say what you see."}
 
     return peek

@@ -114,7 +114,8 @@ setting the container cannot write.
 
 **The Python half reads environment variables directly** and never opens that file:
 `POLSON_MODEL`, `POLSON_BUDGET_TOKENS`, `POLSON_BUDGET_RAW_TOKENS`, `ADK_MAX_LLM_CALLS`,
-`POLSON_MAX_RUNS_PER_DAY`, `POLSON_ALLOW_ORIGINS`, `POLSON_SEED_*`, `POLSON_ASK_SECONDS`, `POLSON_MAX_CREDIT_SECONDS`.
+`POLSON_MAX_RUNS_PER_DAY`, `POLSON_ALLOW_ORIGINS`, `POLSON_SEED_*`, `POLSON_ASK_SECONDS`, `POLSON_MAX_CREDIT_SECONDS`,
+`POLSON_PEEK_STABLE_NAME`.
 
 ### Changing a value
 
@@ -149,6 +150,14 @@ Worth setting deliberately rather than leaving at defaults:
   failure the breaker exists to replace. `drawing` is the case to watch: 45-minute default plus the
   15-minute grace already *is* the 3600s ceiling. Set it to `0` for a fully unattended deployment,
   where nobody will answer and every wait is real time spent.
+- **`POLSON_PEEK_STABLE_NAME`** — save every peek under one artifact name per file type instead of
+  the render's own path. **Off by default.** ADK's `LoadArtifactsTool` writes the artifact *name
+  list* into the instructions, which is the head of the prompt-cache prefix, so each new name
+  re-bills the whole conversation at full price while a new *version* costs nothing. Measured across
+  two drawing runs: cache misses took **57% and 62%** of the run's entire budget, and the misses land
+  on new names appearing. Turning this on should return a large part of that as drawing turns.
+  **Try it on one run before trusting it** — `peek` is the whole perception path, and nothing about
+  it has been exercised live yet.
 
 ---
 

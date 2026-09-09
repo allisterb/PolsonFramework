@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # `src/` first so `orchestrator.events` resolves, then `adk_agent/` on top of it — that order matters,
 # because **two packages in this tree are called `studio`** and the ADK one has to win. See the same
@@ -349,6 +350,98 @@ class AskWiringTests(unittest.TestCase):
         for sub in getattr(agent, "sub_agents", None) or []:
             self.assertNotIn("ask_director", [getattr(t, "name", "") for t in sub.tools],
                              f"{sub.name} should transfer to the facilitator rather than ask")
+
+
+class PeekArtifactNameTests(unittest.IsolatedAsyncioTestCase):
+    """One artifact name per file type, behind a flag, because names are what cost the cache.
+
+    **The measurement this exists for.** ADK's `LoadArtifactsTool` writes the artifact *name list*
+    into the instructions, which is the head of the prompt-cache prefix — so a new name re-bills the
+    whole conversation and a new version does not. On `overshoulder2`, 25 of 95 turns missed cache
+    and cost 1,501,528 tokens: 62% of the entire run.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-peek-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        (self.root / "artifacts").mkdir()
+        (self.root / "artifacts" / "001_ground.webp").write_bytes(b"RIFF....WEBPVP8 pretend")
+        (self.root / "artifacts" / "002_darks.webp").write_bytes(b"RIFF....WEBPVP8 pretend two")
+
+        import studio
+        self.studio = studio
+        self.saved = []
+
+        class Ctx:
+            invocation_id = "inv-peek"
+
+            async def save_artifact(inner, filename, part):          # noqa: N805
+                self.saved.append(filename)
+                return self.saved.count(filename) - 1
+
+        self.ctx = Ctx()
+        studio.transcript._artifacts.clear()
+        self.addCleanup(studio.transcript._artifacts.clear)
+
+    async def peek(self, path):
+        return await self.studio._make_peek(self.root)(path, self.ctx)
+
+    async def test_off_by_default_each_render_keeps_its_own_name(self):
+        """The behaviour every run so far has had. Default-off is the cautious choice: `peek` is the
+        whole perception path, and if it breaks every run breaks."""
+        with mock.patch.object(self.studio, "PEEK_STABLE_NAME", False):
+            a = await self.peek("artifacts/001_ground.webp")
+            b = await self.peek("artifacts/002_darks.webp")
+
+        self.assertEqual(["artifacts/001_ground.webp", "artifacts/002_darks.webp"], self.saved)
+        self.assertTrue(a["ok"] and b["ok"])
+
+    async def test_on_every_render_becomes_a_version_of_one_name(self):
+        with mock.patch.object(self.studio, "PEEK_STABLE_NAME", True):
+            a = await self.peek("artifacts/001_ground.webp")
+            b = await self.peek("artifacts/002_darks.webp")
+
+        self.assertEqual(["peek.webp", "peek.webp"], self.saved, "one name, two versions")
+        self.assertEqual(0, a["version"])
+        self.assertEqual(1, b["version"])
+
+    async def test_the_mapping_is_recorded_so_a_version_still_says_what_it_holds(self):
+        """Anonymous versions would be a regression from the self-describing names."""
+        with mock.patch.object(self.studio, "PEEK_STABLE_NAME", True):
+            await self.peek("artifacts/002_darks.webp")
+
+        queued = self.studio.transcript._artifacts["inv-peek"]
+        self.assertEqual([{"artifact": "peek.webp", "version": 0,
+                           "source": "artifacts/002_darks.webp"}], queued)
+
+    async def test_nothing_is_recorded_when_the_name_is_the_path(self):
+        """With the flag off the name already says what it holds, so the event would be noise."""
+        with mock.patch.object(self.studio, "PEEK_STABLE_NAME", False):
+            await self.peek("artifacts/001_ground.webp")
+
+        self.assertEqual([], self.studio.transcript._artifacts.get("inv-peek", []))
+
+    async def test_the_real_path_still_comes_back_to_the_agent(self):
+        """It has to be able to say which render it is looking at, whatever the store called it."""
+        with mock.patch.object(self.studio, "PEEK_STABLE_NAME", True):
+            answer = await self.peek("artifacts/001_ground.webp")
+
+        self.assertEqual("artifacts/001_ground.webp", answer["source"])
+
+    async def test_peeking_an_older_render_makes_it_the_newest_version(self):
+        """**The capability collapsing names would otherwise cost.**
+
+        `load_artifacts` fetches the latest version of a name, so with one name an earlier pass could
+        not be brought back into view — except that `peek` re-reads from disk, so asking for the old
+        file saves it again as the newest version. Nothing is lost.
+        """
+        with mock.patch.object(self.studio, "PEEK_STABLE_NAME", True):
+            await self.peek("artifacts/001_ground.webp")
+            await self.peek("artifacts/002_darks.webp")
+            back = await self.peek("artifacts/001_ground.webp")
+
+        self.assertEqual(2, back["version"], "the old render is now the newest version")
+        self.assertEqual("artifacts/001_ground.webp", back["source"])
 
 
 class AddendumTests(unittest.TestCase):

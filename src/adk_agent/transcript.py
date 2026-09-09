@@ -97,6 +97,37 @@ def note_budget(invocation: str, *, limit: str, share: float, spent: float, cap:
         _logger.debug("polson transcript: budget note not recorded (%s)", exc)
 
 
+#: Artifact-version mappings not yet written, keyed by invocation id. Same courier as `_budget`.
+_artifacts: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+
+
+def note_artifact(invocation: str, *, name: str, version: int, source: str) -> None:
+    """Records which render an artifact version actually holds.
+
+    **Only used when `studio.PEEK_STABLE_NAME` collapses every peek onto one name.** That keeps the
+    prompt-cache prefix stable — a new artifact *name* rewrites it and re-bills the conversation,
+    a new *version* does not — at the cost of versions that no longer say what they contain. This is
+    the mapping that gives that back, and it is what lets a stage's render be reconstructed from the
+    store afterwards.
+
+    Written by the transcript rather than by `peek` because `agent.jsonl` has one writer.
+    """
+    try:
+        if not invocation:
+            return
+        _artifacts.setdefault(invocation, []).append(
+            {"artifact": name, "version": version, "source": source})
+        while len(_artifacts) > HALT_MEMORY:
+            _artifacts.popitem(last=False)
+    except Exception as exc:                                    # pragma: no cover - defensive
+        _logger.debug("polson transcript: artifact version not recorded (%s)", exc)
+
+
+def _take_artifacts(invocation: str) -> list[dict[str, Any]]:
+    """Everything queued for `invocation`, removed."""
+    return _artifacts.pop(invocation, []) if invocation else []
+
+
 def _take_budget(invocation: str) -> list[dict[str, Any]]:
     """Everything queued for `invocation`, removed. Empty when there is nothing."""
     return _budget.pop(invocation, []) if invocation else []
@@ -330,8 +361,11 @@ def make_plugin(project_dir: str | Path):
             # Before the usage line, so a reader scanning the trace meets the warning and then the
             # number it is about. Written here rather than by the breaker itself because
             # `agent.jsonl` has one writer — see the module docstring — and this is it.
-            for note in _take_budget(getattr(callback_context, "invocation_id", "")):
+            invocation = getattr(callback_context, "invocation_id", "")
+            for note in _take_budget(invocation):
                 self.agent.append("budget", at=at, **common, **note)
+            for note in _take_artifacts(invocation):
+                self.agent.append("artifact.version", at=at, **common, **note)
 
             usage = getattr(llm_response, "usage_metadata", None)
             if usage is not None and wrote:

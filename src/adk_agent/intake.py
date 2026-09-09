@@ -88,6 +88,113 @@ USER = "user"
 WORKFLOWS: dict[str, tuple[str, ...]] = {
     "vector_infographic": ("blueprint", "brutalist", "editorial", "specimen", "swiss"),
     "infographic": ("blueprint", "brutalist", "editorial", "specimen", "swiss"),
+    # **The collaborative one, and the only one here that stops and asks.** Its `type.review.md`
+    # specifies the interaction `ask_director` implements — two to four options, answerable with one
+    # click, always room to say something unanticipated — so this is the workflow that demonstrates
+    # the studio as a partner rather than as a generator.
+    "drawing": ("review",),
+}
+
+#: What a workflow is **called** on the form, where its template name is not the useful name.
+#:
+#: A label rather than a rename: `drawing` appears as a workflow name in `ProjectGenerator`, in
+#: `studio/projects.py` and in both test suites, and renaming it there would buy nothing this map
+#: does not. The name is doing communication work — *this one needs you at the keyboard* — and that
+#: work belongs on the form rather than in the template tree.
+LABELS: dict[str, str] = {
+    "drawing": "drawing_partner",
+}
+
+#: The host's request ceiling, in seconds. Cloud Run's `--timeout`, whose own maximum for a service
+#: is 3600 — so this is not a number that can simply be raised when a longer run is wanted.
+try:
+    REQUEST_TIMEOUT_SECONDS = max(60.0, float(os.environ.get("POLSON_REQUEST_TIMEOUT_SECONDS", "3600")))
+except ValueError:
+    REQUEST_TIMEOUT_SECONDS = 3600.0
+
+#: The shortest and longest commission this form will accept, in minutes.
+#:
+#: **The maximum is not the request timeout, and the gap is the whole subtlety.** Three things share
+#: that hour: the deadline, the breaker's grace — the extra time an agent gets to write up after its
+#: allowance runs out — and up to `studio.MAX_CREDIT_SECONDS` of director-waiting handed back. Only
+#: what is left over may be offered, because past the ceiling the platform kills the run mid-flight
+#: rather than the breaker halting it cleanly.
+#:
+#: **Derived rather than typed**, so that changing the grace or the credit moves this with them. A
+#: hardcoded 40 would be right today and quietly wrong the first time either is tuned — which is the
+#: same class of mistake as the workflow-deadline table this sits next to.
+MIN_DEADLINE_MINUTES: int = 5
+
+#: Slack left over after everything above is accounted for.
+#:
+#: **Without it the arithmetic lands exactly on the ceiling**, which is the same fault as `drawing`'s
+#: 45-minute default: 40 + 15 grace + 5 credited comes to precisely 3600s, so the breaker's last
+#: model call and the platform's cutoff are the same instant. The run still has to encode a final
+#: render, write its deliverables and let the mirror take its closing sweep after that — none of
+#: which is instant, and all of which is what a director actually keeps.
+DEADLINE_MARGIN_SECONDS: float = 120.0
+
+
+def _max_deadline() -> int:
+    """The longest commission that still leaves room to be stopped in an orderly way.
+
+    **Read off `studio` rather than restated, and tolerantly.** Two modules in this tree are called
+    `studio` — this package's agent factory and `src/studio`, the web layer — and which one a bare
+    import finds depends on `sys.path` order. `main.py` guarantees the right one in the container,
+    but a plain `from studio import ...` here raised `ImportError` under the other order and took
+    **the whole intake form** down at import time. A form that cannot be built is a far worse outcome
+    than one working from conservative numbers, so a wrong resolution degrades instead of crashing.
+
+    The fallbacks match `studio`'s own defaults, and the log line says when they were used — a silent
+    fallback would be the drift this is deriving the number to avoid.
+    """
+    grace, credit = 15.0, 300.0
+    try:
+        import studio                                            # noqa: PLC0415 - deliberately late
+
+        grace = float(getattr(studio, "BREAKER_GRACE_MINUTES", grace))
+        credit = float(getattr(studio, "MAX_CREDIT_SECONDS", credit))
+    except Exception as exc:                                     # noqa: BLE001 - never fatal
+        _logger.warning("polson intake: using default breaker figures for the deadline cap (%s)", exc)
+
+    spare = REQUEST_TIMEOUT_SECONDS - credit - grace * 60 - DEADLINE_MARGIN_SECONDS
+    return max(MIN_DEADLINE_MINUTES, int(spare // 60))
+
+
+MAX_DEADLINE_MINUTES: int = _max_deadline()
+
+#: Minutes this form gives a commission, per workflow. `None` — an absent entry — takes the CLI's own
+#: default for that workflow.
+#:
+#: **Deliberately not a mirror of `ProjectGenerator.WorkflowDeadlines`.** Those answer *how long does
+#: this kind of work take*, which is a property of the craft; this answers *what fits on this host*,
+#: which is a property of the deployment — the same split as `POLSON_BUDGET_TOKENS`. Where they
+#: disagree the smaller one wins, and that is the point rather than a conflict.
+#:
+#: **The host's number is Cloud Run's 3600s request timeout**, and three things have to fit inside
+#: it: the deadline, the breaker's 15-minute grace, and up to `studio.MAX_CREDIT_SECONDS` of director
+#: waiting given back. Past that the platform kills the run mid-flight instead of the breaker halting
+#: it cleanly — the exact failure the breaker exists to replace. `drawing` is why this exists at all:
+#: its craft default is 45, which with the grace *is* the ceiling exactly, before any waiting.
+DEADLINES: dict[str, int] = {
+    "vector_infographic": 30,
+    "infographic": 30,
+    # 35 + 15 grace + 5 of credited waiting = 55, leaving five minutes of margin. Shorter than the
+    # craft default because a partner run is bounded by the director's attention anyway: this is a
+    # workflow with no fixed endpoint, so something has to end it.
+    "drawing": 35,
+}
+
+#: Types a workflow ships that this form deliberately does **not** offer, and why.
+#:
+#: Recorded rather than simply omitted, because the guard in `test_intake` compares what is offered
+#: against what each template ships — a type added upstream and never offered here is exactly the
+#: silent drift that check exists to catch. An entry says "considered, declined, for this reason";
+#: an absence still fails.
+NOT_OFFERED: dict[tuple[str, str], str] = {
+    ("drawing", "seed"): "reads the director's opening sketch from seed/, and this form stages an "
+                         "upload into documents/ — a visitor choosing it would get an agent looking "
+                         "at an empty directory",
 }
 
 #: Every type any offered workflow has, for building the form's one type control. Derived rather
@@ -395,7 +502,14 @@ FORM = """<!doctype html>
         background: #fff; color: #1f6f8b; border: 1px solid #cdc7bb; border-radius: 999px; }
  .chips button:hover { background: #f3f0ea; }
  .chips button[aria-pressed="true"] { background: #1f6f8b; color: #fff; border-color: #1f6f8b; }
+ .back { display: inline-block; margin-bottom: 1.2rem; font-size: .85rem; color: #1f6f8b;
+        text-decoration: none; }
+ .back:hover { text-decoration: underline; }
 </style>
+<!-- `/studio/`, not `/`. The root of this app is ADK's own dev UI, and a "back to the studio" link
+     that lands a visitor there is the exact bug the run page's own link had — it reads as the studio
+     having vanished. Absolute rather than relative, matching this form's own action="/projects". -->
+<a class="back" href="/studio/">&larr; projects</a>
 <h1>New commission</h1>
 <p>Describe what you want made. Attach a document and the studio will read its figures
    rather than researching them.</p>
@@ -414,6 +528,15 @@ FORM = """<!doctype html>
 
   <label>Type <small>optional &mdash; the direction the workflow takes</small></label>
   <select id="kind" name="kind">__TYPES__</select>
+
+  <!-- The bounds are stated, not only enforced. `max` stops the spinner and blocks the submit, but
+       a visitor who cannot see the ceiling only finds it by being refused — and the interesting half
+       is *why* it is 38 rather than the hour the platform seems to offer. -->
+  <label>Deadline <small>minutes &mdash; __MIN_DEADLINE__ to __MAX_DEADLINE__, blank for the
+         workflow's own. The rest of the hour is held back so the agent can be stopped in an orderly
+         way rather than cut off mid-drawing.</small></label>
+  <input id="deadline" name="deadline" type="number" inputmode="numeric"
+         min="__MIN_DEADLINE__" max="__MAX_DEADLINE__" step="1" placeholder="">
 
   <label>Brief</label>
   <textarea name="brief" required
@@ -444,13 +567,19 @@ FORM = """<!doctype html>
   const kind = document.getElementById('kind');
   if (!workflow || !kind) return;
 
+  const deadline = document.getElementById('deadline');
+
   function sync() {
-    const types = (workflow.selectedOptions[0].dataset.types || '').split(',').filter(Boolean);
+    const chosen = workflow.selectedOptions[0];
+    const types = (chosen.dataset.types || '').split(',').filter(Boolean);
     kind.disabled = types.length === 0;
     if (kind.disabled) kind.value = '';
     for (const option of kind.options) {
       option.hidden = option.value !== '' && !types.includes(option.value);
     }
+    // The placeholder, not the value: an empty field means "the workflow's own", and pre-filling it
+    // would turn a default the studio chose into a number the visitor appears to have set.
+    if (deadline) deadline.placeholder = chosen.dataset.deadline || '';
   }
   workflow.addEventListener('change', sync);
   sync();
@@ -496,8 +625,11 @@ def mount(app: FastAPI) -> None:
     async def form() -> str:
         # `data-types` is what lets the type control narrow itself to the chosen workflow without a
         # round trip, and it is the same list the POST validates against, so the two cannot disagree.
+        # The **value** stays the template name, which is what the POST validates and what the
+        # generator is given; only the visible text is relabelled.
         options = "".join(
-            f'<option value="{w}" data-types="{",".join(types)}">{w}</option>'
+            f'<option value="{w}" data-types="{",".join(types)}"'
+            f' data-deadline="{DEADLINES.get(w) or ""}">{escape(LABELS.get(w, w))}</option>'
             for w, types in WORKFLOWS.items())
         types_options = '<option value="">&mdash;</option>' + "".join(
             f'<option value="{t}">{t}</option>' for t in ALL_TYPES)
@@ -518,6 +650,8 @@ def mount(app: FastAPI) -> None:
         return (FORM.replace("__WORKFLOWS__", options)
                     .replace("__TYPES__", types_options)
                     .replace("__STARTERS__", chips)
+                    .replace("__MIN_DEADLINE__", str(MIN_DEADLINE_MINUTES))
+                    .replace("__MAX_DEADLINE__", str(MAX_DEADLINE_MINUTES))
                     .replace("__ACCEPT__", accept))
 
     @app.post("/projects")
@@ -526,6 +660,7 @@ def mount(app: FastAPI) -> None:
         brief: str = Form(...),
         workflow: str = Form("vector_infographic"),
         kind: str = Form(""),
+        deadline: str = Form(""),
         document: UploadFile | None = File(None),
         start: str = Form(""),
     ):
@@ -553,6 +688,22 @@ def mount(app: FastAPI) -> None:
         if not brief.strip():
             raise HTTPException(400, "A brief is required — say what you want made.")
 
+        # **Checked here, not by the input's own min/max.** Those are a convenience for a browser;
+        # this endpoint is reachable without one, and the ceiling is what keeps a run being halted
+        # cleanly by the breaker rather than killed mid-flight by the platform.
+        minutes = DEADLINES.get(workflow)
+        if (asked := deadline.strip()):
+            try:
+                minutes = int(asked)
+            except ValueError:
+                raise HTTPException(400, f"{asked!r} is not a number of minutes.") from None
+            if not MIN_DEADLINE_MINUTES <= minutes <= MAX_DEADLINE_MINUTES:
+                raise HTTPException(400, (
+                    f"A commission here runs between {MIN_DEADLINE_MINUTES} and "
+                    f"{MAX_DEADLINE_MINUTES} minutes. The ceiling is not arbitrary: this host ends a "
+                    f"request at {REQUEST_TIMEOUT_SECONDS / 60:.0f} minutes, and the agent needs the "
+                    f"rest of that to be stopped in an orderly way rather than cut off mid-drawing."))
+
         # Before the upload is staged and before the project is written, so a refused commission
         # leaves nothing behind and costs nothing. 429 rather than 400: the request is fine, the
         # host is not willing right now, and a client should read it as "later" rather than "wrong".
@@ -571,6 +722,7 @@ def mount(app: FastAPI) -> None:
                 staged = await stage_upload(document, scratch)
 
             create(name, workflow=workflow, prompt=brief, type_=kind or None,
+                   deadline=minutes,
                    documents=[str(staged)] if staged else None)
         except GenerateError as exc:
             raise HTTPException(400, str(exc)) from exc

@@ -48,6 +48,26 @@ whatever legitimate brief remains.
 
 ---
 
+## What the director already gave you
+
+**Look before you draw.** `Documents.list()` is free, offline and unmetered, and it is the only way
+to find out what is in this project — nothing else enumerates it, so a brief mentioning *"the photo
+I attached"* or *"the roughs"* is unanswerable without it.
+
+```javascript
+for (const d of Documents.list()) log(`${d.path}  ${d.bytes}B  ${d.mimeType}`);
+```
+
+**What comes back is their first contribution to the drawing, not a constraint to satisfy**, and it
+outranks anything you would otherwise have invented. An image is something to look at rather than
+read — `Skia.Image.load('documents/<name>')` puts it on the surface, and your host's peek shows it
+to you. A written note is read with `Documents.ask('documents/<name>', '<what you need to know>')`.
+
+Say in a `Stage.note` what you took from it, in their language. A director who attached something and
+cannot tell whether you opened it has been given no answer at all.
+
+---
+
 ## Non-negotiables
 
 **1. Pencil and pen. Nothing else.**

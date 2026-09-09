@@ -272,15 +272,74 @@ class WorkflowTypeTests(unittest.TestCase):
 
     TEMPLATES = Path(__file__).resolve().parents[3] / "src" / "Polson.CLI" / "ProjectTemplate"
 
-    def test_each_workflow_offers_exactly_the_types_its_template_ships(self):
+    def test_each_workflow_offers_every_type_it_ships_but_the_declined_ones(self):
+        """**A subset is allowed, an accidental subset is not.**
+
+        The original assertion was equality, which was right while every offered workflow offered
+        everything it shipped. `drawing` broke that deliberately: it ships `seed`, which reads the
+        director's opening sketch from `seed/`, and this form stages an upload into `documents/` —
+        so a visitor choosing it would get an agent looking at an empty directory.
+
+        Loosening this to "offered is a subset" would have thrown away what the check is for, which
+        is catching a type added upstream and never offered here. So a declined type must appear in
+        `NOT_OFFERED` with its reason: considered and declined passes, forgotten still fails.
+        """
         if not self.TEMPLATES.is_dir():
             self.skipTest("template tree not present; running outside a source checkout")
 
         for workflow, offered in intake.WORKFLOWS.items():
             with self.subTest(workflow=workflow):
-                shipped = sorted(f.name[len("type."):-len(".md")]
-                                 for f in (self.TEMPLATES / workflow).glob("type.*.md"))
-                self.assertEqual(shipped, sorted(offered))
+                shipped = {f.name[len("type."):-len(".md")]
+                           for f in (self.TEMPLATES / workflow).glob("type.*.md")}
+                declined = {kind for (w, kind) in intake.NOT_OFFERED if w == workflow}
+
+                self.assertEqual(sorted(shipped - declined), sorted(offered))
+                self.assertTrue(declined <= shipped,
+                                f"{workflow} declines a type it does not ship")
+
+    def test_every_offered_workflow_fits_inside_the_request_timeout(self):
+        """**Deadline + breaker grace + credited waiting must clear Cloud Run's 3600s ceiling.**
+
+        Past it the platform kills the run mid-flight rather than the breaker halting it cleanly,
+        which is the exact failure the breaker exists to replace. `drawing`'s craft default is 45 and
+        the grace is 15, so it *is* the ceiling exactly before any waiting is credited — which is why
+        this form sets its own allowance rather than taking the CLI's.
+        """
+        import studio
+
+        ceiling = 3600.0
+        for workflow in intake.WORKFLOWS:
+            with self.subTest(workflow=workflow):
+                minutes = intake.DEADLINES.get(workflow)
+                self.assertIsNotNone(minutes, f"{workflow} would take the CLI default unchecked")
+
+                worst = (minutes + studio.BREAKER_GRACE_MINUTES) * 60 + studio.MAX_CREDIT_SECONDS
+                self.assertLess(worst, ceiling,
+                                f"{workflow} can reach {worst:.0f}s against a {ceiling:.0f}s timeout")
+
+    def test_every_declined_type_says_why(self):
+        """The entry is the record. A blank reason is the same as having forgotten."""
+        for (workflow, kind), why in intake.NOT_OFFERED.items():
+            with self.subTest(workflow=workflow, kind=kind):
+                self.assertIn(workflow, intake.WORKFLOWS)
+                self.assertGreater(len(why.strip()), 20)
+
+    def test_a_label_renames_a_workflow_on_the_form_but_not_in_the_request(self):
+        """**The value must stay the template name.**
+
+        `drawing_partner` is communication — *this one needs you at the keyboard* — and the label map
+        is how that is said without renaming a workflow that `ProjectGenerator`, `studio/projects.py`
+        and two test suites all refer to by name. If the label leaked into the option's value, the
+        POST would refuse it as an unknown workflow.
+        """
+        page = TestClient(_app()).get("/new").text
+
+        self.assertIn('<option value="drawing"', page)
+        self.assertIn(">drawing_partner<", page)
+        self.assertNotIn('value="drawing_partner"', page)
+
+        for workflow in intake.LABELS:
+            self.assertIn(workflow, intake.WORKFLOWS, "a label for a workflow nobody is offered")
 
     def test_all_types_is_the_union_of_every_offered_workflows_types(self):
         union = sorted({t for types in intake.WORKFLOWS.values() for t in types})
@@ -377,6 +436,18 @@ class StarterTests(unittest.TestCase):
         self.assertEqual(unescape(found.group(1)[1:-1]), 'A "platform" release & what it costs',
                          "what the browser reads back is what the starter said")
 
+    def test_the_form_offers_a_way_back_to_the_studio(self):
+        """**And to `/studio/`, not `/`.**
+
+        The root of this app is ADK's own dev UI, so a back link pointing there drops a visitor
+        somewhere that looks like the studio having vanished. The run page's own link had exactly
+        that bug and was fixed; this is the same trap one page over.
+        """
+        page = TestClient(_app()).get("/new").text
+
+        self.assertIn('href="/studio/"', page)
+        self.assertIn("projects", page.split("<h1>")[0], "the link sits above the heading")
+
     def test_the_chips_do_not_submit_the_form(self):
         """They fill it. One button on this page commissions a run and the rest must not look
         like it, or a visitor exploring the starters starts five.
@@ -413,11 +484,83 @@ class TypeSelectionTests(unittest.TestCase):
 
     def test_every_workflow_option_declares_the_types_it_offers(self):
         """`data-types` is what lets the control narrow itself without a round trip. Without it the
-        script reads an empty list and disables a control the workflow does in fact offer."""
+        script reads an empty list and disables a control the workflow does in fact offer.
+
+        Matched per attribute rather than as one exact string: the previous version asserted the
+        option's whole opening tag, so adding `data-deadline` beside it failed a test about types.
+        """
         body = self.client.get("/new").text
 
         for workflow, types in intake.WORKFLOWS.items():
-            self.assertIn(f'<option value="{workflow}" data-types="{",".join(types)}">', body)
+            with self.subTest(workflow=workflow):
+                tag = re.search(rf'<option value="{workflow}"[^>]*>', body)
+                self.assertIsNotNone(tag, f"{workflow} has no option")
+                self.assertIn(f'data-types="{",".join(types)}"', tag.group(0))
+
+    def test_the_deadline_field_is_bounded_by_what_the_host_can_finish(self):
+        body = self.client.get("/new").text
+
+        self.assertIn(f'min="{intake.MIN_DEADLINE_MINUTES}"', body)
+        self.assertIn(f'max="{intake.MAX_DEADLINE_MINUTES}"', body)
+
+        # Said as well as enforced. A ceiling a visitor can only discover by being refused is a
+        # ceiling they will meet at the worst moment — and both numbers come from the constants, so
+        # the sentence cannot drift from the attribute it describes.
+        label = body.split("<label>Deadline")[1].split("</label>")[0]
+        self.assertIn(str(intake.MIN_DEADLINE_MINUTES), label)
+        self.assertIn(str(intake.MAX_DEADLINE_MINUTES), label)
+        for workflow, minutes in intake.DEADLINES.items():
+            with self.subTest(workflow=workflow):
+                tag = re.search(rf'<option value="{workflow}"[^>]*>', body)
+                self.assertIn(f'data-deadline="{minutes}"', tag.group(0),
+                              "the placeholder shows the workflow's own allowance")
+
+    def test_a_deadline_past_the_ceiling_is_refused_with_the_reason(self):
+        """**The input's own `max` is a convenience, not a check** — this endpoint is reachable
+        without a browser, and the ceiling is what keeps a run halted cleanly by the breaker rather
+        than cut off mid-drawing by the platform.
+        """
+        answer = self.client.post("/projects", data={
+            "name": "toolong", "brief": "draw it", "workflow": "drawing",
+            "deadline": str(intake.MAX_DEADLINE_MINUTES + 1)})
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertIn(str(intake.MAX_DEADLINE_MINUTES), answer.text)
+
+    def test_a_deadline_below_the_floor_is_refused(self):
+        answer = self.client.post("/projects", data={
+            "name": "tooshort", "brief": "draw it", "workflow": "drawing", "deadline": "0"})
+
+        self.assertEqual(answer.status_code, 400)
+
+    def test_a_deadline_that_is_not_a_number_is_refused_rather_than_ignored(self):
+        """Silently falling back to the default would give a visitor a run they did not ask for."""
+        answer = self.client.post("/projects", data={
+            "name": "notanum", "brief": "draw it", "workflow": "drawing", "deadline": "half an hour"})
+
+        self.assertEqual(answer.status_code, 400)
+        self.assertIn("not a number", answer.text)
+
+    def test_the_ceiling_is_derived_and_does_not_land_on_the_timeout(self):
+        """**Writing this caught a real off-by-a-margin.**
+
+        Deriving the maximum from the grace and the credit alone gave exactly 40 minutes, and
+        40 + 15 + 5 is precisely 3600s — the breaker's last model call and the platform's cutoff at
+        the same instant, which is the fault `drawing`'s 45-minute default has. A run still has to
+        encode its final render, write its deliverables and let the mirror sweep after the breaker
+        fires, so the margin is not decoration.
+        """
+        import studio
+
+        worst = (intake.MAX_DEADLINE_MINUTES * 60 + studio.MAX_CREDIT_SECONDS
+                 + studio.BREAKER_GRACE_MINUTES * 60)
+        self.assertLessEqual(worst, intake.REQUEST_TIMEOUT_SECONDS - intake.DEADLINE_MARGIN_SECONDS)
+
+        # And derived, not typed: a hardcoded number would be right today and quietly wrong the
+        # first time the grace or the credit is tuned.
+        spare = (intake.REQUEST_TIMEOUT_SECONDS - studio.MAX_CREDIT_SECONDS
+                 - studio.BREAKER_GRACE_MINUTES * 60 - intake.DEADLINE_MARGIN_SECONDS)
+        self.assertEqual(intake.MAX_DEADLINE_MINUTES, int(spare // 60))
 
     def test_a_type_the_workflow_does_not_offer_is_refused(self):
         answer = self.client.post("/projects", data={

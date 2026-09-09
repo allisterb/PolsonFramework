@@ -417,6 +417,12 @@
     // Any event belonging to a pass opens that pass — its render and the script that made it,
     // together. They arrive as separate events, so the pane is assembled from the execution id they
     // share rather than read off any one line.
+    // Counted per *path* rather than per pass, and outside the `key` guard: a render with no
+    // execution of its own still lands on a path, and it is the path that gets overwritten.
+    if (kind === 'render' && event.artifact) {
+      written.set(event.artifact, (written.get(event.artifact) || 0) + 1);
+    }
+
     const key = keyOf(kind, event);
     if (key) {
       const made = pass(key);
@@ -765,6 +771,10 @@
   // What each pass produced. A render names the artifact, a script.* event names the source, and an
   // inspect or artifact.read names neither — all of them carry the execution id that joins the two.
   const passes = new Map();
+  //: How many renders have landed on each artifact path. A path written once is a pass you can pin;
+  //: a path written repeatedly is a moving target, and `present` says so rather than implying the
+  //: picture on screen is the one the chosen row produced.
+  const written = new Map();
   let pinned = null, latest = null, showing = null;
 
   // Fetching a script is slower than choosing one. Every request takes a number and only the newest
@@ -812,9 +822,22 @@
 
     // The version stamp is the one the render arrived under, not the current event count, so a
     // pinned pass keeps a stable URL instead of re-fetching every time the trace moves.
+    // **A path written more than once cannot be pinned, and the caption has to admit it.**
+    // `artifacts/` files carry a turn number and are written once each, so choosing one shows
+    // exactly that pass. `output.webp` does not: four workflows keep the finished piece current at
+    // the project root, so a real drawing run wrote it seven times to one path — and the file the
+    // page serves is the last of them however early a pass you chose. Measured on nightstreet2,
+    // where a director picked a pass carrying annotation marks and saved a later one without them.
+    const rewritten = written.get(made.artifact) || 0;
+    const caption = rewritten > 1
+      ? `${esc(made.artifact)} <span class="hint">— written ${rewritten} times to this path, so ` +
+        `this is the current file rather than that pass. The turns are kept under their own names ` +
+        `in <code>artifacts/</code>.</span>`
+      : esc(made.artifact);
+
     render.innerHTML = made.artifact
       ? `<img src="${base}/runs/${runId}/artifact/${made.artifact}?v=${made.v}" alt="${esc(made.artifact)}">` +
-        `<figcaption>${esc(made.artifact)}</figcaption>`
+        `<figcaption>${caption}</figcaption>`
       : '<p class="empty">This pass rendered nothing.</p>';
 
     if (made.script) openScript(made.script);

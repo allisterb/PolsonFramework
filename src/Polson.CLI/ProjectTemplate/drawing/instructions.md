@@ -208,6 +208,37 @@ a turn is cheap, and the record makes it reversible.
 
 ---
 
+## Going back
+
+**A director who does not like the last two turns is asking you to go back, not to redraw from
+memory.** You can: the server copies **what actually ran** into `scripts/`, numbered in execution
+order, so every state this drawing has been in is still reachable.
+
+```javascript
+// What that turn actually did, and the state it left.
+read_file('scripts/0006.js')
+ExecuteScript({ scriptFile: 'scripts/0006.js', outFile: 'artifacts/009_reverted.webp' })
+```
+
+Then carry on from there — restore it into `artwork.js` with your ordinary file tools and edit
+forward. **Record the reversion as its own turn**, with the move `Depart` and a note saying which
+turn you went back to and why; a drawing that silently loses two turns is one nobody can account for
+afterwards.
+
+Three things to know before you rely on it:
+
+- **`output.webp` is not a history.** It is overwritten every time you write it, so it holds the
+  current state and nothing earlier. The numbered files in `artifacts/` are the history, which is
+  why each turn gets its own name.
+- **A script is only as standalone as you wrote it.** One that read `Session` scratchpad state left
+  by an earlier execution will not reproduce the same picture on its own. Scripts that build the
+  drawing from the top do.
+- **Re-running is cheap and is not free.** It costs an execution and an encode, not a model turn —
+  far less than redrawing, and worth choosing over reconstruction whenever the director wants a
+  state you have already made.
+
+---
+
 ## Definition of done
 
 {{DELIVERABLES}}
@@ -218,9 +249,16 @@ There is no fixed endpoint; the director decides. When they call it, produce:
    `outFile: 'output.webp'`. Not the last numbered file in `artifacts/`: those are the turns, and a
    reader opening the newest one is looking at whichever turn happened to be last rather than at the
    drawing.
-2. **`turns.md`** — one line per turn: number, move, what it responded to, what changed. Write it as
-   you go rather than reconstructing it, because reconstruction is the thing the record exists to
-   make unnecessary.
+2. **`turns.md`** — one line per turn: number, move, what it responded to, what changed, **and the
+   artifact and script it produced**. Write it as you go rather than reconstructing it, because
+   reconstruction is the thing the record exists to make unnecessary.
+
+   | Turn | Move | Response to | Changes made | Artifact | Script |
+   | :---: | :---: | :--- | :--- | :--- | :--- |
+   | 003 | Elaborate | *"push the light harder from the left"* | Blocked the sky and the side shadows | `artifacts/003_darks.webp` | `scripts/0006.js` |
+
+   The last two columns are what make a turn **addressable** rather than merely described — see
+   *Going back* below. A turn is often several executions; name the one that produced the render.
 3. **A closing `Stage.note`** naming the two or three turns that actually determined the drawing.
    They are rarely the ones that took longest.
 

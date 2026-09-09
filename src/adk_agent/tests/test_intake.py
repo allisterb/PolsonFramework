@@ -395,6 +395,48 @@ class StarterTests(unittest.TestCase):
                 self.assertIsNone(money.search(starter["brief"]),
                                   "state the question, not an answer nobody sourced")
 
+    def test_a_workflow_offering_one_type_selects_it(self):
+        """An em-dash the server quietly turns into `review` tells the visitor nothing.
+
+        `ProjectGenerator.DefaultTypes` already maps drawing to review, so a blank submits fine —
+        this is about the control showing what is going to happen.
+        """
+        single = [w for w, types in intake.WORKFLOWS.items() if len(types) == 1]
+        self.assertTrue(single, "no single-type workflow to check")
+
+        body = TestClient(_app()).get("/new").text
+        self.assertIn("if (types.length === 1) kind.value = types[0];", body)
+
+    def test_switching_workflow_cannot_leave_an_unoffered_type_selected(self):
+        """**Hiding an option does not clear a value already on it.**
+
+        Choosing drawing_partner (review) then switching to infographic left `review` selected on a
+        hidden option — submitted, and refused by the server for a type the visitor could no longer
+        see. Only reachable now that one workflow offers a type no other does.
+        """
+        body = TestClient(_app()).get("/new").text
+
+        self.assertIn("if (kind.disabled || !types.includes(kind.value)) kind.value = '';", body)
+
+    def test_a_drawing_starter_asks_for_nothing_the_workflow_refuses_to_draw(self):
+        """`drawing`'s first non-negotiable is pencil and pen: no colour, no flats, no fills.
+
+        A starter asking for a palette or a graded sky would commission something the workflow
+        declines, and the visitor would read the refusal as the studio being broken.
+        """
+        banned = re.compile(r"\b(colour|color|palette|hue|gradient|wash|flats?|paint(ed|ing)?)\b", re.I)
+        for starter in intake.STARTERS:
+            if starter["workflow"] != "drawing":
+                continue
+            with self.subTest(starter=starter["label"]):
+                self.assertIsNone(banned.search(starter["brief"]))
+
+    def test_every_offered_workflow_has_at_least_one_starter(self):
+        """A workflow with no starter is one a visitor has to invent a brief for, which is the
+        friction the chips exist to remove — and the new one needs it most."""
+        covered = {s["workflow"] for s in intake.STARTERS}
+        self.assertEqual(covered, set(intake.WORKFLOWS))
+
     def test_the_names_are_distinct(self):
         """Two chips writing one name is a collision the second click discovers."""
         names = [s["name"] for s in intake.STARTERS]

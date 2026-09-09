@@ -68,6 +68,9 @@ def project(root: Path) -> Path:
     (root / "scripts" / "0001.js").write_text("// ran", encoding="utf-8")
     (root / "events" / "agent.jsonl").write_text('{"type":"run.begin"}\n', encoding="utf-8")
     (root / "documents" / "returns.csv").write_text("secret,numbers", encoding="utf-8")
+    # The finished piece. `drawing`, `comic`, `comic_studio` and `painting` write it to the *root*
+    # rather than into `artifacts/`, which is why it needs saying separately.
+    (root / "output.webp").write_bytes(b"the drawing itself")
     return root
 
 
@@ -88,6 +91,37 @@ class MirrorSelectionTests(unittest.TestCase):
                          "mirror/acme/project.json", "mirror/acme/artifacts/stage1.webp",
                          "mirror/acme/scripts/0001.js", "mirror/acme/events/agent.jsonl"):
             self.assertIn(expected, self.bucket.uploaded)
+
+    def test_the_finished_piece_is_copied(self):
+        """**The omission this test was written for.**
+
+        Four workflows write their deliverable to the project root — `artifacts/` holds the turns,
+        and a reader opening the newest numbered file is looking at whichever pass happened to be
+        last rather than at the drawing. The root allowlist did not include it, so on `nightstreet2`
+        seven intermediate passes were mirrored and the finished drawing was not: the one run whose
+        deliverable was a single root file was the one run whose deliverable was not backed up.
+        """
+        asyncio.run(self.mirror.sweep())
+
+        self.assertIn("mirror/acme/output.webp", self.bucket.uploaded)
+        self.assertEqual(self.bucket.uploaded["mirror/acme/output.webp"], b"the drawing itself")
+
+    def test_a_rewritten_deliverable_is_copied_again(self):
+        """`output.webp` is written once per turn, not once at the end — seven times on a real run —
+        so the mirror has to follow it rather than copying the first version and stopping.
+        """
+        asyncio.run(self.mirror.sweep())
+        self.bucket.uploaded.clear()
+
+        target = self.root / "output.webp"
+        target.write_bytes(b"a later pass, with the marks")
+        import os
+        stat = target.stat()
+        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+
+        asyncio.run(self.mirror.sweep())
+        self.assertEqual(self.bucket.uploaded.get("mirror/acme/output.webp"),
+                         b"a later pass, with the marks")
 
     def test_the_directors_documents_are_never_copied(self):
         """`documents/` is the client's own material and is not ours to put anywhere."""

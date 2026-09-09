@@ -277,6 +277,38 @@ STARTERS: tuple[dict[str, str], ...] = (
                  "set when, where the waiting happens, and how the hours actually distribute across "
                  "camera, grip and electric, art, wardrobe and talent.",
     },
+    # **Pencil and pen only.** `drawing`'s first non-negotiable rules out colour, flats and fills of
+    # any hue — value comes from pressure, hatching and density — so a starter asking for a palette
+    # or a graded sky would be commissioning something the workflow refuses to draw. Each of these is
+    # a subject graphite and line are *for*, and each says outright that the director will steer,
+    # because that is the difference between this workflow and the other two.
+    {
+        "label": "Storyboard: the reveal",
+        "name": "storyboard",
+        "workflow": "drawing",
+        "kind": "review",
+        "brief": "A single storyboard frame: the moment a character sees something we cannot see "
+                 "yet. Their back to us, the room doing the work. Block it in and I will tell you "
+                 "where to push it.",
+    },
+    {
+        "label": "Wet street, night",
+        "name": "nightstreet",
+        "workflow": "drawing",
+        "kind": "review",
+        "brief": "A location sketch in graphite: a rain-slicked street corner at night, signage and "
+                 "reflections, the kind of place a crew would block a chase through. Start with the "
+                 "perspective and the darks; I will steer the mood.",
+    },
+    {
+        "label": "Character study",
+        "name": "castingstudy",
+        "workflow": "drawing",
+        "kind": "review",
+        "brief": "A head-and-shoulders study of a weathered detective — a type rather than a "
+                 "likeness of anyone real. Construction first, then ink the lines that matter. Ask "
+                 "me before you commit to the expression.",
+    },
 )
 
 
@@ -573,10 +605,20 @@ FORM = """<!doctype html>
     const chosen = workflow.selectedOptions[0];
     const types = (chosen.dataset.types || '').split(',').filter(Boolean);
     kind.disabled = types.length === 0;
-    if (kind.disabled) kind.value = '';
     for (const option of kind.options) {
       option.hidden = option.value !== '' && !types.includes(option.value);
     }
+
+    // **A type the new workflow does not offer cannot be kept.** Hiding an option does not clear a
+    // value already on it, so choosing drawing_partner (review) and then switching to infographic
+    // left `review` selected on a hidden option — submitted, and refused by the server for a type
+    // the visitor could no longer even see. Only visible now that a workflow offers a type no other
+    // one does.
+    if (kind.disabled || !types.includes(kind.value)) kind.value = '';
+
+    // One type is not a choice. Select it, so the control shows what is going to happen rather than
+    // an em-dash the server will quietly turn into the same thing.
+    if (types.length === 1) kind.value = types[0];
     // The placeholder, not the value: an empty field means "the workflow's own", and pre-filling it
     // would turn a default the studio chose into a number the visitor appears to have set.
     if (deadline) deadline.placeholder = chosen.dataset.deadline || '';

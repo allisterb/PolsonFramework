@@ -79,10 +79,21 @@ MIRRORED_DIRS = ("artifacts", "scripts", "events", ".polson/research")
 #: Related to `studio.app.DELIVERABLES` but deliberately not shared with it. That list answers "what
 #: may be served over HTTP" — and `GEMINI.md` must never be, it is the studio's own instructions.
 #: This answers "what is needed to have this run again", which is a different question.
+#: **`output.*` is the deliverable itself, and leaving it out was the worst omission this list has
+#: had.** Four workflows — `drawing`, `comic`, `comic_studio`, `painting` — write their finished piece
+#: to the project *root* rather than into `artifacts/`, deliberately: `artifacts/` holds the turns,
+#: and a reader opening the newest numbered file is looking at whichever pass happened to be last
+#: rather than at the drawing. The three `harness` types write `output.svg` beside it.
+#:
+#: So the run whose deliverable is a single root file was the one run whose deliverable was not
+#: backed up. Measured on `nightstreet2`: seven intermediate passes mirrored, and the finished
+#: drawing not — the exact inverse of what is worth keeping. Found because a director asked why the
+#: pass they had chosen was not the one they could save.
 MIRRORED_FILES = (
     "brief.md", "artwork.js", "accuracy.md", "findings.md",
     "critique_log.md", "materials.md", "turns.md", "project.json",
     "GEMINI.md", "CLAUDE.md",
+    "output.webp", "output.svg", "output.png",
 )
 
 #: Never copied, at any depth. `documents/` is the director's own supplied material — a client's

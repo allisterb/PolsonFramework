@@ -10,7 +10,7 @@ Most programmers tend to believe that the incredible coding capablities of LLMs 
 
 
 To enable true computational creativtiy for agents in the visual arts fields requires an alternative approach to the standard one-way prompting of probabilistic neural models to generate visual artifacts.
-![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/drawing_partner4.png)
+![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/storyboad-annot.png)
 
 ## What it does
 Polson Graphics Studio is an agentic co-creative graphic design firm for drawing and infographics for advertising, TV, and film. PGS provides a completely autonomous way to create raster drawings like storyboards, and professional-grade, vector-based infographics that uses cited, sourced facts only, and produces the same deliverables that clients expect from human art and graphic design projects. 
@@ -213,6 +213,47 @@ Using AI to execute code is always fraught with problems. The Polson JavaScript 
 * No access to ‘eval’ or other potentially unsafe JavaScript features.  
 
 ### Google ADK Agent Orchestration
+
+Polson Graphics Studio runs on Google ADK 2.8.0. ADK owns each project's generation, artifacts, and agent loop, and gives every run a set of lifecycle callbacks that fire outside any single agent. The Polson agent orchestration is implemented as follows
+
+#### One ADK app per project
+
+ADK scopes sessions, artifacts and toolsets by **app name**, and one app means one `McpToolset`, built once and cached, so one drawing engine process and one project directory for every session it
+serves. 
+
+#### The generated project is the agent definition
+
+Polson does not follow the ADK idiom and restate the instructions and the MCP launch command in Python, which is duplication and could drift. Instead `agent.py` reads the generated project: its `GEMINI.md` becomes the agent's `instruction`, and the stdio launch command mirrors `ProjectGenerator.McpConfig` exactly. A workflow with a `roles/` directory becomes a root agent plus one ADK sub-agent per role file, parsed by the same code that generates them, so the multi-agent and single-agent cases cannot disagree about what a role is. All of the prompt work in
+`ProjectTemplate/*/instructions.md`,  including its untrusted-brief boundary, is inherited rather than reimplemented.
+
+#### Plugins
+
+`BasePlugin` callbacks fire for every agent in an app, outside any of them, so one instance sees a whole run without each agent opting in. That is the seam Polson builds the studio on.
+
+| Plugin | Callbacks | What it does |
+|---|---|---|
+| `transcript` | `before_run`, `after_run`, `on_run_error`, `after_model` | Writes the run record — `thinking`, `text`, `tool.call`, `usage`, `budget` — into `events/agent.jsonl`, the same vocabulary the web UI, the replay and the sense-making curve already read. |
+| `mirror` | `before_run`, `after_run`, `on_run_error` | Sweeps the project directory to Cloud Storage every 20s **while the run is happening**, because a Cloud Run instance can be replaced mid-run and its filesystem does not outlive it. |
+| `interject` | `after_tool_callback` | The director's words, mid-run. ADK has no way to push a message into a running invocation, but `after_tool_callback` may return a **replacement tool result** — so the interjection is appended to the next tool result the agent receives, never substituted for it. |
+| `StudioWatchdog` | `after_tool_callback` | Puts a directive in front of a role that has stopped making progress. |
+| budget / breaker | `before_model_callback` | Below. |
+
+
+#### Tools
+
+ADK artifacts are not file paths but **versioned entities**  `save_artifact` returns an integer, and successive saves under one name accumulate. `peek` is an ADK `FunctionTool` that reads a render from the project, saves it as an ADK artifact, and lets `LoadArtifactsTool` inject it as a real `inline_data` part. `write_script` and `edit_script` exist for the same reason: `ExecuteScript` accepts a `scriptFile`,
+and until an ADK tool could author one, the agent could *run* a file it had no way to create.
+
+#### Budget
+
+All human creators work under time and budget constraints. Every Polson project carries a wall-clock deadline, per-role time allowances, and a token cap measured in billable tokens with cached input tokens charged at a fraction of rgular input
+
+The circuit breaker is a module-level set of tripped `invocation_id`s rather than ADK's `end_invocation`
+
+
+#### Web Interface
+
+`get_fast_api_app(...)` returns an ordinary `FastAPI`, so the Polson studio interface is mounted onto ADK's own app.
 
 ### Extended Mind
 The Polson extended mind tools use Google's GenAI SDK and the Parallel API to create extended cognition tools for demanding tasks like document processing and web research. The tools are exposed to the agent via MCP. The agent can write a search quer

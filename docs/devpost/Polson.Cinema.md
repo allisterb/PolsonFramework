@@ -171,9 +171,8 @@ However, because the code state is externalized, correcting semantic drift in a 
 ![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/ask9.png)
 
 
-
-
 ## How it works
+![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/new.png)
 Polson organizes it work into *projects*. When you you use the web interface or CLI to create a new project, Polson creates a directory with all the files that an agent needs to use Polson including config for the Polson MCP tools and the different ADK hooks and tools and orchestr that fire at session stop and end to call the CLI to copy Gemini chat logs for the project session from your profile directory to the Polson project directory. The generated GEMINI.md contains the instructions and prompt guardrails and subagent roles for carrying out the drawing workflow you specified.  
 
 When an project starts, the agents calls the Polson `Search` and `ReadDoc` and`ExecuteScript` and other MCP tools, and to get the SDK and drawing manuals and enough info to begin the drawing and graphic design process. When agents make a drawing the rendered drawing is stored both as JavaScript code and as a .webp or .svg image. The JavaScript code is the exact procedural code required to create a byte-for-byte identical render of  images and serves as the medium for agentic collaboration and creativity over visual images and graphics.

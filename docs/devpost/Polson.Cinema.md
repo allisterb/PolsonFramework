@@ -171,6 +171,20 @@ However, because the code state is externalized, correcting semantic drift in a 
 ![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/ask9.png)
 
 
+#### Stigmergic Collaboration
+
+Stigmergy is coordination *through the environment* rather than through instruction. A code-based studio makes the traces **legible**, where a pixel-based one cannot. A diffusion model's output carries no account of itself. A `.js` file that renders a scene carries the whole account: what was drawn, in what order, with a comment saying why.
+
+In Polson the traces run in two directions, and only the first is what the term usually means.
+
+**Horizontally — between peers in the same environment.** In a multi-agent run that is several agents sharing a project directory. But it is also one agent coordinating with its own earlier passes: reading back the artifacts, scripts and stage notes it left rather than trusting recall. The environment is the medium either way; the only difference is how many hands are in it.
+
+
+**Vertically — from the agent to whoever can change what the environment affords.** The run record is read by *developers*, and the affordances change in response, so the next agent does not need the trace at all, because the thing it would have had to work around is gone.
+
+Horizontal stigmergy coordinates *within* a fixed environment. Vertical stigmergy **edits the environment**.
+
+
 ## How it works
 ![](https://ajb.nyc3.cdn.digitaloceanspaces.com/polson/new.png)
 Polson organizes it work into *projects*. When you you use the web interface or CLI to create a new project, Polson creates a directory with all the files that an agent needs to use Polson including config for the Polson MCP tools and the different ADK hooks and tools and orchestr that fire at session stop and end to call the CLI to copy Gemini chat logs for the project session from your profile directory to the Polson project directory. The generated GEMINI.md contains the instructions and prompt guardrails and subagent roles for carrying out the drawing workflow you specified.  

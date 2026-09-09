@@ -403,7 +403,10 @@ beautiful and overstates its numbers has failed the more important half.
 
 ## Where to look things up
 
-- `Search` — the studio's design knowledge and API reference, in one query. Start here.
+- `polson://manual/index` — **read this once, before you start.** Every manual with its purpose, its
+  topics, and the SDK calls it binds to, in one document. It is the only thing here that can tell
+  you a capability exists when you did not know to look for it.
+- `Search` — the studio's design knowledge and API reference, in one query.
 - `polson://manual/13` — this workflow's manual. `polson://manual/11` for type, `polson://manual/09`
   for compositional armatures and value hierarchy.
 - `polson://manual/15` — measuring a render, for the verification pass: `palette` checks the colour

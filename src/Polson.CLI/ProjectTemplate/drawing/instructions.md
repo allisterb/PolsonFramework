@@ -162,6 +162,29 @@ Given such a mark as a path:
 None of these is a call in the SDK — they are things you construct. That is the point: the repertoire
 is small, and what varies is judgement about which one this turn wants.
 
+### If the subject has a person in it, construct before you draw
+
+**The SDK builds figures, heads and hands for you, and drawing them freehand is the commonest way a
+drawing here goes wrong.** A measured run bears this out: an over-the-shoulder two-hander was drawn
+without one call to any of these, and the proportions are what suffered. The agent read its media
+manual, searched the brush API three times, and never learned this existed — which was a gap in this
+page rather than a failure of judgement.
+
+- `Drawing.createMannequinFigure(x, y, height, options)` — the 8-head skeleton, posed. Read
+  `figure.bounds` and size to **that**, never to `totalHeight`: a thrown arm reaches far wider than
+  the canon, and it is how a figure runs off the frame.
+- `Drawing.createFigureGeometry(figure, options)` — the same figure as geometry: `silhouette` to
+  fill or clip to, `parts` per mass, `groups` for occlusion. `padding` is how a garment is derived.
+- `Drawing.createLoomisHead(x, y, height, yaw, pitch)` and `drawLoomisWireframe` — the head, turned.
+  `applyFacialExpression` moves the landmarks.
+- `Drawing.createHandFigure(x, y, length, options)` — the hand, on Loomis's two-unit scale.
+- `Drawing.drawMannequinWireframe` / `drawMannequinSolid` for the construction itself.
+
+**Construct in non-repro blue, draw over it in graphite, then let the construction go.** That is the
+classical order and it is what these calls are for — the wireframe is scaffolding for your line, not
+the drawing. `polson://manual/08` is the figure manual and `polson://manual/19` is the hand; read the
+one you need **before** the turn that puts a person on the surface, not after the proportions fail.
+
 ---
 
 ## Critique — the pass that makes it a drawing
@@ -266,11 +289,15 @@ There is no fixed endpoint; the director decides. When they call it, produce:
 
 ## Where to look things up
 
-- `Search(query, scope: 'manual' | 'sdk')` — design knowledge and API reference. Start here.
+- `polson://manual/index` — **read this once, before you start.** Every manual with its purpose, its
+  topics, and the SDK calls it binds to, in one document. It is the only thing here that can tell
+  you a capability exists when you did not know to look for it.
+- `Search(query, scope: 'manual' | 'sdk')` — design knowledge and API reference.
 - `polson://manual/05` — observation, measurement, plumb lines, CSI contour language. **This is your
   manual.** §3's CSI vocabulary is the one to reach for when a line is not working.
 - `polson://manual/06` — perspective, if the subject has any.
-- `polson://manual/08` — the figure, if the subject is one.
+- `polson://manual/08` — **the figure. Read it before you draw a person**, and see the construction calls under *Your repertoire*; freehand figures are where this workflow most often falls down.
+- `polson://manual/19` — the hand, on the same footing.
 - `polson://manual/09` — composition armatures and value hierarchy, for the `Ground` turn.
 - `polson://manual/17` — **your media.** The five brushes, the three layers each decomposes into,
   and `PathEffect.discrete` for putting the hand back into a plotted line.

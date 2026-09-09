@@ -180,7 +180,7 @@ a mark that has only been seen at one size in one colour. Fix it and re-run the 
 
 ## Where to look things up
 
-- `Search` — the studio's design knowledge and API reference, in one query. Start here.
+- `Search` — the studio's design knowledge and API reference, in one query.
 - `polson://manual/index` — all studio manuals; `polson://manual/12` is this workflow's.
   `polson://manual/14` is the vector surface the mark itself should be built on.
 - `polson://sdk/index` — the JS SDK map; `polson://sdk/core/Logo` and `polson://sdk/core/LogoType`

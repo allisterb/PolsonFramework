@@ -177,7 +177,10 @@ In this directory:
 
 ## Where to look things up
 
-- `Search(query, scope: 'manual' | 'sdk')` — start here.
+- `polson://manual/index` — **read this once, before you start.** Every manual with its purpose, its
+  topics, and the SDK calls it binds to, in one document. It is the only thing here that can tell
+  you a capability exists when you did not know to look for it.
+- `Search(query, scope: 'manual' | 'sdk')` — design knowledge and API reference.
 - `polson://manual/01` — head and facial construction (Loomis).
 - `polson://manual/02` — hair and flowing ribbons.
 - `polson://manual/03` — inking, line weight hierarchy, feathering. **Read §7 before the `Ink`

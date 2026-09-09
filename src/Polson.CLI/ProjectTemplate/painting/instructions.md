@@ -247,7 +247,10 @@ In this directory:
 
 ## Where to look things up
 
-- `Search(query, scope: 'manual' | 'sdk')` — start here.
+- `polson://manual/index` — **read this once, before you start.** Every manual with its purpose, its
+  topics, and the SDK calls it binds to, in one document. It is the only thing here that can tell
+  you a capability exists when you did not know to look for it.
+- `Search(query, scope: 'manual' | 'sdk')` — design knowledge and API reference.
 - `polson://manual/16` and `polson://sdk/core/Assets` — requisition, budget, failure handling.
   **Read them before the first requisition**, not after the first failure. Manual 16 has the
   descriptor rules, the `await` trap, and why requisition and drawing belong in separate scripts.

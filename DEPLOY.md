@@ -296,8 +296,8 @@ mid-flight and roughly twenty minutes in when Cloud Run replaced the instance un
 Both fixes are now in place and both are needed, because they save different things:
 
 ```bash
---update-env-vars POLSON_ARTIFACT_SERVICE_URI=gs://polson-artifacts        # ADK's versioned blobs
---update-env-vars POLSON_MIRROR_URI=gs://polson-artifacts/mirror          # the project directory
+--update-env-vars POLSON_ARTIFACT_SERVICE_URI=gs://<bucket-name>        # ADK's versioned blobs
+--update-env-vars POLSON_MIRROR_URI=gs://<bucket-name>/mirror          # the project directory
 ```
 
 The first is ADK's own artifact store — the versioned renders the *model* is shown, under ADK's key
@@ -329,7 +329,7 @@ Restoring lands it on the same ephemeral disk, deliberately: that copy is a **ca
 instance is replaced again the archive is still the archive. By hand, if the page is not available:
 
 ```bash
-gcloud storage cp -r "gs://polson-artifacts/mirror/<project>" ./projects/ --project <project-id>
+gcloud storage cp -r "gs://<bucket-name>/mirror/<project>" ./projects/ --project <project-id>
 ```
 
 > [!NOTE]

@@ -1,8 +1,7 @@
 # Polson — the ADK agent runtime
 
-A second Google agent runtime for the studio, alongside the Antigravity SDK. This is the deliverable
-for the **Agentic Cinema** hackathon (Parallel track); the feasibility brief and the verification
-behind every claim here are in [`docs/agentic-cinema-assessment.md`](../../docs/agentic-cinema-assessment.md).
+A second Google agent runtime for the studio, alongside the Antigravity SDK. The feasibility brief
+and the verification behind every claim here are kept out of the repository, in `docs/internal/`.
 
 **Status: deployed and drawing on Cloud Run** (private URL), and running locally. One app per project, created dynamically, single- and
 multi-agent both working end to end against the real engine. The Dockerfile exists and is unbuilt;
@@ -367,7 +366,7 @@ The image is built by **Cloud Build, not locally** — `--source .` uploads the 
 remotely, so no Docker engine is needed on a developer machine at any point.
 
 ```bash
-gcloud run deploy polson-studio --source . \
+gcloud run deploy <service> --source . \
   --project <project> --region <region> --allow-unauthenticated \
   --set-secrets POLSON_AGENT_PLATFORM_KEY=polson-agent-key:latest
 ```
@@ -409,7 +408,7 @@ gcloud run deploy polson-studio --source . \
 > explains it, because the refusal happens in middleware before any of our handlers run.
 >
 > ```bash
-> gcloud run services update polson-studio --project <project> --region <region> \
+> gcloud run services update <service> --project <project> --region <region> \
 >   --update-env-vars "^;^POLSON_ALLOW_ORIGINS=http://127.0.0.1:8080,http://localhost:8080"
 > ```
 >

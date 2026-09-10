@@ -21,7 +21,7 @@ nobody tests. A sweep sees whatever is on disk, whoever put it there.
 
 **Publishing is not what this is for.** This is durability: a private bucket, everything worth
 keeping, continuously. Handing a judge a permalink to a finished piece is a different job with a
-different bucket, a curated subset and a single moment — see `gs://polson-published`. Conflating them
+different bucket, a curated subset and a single moment — see `gs://<published-bucket>`. Conflating them
 is how `documents/` ends up on the public internet.
 
 Configure with `POLSON_MIRROR_URI`; absent, this is inert and every call is a no-op, which is what a

@@ -3,10 +3,9 @@
 **Written 2026-09-05, nothing started.** This is a cold-start spec: everything decided, measured or
 found during the session that led to it is recorded here so none of it has to be re-derived.
 
-> **Deadline context.** The Agentic Cinema hackathon closes **14:00 PT 2026-09-09**
-> (`docs/agentic-cinema-assessment.md`). What already exists is enough to *make* a short animated
-> infographic; this API is what makes a long one maintainable. Build it in the order below and it is
-> useful at every stopping point.
+> **Scope.** What already exists is enough to *make* a short animated infographic; this API is what
+> makes a long one maintainable. Build it in the order below and it is useful at every stopping
+> point.
 
 ---
 

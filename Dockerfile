@@ -2,7 +2,7 @@
 #
 # Built by Cloud Build, not locally:
 #
-#     gcloud run deploy polson-studio --source . --region <region> --project <project>
+#     gcloud run deploy <service> --source . --region <region> --project <project>
 #
 # **Nothing here needs a local Docker engine.** `--source .` uploads the tree (see `.gcloudignore`)
 # and builds remotely.

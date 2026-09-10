@@ -61,7 +61,7 @@ class FakeBucket:
         return FakeListing([b for b in self.blobs if b.name.startswith(prefix)])
 
 
-def with_archive(bucket, uri="gs://polson-artifacts/mirror"):
+def with_archive(bucket, uri="gs://example-artifacts/mirror"):
     """Patches the module so `_bucket()` answers with the fake, without a client anywhere."""
     return mock.patch.multiple(archive_mod,
                                ARCHIVE_URI=uri,

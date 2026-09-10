@@ -32,7 +32,7 @@ class FakeBlob:
 
 
 class FakeBucket:
-    def __init__(self, name="polson-artifacts"):
+    def __init__(self, name="example-artifacts"):
         self.name = name
         self.uploaded: dict[str, bytes] = {}
         self.fail_on: set[str] = set()
@@ -43,7 +43,7 @@ class FakeBucket:
         return FakeBlob(self, name)
 
 
-def build(root: Path, uri="gs://polson-artifacts/mirror") -> tuple[mirror_mod.ProjectMirror, FakeBucket]:
+def build(root: Path, uri="gs://example-artifacts/mirror") -> tuple[mirror_mod.ProjectMirror, FakeBucket]:
     """A mirror wired to a fake bucket, with no cloud client constructed."""
     bucket = FakeBucket()
     fake_storage = mock.MagicMock()
@@ -279,21 +279,21 @@ class MirrorConfigurationTests(unittest.TestCase):
             self.assertIsNone(mirror_mod.make_plugin(self.root))
 
     def test_a_uri_that_is_not_gs_is_refused_by_name(self):
-        for bad in ("file:///tmp/x", "polson-artifacts", "https://example.com/x", "gs://"):
+        for bad in ("file:///tmp/x", "example-artifacts", "https://example.com/x", "gs://"):
             with self.assertRaises(ValueError, msg=bad):
                 build(self.root, uri=bad)
 
     def test_the_prefix_is_the_uri_path_plus_the_project_name(self):
-        m, _ = build(self.root, uri="gs://polson-artifacts/mirror")
+        m, _ = build(self.root, uri="gs://example-artifacts/mirror")
         self.assertEqual(m.prefix, "mirror/acme")
 
     def test_a_bucket_with_no_prefix_puts_the_project_at_the_root(self):
-        m, _ = build(self.root, uri="gs://polson-artifacts")
+        m, _ = build(self.root, uri="gs://example-artifacts")
         self.assertEqual(m.prefix, "acme")
 
     def test_a_plugin_that_cannot_be_built_is_none_rather_than_an_exception(self):
         """An app that will not start because a *backup* failed is the worse outcome."""
-        with mock.patch.object(mirror_mod, "MIRROR_URI", "gs://polson-artifacts"), \
+        with mock.patch.object(mirror_mod, "MIRROR_URI", "gs://example-artifacts"), \
              mock.patch.object(mirror_mod, "ProjectMirror", side_effect=RuntimeError("no creds")):
             self.assertIsNone(mirror_mod.make_plugin(self.root))
 
@@ -320,7 +320,7 @@ class MirrorWiringTests(unittest.TestCase):
     def test_the_mirror_is_attached_when_a_destination_is_configured(self):
         fake_storage = mock.MagicMock()
         fake_storage.Client.return_value.bucket.return_value = FakeBucket()
-        with mock.patch.object(mirror_mod, "MIRROR_URI", "gs://polson-artifacts/mirror"), \
+        with mock.patch.object(mirror_mod, "MIRROR_URI", "gs://example-artifacts/mirror"), \
              mock.patch.dict(sys.modules, {"google.cloud": mock.MagicMock(storage=fake_storage),
                                            "google.cloud.storage": fake_storage}):
             self.assertIn("polson_mirror", self._plugin_names())
@@ -334,7 +334,7 @@ class MirrorWiringTests(unittest.TestCase):
         """The two observe the same run for different reasons; neither may displace the other."""
         fake_storage = mock.MagicMock()
         fake_storage.Client.return_value.bucket.return_value = FakeBucket()
-        with mock.patch.object(mirror_mod, "MIRROR_URI", "gs://polson-artifacts/mirror"), \
+        with mock.patch.object(mirror_mod, "MIRROR_URI", "gs://example-artifacts/mirror"), \
              mock.patch.dict(sys.modules, {"google.cloud": mock.MagicMock(storage=fake_storage),
                                            "google.cloud.storage": fake_storage}):
             names = self._plugin_names()

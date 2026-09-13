@@ -447,3 +447,8 @@ projects/
 # Nothing committed lives here - the shared factory is src/adk_agent/studio.py, one level up.
 src/adk_agent/apps/
 src/adk_agent/artifact_versions/
+
+# Working notes that are not part of the published project: session handoffs, deployment
+# assessments, anything naming a live project id, region, bucket or service. Kept on disk and
+# backed up separately, deliberately outside the repository - see docs/ for what IS published.
+docs/internal/

@@ -84,6 +84,9 @@ public class CreateProjectOptions : Options
     [Option("test", Required = false, HelpText = "Run this workflow as an evaluation of the framework as well as a commission: the agent reports friction, errors and gaps in findings.md, and reading Polson's own source is denied so the run can say whether the published API was sufficient. Applies to any workflow, each of which exercises a different part of the stack.")]
     public bool Test { get; set; }
 
+    [Option("inline-manuals", Required = false, HelpText = "Write the workflow's judgment manuals into the instructions file instead of leaving them to be searched for. Costs tokens on every turn — roughly 15k for `drawing` — but they are a stable prefix, so a host that caches pays a fraction of that after the first turn. Worth it in managed mode, where the host's own subscription covers the spend; think harder about it on a metered deployment. Measured: pointing at a manual has never reliably produced a read, and `polson://manual/index` was never opened in any run.")]
+    public bool InlineManuals { get; set; }
+
     [Option("standalone", Required = false, HelpText = "Also generate what the Polson orchestrator needs to host the agent itself. Without it the project is managed by a desktop or IDE host.")]
     public bool Standalone { get; set; }
 

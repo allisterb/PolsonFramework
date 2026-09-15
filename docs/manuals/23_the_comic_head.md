@@ -169,7 +169,79 @@ ctx.fillWrappedText('Black — the width the Loomis landmarks already carry. The
 canvas;
 ```
 
-## 6. What this does not give you
+## 6. The same face twice — character consistency across panels
+
+A comic asks something a portrait never does: the head in panel 40 has to be recognisably the person
+from panel 1, drawn at a different size, at a different angle, months of reading apart. Construction
+alone will not do it. `createLoomisHead` gives you the *canon*, and the canon is by definition the
+average — every character built from it comes out as the same generically proportioned person.
+
+**`Drawing.createParametricHead(head, parameters)` is what makes one head a particular person**, and
+it works by displacing the landmarks the canon already computes rather than by drawing anything new:
+
+```javascript
+// One character, three panels: different size, different angle, same person.
+const canvas = createCanvas(900, 340);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f5f2e9'; ctx.fillRect(0, 0, 900, 340);
+const INK = '#1a1a18';
+
+// The character is five numbers. Keep them at the top of artwork.js and the face keeps.
+const MORT = { eyesDistance: -0.4, eyesSize: 0.3, noseLength: -0.5, jawShape: 0.8, mouthWidth: 0.2 };
+
+const panels = [
+    { cx: 150, cy: 70, headH: 180, yaw: 0 },     // mid shot, square on
+    { cx: 430, cy: 40, headH: 250, yaw: 20 },    // closer, turning
+    { cx: 730, cy: 95, headH: 130, yaw: -15 },   // further off, turned back
+];
+
+for (const panel of panels) {
+    const head = Drawing.createLoomisHead(panel.cx, panel.cy, panel.headH, panel.yaw, 0);
+    const face = Drawing.createParametricHead(head, MORT);
+
+    Drawing.drawLoomisWireframe(ctx, face, { graphiteColor: '#b9b3a4' });
+    Drawing.drawComicEye(ctx, face.nearEye, false, { inkColor: INK });
+    Drawing.drawComicNose(ctx, face.noseWedge, { inkColor: INK });
+    Drawing.drawComicMouth(ctx, face.mouthGuides, { inkColor: INK });
+}
+
+// The proof is arithmetic rather than impression: every panel's eye spacing is the same fraction of
+// its own head height. A character that drifts would show up here before a reader ever noticed it.
+for (const panel of panels) {
+    const face = Drawing.createParametricHead(
+        Drawing.createLoomisHead(panel.cx, panel.cy, panel.headH, 0, 0), MORT);
+    const gap = Math.abs(face.nearEye.inner.x - face.farEye.inner.x) / panel.headH;
+    log(`head ${panel.headH}px — eye gap ${(gap * 100).toFixed(2)}% of head height`);
+}
+
+canvas;
+```
+
+Three things about it that matter for a page rather than for a single drawing:
+
+- **It is a pure function.** No clock, no randomness, no memory. The same five numbers give identical
+  landmarks every time, which is the entire mechanism — consistency lives in *you keeping the
+  numbers*, not in anything remembering a face. A `const` at the top of the file is the whole of it.
+- **Displacements are fractions of the head's own height**, so the character survives a change of
+  scale. A 40px head in a long shot and a 600px head in a close-up get the same face, which is
+  exactly the case §3's simplification doctrine is otherwise silent about.
+- **Zero is the canon, exactly.** A head with no parameters is byte-identical to the one that went
+  in, so adding the call to an existing page changes nothing until you give it a number.
+
+**Two characters on one page is two constants, not two constructions.** The head you pass in is never
+modified, so one canon head can serve a whole cast in the same script.
+
+> **It works in screen space, so it has a yaw limit.** `createLoomisHead` applies the turn before
+> this sees the head, and past roughly 40° "outward" on the page stops being "outward" on the face —
+> a widened jaw widens the wrong way. For a character who turns that far, build the extreme angles as
+> their own construction. The failure is quiet: the face stops being the same person rather than
+> erroring, which is precisely the failure a reader notices and cannot name.
+
+The parameter set follows Schwind et al., *FaceMaker* (Springer 2017), whose five most identity-bearing
+controls were drawn from surveying nine commercial character creators. Their system morphs 3D meshes;
+this moves Loomis landmarks, which is the same idea in the medium we actually draw in.
+
+## 7. What this does not give you
 
 - **Still no composed head.** This manual explains what a comic head *is*; the toolkit still has
   landmarks and separate feature drawers and nothing that unions them into a drawn head with a

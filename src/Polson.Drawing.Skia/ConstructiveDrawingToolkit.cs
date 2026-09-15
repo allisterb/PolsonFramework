@@ -2951,6 +2951,86 @@ public class ConstructiveDrawingToolkit
         ctx.Restore();
     }
 
+    /// <summary>
+    /// Accepted parameter names for <see cref="CreateParametricHead"/>. An unrecognised one is refused.
+    /// </summary>
+    /// <remarks>
+    /// Five to begin with, one per facial domain, chosen to answer whether a named character is
+    /// reachable at all before the other ten are worth writing. Refused rather than ignored for the
+    /// reason <c>ChartToolkit</c> gives: a misspelled key binds to nothing and silently draws the
+    /// canon, which looks like the parameter having no effect.
+    /// </remarks>
+    private static readonly string[] HeadParameters =
+        ["eyesDistance", "eyesSize", "noseLength", "jawShape", "mouthWidth"];
+
+    /// <summary>
+    /// Displaces a Loomis head's landmarks by named character parameters, and returns a whole head.
+    /// </summary>
+    /// <param name="headObj">A head from <see cref="CreateLoomisHead"/>.</param>
+    /// <param name="parameters">
+    /// Signed scales, each <c>-1 … 0 … +1</c>, defaulting to <c>0</c>. Out-of-range values are clamped.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>A character is a value, not a procedure.</b> This is a pure function of the head and the
+    /// parameters — no clock, no randomness, no state — so the same five numbers give byte-identical
+    /// landmarks in panel 1 and panel 40. That is the whole point: consistency across panels comes
+    /// from the agent keeping the numbers, which a `const` at the top of `artwork.js` already does,
+    /// rather than from anything remembering a face.
+    /// </para>
+    /// <para>
+    /// <b>Zero is the canon, exactly.</b> Every parameter defaults to <c>0</c> and a head built with
+    /// none of them, or all of them at zero, is identical to the one that went in. An unparameterised
+    /// head must not change, or every comic script already written silently redraws.
+    /// </para>
+    /// <para>
+    /// <b>Displacements are fractions of the head's own <c>unit.H</c></b>, never pixels, so a
+    /// parameter means the same thing on a 200px head and a 900px one. Same discipline as
+    /// <see cref="ApplyFacialExpression"/>, which scales its offsets by <c>H</c> for the same reason.
+    /// </para>
+    /// <para>
+    /// <b>Returns a complete head, deliberately unlike <see cref="ApplyFacialExpression"/></b>, which
+    /// returns only the keys it changed — so passing its result to <c>drawLoomisWireframe</c> fails
+    /// on a missing <c>unit</c>. A result that cannot be drawn by the renderer that consumes it is a
+    /// trap, and this composes and chains instead.
+    /// </para>
+    /// <para>
+    /// <b>Known limit: the head is already projected.</b> <see cref="CreateLoomisHead"/> applies yaw
+    /// and pitch before this sees it, so displacements are applied in screen space rather than head
+    /// space. At modest yaw the difference is invisible; past roughly 40° a widened jaw widens the
+    /// wrong way. Re-deriving from the canon construction with modified ratios is the correct fix and
+    /// is deliberately not done here — this layer is worth proving before it is worth rebuilding.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateParametricHead(object headObj, object? parameters = null)
+    {
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException("headObj must be a valid dictionary from createLoomisHead", nameof(headObj));
+
+        var opt = JsInterop.AsDict(parameters);
+        RefuseUnknownHeadParameters(opt, HeadParameters);
+
+        var result = CloneHead(head);
+
+        var unit = JsInterop.AsDict(head["unit"]);
+        var H = unit is not null && unit.Contains("H")
+            ? Convert.ToSingle(unit["H"], CultureInfo.InvariantCulture) : 200f;
+        var eyeW = unit is not null && unit.Contains("eyeW")
+            ? Convert.ToSingle(unit["eyeW"], CultureInfo.InvariantCulture) : H * 0.14f;
+
+        float P(string name) => Math.Clamp(Param(opt, name), -1f, 1f);
+
+        // Each parameter's full-scale displacement, as a fraction of head height. Kept modest: a
+        // face at +1 should read as a different person, not as a deformity, and the canon sits in
+        // the middle of a range a reader would accept as human.
+        MoveEyes(result, P("eyesDistance") * eyeW * 0.45f, P("eyesSize"));
+        StretchNose(result, P("noseLength") * H * 0.07f);
+        SquareJaw(result, P("jawShape"));
+        WidenMouth(result, P("mouthWidth") * H * 0.06f);
+
+        return result;
+    }
+
     public Dictionary<string, object?> ApplyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
     {
         if (JsInterop.AsDict(headObj) is not IDictionary head)
@@ -3826,6 +3906,196 @@ public class ConstructiveDrawingToolkit
     static string PhalanxName(int index, int count) => count == 2
         ? index switch { 0 => "Proximal", 1 => "Distal", _ => "Segment" + index }
         : index switch { 0 => "Proximal", 1 => "Middle", 2 => "Distal", _ => "Segment" + index };
+    #endregion
+
+    #region Parametric head
+    /// <summary>One parameter's value, or 0 when it was not given. Absent means canon, never a default.</summary>
+    static float Param(IDictionary? opt, string name)
+    {
+        if (opt is null) return 0f;
+        foreach (DictionaryEntry entry in opt)
+        {
+            if (string.Equals(entry.Key?.ToString(), name, StringComparison.OrdinalIgnoreCase))
+            {
+                try { return Convert.ToSingle(entry.Value, CultureInfo.InvariantCulture); }
+                catch (Exception) { return 0f; }   // a non-numeric value is canon, not a crash mid-draw
+            }
+        }
+
+        return 0f;
+    }
+
+    /// <summary>Refuses a misspelled parameter by name, rather than silently drawing the canon.</summary>
+    static void RefuseUnknownHeadParameters(IDictionary? opt, string[] accepted)
+    {
+        if (opt is null) return;
+
+        var unknown = new List<string>();
+        foreach (DictionaryEntry entry in opt)
+        {
+            var name = entry.Key?.ToString();
+            if (name is not null && !accepted.Contains(name, StringComparer.OrdinalIgnoreCase)) unknown.Add(name);
+        }
+
+        if (unknown.Count > 0)
+        {
+            throw new ArgumentException(
+                $"Head parameter{(unknown.Count > 1 ? "s" : string.Empty)} not recognised: "
+                + $"{string.Join(", ", unknown)}. Accepted: {string.Join(", ", accepted)}.");
+        }
+    }
+
+    /// <summary>A head copied deeply enough that displacing the copy cannot reach the original.</summary>
+    /// <remarks>
+    /// Two levels is the whole structure: the head's own keys, and the nested groups (<c>unit</c>,
+    /// <c>nearEye</c>, <c>noseWedge</c>, <c>mouthGuides</c>, <c>jaw</c>, and the points inside them).
+    /// A shallow copy would share those inner dictionaries, so parameterising a head would mutate
+    /// the canon it came from — and the second call with the same head would start from the first
+    /// call's face, which is exactly the consistency this exists to provide, destroyed.
+    /// </remarks>
+    static Dictionary<string, object?> CloneHead(IDictionary head)
+    {
+        var copy = new Dictionary<string, object?>(head.Count);
+        foreach (DictionaryEntry entry in head)
+        {
+            var key = entry.Key?.ToString();
+            if (key is null) continue;
+            copy[key] = JsInterop.AsDict(entry.Value) is IDictionary nested ? CloneHead(nested) : entry.Value;
+        }
+
+        return copy;
+    }
+
+    /// <summary>Replaces a point inside a nested group, leaving the rest of the group alone.</summary>
+    static void SetPoint(Dictionary<string, object?> head, string group, string key, Point2D value)
+    {
+        if (head.TryGetValue(group, out var g) && g is Dictionary<string, object?> dict)
+            dict[key] = ToDict(value);
+    }
+
+    static Point2D GetPoint(Dictionary<string, object?> head, string group, string key) =>
+        head.TryGetValue(group, out var g) && g is Dictionary<string, object?> dict && dict.ContainsKey(key)
+            ? ExtractPoint(dict[key])
+            : new Point2D(0f, 0f);
+
+    /// <summary>
+    /// Eye spacing and eye size, the two that most change who a face is.
+    /// </summary>
+    /// <remarks>
+    /// Spacing moves the inner corners toward or away from the facial axis and carries the outer
+    /// corner and centre with them, so the eye keeps its width while the pair moves. Size scales each
+    /// eye about its own centre, so the spacing set above survives it — doing them the other way
+    /// round makes the two parameters fight, and a reader cannot tell which one they are adjusting.
+    /// </remarks>
+    static void MoveEyes(Dictionary<string, object?> head, float spacing, float size)
+    {
+        foreach (var (group, sign) in new[] { ("nearEye", 1f), ("farEye", -1f) })
+        {
+            if (head[group] is not Dictionary<string, object?> eye) continue;
+
+            var inner = GetPoint(head, group, "inner");
+            var outer = GetPoint(head, group, "outer");
+            var centre = GetPoint(head, group, "center");
+
+            // Which way "outward" points for this eye, read off its own geometry rather than assumed:
+            // the far eye mirrors, and at yaw its corners are not symmetric about the axis.
+            var away = MathF.Sign(outer.X - inner.X);
+            if (away == 0) away = (int)sign;
+
+            // Positive is WIDER: the whole eye translates outward, so the gap between the two inner
+            // corners — which is what "eyes distance" names — opens. Written negated first, which
+            // made +1 narrow the face; the sign is not guessable from the parameter name alone,
+            // which is why both directions are asserted rather than one.
+            var dx = away * spacing;
+            inner = new Point2D(inner.X + dx, inner.Y);
+            outer = new Point2D(outer.X + dx, outer.Y);
+            centre = new Point2D(centre.X + dx, centre.Y);
+
+            var scale = 1f + size * 0.35f;
+            inner = new Point2D(centre.X + (inner.X - centre.X) * scale, centre.Y + (inner.Y - centre.Y) * scale);
+            outer = new Point2D(centre.X + (outer.X - centre.X) * scale, centre.Y + (outer.Y - centre.Y) * scale);
+
+            SetPoint(head, group, "inner", inner);
+            SetPoint(head, group, "outer", outer);
+            SetPoint(head, group, "center", centre);
+
+            if (eye.TryGetValue("width", out var w) && w is not null)
+                eye["width"] = Convert.ToSingle(w, CultureInfo.InvariantCulture) * scale;
+            if (eye.TryGetValue("height", out var h) && h is not null)
+                eye["height"] = Convert.ToSingle(h, CultureInfo.InvariantCulture) * scale;
+        }
+    }
+
+    /// <summary>
+    /// Nose length, from the bridge down.
+    /// </summary>
+    /// <remarks>
+    /// The bridge is the hinge, not the apex: a nose lengthens from where it leaves the brow, which
+    /// is what keeps the eye line fixed while the nose changes. `underNose` and the nostril travel
+    /// with the apex, and `noseBase` at the top level is moved to match — it and `noseWedge.apex`
+    /// describe the same feature, and a head where they disagree draws a wireframe that does not meet
+    /// the inked nose.
+    /// </remarks>
+    static void StretchNose(Dictionary<string, object?> head, float dy)
+    {
+        if (dy == 0f) return;
+
+        foreach (var key in new[] { "apex", "underNose", "nearNostril" })
+        {
+            var p = GetPoint(head, "noseWedge", key);
+            SetPoint(head, "noseWedge", key, new Point2D(p.X, p.Y + dy));
+        }
+
+        if (head.TryGetValue("noseBase", out var nb) && nb is not null)
+        {
+            var basePt = ExtractPoint(nb);
+            head["noseBase"] = ToDict(new Point2D(basePt.X, basePt.Y + dy));
+        }
+    }
+
+    /// <summary>
+    /// Jaw shape, from tapering toward the chin to squared at the angle.
+    /// </summary>
+    /// <remarks>
+    /// Loomis hangs the jaw off the halfway line round the ball (Plate 1), so the stations are what
+    /// the shape lives in: widening them squares the jaw, narrowing them tapers it to the chin. The
+    /// chin points move a fraction of that so the outline stays continuous — moving the stations
+    /// alone leaves a jaw that steps in at the chin instead of running to it.
+    /// </remarks>
+    static void SquareJaw(Dictionary<string, object?> head, float amount)
+    {
+        if (amount == 0f) return;
+
+        var axis = ExtractPoint(head.TryGetValue("chin", out var c) ? c : null).X;
+        var unit = head["unit"] as Dictionary<string, object?>;
+        var W = unit is not null && unit.TryGetValue("W", out var w) && w is not null
+            ? Convert.ToSingle(w, CultureInfo.InvariantCulture) : 160f;
+
+        foreach (var (key, share) in new[] { ("nearStation", 1f), ("farStation", 1f),
+                                             ("nearAngle", 0.8f), ("angle", 0.8f),
+                                             ("chinNear", 0.35f), ("chinFar", 0.35f) })
+        {
+            var p = GetPoint(head, "jaw", key);
+            var outward = p.X - axis;
+            if (outward == 0f) continue;
+            SetPoint(head, "jaw", key, new Point2D(p.X + MathF.Sign(outward) * amount * W * 0.08f * share, p.Y));
+        }
+    }
+
+    /// <summary>Mouth width, about its own centre, leaving the lip heights alone.</summary>
+    static void WidenMouth(Dictionary<string, object?> head, float dx)
+    {
+        if (dx == 0f) return;
+
+        var centre = GetPoint(head, "mouthGuides", "center");
+        foreach (var (key, sign) in new[] { ("leftCorner", -1f), ("rightCorner", 1f) })
+        {
+            var p = GetPoint(head, "mouthGuides", key);
+            var away = MathF.Sign(p.X - centre.X);
+            if (away == 0) away = (int)sign;
+            SetPoint(head, "mouthGuides", key, new Point2D(p.X + away * dx, p.Y));
+        }
+    }
     #endregion
 
     #endregion

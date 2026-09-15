@@ -330,3 +330,5 @@ There is no fixed endpoint; the director decides. When they call it, produce:
 
 Query them rather than recalling from memory. A call invented from memory that happens to sound right
 will fail in ways that cost more than the lookup.
+
+{{MANUALS}}

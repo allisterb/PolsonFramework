@@ -85,6 +85,22 @@ Structure it as you like, but cover these — and whatever the section below rai
 - **What misled you.** Answers you acted on that were wrong for your task. Costlier than finding
   nothing.
 - **What you hand-rolled** that the SDK already provided.
+- **What you needed and could not have.** Not a search that failed — a capability that is genuinely
+  absent. A call you expected to exist and that does not; a manual with no passage on what you were
+  actually doing; geometry you built by hand because nothing offered it. Say what you built, and what
+  the call should have been named and taken.
+
+  **This is the one item in this list nobody else can write.** Everything above is recoverable from
+  the run record by someone reading it afterwards — what broke, what you searched for, where the time
+  went. What you *reached for and found nothing* leaves no trace at all: you worked around it, the
+  drawing came out, and the absence is invisible in the artifact and in the log. If you do not say
+  it, it is not known.
+
+  Be concrete and be willing to be wrong. "A composed head — one call unioning the landmarks into a
+  silhouette with an ear and a neck, because I drew the features separately and they do not sit on
+  anything" is worth more than "the head toolkit could be richer". And if you are unsure whether it
+  exists, say that too — an absence reported that turns out to be a discovery failure is still the
+  more useful half of the pair, because it names the words you expected to find it under.
 - **The run record.** Did `Stage` fit how you worked? Were the names right?
 - **The boundary.** Whether the out-of-folder `outFile` was refused, and any tool refusal that blocked
   something the published API told you to do. Most importantly: **every time you wanted to look at the

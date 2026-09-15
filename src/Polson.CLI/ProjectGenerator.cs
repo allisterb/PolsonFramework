@@ -313,6 +313,9 @@ internal static class ProjectGenerator
             // workflow: it carries no instructions.md, which is the only thing discovery looks for.
             ["ENGINE_ONLY"] = Render("_shared", "engine_only.md", []),
 
+            // The judgment manuals, inlined rather than pointed at. Empty unless asked for.
+            ["MANUALS"] = opts.InlineManuals ? InlinedManuals(workflow) : "",
+
             // Stay in the project directory. Shared because it is true of every workflow, and stated
             // as a prompt rule because that is what has actually worked: the engine-only guardrail
             // above dropped permission prompts sharply where wrangling permission syntax had not.
@@ -1078,6 +1081,87 @@ internal static class ProjectGenerator
     /// to the setting either way.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The manuals worth inlining per workflow: the ones with no call to name.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A deliberately small subset, and the criterion is what the workflow can do instead.</b>
+    /// Where a manual's actionable content reduces to "call this" — perspective to
+    /// <c>createPerspectiveGrid</c>, anatomy to <c>createMannequinFigure</c>, media to
+    /// <c>Skia.Brush.*</c>, measurement to <c>bitmap.diff</c> — naming the call in the instructions is
+    /// both cheaper and <b>proven</b>: the figure toolkit went from unused to used immediately when
+    /// the workflow named it. Those manuals stay behind <c>Search</c> and <c>ReadDoc</c>.
+    /// </para>
+    /// <para>
+    /// What is left is judgment, which no call can carry: which shot, where the eye goes, what the
+    /// value structure is, where the line of action runs. Those are inlined, because the alternative
+    /// has been measured and it does not work — <c>polson://manual/index</c>, whose whole purpose is
+    /// to say which manuals exist, was <b>never read in any run</b>. A pointer needs two conversions
+    /// (decide to read, then apply); present content needs none.
+    /// </para>
+    /// <para>
+    /// <b>Cost, so the trade is visible rather than discovered:</b> `drawing` is ~15k tokens of the
+    /// ~56k its eleven cited manuals would be, and ~9% of the 160k the whole corpus would be. It sits
+    /// in the instructions file, which is a stable prefix, so a caching host pays it once at full
+    /// price. The real risk is not the bill: it is burying the brief behind a preamble, which would
+    /// look like the manuals failing rather than like the brief being lost.
+    /// </para>
+    /// </remarks>
+    static readonly Dictionary<string, string[]> JudgmentManuals = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Staging, continuity and the line of action are the storyboard's whole content, and 23 is
+        // the *comic* idiom for a head where manual 08 is the portrait one. These are the same four
+        // the drawing workflow's own idiom routing already sends a panel to.
+        ["drawing"] = ["09", "20", "21", "23", "24"],
+        ["comic"] = ["09", "20", "21", "23"],
+        ["comic_studio"] = ["09", "20", "21", "23"],
+        ["painting"] = ["09", "07"],
+        ["vector_infographic"] = ["09", "13"],
+        ["infographic"] = ["09", "13"],
+        ["logo"] = ["09", "11"],
+    };
+
+    /// <summary>The judgment manuals for one workflow, as one Markdown block, or empty.</summary>
+    /// <remarks>
+    /// Each is framed as reference the agent already holds rather than as an instruction, so it does
+    /// not compete with the workflow's own stages for authority. A manual that cannot be found is
+    /// skipped rather than throwing: a missing manual should not stop a project being generated, and
+    /// the omission is visible in the file.
+    /// </remarks>
+    static string InlinedManuals(string workflow)
+    {
+        if (!JudgmentManuals.TryGetValue(workflow, out var ids)) return string.Empty;
+
+        var parts = new List<string>
+        {
+            "## Studio manuals, in full",
+            "",
+            "These are the manuals whose content is **judgment rather than a call** — what to stage, "
+            + "where the eye goes, how value is structured. They are here rather than behind `Search` "
+            + "because a manual you have to decide to fetch is one you will not fetch.",
+            "",
+            "**The rest of the corpus is still only a call away.** `polson://manual/index` lists every "
+            + "manual with its purpose, and `Search(query, scope: 'manual')` finds a passage in any of "
+            + "them. Perspective, anatomy, hands, drawing media and measurement are all there, and each "
+            + "binds to SDK calls this file already names.",
+            "",
+        };
+
+        foreach (var id in ids)
+        {
+            if (PolsonManuals.Find(id) is not { } manual) continue;
+            parts.Add($"---");
+            parts.Add("");
+            parts.Add($"### Manual {manual.Id} — {manual.Title}");
+            parts.Add("");
+            parts.Add(manual.Body.Trim());
+            parts.Add("");
+        }
+
+        return parts.Count > 5 ? string.Join(Environment.NewLine, parts) : string.Empty;
+    }
+
     static string HookCommand(string sdk, string projectDir) =>
         sdk == "agy" ? ".\\" + Path.GetFileName(HookScriptPath) : DirectCommand(sdk, projectDir);
 

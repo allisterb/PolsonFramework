@@ -1093,6 +1093,37 @@ Also accessible via `Skia.Drawing`.
 
 ## Loomis Head & Feature Construction
 - `Drawing.createLoomisHead(originX: number, originY: number, headHeight: number, yawDeg?: number, pitchDeg?: number)` → `object` — Computes all 3D head landmarks, proportional ratios (Rule of Thirds, 1/5th eye width), temporal ovals, eye sockets, nose wedge, mouth guides, and jaw angles.
+- `Drawing.createParametricHead(headObj: object, parameters?: { eyesDistance?: number, eyesSize?: number, noseLength?: number, jawShape?: number, mouthWidth?: number })` → `object` — Displaces a Loomis head's landmarks by named character parameters and returns a **whole head**, ready for `drawLoomisWireframe` and the comic feature calls. Each parameter is a signed scale, `-1 … 0 … +1`, defaulting to `0`; out-of-range values are clamped, and a misspelled one is refused by name.
+
+> [!IMPORTANT]
+> **This is how a character survives a page.** It is a pure function of the head and the parameters — no clock, no randomness, no state — so the same five numbers give identical landmarks in panel 1 and panel 40. Consistency comes from *you keeping the numbers*, which a `const` at the top of `artwork.js` already does; nothing here remembers a face.
+>
+> ```javascript
+> const MORT = { eyesDistance: -0.4, eyesSize: 0.3, noseLength: -0.5, jawShape: 0.8, mouthWidth: 0.2 };
+>
+> for (const panel of panels) {
+>     const head = Drawing.createLoomisHead(panel.cx, panel.cy, panel.headH, panel.yaw);
+>     const face = Drawing.createParametricHead(head, MORT);      // same face, every panel
+>     Drawing.drawLoomisWireframe(ctx, face);
+>     Drawing.drawComicEye(ctx, face.nearEye, false, { inkColor: '#15151a' });
+> }
+> ```
+>
+> **Zero is the canon, exactly.** A head with no parameters — or with all five at `0` — is identical to the one that went in, down to every key. So adding this call to an existing script changes nothing until you give it a number.
+>
+> **The head you pass in is never modified.** The result is a deep copy, which is what lets one canon head serve several characters in the same script. Reusing a head across `createParametricHead` calls is safe and is the intended way to draw a crowd.
+>
+> **Displacements are fractions of `unit.H`**, never pixels, so a character reads the same at any head size — a 40px head in a long shot and a 600px head in a close-up get the same face.
+
+> [!WARNING]
+> **The head is already projected when this sees it, so yaw has a limit.** `createLoomisHead` applies `yawDeg` and `pitchDeg` before returning, and these displacements are applied in screen space on top of that. Up to roughly 40° the directions are correct. Past that, a widened jaw widens the wrong way, because "outward" on a turned head is no longer "outward" on the page.
+>
+> For a character who turns a long way, build the extreme angles as their own construction rather than trusting the parameters to carry across — and check it, since the failure is a face that subtly stops being the same person rather than anything that errors.
+
+> [!TIP]
+> **Five parameters, not the thirty-two a 3D generator would offer**, and they are the five that most change *who* a face is: eye spacing, eye size, nose length, jaw squareness, mouth width. `eyesOpening` is deliberately absent — it needs `drawComicEye` to take a lid aperture, which it does not yet.
+>
+> The taxonomy follows Schwind et al., *FaceMaker* (Springer 2017, DOI 10.1007/978-3-319-53088-8_6), whose parameter set was derived by surveying nine commercial RPG character creators. Their implementation morphs 3D meshes; this moves the landmarks Loomis construction already computes, which is the 2D analogue rather than a port.
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
 - `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**.
 - `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` → `{ underPlane, bridge, nostril }` — Renders nose bridge, apex, nostril, and under-plane shadow, **returning each as a `CanvasPath`**.

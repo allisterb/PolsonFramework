@@ -1,0 +1,45 @@
+# Direct dependencies for the Polson studio's web layer. Hand-edited; this is the file you change.
+#
+# The pinned, hash-locked file that actually gets installed is requirements.txt, which is GENERATED
+# from this one. Do not edit requirements.txt by hand. See README.md for the commands.
+#
+# Every line here is a name being trusted, and each one drags in a transitive tree. Keeping the list
+# short is a security property, not tidiness: it is the difference between a dependency graph a
+# person can review and one they can only hope about. Prefer doing without over adding a package.
+#
+# Names are easy to get subtly wrong, and a wrong name is a live typosquat risk. Each is written
+# below with its project page so it can be checked against the real repository before first install.
+
+# Web framework and ASGI server.
+#   fastapi   https://github.com/fastapi/fastapi
+#   uvicorn   https://github.com/encode/uvicorn
+#
+# Plain uvicorn, not uvicorn[standard]: the extra pulls in websockets, httptools, watchfiles and
+# more, none of which a Server-Sent Events app needs. Fewer packages, less surface.
+fastapi
+uvicorn
+
+# Server-side HTML templating. Autoescaping is what stops model-authored text from becoming markup
+# in the page, so it must stay on and `|safe` must stay away from agent or judge input.
+#   jinja2    https://github.com/pallets/jinja
+jinja2
+
+# Server-Sent Events response type for Starlette/FastAPI. SSE is one-way server to client, which is
+# all the thinking/artifact stream needs, and it reconnects on its own.
+#   sse-starlette   https://github.com/sysid/sse-starlette
+sse-starlette
+
+# Syntax highlighting for the JS artifacts, rendered server-side. Pygments escapes as it highlights,
+# so the code panel cannot become an injection vector.
+#   pygments  https://github.com/pygments/pygments
+pygments
+
+# NOT named here, deliberately: the agent SDK.
+#
+# `studio/` itself has zero references to it, and `runs._drive` imports the driver lazily - so
+# serving the pages, reading a record and watching a run in progress need none of it. That is the
+# managed-mode case: a director driving from Antigravity or Claude Code on their own subscription
+# wants a window onto the record, not a second agent runtime.
+#
+# Starting a run from the page, and `python -m orchestrator`, do need it. Install
+# requirements-driver.txt for that; it is this list plus the SDK.

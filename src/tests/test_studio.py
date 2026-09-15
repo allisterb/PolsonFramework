@@ -26,9 +26,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from orchestrator import director as director_mod
 from orchestrator.broker import Broker
 from orchestrator.events import EventLog
+from tests import HAS_DRIVER, NO_DRIVER
 from studio import app as app_mod
 from studio import projects as projects_mod
 from studio.runs import Registry, Run, StudioError
@@ -499,6 +499,7 @@ class SourceOfferTests(unittest.TestCase):
                 importlib.reload(reloaded)
 
 
+@unittest.skipUnless(HAS_DRIVER, NO_DRIVER)
 class QuestionSelectionTests(unittest.IsolatedAsyncioTestCase):
     """A chosen option has to survive the round trip, and it silently did not.
 
@@ -532,7 +533,16 @@ class QuestionSelectionTests(unittest.IsolatedAsyncioTestCase):
             self.is_multi_select = False
 
     async def _settled(self, reply_with: dict):
-        """Opens a question, replies to it the way the route does, and returns the response."""
+        """Opens a question, replies to it the way the route does, and returns the response.
+
+        **`orchestrator.director` is imported here rather than at module scope, and that is the one
+        thing keeping this suite installable without the Antigravity SDK.** `studio/` needs none of
+        it — the whole package has zero references — and `_drive` already defers its own import for
+        the same reason, so a module-scope import in the *tests* was the only thing making the
+        observe-only install pull a driver it never runs. This is the single test that needs one.
+        """
+        from orchestrator import director as director_mod
+
         published = []
         log = EventLog(Path(tempfile.mkdtemp(prefix="polson-q-")) / "director.jsonl", "director")
         director = director_mod.WebDirector(log, published.append, timeout=5.0)

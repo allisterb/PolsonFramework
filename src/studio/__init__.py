@@ -3,7 +3,7 @@
 A UI over `orchestrator`, not a replacement for it. `run_turn` still owns the agent, the tool policy
 and the record; this owns the part a browser needs.
 
-    python src/webapp/serve_studio.py <projects-dir>
+    python -m studio <projects-dir>              # from src/, see __main__.py
 
 See `docs/project-layout.md` for the directory contract and `docs/creative-sense-making.md` for what
 the coded run means.

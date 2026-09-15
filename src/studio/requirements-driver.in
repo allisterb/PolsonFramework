@@ -1,0 +1,37 @@
+# Direct dependencies for DRIVING a run - the studio's base list plus the agent SDK.
+#
+# Split from requirements.in because the two have different audiences. Serving the studio and
+# reading a run need no driver at all: `studio/` has zero SDK references and `runs._drive` defers
+# its import, so an observe-only install should not pay for an agent runtime it never starts.
+#
+# Install this one to get the Start button on the page and `python -m orchestrator <project>`.
+# Everything in requirements.in comes with it.
+-r requirements.in
+
+# The agent SDK. Drives the Gemini agent that does the design work and attaches our MCP server.
+#   google-antigravity   https://github.com/google/antigravity-sdk-python
+#
+# The distribution name is confirmed, not guessed. `reference/projects/antigravity-sdk-python-0.1.15`
+# declares `name = "google-antigravity"` in its pyproject.toml, and the package looks *itself* up by
+# that exact string at runtime — `importlib.metadata.version("google-antigravity")` in
+# connections/local/local_connection.py. A name a package uses to find itself cannot be the wrong
+# name for it.
+#
+# It pulls a real tree: absl-py, google-genai>=1.0, mcp>=1.0,<3.0, pydantic>=2.0, uvicorn>=0.46,
+# websockets>=12.0. Read that part of the requirements.txt diff especially — `websockets` arrives
+# here despite being deliberately excluded above by choosing plain `uvicorn` over `uvicorn[standard]`,
+# which is exactly the kind of thing the diff is for.
+google-antigravity
+
+# NOT named here, but present anyway:
+#
+#   python-multipart  — this list does not ask for it, and it arrives regardless: `mcp` depends on
+#                       it, and `mcp` is not optional once the agent SDK is in. So the intent behind
+#                       leaving it out — no multipart parser, because that is a parser for untrusted
+#                       bytes — is not achieved, and pretending otherwise would be worse than saying
+#                       so. What still holds is that *we* do not post multipart: HTMX sends
+#                       urlencoded forms, which Starlette parses without it. Do not add an upload
+#                       without deciding that separately.
+#
+# Reviewing the lock diff is what surfaced this, which is the point of the step. Anything appearing
+# under a `# via` you did not expect deserves the same treatment.

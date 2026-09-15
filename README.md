@@ -149,6 +149,39 @@ Then fill in `brief.md`, open the directory with your agent host, and tell it to
 
 **The host owns tool policy while the host is running it.** Polson writes the permissions file your host expects but cannot enforce it or check that it was honoured — which is why image generation is denied there *and* stated again as a rule in the instructions.
 
+### Watching a managed run
+
+The studio's pages work over a project whoever is driving it — the MCP server writes the record regardless of which host called it, so this only puts a reader on it. Nothing is started and nothing is spent.
+
+That needs the **second** virtual environment, `python/`, which is separate from the ADK one for the reason given above:
+
+```bash
+python -m venv python
+src\studio\install.cmd          # src/studio/install.sh on Linux or macOS
+```
+
+Then, from `src/`:
+
+```bash
+python -m studio ../projects --observe-only
+```
+
+It serves `http://127.0.0.1:8000` over a directory of projects, and gives you the live trace, the renders beside the scripts that made them, and the creative sense-making curve — the things `polson report` can only summarise afterwards.
+
+**That install deliberately carries no agent SDK.** `studio/` has no reference to one and the driver is imported lazily, so serving the pages and reading a record need none of it — 17 packages rather than 52. If you also want the page's Start button, or to drive a turn from the terminal, install the driver lock instead:
+
+```bash
+src\studio\install.cmd driver   # ./install.sh driver on Linux or macOS
+```
+
+`--observe-only` then becomes optional, and one turn can be driven from the terminal with you answering the agent's questions:
+
+```bash
+python -m orchestrator ../projects/acme
+```
+
+**Think before binding beyond `127.0.0.1`.** A reachable studio is an open cost surface, and visitor-typed text reaches an agent holding tools.
+
 ---
 
 ## Reading a run back

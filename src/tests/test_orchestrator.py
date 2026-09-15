@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests import HAS_DRIVER, NO_DRIVER
 from orchestrator import events, project as project_mod, transcript as transcript_mod
 
 
@@ -443,8 +444,13 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual("conv-123", project_mod.load(self.dir).conversation_id)
 
 
+@unittest.skipUnless(HAS_DRIVER, NO_DRIVER)
 class ConfigTests(unittest.TestCase):
-    """The policy is the one thing that must not drift from what the generator wrote."""
+    """The policy is the one thing that must not drift from what the generator wrote.
+
+    Skipped without the SDK: `setUp` imports `orchestrator.run`, which imports the agent runtime at
+    module scope. Everything else in this file reads records and needs no driver.
+    """
 
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="polson-config-"))

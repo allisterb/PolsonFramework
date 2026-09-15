@@ -25,6 +25,15 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests import HAS_DRIVER, NO_DRIVER
+
+# Raised during module import, which `unittest discover` reports as a skipped module rather than a
+# load error. Every name below reaches `orchestrator.director`, which imports the agent runtime at
+# module scope — so unlike the studio suite there is nothing here to salvage without the SDK, and a
+# module that cannot load would otherwise make `discover` fail for an observe-only install.
+if not HAS_DRIVER:                                          # pragma: no cover - environment gate
+    raise unittest.SkipTest(NO_DRIVER)
+
 from orchestrator import events
 from orchestrator.broker import Broker
 from orchestrator.director import Reply, WebDirector

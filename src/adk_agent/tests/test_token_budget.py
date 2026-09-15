@@ -15,6 +15,7 @@ cache-weighted count would discount it exactly when it is most out of control.
 
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -556,6 +557,45 @@ class TwoLimitTests(unittest.TestCase):
         studio._invocation_input[ctx.invocation_id] = 1_200_000
 
         self.assertIsNotNone(before(ctx, _Request()))
+
+
+class TokenCapResolutionTests(unittest.TestCase):
+    """Where the spend cap comes from when nobody passed one.
+
+    **Unset used to mean uncapped, which had it backwards.** A deployment names its cap on the
+    revision, so the fallback only ever applied to a run nobody had configured — in practice a
+    developer against their own key, with no public URL, no daily brake and nobody watching the bill.
+    That was the one run with no ceiling at all.
+    """
+
+    def setUp(self) -> None:
+        self.addCleanup(os.environ.pop, "POLSON_BUDGET_TOKENS", None)
+        os.environ.pop("POLSON_BUDGET_TOKENS", None)
+
+    def test_nothing_set_lands_on_the_default(self):
+        self.assertEqual(studio.DEFAULT_TOKEN_CAP, studio.resolve_token_cap())
+
+    def test_the_environment_beats_the_default(self):
+        os.environ["POLSON_BUDGET_TOKENS"] = "3_000_000"
+        self.assertEqual(3_000_000, studio.resolve_token_cap())
+
+    def test_an_explicit_argument_beats_the_environment(self):
+        os.environ["POLSON_BUDGET_TOKENS"] = "5000"
+        self.assertEqual(7000, studio.resolve_token_cap(7000))
+
+    def test_zero_is_how_you_ask_for_uncapped(self):
+        """The only route to no ceiling, and it has to be said rather than forgotten."""
+        os.environ["POLSON_BUDGET_TOKENS"] = "0"
+        self.assertIsNone(studio.resolve_token_cap())
+
+    def test_an_explicit_zero_also_means_uncapped(self):
+        os.environ["POLSON_BUDGET_TOKENS"] = "5000"
+        self.assertIsNone(studio.resolve_token_cap(0))
+
+    def test_an_unparseable_value_falls_back_rather_than_uncapping(self):
+        """A mistyped cap must not be the one thing that removes the ceiling."""
+        os.environ["POLSON_BUDGET_TOKENS"] = "lots"
+        self.assertEqual(studio.DEFAULT_TOKEN_CAP, studio.resolve_token_cap())
 
 
 if __name__ == "__main__":

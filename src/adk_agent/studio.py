@@ -931,6 +931,43 @@ CACHED_TOKEN_SHARE = 0.1
 #: `POLSON_BUDGET_RAW_TOKENS` overrides it outright.
 RAW_CAP_MULTIPLE = 4
 
+#: The spend cap a run gets when nothing sets one, in billable input tokens.
+#:
+#: **Unset used to mean uncapped, and that had it backwards.** A deployment names its cap explicitly
+#: — the hosted studio passes `POLSON_BUDGET_TOKENS` on the revision — so the default only ever
+#: applies where no one thought about it, which in practice is a developer running the runtime
+#: locally against their own key. That is the run with no public URL, no daily brake and nobody
+#: watching the bill, and it was the only one with no ceiling at all. The wall clock was stopping it.
+#:
+#: Two million rather than the deployed three: a local run is iteration rather than a commission, and
+#: a cap that binds occasionally is doing its job. Every drawing run measured on this project has
+#: finished inside it.
+#:
+#: **`POLSON_BUDGET_TOKENS=0` still means uncapped**, and is now the way to ask for it — deliberately,
+#: since the case for no ceiling is a person deciding rather than a variable being forgotten.
+DEFAULT_TOKEN_CAP = 2_000_000
+
+
+def resolve_token_cap(explicit: int | None = None) -> int | None:
+    """The spend cap for a run: explicit argument, then environment, then `DEFAULT_TOKEN_CAP`.
+
+    **No per-*project* default**, unlike a deadline: a workflow sets that because a logo and a study
+    painting are different commissions, whereas a token cap is a property of the deployment paying
+    for it. So the project never gets a say, and the fallback is a deployment-wide number.
+
+    Returns `None` for uncapped, which `0` or any negative value asks for — from either source. That
+    is the only way to get no ceiling now, and it being explicit is the point: an unset variable used
+    to mean uncapped, so the runs with no limit were the ones nobody had thought about.
+
+    A lifted function rather than eight lines inside `build`, because `build` needs a project
+    directory and a live MCP toolset to call, which is too much apparatus to stand up in order to
+    check what an environment variable resolves to.
+    """
+    cap = explicit if explicit is not None else _env_tokens("POLSON_BUDGET_TOKENS")
+    if cap is None:
+        cap = DEFAULT_TOKEN_CAP
+    return None if cap <= 0 else cap
+
 
 def credit_wait(invocation: str | None, agent_name: str | None, seconds: float) -> bool:
     """Gives back time the agent spent waiting on a person. False when there was nothing to credit.
@@ -1691,12 +1728,7 @@ def build(
     roles = roles_in(project)
     root_name = "facilitator" if roles else "polson"
 
-    # No per-project default: unlike a deadline, which the workflow sets because a logo and a study
-    # painting are different commissions, a token cap is a property of the deployment paying for it.
-    # A public URL wants one; a developer iterating locally usually does not.
-    token_cap = budget_tokens if budget_tokens is not None else _env_tokens("POLSON_BUDGET_TOKENS")
-    if token_cap is not None and token_cap <= 0:
-        token_cap = None
+    token_cap = resolve_token_cap(budget_tokens)
 
     # **Two limits, because there are two failure modes and one number cannot see both.**
     #

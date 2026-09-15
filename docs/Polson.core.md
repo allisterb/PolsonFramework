@@ -1124,6 +1124,46 @@ Also accessible via `Skia.Drawing`.
 > **Five parameters, not the thirty-two a 3D generator would offer**, and they are the five that most change *who* a face is: eye spacing, eye size, nose length, jaw squareness, mouth width. `eyesOpening` is deliberately absent — it needs `drawComicEye` to take a lid aperture, which it does not yet.
 >
 > The taxonomy follows Schwind et al., *FaceMaker* (Springer 2017, DOI 10.1007/978-3-319-53088-8_6), whose parameter set was derived by surveying nine commercial RPG character creators. Their implementation morphs 3D meshes; this moves the landmarks Loomis construction already computes, which is the 2D analogue rather than a port.
+- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, neck }, bounds, padding, order }` — **The composed head**: the construction's four masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. An unrecognised option is refused by name.
+
+> [!IMPORTANT]
+> **This is what stops features being marks floating in space.** `createLoomisHead` places landmarks and the comic feature drawers put marks at them, and until this there was nothing in between — a live run drew two correctly proportioned faces that read as **masks on undifferentiated shoulder-masses**, because the features had nothing to sit on. Clip them to `mass` and they belong to a head.
+>
+> ```javascript
+> const head = Drawing.createParametricHead(Drawing.createLoomisHead(320, 180, 200, 28), MORT);
+> const geo = Drawing.createHeadGeometry(head);
+>
+> ctx.fillStyle = '#efe9dc';
+> ctx.fill(geo.silhouette);                 // cranium, jaw, ear and neck as one shape
+> ctx.save();
+> ctx.clip(geo.mass);                       // features now sit ON something
+> Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: '#15151a' });
+> ctx.restore();
+> ```
+>
+> **A parametric jaw reaches the silhouette.** The jaw is the polygon through the six stations `createParametricHead` displaces, so two characters get two *outlines* rather than one outline with different marks inside it — which is most of what makes them read as different people at panel size.
+>
+> **`bounds` is closed-form and builds no paths**, the same split as `createMannequinFigure` against `createFigureGeometry`. Size a head from it; call this when you need the shape.
+
+> [!TIP]
+> **`padding` inflates every mass, which is how a hood, a hat band or a collar is derived** — the padded head minus the bare one, exactly as Manual 22 derives cloth from a figure:
+>
+> ```javascript
+> const bare = Drawing.createHeadGeometry(head);
+> const collar = Drawing.createHeadGeometry(head, { padding: 14 });
+> ctx.fill(collar.parts.neck.subtract(bare.parts.neck));
+> ```
+>
+> **The ear widens as the head turns**, because an ear is seen edge-on frontally and full-face in profile — the reverse of the far eye, and the one place foreshortening runs the other way here. The yaw is recovered from `farEye.width / unit.eyeW`, which the construction **clamps at 0.45**, so past roughly 63° the ear stops widening; build it yourself beyond that.
+>
+> **The neck is anchored under the ear, not under the chin.** Loomis attaches the turning muscles to the skull just behind the ears and puts the pivot deep under it — that is the fact that makes a head sit rather than float. Its length and thickness are the studio's; see `polson://manual/23` §7.
+>
+> **`skull: 'comic'` narrows the cranium to five eye-widths against Loomis's six**, at the same height — `polson://manual/23` §1 measured both schools on one head, and 5/6 is the difference. Opt-in, because the landmarks were laid out for a six-eye head; on a comic page it is usually what you want.
+>
+> **`order` is construction order, not depth**, as on a figure. A head turned far enough that the far jaw passes behind the neck still needs a clip to say so.
+
+> [!WARNING]
+> **Two things it does not compose, both visible rather than theoretical.** There is **no cheek**, so where the ball's inward curve crosses the jaw's outward one the union shows a shallow concave step — a cheekbone at panel size, a seam at portrait size; ink over it or union your own wedge in. And there is **one ear**, on the side `jaw.ear` names, which is right for a three-quarter view and wrong for a frontal one: mirror `parts.ear` about `crown.x` when the head is square on.
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
 - `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**.
 - `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` → `{ underPlane, bridge, nostril }` — Renders nose bridge, apex, nostril, and under-plane shadow, **returning each as a `CanvasPath`**.

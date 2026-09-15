@@ -241,12 +241,122 @@ The parameter set follows Schwind et al., *FaceMaker* (Springer 2017), whose fiv
 controls were drawn from surveying nine commercial character creators. Their system morphs 3D meshes;
 this moves Loomis landmarks, which is the same idea in the medium we actually draw in.
 
-## 7. What this does not give you
+## 7. Composing the head — a silhouette to put the features on
 
-- **Still no composed head.** This manual explains what a comic head *is*; the toolkit still has
-  landmarks and separate feature drawers and nothing that unions them into a drawn head with a
-  silhouette, an ear and a neck. That gap is unchanged, and this manual makes it more conspicuous
-  rather than less.
+Everything above places marks. Nothing above makes a **head**: the cranium, the jaw, the ear and the
+neck are all implied by the construction and none of them was ever a shape you could fill.
+
+That is not a cosmetic gap. A run drawing this manual's own brief — two characters in a diner booth,
+faces carrying the whole panel — produced two recognisably different faces that read as **masks on
+undifferentiated dark shoulder-masses**. Every feature was at the right landmark. There was nothing
+for them to sit on, and no call composed one.
+
+**`Drawing.createHeadGeometry(head, options)` is that call.** It takes the head the construction
+already computed — canon or parametric — and returns real geometry:
+
+```javascript
+const canvas = createCanvas(760, 420);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f5f2e9'; ctx.fillRect(0, 0, 760, 420);
+const INK = '#1a1a18';
+
+const MORT  = { eyesDistance: 0.78, eyesSize: -0.22, noseLength: -0.72, jawShape: 0.88, mouthWidth: 0.30 };
+const ELENA = { eyesDistance: -0.76, eyesSize: 0.26, noseLength: 0.80, jawShape: -0.86, mouthWidth: -0.34 };
+
+for (const who of [{ face: MORT, x: 215, yaw: 28 }, { face: ELENA, x: 545, yaw: -22 }]) {
+    const head = Drawing.createParametricHead(
+        Drawing.createLoomisHead(who.x, 170, 200, who.yaw, 0), who.face);
+    const geo = Drawing.createHeadGeometry(head, { skull: 'comic' });
+
+    // A collar is the padded head minus the bare one - Manual 22's derivation, on a neck.
+    const padded = Drawing.createHeadGeometry(head, { padding: 14, skull: 'comic' });
+    ctx.fillStyle = '#d8d2c4';
+    ctx.fill(padded.parts.neck.subtract(geo.parts.neck));
+
+    ctx.fillStyle = '#efe9dc';
+    ctx.fill(geo.silhouette);                 // one shape: cranium, jaw, ear and neck
+    ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
+    ctx.stroke(geo.silhouette);
+
+    // The features now sit ON something, so they can be clipped to it.
+    ctx.save();
+    ctx.clip(geo.mass);
+    Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: INK });
+    Drawing.drawComicEye(ctx, head.farEye, true, { inkColor: INK });
+    Drawing.drawComicNose(ctx, head.noseWedge, { inkColor: INK });
+    Drawing.drawComicMouth(ctx, head.mouthGuides, { inkColor: INK });
+    ctx.restore();
+
+    log(`head ${geo.bounds.width.toFixed(0)}x${geo.bounds.height.toFixed(0)}, neck reaches ` +
+        `${(geo.bounds.y2 - head.chin.y).toFixed(0)}px below the chin`);
+}
+
+canvas;
+```
+
+**`silhouette`** is everything unioned. **`mass`** is the head without the neck, which is what a
+feature clips to and what a hat sits on. **`parts`** carries `cranium`, `jaw`, `ear` and `neck`
+separately, and **`bounds`** is closed-form, so a head can be sized without building any of it.
+
+### Where each mass comes from, and which numbers are whose
+
+Two of the four are Loomis's own and cost nothing to derive, which is the reason this is a small call
+rather than a second construction to keep in step with the first:
+
+- **The cranium is the ball the head is already built on.** Its radius is `brow.y − crown.y`, which is
+  the *same* radius `createLoomisHead` uses to find the jaw stations. The ball drawn here and the jaw
+  hung off it therefore cannot disagree — a property tested rather than hoped for.
+- **The ear straddles the ball's own silhouette, and is a unit tall** (Plate 18). Plate 1 attaches the
+  ears along the same halfway line round the ball that the jaw hangs from, and **that halfway line is
+  the silhouette** — centred on the `jaw.ear` landmark instead, the mass sits at one unit from the axis
+  against a ball 1.41 units wide there, wholly inside the cranium and invisible on anything but a
+  profile. The landmark is the attachment; it is left untouched and supplies the side. The ear also
+  **widens as the head turns**, because an ear is seen edge-on frontally and full-face in profile — the
+  opposite of the far eye, and the one place here where foreshortening runs the other way.
+- **The jaw is the polygon through the six stations** `createParametricHead` displaces, so a squared or
+  tapered jaw reaches the silhouette for free. Two characters get two outlines, not one outline with
+  different marks inside it.
+- **The neck's *attachment* is cited; its length and thickness are the studio's.** Loomis puts the
+  turning muscles on the skull *just behind the ears* at the top and on the breastbone between the
+  collarbones at the bottom, and places the pivot *well inside the roundness of the neck and deep
+  under the skull*. That is why the column is anchored **under the ear rather than under the chin** —
+  and it is the single fact that makes a head sit rather than float. He gives no measurement for how
+  long or how thick, so `neckLength` defaults to **0.30 of the head height** and `neckWidth` to 1.3
+  units — both the studio's. `neckLength` is the **whole** extent below the chin, base cap included:
+  measured to the capsule's centre instead it overshot by a third and rendered as a light-bulb stem.
+  The offset behind the face is scaled by the turn, so a frontal head gets a centred neck.
+- **`skull: 'comic'` narrows the cranium to five eye-widths**, which is §1's measurement of this
+  manual's own source against Loomis's construction — 6.0 against 5, so the comic skull is 5/6 of the
+  ball, at the same height. It is the one departure from the construction this call offers, and it is
+  **opt-in**: the landmarks were laid out for a six-eye head, and silently narrowing every head
+  already drawn is not a default's job. On a comic page it is usually what you want.
+
+> **Cite that neck passage by passage, not by page.** It is in Part One of *Drawing the Head and
+> Hands*, in the discussion of the head's action on the neck. The scan's page numbers do not survive
+> text extraction reliably, and a page number nobody can check is worse than none — see the ledger
+> row in `reference/README.md`.
+
+> **The ear's turn is recovered, not passed in.** `createHeadGeometry` reads the yaw back out of
+> `farEye.width / unit.eyeW`, which the construction clamps at 0.45 — so **past roughly 63° the ear
+> stops widening**. Beyond that angle, build the ear yourself.
+
+## 8. What this does not give you
+
+- **A composed head is not a rendered one.** §7 closed the gap this section used to name: there is
+  now a silhouette, an ear and a neck. What it gives you is *shape* — four masses and their union.
+  It does not shade them, does not join the head to a body, and knows nothing about hair, which
+  remains the largest untouched thing on a comic head. `Drawing.drawHairRibbon(...)` draws one strand
+  and nothing decides where strands go.
+- **Nothing in it is depth.** `order` is the sequence the masses are built in, not a z-order, exactly
+  as on a figure. A head turned far enough that the far jaw passes behind the neck still needs you to
+  say so with a clip.
+- **There is no cheek, so the ball and the jaw meet at a corner.** The ball's outline curves inward
+  while the jaw's curves outward, and where they cross the union shows a shallow concave step. A real
+  head has a mass bridging them and this does not; at panel size it reads as a cheekbone, at portrait
+  size it reads as a seam. Ink over it, or union your own wedge in.
+- **One ear, on the side `jaw.ear` names.** The construction carries a single ear landmark, which is
+  right for a three-quarter view — the far ear is hidden by the head — and wrong for a frontal one,
+  where a reader expects two. Mirror `parts.ear` about `crown.x` when the head is square on.
 - **The plates carry what the text cannot.** The five- and six-step figures for the female head and
   profile are drawings; the text gives their order and their rules, which is what is distilled above.
 - **Nothing here is about likeness.** Neither school offers it, and no construction will.

@@ -135,6 +135,11 @@ Polson generates the project; your host drives the agent.
 [./]polson create-project projects roaster agy --workflow logo --type modern
 ```
 
+> `[./]polson` is `./polson` on Linux and macOS and `.\polson.ps1` on Windows. Both dispatch the
+> verb — .NET for `create-project`, `eval`, `report`, `server` and `version`; Python for `studio` —
+> and both pass the exit code through. `polson.cmd` is gone: cmd cannot do the branching, and it
+> reported success whatever the CLI actually returned.
+
 The `sdk` argument decides what the config files are called — `agy` for Google Antigravity, `claude` for Claude Code:
 
 | | `agy` | `claude` |
@@ -160,11 +165,16 @@ python -m venv python
 src\studio\install.cmd          # src/studio/install.sh on Linux or macOS
 ```
 
-Then, from `src/`:
+Then, from the repo root:
 
 ```bash
-python -m studio ../projects --observe-only
+[./]polson studio projects --observe-only
 ```
+
+`studio` is the one verb the launcher sends to Python rather than to the .NET CLI; everything after
+it is forwarded verbatim, so `--host`, `--port` and `--observe-only` are the module's own options and
+`[./]polson help studio` prints them. Running it directly still works and is exactly equivalent, from
+`src/`: `python -m studio ../projects --observe-only`.
 
 It serves `http://127.0.0.1:8000` over a directory of projects, and gives you the live trace, the renders beside the scripts that made them, and the creative sense-making curve — the things `polson report` can only summarise afterwards.
 

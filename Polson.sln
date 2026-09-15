@@ -66,14 +66,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Scripts", "Scripts", "{4A8D
 		Directory.Build.props = Directory.Build.props
 		docker-entrypoint.sh = docker-entrypoint.sh
 		Dockerfile = Dockerfile
-		src\webapp\install.cmd = src\webapp\install.cmd
-		src\webapp\install.sh = src\webapp\install.sh
+		src\studio\install.cmd = src\studio\install.cmd
+		src\studio\install.sh = src\studio\install.sh
 		polson = polson
-		polson.cmd = polson.cmd
-		polson_run = polson_run
-		polson_run.cmd = polson_run.cmd
-		polson_webapp = polson_webapp
-		polson_webapp.cmd = polson_webapp.cmd
+		polson.ps1 = polson.ps1
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Polson.Tests.CLI", "tests\Polson.Tests.CLI\Polson.Tests.CLI.csproj", "{CBEB7643-6424-41BC-B11D-BE34352FC3A7}"

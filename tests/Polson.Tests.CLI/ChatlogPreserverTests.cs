@@ -226,6 +226,47 @@ public class ChatlogPreserverTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// One message spread over several lines is counted once, not once per line.
+    /// </summary>
+    /// <remarks>
+    /// **Claude Code writes a line per content block** — the text, the thinking and each tool call
+    /// arrive separately and every one of them repeats the same <c>usage</c> block. Summing lines
+    /// therefore counts a turn two or three times, and nothing about the result looks wrong.
+    /// <para>
+    /// Measured on the drawing-1 run before the fix: <b>106 lines carrying usage against 60 distinct
+    /// message ids</b>, a 1.75× overcount reporting 31.2M tokens for a run that spent 17.9M. The
+    /// figure was quoted as a cost and then used to argue the run had failed to converge over 106
+    /// turns, when it had drawn 13 renders in 60 — so the defect cost a wrong number and a wrong
+    /// conclusion drawn from it.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestOneMessageOverSeveralLinesIsCountedOnce()
+    {
+        Environment.SetEnvironmentVariable("CLAUDE_PROJECT_DIR", root);
+        var blocks = Path.Combine(root, "blocks.jsonl");
+
+        // msg_a arrives as thinking + text + tool_use; msg_b as text + tool_use. Five lines, two turns.
+        const string A = """{"type":"assistant","message":{"id":"msg_a","role":"assistant","model":"claude-opus-5","usage":{"input_tokens":100,"output_tokens":10,"cache_read_input_tokens":9000}}}""";
+        const string B = """{"type":"assistant","message":{"id":"msg_b","role":"assistant","model":"claude-opus-5","usage":{"input_tokens":200,"output_tokens":20,"cache_read_input_tokens":9500}}}""";
+        File.WriteAllLines(blocks, [A, A, A, B, B]);
+
+        Hook($$"""{"session_id":"blocks","transcript_path":"{{Json(blocks)}}"}""");
+
+        var summary = (JsonObject)JsonNode.Parse(
+            File.ReadAllText(Path.Combine(Events, "tokens-blocks.json")))!;
+
+        Assert.Equal(2, summary["turns"]!.GetValue<int>());
+        Assert.Equal(300, summary["inputTokens"]!.GetValue<long>());
+        Assert.Equal(30, summary["outputTokens"]!.GetValue<long>());
+        Assert.Equal(18500, summary["cacheReadTokens"]!.GetValue<long>());
+        Assert.Equal(18830, summary["totalTokens"]!.GetValue<long>());
+
+        // Per-model output is summed in the same loop and would double-count with it.
+        Assert.Equal(30, ((JsonObject)summary["outputByModel"]!)["claude-opus-5"]!.GetValue<long>());
+    }
+
+    /// <summary>
     /// A transcript with no usage records writes no summary rather than a summary of zeros.
     /// </summary>
     /// <remarks>

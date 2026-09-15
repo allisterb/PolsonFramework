@@ -138,12 +138,15 @@ EOF
 }
 
 run_python() {
-    local module="$1"
-    shift
+    local verb="$1" module="$2"
+    shift 2
     # Its own statement, not an argument: a command substitution that fails inside an argument list
     # is not what `set -e` acts on, so `exec ""` would be the next thing to happen.
     local python
     python="$(find_python)"
+
+    # So that argparse opens with "usage: polson studio" rather than naming a module nobody typed.
+    export POLSON_VERB="$(basename "${BASH_SOURCE[0]}") $verb"
 
     # `studio` is a package under src/, so src/ has to be importable. Set on the path rather than by
     # changing directory, so a relative argument still resolves against the caller's own cwd —
@@ -161,12 +164,12 @@ verb="${1:-}"
 
 # `polson help studio`, which the CLI would reject as a verb name it has never heard of.
 if is_help_token "$verb" && [ "$#" -ge 2 ] && module="$(python_module "$2")"; then
-    run_python "$module" --help
+    run_python "$2" "$module" --help
 fi
 
 if module="$(python_module "$verb")"; then
     shift || true
-    run_python "$module" "$@"
+    run_python "$verb" "$module" "$@"
 fi
 
 # Everything else is the CLI's, including an unknown verb: its parser writes a better error than a

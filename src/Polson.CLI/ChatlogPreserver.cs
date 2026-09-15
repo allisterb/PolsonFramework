@@ -463,6 +463,20 @@ internal static class ChatlogPreserver
     /// what the session actually cost. Other hosts may carry nothing of the kind, so an absent or
     /// unfamiliar shape writes no file rather than a file full of zeros — a zero here would read as
     /// a measurement rather than as an absence.
+    /// <para>
+    /// <b>One assistant message can occupy several lines, and every one of them repeats the same
+    /// usage block.</b> Claude Code writes a line per content block — the text, the thinking and each
+    /// tool call arrive separately — so summing lines counts one turn two or three times. Measured on
+    /// the drawing-1 run: <b>106 lines carrying usage against 60 distinct message ids</b>, a 1.75×
+    /// overcount that reported 31.2M tokens for a run that spent 17.9M. Nothing about that figure
+    /// looked wrong, which is what made it expensive: it was quoted as a cost, and it was also used
+    /// to argue the run had failed to converge over 106 turns when it had drawn 13 renders in 60.
+    /// </para>
+    /// <para>
+    /// So the sum is over <b>message ids</b>, and a line whose id has already been counted is
+    /// skipped. A transcript from a host that states no id falls back to counting the line, which is
+    /// the old behaviour and is right where one line is one message.
+    /// </para>
     /// </remarks>
     private static void WriteTokenUsage(string transcript, string events, string session)
     {
@@ -471,6 +485,7 @@ internal static class ChatlogPreserver
             long input = 0, output = 0, cacheCreate = 0, cacheRead = 0;
             var turns = 0;
             var models = new Dictionary<string, long>(StringComparer.Ordinal);
+            var counted = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (var line in File.ReadLines(transcript))
             {
@@ -482,6 +497,11 @@ internal static class ChatlogPreserver
 
                 if (node?["message"] is not JsonObject message) continue;
                 if (message["usage"] is not JsonObject usage) continue;
+
+                // The id identifies the model's answer; the line identifies one block of it. Only
+                // the first line of a message carries it into the totals.
+                var id = message["id"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(id) && !counted.Add(id)) continue;
 
                 turns++;
                 input += Num(usage, "input_tokens");

@@ -3926,7 +3926,12 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>Refuses a misspelled parameter by name, rather than silently drawing the canon.</summary>
-    static void RefuseUnknownHeadParameters(IDictionary? opt, string[] accepted)
+    /// <param name="noun">
+    /// What the caller passed, singular — pluralised for the message. Shared with
+    /// <see cref="CreateHeadGeometry"/>, whose dictionary is options rather than face parameters, so
+    /// the error has to be able to say which.
+    /// </param>
+    static void RefuseUnknownHeadParameters(IDictionary? opt, string[] accepted, string noun = "Head parameter")
     {
         if (opt is null) return;
 
@@ -3940,7 +3945,7 @@ public class ConstructiveDrawingToolkit
         if (unknown.Count > 0)
         {
             throw new ArgumentException(
-                $"Head parameter{(unknown.Count > 1 ? "s" : string.Empty)} not recognised: "
+                $"{noun}{(unknown.Count > 1 ? "s" : string.Empty)} not recognised: "
                 + $"{string.Join(", ", unknown)}. Accepted: {string.Join(", ", accepted)}.");
         }
     }
@@ -4095,6 +4100,271 @@ public class ConstructiveDrawingToolkit
             if (away == 0) away = (int)sign;
             SetPoint(head, "mouthGuides", key, new Point2D(p.X + away * dx, p.Y));
         }
+    }
+    #endregion
+
+    #region Head Geometry
+    /// <summary>Accepted options for <see cref="CreateHeadGeometry"/>. An unrecognised one is refused.</summary>
+    static readonly string[] HeadGeometryOptions = ["padding", "neckLength", "neckWidth", "skull"];
+
+    /// <summary>Chaikin corner-cutting on a closed polygon: each pass replaces every vertex with two.</summary>
+    /// <remarks>
+    /// Closed-form and deterministic, which a head has to be — the same landmarks must give the same
+    /// outline in panel 1 and panel 40. Two passes turn seven jaw stations into twenty-eight points
+    /// and round every corner; the contour pulls in by about a quarter of each corner, which is what
+    /// a jaw does and a scaffold does not.
+    /// </remarks>
+    static List<Point2D> Chaikin(IReadOnlyList<Point2D> pts, int passes)
+    {
+        var current = new List<Point2D>(pts);
+        for (var pass = 0; pass < passes && current.Count > 2; pass++)
+        {
+            var next = new List<Point2D>(current.Count * 2);
+            for (var i = 0; i < current.Count; i++)
+            {
+                Point2D a = current[i], b = current[(i + 1) % current.Count];
+                next.Add(new Point2D(a.X * 0.75f + b.X * 0.25f, a.Y * 0.75f + b.Y * 0.25f));
+                next.Add(new Point2D(a.X * 0.25f + b.X * 0.75f, a.Y * 0.25f + b.Y * 0.75f));
+            }
+
+            current = next;
+        }
+
+        return current;
+    }
+
+    /// <summary>A closed polygon through the given points, optionally grown outward by <paramref name="padding"/>.</summary>
+    /// <remarks>
+    /// The growth is a union of capsules along the edges rather than a true polygon offset. It is
+    /// exact along each edge and slightly round at the corners, which is what cloth over a jaw does
+    /// anyway — and unlike an offset it cannot invert on a concave vertex.
+    /// </remarks>
+    static CanvasPath Polygon(IReadOnlyList<Point2D> pts, float padding)
+    {
+        var p = new CanvasPath();
+        if (pts.Count == 0) return p;
+
+        p.MoveTo(pts[0].X, pts[0].Y);
+        for (var i = 1; i < pts.Count; i++) p.LineTo(pts[i].X, pts[i].Y);
+        p.ClosePath();
+        if (padding <= 0f) return p;
+
+        var grown = p;
+        for (var i = 0; i < pts.Count; i++)
+            grown = grown.Union(Capsule(pts[i], pts[(i + 1) % pts.Count], padding, padding));
+        return grown;
+    }
+
+    /// <summary>
+    /// The head as geometry rather than as landmarks: one silhouette, and the four masses it is made
+    /// of — cranium, jaw, ear and neck.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this exists.</b> <see cref="CreateLoomisHead"/> returns landmarks and the comic feature
+    /// drawers place marks at them, and between the two there was nothing that unioned anything into
+    /// a head. Studio Manual 23 §7 named the absence — <em>"nothing that unions them into a drawn
+    /// head with a silhouette, an ear and a neck"</em> — and a live run then drew it: two faces whose
+    /// features were correctly placed and which read as masks on undifferentiated shoulder-masses,
+    /// because the features had nothing to sit on. The agent had not failed to compose a head; no
+    /// call composed one.
+    /// </para>
+    /// <para>
+    /// Same split as <see cref="CreateMannequinFigure"/> against <see cref="CreateFigureGeometry"/>,
+    /// and for the same reason: paths are not free, so a loop that only places heads should not pay
+    /// for a dozen boolean operations it will not use.
+    /// </para>
+    /// <para>
+    /// <b>Two of the four masses are Loomis's own construction and cost nothing to derive.</b> The
+    /// cranium is the ball the head is already built on — <c>brow.y − crown.y</c> is its radius, which
+    /// is exactly the <c>ballR</c> the jaw stations are computed from, so the ball drawn here and the
+    /// jaw hung off it cannot disagree. The ear is a unit tall and half a unit across with its outer
+    /// edge on the head's half-width (Plate 18), which is already why <c>jaw.ear</c> sits where it does.
+    /// </para>
+    /// <para>
+    /// <b>The neck's attachment is cited; its length and width are the studio's.</b> Loomis puts the
+    /// turning muscles on the skull <em>just behind the ears</em> at the top and on the breastbone
+    /// between the collarbones at the bottom, and places the pivot <em>well inside the roundness of
+    /// the neck and deep under the skull</em>, a little back of its centre line (<em>Drawing the Head
+    /// and Hands</em>, the head-on-neck passage in Part One — <b>cite by passage, not by page</b>: the
+    /// scan's page numbers do not survive extraction reliably). That is the one fact that makes a head
+    /// sit rather than float, and it is why the column is anchored under the ear rather than under the
+    /// chin. He gives no measurement for how long or how thick, so <c>neckLength</c> defaults to
+    /// 0.42 H below the chin and the half-width is derived from the jaw stations — which also means
+    /// the neck foreshortens with the turn, because the stations do.
+    /// </para>
+    /// <para>
+    /// <b>The ear widens with the turn rather than narrowing.</b> Frontally an ear is seen edge-on; in
+    /// profile it is seen full-face — the opposite of the far eye, which is the only foreshortening
+    /// this construction already carried. The turn is recovered from <c>farEye.width / unit.eyeW</c>,
+    /// which is <c>cos(yaw)</c> <b>clamped at 0.45</b> by the construction, so past roughly 63° the ear
+    /// stops widening. Beyond that angle build the ear yourself.
+    /// </para>
+    /// <para>
+    /// <c>padding</c> inflates every mass, exactly as it does on a figure: a hood, a hat band or a
+    /// collar is the padded head minus the bare one.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateHeadGeometry(object headObj, object? options = null)
+    {
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException(
+                "createHeadGeometry needs a head from Drawing.createLoomisHead(...) or Drawing.createParametricHead(...).",
+                nameof(headObj));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownHeadParameters(opt, HeadGeometryOptions, "createHeadGeometry option");
+
+        var unit = JsInterop.AsDict(head["unit"]);
+        var H = Num(unit, "H", 100f);
+        var thirdH = Num(unit, "thirdH", H / 3.5f);
+        var eyeW = Num(unit, "eyeW", thirdH * 0.5f);
+
+        var padding = MathF.Max(0f, Num(opt, "padding", 0f));
+        var neckLength = Num(opt, "neckLength", 0.30f) * H;
+
+        // **The one cited departure from the ball, and it is this manual's own measurement.** Lee &
+        // Buscema's head is five eye-widths across where Loomis's construction is six (Studio Manual
+        // 23 §1, measured on both) — so a comic skull is 5/6 of the ball, and the same face inside a
+        // narrower cranium is most of what makes a head read at panel size. `loomis` stays the
+        // default: the landmarks were laid out for a six-eye head, and silently narrowing every head
+        // already drawn is not a default's job.
+        var skull = opt?["skull"]?.ToString()?.Trim().ToLowerInvariant() ?? "loomis";
+        var wScale = skull switch
+        {
+            "loomis" => 1f,
+            "comic" => 5f / 6f,
+            _ => throw new ArgumentException(
+                $"createHeadGeometry skull not recognised: {skull}. Accepted: loomis, comic.")
+        };
+
+        var jaw = JsInterop.AsDict(head["jaw"]);
+        var crown = ExtractPoint(head["crown"]);
+        var brow = ExtractPoint(head["brow"]);
+        var chin = ExtractPoint(head["chin"]);
+        var noseBase = ExtractPoint(head["noseBase"]);
+        var ear = ExtractPoint(jaw?["ear"]);
+
+        float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+        void Extent(float cx, float cy, float hw, float hh)
+        {
+            x0 = MathF.Min(x0, cx - hw); y0 = MathF.Min(y0, cy - hh);
+            x1 = MathF.Max(x1, cx + hw); y1 = MathF.Max(y1, cy + hh);
+        }
+
+        // The ball. Its radius IS the one the jaw stations were computed from, so the two agree by
+        // construction rather than by matching numbers written in two places.
+        var ballR = MathF.Max(thirdH * 0.5f, brow.Y - crown.Y);
+        var craniumC = new Point2D(crown.X, brow.Y);
+        var cranium = OrientedEllipse(craniumC, ballR * wScale + padding, ballR + padding, 0f);
+        Extent(craniumC.X, craniumC.Y, ballR * wScale + padding, ballR + padding);
+
+        // Half-width of the cranium at a given height, which is what the jaw and the ear both meet.
+        float Reach(float y) => MathF.Sqrt(MathF.Max(0f, ballR * ballR - (y - brow.Y) * (y - brow.Y))) * wScale;
+
+        // The jaw hangs off the halfway line round the ball, station to station (Plate 1). These are
+        // the six points `squareJaw` displaces, so a parametric head changes shape here for free.
+        // **A station is held out to the ball's own silhouette at its height.** The turn foreshortens
+        // the stations (`× cos(yaw)`) while a sphere's outline does not foreshorten at all, so on any
+        // turned head the jaw starts inboard of the cranium and the union shows a notch at the cheek
+        // — a bite out of the face, not a jaw. Holding it out only changes where the two meet: the
+        // ball already governs the outline at that height, so no extent is added and a squared jaw
+        // still widens past it.
+        Point2D OnBall(Point2D p)
+        {
+            var reach = Reach(p.Y);
+            var outward = p.X - crown.X;
+            return MathF.Abs(outward) >= reach ? p : new Point2D(crown.X + MathF.Sign(outward) * reach, p.Y);
+        }
+
+        Point2D[] jawPts =
+        [
+            OnBall(ExtractPoint(jaw?["farStation"])), ExtractPoint(jaw?["angle"]), ExtractPoint(jaw?["chinFar"]),
+            chin, ExtractPoint(jaw?["chinNear"]), ExtractPoint(jaw?["nearAngle"]), OnBall(ExtractPoint(jaw?["nearStation"]))
+        ];
+        // Corner-cut before filling. The seven stations are a scaffold, not an outline: joined by
+        // straight segments they give a jaw with a hard shelf at the angle, which at head size reads
+        // as a machined part rather than a face. Two rounds of Chaikin is enough to round it and is
+        // closed-form, so it stays deterministic.
+        var jawPath = Polygon(Chaikin(jawPts, 2), padding);
+        foreach (var p in jawPts) Extent(p.X, p.Y, padding, padding);
+
+        // cos(yaw), recovered from the one place the construction recorded it. The clamp is the
+        // construction's, not ours, and it is why the ear stops widening past about 63 degrees.
+        var cos = eyeW > 0f ? Math.Clamp(Num(JsInterop.AsDict(head["farEye"]), "width", eyeW) / eyeW, 0f, 1f) : 1f;
+        var sin = MathF.Sqrt(MathF.Max(0f, 1f - cos * cos));
+
+        // **The ear straddles the ball's own silhouette, and that is Loomis rather than a nudge to
+        // make it show.** Plate 1 attaches the ears along the same halfway line round the ball that
+        // the jaw hangs from, and that halfway line IS the silhouette. Centred on the `jaw.ear`
+        // landmark instead, the mass sits at one unit from the axis against a ball 1.41 units wide at
+        // that height — wholly inside the cranium, invisible on every head that is not a profile. The
+        // landmark is the attachment, not the centre; it is left untouched and supplies the side.
+        var earDir = ear.X < brow.X ? -1f : 1f;
+        var earDy = ear.Y - brow.Y;
+        var earRy = thirdH * 0.5f + padding;                       // one unit tall — Plate 18
+        // Roughly 1:0.55 tall to wide, opening toward profile. Thinner than this and the mass reads
+        // as a chip taken out of the skull rather than as an ear: half of it is inside the cranium,
+        // so what the reader sees is one radius wide against a full unit tall.
+        var earRx = thirdH * (0.18f + 0.10f * sin) + padding;
+        var earOut = Reach(ear.Y) * cos - earRx * 0.3f;
+        var earCx = crown.X + earDir * earOut;
+        var earPath = OrientedEllipse(new Point2D(earCx, ear.Y), earRx, earRy, 0f);
+        Extent(earCx, ear.Y, earRx, earRy);
+
+        // Behind the ear at the top, deep under the skull — the cited part. How far down and how
+        // thick are the studio's, and both are in head units so they scale.
+        var neckHalf = MathF.Max(thirdH * 0.2f, Num(opt, "neckWidth", thirdH * 1.30f) * 0.5f);
+        // **Scaled by the turn, so a frontal head gets a centred neck.** Loomis's "a little back of
+        // the centre line" is a statement about depth, and depth only becomes screen offset once the
+        // head turns — applied flat it hangs the column off one side of a head looking straight out.
+        var neckX = crown.X + (ear.X - crown.X) * 0.45f * sin;
+        var neckTop = new Point2D(neckX, (noseBase.Y + chin.Y) * 0.5f);
+
+        var neck = new CanvasPath();
+        if (neckLength > 0f)
+        {
+            // `neckLength` is the whole extent below the chin, base cap included. Measuring to the
+            // capsule's centre instead put the drawn end a further half-width down, which is how the
+            // first version of this came out as a light-bulb stem a third longer than asked for.
+            var baseR = neckHalf + padding;
+            var neckBase = new Point2D(neckX, MathF.Max(neckTop.Y + 1f, chin.Y + neckLength - baseR));
+            neck = Capsule(neckTop, neckBase, neckHalf + padding, baseR);
+            Extent(neckTop.X, neckTop.Y, neckHalf + padding, neckHalf + padding);
+            Extent(neckBase.X, neckBase.Y, baseR, baseR);
+        }
+
+        var mass = cranium.Union(jawPath).Union(earPath);
+
+        return new Dictionary<string, object?>
+        {
+            ["silhouette"] = (neckLength > 0f ? mass.Union(neck) : mass).Simplify(),
+            // The head without the neck: what a feature clips to, and what a hat sits on.
+            ["mass"] = mass.Simplify(),
+            ["parts"] = new Dictionary<string, object?>
+            {
+                ["cranium"] = cranium,
+                ["jaw"] = jawPath,
+                ["ear"] = earPath,
+                ["neck"] = neck
+            },
+            ["bounds"] = x0 > x1
+                ? new Dictionary<string, object?>
+                {
+                    ["x"] = 0f, ["y"] = 0f, ["width"] = 0f, ["height"] = 0f,
+                    ["x2"] = 0f, ["y2"] = 0f, ["cx"] = 0f, ["cy"] = 0f
+                }
+                : new Dictionary<string, object?>
+                {
+                    ["x"] = x0, ["y"] = y0, ["width"] = x1 - x0, ["height"] = y1 - y0,
+                    ["x2"] = x1, ["y2"] = y1, ["cx"] = (x0 + x1) * 0.5f, ["cy"] = (y0 + y1) * 0.5f
+                },
+            ["padding"] = padding,
+            // Construction order, NOT depth — as on a figure. The neck goes down first because the
+            // jaw overlaps it; on a head turned far enough that the far jaw passes behind the neck,
+            // the caller still has to say so.
+            ["order"] = new List<object?> { "neck", "cranium", "jaw", "ear" }
+        };
     }
     #endregion
 

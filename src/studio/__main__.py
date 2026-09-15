@@ -19,12 +19,17 @@ turn against one project with you as the director, and is the other half of this
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="python -m studio", description="Serve the Polson studio.")
+    # The launcher says how it was invoked, so `./polson studio --help` opens with "usage: polson
+    # studio" rather than naming a module the reader did not type. Falls back to the module form,
+    # which is still exactly how this is run without a launcher.
+    prog = os.environ.get("POLSON_VERB") or "python -m studio"
+    parser = argparse.ArgumentParser(prog=prog, description="Serve the Polson studio.")
     parser.add_argument("root", help="directory holding the project directories")
     parser.add_argument("--host", default="127.0.0.1",
                         help="bind address (default: localhost only - see the warning below)")

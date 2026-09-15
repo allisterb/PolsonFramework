@@ -1,3 +1,190 @@
-#! /bin/bash
-dotnet bin/cli/Polson.CLI.dll $*
+#! /usr/bin/env bash
+#
+# Polson's entry point. Dispatches the verb to the .NET CLI or to Python.
+#
+#   server, eval, create-project, report, help, version    the .NET CLI, bin/cli
+#   studio                                                 Python, src/studio
+#
+# The split follows where the code already is. `server` IS the MCP server and `eval`, `report` and
+# `create-project` are C#-fronted; the studio is a FastAPI application with its own argparse, and a
+# CLI verb for it would re-declare every one of its options in a second place, then spawn Python
+# anyway. Branching here is that dispatch without the second copy of the flags and without the
+# process hop.
+#
+# Arguments are forwarded verbatim and the exit code is passed through, so anything documented for
+# `polson report` or for `python -m studio` works here unchanged.
+#
+# Interpreter and binary are found in this order:
+#
+#   POLSON_PYTHON, then the repo venv at python/, then python3 / python on PATH
+#   POLSON_CLI, then bin/cli/Polson.CLI.exe, then bin/cli/Polson.CLI.dll through dotnet
+#
+# POLSON_CLI may name either the managed dll or a self-contained executable; a .dll is run through
+# `dotnet` and anything else is run directly.
+#
+# Keep this in step with polson.ps1, which does the same job on Windows.
 
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# The routing table, and the only place a new Python verb needs adding. A case rather than an
+# associative array, which bash 3.2 — still the /bin/bash on macOS — does not have.
+python_module() {
+    case "$1" in
+        studio) echo "studio" ;;
+        *)      return 1 ;;
+    esac
+}
+
+is_help_token() {
+    case "$1" in
+        help|--help|-h|-\?) return 0 ;;
+        *)                  return 1 ;;
+    esac
+}
+
+find_python() {
+    # Trusted as given: a caller who set it knows better than this search does.
+    if [ -n "${POLSON_PYTHON:-}" ]; then
+        echo "$POLSON_PYTHON"
+        return
+    fi
+
+    # `python/` and not `python-adk/`. The two venvs are deliberately separate — ADK caps
+    # websockets<16 where the studio's lock resolves it to 16.1.1, so in one shared environment the
+    # second install silently wins and neither lock then describes what is installed. See CLAUDE.md.
+    #
+    # Windows here means git bash / MSYS, where a venv keeps its interpreter under Scripts.
+    local candidates
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) candidates=("$repo_root/python/Scripts/python.exe") ;;
+        *)                    candidates=("$repo_root/python/bin/python3" "$repo_root/python/bin/python") ;;
+    esac
+
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return
+        fi
+    done
+
+    local name
+    for name in python3 python; do
+        if command -v "$name" >/dev/null 2>&1; then
+            command -v "$name"
+            return
+        fi
+    done
+
+    cat >&2 <<'EOF'
+No usable Python found, and the studio is Python.
+Create the repo venv and install the studio's lock:
+
+    python -m venv python
+    src/studio/install.sh          # src\studio\install.cmd on Windows
+
+or put python on PATH, or set POLSON_PYTHON.
+EOF
+    exit 1
+}
+
+# Prints the command to run the CLI, one argument per line, so a path with a space survives.
+find_cli() {
+    if [ -n "${POLSON_CLI:-}" ]; then
+        case "$POLSON_CLI" in
+            *.dll) printf '%s\n%s\n' dotnet "$POLSON_CLI" ;;
+            *)     printf '%s\n' "$POLSON_CLI" ;;
+        esac
+        return
+    fi
+
+    local apphost="Polson.CLI"
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) apphost="Polson.CLI.exe" ;;
+    esac
+
+    # One output directory rather than a Release/Debug search: the CLI builds to bin/cli, which is
+    # what an agent harness's .mcp.json already points at.
+    local dir="$repo_root/bin/cli"
+
+    # The apphost when the build produced one, because it needs no dotnet on PATH.
+    if [ -x "$dir/$apphost" ]; then
+        printf '%s\n' "$dir/$apphost"
+        return
+    fi
+    if [ -f "$dir/Polson.CLI.dll" ]; then
+        printf '%s\n%s\n' dotnet "$dir/Polson.CLI.dll"
+        return
+    fi
+
+    cat >&2 <<'EOF'
+The Polson CLI is not built. Run:
+    ./build
+or set POLSON_CLI to the path of Polson.CLI.dll.
+EOF
+    exit 1
+}
+
+# The CLI's own help cannot mention a verb it does not have, so this script says it afterwards.
+show_extra_verbs() {
+    cat <<'EOF'
+  studio            Serve the studio over a directory of projects: the live trace, the
+                    renders beside the scripts that made them, and the sense-making curve.
+                    Python, and needs the python/ venv - see README.md.
+
+EOF
+}
+
+run_python() {
+    local module="$1"
+    shift
+    # Its own statement, not an argument: a command substitution that fails inside an argument list
+    # is not what `set -e` acts on, so `exec ""` would be the next thing to happen.
+    local python
+    python="$(find_python)"
+
+    # `studio` is a package under src/, so src/ has to be importable. Set on the path rather than by
+    # changing directory, so a relative argument still resolves against the caller's own cwd —
+    # `./polson studio projects` means the projects directory they can see, not one under src/.
+    if [ -n "${PYTHONPATH:-}" ]; then
+        export PYTHONPATH="$repo_root/src:$PYTHONPATH"
+    else
+        export PYTHONPATH="$repo_root/src"
+    fi
+
+    exec "$python" -m "$module" "$@"
+}
+
+verb="${1:-}"
+
+# `polson help studio`, which the CLI would reject as a verb name it has never heard of.
+if is_help_token "$verb" && [ "$#" -ge 2 ] && module="$(python_module "$2")"; then
+    run_python "$module" --help
+fi
+
+if module="$(python_module "$verb")"; then
+    shift || true
+    run_python "$module" "$@"
+fi
+
+# Everything else is the CLI's, including an unknown verb: its parser writes a better error than a
+# guess here would, and a verb added to the CLI works through this script without it being touched.
+#
+# Not mapfile: that is bash 4, and /bin/bash on macOS is still 3.2. The assignment is its own
+# statement so that `set -e` sees find_cli's failure rather than an empty array.
+cli_line="$(find_cli)"
+cli=()
+while IFS= read -r part; do cli+=("$part"); done <<< "$cli_line"
+
+if is_help_token "$verb"; then
+    # Not `exec`, and `|| code=$?` rather than a bare call: the extra verb has to be printed after
+    # the CLI's own help, and `set -e` would otherwise take a non-zero help exit as fatal.
+    code=0
+    "${cli[@]}" "$@" || code=$?
+    show_extra_verbs
+    exit "$code"
+fi
+
+exec "${cli[@]}" "$@"

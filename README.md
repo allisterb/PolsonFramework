@@ -2,14 +2,22 @@
 
 Polson is a framework for agentic co-creative visual art and graphic design, built on the principles of [Enactive AI](https://computationalcreativity.net/iccc24/papers/ICCC24_paper_58.pdf).
 
+![](https://imgur.com/kMxGLm0.png)
+
+![](https://imgur.com/otjil6S.png)
+
+![](https://imgur.com/xuiONgF.png)
 Polson runs in three modes:
 
 | | What drives the agent | What you watch it through | Python environment |
 | :--- | :--- | :--- | :--- |
-| **Managed** | An agent harness you already use: either Google Antigravity or Claude Code | The studio, **observing**. Nothing is started and nothing is spent. | `python/`, base lock |
+| **Managed** | An agent harness you already use: either  Claude Code or Google Antigravity | The agent harness interface and the studio local web interface. | `python/`, base lock |
 | **Terminal** | Polson, through the Google Antigravity SDK | Nothing. One turn, you answering in the terminal. | `python/`, driver lock |
 | **Graphics Studio** | Polson, through Google ADK | Its own web interface — commission form, run pages, ADK console | `python-adk/` |
 
+The screenshot below show Polson running in Claude Desktop:
+![](https://imgur.com/KElTXyn.png)
+![](https://imgur.com/R1xnUWJ.png)
 **Managed is the cheapest and the least ceremony**: your host's subscription pays for the model, and
 Polson supplies the drawing engine, the project, the record and a reader for it. **Graphics Studio is
 the whole thing in a browser** and the one a visitor can be handed. **Terminal is the smallest**, for

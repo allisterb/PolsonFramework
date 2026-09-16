@@ -4,11 +4,11 @@ Polson is a framework for agentic co-creative visual art and graphic design, bui
 
 Polson runs in three modes:
 
-| | Who drives the agent | What you watch it through | Python environment |
+| | What drives the agent | What you watch it through | Python environment |
 | :--- | :--- | :--- | :--- |
-| **Managed** | An agent host you already use — Google Antigravity, Claude Code | The studio, **observing**. Nothing is started and nothing is spent. | `python/`, base lock |
+| **Managed** | An agent harness you already use: either Google Antigravity or Claude Code | The studio, **observing**. Nothing is started and nothing is spent. | `python/`, base lock |
 | **Terminal** | Polson, through the Google Antigravity SDK | Nothing. One turn, you answering in the terminal. | `python/`, driver lock |
-| **Graphics Studio** | Polson, on Google ADK | Its own web interface — commission form, run pages, ADK console | `python-adk/` |
+| **Graphics Studio** | Polson, through Google ADK | Its own web interface — commission form, run pages, ADK console | `python-adk/` |
 
 **Managed is the cheapest and the least ceremony**: your host's subscription pays for the model, and
 Polson supplies the drawing engine, the project, the record and a reader for it. **Graphics Studio is
@@ -21,15 +21,23 @@ driving a single turn without a page open.
 
 ## Requirements
 
+
 | | |
 | :--- | :--- |
 | .NET 10 SDK | Builds the drawing engine and MCP server. |
-| Python 3.13 | Runs the studio, the orchestrator and the ADK agent. Not needed to build or to serve MCP. |
-| A Google Agent Platform API key | Required. Without it the agent cannot run. |
-| A [Parallel](https://parallel.ai) API key | Optional. Without it **research is silently disabled** — figures cannot be sourced. |
-| `potrace` on PATH | Optional. Only `bitmap.trace(...)` needs it. `apt-get install potrace`, or set `Tools:Potrace`. |
+| Python 3.13 | Runs the studio, the orchestrator and the ADK agent. Not needed to build just the MCP server drawing tools. |
+| 
 
----
+## Optional
+
+
+| | |
+| :--- | :--- |
+| A [Parallel](https://parallel.ai) API key | Without it research is silently disabled — infographics figures cannot be sourced. |
+| A Google Agent Platform API key | For using a Google Cloud-hosted AI model for material asset generation. |
+| `potrace` on PATH | For vector tracing bitmaps with`bitmap.trace(...)`. `apt-get install potrace`, or set `Tools:Potrace`. |
+
+
 
 ## Setup
 

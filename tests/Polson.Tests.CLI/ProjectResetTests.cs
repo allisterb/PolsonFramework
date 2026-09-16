@@ -369,4 +369,97 @@ public class ProjectResetTests : TestsRuntime, IDisposable
             .RootElement.GetProperty("profile").GetString()!;
     #endregion
 
+    #region Workflow Tests
+    /// <summary>
+    /// A reset clears the run. It does not decide what the project makes.
+    /// </summary>
+    /// <remarks>
+    /// The same defect as the profile one above, in the field next to it, and it survived that fix
+    /// because <c>--workflow</c> carried <c>Default = "logo"</c> — so the parser could not tell an
+    /// omitted flag from a typed one and every reset looked like a request for a logo.
+    /// <para>
+    /// **Measured on 2026-09-15**: a project created <c>drawing</c>/<c>review</c> and reset with no
+    /// flags came back as <c>logo</c> with no type. Every generated file was rewritten for the wrong
+    /// workflow — the instructions, the manifest, the judgment manuals inlined into them — while the
+    /// run was correctly archived under <c>previous/</c>. So the evidence survived and the project
+    /// did not, which is the worse half to lose silently.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestResettingAProjectKeepsItsWorkflowAndType()
+    {
+        Assert.True(ProjectGenerator.Create(Options("keepwork", o => { o.Workflow = "drawing"; o.Type = "review"; })));
+        Assert.Equal(("drawing", "review"), Made("keepwork"));
+
+        Assert.True(ProjectGenerator.Create(Options("keepwork", o => o.Reset = true)));
+        Assert.Equal(("drawing", "review"), Made("keepwork"));
+    }
+
+    /// <summary>`--force` regenerates the same files, so it inherits by the same rule.</summary>
+    [Fact]
+    public void TestForcingAProjectKeepsItsWorkflowAndType()
+    {
+        Assert.True(ProjectGenerator.Create(Options("keepforce", o => { o.Workflow = "drawing"; o.Type = "review"; })));
+        Assert.True(ProjectGenerator.Create(Options("keepforce", o => o.Force = true)));
+
+        Assert.Equal(("drawing", "review"), Made("keepforce"));
+    }
+
+    /// <summary>Stating the flag still changes it: that is someone asking, not an accident.</summary>
+    [Fact]
+    public void TestAStatedWorkflowStillChangesTheProject()
+    {
+        Assert.True(ProjectGenerator.Create(Options("repurpose", o => { o.Workflow = "drawing"; o.Type = "review"; })));
+        Assert.True(ProjectGenerator.Create(Options("repurpose", o => { o.Reset = true; o.Workflow = "logo"; })));
+
+        Assert.Equal("logo", Made("repurpose").Workflow);
+    }
+
+    /// <summary>
+    /// A type is not carried across a change of workflow.
+    /// </summary>
+    /// <remarks>
+    /// A type belongs to its workflow — <c>review</c> means nothing to <c>logo</c>, whose types are
+    /// antique, geometric and modern — so inheriting it here would fail validation and report an
+    /// unknown type the caller never typed.
+    /// </remarks>
+    [Fact]
+    public void TestATypeIsNotCarriedAcrossAChangeOfWorkflow()
+    {
+        Assert.True(ProjectGenerator.Create(Options("crossover", o => { o.Workflow = "drawing"; o.Type = "review"; })));
+        Assert.True(ProjectGenerator.Create(Options("crossover", o => { o.Reset = true; o.Workflow = "logo"; })));
+
+        Assert.NotEqual("review", Made("crossover").Type);
+    }
+
+    /// <summary>A directory with nothing to inherit from still gets the documented default.</summary>
+    [Fact]
+    public void TestANewProjectStillDefaultsToLogo()
+    {
+        Assert.True(ProjectGenerator.Create(Options("brandnew")));
+        Assert.Equal("logo", Made("brandnew").Workflow);
+    }
+
+    /// <summary>An unreadable manifest falls back to the default rather than refusing.</summary>
+    /// <remarks>
+    /// The recovery is a convenience; a project that cannot say what it is should still regenerate.
+    /// Paired with the profile test above, which makes the same point about the field beside it.
+    /// </remarks>
+    [Fact]
+    public void TestAProjectThatCannotSayWhatItMakesGetsTheDefault()
+    {
+        Assert.True(ProjectGenerator.Create(Options("mute", o => { o.Workflow = "drawing"; o.Type = "review"; })));
+        File.WriteAllText(Path.Combine(root, "mute", "project.json"), "{ not json at all");
+
+        Assert.True(ProjectGenerator.Create(Options("mute", o => o.Reset = true)));
+        Assert.Equal("logo", Made("mute").Workflow);
+    }
+
+    (string Workflow, string Type) Made(string name)
+    {
+        var root_ = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, name, "project.json"))).RootElement;
+        return (root_.GetProperty("workflow").GetString()!,
+                root_.TryGetProperty("type", out var t) ? t.GetString()! : string.Empty);
+    }
+    #endregion
 }

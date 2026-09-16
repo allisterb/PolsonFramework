@@ -52,6 +52,11 @@ internal static class ProjectGenerator
     /// <summary>Used when the optional third positional is omitted.</summary>
     const string DefaultSdk = "agy";
 
+    //: What `--workflow` means when it is omitted and the directory holds no project to inherit from.
+    //  Here rather than on the option, because the parser cannot tell an omitted flag from a typed
+    //  one and the difference is what keeps a reset from rewriting a project's workflow.
+    const string DefaultWorkflow = "logo";
+
     static readonly Regex ValidId = new(@"^[A-Za-z0-9._-]{1,64}$", RegexOptions.Compiled);
     #endregion
 
@@ -134,10 +139,41 @@ internal static class ProjectGenerator
     /// </remarks>
     public static bool Create(CreateProjectOptions opts)
     {
-        var workflow = opts.Workflow.ToLowerInvariant();
+        var id = opts.Id.Trim();
+
+        // The character class permits dots, so it alone would accept "." and ".." — which are not
+        // names but traversal, and would resolve to the parent directory rather than a project.
+        if (!ValidId.IsMatch(id) || id.Trim('.').Length == 0)
+        {
+            return Fail($"Invalid project id '{id}'. Use letters, digits, dot, underscore or dash (max 64), and not only dots.");
+        }
+
+        // The id names the directory, so one parent holds many projects. Validated first, above:
+        // it becomes a path segment here.
+        //
+        // **Resolved before the workflow rather than after it**, which is the only reason the
+        // recovery below can work: what this project already is, is recorded in the directory.
+        var dir = Path.Combine(Path.GetFullPath(opts.Directory), id);
+        var recorded = PreviousManifest(dir);
+
+        // **A regeneration does not decide what the project is — the same rule --standalone already
+        // follows below, and for the same reason.** `--workflow` had `Default = "logo"`, so the
+        // parser could not tell an omitted flag from one typed, and `--reset` on a drawing project
+        // regenerated it as a logo one: instructions, manifest and all, silently, while correctly
+        // archiving the run. Measured on 2026-09-15 — `drawing/review` in, `logo` out.
+        //
+        // Stating the flag still changes the workflow, because that is someone asking for it.
+        var workflow = opts.Workflow.Trim().ToLowerInvariant();
+        var inherited = workflow.Length == 0 ? Recorded(recorded, "workflow") : string.Empty;
+        if (workflow.Length == 0)
+        {
+            workflow = inherited.Length > 0 ? inherited : DefaultWorkflow;
+        }
+
         if (!KnownWorkflows.Contains(workflow))
         {
-            return Fail($"Unknown workflow '{opts.Workflow}'. Known: {string.Join(", ", KnownWorkflows)}.");
+            var from = inherited.Length > 0 ? $" (read from {Path.Combine(dir, "project.json")})" : string.Empty;
+            return Fail($"Unknown workflow '{workflow}'{from}. Known: {string.Join(", ", KnownWorkflows)}.");
         }
 
         // The third positional is optional and defaults to Antigravity, which is the host the studio
@@ -163,6 +199,15 @@ internal static class ProjectGenerator
         // rather than ignored, because a flag that silently does nothing reads as a choice honoured.
         var offered = TypesFor(workflow);
         var type = opts.Type.Trim().ToLowerInvariant();
+
+        // The recorded type is inherited only when the workflow is the one it was recorded against.
+        // A type belongs to a workflow — `review` means nothing to `logo` — so carrying it across a
+        // deliberate change of workflow would fail validation below and blame the caller for a value
+        // they did not type.
+        if (type.Length == 0 && inherited.Length > 0 && inherited == workflow)
+        {
+            type = Recorded(recorded, "type");
+        }
 
         if (type.Length > 0 && offered.Length == 0)
         {
@@ -202,19 +247,6 @@ internal static class ProjectGenerator
                       + "       configurations only. Generate it managed, or use 'agy' for a standalone project.");
         }
 
-        var id = opts.Id.Trim();
-
-        // The character class permits dots, so it alone would accept "." and ".." — which are not
-        // names but traversal, and would resolve to the parent directory rather than a project.
-        if (!ValidId.IsMatch(id) || id.Trim('.').Length == 0)
-        {
-            return Fail($"Invalid project id '{id}'. Use letters, digits, dot, underscore or dash (max 64), and not only dots.");
-        }
-
-        // The id names the directory, so one parent holds many projects. Validated first, above:
-        // it becomes a path segment here.
-        var dir = Path.Combine(Path.GetFullPath(opts.Directory), id);
-
         if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any() && !opts.Force && !opts.Reset)
         {
             return Fail($"Directory is not empty: {dir}\n"
@@ -240,7 +272,16 @@ internal static class ProjectGenerator
         // --reset clears the run before anything is written, so the regenerated project is what a
         // fresh one would be. Reported rather than silent: deleting a previous run's work is the
         // one thing here that cannot be undone.
-        var preserved = opts.Reset ? ClearRun(dir, HostFiles.For(sdk)) : [];
+        var cleared = opts.Reset ? ClearRun(dir) : new ClearResult([], []);
+        var preserved = cleared.Preserved;
+
+        // Said again at the end rather than only where it happened: the archive line below it reads
+        // as success, and on a long console the warning above scrolls out of sight.
+        if (cleared.Kept.Length > 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]  warning:[/] the previous run was only partly cleared — "
+                + string.Join(", ", cleared.Kept.Select(Markup.Escape)) + " could not be moved.");
+        }
 
         var host = HostFiles.For(sdk);
         // A reset clears the run; it does not decide what the project is. Without this, resetting a
@@ -943,6 +984,42 @@ internal static class ProjectGenerator
     /// </para>
     /// </remarks>
     /// <summary>
+    /// <summary>
+    /// What the project already in this directory says it is, or null when there is nothing to read.
+    /// </summary>
+    /// <remarks>
+    /// One reader for the manifest, so `profile`, `workflow` and `type` cannot disagree about
+    /// whether it was readable. Null for anything unreadable rather than throwing: a regeneration
+    /// whose recovery fails should fall back to the flags, not refuse.
+    /// </remarks>
+    static JsonNode? PreviousManifest(string dir)
+    {
+        try
+        {
+            var manifest = Path.Combine(dir, "project.json");
+            return File.Exists(manifest) ? JsonNode.Parse(File.ReadAllText(manifest)) : null;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>One recorded field, lower-cased and trimmed, or empty when absent.</summary>
+    static string Recorded(JsonNode? manifest, string field)
+    {
+        try
+        {
+            return (manifest?[field]?.GetValue<string>() ?? string.Empty).Trim().ToLowerInvariant();
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException)
+        {
+            // A field of the wrong JSON type. Absent is the right reading: it says nothing usable.
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
     /// Whether the project already in this directory was generated as standalone.
     /// </summary>
     /// <remarks>
@@ -954,18 +1031,36 @@ internal static class ProjectGenerator
     {
         try
         {
-            var manifest = Path.Combine(dir, "project.json");
-            if (!File.Exists(manifest)) return false;
-
-            return string.Equals(
-                JsonNode.Parse(File.ReadAllText(manifest))?["profile"]?.GetValue<string>(),
-                "standalone", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(Recorded(PreviousManifest(dir), "profile"), "standalone",
+                StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception)
         {
             return false;
         }
     }
+
+    /// <summary>What a run leaves behind: the engine's own record, and the agent's account of it.</summary>
+    /// <remarks>
+    /// One list, so the <c>reset</c> verb and <c>create-project --reset</c> cannot disagree about
+    /// what a run *is*. The second group is the part a reset used to miss: the engine did not write
+    /// those files, so clearing only its own output left a report describing a record that had just
+    /// been cleared, and the next agent read it as current.
+    /// </remarks>
+    internal static readonly string[] RunOutput =
+    [
+        "events", "scripts", "artifacts",
+        "findings.md", "critique_log.md", "artwork.js", "output.webp", "output.svg", "output.png"
+    ];
+
+    /// <summary>What a clear actually managed to do.</summary>
+    /// <param name="Preserved">The files a person wrote that were left where they are.</param>
+    /// <param name="Kept">
+    /// What could not be moved because something holds it open. <b>Non-empty means the project is
+    /// half-cleared</b> — the caller decides whether that is a failure, and for the <c>reset</c>
+    /// verb it is.
+    /// </param>
+    internal readonly record struct ClearResult(string[] Preserved, string[] Kept);
 
     /// <summary>
     /// Moves the previous run aside into <c>previous/&lt;timestamp&gt;/</c>. Nothing is deleted.
@@ -988,12 +1083,41 @@ internal static class ProjectGenerator
     /// <c>brief.md</c> stays put because it is the one file a person authors, and <c>.polson/</c>
     /// because a reset of the <i>work</i> should not be a reset of the <i>spend</i>.
     /// </para>
+    /// <para>
+    /// <b>A directory that will not move is retried entry by entry, and that is the difference
+    /// between losing one file and losing the folder.</b> <c>Directory.Move</c> is all-or-nothing:
+    /// one render open in a viewer, or served by a running studio, and the whole of
+    /// <c>artifacts/</c> stays put — observed on a real project, where the record and the scripts
+    /// archived and the renders did not. Half-cleared is the worst of the three states, because the
+    /// next run reads renders belonging to a record that is no longer there.
+    /// </para>
     /// </remarks>
-    static string[] ClearRun(string dir, HostFiles host)
+    /// <param name="delete">
+    /// Remove rather than archive. Off everywhere by default, and the one caller that passes it is a
+    /// person who typed <c>--delete</c>.
+    /// </param>
+    internal static ClearResult ClearRun(string dir, bool delete = false)
     {
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
         var archive = Path.Combine(dir, "previous", stamp);
         var moved = 0;
+        var kept = new List<string>();
+
+        // One entry — a file, or a directory being taken whole. Throws on a lock, and the caller
+        // decides whether that is fatal for the whole entry or only for this one file.
+        void MoveOne(string from, string to)
+        {
+            if (delete)
+            {
+                if (Directory.Exists(from)) Directory.Delete(from, recursive: true);
+                else File.Delete(from);
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            if (Directory.Exists(from)) Directory.Move(from, to);
+            else File.Move(from, to);
+        }
 
         void Aside(string relative)
         {
@@ -1003,46 +1127,102 @@ internal static class ProjectGenerator
             var to = Path.Combine(archive, relative);
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-                if (Directory.Exists(from)) Directory.Move(from, to);
-                else File.Move(from, to);
+                MoveOne(from, to);
                 moved += 1;
+                return;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A file the host still holds open. Say so rather than failing the reset: a stale
-                // artifact left behind is a nuisance, an aborted reset is a blocker.
-                AnsiConsole.MarkupLine($"[yellow]  kept (in use):[/] {Markup.Escape(relative)}");
+                if (!Directory.Exists(from))
+                {
+                    kept.Add(relative);
+                    AnsiConsole.MarkupLine($"[yellow]  kept (in use):[/] {Markup.Escape(relative)}");
+                    return;
+                }
             }
+
+            // The whole directory would not go, so take what will. Every file that is not locked
+            // still reaches the archive, and what stays is the actual offender rather than the
+            // folder that happened to contain it.
+            var stuck = 0;
+            foreach (var entry in Directory.EnumerateFileSystemEntries(from, "*", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    MoveOne(entry, Path.Combine(to, Path.GetFileName(entry)));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    stuck += 1;
+                }
+            }
+
+            if (stuck == 0)
+            {
+                // Emptied. The directory itself may still refuse to go if it is someone's working
+                // directory, which is harmless — an empty artifacts/ is what a fresh project has.
+                try { Directory.Delete(from); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                moved += 1;
+                return;
+            }
+
+            kept.Add($"{relative} ({stuck} file{(stuck == 1 ? "" : "s")} in use)");
+            AnsiConsole.MarkupLine($"[yellow]  kept (in use):[/] {Markup.Escape(relative)} "
+                + $"[dim]— {stuck} file{(stuck == 1 ? "" : "s")}; the rest was archived[/]");
         }
 
-        foreach (var name in new[] { "events", "scripts", "artifacts" })
+        // The engine's record first, then the run's own account of itself — which the engine did not
+        // write and a reset once left in place, stale and read as current by whatever ran next.
+        foreach (var name in RunOutput)
         {
             Aside(name);
         }
 
-        // The run's own account of itself, which the engine did not write and a reset previously
-        // left in place. Stale, and read as current by whatever runs next.
-        foreach (var name in new[] { "findings.md", "critique_log.md", "artwork.js", "output.webp", "output.svg", "output.png" })
+        if (moved > 0 && delete)
         {
-            Aside(name);
+            AnsiConsole.MarkupLine($"[yellow]  deleted:[/] {moved} items [dim](--delete — nothing was kept)[/]");
         }
-
-        if (moved > 0)
+        else if (moved > 0)
         {
             // A note in the archive rather than only on the console, because the console scrolls away
             // and the question "what is this directory?" is asked months later.
+            // **"What one reset moved", not "a run".** The two differ whenever a clear is
+            // interrupted — an open image viewer kept `artifacts/` on a real project, and the
+            // second pass put the renders in a stamp of their own. An agent reading the result took
+            // five stamps for five runs and reported that a file had not survived the archive. It
+            // had; it was in the stamp before. A folder that names itself a run invites that.
             File.WriteAllText(Path.Combine(archive, "README.md"),
-                $"# Previous run, archived {DateTime.UtcNow:u}\n\n"
-              + "Moved aside by `polson create-project --reset`, which archives rather than deletes.\n"
-              + "Everything the previous run produced is here: its record, its scripts, its renders,\n"
-              + "and whatever it wrote about itself. Delete this directory yourself if you do not\n"
-              + "want it — nothing else will.\n");
+                $"# Archived {DateTime.UtcNow:u}\n\n"
+              + "What one `polson reset` (or `create-project --reset`) moved aside — they archive\n"
+              + "rather than delete. Usually that is a whole run: its record, its scripts, its\n"
+              + "renders, and whatever it wrote about itself.\n\n"
+              + "**A stamp is not always a run.** A clear stops short of anything held open by\n"
+              + "another program, and the next reset takes the rest — so one run's work can be split\n"
+              + "across two stamps, and this one may hold only part of what it started with. Read\n"
+              + "the neighbours before concluding something was lost.\n\n"
+              + "Delete this directory yourself if you do not want it — nothing else will.\n");
 
             AnsiConsole.MarkupLine($"[green]  archived:[/] previous/{stamp} [dim]({moved} items — nothing deleted)[/]");
         }
+        else if (!delete)
+        {
+            // Nothing moved, so the stamp directory the first attempted move created holds nothing.
+            // Left behind it is a dated folder recording that a reset failed, and a second failed
+            // attempt leaves another — so a project someone is waiting to unlock accumulates empty
+            // archives that read, from the outside, exactly like archives.
+            try
+            {
+                if (Directory.Exists(archive) && !Directory.EnumerateFileSystemEntries(archive).Any())
+                {
+                    Directory.Delete(archive);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
 
-        return [.. new[] { "brief.md" }.Where(f => File.Exists(Path.Combine(dir, f)))];
+        return new ClearResult(
+            [.. new[] { "brief.md" }.Where(f => File.Exists(Path.Combine(dir, f)))],
+            [.. kept]);
     }
 
     /// <summary>The command a hook runs: this CLI, in the runtime the project already needs.</summary>
@@ -1311,6 +1491,26 @@ internal static class ProjectGenerator
                 enabledMcpjsonServers = new[] { "polson" },
 
                 hooks = ClaudeHooks(sdk, dir),
+
+                // **This is what puts the agent's reasoning into the record, and it has to be here
+                // rather than switched on later.** Without it the host writes a `thinking` block
+                // carrying a signature and no text, so `hostlog.py` transcribes it as `redacted` and
+                // the run page shows that the agent deliberated without showing what about — the
+                // half of the record that says *why*, missing from the one place built to show it.
+                //
+                // Measured on 2026-09-16 across four samples: 2,038 blocks in one session, 25 in a
+                // finished run, and 6 then 7 either side of adding the setting mid-session — every
+                // one empty. A session started fresh with it produced 3 of 3 blocks carrying text.
+                // **The settings are read at session start**, which is why adding it to a running
+                // project changes nothing and why generating it is the only reliable way to have it.
+                //
+                // **This setting alone is enough, and that was measured rather than assumed.** It
+                // was first tried alongside `viewMode: "verbose"`, so the pair was confirmed before
+                // either half was; a later run with `viewMode` removed produced 7 of 7 blocks
+                // carrying text. So `viewMode` is deliberately absent — it governs what the terminal
+                // renders, the studio already shows every tool call with its arguments, and a
+                // verbose terminal is noise a director reported as distracting.
+                showThinkingSummaries = true,
             };
     }
 

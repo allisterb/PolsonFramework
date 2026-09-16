@@ -663,6 +663,37 @@ public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.Equal(expected, settings.Contains("\"Task\"", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A Claude project asks the host to store the agent's reasoning, because it cannot be asked
+    /// later.
+    /// </summary>
+    /// <remarks>
+    /// Without it the host writes a <c>thinking</c> block carrying a signature and no text, so the
+    /// record shows that the agent deliberated and not what about — and <c>hostlog</c> marks every
+    /// one <c>redacted</c>. Measured on 2026-09-16: 2,038 empty blocks in one session and 25 in a
+    /// finished run, against 3 of 3 carrying text in a session started fresh with this set.
+    /// <para>
+    /// <b>Generated rather than documented</b> because the settings are read at session start:
+    /// adding it to a project whose run is already going changes nothing, which is exactly the trap
+    /// that made it look ineffective the first time it was tried.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestAClaudeProjectAsksTheHostToRecordReasoning()
+    {
+        Assert.True(ProjectGenerator.Create(Options("thinks", o => o.Sdk = "claude")));
+
+        var settings = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(root, "thinks", ".claude/settings.local.json"))).RootElement;
+
+        Assert.True(settings.GetProperty("showThinkingSummaries").GetBoolean());
+
+        // `viewMode` is deliberately absent: it governs what the terminal renders, and the studio
+        // already shows every tool call with its arguments. Asserted so that adding it becomes a
+        // decision rather than something that drifts in beside the setting it was tested with.
+        Assert.False(settings.TryGetProperty("viewMode", out _), "viewMode is the terminal's business");
+    }
+
     /// <summary>Generated JSON is readable: an ampersand in a role name stays an ampersand.</summary>
     [Fact]
     public void TestGeneratedJsonIsNotAsciiEscaped()
@@ -1706,10 +1737,17 @@ public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// The workflow name selects which template becomes the agent prompt, so an unknown one fails
     /// rather than falling back to a default the caller did not ask for.
     /// </summary>
+    /// <remarks>
+    /// **The empty string used to be in this list and is deliberately no longer.** `--workflow` lost
+    /// its parser-level `Default` so that regenerating a project could tell an omitted flag from a
+    /// typed one — without that distinction `--reset` rewrote a drawing project as a logo one. The
+    /// cost is that empty and omitted are now the same thing, and omitted has to resolve: to the
+    /// recorded workflow when the directory holds a project, and to `logo` when it does not.
+    /// `ProjectResetTests` covers both halves of that.
+    /// </remarks>
     [Theory]
     [InlineData("storyboard")]
     [InlineData("../logo")]
-    [InlineData("")]
     public void TestUnknownWorkflowIsRefused(string workflow) =>
         Assert.False(ProjectGenerator.Create(Options("badflow", o => o.Workflow = workflow)));
 

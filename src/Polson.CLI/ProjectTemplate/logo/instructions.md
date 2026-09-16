@@ -38,6 +38,8 @@ refuse and report, not one you should guess around.
 
 {{TEST}}
 
+{{PROJECT_DIR}}
+
 ---
 
 ## Non-negotiables

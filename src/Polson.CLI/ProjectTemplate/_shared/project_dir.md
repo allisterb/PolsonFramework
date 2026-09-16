@@ -17,3 +17,22 @@ file written outside it is not part of the run in any sense that survives the se
 
 So if you need something that is not in this directory, **ask the director for it** rather than going
 to find it. A path you were given is part of the brief; a path you went looking for is not.
+
+### One folder here is not yours to read: `previous/`
+
+If this project has been run before, `polson reset` moved that run aside into
+`previous/<timestamp>/` — its record, its scripts, its renders, and whatever it wrote about itself.
+**Do not read it.** Not the findings, not the old artifacts, not the archived event log.
+
+It is there so a person can go back to it, not so the next run can start from it. A reset is a
+director saying *begin again*, and the archive is the evidence being kept rather than handed
+forward — so reading it spends a large part of your context re-deriving a run somebody deliberately
+set aside, and anchors this one on decisions that were made about a different attempt.
+
+**What carries forward is what the director put in the brief.** If they want a previous run's
+findings honoured, they will say so, and the words will be in `brief.md` where you have already read
+them. Silence there means a clean start is the ask.
+
+> A timestamped folder is also not a run. A reset interrupted by an open file finishes on the next
+> pass, so one run's work can be split across two stamps — which is one more reason the directory
+> repays a careful human reader and misleads a quick one.

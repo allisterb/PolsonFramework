@@ -306,10 +306,16 @@ def transcribe(entry: dict[str, Any], role: str | None = None) -> list[tuple[str
                 }))
 
     if (usage := (entry.get("message") or {}).get("usage")) and out:
-        # Attached to the entry rather than to a block, so it is emitted once per assistant message
-        # and only when the message said something. `iterations` and `speed` are host telemetry.
+        # **One usage event per model RESPONSE, which is not one per transcript entry.** The host
+        # writes a line per content block - the thinking, the prose, each tool call - and every one
+        # of them repeats the same `message.usage`. Emitting per entry therefore counted a turn two
+        # or three times: measured on the drawing-1 run, 106 usage events for 60 responses, so the
+        # studio's token figures for a managed run ran ~1.75x high. `messageId` is what lets `sync`
+        # tell a second block of a counted response from a new one; the same defect and the same fix
+        # as `ChatlogPreserver.WriteTokenUsage` on the .NET side.
         out.append(("agent", "usage", {
             **common,
+            "messageId": (entry.get("message") or {}).get("id"),
             "inputTokens": usage.get("input_tokens"),
             "outputTokens": usage.get("output_tokens"),
             "cacheReadTokens": usage.get("cache_read_input_tokens"),
@@ -331,8 +337,8 @@ class HostTranscript:
     # endregion
 
     # region Methods
-    def written(self) -> set[str]:
-        """Transcript uuids already in the record.
+    def written(self) -> tuple[set[str], set[str]]:
+        """Transcript uuids already in the record, and the responses already measured.
 
         Read back rather than remembered. A state file beside the record is one more thing that can
         disagree with it, and the disagreement would be invisible: a stale offset re-transcribes a
@@ -340,11 +346,14 @@ class HostTranscript:
         was written.
         """
         seen: set[str] = set()
+        measured: set[str] = set()
         for path in (self.project.agent_events, self.project.director_events):
             for event in read_events(path):
                 if (uuid := event.get("uuid")):
                     seen.add(uuid)
-        return seen
+                if event.get("type") == "usage" and (message := event.get("messageId")):
+                    measured.add(message)
+        return seen, measured
 
     def sync(self) -> int:
         """Transcribes everything not yet in the record. Returns how many events were appended.
@@ -352,7 +361,7 @@ class HostTranscript:
         Ordered by the transcript's own timestamp, so a project holding several sessions reads as one
         history rather than as its files happen to be named.
         """
-        seen = self.written()
+        seen, measured = self.written()
         pending: list[tuple[dict[str, Any], str | None]] = []
 
         # The director's conversation and each subagent's own, live where the host is still writing
@@ -371,6 +380,16 @@ class HostTranscript:
         for entry, role in pending:
             at = _stamp(entry.get("timestamp") or "")
             for src, kind, fields in transcribe(entry, role):
+                # A response already counted, arriving again as its next content block. Read back
+                # from the record rather than remembered, so it holds across a restart for the same
+                # reason `written` does.
+                if kind == "usage":
+                    message = fields.get("messageId")
+                    if message and message in measured:
+                        continue
+                    if message:
+                        measured.add(message)
+
                 log = self.agent if src == "agent" else self.director
                 log.append(kind, at=at, **{k: v for k, v in fields.items() if v is not None})
                 written += 1

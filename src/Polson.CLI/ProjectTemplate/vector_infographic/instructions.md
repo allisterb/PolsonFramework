@@ -49,6 +49,8 @@ not a source.
 
 {{TEST}}
 
+{{PROJECT_DIR}}
+
 ---
 
 ## Non-negotiables

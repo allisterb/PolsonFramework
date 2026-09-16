@@ -1,4 +1,4 @@
-namespace Polson.CLI;
+﻿namespace Polson.CLI;
 
 using System;
 using System.Collections.Generic;
@@ -109,14 +109,15 @@ internal class Program : Runtime
             with.HelpWriter = Console.Error;
         });
 
-        var result = parser.ParseArguments<ServerOptions, EvalOptions, CreateProjectOptions, ReportOptions, PreserveChatlogOptions>(args);
+        var result = parser.ParseArguments<ServerOptions, EvalOptions, CreateProjectOptions, ResetOptions, ReportOptions, PreserveChatlogOptions>(args);
         try
         {
             await result.MapResult(
                 async (ServerOptions opts) => await HandleServerArgs(opts),
                 async (EvalOptions opts) => await HandleEvalArgs(opts),
                 (CreateProjectOptions opts) => HandleCreateProjectArgs(opts),
-                (ReportOptions opts) => Task.FromResult(RunReport.Run(opts)),
+                (ResetOptions opts) => HandleResetArgs(opts),
+                (ReportOptions opts) => HandleReportArgs(opts),
                 (PreserveChatlogOptions opts) => Task.FromResult(ChatlogPreserver.Run(opts)),
                 errs => ReportParseFailure(errs)
             );
@@ -437,6 +438,32 @@ internal class Program : Runtime
     {
         var asked = errors.All(e => e is HelpRequestedError or HelpVerbRequestedError or VersionRequestedError);
         if (!asked) Environment.ExitCode = 1;
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// A report that could not be produced exits non-zero.
+    /// </summary>
+    /// <remarks>
+    /// <c>RunReport.Run</c> was already returning one — 1 for a directory that is not there, 0
+    /// otherwise — and the dispatcher wrapped it in <c>Task.FromResult</c> and dropped it on the
+    /// floor. So `polson report missing-dir` printed its error and exited 0, indistinguishable from
+    /// a report and invisible to `polson report … || exit 1`. The code was right; nothing read it.
+    /// </remarks>
+    static Task HandleReportArgs(ReportOptions opts)
+    {
+        Environment.ExitCode = RunReport.Run(opts);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>A refused reset exits non-zero, so a script can tell it did not happen.</summary>
+    static Task HandleResetArgs(ResetOptions opts)
+    {
+        if (!ProjectReset.Run(opts))
+        {
+            Environment.ExitCode = 1;
+        }
 
         return Task.CompletedTask;
     }

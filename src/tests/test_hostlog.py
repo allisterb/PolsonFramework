@@ -339,6 +339,86 @@ class SyncTests(HostlogTestCase):
         said = [e["text"] for e in read_events(self.project.director_events)]
         self.assertEqual(["first session", "second session"], said)
 
+    def test_one_response_is_measured_once_however_many_lines_it_takes(self):
+        """The host writes a line per content block, and every one repeats the same usage.
+
+        Measured on the drawing-1 run before this: **106 usage events for 60 model responses**, so
+        every token figure the studio showed for a managed run ran about 1.75x high. Nothing about
+        the number looked wrong, which is what made it expensive - the same defect, and the same
+        fix, as `ChatlogPreserver.WriteTokenUsage` on the .NET side.
+        """
+        usage = {"input_tokens": 12, "output_tokens": 30,
+                 "cache_read_input_tokens": 900, "cache_creation_input_tokens": 40}
+        line = lambda uuid, block: {
+            "uuid": uuid, "type": "assistant", "timestamp": "2026-09-01T07:00:00.000Z",
+            "sessionId": "s1", "isSidechain": False,
+            "message": {"role": "assistant", "id": "msg_a", "model": "claude-opus-5",
+                        "content": [block], "usage": usage},
+        }
+
+        self.write_transcript(
+            line("b1", {"type": "thinking", "thinking": "considering"}),
+            line("b2", {"type": "text", "text": "here goes"}),
+            line("b3", {"type": "tool_use", "name": "Read", "input": {"path": "brief.md"}}),
+        )
+
+        hostlog.HostTranscript(self.project).sync()
+
+        agent = read_events(self.project.agent_events)
+        measured = [e for e in agent if e["type"] == "usage"]
+
+        self.assertEqual(1, len(measured), "one response was counted more than once")
+        self.assertEqual(12, measured[0]["inputTokens"])
+        self.assertEqual(900, measured[0]["cacheReadTokens"])
+
+        # Every other block still becomes its own event - the dedup is about the measurement only.
+        self.assertEqual(["thinking", "text", "tool.call"],
+                         [e["type"] for e in agent if e["type"] != "usage"])
+
+    def test_two_responses_are_measured_twice(self):
+        """The guard is per response, not "one usage event ever"."""
+        def response(uuid, message_id, tokens):
+            return {
+                "uuid": uuid, "type": "assistant", "timestamp": "2026-09-01T07:00:00.000Z",
+                "sessionId": "s1", "isSidechain": False,
+                "message": {"role": "assistant", "id": message_id,
+                            "content": [{"type": "text", "text": "x"}],
+                            "usage": {"input_tokens": tokens, "output_tokens": 1}},
+            }
+
+        self.write_transcript(response("b1", "msg_a", 10), response("b2", "msg_b", 20))
+        hostlog.HostTranscript(self.project).sync()
+
+        self.assertEqual([10, 20],
+                         [e["inputTokens"] for e in read_events(self.project.agent_events)
+                          if e["type"] == "usage"])
+
+    def test_a_later_block_of_a_counted_response_is_not_counted_again(self):
+        """The hook re-copies the transcript every turn, so a response arrives across syncs.
+
+        Read back from the record rather than remembered, for the same reason `written` is: a state
+        file beside the record is one more thing that can disagree with it.
+        """
+        usage = {"input_tokens": 7, "output_tokens": 3}
+        line = lambda uuid, block: {
+            "uuid": uuid, "type": "assistant", "timestamp": "2026-09-01T07:00:00.000Z",
+            "sessionId": "s1", "isSidechain": False,
+            "message": {"role": "assistant", "id": "msg_a", "content": [block], "usage": usage},
+        }
+
+        self.write_transcript(line("b1", {"type": "text", "text": "first"}))
+        hostlog.HostTranscript(self.project).sync()
+
+        # The same response, now with its tool call written too.
+        self.write_transcript(
+            line("b1", {"type": "text", "text": "first"}),
+            line("b2", {"type": "tool_use", "name": "Read", "input": {}}),
+        )
+        hostlog.HostTranscript(self.project).sync()
+
+        self.assertEqual(
+            1, len([e for e in read_events(self.project.agent_events) if e["type"] == "usage"]))
+
 
 class CodingTests(unittest.TestCase):
     """What the transcribed events mean to the curve."""

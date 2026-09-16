@@ -112,5 +112,31 @@ public class CommandLineTests : TestsRuntime
 
         Assert.NotEqual(0, exitCode);
     }
+
+    /// <summary>
+    /// A verb that refused fails the process, and not only the ones the parser caught.
+    /// </summary>
+    /// <remarks>
+    /// The parse-failure case above was fixed and these were not, because they are a different
+    /// defect in a different place: the command line parsed perfectly and the <em>handler</em> said
+    /// no. <c>RunReport.Run</c> was already returning 1 for a directory that is not there, and the
+    /// dispatcher wrapped it in <c>Task.FromResult</c> and dropped it; <c>reset</c> had the same
+    /// wiring. So `polson report missing-dir` printed its error and exited 0.
+    /// <para>
+    /// Driven as a real process rather than by calling the method, because the method was never the
+    /// broken part — the wiring between it and the exit code was, and only a process can see that.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("report")]
+    [InlineData("reset")]
+    public async Task TestAVerbThatRefusesFailsTheProcess(string verb)
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "polson-absent-" + Guid.NewGuid().ToString("N")[..8]);
+
+        var (exitCode, _) = await RunAsync(TimeSpan.FromSeconds(30), verb, missing);
+
+        Assert.NotEqual(0, exitCode);
+    }
     #endregion
 }

@@ -1,16 +1,21 @@
 """Command line entry: run one turn against a project directory.
 
-    python -m orchestrator <project> [--prompt "..."]        # from src/webapp
-    python src/webapp/run_studio.py <project>                # from the repository root
+    [./]polson orchestrator <project> [--prompt "..."]       # from the repository root
+    python -m orchestrator <project> [--prompt "..."]        # from src/
 
-Both are the same program. There is no web server here yet — Milestone 6 adds one over the same
-`run_turn`, and until then the terminal is the director.
+Both are the same program; the launcher only finds the interpreter and puts `src/` on the path.
+**It needs the driver lock** — this drives an agent, so the Antigravity SDK has to be installed
+(`src/studio/install.sh driver`). The studio's own lock deliberately does not carry it.
+
+The web server the same `run_turn` was waiting for is now `python -m studio`, which serves the
+record this writes. The terminal is still the director for a single turn.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -57,7 +62,10 @@ def summarize(result: run_mod.RunResult, project: project_mod.Project) -> None:
 
 
 async def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="orchestrator", description=__doc__)
+    # The launcher says how it was invoked, so `./polson orchestrator --help` opens with the name
+    # the reader typed rather than a module they did not. Same contract as studio/__main__.py.
+    parser = argparse.ArgumentParser(prog=os.environ.get("POLSON_VERB") or "orchestrator",
+                                     description=__doc__)
     parser.add_argument("project", type=Path, help="a directory made by 'polson create-project'")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="what to say to the agent")
     parser.add_argument("--timeout", type=float, default=900.0,

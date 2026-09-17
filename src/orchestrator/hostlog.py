@@ -36,10 +36,19 @@ Four things this has to get right:
 `{"type": "thinking", "thinking": ..., "signature": ...}`, but whether `thinking` holds the reasoning
 or an empty string is not ours to control and has changed over time. Measured across 409 transcripts
 on one machine: mostly present through late July and August 2026 (63–100% of blocks per day), and
-absent from 2026-08-21 onward — 9 of ~3,300 blocks since. The client carries server-side feature
-flags (`tengu_thinking_display_updates`, `tengu_thinking_block_resumption`) that track the change, so
-it is a property of the host at the time, not of the session or the model. Signatures are unique per
-block, so an empty one's text is not recoverable from some other entry: it was never written.
+absent from 2026-08-21 onward — 9 of ~3,300 blocks since.
+
+**It is decided upstream, and the model is part of that.** This note used to blame the client's
+server-side feature flags and conclude it was "a property of the host at the time, not of the session
+or the model". The last clause is wrong. Measured 2026-09-16 inside a *single* desktop session — one
+settings file, three models: `claude-sonnet-5` 4 of 4 blocks with text, `claude-opus-4-6` 3 of 3,
+`claude-opus-4-7` 0 of 16. Across the same project `claude-opus-5` gave 0 of 75 blocks under the
+desktop app and 52 of 140 under Claude Code in a terminal. So the host matters too, and neither is
+ours to set: `showThinkingSummaries` is necessary rather than sufficient.
+
+When the text is withheld the block still arrives signed — an empty `thinking` beside a signature
+roughly twice as long, so the reasoning is encrypted into it rather than dropped. Not recoverable
+here: signatures are unique per block, so an empty one's text is not sitting in some other entry.
 
 Either way the block is emitted — with `text` when there is text, marked `redacted` when there is
 not. Skipping the empty ones was the first implementation and it is wrong, because `csm` codes

@@ -59,8 +59,6 @@ The studio uses a multi-canvas model in which an agent works by manipulating cod
 
 **One agent is the default; several is a mode, not the architecture.** Most graphic design work — a logo, an identity, a single illustration — is done well by a single agent carrying the whole brief, and one agent is markedly less cognitive load for the director, who has one collaborator to talk to rather than a committee to supervise. Work that is genuinely large or genuinely divisible — a comic with many panels, a scene with distinct structural and atmospheric passes — is where a second and third agent start to earn their coordination cost. Both configurations run on the same tools and the same artifacts, so the choice is per project rather than baked into the system. When designing a workflow, start with one agent and add another only where the work actually splits.
 
-This project is an entry into Google's All Things Agentic hackathon: https://allthingsagentichackathon.devpost.com
-
 ## 2. Core Theoretical Frameworks
 All agent logic, coordination protocols, and artifact management must adhere to the concepts below.
 
@@ -87,12 +85,12 @@ All agent logic, coordination protocols, and artifact management must adhere to 
 
 ## 3. System Architecture & Tech Stack
 ┌────────────────────────────────────────────────────────────────────────┐
-│                      Antigravity 2.0 Desktop / IDE                     │
+│               Claude Code / Antigravity 2.0 Desktop / IDE              │
 └───────────────────────────────────┬────────────────────────────────────┘
 │                     User Feedback & Live Monitoring
 ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                   Orchestration Layer (Python Antigravity SDK)         │
+│                   Orchestration Layer (Antigravity SDK / Google ADK)         │
 │  • PubSub Bus & Hooks / Triggers       • Cloud RAG Engine              │
 │  • Agent Coordination (1..n)           • Agent Platform Memory Bank    │
 └───────────────────────────────────┬────────────────────────────────────┘
@@ -133,13 +131,6 @@ All agent logic, coordination protocols, and artifact management must adhere to 
     *   **Actuation (Code):** Agents execute JavaScript against the Snap.svg-compatible JS vector drawing APIs and other JS APIs for drawing and graphics to mutate scene state. This code serves as understandable traces for collaboration over graphics works
     *   **Perception (Pixels):** The .NET backend headlessly renders the combined script to PNG byte arrays. The Antigravity SDK streams these images directly into agent contexts for "peeking." Agents use their both their visual perception abilities and code understanding abilities to understand artifacts and collaborate over. 
 
-### C. Git Architecture (Trunk & Fork Model)
-Applies to **multi-agent runs**, where it exists to stop concurrent agents blocking each other. A single-agent run needs none of it and works directly in one workspace.
-
-*   **Main Repository:** Holds the canonical state of the project. Only the Facilitator agent can merge changes into `main`.
-*   **Agent Forks:** Each agent operates in an isolated private workspace, committing code without lockouts or merge conflicts. Pull Requests are submitted to the Facilitator for evaluation.
-
----
 ## 4. Implementation Roadmap & Milestones
 
 ### Milestone 1: Core SVG Engine & Snap.svg Jint Adapter (.NET MCP Server)

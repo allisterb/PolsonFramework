@@ -1492,24 +1492,29 @@ internal static class ProjectGenerator
 
                 hooks = ClaudeHooks(sdk, dir),
 
-                // **This is what puts the agent's reasoning into the record, and it has to be here
-                // rather than switched on later.** Without it the host writes a `thinking` block
-                // carrying a signature and no text, so `hostlog.py` transcribes it as `redacted` and
-                // the run page shows that the agent deliberated without showing what about — the
-                // half of the record that says *why*, missing from the one place built to show it.
+                // **Left in deliberately, and it is necessary rather than sufficient.** Without
+                // it the host writes a `thinking` block carrying a signature and no text, so
+                // `hostlog.py` transcribes it as `redacted` and the run page shows that the agent
+                // deliberated without showing what about — the half of the record that says *why*,
+                // missing from the one place built to show it. **The settings are read at session
+                // start**, which is why adding it to a running project changes nothing and why
+                // generating it is the only reliable way to have it.
                 //
-                // Measured on 2026-09-16 across four samples: 2,038 blocks in one session, 25 in a
-                // finished run, and 6 then 7 either side of adding the setting mid-session — every
-                // one empty. A session started fresh with it produced 3 of 3 blocks carrying text.
-                // **The settings are read at session start**, which is why adding it to a running
-                // project changes nothing and why generating it is the only reliable way to have it.
-                //
-                // **This setting alone is enough, and that was measured rather than assumed.** It
-                // was first tried alongside `viewMode: "verbose"`, so the pair was confirmed before
-                // either half was; a later run with `viewMode` removed produced 7 of 7 blocks
-                // carrying text. So `viewMode` is deliberately absent — it governs what the terminal
+                // **Showing thinking is only confirmed to work in Claude Code.** There it was
+                // measured repeatedly, including 7 of 7 blocks on a run with `viewMode` removed —
+                // which is why `viewMode` is deliberately absent: it governs what the terminal
                 // renders, the studio already shows every tool call with its arguments, and a
                 // verbose terminal is noise a director reported as distracting.
+                //
+                // Measured 2026-09-16 with this setting generated and present, the desktop app told
+                // a different story: `claude-opus-5` produced 0 of 75 blocks with text across two
+                // sessions, while within one desktop session `claude-sonnet-5` gave 4 of 4 and
+                // `claude-opus-4-6` 3 of 3 against `claude-opus-4-7`'s 0 of 16 — same file, same
+                // host, three models. So the model and the host both bear on it and neither is ours
+                // to set. The setting costs nothing, is ignored harmlessly where it does not apply,
+                // and is the half we can control; the machinery downstream depends on none of it,
+                // because `hostlog.py` emits the block either way and the studio renders the text
+                // whenever it appears.
                 showThinkingSummaries = true,
             };
     }

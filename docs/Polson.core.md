@@ -1124,7 +1124,7 @@ Also accessible via `Skia.Drawing`.
 > **Five parameters, not the thirty-two a 3D generator would offer**, and they are the five that most change *who* a face is: eye spacing, eye size, nose length, jaw squareness, mouth width. `eyesOpening` is deliberately absent — it needs `drawComicEye` to take a lid aperture, which it does not yet.
 >
 > The taxonomy follows Schwind et al., *FaceMaker* (Springer 2017, DOI 10.1007/978-3-319-53088-8_6), whose parameter set was derived by surveying nine commercial RPG character creators. Their implementation morphs 3D meshes; this moves the landmarks Loomis construction already computes, which is the 2D analogue rather than a port.
-- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, neck }, bounds, padding, order }` — **The composed head**: the construction's four masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. An unrecognised option is refused by name.
+- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, neck }, bounds, padding, order }` — **The composed head**: the construction's four masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
 
 > [!IMPORTANT]
 > **This is what stops features being marks floating in space.** `createLoomisHead` places landmarks and the comic feature drawers put marks at them, and until this there was nothing in between — a live run drew two correctly proportioned faces that read as **masks on undifferentiated shoulder-masses**, because the features had nothing to sit on. Clip them to `mass` and they belong to a head.
@@ -1164,6 +1164,39 @@ Also accessible via `Skia.Drawing`.
 
 > [!WARNING]
 > **Two things it does not compose, both visible rather than theoretical.** There is **no cheek**, so where the ball's inward curve crosses the jaw's outward one the union shows a shallow concave step — a cheekbone at panel size, a seam at portrait size; ink over it or union your own wedge in. And there is **one ear**, on the side `jaw.ear` names, which is right for a three-quarter view and wrong for a frontal one: mirror `parts.ear` about `crown.x` when the head is square on.
+- `Drawing.createHeadForFigure(figureObj: object, options?: { yawDeg?: number, pitchDeg?: number, skull?: 'loomis' | 'comic', neckLength?: number, character?: object })` → `head` — **A head built to sit on a mannequin.** Returns an ordinary head — everything that takes one works unchanged — carrying an extra `fit` block: `{ rollDeg, pivot, headHeight, neckLength, reach, skull }`.
+
+> [!IMPORTANT]
+> **This is the seam between `polson://manual/23` and `polson://manual/08`, and three of its four parts were arithmetic you had to do yourself.** Measured against `createMannequinFigure`, whose stations in head units down from the crown are chin `1.00 H`, neck `1.15 H`, shoulder line `1.40 H`:
+>
+> - **Placement and scale.** `createLoomisHead`'s `originY` is the head's vertical *centre*, not its crown — so the natural mistake puts the head half a unit low. This takes `figure.head.center` and `2 * figure.head.ry`.
+> - **The skull defaults to `comic` here**, against `loomis` everywhere else. The figure's head egg is `0.72 H` wide; a Loomis head is `0.857 H` and overhangs its own shoulders by 19%, where the comic skull is `0.714 H` — the egg to within 1%. **The mannequin has been carrying a comic skull all along.**
+> - **The neck is measured, not assumed.** `createHeadGeometry`'s default `0.30` ends at `1.30 H` against a shoulder line at `1.40 H`, so an unfitted head floats a tenth of a head unit clear of the body. This measures chin to sternal notch on the figure in hand, so a posed figure gets the length its own pose needs.
+> - **The roll is reported, not applied.** `figure.head.angleDeg` is `spineDeg + neckDeg`, a lean on the page, and `createLoomisHead` takes only yaw and pitch. Apply `fit.rollDeg` about `fit.pivot` yourself — without it a leaning figure keeps an upright face.
+>
+> ```javascript
+> const fig = Drawing.createMannequinFigure(240, 60, 900, { pose });
+> const head = Drawing.createHeadForFigure(fig, { yawDeg: 20, character: MORT });
+>
+> ctx.save();
+> ctx.translate(head.fit.pivot.x, head.fit.pivot.y);
+> ctx.rotate(head.fit.rollDeg * Math.PI / 180);      // the lean the figure is already in
+> ctx.translate(-head.fit.pivot.x, -head.fit.pivot.y);
+>
+> const geo = Drawing.createHeadGeometry(head);       // skull and neckLength come from the fit
+> ctx.fillStyle = '#efe9dc';
+> ctx.fill(geo.silhouette);
+> ctx.save();
+> ctx.clip(geo.mass);
+> Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: '#15151a' });
+> ctx.restore();
+> ctx.restore();
+> ```
+>
+> `yawDeg` defaults to **0** rather than `createLoomisHead`'s 35: a head on a figure faces where the figure faces until told otherwise. `character` is passed to `createParametricHead`, so a character stays the same person from panel to panel.
+>
+> **Drawing it onto a body has two ordering rules that are not obvious and produce a wrong picture silently** — the head and neck go down **first** with the torso over them, or the neck's closed base is outlined across the chest; and the mannequin's own head egg has to be cut out of the body (`figGeo.silhouette.subtract(figGeo.groups.head)`) or it paints over the face. Worked through in `polson://manual/23` §8.
+
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
 - `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**.
 - `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` → `{ underPlane, bridge, nostril }` — Renders nose bridge, apex, nostril, and under-plane shadow, **returning each as a `CanvasPath`**.

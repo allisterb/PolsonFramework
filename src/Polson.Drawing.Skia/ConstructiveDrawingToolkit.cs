@@ -4220,8 +4220,13 @@ public class ConstructiveDrawingToolkit
         var thirdH = Num(unit, "thirdH", H / 3.5f);
         var eyeW = Num(unit, "eyeW", thirdH * 0.5f);
 
+        // A head from `createHeadForFigure` carries the fit it was built to. An explicit option still
+        // wins; without one these follow the figure rather than the canon, so a caller never has to
+        // remember to forward two values that were computed for this exact head on that exact body.
+        var fit = JsInterop.AsDict(head["fit"]);
+
         var padding = MathF.Max(0f, Num(opt, "padding", 0f));
-        var neckLength = Num(opt, "neckLength", 0.30f) * H;
+        var neckLength = Num(opt, "neckLength", Num(fit, "neckLength", 0.30f)) * H;
 
         // **The one cited departure from the ball, and it is this manual's own measurement.** Lee &
         // Buscema's head is five eye-widths across where Loomis's construction is six (Studio Manual
@@ -4229,7 +4234,9 @@ public class ConstructiveDrawingToolkit
         // narrower cranium is most of what makes a head read at panel size. `loomis` stays the
         // default: the landmarks were laid out for a six-eye head, and silently narrowing every head
         // already drawn is not a default's job.
-        var skull = opt?["skull"]?.ToString()?.Trim().ToLowerInvariant() ?? "loomis";
+        var skull = opt?["skull"]?.ToString()?.Trim().ToLowerInvariant()
+                    ?? fit?["skull"]?.ToString()?.Trim().ToLowerInvariant()
+                    ?? "loomis";
         var wScale = skull switch
         {
             "loomis" => 1f,
@@ -4366,6 +4373,111 @@ public class ConstructiveDrawingToolkit
             ["order"] = new List<object?> { "neck", "cranium", "jaw", "ear" }
         };
     }
+
+    /// <summary>Accepted options for <see cref="CreateHeadForFigure"/>. An unrecognised one is refused.</summary>
+    static readonly string[] HeadForFigureOptions = ["yawDeg", "pitchDeg", "skull", "neckLength", "character"];
+
+    /// <summary>
+    /// A head built to sit on a mannequin figure: placed and scaled to the figure's own head mass,
+    /// with a neck that reaches its shoulder line. Returns an ordinary head, plus a <c>fit</c> block.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Four things have to line up and three of them are arithmetic the caller kept getting to do
+    /// itself.</b> Measured against <see cref="CreateMannequinFigure"/>, whose stations in head units
+    /// down from the crown are chin <c>1.00 H</c>, neck <c>1.15 H</c>, shoulder line <c>1.40 H</c>:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><b>Placement and scale.</b> <c>createLoomisHead</c>'s <c>originY</c> is the head's
+    /// vertical <i>centre</i>, not its crown, so the figure's <c>head.center</c> goes straight in and
+    /// the height is <c>2 * head.ry</c> — one head unit, which is what the canon says it is.</item>
+    /// <item><b>The skull defaults to <c>comic</c> here, and to <c>loomis</c> everywhere else.</b> The
+    /// figure's head egg is <c>2 * rx</c> = <c>0.72 H</c> wide. A Loomis head is <c>3 * (H / 3.5)</c> =
+    /// <c>0.857 H</c>, so it overhangs its own shoulders by 19%; the comic skull is <c>5/6</c> of that,
+    /// <c>0.714 H</c>, which is the egg to within 1%. The mannequin has been carrying a comic skull
+    /// all along.</item>
+    /// <item><b>The neck is measured, not assumed.</b> <c>createHeadGeometry</c>'s default
+    /// <c>neckLength</c> of <c>0.30</c> ends at <c>1.30 H</c> and the shoulder line is at
+    /// <c>1.40 H</c> — a tenth of a head unit of daylight under the chin. This measures chin to
+    /// sternal notch on the figure in hand, so a posed figure gets the length its own pose needs
+    /// rather than the canon's.</item>
+    /// <item><b>The roll is reported and not applied.</b> <c>figure.head.angleDeg</c> is
+    /// <c>spineDeg + neckDeg</c>, a lean on the page — where <c>createLoomisHead</c> takes only yaw
+    /// and pitch. Rotating every landmark here would produce a head whose features no longer agree
+    /// with the axis the drawing calls build from, so <c>fit.rollDeg</c> and <c>fit.pivot</c> are
+    /// handed back for the caller to apply with a transform. Without it a leaning figure keeps an
+    /// upright face.</item>
+    /// </list>
+    /// <para>
+    /// <c>yawDeg</c> defaults to <b>0</b> rather than <c>createLoomisHead</c>'s 35: a head on a figure
+    /// faces where the figure faces until told otherwise. <c>character</c> is passed to
+    /// <see cref="CreateParametricHead"/> before the neck is measured. <b>That order changes nothing
+    /// today and is kept anyway</b>: of the five parameters only <c>jawShape</c> goes near the chin,
+    /// and it displaces <c>jaw.chinNear</c> and <c>jaw.chinFar</c> rather than the top-level
+    /// <c>chin</c> the neck hangs from. A parameter that ever moves that one would silently hang the
+    /// neck off a chin that no longer exists, and measuring last costs nothing.
+    /// </para>
+    /// <para>
+    /// <b><c>fit</c> travels with the head</b>, so <c>createHeadGeometry</c> reads <c>neckLength</c>
+    /// and <c>skull</c> from it unless you pass your own. One source of truth, and nothing to
+    /// remember to forward.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateHeadForFigure(object figureObj, object? options = null)
+    {
+        if (JsInterop.AsDict(figureObj) is not IDictionary fig || JsInterop.AsDict(fig["head"]) is not IDictionary node)
+            throw new ArgumentException(
+                "createHeadForFigure needs a figure from Drawing.createMannequinFigure(...).", nameof(figureObj));
+
+        if (fig["sternum"] is null)
+            throw new ArgumentException(
+                "createHeadForFigure: the figure carries no sternum, so there is no shoulder line to reach.",
+                nameof(figureObj));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownHeadParameters(opt, HeadForFigureOptions, "createHeadForFigure option");
+
+        var skull = opt?["skull"]?.ToString()?.Trim().ToLowerInvariant() ?? "comic";
+        if (skull is not ("loomis" or "comic"))
+            throw new ArgumentException(
+                $"createHeadForFigure skull not recognised: {skull}. Accepted: loomis, comic.");
+
+        var center = ExtractPoint(node["center"]);
+        var headHeight = Num(node, "ry", 0f) * 2f;
+        if (headHeight <= 0f)
+            throw new ArgumentException(
+                "createHeadForFigure: the figure's head carries no ry, so there is no size to build to.",
+                nameof(figureObj));
+
+        var head = CreateLoomisHead(center.X, center.Y, headHeight,
+            Num(opt, "yawDeg", 0f), Num(opt, "pitchDeg", 0f));
+
+        if (JsInterop.AsDict(opt?["character"]) is IDictionary character)
+            head = CreateParametricHead(head, character);
+
+        // Measured on the figure in hand rather than on the canon, which is what lets a posed figure
+        // get the neck its own pose needs. Taken after any character parameters, which today move no
+        // landmark this reads - see the remarks for why the order is kept regardless.
+        var chin = ExtractPoint(head["chin"]);
+        var sternum = ExtractPoint(fig["sternum"]);
+        var reach = MathF.Sqrt((sternum.X - chin.X) * (sternum.X - chin.X)
+                             + (sternum.Y - chin.Y) * (sternum.Y - chin.Y));
+
+        head["fit"] = new Dictionary<string, object?>
+        {
+            ["rollDeg"] = Num(node, "angleDeg", 0f),
+            ["pivot"] = ToDict(center),
+            ["headHeight"] = headHeight,
+            ["neckLength"] = opt != null && opt.Contains("neckLength")
+                ? MathF.Max(0f, Num(opt, "neckLength", 0f))
+                : reach / headHeight,
+            ["reach"] = reach,
+            ["skull"] = skull
+        };
+
+        return head;
+    }
+
     #endregion
 
     #endregion

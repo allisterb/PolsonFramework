@@ -5,6 +5,11 @@
 > words and cited by page. **The copyright page is absent from the scanned copy**, so its terms could
 > not be read; treated as ordinary all-rights-reserved and handled as the Bokhua row — distil, cite,
 > never reproduce at length. See the ledger row in `reference/README.md`.  
+> **§8's craft half** is from Jack Faragasso, *Mastering Drawing the Human Figure* (Stargarden Press, 1998) —
+> "Additions and Clarifications of the Structure System: 1. The Head and Shoulders", p. 74 — and Andrew Loomis,
+> *Drawing the Head and Hands* (Viking Press, 1956) — p. 24, the text for Plate 7 *Action of the head on the
+> neck*, and p. 46. **Faragasso's terms name retrieval systems explicitly**, so it is distilled and cited here
+> and its text stays out of the retrieval corpus.  
 > **Purpose**: The *comic* idiom for a head, as distinct from the portrait idiom every other head
 > source here teaches. Where Loomis builds a head that could be a person, this builds one that reads
 > instantly at panel size — and the difference between them is measurable, not a matter of feel.
@@ -340,12 +345,234 @@ rather than a second construction to keep in step with the first:
 > `farEye.width / unit.eyeW`, which the construction clamps at 0.45 — so **past roughly 63° the ear
 > stops widening**. Beyond that angle, build the ear yourself.
 
-## 8. What this does not give you
+## 8. Putting the head on a body
+
+§7 makes a head. It does not make a **person** — and the join is exactly where this manual and
+Manual 08 stop talking to each other. That one builds a figure with `Drawing.createMannequinFigure`;
+this one builds a head with `Drawing.createLoomisHead`. Nothing said how one goes on the other, and
+between them sit four conversions, **three of which fail in ways a render does not announce**. A head
+too wide for its own shoulders still looks like a head. A neck stopping short still looks like a neck
+until you notice the daylight under the chin.
+
+Every one of them starts from the figure's own stations, in head units down from the crown:
+
+| Station | Where |
+| :--- | :--- |
+| `0.00 H` | crown |
+| `1.00 H` | chin — the figure's head egg is `ry = 0.50 H`, so it is exactly one unit tall |
+| `1.15 H` | neck |
+| `1.40 H` | shoulder line, and the sternal notch with it |
+
+**`Drawing.createHeadForFigure(figure, options)` does the conversions and hands back an ordinary
+head** — everything in §1–§7 takes it unchanged — carrying an extra `fit` block that says what it
+worked out.
+
+### The four things it settles
+
+**1. Where it goes and how big it is.** `createLoomisHead`'s `originY` is the head's vertical
+**centre**, not its crown, where every proportion table in Manual 08 measures from the crown. So the
+natural mistake puts the head half a unit low, which on an eight-head figure is a head resting on its
+own sternum. The conversion is `figure.head.center` and `2 * figure.head.ry`.
+
+**2. Which skull — and the default here is `comic`, against `loomis` everywhere else.** The figure's
+head egg is `2 * rx` = **0.72 H** across. A Loomis head is `3 * (H / 3.5)` = **0.857 H**, so dropped
+onto a mannequin it overhangs its own shoulders by 19%. The comic skull of §1 is 5/6 of Loomis =
+**0.714 H** — the egg to within one per cent. **The mannequin has been carrying a comic skull all
+along**, and nothing had noticed; the surprising default is the one that matches the body.
+
+**3. How long the neck is, measured rather than assumed.** `createHeadGeometry`'s own default
+`neckLength` of `0.30` ends at `1.30 H`, and the shoulder line is at `1.40 H` — **a tenth of a head
+unit of daylight**. This measures chin to sternal notch on the figure in hand, so a posed figure gets
+the length its own pose needs rather than the canon's.
+
+**4. The lean, which is reported and not applied.** `figure.head.angleDeg` is `spineDeg + neckDeg`, a
+roll on the page — and `createLoomisHead` takes only yaw and pitch, so there is no parameter for it.
+`fit.rollDeg` and `fit.pivot` come back for you to apply with a transform. Skip it and a leaning
+figure keeps an upright face, which is the failure Manual 08 §3 warns about without saying what to do.
+
+**Two ordering rules, and both were found by rendering rather than by reasoning.** Neither is
+obvious and each produces a picture that is wrong in a way the geometry cannot report:
+
+1. **Draw the head and neck first, and the torso over them.** The neck is a closed shape, so drawn
+   on top of the body its base is outlined straight across the chest — a tube laid on a mannequin
+   rather than a neck going into it. The shoulders have to cover it, which means they go on last.
+2. **Cut the mannequin's own head out of the body.** `createFigureGeometry` includes a head egg at
+   exactly the place you just composed a head, so a body drawn afterwards paints over the face.
+   `silhouette.subtract(groups.head)` is the whole of it.
+
+```javascript
+const canvas = createCanvas(520, 760);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f5f2e9'; ctx.fillRect(0, 0, 520, 760);
+const INK = '#1a1a18';
+
+const MORT = { eyesDistance: 0.78, eyesSize: -0.22, noseLength: -0.72, jawShape: 0.88, mouthWidth: 0.30 };
+
+const fig = Drawing.createMannequinFigure(260, 70, 620, {
+    pose: { spineDeg: 14, neckDeg: -6 }, shoulderTiltDeg: -8 });
+
+// Rule 2 - the mannequin carries its own head egg, and it would paint over the face.
+const figGeo = Drawing.createFigureGeometry(fig);
+const body = figGeo.silhouette.subtract(figGeo.groups.head);
+
+const head = Drawing.createHeadForFigure(fig, { yawDeg: 22, character: MORT });
+log(`skull ${head.fit.skull}, neck ${head.fit.neckLength.toFixed(3)} H, lean ${head.fit.rollDeg.toFixed(1)} deg`);
+
+// The lean the figure is already in. Skip it and the face sits upright on a tilted body.
+const lean = () => {
+    ctx.translate(head.fit.pivot.x, head.fit.pivot.y);
+    ctx.rotate(head.fit.rollDeg * Math.PI / 180);
+    ctx.translate(-head.fit.pivot.x, -head.fit.pivot.y);
+};
+
+// Rule 1 - head and neck first. No options: skull and neckLength come from the fit.
+const geo = Drawing.createHeadGeometry(head);
+ctx.save(); lean();
+ctx.fillStyle = '#efe9dc';
+ctx.fill(geo.silhouette);
+ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
+ctx.stroke(geo.silhouette);
+ctx.restore();
+
+// ... then the torso over the neck's base.
+ctx.fillStyle = '#d8d2c4';
+ctx.fill(body);
+ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
+ctx.stroke(body);
+
+// Features last, inside the same lean and clipped to the head's mass.
+ctx.save(); lean();
+ctx.clip(geo.mass);
+Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: INK });
+Drawing.drawComicEye(ctx, head.farEye, true, { inkColor: INK });
+Drawing.drawComicNose(ctx, head.noseWedge, { inkColor: INK });
+Drawing.drawComicMouth(ctx, head.mouthGuides, { inkColor: INK });
+ctx.restore();
+
+canvas;
+```
+
+**`fit` travels with the head**, so `createHeadGeometry` reads `neckLength` and `skull` from it unless
+you pass your own. One source of truth, and nothing to remember to forward.
+
+`yawDeg` defaults to **0** rather than `createLoomisHead`'s 35: a head on a figure faces where the
+figure faces until told otherwise. `character` goes to `createParametricHead` (§6), so the same five
+numbers give the same person on every panel of the page.
+
+### The craft — what makes a head sit rather than perch
+
+The arithmetic above puts the head in the right place at the right size. It does not make it **sit**
+there, and the two sources agree about why: the join is built from the **pit of the neck**, and the
+neck is described by the muscles that turn the head rather than by its own outline.
+
+**Faragasso's order is head, centre line, then shoulder axis** — and it runs opposite to the order the
+toolkit makes natural. Draw the head shape; run a centre line down it **to the pit of the neck**; then
+draw the shoulder axis *through that point* to the widest points of the shoulders, taking care over
+its angle. In our terms the pit of the neck is `figure.sternum`, and it is the anchor rather than a
+consequence: everything about the shoulders is measured from it. (The shoulder line is an axis and
+not the clavicles — Manual 08 §3 carries that, from the same page of Faragasso.)
+
+**His measure is a head-length.** The distance from the pit of the neck to the widest point of the
+shoulder is **one head length in a woman and one and a third in a man**, and he adds at once that
+these vary greatly in real life. `createMannequinFigure`'s `shoulderSpanHeads` defaults to `1.8`, so
+**0.9 H a side** — narrower than both, deliberately, because it is a *joint* span rather than the
+figure's widest point (Manual 08 §1). If you want Faragasso's shoulders, say `2.67`.
+
+**The trapezius is what fills the corner this manual leaves as a seam.** From the widest shoulder
+point, go up on an angle to where the clavicle ends, then across to a point on the centre line at the
+**back** of the neck; repeat on the other side, then add the clavicles and the sterno-mastoids. That
+triangle is precisely the gap between the composed neck and the composed shoulder — so the remedy for
+the seam is not a smoothing pass, it is a shape with a name.
+
+**And he gives a check for the whole thing**: draw an **arc around the head** out to the widest points
+of the shoulders. If the shoulders do not land on it, the head is the wrong size for the body — which
+is the failure §8's `skull` and `headHeight` conversions exist to prevent, arrived at from the
+drawing side rather than the arithmetic one.
+
+#### The commonest mistake, and where our neck actually falls
+
+Faragasso names it outright: **the neck in the wrong position as it relates to the head.** He gives
+three defensible relations, chosen by the neck's width and the viewpoint — the line of the neck meets
+the face at the **side of the eye socket**, at the **edge of the nostril**, or at the **corner of the
+mouth**.
+
+Those are landmarks the construction already computes, so the relation is measurable rather than a
+matter of eye. Measured on a canon head at yaw 0, as a fraction of head height `H`:
+
+| Faragasso's relation | dx from the facial axis | `neckWidth` to get it |
+| :--- | :--- | :--- |
+| side of the eye socket — the widest | `0.214 H` | `head.unit.thirdH * 1.50` |
+| corner of the mouth | `0.121 H` | `head.unit.thirdH * 0.85` |
+| edge of the nostril — the narrowest | `0.071 H` | `head.unit.thirdH * 0.50` |
+| **the toolkit's default** | **`0.186 H`** | `head.unit.thirdH * 1.30` |
+
+```js
+// A narrower, more classical neck: Faragasso's mouth-corner relation.
+const geo = Drawing.createHeadGeometry(head, { neckWidth: head.unit.thirdH * 0.85 });
+```
+
+**So the default neck is a wide one** — between the mouth corner and the eye socket and much nearer
+the eye socket, not the thin stalk it looks like against a mannequin's shoulders. That impression is
+the shoulder span being narrow, not the neck. **`neckWidth` is in pixels**, unlike `neckLength`, which
+is a fraction of head height; deriving it from `head.unit.thirdH` is what keeps it scale-free.
+
+#### Loomis on why a tipped head is not a hinge
+
+**The pivot is deep and set back.** It is at the top of the spine and the base of the skull, *well
+inside the roundness of the neck and deep under the skull*, a little behind the centre line — a
+rotating action, not a hinge. Three things follow that a surface rotation does not give you: tipped
+**backward**, the neck is squeezed and bulges into a crease at the base of the skull; tipped
+**forward**, the larynx drops and hides itself within the neck; and the head *"drops forward mostly of
+its own weight"*, which is a gesture note as much as an anatomical one.
+
+That is what `fit.rollDeg` cannot do for you. Rotating the composed head about its own centre is a
+surface rotation — right for a lean, and silent about all three.
+
+**The two muscles that turn the head run from behind the ears to the breastbone.** Loomis attaches
+them to the skull *just behind the ears* at the top and to the breastbone *between the two
+collarbones* at the bottom. In our terms that is **`jaw.ear` to `figure.sternum`** — two points the
+toolkit already hands you, and a line worth drawing even when nothing else on the neck is:
+
+```js
+// The cord that makes a turned head read as turned.
+ctx.beginPath();
+ctx.moveTo(head.jaw.ear.x, head.jaw.ear.y);
+ctx.lineTo(fig.sternum.x, fig.sternum.y);
+ctx.stroke();
+```
+
+At the back, two more attach under the back of the skull and hold the head up. `createHeadGeometry`
+anchors its neck under the ear for exactly this reason, which is §7's note read from its source.
+
+**One rule for the jaw seam**: the crease between neck and jaw *"seldom runs up to the ear but points
+below it"*, and is *"seldom sharply defined"*. So the concave step §9 warns about should be inked as a
+soft mark aimed **below** the ear — not closed up, and not run to the ear itself.
+
+### What the join still does not do
+
+- **It composes two silhouettes; it does not weld them.** The neck reaches the shoulder line and
+  stops there. Where neck meets trapezius a real drawing has a mass bridging them, and this has a
+  seam — the same order of defect as the missing cheek in §9, and the same remedy: ink over it, or
+  union your own wedge in.
+- **The roll is yours to apply, and it is a transform rather than a rotated construction.** The
+  landmarks inside the head are still axis-aligned, so anything you measure off them after rotating
+  the context is in the unrotated frame. Measure first, draw second.
+- **Nothing here is depth.** A figure whose arm crosses in front of the chin still needs a clip to
+  say so; `order` on either object is construction order, not z. The two ordering rules above are
+  the same fact in its commonest form.
+- **There is no trapezius**, so the corner between neck and shoulder stays a seam. That is the one
+  shape the craft section names and the toolkit does not build; union your own in. (An earlier draft
+  of this list called the neck *thin* — measured, it is nearer Faragasso's **widest** relation, and
+  what looks thin is the mannequin's narrow shoulder span.)
+- **The ear is easy to lose at a small yaw.** It straddles the ball's silhouette, so at the yaws a
+  figure shot usually wants it is a few pixels wide. Check `parts.ear` rather than assuming it drew.
+
+## 9. What this does not give you
 
 - **A composed head is not a rendered one.** §7 closed the gap this section used to name: there is
-  now a silhouette, an ear and a neck. What it gives you is *shape* — four masses and their union.
-  It does not shade them, does not join the head to a body, and knows nothing about hair, which
-  remains the largest untouched thing on a comic head. `Drawing.drawHairRibbon(...)` draws one strand
+  now a silhouette, an ear and a neck, and §8 joins it to a body. What it gives you is *shape* — four
+  masses and their union. It does not shade them, and knows nothing about hair, which is now the
+  largest untouched thing on a comic head. `Drawing.drawHairRibbon(...)` draws one strand
   and nothing decides where strands go.
 - **Nothing in it is depth.** `order` is the sequence the masses are built in, not a z-order, exactly
   as on a figure. A head turned far enough that the far jaw passes behind the neck still needs you to

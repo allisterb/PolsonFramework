@@ -349,6 +349,11 @@ public partial class JsDrawingEngine : Runtime
             var randomToolkit = new RandomToolkit();
             engine.SetValue("Random", randomToolkit);
 
+            // A staged composition as a construction: depth layers, named slots, and the colour
+            // system that holds them together. Returns a model and draws nothing, like Chart.
+            var sceneToolkit = new SceneToolkit();
+            engine.SetValue("Scene", sceneToolkit);
+
             // Whole charts as constructions, above the Scale/Layout primitives. Returns models and
             // geometry rather than drawing, on the createMannequinFigure/createFigureGeometry split.
             var chartToolkit = new ChartToolkit();

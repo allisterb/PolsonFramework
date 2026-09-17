@@ -4,6 +4,9 @@
 > DC Comics, 2002) — §1 from ch. 9 (pp. 83–86), §2 and §3 from ch. 11 (pp. 100–105), §4 from ch. 10
 > (pp. 87–99), §5 from ch. 8 (pp. 63–73). Distilled in our own words and cited by chapter; the book
 > is all-rights-reserved and is not reproduced here.  
+> **§6** is from Lex Sokolin, *How I Built Procedurally Generated Gothic Comic Compositions*
+> (medium.muz.li, 15 January 2019) — distilled in our own words and cited by author and date. The
+> post states no terms; handled as the Bokhua row. See the ledger in `reference/README.md`.  
 > **Purpose**: How to *stage* a sequential image — where the camera goes, how far away, what the
 > panel's shape says before its contents are read, and how the eye is steered through a page. This
 > is the discipline the rest of the drawing manuals do not cover: they build and render a figure,
@@ -273,7 +276,238 @@ it achieves.
 
 ---
 
-## 6. What this manual does not give you
+## 6. The arranged route — composing from parts
+
+Everything above assumes the picture is **constructed**: a figure from a canon, a head from
+landmarks, a panel drawn. There is a second route, and it is a different trade rather than a worse
+one — **arrange** a picture from parts that arrive from somewhere else, and spend the effort on where
+they go rather than on what they are.
+
+**The trade is measurable, and it is not the one people assume.** Across every run on disk, 599
+script executions classified by what they actually call:
+
+| what the script draws | median authoring | mean | p90 | median size |
+| :--- | ---: | ---: | ---: | ---: |
+| a face | 1.00 min | 2.19 | **5.71** | 22 KB |
+| a body | 0.94 min | 1.75 | **5.97** | **52 KB** |
+| composition | 0.89 min | 1.47 | 3.05 | 18 KB |
+| lighting | 0.90 min | 1.34 | 2.70 | 21 KB |
+
+**At the median there is no difference at all.** A face script takes a minute to write and so does a
+lighting script. The difference is entirely in the tail: figure work has roughly **twice the p90** and
+runs to **three times the code**. So this route does not buy back a constant tax — it buys out the
+variance and the bulk, and it pays for that with articulation. It is the trade between working from a
+model sheet and redrawing, and it belongs to storyboards, covers and thumbnails rather than to a
+finished panel.
+
+### Janson's sequence and the procedural formula are the same construction
+
+That is the reason this section sits in this manual rather than in one of its own. §4's worked
+sequence is craft advice arrived at by drawing; Sokolin's formula is a rule set arrived at by
+analysing twenty years of Mignola covers in order to write software that generates them. They land
+in almost the same place:
+
+| §4, from the drawing side | the formula, from the code side |
+| :--- | :--- |
+| Break the equal split — move the horizon off the halfway line | the frame divides into **horizontal thirds**, never halves |
+| Move the subject off centre | the **figure** sits low and off axis, in the bottom two thirds |
+| Separate subject from background shape | a **diagonal** passes behind the figure rather than being contained by it |
+| Add a foreground element for depth | a **foreground** slot that pulls the eye and hands it to the figure |
+| Introduce black for contrast | the ground starts **near-black** and colour is cut into it |
+| Break artificial regularity | **seeded variation**, so no two arrangements are placed identically |
+
+*"The diagonal is king"* (§4) and the formula's background diagonal are the same observation. The
+useful addition from the code side is **where** it goes: the upper two thirds, crossing behind the
+figure's shoulder — which is §4's fourth point, *separate the subject from the background shape*,
+stated as a placement rather than as a warning.
+
+### The construction
+
+`Scene.createLayeredScene(rect, options)` returns the arrangement as a model — it draws nothing, on
+the same split as `createMannequinFigure` against `createFigureGeometry`.
+
+| Layer | What goes in it |
+| :--- | :--- |
+| **background** | a **texture** mass in the upper reaches — architecture, columns, branches, armour — and the **diagonal** |
+| **middle** | the **figure**, low in the frame, and meant to be the **brightest thing in it** |
+| **foreground** | an object or decoration that pulls the eye and passes it to the figure, plus the reserved **title** band |
+
+`slots` is one uniform entry per placeable thing (`{ name, layer, rect, depth }`), and **`order` is
+depth here rather than construction order** — the one place in the SDK where it is. Paint in that
+sequence and the layering is correct.
+
+### The colour system
+
+`Scene.createMoodPalette(options)` is five hues × **dark / mid / highlight**, and the placement rules
+are the substance rather than the colours:
+
+- The **figure** carries its hue's `highlight` and is the brightest thing in the frame.
+- The **mood** hue is a *different* one and appears **twice** — on the background diagonal and again
+  in the foreground — so the figure is held between two uses of it.
+- Everything else starts at `ground`, which is near-black. **A composition that begins dark and has
+  colour cut into it reads differently from one that begins light and has colour added**, which is
+  §4's *introduce black for contrast* turned into a starting condition rather than a later step.
+
+Asking for the same hue for figure and mood is refused: the figure has to stand against the ground it
+is held between. The five defaults carry **no blue and no purple** — the source's selection rather
+than a law of colour, and what makes the set read as one world. Pass `hues` to replace them entirely.
+
+Distinct from `Drawing.createNotanPalette`, which is **tonal**: that answers how light and dark are
+distributed, this answers which hue goes where.
+
+### Variation has to be reproducible, or the run record is lying
+
+**This is the part a procedural system gets wrong quietly.** The record's promise is that the script
+in `scripts/` can be run again and give the picture under discussion — and a script drawing from
+`Math.random` gives a different one every time, with nothing saying so. So the seed goes in the
+script, where it is saved with everything else.
+
+```javascript
+const canvas = createCanvas(640, 900);
+const ctx = canvas.getContext('2d');
+
+const run = Random.seeded(1907);
+const staging = run.fork('staging');
+const palette = run.fork('palette');
+
+const scene = Scene.createLayeredScene(Layout.rect(0, 0, 640, 900), { rng: staging });
+const mood = Scene.createMoodPalette({ rng: palette });
+
+Stage.note(`seed ${run.seed}: ${mood.figureName} figure against ${mood.moodName}, ` +
+           `${staging.count} draws for the staging`);
+
+ctx.fillStyle = mood.ground;
+ctx.fillRect(0, 0, 640, 900);
+
+for (const slot of scene.slots) {
+    const r = slot.rect;
+    if (slot.name === 'diagonal') {
+        const d = scene.layers.background.diagonal;
+        ctx.strokeStyle = mood.mood.mid;
+        ctx.lineWidth = d.width * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(d.from.x, d.from.y);
+        ctx.lineTo(d.to.x, d.to.y);
+        ctx.stroke();
+    } else if (slot.name === 'figure') {
+        ctx.fillStyle = mood.figure.highlight;
+        ctx.fillRect(r.x, r.y, r.width, r.height);
+    } else if (slot.name === 'foreground') {
+        ctx.fillStyle = mood.mood.dark;
+        ctx.fillRect(r.x, r.y, r.width, r.height);
+    }
+}
+
+canvas;
+```
+
+**`Random.seeded(n)` gives a stream; `rng.fork(name)` gives an independent one named off it**, and the
+fork is what keeps the composition editable. Drawn from a single stream the numbers are positional:
+add one draw to the background and every later number shifts, so the figure moves and the palette
+changes because you adjusted a smoke trail. Forking does not advance the parent, so adding a fourth
+fork later changes none of the first three.
+
+The rest of the surface is what you would expect — `rng.next()` for a unit number, `rng.range(a, b)`
+and `rng.int(a, b)` for a bounded one, `rng.bool(p)` and `rng.sign()` for a coin, `rng.pick(list)` and
+`rng.shuffle(list)` for a choice, `rng.gaussian(mean, sd)` for jitter that clusters rather than
+spreading evenly, `rng.reset()` to rewind, and `rng.seed` and `rng.count` to report what happened.
+`Random.hash(text)` turns a name into a seed when you want one without a parent stream.
+
+> **Both calls draw from the generator a fixed number of times in a fixed order.** So `variation: 0`
+> gives the canonical arrangement *without shifting the sequence* — you can tune how much randomness a
+> scene carries and still recognise the composition you liked. A system that only drew when it needed
+> to vary would make those two knobs interact, which is the commonest way a procedural system becomes
+> impossible to tune.
+
+### Tint the part whole; do not separate it into regions
+
+**The temptation is to trace an imported drawing to vector and colour its parts separately. Do not
+start there.** The source is explicit about why: cut-outs are kept as raster, **tinted whole**, and
+given a deliberately flat light-and-shadow pass, because per-region work *"does not scale"* across
+dozens of parts. The flatness is the style, not a compromise — and a flat tint is
+`ctx.colorFilter` or `bitmap.applyColorFilter(...)`, which costs nothing.
+
+Staying raster also keeps the cheap route open in the other direction: **an agent can see a region and
+cut it** with `bitmap.extractSubset(...)` or a `ctx.clip(...)`, which is a judgment models are good at
+and no amount of contour data supplies. Vectorising is worth it only when the **deliverable** is SVG
+— see `polson://manual/14` — and then `bitmap.trace(...)` is there.
+
+### Where the parts come from
+
+`Assets.matte(descriptor, { hardEdge: true })` is the one requisition that will answer a **form**
+rather than a material, so it is the natural source for a cut-out: a silhouette you place, tint and
+light yourself.
+
+**Prefer generating the part to sourcing a Creative Commons one**, at least until there is a reason
+not to. A generated matte carries **no attribution obligation and no share-alike contamination**,
+where a traced CC BY-SA engraving arguably makes the whole composition BY-SA. `Photo.of(...)` remains
+the route for a real person, with its identity, licence and provenance gates — and a generated
+likeness has none of them, which is why `Assets.matte` refuses a descriptor that names somebody and
+asks for a face.
+
+### A sequence is one space, not several arrangements
+
+**`createLayeredScene` is for a single frame, and a storyboard is not one.** It gives every panel an
+*independent* arrangement, which is the opposite of continuity — and a live `storyboard_quick` run
+found that in ten minutes: it used the palette and the seeded generator, declined the scene template,
+and hand-rolled a persistent room instead. It was right to.
+
+So the sequence form is a different pair of calls:
+
+```js
+const set = Scene.createSet(Layout.rect(0, 0, 100, 60), {
+    horizon: 0.55,
+    elements: [{ name: 'window', x: 68, y: 8, width: 22, height: 20 },
+               { name: 'table',  x: 10, y: 34, width: 26, height: 10 }]
+});
+
+const shot = Scene.createShot(set, panelRect, { shot: 'medium', focusOn: 'window' });
+const here = shot.element('window');          // the same window, in this panel's coordinates
+```
+
+**A shot is a crop and a scale of the same space, never a redrawing of it.** There is one table, in
+one set; a shot does not own it and therefore cannot move it. That matters more than it sounds,
+because **continuity is the one thing no measurement in this studio can check** — `bitmap.diff` will
+not tell you the room changed, and a reader will feel it immediately. Making drift impossible beats
+remembering to avoid it.
+
+`shot.point(x, y)` and `shot.place(rect)` project anything else you draw; `shot.shows(name)` asks
+whether an element is in frame; `shot.view`, `shot.scale`, `shot.panel`, `shot.coverage` and
+`shot.name` report what the camera did. The view is **clamped inside the set**, so a camera cannot pan
+into space nobody described.
+
+**The ladder is §2's, and `shot.backgroundDetail` carries §2's rule as a value rather than as prose** —
+`none` at the two closest rungs, `full` at the widest. *The closer the camera, the less background you
+should draw* cuts against the reflex to fill the frame, so it is worth handing to the caller as a
+decision already made.
+
+### What this route does not do
+
+- **A shot cannot turn around.** The set describes what the camera faces, so a **reverse angle** is
+  not a crop of it — and shot-reverse-shot is the basic grammar of two people talking, which makes
+  this the limit most likely to be met rather than a curiosity. Describe both walls as two sets and
+  shoot whichever the panel looks at, or draw the reverse by hand and say in a note that the panel is
+  not a view of the set. A live run met this at `extremeCloseUp`, where it cost nothing because
+  `backgroundDetail` is `none` there — and said so: *"that the manual's rule and the honest answer
+  coincide here is luck, not method."*
+- **It cannot repose a part.** A cut-out is fixed; a construction can turn its head. That is the
+  whole of the trade, and it is why this suits a cover or a thumbnail better than a sequence where one
+  character must be recognisable across eight panels from three angles. Reusing one part across panels
+  is *more* consistent than construction — byte-identical geometry every time — and completely static.
+- **The source is a cover formula**, generated one frame at a time. `createSet` and `createShot`
+  above are this studio's answer for a sequence and are not from it; §5's page flow is addressed by
+  neither.
+- **Composition is not the same as arrangement.** This places masses. Whether the result *reads* is
+  §1's question and still yours: squint at it, and check the silhouettes separate.
+
+> **The one caution worth carrying from the source, in its own words**: *"Too much randomness and the
+> output is nonsense. Too much control and the output is boring."* The work moves from making the
+> particular image to setting the template and the parameters of variation — which is the same shift
+> this studio makes everywhere else, and the reason the seed belongs in the record.
+
+---
+
+## 7. What this manual does not give you
 
 Stated because the gap is real and an agent should not discover it by failing:
 

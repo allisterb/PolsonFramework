@@ -45,6 +45,7 @@ public static class SdkDocs
         new("Css", ["Css", "css", "Stylesheet"], "Css (Design Languages)"),
         new("Scale", ["Scale", "scale"], "Scale (Data to Pixels)"),
         new("Random", ["Random", "random", "seed", "seeded", "procedural"], "Random (Reproducible Randomness)"),
+        new("Scene", ["Scene", "scene", "staging", "layers", "mood"], "Scene (Staged Composition)"),
         // Chart is its own area rather than a keyword on Scale, and the difference is not
         // cosmetic. `Slice` stops at the next heading of equal level, so asking for `Scale`
         // returns the Scale section alone — the whole Chart section is a sibling `#` heading and

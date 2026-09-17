@@ -107,12 +107,11 @@ public class ManualCoverageTests : TestsRuntime
         ["Logo"] = 65,
         ["Scale"] = 63,
 
-        // **Deliberately 0, and deliberately not silent.** `Random` was added on 2026-09-17 for
-        // procedural composition and no manual names it yet, so nothing here measures whether an
-        // agent can find it — the SDK reference is its only prose. The floor is an entry rather than
-        // an omission so the gap is stated where the other floors are read, and it rises the moment
-        // the procedural-composition passage exists. Raise it; do not delete it.
-        ["Random"] = 0,
+        // Both arrived at their floor on 2026-09-17 rather than climbing to it: Manual 20 §6 was
+        // written in the same stretch as the surface, so there was never a version an agent could
+        // not find. That is the order this ratchet exists to encourage.
+        ["Random"] = 100,
+        ["Scene"] = 100,
 
         // Arrived at 100 on 2026-09-05 rather than climbing to it: `Chart` was built and documented
         // in Manual 13 in one go, so there was never a version of it an agent could not find. That is

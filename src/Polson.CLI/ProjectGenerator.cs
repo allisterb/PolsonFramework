@@ -574,6 +574,15 @@ internal static class ProjectGenerator
     static readonly Dictionary<string, int> WorkflowDeadlines = new(StringComparer.OrdinalIgnoreCase)
     {
         ["logo"] = 15,
+        // Ten because the clock is the point rather than a constraint on it: `storyboard_quick`
+        // exists to make the choice between arranging and constructing cost something, and a budget
+        // long enough to construct four panels would remove the choice. Manual 20 §6 is the route.
+        ["storyboard_quick"] = 10,
+        // Twenty-five because the composition is minutes and the requisitions are seconds each, in
+        // their own scripts: the clock has to cover two or three round trips to a metered service
+        // plus the passes that follow seeing what came back. Longer than `storyboard_quick`, whose
+        // whole point is that it buys nothing, and far shorter than `painting`, which constructs.
+        ["cover"] = 25,
         ["infographic"] = 30,
         // Same allowance as `infographic`: the vector discipline changes what is built, not how long
         // it takes. Two Apollo vector runs finished inside it, the longer at 18.6 minutes.
@@ -1295,7 +1304,18 @@ internal static class ProjectGenerator
         // the drawing workflow's own idiom routing already sends a panel to.
         ["drawing"] = ["09", "20", "21", "23", "24"],
         ["comic"] = ["09", "20", "21", "23"],
+        // Staging and continuity only. 23 is deliberately absent: this workflow tells the agent not
+        // to construct a head, so offering the head manual would advertise the route it is being
+        // asked not to take. Note these only reach the page under `--inline-manuals`, and on a
+        // ten-minute clock inlining three manuals is unlikely to pay - the instructions point at
+        // Manual 20 §6 by URI instead, which is one cheap `ReadDoc` rather than 40 KB of prelude.
+        ["storyboard_quick"] = ["20", "21", "09"],
         ["comic_studio"] = ["09", "20", "21", "23"],
+        // Composition, requisition, staging. 21 is deliberately absent: it is screen continuity
+        // across panels, and a cover is one frame — offering it would advertise a sequence this
+        // workflow cannot compose. 16 is here rather than in any other workflow because this is the
+        // only one where buying material is the intended route rather than a last resort.
+        ["cover"] = ["09", "16", "20"],
         ["painting"] = ["09", "07"],
         ["vector_infographic"] = ["09", "13"],
         ["infographic"] = ["09", "13"],

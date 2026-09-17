@@ -1,6 +1,6 @@
 # Polson
 
-Polson is a framework for agentic co-creative visual art and graphic design, built on the principles of [Enactive AI](https://computationalcreativity.net/iccc24/papers/ICCC24_paper_58.pdf).
+Polson is a framework for agentic co-creative visual art and graphic design, built on the principles of [Enactive AI](https://www.enactive-ai.com/).
 
 ![](https://imgur.com/kMxGLm0.png)
 

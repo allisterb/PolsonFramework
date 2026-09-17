@@ -1945,6 +1945,277 @@ canvas;
 
 ---
 
+# Scene (Staged Composition)
+
+A picture **arranged** rather than constructed: three depth layers, a slot for each thing that goes in
+them, and the colour system that holds them together. It draws nothing — it returns a model, on the
+same split as `createMannequinFigure` against `createFigureGeometry`.
+
+> [!IMPORTANT]
+> **This is the studio's second creation route, and it is a different trade rather than a better one.**
+> Everywhere else a picture is built from geometry — a head from landmarks, a figure from a canon.
+> Here the parts arrive from somewhere else (a requisitioned matte, a photograph, an earlier render)
+> and what this supplies is **where they go, how deep they sit, and what colour holds them together**.
+>
+> Measured across every run on disk: figure construction is *not* slower than composition at the
+> median — 1.00 minute a script against 0.90 — but its p90 is **5.7 minutes against 2.7**, and figure
+> scripts run 52 KB against composition's 18 KB. So this buys out the variance and the bulk, at the
+> cost of articulation. It is the trade a human makes between a model sheet and a redraw, and it
+> belongs to storyboards and covers rather than to a finished panel.
+
+- `Scene.createLayeredScene(rect, options?)` → `object` — The composition. `options`: `{ rng, variation, titleBand, figureHeight, figureAspect, figureBase, diagonalDeg, foregroundHeight }`. An unrecognised option is refused by name.
+- `Scene.createMoodPalette(options?)` → `object` — The colour system. `options`: `{ rng, hues, figure, mood, ground }`.
+
+## A sequence: one space, several views
+
+`createLayeredScene` composes a **single frame** and gives each panel an *independent* arrangement —
+right for a cover, and the exact opposite of what a sequence needs. A storyboard is **one space seen
+across time**, so the space is described once and the camera moves over it.
+
+- `Scene.createSet(rect, options?)` → `object` — The space. `options`: `{ horizon, elements }`, where
+  each element is `{ name, x, y, width, height }` in the set's own coordinates. Returns
+  `{ bounds, horizon, floorY, wall, floor, elements, list }`.
+- `Scene.createShot(set, panelRect, options?)` → `Shot` — One panel's view. `options`:
+  `{ shot, coverage, focusOn, subjectAt }`.
+
+> [!IMPORTANT]
+> **A shot is a crop and a scale of the same space, never a redrawing of it** — and that is what makes
+> continuity structural rather than something to remember. There is one table, in one set; a shot does
+> not own it and therefore cannot move it. **No measurement in the studio can tell you a table drifted
+> between panels**; a reader simply feels the room is not the same room, which is why this is worth
+> making impossible rather than unlikely.
+>
+> Nothing here is perspective. A storyboard needs to say who is where and how close the camera is, and
+> that is a crop — which keeps the whole model closed-form arithmetic.
+
+**The ladder is Janson's, closest to widest**, and `polson://manual/20` §2 says what each is for:
+
+| `shot` | frames | `backgroundDetail` |
+| :--- | ---: | :--- |
+| `extremeCloseUp` | 10% of the set's width | `none` |
+| `closeUp` | 18% | `none` |
+| `medium` | 35% | `minimal` |
+| `full` | 55% | `some` |
+| `long` | 80% | `full` |
+| `extremeLong` | 100% | `full` |
+| `establishing` | 100% | `full` |
+
+`backgroundDetail` carries the manual's rule instead of leaving it in prose: **the closer the camera,
+the less background you should draw.** That cuts against the reflex to fill the frame, which is
+exactly why it is a field rather than a sentence.
+
+### `Shot`
+
+- `shot.point(x, y)` → `{ x, y }` — a point in the set, in page coordinates.
+- `shot.place(rect)` → `Rect` — a rectangle in the set, in page coordinates.
+- `shot.element(name)` → `Rect?` — a named element placed, or **`null`** when the set has no such element.
+- `shot.shows(name)` → `boolean` — whether any part of it falls inside this frame.
+- `shot.name` · `shot.coverage` · `shot.scale` · `shot.view` · `shot.panel` · `shot.backgroundDetail`
+
+> [!TIP]
+> **The view is clamped inside the set**, so a camera cannot pan off into space nobody described. A
+> focus near an edge gives a frame pressed against that edge rather than a frame half full of
+> nothing — the same decision a person makes at a board.
+>
+> **`focusOn` centres on the element, which is not always where you want the frame.** An element high
+> in the set gives a frame with no ground in it — correct, and rarely what a person would draw. Aim
+> with `subjectAt: { x, y }` when you want the frame somewhere other than an element's own centre;
+> `focusOn` is the convenience, not the only way.
+>
+> **Names must be unique and are refused if not**, because last-wins would make one element
+> unreachable by `focusOn` and silently absent from the shot, which reads as a drawing bug rather than
+> a naming one. Asking about an element the set does not have is a *question*, though, not an error:
+> `element` returns null and `shows` returns false, because a panel loop asks that about everything.
+
+> [!IMPORTANT]
+> **A shot is a crop, so it cannot turn around — and that rules out the reverse angle.** The set
+> describes what the camera faces; a reverse looks at the wall *behind* it, which the set does not
+> contain and no crop of it can produce. **Shot-reverse-shot is the basic grammar of two people
+> talking**, so this is a real limit rather than a corner case, and it was found by a live run rather
+> than foreseen here: *"the set describes the wall she faces, not the wall behind camera, so a reverse
+> angle is not expressible as a crop of it."*
+>
+> Two honest ways round it, and neither is a workaround to be embarrassed about:
+>
+> - **Describe both walls as two sets** — `room.facing` and `room.reverse` — and take shots of
+>   whichever one the panel looks at. Continuity within each is still structural; continuity *between*
+>   them is yours.
+> - **Draw the reverse by hand** and say in a `Stage.note` that the panel is not a view of the set.
+>   That is what the run above did, and at `extremeCloseUp` it cost nothing, because
+>   `backgroundDetail` is `none` there and the background was never going to be drawn.
+
+```javascript
+const canvas = createCanvas(1200, 760);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#efe9dc';
+ctx.fillRect(0, 0, 1200, 760);
+
+// The room, described once.
+const set = Scene.createSet(Layout.rect(0, 0, 100, 60), {
+    horizon: 0.55,
+    elements: [
+        { name: 'window', x: 68, y: 8, width: 22, height: 20 },
+        { name: 'table', x: 10, y: 34, width: 26, height: 10 }
+    ]
+});
+
+// Four views of it: the camera moves in, the room does not.
+const beats = [
+    { shot: 'establishing', focusOn: 'table' },
+    { shot: 'full', focusOn: 'table' },
+    { shot: 'medium', focusOn: 'window' },
+    { shot: 'closeUp', focusOn: 'window' }
+];
+
+const panels = Layout.grid(Layout.inset(Layout.rect(0, 0, 1200, 760), 24), 2, 2, 18);
+for (let i = 0; i < beats.length; i++) {
+    const shot = Scene.createShot(set, panels[i], beats[i]);
+
+    ctx.save();
+    const frame = new CanvasPath();
+    frame.rect(panels[i].x, panels[i].y, panels[i].width, panels[i].height);
+    ctx.clip(frame);
+
+    const floor = shot.place(set.floor);
+    ctx.fillStyle = '#cfc6b4';
+    ctx.fillRect(floor.x, floor.y, floor.width, floor.height);
+
+    // Background detail is the shot's decision, not yours.
+    if (shot.backgroundDetail !== 'none') {
+        for (const name of ['window', 'table']) {
+            if (!shot.shows(name)) continue;
+            const r = shot.element(name);
+            ctx.fillStyle = name === 'window' ? '#dce8f0' : '#a8977c';
+            ctx.fillRect(r.x, r.y, r.width, r.height);
+        }
+    }
+
+    ctx.restore();       // balance every clip - a leaked one subtracts in silence
+    ctx.strokeStyle = '#15151a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(panels[i].x, panels[i].y, panels[i].width, panels[i].height);
+    log(`${shot.name}: ${(shot.coverage * 100).toFixed(0)}% of the set, background ${shot.backgroundDetail}`);
+}
+
+canvas;
+```
+
+### What the scene model carries
+
+| Field | |
+| :--- | :--- |
+| `bounds` · `thirds` | the frame, and its three horizontal bands |
+| `layers.background` | `{ band, texture, diagonal }` — the mass behind everything, and the diagonal that runs against the figure |
+| `layers.middle` | `{ band, figure, baseline }` — the protagonist and the line it stands on |
+| `layers.foreground` | `{ band, object, title }` — what pulls the eye, and the reserved title band |
+| **`slots`** | one entry per placeable thing: `{ name, layer, rect, depth }`, in painting order |
+| `figure` · `title` | the two rectangles most callers want directly |
+| `flipped` · `variation` · `seed` | what the generator decided, so a run can say which arrangement it drew |
+| **`order`** | **depth, not construction order** — paint in this sequence |
+
+> [!IMPORTANT]
+> **`order` means something different here than it does anywhere else in the SDK.** On a figure and on
+> a head it is construction order and explicitly *not* z. A staged scene is layers by definition, so
+> painting in `order` is correct and is the whole point of the model.
+
+> [!TIP]
+> **The diagonal leans against the figure, and that opposition is the formula rather than decoration.**
+> A figure placed left gets a diagonal from the right. It is what stops a centred figure reading as a
+> portrait, and it carries the mood colour so the figure is held between two uses of it — once behind,
+> once in the foreground.
+>
+> **Pass an `rng` to vary the arrangement.** Without one you get the canonical placement, identical
+> every call. With one, every slot is jittered within the bounds `variation` states. The generator is
+> drawn from in a **fixed order and a fixed number of times**, so the same seed gives the same scene
+> and `variation: 0` gives the canon without shifting the sequence — which is what lets you tune the
+> amount of randomness without losing the arrangement you liked.
+
+> [!IMPORTANT]
+> **The palette's placement rules are the substance; the colours are replaceable.** The figure carries
+> its hue's `highlight` and is the brightest thing in the frame. The **mood** hue is a *different* one
+> and appears **twice** — on the background diagonal and again in the foreground. Everything else
+> starts at `ground`, which is near-black: a composition that begins dark and has colour cut into it
+> reads differently from one that begins light and has colour added.
+>
+> Figure and mood are **refused if they are the same hue**, because the figure has to stand against
+> the ground it is held between.
+>
+> **The five defaults are tuned for a cover** — saturated, high contrast, and carrying no blue and no
+> purple, which is the source's selection rather than a law of colour and is what makes the set read
+> as one world. **A quiet daylight interior is outside that range**, so replace them. Each hue is a
+> name of your choosing against `{ dark, mid, highlight }`:
+>
+> ```javascript
+> const run = Random.seeded(4171);
+> const mood = Scene.createMoodPalette({
+>     rng: run.fork('palette'),
+>     hues: {
+>         slate: { dark: '#2b3640', mid: '#5b6b7a', highlight: '#8ea2b4' },
+>         sand:  { dark: '#4a3f31', mid: '#9c8a6e', highlight: '#d9c9a8' },
+>         pane:  { dark: '#6b6f5e', mid: '#aeb3a0', highlight: '#eef0e6' }
+>     },
+>     figure: 'slate',      // optional: otherwise the generator picks
+>     ground: '#c9c4b6'     // optional: the default is near-black
+> });
+> ```
+>
+> The names are yours and are what `figure`, `mood`, `figureName` and `moodName` speak in — so they
+> may as well describe the room. **At least two are required**, since the whole rule is that the
+> figure's hue and the mood's differ.
+>
+> **This example exists because a live run could not find the shape and bypassed the call.** It wrote
+> its palette by hand rather than guess, which was the right call on a ten-minute clock and cost the
+> board the one thing the generator is for. Its own words: *"the doc does not give the shape of the
+> `hues` option, so the only route on a short clock is to bypass the call."*
+>
+> Distinct from `Drawing.createNotanPalette`, which is **tonal**: that answers how light and dark are
+> distributed, this answers which hue goes where.
+
+```javascript
+const canvas = createCanvas(640, 900);
+const ctx = canvas.getContext('2d');
+
+const run = Random.seeded(1907);
+const scene = Scene.createLayeredScene(Layout.rect(0, 0, 640, 900), { rng: run.fork('staging') });
+const mood = Scene.createMoodPalette({ rng: run.fork('palette') });
+
+ctx.fillStyle = mood.ground;
+ctx.fillRect(0, 0, 640, 900);
+Stage.note(`seed ${run.seed}: ${mood.figureName} figure against ${mood.moodName}`);
+
+// Paint in `order`, which here really is depth.
+for (const slot of scene.slots) {
+    const r = slot.rect;
+    if (slot.name === 'diagonal') {
+        const d = scene.layers.background.diagonal;
+        ctx.strokeStyle = mood.mood.mid;
+        ctx.lineWidth = d.width * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(d.from.x, d.from.y);
+        ctx.lineTo(d.to.x, d.to.y);
+        ctx.stroke();
+    } else if (slot.name === 'figure') {
+        ctx.fillStyle = mood.figure.highlight;      // the brightest thing in the frame
+        ctx.fillRect(r.x, r.y, r.width, r.height);
+    } else if (slot.name === 'foreground') {
+        ctx.fillStyle = mood.mood.dark;             // the mood colour, a second time
+        ctx.fillRect(r.x, r.y, r.width, r.height);
+    }
+}
+
+log(`${scene.slots.length} slots, figure ${scene.figure.width.toFixed(0)}x${scene.figure.height.toFixed(0)}`);
+canvas;
+```
+
+> [!TIP]
+> **The rectangles are where a requisitioned part goes.** `Assets.matte(..., { hardEdge: true })` is
+> the one requisition that answers a *form*, so the usual pairing is a matte per slot, tinted whole
+> with `ctx.colorFilter` and drawn into `slot.rect`. Flat tinting is the idiom rather than a
+> compromise — it is what makes the route cheap, since nothing has to be separated into regions
+> first.
+
+---
+
 # Chart (Whole Charts as Constructions)
 
 Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one call returns a **model** you can read, measure, restyle and animate. `Scale` maps values to pixels and `Layout` divides a page; this is the layer above them, and it exists because writing that loop by hand was sixty lines every time.

@@ -198,13 +198,13 @@ public class LayoutToolkit
     #endregion
 
     #region Child types
-    private readonly record struct RectValue(float X, float Y, float Width, float Height);
+    internal readonly record struct RectValue(float X, float Y, float Width, float Height);
 
     private readonly record struct Band(float Offset, float Extent);
     #endregion
 
     #region Methods (private)
-    private static Dictionary<string, object> Make(float x, float y, float width, float height) =>
+    internal static Dictionary<string, object> Make(float x, float y, float width, float height) =>
         new()
         {
             ["x"] = x,
@@ -226,7 +226,7 @@ public class LayoutToolkit
     /// <c>ctx.measureWrappedText(...)</c> and a hand-written literal without any of them knowing
     /// about each other.
     /// </remarks>
-    private static RectValue AsRect(object rect)
+    internal static RectValue AsRect(object rect)
     {
         var dict = JsInterop.AsDict(rect)
             ?? throw new ArgumentException("Layout expects a { x, y, width, height } rectangle.");

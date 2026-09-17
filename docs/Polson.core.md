@@ -1838,6 +1838,113 @@ canvas;
 
 ---
 
+# Random (Reproducible Randomness)
+
+A generator whose whole sequence is fixed by its seed. `Math.random` still works and is still there;
+this is the one a run can be **re-rendered** from.
+
+> [!IMPORTANT]
+> **The run record promises a script can be run again, and `Math.random` breaks that promise
+> silently.** The server copies what actually ran into `scripts/` precisely so a reader can re-run
+> it — but a script drawing from `Math.random` produces a different picture every time, and nothing
+> in the record says so. **Procedural composition is where this bites hardest**, because there the
+> arrangement *is* the randomness: re-running the saved script gives a different work rather than the
+> one being discussed.
+>
+> So put the seed in the script, where it is saved with everything else:
+>
+> ```javascript
+> const rng = Random.seeded(1907);        // this run, forever
+> ```
+>
+> The algorithm is **mulberry32**, named rather than left to the platform on purpose: a platform's own
+> generator is typically not guaranteed to produce the same sequence between runtime versions, so a
+> run seeded through one could not be re-rendered next year — which is the one thing this is for.
+
+- `Random.seeded(seed: number)` → `SeededRandom` — A stream. The seed is truncated to 32 bits, so `7` and `7.9` are the same stream.
+- `Random.hash(text: string)` → `number` — A stable 32-bit hash, for seeding by name. Same text, same number, on any machine. Usually `rng.fork(name)` is the better spelling.
+
+## `SeededRandom`
+
+- `rng.next()` → `number` — The next number, in `[0, 1)`.
+- `rng.range(min, max)` → `number` — A number in `[min, max)`.
+- `rng.int(min, max)` → `number` — An integer in `[min, max)`; **the upper bound is excluded**, as in `range`. A **collapsed** interval returns that bound and draws nothing, since `int(0, items.length)` over an empty list is an ordinary count of zero. An **inverted** one is refused by name — arguments the wrong way round cannot come from data, and normalising them would return plausible numbers forever.
+- `rng.bool(probability?)` → `boolean` — `true` with that probability, default even.
+- `rng.sign()` → `number` — `-1` or `1`, for a flip or a direction.
+- `rng.pick(items)` → `any` — One item, or **`null`** when the list is empty.
+- `rng.shuffle(items)` → `any[]` — A shuffled **copy**; the input is left alone.
+- `rng.gaussian(mean?, standardDeviation?)` → `number` — Jitter that clusters rather than spreading evenly.
+- `rng.fork(name: string)` → `SeededRandom` — An independent stream named off this one, **without consuming it**.
+- `rng.reset()` → `SeededRandom` — Back to the seed, as though nothing had been drawn.
+- `rng.seed` → `number`, `rng.count` → `number` — The seed as stored, and how many numbers have been drawn.
+
+> [!IMPORTANT]
+> **`fork` is what keeps a procedural composition editable, and it is the one call here worth
+> learning.** Draw everything from a single stream and the numbers become positional: adding one draw
+> to the background shifts every later number, so the figure moves and the palette changes because
+> you adjusted a smoke trail. Nothing is wrong and nothing is reproducible in the way you wanted.
+>
+> ```javascript
+> const run = Random.seeded(1907);
+> const back = run.fork('background');
+> const figure = run.fork('figure');
+> const palette = run.fork('palette');
+> ```
+>
+> Each part now has its own sequence, derived from the run's seed and the part's name, so the parts
+> stop depending on each other's history. Forking does not advance the parent, so it is
+> order-independent too — adding a fourth fork later changes none of the first three.
+
+> [!TIP]
+> **Record the seed where a reader will find it.** The script carries it, but a `Stage.note` puts it
+> in the run record beside the render it produced, which is where someone comparing two variants will
+> be looking:
+>
+> ```javascript
+> const rng = Random.seeded(1907);
+> Stage.note(`composition seed ${rng.seed}`);
+> ```
+>
+> **`gaussian` spends two draws per call and discards the spare** — deliberately, so every call
+> advances the stream by exactly two. Caching the spare, which is the textbook optimisation, would
+> make the sequence depend on how many gaussians had been asked for earlier.
+
+```javascript
+// Two variants of one arrangement: same structure, different seed, both re-renderable.
+const canvas = createCanvas(640, 400);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#12121a';
+ctx.fillRect(0, 0, 640, 400);
+
+const run = Random.seeded(1907);
+const smoke = run.fork('smoke');
+const palette = run.fork('palette');
+
+const hues = ['#c0392b', '#d98324', '#e5c33c', '#2e8b86', '#4f8a5b'];
+ctx.strokeStyle = palette.pick(hues);
+
+// A broken, jittered diagonal: segments shorten and fade as the count rises.
+let x = 90, y = 360;
+for (let i = 0; i < 26; i++) {
+    const len = smoke.range(14, 46) * (1 - i / 34);
+    const angle = -1.1 + smoke.gaussian(0, 0.16);
+    ctx.globalAlpha = Math.max(0.15, 1 - i / 26);
+    ctx.lineWidth = Math.max(1, 7 * (1 - i / 26));
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    x += Math.cos(angle) * len;
+    y += Math.sin(angle) * len;
+    ctx.lineTo(x, y);
+    ctx.stroke();
+}
+
+ctx.globalAlpha = 1;
+log(`seed ${run.seed}, ${smoke.count} draws for the smoke`);
+canvas;
+```
+
+---
+
 # Chart (Whole Charts as Constructions)
 
 Builds a chart the way `Drawing.createMannequinFigure(...)` builds a figure: one call returns a **model** you can read, measure, restyle and animate. `Scale` maps values to pixels and `Layout` divides a page; this is the layer above them, and it exists because writing that loop by hand was sixty lines every time.

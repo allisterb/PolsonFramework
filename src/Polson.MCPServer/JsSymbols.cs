@@ -135,6 +135,9 @@ public static class JsSurface
         new("scale", typeof(LinearScale), "Scale", true),
         new("band", typeof(BandScale), "Scale", true),
 
+        new("Random", typeof(RandomToolkit), "Random", false),
+        new("rng", typeof(SeededRandom), "Random", true),
+
         // Constructions above those primitives. Its own area rather than more of Scale, because
         // Scale is deliberately "draws nothing and knows no forms" and that is worth keeping.
         new("Chart", typeof(ChartToolkit), "Chart", false),

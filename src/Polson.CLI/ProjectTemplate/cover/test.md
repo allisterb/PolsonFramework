@@ -20,8 +20,12 @@ Answer these in `findings.md`:
 - **What did a requisition actually buy?** Per call: seconds waited, budget spent, and whether a
   drawn shape would have said the same thing. A cover where every matte could have been a polygon is
   the finding this workflow most wants.
-- **Where did the route run out?** The known limit is that a matte carries no interior detail, so a
-  face is not available on this path. Name any other you met, and say what the call should have been
-  named and taken.
+- **Did you find `Assets.cutout` and did it hold?** It is the only requisition that depicts, so it is
+  the one most likely to be reached for wrongly. Say whether the published resources made the matte /
+  cutout choice clear, whether `variants` gave you one consistent subject, and what `split` reported.
+- **Where did the route run out?** A cutout is an opaque asset with no regions, so nothing in it can
+  be parameterised. Did that bite, and if so, would constructing that one element have been cheaper
+  than working around it? Name any other limit you met, and say what the call should have been named
+  and taken.
 - **The title band.** Was the reserved space the right size and in the right place once you had
   something to put in it?

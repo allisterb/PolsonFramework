@@ -47,6 +47,14 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
     "comic": ("review", "seed"),
     "painting": (),
     "comic_studio": (),
+    # The three staged-composition workflows. None ships a `type.*.md`, so none offers a type: what
+    # varies between them is the clock and whether the actors are bought, not a style the form could
+    # pick. `storyboard_quick` had been absent since it shipped - the same drift the comment above
+    # records for `vector_infographic`, which is twice now, so the lesson is that this table is a
+    # second registration point and adding a template is not finishing the job.
+    "storyboard_quick": (),
+    "storyboard": (),
+    "cover": (),
     "harness": ("image", "infographic", "logo"),
 }
 

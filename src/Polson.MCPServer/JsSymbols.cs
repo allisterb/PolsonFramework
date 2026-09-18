@@ -102,6 +102,8 @@ public static class JsSurface
         new("material", typeof(MaterialAsset), "Assets", true),
         new("plate", typeof(BackdropPlate), "Assets", true),
         new("matte", typeof(MatteAsset), "Assets", true),
+        new("cutout", typeof(CutoutAsset), "Assets", true),
+        new("cell", typeof(CutoutCell), "Assets", true),
         new("budget", typeof(AssetBudget), "Assets", true),
 
         new("Documents", typeof(DocumentProcessor), "Documents", false),
@@ -195,6 +197,8 @@ public static class JsSurface
             ["material.toJSON"] = "JSON.stringify protocol hook; see the execution model",
             ["plate.toJSON"] = "JSON.stringify protocol hook; see the execution model",
             ["matte.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["cutout.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["cell.toJSON"] = "JSON.stringify protocol hook; see the execution model",
             ["imageData.toJSON"] = "JSON.stringify protocol hook; see the execution model",
 
             // Aliases of a documented member; documenting both spellings invites drift.

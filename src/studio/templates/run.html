@@ -1012,10 +1012,33 @@
     // thing that matters — and on the run this was written for, the two warnings arrived twelve
     // and four minutes before the halt with nobody able to see either of them.
     if (kind === 'budget') {
-      const pct = Math.round((e.share || 0) * 100);
-      return e.limit === 'time'
-        ? `${pct}% of the time budget — ${(+e.spent).toFixed(1)} of ${(+e.cap).toFixed(0)} min`
-        : `${pct}% of the token budget — ${(+e.spent).toLocaleString()} of ${(+e.cap).toLocaleString()}`;
+      // **Two unrelated producers write this kind, so branch on shape rather than on the name.**
+      // `studio.py` emits a *warning* when an allowance threshold is crossed - `limit`, `share`,
+      // `spent`, `cap`. `DrawingMcpTools` emits a requisition *snapshot* after every execution that
+      // touched the asset surface - `total`, `spent`, `remaining`, `cacheHits`, `tokensSpent`. Only
+      // `spent` is common to both, and it counts different things in each.
+      //
+      // Read as the first shape, the second rendered as `0% of the token budget - 1 of NaN`: no
+      // `limit` took the token branch, no `share` read as 0%, `spent` was a count of requisitions,
+      // and `+undefined` is NaN. It named the wrong allowance and invented a ceiling that does not
+      // exist - and it renders perfectly, which is why it survived a live run to be noticed by eye.
+      //
+      // `limit` is the discriminator because only the warning carries it, and branching on shape
+      // keeps every run already on disk readable: those records are frozen and cannot be reissued.
+      if (e.limit) {
+        const pct = Math.round((e.share || 0) * 100);
+        return e.limit === 'time'
+          ? `${pct}% of the time budget — ${(+e.spent).toFixed(1)} of ${(+e.cap).toFixed(0)} min`
+          : `${pct}% of the token budget — ${(+e.spent).toLocaleString()} of ${(+e.cap).toLocaleString()}`;
+      }
+
+      // The requisition snapshot. `total` is the allowance in *requisitions*, not tokens, so it is
+      // spelt as such - and the tokens are reported beside it rather than in place of it, because
+      // the two answer different questions and conflating them is what produced the line above.
+      const parts = [`${(+e.spent || 0).toLocaleString()} of ${(+e.total || 0).toLocaleString()} requisitions`];
+      if (e.cacheHits) parts.push(`${(+e.cacheHits).toLocaleString()} from cache`);
+      if (e.tokensSpent) parts.push(`${(+e.tokensSpent).toLocaleString()} tokens`);
+      return parts.join(' — ');
     }
     if (kind === 'stream.lag' || kind === 'stream.truncated') return `${e.dropped} not shown`;
     // The row that has to earn its place: what follows it is minutes of nothing, and a reader who
@@ -1037,10 +1060,28 @@
       if (e.thinkingTokens) bits.push(`thinking ${e.thinkingTokens.toLocaleString()}`);
       return bits.join(' · ');
     }
+    // **Two producers again, and here the wrong reading was silent rather than ugly.** `transcript.py`
+    // ends a run with `reason` - completed / failed / halted, the last carrying `limit`, `used` and
+    // `cap`. `run.py` ends one with `status` - ok / incomplete - and an `error`, and carries no
+    // `reason` at all. Keyed only on `reason`, an Antigravity run that ended *incomplete* fell past
+    // both tests and rendered as **completed**: the page said a run had finished when it had not.
+    // No NaN, nothing to notice, and the one row a director reads to learn the outcome was wrong.
     if (kind === 'run.end') {
-      return e.reason === 'halted'
-        ? `halted — ${e.limit === 'tokens' ? `${e.used} input tokens` : `${(e.used / 60).toFixed(0)} min`} against a cap of ${e.limit === 'tokens' ? e.cap : (e.cap / 60).toFixed(0) + ' min'}`
-        : (e.reason === 'failed' ? e.error || 'failed' : 'completed');
+      if (e.reason === 'halted') {
+        // Guarded because a halt from a producer that did not carry the pair would otherwise read
+        // as `NaN min against a cap of NaN min` - the same coercion that broke the budget row.
+        const tokens = e.limit === 'tokens';
+        const used = e.used == null ? null : (tokens ? (+e.used).toLocaleString() + ' input tokens' : (+e.used / 60).toFixed(0) + ' min');
+        const cap = e.cap == null ? null : (tokens ? (+e.cap).toLocaleString() : (+e.cap / 60).toFixed(0) + ' min');
+        return used && cap ? `halted — ${used} against a cap of ${cap}` : 'halted';
+      }
+      if (e.reason === 'failed') return e.error || 'failed';
+      if (e.reason === 'completed') return 'completed';
+
+      // The `status` vocabulary. Anything that is not `ok` is reported as itself rather than
+      // flattened to a word this producer never used.
+      if (e.status && e.status !== 'ok') return e.error ? `${e.status} — ${e.error}` : e.status;
+      return e.error || 'completed';
     }
     return (e.text || e.script || e.message || '').toString();
   }

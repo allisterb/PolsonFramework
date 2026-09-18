@@ -220,6 +220,84 @@ Drawing.projectCastShadow(key, groundY, subject);
 
 ---
 
+## 8a. Cut-outs — The One Requisition That Depicts
+
+> **Implemented by**: `Assets.cutout`, `cutout.cells`, `cutout.cell`, `cutout.split`, `cutout.backgroundColor`, `cutout.bytes`, `cutout.width`, `cutout.height`, `cutout.toDataUri`, `cell.name`, `cell.bytes`, `cell.width`, `cell.height`, `cell.coverage`, `cell.aspectRatio`, `cell.toDataUri`.
+
+Everything above this section buys **substance** or a **shape**. `Assets.cutout(...)` buys a
+**picture of something** — an element with a real alpha channel, ready to composite — and it is the
+sharpest line this studio draws, so it is worth being exact about where the line actually is.
+
+**It was never "buy no forms."** §8's matte answers "a rearing horse" on purpose: the classifier is
+switched off there because a matte is nothing but a silhouette. The rule is **buy no pictures** —
+meaning the whole picture, the finished thing. A cutout supplies one element; where it sits, how deep
+it sits, at what scale, and in what colour all remain yours. That is the difference between a
+composition you made from bought parts and a composition you bought.
+
+### Why a matte cannot do this
+
+A matte's prompt asks for *no interior detail, no outline, no gradient, no shading*, and the plate is
+then thresholded on **luminance**, which collapses everything inside the subject to one value. That is
+exactly right for a silhouette and it means **a face comes back as a blank head-shaped blob**. No
+descriptor reaches past it, because the wording belongs to the server rather than to you.
+
+So the two are not alternatives on a sliding scale. **A silhouette against the sky is a matte; a face
+is a cutout; and if a silhouette would do, use one** — it is cheaper, smaller, and honest about being
+a shape.
+
+### `variants` is the whole point
+
+**Generation is not deterministic across calls.** Ask twice for "the same man" and two different men
+arrive — which on a storyboard destroys the one thing a board exists to establish. So ask **once**:
+
+```js
+const cutout = await Assets.cutout('a weathered ranch hand in his fifties, head and shoulders', {
+    variants: ['calm, looking left', 'alarmed, eyes wide', 'shouting', 'looking down, defeated'],
+    size: 420
+});
+if (!cutout.success) { error(cutout.remedy); exit(cutout.failureName); }
+
+const shouting = cutout.cell('shouting');
+Session.cast = cutout.cells.map(c => ({ name: c.name, uri: c.toDataUri(), aspect: c.aspectRatio }));
+```
+
+One generation is one context, so the subject is the same subject **by construction**. This is the
+arranged route's counterpart to what `Drawing.createParametricHead(...)` does for the constructed one
+— and like it, **it does not work retroactively**. Plan the whole set before the first call: a
+seventh expression asked for later is a seventh man.
+
+Six is the cap, and the reason is arithmetic rather than policy: the sheet is one generation of fixed
+width, so every variant makes every cell narrower. Four across is roughly a storyboard face.
+
+### The two readbacks that matter
+
+**`cutout.split`** says how the sheet was divided. `'gaps'` means it was cut where the background
+actually was; `'even'` means the gaps did not yield the count asked for and it fell back to equal
+columns, **which cuts through shoulders**. Look at it, because a mis-split renders perfectly.
+
+**`cell.coverage`** near zero means the key removed the subject rather than the ground. Raise
+`tolerance` for a ground that was not flat; lower it when edges are being eaten. `cutout.backgroundColor`
+reports what was actually keyed — measured from the plate's corners, not assumed, for the same reason
+a stencil measures its cut level rather than fixing it at 128.
+
+### What you give up
+
+**A cutout is an opaque asset with no regions.** Nothing in it can be parameterised: you cannot move
+its jaw, change its eye spacing, or relight it per plane. Tint it whole with `ctx.colorFilter` — that
+is the idiom of this route, not a compromise, and it is what makes composing from bought parts cheap.
+
+**Vectorising does not recover what you gave up.** Tracing it produces an outline with no more regions
+than the raster had; it scales better and parameterises exactly as badly. If a character has to *act*
+across a sequence — change expression, turn, be relit — that is `polson://manual/23` and
+`createParametricHead`, and no amount of requisition substitutes for it.
+
+**And a named person is refused before the network is touched.** A cutout depicts, so a generated
+likeness is a fabricated portrait carrying none of `Photo`'s identity, licence or publicity-rights
+checks — and it renders perfectly whether or not it resembles anybody. Use `Photo.of(...)`, or drop
+the name and describe the figure.
+
+---
+
 ## 9. Provenance and Reuse
 
 > **Implemented by**: `Assets.library`, `material.provenance`, `material.id`.
@@ -273,6 +351,8 @@ log('already requisitioned: ' + have.map(m => m.provenance.prompt).join(' | '));
 | A tiling surface | `await Assets.material(d, opts)` | `size` 32–1024, `tileable`, `format`, `quality`, `model` |
 | A background | `await Assets.backdrop(d, opts)` | `width`, `height`, `keepQuiet`, `noHorizon`, `conditionOn` |
 | A mask or height field | `await Assets.matte(d, opts)` | `size`, `invert` |
+| A face, a figure, a thing to composite | `await Assets.cutout(d, opts)` | `variants` (max 6), `size`, `style`, `background`, `tolerance`. Real alpha — see §8a |
+| Did the sheet divide properly? | `cutout.split` | `'gaps'` good, `'even'` means check for clipped shoulders |
 | Did it work? | `result.success` | Then `failureName`, `remedy`, `retryable`, `error` |
 | Turn it into pixels | `material.toDataUri()` → `Skia.Image.fromDataUrl(...)` | Or `material.bytes` → `Skia.Image.fromBytes(...)` |
 | Does it really tile? | `material.tiling.wraps`, `.repaired` | Guaranteed `true` on success |

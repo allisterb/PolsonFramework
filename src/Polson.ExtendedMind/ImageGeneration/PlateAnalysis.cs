@@ -410,6 +410,186 @@ public static class PlateAnalysis
     }
 
     /// <summary>Encodes to the delivery format. WebP q85 is ~10x smaller than the PNG the service returns.</summary>
+    #region Cutout
+
+    /// <summary>
+    /// The plate's background colour, measured from its own corners rather than assumed.
+    /// </summary>
+    /// <remarks>
+    /// The same discipline <see cref="OtsuThreshold"/> applies to a stencil, and for the same reason:
+    /// a model asked for pure magenta does not deliver pure magenta, and keying on the literal value
+    /// leaves a fringe of near-misses standing all round the subject. Per-channel median over four
+    /// corner patches, so a stray dark pixel in one corner cannot move the answer.
+    /// </remarks>
+    public static SKColor SampleBackground(SKBitmap plate, int patch = 12)
+    {
+        var size = Math.Max(1, Math.Min(patch, Math.Min(plate.Width, plate.Height) / 4));
+        List<byte> r = [], g = [], b = [];
+
+        foreach (var (ox, oy) in new[]
+                 {
+                     (0, 0), (plate.Width - size, 0),
+                     (0, plate.Height - size), (plate.Width - size, plate.Height - size),
+                 })
+        {
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var c = plate.GetPixel(ox + x, oy + y);
+                    r.Add(c.Red);
+                    g.Add(c.Green);
+                    b.Add(c.Blue);
+                }
+            }
+        }
+
+        return new SKColor(Median(r), Median(g), Median(b));
+
+        static byte Median(List<byte> values)
+        {
+            values.Sort();
+            return values.Count == 0 ? (byte)0 : values[values.Count / 2];
+        }
+    }
+
+    /// <summary>
+    /// Replaces a flat background with transparency, keeping the subject's interior intact.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is what separates a cutout from a matte.</b> A matte thresholds on <i>luminance</i>, so
+    /// everything inside the subject collapses to one value — which is the point there and fatal here,
+    /// because a face is nothing but interior. Keying on distance from a background <i>colour</i>
+    /// leaves every interior value untouched and removes only what matches the ground.
+    /// <para>
+    /// The band between <paramref name="tolerance"/> and twice it is ramped rather than cut, so the
+    /// antialiased rim of the subject keeps a partial alpha instead of a staircase. A hard cut here
+    /// is visible the moment the cutout is composited over anything that is not the colour it was
+    /// generated on.
+    /// </para>
+    /// </remarks>
+    public static SKBitmap ChromaKey(SKBitmap source, SKColor background, double tolerance = 0.18)
+    {
+        var keyed = new SKBitmap(source.Width, source.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        var near = Math.Clamp(tolerance, 0.01, 0.9) * 441.673;      // sqrt(3) * 255
+        var far = near * 2.0;
+
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                var c = source.GetPixel(x, y);
+                double dr = c.Red - background.Red, dg = c.Green - background.Green, db = c.Blue - background.Blue;
+                var d = Math.Sqrt((dr * dr) + (dg * dg) + (db * db));
+
+                var alpha = d <= near ? 0.0 : d >= far ? 1.0 : (d - near) / (far - near);
+                keyed.SetPixel(x, y, new SKColor(c.Red, c.Green, c.Blue, (byte)Math.Round(alpha * 255)));
+            }
+        }
+
+        return keyed;
+    }
+
+    /// <summary>Share of the frame carrying any opacity at all, 0 to 1.</summary>
+    public static double AlphaCoverage(SKBitmap keyed)
+    {
+        if (keyed.Width == 0 || keyed.Height == 0) return 0;
+
+        var on = 0L;
+        for (var y = 0; y < keyed.Height; y++)
+        {
+            for (var x = 0; x < keyed.Width; x++)
+            {
+                if (keyed.GetPixel(x, y).Alpha > 16) on++;
+            }
+        }
+
+        return on / (double)(keyed.Width * (long)keyed.Height);
+    }
+
+    /// <summary>Per-column share of opaque pixels: the profile a row of figures is split on.</summary>
+    public static double[] AlphaColumnProfile(SKBitmap keyed)
+    {
+        var profile = new double[keyed.Width];
+        for (var x = 0; x < keyed.Width; x++)
+        {
+            var on = 0;
+            for (var y = 0; y < keyed.Height; y++)
+            {
+                if (keyed.GetPixel(x, y).Alpha > 16) on++;
+            }
+
+            profile[x] = keyed.Height == 0 ? 0 : on / (double)keyed.Height;
+        }
+
+        return profile;
+    }
+
+    /// <summary>
+    /// Runs of occupied columns, separated by empty ones. Empty when nothing is occupied.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why gaps rather than an even division into n.</b> A model asked for four figures in a row
+    /// does not place them on a grid, so slicing the sheet into quarters cuts through shoulders. The
+    /// gaps are where the background actually is, and finding them costs one pass. The caller checks
+    /// the count it got against the count it asked for and falls back rather than trusting this.
+    /// </remarks>
+    public static (int Start, int End)[] SegmentsByGaps(double[] profile, double floor = 0.004, int minWidth = 8)
+    {
+        List<(int, int)> runs = [];
+        int? start = null;
+
+        for (var x = 0; x < profile.Length; x++)
+        {
+            if (profile[x] > floor)
+            {
+                start ??= x;
+            }
+            else if (start is { } from)
+            {
+                if (x - from >= minWidth) runs.Add((from, x - 1));
+                start = null;
+            }
+        }
+
+        if (start is { } last && profile.Length - last >= minWidth) runs.Add((last, profile.Length - 1));
+        return [.. runs];
+    }
+
+    /// <summary>The bitmap cropped to its own opaque extent, or one transparent pixel if it has none.</summary>
+    public static SKBitmap TrimToAlpha(SKBitmap keyed, int margin = 0)
+    {
+        int minX = keyed.Width, minY = keyed.Height, maxX = -1, maxY = -1;
+
+        for (var y = 0; y < keyed.Height; y++)
+        {
+            for (var x = 0; x < keyed.Width; x++)
+            {
+                if (keyed.GetPixel(x, y).Alpha <= 16) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+
+        if (maxX < 0) return new SKBitmap(1, 1, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+
+        minX = Math.Max(0, minX - margin);
+        minY = Math.Max(0, minY - margin);
+        maxX = Math.Min(keyed.Width - 1, maxX + margin);
+        maxY = Math.Min(keyed.Height - 1, maxY + margin);
+
+        var cropped = new SKBitmap(maxX - minX + 1, maxY - minY + 1, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        using var canvas = new SKCanvas(cropped);
+        canvas.Clear(SKColors.Transparent);
+        canvas.DrawBitmap(keyed, new SKRect(minX, minY, maxX + 1, maxY + 1),
+            new SKRect(0, 0, cropped.Width, cropped.Height), Sampling, null);
+        return cropped;
+    }
+
+    #endregion
+
     public static byte[] Encode(SKBitmap bitmap, string format = "webp", int quality = 85)
     {
         ArgumentNullException.ThrowIfNull(bitmap);
@@ -530,7 +710,7 @@ public static class PlateAnalysis
     /// <summary>Columns/rows this close to the seam are excluded from the neighbour baseline.</summary>
     const int SeamGuard = 3;
 
-    static readonly SKSamplingOptions Sampling = new(SKFilterMode.Linear, SKMipmapMode.Linear);
+    internal static readonly SKSamplingOptions Sampling = new(SKFilterMode.Linear, SKMipmapMode.Linear);
 
     static readonly (int Dx, int Dy)[] Neighbours = [(1, 0), (-1, 0), (0, 1), (0, -1)];
     #endregion

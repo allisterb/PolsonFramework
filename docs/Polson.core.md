@@ -265,6 +265,45 @@ Per-session scratchpad dictionary that persists across multiple script execution
 - `Session[key]` — Retrieve a previously cached value (returns `undefined` if key is not set).
 - `delete Session[key]` — Evict a key from session scratchpad.
 
+> [!IMPORTANT]
+> **Store the finished value. A plain object or array you mutate *after* storing it does not
+> change what is stored** — and the failure is silent, which is what makes it worth a warning
+> rather than a footnote.
+>
+> ```javascript
+> const cast = [];
+> Session.cast = cast;            // WRONG: stores an empty array, for ever
+> cast.push(cell);
+> ```
+> ```javascript
+> const cast = [];
+> cast.push(cell);
+> Session.cast = cast;            // right: assign once it is built
+> Session.cast = cells.map(c => ({ name: c.name, uri: c.toDataUri() }));   // or in one go
+> ```
+>
+> **Measured on a live run**: the first spelling left a zero-length array in the next script, whose
+> loop ran zero times, logged nothing, rendered a flat image and **reported success**. There is no
+> error to see, because nothing went wrong — the loop simply had nothing to iterate.
+>
+> **Why, since a JavaScript object is a reference.** Nothing here copies by value. What happens is a
+> **conversion**: a plain value is translated as it crosses into the scratchpad, and translating it
+> builds a second object. The one your script is holding and the one `Session` is holding are then
+> two different objects, so changing either cannot reach the other — and the stored array is fixed
+> in length, which is the separate reason `Session.cast.push(...)` does not grow it.
+>
+> **SDK objects are the exception, and it is the useful half.** A bitmap, a canvas or a paper needs
+> no translation, so none happens: it is genuinely shared, and a change made to it in one script is
+> there in the next. That is what makes the bitmap-stashing advice below sound.
+>
+> ```javascript
+> Session.plate = createCanvas(4, 4).toBitmap();
+> Session.plate.setPixel(0, 0, '#FF0000FF');    // still #FF0000FF in the next script
+> ```
+>
+> Pinned by `SessionMarshallingTests`, which asserts both halves — the conversion for plain values
+> and the shared reference for an SDK object.
+
 > [!TIP]
 > **It holds bitmaps and canvases, not just data — and that is the cheapest way to hand work between stages.** Writing a stage to disk and loading it back in the next call costs an encode (~150 ms at 1600 × 1200) and a decode, for a picture only the machine will read. Stashing the bitmap costs neither:
 >
@@ -2163,6 +2202,20 @@ canvas;
 > may as well describe the room. **At least two are required**, since the whole rule is that the
 > figure's hue and the mood's differ.
 >
+> **The whole table comes back, not only the two that were selected.** The result carries
+> `figure` and `mood` (the chosen `{ dark, mid, highlight }` triples), `figureName` and `moodName`,
+> `ground`, `seed`, plus **`hues`** — every triple you supplied, by name — and **`names`**, the
+> order they were considered in. So a third hue is reached as `mood.hues.paper`, not `mood.paper`:
+>
+> ```javascript
+> ctx.fillStyle = mood.figure.highlight;     // the selected figure hue
+> ctx.fillStyle = mood.hues.paper.mid;       // one you supplied but the generator did not pick
+> ```
+>
+> **This is written down because a live run concluded the third hue was unreachable** and kept it as
+> a local constant instead. It was reachable; `hues` and `names` were simply never documented, and
+> `mood.paper` — the natural guess — is `undefined`, so reading `.highlight` off it throws.
+>
 > **This example exists because a live run could not find the shape and bypassed the call.** It wrote
 > its palette by hand rather than guess, which was the right call on a ten-minute clock and cost the
 > board the one thing the generator is for. Its own words: *"the doc does not give the shape of the
@@ -2580,6 +2633,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 - `Assets.material(descriptor: string, options?: object)` → `Promise<MaterialAsset>` — A flat, seamlessly tiling swatch. Safest and most reusable: independent of geometry, so it survives any amount of redrawing. `options`: `{ size?: number (32–1024, default 512), tileable?: boolean (default true), format?: 'webp'|'png'|'jpeg', quality?: number, model?: string }`.
 - `Assets.backdrop(descriptor: string, options?: object)` → `Promise<BackdropPlate>` — A background plate composited beneath the scene. `options`: `{ width?: number, height?: number, keepQuiet?: 'lowerThird'|'upperThird'|'leftHalf'|'rightHalf'|'center'|'none', noHorizon?: boolean, noForeground?: boolean, conditionOn?: byte[], format?: string, quality?: number, model?: string }`.
 - `Assets.matte(descriptor: string, options?: object)` → `Promise<MatteAsset>` — A greyscale mask, height field, or displacement source for use as a shader input — **and, with `hardEdge`, a stencil.** `options`: `{ size?: number, invert?: boolean, hardEdge?: boolean, threshold?: number, model?: string }`.
+- `Assets.cutout(descriptor: string, options?: object)` → `Promise<CutoutAsset>` — Pictorial elements with a **real alpha channel**, cut from a flat keyed ground — and, with `variants`, several views of one subject from **one generation**. `options`: `{ variants?: string[] (max 6), size?: number (default 512), style?: string, background?: string, tolerance?: number (default 0.18), model?: string }`.
 
 > [!TIP]
 > **This is the one requisition that will answer a *form*, and that is deliberate.** `material()` refuses "a rearing horse" because a material has no silhouette; a matte is nothing *but* a silhouette, so the classifier does not run here. It is therefore the route to the bold graphic form a header or a section marker wants — and it stays on the right side of the line, because what comes back is a shape rather than a picture. Colour, scale, placement and composition all stay with your code.
@@ -2609,6 +2663,99 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > **That second one is refused rather than asked.** A descriptor that both names somebody and asks for a face — `Assets.matte('Stanley Kubrick bearded director portrait')` — comes back `RefusedLikeness` before any network call, naming the person and pointing at `Photo.of(...)`. It became a refusal because the paragraph did not hold: a live run read *"a stencil of the author"* in its brief and reworded past this guidance three times until a face came back, then captioned it with his name and dates. Every other integrity check on that page passed, because a wrong face renders perfectly.
 >
 > **Both signals are needed, so the check stays narrow.** A name alone is style vocabulary — `Art Deco`, `Golden Gate Bridge` — and a face alone is an anonymous figure, which is a legitimate graphic form. Only the pair claims a particular person. If you meant a shape, name the shape and drop the name.
+
+> [!CAUTION]
+> **`cutout` is the only requisition that returns a *depiction*, and it is the studio's sharpest
+> line.** A material is substance and a matte is a silhouette; this is a picture of something. It
+> exists because the rule was never *buy no forms* — `matte` answers a form on purpose — but **buy no
+> pictures**. A cutout supplies **one element**; where it sits, how deep, at what scale and in what
+> colour all stay with your code, which is the whole of what makes a composition yours. Requisition
+> the parts of a picture; never the picture.
+>
+> **Use it where a matte cannot reach, not instead of one.** A matte's own prompt forbids interior
+> detail and it is thresholded on luminance, so a head comes back as a blank head-shaped blob — right
+> for a figure against the sky, useless for a face. If a silhouette would do, a silhouette is
+> cheaper, smaller, and honest about what it is.
+
+> [!IMPORTANT]
+> **`variants` is the consistency mechanism, and it is the reason this is not *n* separate calls.**
+> Generation is **not deterministic across calls**, so two requisitions of "the same man" return two
+> different men — and a board that loses its character between panels has lost the one thing a board
+> is for. One generation carrying every pose you need is **one context**, so the figure is the same
+> figure by construction.
+>
+> That is the arranged route's answer to what `Drawing.createParametricHead(...)` does for the
+> constructed one: there, five numbers kept in a `const` make panel 1 and panel 40 the same person.
+> Here, asking once makes them the same person. **Neither works retroactively** — plan the whole set
+> of poses before the first call, because a seventh expression is a new man.
+>
+> ```javascript
+> const cutout = await Assets.cutout('a weathered ranch hand in his fifties, head and shoulders', {
+>     variants: ['calm, looking left', 'alarmed, eyes wide', 'shouting', 'looking down, defeated'],
+>     size: 420
+> });
+> if (!cutout.success) { error(cutout.remedy); exit(cutout.failureName); }
+> if (cutout.split === 'even') Stage.note('sheet split evenly - check the cells for clipped shoulders');
+>
+> for (const cell of cutout.cells) log(`${cell.name}: ${cell.width}x${cell.height}`);
+> Session.cast = cutout.cells.map(c => ({ name: c.name, uri: c.toDataUri() }));
+> ```
+
+> [!IMPORTANT]
+> **Check `split` before trusting the cells.** The sheet is divided on the gaps the background
+> actually leaves, which survives a model that does not lay out on a grid. When the subjects touch,
+> or one is missing, the gaps do not yield the count asked for and it falls back to **equal
+> columns** — which cuts through shoulders. `split` is `'gaps'`, `'even'` or `'single'`, and `'even'`
+> is the one to look at, because a mis-split renders perfectly and nothing downstream can see it.
+>
+> **Check each cell's `coverage` too.** Near zero means the key took the subject rather than the
+> ground — a pale figure on a background the model drifted toward. Raise `tolerance` for a ground
+> that was not flat enough; lower it when the subject is losing its edges.
+
+> [!TIP]
+> **The ground is keyed by measurement, not by assumption.** A model asked for pure magenta delivers
+> approximately magenta, so the corners are sampled and the median is what gets removed — the same
+> discipline a stencil applies to its cut level. `backgroundColor` reports what was actually keyed;
+> pass `background: '#FF00FF'` to override it.
+>
+> **`style` says how the subject is drawn; it must not name a ground.** A `style` containing
+> *background* or *backdrop* is **refused before the network is touched**, because the two requests
+> compose in the worst way: asked for both, a model draws each figure on its own card *inside* the
+> keyed gutters. The gutters key out and the cards do not, and what comes back is opaque rectangles
+> with drawings on them — measured at **99.6–99.8% coverage** on the run that found it. Describe the
+> medium (`loose graphite sketch, clean line`), not the surface it sits on.
+>
+> **A cell is trimmed to its own extent**, so `width`, `height` and `aspectRatio` differ between the
+> cells of one sheet, and `size` is a cap on the longest edge rather than a delivered dimension.
+> Standing a row of them on a shared baseline means aligning on `height`, not on a box.
+>
+> **Tint whole rather than shading parts.** `ctx.colorFilter` over the whole cell is the idiom this
+> route is built on — it is what makes composing from bought parts cheap, because nothing has to be
+> separated into regions first. It is also the only thing available: a cutout is an **opaque asset
+> with no regions**, so nothing in it can be parameterised the way a constructed head can, and
+> vectorising it would not change that — a traced outline has no more regions than the raster did.
+> That is the trade this call makes, and it is why the constructive route still exists.
+
+## `CutoutAsset`
+
+- `cutout.success` · `cutout.failureName` · `cutout.remedy` · `cutout.retryable` · `cutout.error`
+- `cutout.cells` → `CutoutCell[]` — One per variant, in the order they were asked for.
+- `cutout.cell(name: string)` → `CutoutCell?` — By variant name, case-insensitively, or **`null`**. A
+  question rather than an error, because a panel loop asks it about every character it might show.
+- `cutout.bytes` → `byte[]`, `cutout.width` / `cutout.height` → `number` — The whole keyed sheet.
+- `cutout.toDataUri()` → `string` — The sheet, as PNG. Usually you want a cell instead.
+- `cutout.split` → `string` — `'single'`, `'gaps'`, or `'even'`. See above.
+- `cutout.backgroundColor` → `string` — The colour actually keyed out, as `#RRGGBB`.
+- `cutout.id` · `cutout.provenance`
+
+## `CutoutCell`
+
+- `cell.name` → `string` — The variant it was asked for, or `'subject'` when only one was.
+- `cell.bytes` → `byte[]`, `cell.width` / `cell.height` → `number`
+- `cell.toDataUri()` → `string` — **PNG, because alpha is the whole point and JPEG has none.** Feed it
+  to `Skia.Image.fromDataUrl(...)`, or pass the cell straight to `paper.image(...)`.
+- `cell.coverage` → `number` — Share of this cell's own box carrying opacity.
+- `cell.aspectRatio` → `number` — Width over height. Cells are trimmed, so this differs between them.
 
 ## `Assets` Properties
 

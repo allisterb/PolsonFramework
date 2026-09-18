@@ -1745,8 +1745,13 @@ public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
     /// recorded workflow when the directory holds a project, and to `logo` when it does not.
     /// `ProjectResetTests` covers both halves of that.
     /// </remarks>
+    /// <remarks>
+    /// The plausible-name case was <c>storyboard</c> until that workflow shipped, which is the hazard
+    /// of naming a real-sounding absence in a test: it passes until someone builds the thing. The
+    /// replacement is deliberately a name nobody will implement.
+    /// </remarks>
     [Theory]
-    [InlineData("storyboard")]
+    [InlineData("woodcut")]
     [InlineData("../logo")]
     public void TestUnknownWorkflowIsRefused(string workflow) =>
         Assert.False(ProjectGenerator.Create(Options("badflow", o => o.Workflow = workflow)));

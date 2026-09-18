@@ -86,11 +86,22 @@ buying a finished picture.
 > first. The source this formula comes from defends exactly that: a flat treatment is what lets one
 > arrangement scale to dozens of cut-outs without pre-highlighting anything.
 
-> **`Assets.matte` will not give you a face.** It returns one channel and its prompt asks for no
-> interior detail and no shading, so a head comes back as a blank silhouette. That is the right
-> material for a figure seen against the sky and the wrong one for a portrait. If the brief wants a
-> recognisable person, that is `Photo.of(...)` with its terms; if it wants a *drawn* face, construct
-> it — and say in `findings.md` that you had to leave this route to do it.
+> **A matte will not give you a face — `Assets.cutout(...)` will.** A matte returns one channel and
+> its prompt asks for no interior detail, so a head comes back as a blank silhouette: right for a
+> figure against the sky, useless for a portrait. A cutout returns a real alpha channel and is the
+> one requisition that *depicts*. Use it where a matte cannot reach, not instead of one — if a
+> silhouette would do, a silhouette is cheaper and smaller.
+>
+> **Ask for every view you need in one call.** Generation is not deterministic between calls, so two
+> requisitions of the same subject return two different subjects. `variants` puts them in one
+> generation, which is what makes them the same subject. Plan the set before the first call.
+>
+> **Check `cutout.split`.** `'gaps'` means the sheet divided where the background was; `'even'` means
+> it fell back to equal columns, which cuts through shoulders and renders perfectly.
+>
+> A *recognisable* person is still `Photo.of(...)` with its terms — a generated likeness is refused
+> here before the network is touched, because it carries none of the identity or rights checks and
+> looks entirely convincing either way.
 
 ---
 

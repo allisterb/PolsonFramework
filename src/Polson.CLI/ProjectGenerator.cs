@@ -578,6 +578,11 @@ internal static class ProjectGenerator
         // exists to make the choice between arranging and constructing cost something, and a budget
         // long enough to construct four panels would remove the choice. Manual 20 §6 is the route.
         ["storyboard_quick"] = 10,
+        // Thirty against `storyboard_quick`'s ten, and the difference is almost entirely the cast:
+        // one `Assets.cutout` per character is seconds of waiting in its own script, and the panels
+        // that carry a face then take passes that flat shapes never needed. Still well short of
+        // `comic`, because nothing here is constructed or inked.
+        ["storyboard"] = 30,
         // Twenty-five because the composition is minutes and the requisitions are seconds each, in
         // their own scripts: the clock has to cover two or three round trips to a metered service
         // plus the passes that follow seeing what came back. Longer than `storyboard_quick`, whose
@@ -1310,6 +1315,12 @@ internal static class ProjectGenerator
         // ten-minute clock inlining three manuals is unlikely to pay - the instructions point at
         // Manual 20 §6 by URI instead, which is one cheap `ReadDoc` rather than 40 KB of prelude.
         ["storyboard_quick"] = ["20", "21", "09"],
+        // The quick workflow's three plus 16, because this is the variant that buys its actors and
+        // the cast sheet is the step that cannot be redone. 23 stays absent for the same reason it
+        // is absent above: this workflow asks for a bought face rather than a constructed one, and
+        // offering the head manual would advertise the road it is being asked not to take. The
+        // instructions name it by URI for the one panel that genuinely needs it.
+        ["storyboard"] = ["20", "21", "09", "16"],
         ["comic_studio"] = ["09", "20", "21", "23"],
         // Composition, requisition, staging. 21 is deliberately absent: it is screen continuity
         // across panels, and a cover is one frame — offering it would advertise a sequence this

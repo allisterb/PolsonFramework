@@ -353,6 +353,227 @@ public partial class AssetRequisitionToolkit : Runtime
             : $"A flat greyscale mask of {descriptor}. Pure white where the feature is, pure black "
             + "elsewhere, no colour, no lighting, no shadow, no perspective, fill the whole frame.";
 
+    #region Cutout
+
+    /// <summary>Requisitions one or more cut-out elements with a real alpha channel.</summary>
+    /// <remarks>
+    /// <b>The one requisition that returns a depiction, and the reasoning is in
+    /// <see cref="CutoutOptions"/>.</b> In short: the classifier's line was never "buy no forms" —
+    /// <see cref="Matte"/> already answers a form on purpose — but "buy no pictures", and a cutout is
+    /// one element of a composition the code arranges.
+    /// <para>
+    /// <b>Why a matte could not do this.</b> Its prompt asks for no interior detail and no shading,
+    /// and <see cref="PlateAnalysis.ToMatte"/> thresholds on luminance, so everything inside the
+    /// subject collapses to one value. That is correct for a silhouette and leaves a face as a blank
+    /// head-shaped blob. Nothing an agent could write in a descriptor reaches past it, because the
+    /// wording belongs to the server.
+    /// </para>
+    /// </remarks>
+    public async Task<CutoutAsset> Cutout(string descriptor, CutoutOptions? options = null)
+    {
+        var opts = options ?? new CutoutOptions();
+
+        // Stricter here than on a matte, and for a reason the matte case only approaches: a cutout
+        // carries interior detail, so a generated likeness of a named person is not a silhouette
+        // that happens to resemble somebody - it is a fabricated portrait that renders perfectly.
+        if (NamedLikeness(descriptor) is { } who)
+        {
+            var reason =
+                who + " reads as a real person, and a cutout depicts rather than outlines - so this " +
+                "would be a fabricated likeness carrying none of the identity, licence or " +
+                "publicity-rights checks Photo applies, and nothing downstream could catch it. Use " +
+                "Photo.of('" + who + "'). If you meant an anonymous figure, describe the figure and " +
+                "drop the name.";
+
+            RequisitionScope.Record(new RequisitionRecord(
+                "cutout", descriptor, Success: false, Failure: nameof(ImageGenerationFailure.RefusedLikeness),
+                Reason: reason, Model: null, FromCache: false, Refused: true));
+            RecordBudgetState();
+
+            return new CutoutAsset
+            {
+                Success = false,
+                Failure = ImageGenerationFailure.RefusedLikeness,
+                Error = reason,
+            };
+        }
+
+        // **The ground is not the caller's to set, and a style that sets one defeats the key.**
+        // Found on the first live run: `style` carried "white background", the model obliged both
+        // instructions and drew each figure on its own white card inside the magenta gutters. The
+        // gutters keyed out and the cards did not, so four cells came back 99.7% opaque - white
+        // rectangles with drawings on them. Refused here rather than warned about, because it is
+        // decidable before the network is touched and the result is otherwise indistinguishable
+        // from a subject that happens to be pale.
+        if (NamedGround(opts.Style) is { } word)
+        {
+            var reason =
+                "cutout style names a " + word + ", and the ground belongs to the call: the subject "
+                + "is generated on a flat keyed background so that it can be cut out, and a style "
+                + "that asks for one too produces a subject sitting on an opaque card. Describe how "
+                + "the subject is drawn and leave the ground alone; check cell coverage afterwards.";
+
+            RequisitionScope.Record(new RequisitionRecord(
+                "cutout", descriptor, Success: false, Failure: nameof(ImageGenerationFailure.InvalidRequest),
+                Reason: reason, Model: null, FromCache: false, Refused: true));
+            RecordBudgetState();
+
+            return new CutoutAsset
+            {
+                Success = false,
+                Failure = ImageGenerationFailure.InvalidRequest,
+                Error = reason,
+            };
+        }
+
+        var variants = (opts.Variants ?? []).Where(v => !string.IsNullOrWhiteSpace(v)).Take(6).ToList();
+        var prompt = CutoutPrompt(descriptor, opts, variants);
+        var aspect = variants.Count > 2 ? "16:9" : variants.Count == 2 ? "4:3" : "1:1";
+
+        var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel,
+            aspect, null, "cutout", descriptor);
+        if (!generated.Success)
+        {
+            return new CutoutAsset { Success = false, Failure = generated.Failure, Error = generated.Error };
+        }
+
+        using var master = SKBitmap.Decode(generated.ImageBytes);
+        if (master is null)
+        {
+            return new CutoutAsset
+            {
+                Success = false,
+                Failure = ImageGenerationFailure.NoImageReturned,
+                Error = "Cutout decoded to nothing.",
+            };
+        }
+
+        var background = ParseHex(opts.Background) ?? PlateAnalysis.SampleBackground(master);
+        using var keyed = PlateAnalysis.ChromaKey(master, background, opts.Tolerance);
+
+        var (cells, split) = SplitSheet(keyed, variants, opts.Size);
+
+        return new CutoutAsset
+        {
+            Success = true,
+            Id = generated.Hash,
+            Bytes = PlateAnalysis.Encode(keyed, "png", 100),
+            Width = keyed.Width,
+            Height = keyed.Height,
+            Cells = cells,
+            Split = split,
+            BackgroundColor = $"#{background.Red:X2}{background.Green:X2}{background.Blue:X2}",
+            Provenance = ProvenanceOf(generated, null),
+        };
+    }
+
+    /// <summary>Divides a keyed sheet into one cell per variant, reporting how it managed it.</summary>
+    /// <remarks>
+    /// Gaps first, because a model does not lay a row out on a grid and equal columns cut through
+    /// shoulders. Equal columns only when the gaps do not yield the count asked for, and the caller
+    /// is told which happened - a mis-split renders perfectly, so it cannot be left to be noticed.
+    /// </remarks>
+    static (List<CutoutCell> Cells, string Split) SplitSheet(
+        SKBitmap keyed, List<string> variants, int size)
+    {
+        if (variants.Count <= 1)
+        {
+            return ([CellOf(keyed, 0, keyed.Width - 1, variants.FirstOrDefault() ?? "subject", size)], "single");
+        }
+
+        var runs = PlateAnalysis.SegmentsByGaps(PlateAnalysis.AlphaColumnProfile(keyed));
+        var split = runs.Length == variants.Count ? "gaps" : "even";
+
+        if (split == "even")
+        {
+            var step = keyed.Width / (double)variants.Count;
+            runs = [.. Enumerable.Range(0, variants.Count)
+                .Select(i => ((int)Math.Round(i * step), (int)Math.Round(((i + 1) * step) - 1)))];
+        }
+
+        return ([.. runs.Select((r, i) => CellOf(keyed, r.Start, r.End, variants[i], size))], split);
+    }
+
+    /// <summary>One column range of the sheet, trimmed to its own extent and scaled to fit.</summary>
+    static CutoutCell CellOf(SKBitmap keyed, int from, int to, string name, int size)
+    {
+        var width = Math.Max(1, to - from + 1);
+        using var slice = new SKBitmap(width, keyed.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        using (var canvas = new SKCanvas(slice))
+        {
+            canvas.Clear(SKColors.Transparent);
+            canvas.DrawBitmap(keyed, new SKRect(from, 0, to + 1, keyed.Height),
+                new SKRect(0, 0, width, keyed.Height), PlateAnalysis.Sampling, null);
+        }
+
+        using var trimmed = PlateAnalysis.TrimToAlpha(slice);
+        var longest = Math.Max(trimmed.Width, trimmed.Height);
+        var scale = longest <= size ? 1.0 : size / (double)longest;
+
+        using var sized = scale >= 1.0
+            ? trimmed.Copy()
+            : PlateAnalysis.Resize(trimmed, Math.Max(1, (int)Math.Round(trimmed.Width * scale)),
+                Math.Max(1, (int)Math.Round(trimmed.Height * scale)));
+
+        return new CutoutCell
+        {
+            Name = name,
+            Bytes = PlateAnalysis.Encode(sized, "png", 100),
+            Width = sized.Width,
+            Height = sized.Height,
+            Coverage = PlateAnalysis.AlphaCoverage(sized),
+        };
+    }
+
+    /// <summary>
+    /// A sheet asks for the same subject several times; a single asks for it once.
+    /// </summary>
+    /// <remarks>
+    /// Every clause here is load-bearing. The flat keyable ground is what makes an alpha channel
+    /// possible at all; forbidding a cast shadow and a ground plane stops the key taking a bite out
+    /// of the subject's feet; forbidding labels stops a "character sheet" arriving annotated, which
+    /// is what the phrase means to a model trained on real ones. And <i>identical in every respect
+    /// except</i> is the sentence the whole consistency argument rests on.
+    /// </remarks>
+    static string CutoutPrompt(string descriptor, CutoutOptions opts, List<string> variants)
+    {
+        const string Ground =
+            "Flat, perfectly uniform pure magenta (#FF00FF) background filling everything around the "
+            + "subject. No cast shadow, no ground plane, no horizon, no vignette, no text, no labels, "
+            + "no numbers, no frame, no border, no panel divisions.";
+
+        if (variants.Count <= 1)
+        {
+            return $"A single {opts.Style} of {descriptor}, the whole subject within the frame with a "
+                + $"clear margin on every side, centred, seen straight on. {Ground}";
+        }
+
+        var listed = string.Join("; ", variants.Select((v, i) => $"{i + 1}. {v}"));
+        return $"A reference sheet of {variants.Count} {opts.Style}s of {descriptor}, arranged in ONE "
+            + "horizontal row, evenly spaced, with a clear band of background between each and the "
+            + "next so that none of them touch or overlap. It is the SAME subject in every one, "
+            + "identical in every respect except as listed, left to right: " + listed + ". " + Ground;
+    }
+
+    /// <summary>The word in a style that claims the ground, or null.</summary>
+    /// <remarks>
+    /// Deliberately two words and no more. <c>background</c> and <c>backdrop</c> in a <i>style</i>
+    /// can only be about the ground, which this call owns; anything looser starts refusing legitimate
+    /// descriptions - "white shirt", "against the light" - and a check that cries wolf is one a
+    /// caller works around rather than reads.
+    /// </remarks>
+    static string? NamedGround(string? style) =>
+        string.IsNullOrWhiteSpace(style) ? null
+        : style.Contains("background", StringComparison.OrdinalIgnoreCase) ? "background"
+        : style.Contains("backdrop", StringComparison.OrdinalIgnoreCase) ? "backdrop"
+        : null;
+
+    /// <summary>A <c>#RRGGBB</c> string as a colour, or null when unparseable or absent.</summary>
+    static SKColor? ParseHex(string? hex) =>
+        !string.IsNullOrWhiteSpace(hex) && SKColor.TryParse(hex, out var c) ? c : null;
+
+    #endregion
+
     /// <summary>Cache lookup, budget check, then generation. The only path that can spend money.</summary>
     /// <remarks>
     /// Also the only place worth recording from. Every requisition passes through here whatever it

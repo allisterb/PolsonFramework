@@ -460,6 +460,141 @@ public sealed record MatteAsset : RequisitionResult, IDataUriSource
     }
 }
 
+/// <summary>One element of a cutout sheet: a trimmed RGBA image with its own alpha.</summary>
+public sealed record CutoutCell : IDataUriSource
+{
+    /// <summary>The variant this cell was asked for, or <c>"subject"</c> when only one was.</summary>
+    public string Name { get; init; } = string.Empty;
+
+    public byte[] Bytes { get; init; } = [];
+
+    public int Width { get; init; }
+
+    public int Height { get; init; }
+
+    /// <summary>Share of this cell's own box carrying opacity. Near zero means the key took the subject.</summary>
+    public double Coverage { get; init; }
+
+    /// <summary>Width over height. Cells are trimmed, so this differs between them.</summary>
+    public double AspectRatio => Height == 0 ? 0 : Width / (double)Height;
+
+    /// <summary>Base64 data URI. PNG, because alpha is the whole point and JPEG has none.</summary>
+    public string ToDataUri() => Bytes.Length > 0
+        ? $"data:image/png;base64,{Convert.ToBase64String(Bytes)}"
+        : string.Empty;
+
+    public Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["name"] = Name,
+        ["byteLength"] = Bytes.Length,
+        ["width"] = Width,
+        ["height"] = Height,
+        ["coverage"] = Coverage,
+        ["aspectRatio"] = AspectRatio,
+    };
+}
+
+/// <summary>A sheet of cut-out elements from one generation, keyed to transparency and split.</summary>
+/// <remarks>
+/// <b>Check <see cref="Split"/> before trusting the cells.</b> The sheet is divided on the gaps the
+/// background actually leaves, which is robust to a model that does not lay out on a grid — but when
+/// the subjects touch, or one is missing, the gaps do not yield the count that was asked for and the
+/// division falls back to equal columns. That fallback cuts through shoulders. It is reported rather
+/// than hidden because the picture it produces is wrong in a way that renders perfectly.
+/// </remarks>
+public sealed record CutoutAsset : RequisitionResult, IDataUriSource
+{
+    /// <summary>One per variant, in the order they were asked for.</summary>
+    public IReadOnlyList<CutoutCell> Cells { get; init; } = [];
+
+    /// <summary>The whole keyed sheet, before splitting. Useful for seeing what came back.</summary>
+    public byte[] Bytes { get; init; } = [];
+
+    public int Width { get; init; }
+
+    public int Height { get; init; }
+
+    /// <summary>How the sheet was divided: <c>single</c>, <c>gaps</c>, or <c>even</c> when gaps failed.</summary>
+    public string Split { get; init; } = "single";
+
+    /// <summary>The colour actually keyed out, as <c>#RRGGBB</c>.</summary>
+    public string BackgroundColor { get; init; } = string.Empty;
+
+    /// <summary>The cell for a variant, or null. Case-insensitive.</summary>
+    /// <remarks>
+    /// Null rather than a throw, because a panel loop asks this about every character it might show
+    /// — the same reason <c>Shot.element(name)</c> answers a question rather than raising an error.
+    /// </remarks>
+    public CutoutCell? Cell(string name) =>
+        Cells.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The whole sheet as a data URI. Usually you want a cell instead.</summary>
+    public string ToDataUri() => Bytes.Length > 0
+        ? $"data:image/png;base64,{Convert.ToBase64String(Bytes)}"
+        : string.Empty;
+
+    /// <inheritdoc/>
+    public override Dictionary<string, object?> ToJSON(string? key = null)
+    {
+        var json = base.ToJSON(key);
+        json["byteLength"] = Bytes.Length;
+        json["width"] = Width;
+        json["height"] = Height;
+        json["split"] = Split;
+        json["backgroundColor"] = BackgroundColor;
+        json["cells"] = Cells.Select(c => c.ToJSON()).ToList();
+        return json;
+    }
+}
+
+/// <summary>Options for <c>Assets.cutout(...)</c>. Returns RGBA with a real alpha channel.</summary>
+/// <remarks>
+/// <b>The line this call sits on, and why it is not the one the classifier draws.</b> A material is
+/// substance and a matte is a silhouette; a cutout is a <i>depiction</i>, which is further than either.
+/// It is allowed because the studio's rule was never "buy no forms" — <see cref="MatteOptions"/>
+/// already answers a form deliberately — but "buy no pictures". A cutout supplies one element; where
+/// it sits, how deep, at what scale and in what colour all stay with the code, which is what makes a
+/// composition the studio's rather than the model's.
+/// <para>
+/// <b><see cref="Variants"/> is the consistency mechanism and is the reason this is not n separate
+/// calls.</b> Generation is not deterministic across calls, so two requisitions of "the same man"
+/// return two different men and a board loses its character between panels. One generation carrying
+/// every pose needed is one context, so the figure is the same figure by construction — the arranged
+/// route's answer to what <c>createParametricHead</c> does for the constructed one.
+/// </para>
+/// </remarks>
+public sealed record CutoutOptions
+{
+    /// <summary>
+    /// Poses, expressions or angles to generate together. One cell each, left to right.
+    /// </summary>
+    /// <remarks>
+    /// Capped at six: the sheet is one generation of fixed width, so every variant added makes every
+    /// cell narrower. Four across a 1024 master is about 250px a cell, which is a storyboard face and
+    /// is not a portrait.
+    /// </remarks>
+    public IReadOnlyList<string>? Variants { get; init; }
+
+    /// <summary>Longest edge of each delivered cell. Cells are trimmed to their own extent, so they differ.</summary>
+    public int Size { get; init; } = 512;
+
+    /// <summary>How it should be drawn. The default is what a storyboard wants.</summary>
+    public string Style { get; init; } = "loose graphite storyboard sketch, clean line, no rendering";
+
+    /// <summary>Background to key out as <c>#RRGGBB</c>. Left unset it is measured from the corners.</summary>
+    /// <remarks>
+    /// Measuring is the better default for the same reason a stencil measures its cut level: a model
+    /// asked for pure magenta delivers approximately magenta, and keying the literal value leaves a
+    /// fringe standing all round the subject.
+    /// </remarks>
+    public string? Background { get; init; }
+
+    /// <summary>How close to the background a pixel must be to be removed, 0 to 1.</summary>
+    public double Tolerance { get; init; } = 0.18;
+
+    public string? Model { get; init; }
+}
+
 #endregion
 
 #region Budget and gatekeeping

@@ -522,6 +522,7 @@ public partial class AssetRequisitionToolkit : Runtime
             Width = sized.Width,
             Height = sized.Height,
             Coverage = PlateAnalysis.AlphaCoverage(sized),
+            Holes = PlateAnalysis.EnclosedTransparency(sized),
         };
     }
 

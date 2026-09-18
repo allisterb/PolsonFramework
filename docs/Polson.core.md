@@ -266,43 +266,38 @@ Per-session scratchpad dictionary that persists across multiple script execution
 - `delete Session[key]` — Evict a key from session scratchpad.
 
 > [!IMPORTANT]
-> **Store the finished value. A plain object or array you mutate *after* storing it does not
-> change what is stored** — and the failure is silent, which is what makes it worth a warning
-> rather than a footnote.
+> **The scratchpad behaves like an ordinary JavaScript object, and that is worth one paragraph
+> because it did not always.** A value you store and then mutate keeps the mutation, an array you
+> stored last script can be pushed to in this one, and a bitmap you stash is the same bitmap:
 >
 > ```javascript
 > const cast = [];
-> Session.cast = cast;            // WRONG: stores an empty array, for ever
-> cast.push(cell);
-> ```
-> ```javascript
-> const cast = [];
-> cast.push(cell);
-> Session.cast = cast;            // right: assign once it is built
-> Session.cast = cells.map(c => ({ name: c.name, uri: c.toDataUri() }));   // or in one go
+> Session.cast = cast;
+> cast.push(cell);                 // kept - Session.cast has one entry
+> Session.cast.push(another);      // kept - it is a real array, not a fixed-size copy
 > ```
 >
-> **Measured on a live run**: the first spelling left a zero-length array in the next script, whose
-> loop ran zero times, logged nothing, rendered a flat image and **reported success**. There is no
-> error to see, because nothing went wrong — the loop simply had nothing to iterate.
+> **Until 2026-09-18 the first two lines lost the push**, and silently: the next script's loop ran
+> zero times, logged nothing, rendered a flat image and reported success. A live storyboard run lost
+> a script to it. The cause was that the engine was handed the durable store directly, so a plain
+> value was translated the moment it was written and your array and the stored one became two
+> objects. It now holds what your script holds and translates once, when the execution ends.
 >
-> **Why, since a JavaScript object is a reference.** Nothing here copies by value. What happens is a
-> **conversion**: a plain value is translated as it crosses into the scratchpad, and translating it
-> builds a second object. The one your script is holding and the one `Session` is holding are then
-> two different objects, so changing either cannot reach the other — and the stored array is fixed
-> in length, which is the separate reason `Session.cast.push(...)` does not grow it.
+> **One consequence survives, and it is narrower than it sounds.** Each execution gets a fresh
+> engine, so what persists between scripts is a *translation* made at the end of each one. Measured,
+> what that costs is exactly two things:
 >
-> **SDK objects are the exception, and it is the useful half.** A bitmap, a canvas or a paper needs
-> no translation, so none happens: it is genuinely shared, and a change made to it in one script is
-> there in the next. That is what makes the bitmap-stashing advice below sound.
+> | stored | comes back as |
+> | :--- | :--- |
+> | object, array, string, number, `Date` | itself, nested to any depth |
+> | function | itself, still **callable** |
+> | bitmap, canvas, paper | the same object |
+> | **`Map`** | **a plain object** |
+> | **`Set`** | **a plain object** |
 >
-> ```javascript
-> Session.plate = createCanvas(4, 4).toBitmap();
-> Session.plate.setPixel(0, 0, '#FF0000FF');    // still #FF0000FF in the next script
-> ```
->
-> Pinned by `SessionMarshallingTests`, which asserts both halves — the conversion for plain values
-> and the shared reference for an SDK object.
+> A `Map` keeps its entries and loses its identity — `.get` and `.has` are gone, and a plain object
+> is still truthy and still has properties, so nothing announces it. **Store a `Map` as
+> `Object.fromEntries(m)` and rebuild it on the other side**, or keep a plain object throughout.
 
 > [!TIP]
 > **It holds bitmaps and canvases, not just data — and that is the cheapest way to hand work between stages.** Writing a stage to disk and loading it back in the next call costs an encode (~150 ms at 1600 × 1200) and a decode, for a picture only the machine will read. Stashing the bitmap costs neither:
@@ -2711,12 +2706,41 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > **Check each cell's `coverage` too.** Near zero means the key took the subject rather than the
 > ground — a pale figure on a background the model drifted toward. Raise `tolerance` for a ground
 > that was not flat enough; lower it when the subject is losing its edges.
+>
+> **And check `holes` on anything carrying a face, because `coverage` cannot see one.** Coverage is a
+> whole-cell statistic, and a face is around 2% of a standing figure — so a key wide enough to reach
+> a skin tone removes the face, leaves the body, and reports a perfectly healthy number. `holes` is
+> the share of the cell that is transparent *and enclosed by the subject*, which is precisely what a
+> punched-out interior is; near zero is clean.
+>
+> **Measured on the run that found it: 68% coverage, and a face averaging 33/255 alpha.** Four passes
+> went into lighting that face before anything probed its alpha — a dark blotch in a dark room is
+> indistinguishable from a face in shadow, so every visual judgment made about it was reasonable and
+> aimed at the wrong defect. `tolerance: 0.10` fixed it in one call.
+>
+> ```javascript
+> for (const cell of cutout.cells) {
+>     if (cell.holes > 0.01) Stage.note(`${cell.name}: ${(cell.holes * 100).toFixed(1)}% enclosed gaps — lower tolerance`);
+> }
+> ```
 
 > [!TIP]
 > **The ground is keyed by measurement, not by assumption.** A model asked for pure magenta delivers
 > approximately magenta, so the corners are sampled and the median is what gets removed — the same
 > discipline a stencil applies to its cut level. `backgroundColor` reports what was actually keyed;
 > pass `background: '#FF00FF'` to override it.
+>
+> **`background` steers the keyer, never the model.** The prompt asks for the same flat ground every
+> time, and this option changes only which colour is *removed* afterwards — so naming a colour the
+> sheet was never painted in removes nothing at all. Measured: `background: '#00FF00'` against a sheet
+> the model had drawn in dusty pink came back `split: 'even'`, **100% coverage**, two opaque
+> rectangles, one generation spent. If a cell keyed badly, the lever is `tolerance`; override this
+> only to key a colour you have read off `backgroundColor`.
+>
+> **`tolerance` is the lever, and for a subject with skin the default is too wide.** 0.18 clears a
+> ground the model drew approximately, and it reaches a warm or pale skin tone when the ground drifts
+> toward one. **Start at 0.10 for anything with a face**, and raise it only if a fringe of ground
+> stands around the subject — which is at least visible, where a lost face is not.
 >
 > **`style` says how the subject is drawn; it must not name a ground.** A `style` containing
 > *background* or *backdrop* is **refused before the network is touched**, because the two requests
@@ -2754,7 +2778,10 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 - `cell.bytes` → `byte[]`, `cell.width` / `cell.height` → `number`
 - `cell.toDataUri()` → `string` — **PNG, because alpha is the whole point and JPEG has none.** Feed it
   to `Skia.Image.fromDataUrl(...)`, or pass the cell straight to `paper.image(...)`.
-- `cell.coverage` → `number` — Share of this cell's own box carrying opacity.
+- `cell.coverage` → `number` — Share of this cell's own box carrying opacity. A whole-cell statistic,
+  and therefore blind to what `holes` measures.
+- `cell.holes` → `number` — Share of the cell that is transparent but **enclosed by the subject**: a
+  hole punched through it. **This is the face check** — see the IMPORTANT under `Assets.cutout`.
 - `cell.aspectRatio` → `number` — Width over height. Cells are trimmed, so this differs between them.
 
 ## `Assets` Properties

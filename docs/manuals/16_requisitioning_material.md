@@ -222,7 +222,7 @@ Drawing.projectCastShadow(key, groundY, subject);
 
 ## 8a. Cut-outs — The One Requisition That Depicts
 
-> **Implemented by**: `Assets.cutout`, `cutout.cells`, `cutout.cell`, `cutout.split`, `cutout.backgroundColor`, `cutout.bytes`, `cutout.width`, `cutout.height`, `cutout.toDataUri`, `cell.name`, `cell.bytes`, `cell.width`, `cell.height`, `cell.coverage`, `cell.aspectRatio`, `cell.toDataUri`.
+> **Implemented by**: `Assets.cutout`, `cutout.cells`, `cutout.cell`, `cutout.split`, `cutout.backgroundColor`, `cutout.bytes`, `cutout.width`, `cutout.height`, `cutout.toDataUri`, `cell.name`, `cell.bytes`, `cell.width`, `cell.height`, `cell.coverage`, `cell.holes`, `cell.aspectRatio`, `cell.toDataUri`.
 
 Everything above this section buys **substance** or a **shape**. `Assets.cutout(...)` buys a
 **picture of something** — an element with a real alpha channel, ready to composite — and it is the
@@ -253,9 +253,14 @@ arrive — which on a storyboard destroys the one thing a board exists to establ
 ```js
 const cutout = await Assets.cutout('a weathered ranch hand in his fifties, head and shoulders', {
     variants: ['calm, looking left', 'alarmed, eyes wide', 'shouting', 'looking down, defeated'],
-    size: 420
+    size: 420,
+    tolerance: 0.10                              // 0.18 is wide enough to key away a face
 });
 if (!cutout.success) { error(cutout.remedy); exit(cutout.failureName); }
+
+for (const c of cutout.cells) {
+    if (c.holes > 0.01) Stage.note(`${c.name}: ${(c.holes * 100).toFixed(1)}% enclosed gaps`);
+}
 
 const shouting = cutout.cell('shouting');
 Session.cast = cutout.cells.map(c => ({ name: c.name, uri: c.toDataUri(), aspect: c.aspectRatio }));
@@ -269,7 +274,7 @@ seventh expression asked for later is a seventh man.
 Six is the cap, and the reason is arithmetic rather than policy: the sheet is one generation of fixed
 width, so every variant makes every cell narrower. Four across is roughly a storyboard face.
 
-### The two readbacks that matter
+### The three readbacks that matter
 
 **`cutout.split`** says how the sheet was divided. `'gaps'` means it was cut where the background
 actually was; `'even'` means the gaps did not yield the count asked for and it fell back to equal
@@ -279,6 +284,30 @@ columns, **which cuts through shoulders**. Look at it, because a mis-split rende
 `tolerance` for a ground that was not flat; lower it when edges are being eaten. `cutout.backgroundColor`
 reports what was actually keyed — measured from the plate's corners, not assumed, for the same reason
 a stencil measures its cut level rather than fixing it at 128.
+
+**`cell.holes`** is the one that cost a run, and it exists because coverage cannot answer it. Coverage
+is a statistic over the *whole* cell, and a face is about 2% of a standing figure — so a key wide
+enough to reach a skin tone takes the face, leaves the body, and reports a healthy number. `holes`
+measures the transparency that is **enclosed by the subject**, which is exactly what a punched-out
+interior is. Near zero is clean — the loop in the example above is the whole check.
+
+> **Measured, on a cover run: 68% coverage, and a face averaging 33/255 alpha.** The render showed a
+> dark blotch where a face should be — and a dark blotch in a dark room is indistinguishable from a
+> face in shadow. Four passes went into lighting it: a brow shadow, two face lifts, a soft-focus pass,
+> a re-centred radial. Every one was a reasonable move against the wrong diagnosis, and none of them
+> could have worked. What settled it was probing the **alpha** channel rather than the colour.
+
+**The fix was `tolerance`, not `background`.** Two things follow from that and they are worth keeping
+separate:
+
+- **`background` steers the keyer, never the model.** The prompt asks for the same flat ground every
+  time; this option only changes which colour is *removed* afterwards. Naming a colour the sheet was
+  never painted in removes nothing — `background: '#00FF00'` against a sheet the model had drawn in
+  dusty pink came back `split: 'even'`, **100% coverage**, two opaque rectangles, one generation
+  spent. Override it only to key a colour you have read off `backgroundColor`.
+- **`tolerance` defaults to 0.18, which is too wide for skin.** It is tuned to clear a ground the
+  model drew approximately. **Start at 0.10 for anything with a face**, and raise it only if a fringe
+  of ground stands around the subject — which is at least visible, where a lost face is not.
 
 ### What you give up
 
@@ -338,6 +367,8 @@ log('already requisitioned: ' + have.map(m => m.provenance.prompt).join(' | '));
 | `budget.total` is `0` | Requisition is unavailable or denied on this project | Draw it; do not retry |
 | A composited subject looks pasted onto its background | The plate's light was never read | `plate.metrics.keyLightX` / `keyLightY` into the lighting calls (§8) |
 | A reused plate no longer fits the scene | `plate.boundTo` is non-null — it is welded to an old blocking | Check `isReusable`; re-requisition |
+| A cutout's face is a dark blotch, and `coverage` looks fine | The key reached the skin tone: coverage is a whole-cell number and a face is ~2% of a figure | Read `cell.holes`; requisition again at `tolerance: 0.10` |
+| A `background` override removes nothing at all | It steers the **keyer**, not the model — the sheet was painted in a different colour | Leave it unset and measure; use `tolerance` |
 | A tiled surface shows faint banding | Check `material.tiling.repaired` | Log it; consider a fresh descriptor |
 
 ---
@@ -353,6 +384,7 @@ log('already requisitioned: ' + have.map(m => m.provenance.prompt).join(' | '));
 | A mask or height field | `await Assets.matte(d, opts)` | `size`, `invert` |
 | A face, a figure, a thing to composite | `await Assets.cutout(d, opts)` | `variants` (max 6), `size`, `style`, `background`, `tolerance`. Real alpha — see §8a |
 | Did the sheet divide properly? | `cutout.split` | `'gaps'` good, `'even'` means check for clipped shoulders |
+| Did the key eat the face? | `cell.holes` | Enclosed transparency. Near zero is clean; `cell.coverage` cannot see this |
 | Did it work? | `result.success` | Then `failureName`, `remedy`, `retryable`, `error` |
 | Turn it into pixels | `material.toDataUri()` → `Skia.Image.fromDataUrl(...)` | Or `material.bytes` → `Skia.Image.fromBytes(...)` |
 | Does it really tile? | `material.tiling.wraps`, `.repaired` | Guaranteed `true` on success |

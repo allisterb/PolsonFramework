@@ -507,6 +507,64 @@ public static class PlateAnalysis
         return on / (double)(keyed.Width * (long)keyed.Height);
     }
 
+    /// <summary>
+    /// Share of the frame that is transparent but <i>enclosed</i> by the subject, 0 to 1.
+    /// </summary>
+    /// <remarks>
+    /// <b>The hole detector, and the measurement <see cref="AlphaCoverage"/> cannot make.</b> Coverage
+    /// is a whole-cell statistic, so a subject whose face has been keyed away still measures healthy —
+    /// a face is around 2% of a standing figure, comfortably inside the noise. Measured on a live run:
+    /// a cell at 68% coverage carried a face averaging 33/255 alpha, and four passes were spent
+    /// lighting a hole.
+    /// <para>
+    /// Enclosure is what separates the two, and it needs no threshold to be chosen: the ground is
+    /// whatever transparency is reachable from the border, so anything transparent that is *not*
+    /// reachable is surrounded by subject and was therefore taken out of it. A clean cutout measures
+    /// near zero. A pixel counts as transparent below half alpha, because the key ramps rather than
+    /// cuts and a half-removed face is already lost.
+    /// </para>
+    /// </remarks>
+    public static double EnclosedTransparency(SKBitmap keyed)
+    {
+        int w = keyed.Width, h = keyed.Height;
+        if (w == 0 || h == 0) return 0;
+
+        var open = new bool[w * h];
+        var stack = new Stack<int>();
+
+        void Seed(int x, int y)
+        {
+            var i = (y * w) + x;
+            if (open[i] || keyed.GetPixel(x, y).Alpha >= 128) return;
+            open[i] = true;
+            stack.Push(i);
+        }
+
+        for (var x = 0; x < w; x++) { Seed(x, 0); Seed(x, h - 1); }
+        for (var y = 0; y < h; y++) { Seed(0, y); Seed(w - 1, y); }
+
+        while (stack.Count > 0)
+        {
+            var i = stack.Pop();
+            int cx = i % w, cy = i / w;
+            if (cx > 0) Seed(cx - 1, cy);
+            if (cx < w - 1) Seed(cx + 1, cy);
+            if (cy > 0) Seed(cx, cy - 1);
+            if (cy < h - 1) Seed(cx, cy + 1);
+        }
+
+        var enclosed = 0L;
+        for (var y = 0; y < h; y++)
+        {
+            for (var x = 0; x < w; x++)
+            {
+                if (keyed.GetPixel(x, y).Alpha < 128 && !open[(y * w) + x]) enclosed++;
+            }
+        }
+
+        return enclosed / (double)(w * (long)h);
+    }
+
     /// <summary>Per-column share of opaque pixels: the profile a row of figures is split on.</summary>
     public static double[] AlphaColumnProfile(SKBitmap keyed)
     {

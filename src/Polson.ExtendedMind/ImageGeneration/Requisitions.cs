@@ -473,7 +473,23 @@ public sealed record CutoutCell : IDataUriSource
     public int Height { get; init; }
 
     /// <summary>Share of this cell's own box carrying opacity. Near zero means the key took the subject.</summary>
+    /// <remarks>
+    /// A whole-cell statistic, and therefore blind to what <see cref="Holes"/> measures. Check both.
+    /// </remarks>
     public double Coverage { get; init; }
+
+    /// <summary>
+    /// Share of the cell that is transparent but enclosed by the subject: a hole punched through it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The check a face needs, because <see cref="Coverage"/> cannot see one.</b> A key set wide
+    /// enough to catch the ground can also catch a skin tone, and what it removes then is the
+    /// interior — which is a couple of percent of a standing figure and vanishes into a healthy
+    /// coverage number. Measured on a live run: 68% coverage, and a face averaging 33/255 alpha.
+    /// Near zero is clean; anything above a percent or so is worth looking at before building
+    /// anything around the cell.
+    /// </remarks>
+    public double Holes { get; init; }
 
     /// <summary>Width over height. Cells are trimmed, so this differs between them.</summary>
     public double AspectRatio => Height == 0 ? 0 : Width / (double)Height;
@@ -490,6 +506,7 @@ public sealed record CutoutCell : IDataUriSource
         ["width"] = Width,
         ["height"] = Height,
         ["coverage"] = Coverage,
+        ["holes"] = Holes,
         ["aspectRatio"] = AspectRatio,
     };
 }
@@ -583,13 +600,29 @@ public sealed record CutoutOptions
 
     /// <summary>Background to key out as <c>#RRGGBB</c>. Left unset it is measured from the corners.</summary>
     /// <remarks>
+    /// <b>This steers the keyer, not the model.</b> The prompt always asks for the same flat ground;
+    /// setting this changes only which colour is <i>removed</i> afterwards. So naming a colour the
+    /// sheet was never painted in removes nothing — measured on a live run, <c>'#00FF00'</c> against
+    /// a sheet the model had drawn in dusty pink gave <c>split: 'even'</c>, 100% coverage and two
+    /// opaque rectangles, for one wasted generation.
+    /// <para>
     /// Measuring is the better default for the same reason a stencil measures its cut level: a model
     /// asked for pure magenta delivers approximately magenta, and keying the literal value leaves a
-    /// fringe standing all round the subject.
+    /// fringe standing all round the subject. Override it only to key a colour you have read off the
+    /// sheet that came back.
+    /// </para>
     /// </remarks>
     public string? Background { get; init; }
 
     /// <summary>How close to the background a pixel must be to be removed, 0 to 1.</summary>
+    /// <remarks>
+    /// <b>Lower it for a subject carrying skin.</b> The default is tuned to clear a ground the model
+    /// drew approximately, and it is wide enough to reach a pale or warm skin tone when the ground
+    /// drifts toward one — which takes the face and leaves the body, so the cell still measures a
+    /// healthy <see cref="CutoutCell.Coverage"/>. On the run that found this, 0.18 removed a face and
+    /// <b>0.10 was the answer</b>: ground gone, split back to <c>gaps</c>, face alpha 223/255. Raise
+    /// it again only if a fringe of ground stands around the subject, which is at least visible.
+    /// </remarks>
     public double Tolerance { get; init; } = 0.18;
 
     public string? Model { get; init; }

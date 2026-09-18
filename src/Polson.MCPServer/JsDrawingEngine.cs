@@ -178,6 +178,11 @@ public partial class JsDrawingEngine : Runtime
         // left, and whether the script was wrapped is what decides the line arithmetic.
         var needsAwait = false;
 
+        // Declared out here because settling happens after the catches: a script that threw or ran
+        // out of time still wrote to the scratchpad, and discarding that would make an error lose
+        // work the run had already done.
+        Dictionary<string, JsValue>? liveSession = null;
+
         try
         {
             var engine = new Engine(options =>
@@ -292,8 +297,11 @@ public partial class JsDrawingEngine : Runtime
                     $"Cannot access property '{member}' on type '{target.GetType().FullName}'");
             }));
 
-            // Per-session scratch storage
-            engine.SetValue("Session", session?.Storage ?? new Dictionary<string, object?>());
+            // Per-session scratch storage. The engine is handed a map of live `JsValue`, not the
+            // durable CLR store, so a value the script mutates after storing it is still the value
+            // that gets kept - see SessionBridge for what that fixes and why.
+            liveSession = SessionBridge.Open(engine, session?.Storage ?? new Dictionary<string, object?>());
+            engine.SetValue("Session", liveSession);
 
             engine.SetValue("Stage", new StageApi(session, Events, executionId));
 
@@ -781,6 +789,10 @@ public partial class JsDrawingEngine : Runtime
         // Frames are uncompressed bitmaps and can be hundreds of megabytes, so they are released
         // when the execution ends rather than left for the collector to notice.
         motionToolkit?.Dispose();
+
+        // The scratchpad crosses back here, after every catch, because this is the last moment the
+        // engine that owns those values is alive.
+        if (session is not null) SessionBridge.Settle(liveSession, session.Storage);
 
         result.ImageSize = result.ImageBytes?.Length ?? 0;
         result.EncodeTimeMs = encodeSw.ElapsedMilliseconds;

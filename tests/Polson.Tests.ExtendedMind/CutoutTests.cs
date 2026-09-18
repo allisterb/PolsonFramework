@@ -80,6 +80,68 @@ public class CutoutTests : TestsRuntime
     }
     #endregion
 
+    #region Enclosed Transparency Tests
+    /// <summary>A cleanly keyed subject has no enclosed gaps.</summary>
+    [Fact]
+    public void EnclosedTransparency_IsZeroForACleanCutout()
+    {
+        using var plate = Sheet(128, 128, [(40, 88)]);
+        using var keyed = PlateAnalysis.ChromaKey(plate, Magenta);
+
+        Assert.Equal(0, PlateAnalysis.EnclosedTransparency(keyed), 3);
+    }
+
+    /// <summary>
+    /// A hole punched through the subject is seen here and is invisible to coverage.
+    /// </summary>
+    /// <remarks>
+    /// <b>The measurement this exists for, and the numbers are the live case scaled down.</b> A cover
+    /// run keyed a sheet at 68% coverage whose face averaged 33/255 alpha, and spent four passes
+    /// lighting the hole — because coverage is a whole-cell statistic and a face is a couple of
+    /// percent of a figure, so nothing downstream could see it. Enclosure needs no threshold to be
+    /// chosen: the ground is whatever transparency reaches the border, so transparency that does not
+    /// was taken out of the subject.
+    /// </remarks>
+    [Fact]
+    public void EnclosedTransparency_SeesAHoleThatCoverageCannot()
+    {
+        using var plate = Sheet(128, 128, [(20, 108)]);
+        using (var canvas = new SKCanvas(plate))
+        {
+            // A patch of the ground colour inside the subject: exactly what keying a skin tone does.
+            using var paint = new SKPaint { Color = Magenta };
+            canvas.DrawRect(SKRect.Create(56, 56, 16, 16), paint);
+        }
+
+        using var keyed = PlateAnalysis.ChromaKey(plate, Magenta);
+
+        // The body carries the coverage, so that number stays healthy and says nothing.
+        Assert.True(PlateAnalysis.AlphaCoverage(keyed) > 0.6);
+        Assert.True(PlateAnalysis.EnclosedTransparency(keyed) > 0.01,
+            "a 16x16 hole in a 128x128 cell should read above 1%");
+    }
+
+    /// <summary>Ground that reaches the border is ground, however far into the frame it comes.</summary>
+    /// <remarks>
+    /// The case that would make this a false-positive machine if it were done by area rather than by
+    /// connectivity: a subject with a deep notch cut into it from outside is a shape, not a hole.
+    /// </remarks>
+    [Fact]
+    public void EnclosedTransparency_IgnoresAGroundNotchOpenToTheEdge()
+    {
+        using var plate = Sheet(128, 128, [(20, 108)]);
+        using (var canvas = new SKCanvas(plate))
+        {
+            using var paint = new SKPaint { Color = Magenta };
+            canvas.DrawRect(SKRect.Create(56, 0, 16, 64), paint);       // open at the top edge
+        }
+
+        using var keyed = PlateAnalysis.ChromaKey(plate, Magenta);
+
+        Assert.Equal(0, PlateAnalysis.EnclosedTransparency(keyed), 3);
+    }
+    #endregion
+
     #region Split Tests
     /// <summary>Four separated subjects give four runs, found where the background actually is.</summary>
     [Fact]

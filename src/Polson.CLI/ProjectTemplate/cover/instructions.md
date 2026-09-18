@@ -99,9 +99,73 @@ buying a finished picture.
 > **Check `cutout.split`.** `'gaps'` means the sheet divided where the background was; `'even'` means
 > it fell back to equal columns, which cuts through shoulders and renders perfectly.
 >
+> **Then check `cell.holes`, and requisition a face at `tolerance: 0.10`.** The default 0.18 is wide
+> enough to reach a skin tone, and what it removes then is the *interior* — so `coverage` stays
+> healthy (a face is about 2% of a figure) while the face itself is a hole. On the run this comes
+> from: 68% coverage, face alpha 33/255, **four passes spent lighting a hole** before anything probed
+> the alpha channel. `holes` is enclosed transparency and near zero is clean.
+>
+> **`background` steers the keyer, not the model.** Naming a colour the sheet was never painted in
+> removes nothing and costs a generation. If a cell keyed badly the lever is `tolerance`.
+>
 > A *recognisable* person is still `Photo.of(...)` with its terms — a generated likeness is refused
 > here before the network is touched, because it carries none of the identity or rights checks and
 > looks entirely convincing either way.
+
+---
+
+## Making a bought part sit in the frame
+
+A cut-out arrives as a flat shape with a hard edge. The formula this workflow follows keeps it flat
+on purpose — tinted whole, no per-element relighting — and that is what makes it scale. **Flatness is
+the trade; a visible seam is not**, and three calls close most of the gap. They are listed in the
+order they are worth doing.
+
+1. **Give the figure a contact shadow.** This is the biggest single thing, and it is usually missing:
+   without one the figure floats, because nothing in the frame says where she is standing.
+   `Drawing.projectCastShadow(light, groundY, figureRect)` takes a plain ground line and a rectangle,
+   and `ctx.drawCastShadow(...)` renders it with a contact crevice. Read the light off the scene — if
+   a backdrop is in play, `plate.metrics.keyLightX` / `keyLightY` is where it actually is rather than
+   where you assumed.
+2. **Use `ctx.drawRimLight(silhouette, lightAngleDeg)` rather than building one by hand.** A rim is a
+   *difference*, and the hand-rolled construction — offset a tinted copy, punch the silhouette back
+   out with `destination-out` — lights **every edge equally**, which is what a sticker looks like.
+   `drawRimLight` weights each stretch of contour by `max(0, n·L) ^ spread`, so the side facing away
+   is not drawn at all and the lit arc fades toward the terminator. The point list must *be* the
+   silhouette, not run near it.
+3. **Run one grain pass over the whole frame, last.** Grain applied per element gives the figure one
+   texture and the wall another, which reads as collage. One pass over everything is what makes them
+   share a surface: `Skia.Shader.luminance(Skia.Shader.perlinNoiseFractal(...))` at `soft-light`. The
+   `luminance` wrapper is not optional — raw Perlin is four independent channels and tints in random
+   hues.
+
+> **Where this comes from.** A finished cover on this workflow read as a cut-out pasted on a wall,
+> and the cause was measurable rather than aesthetic: a pale halo the whole way round a figure lit
+> from one side, and no shadow anywhere. The halo was the hand-rolled rim; the float was the missing
+> shadow. Neither is the technique's trade-off, and both are one call each.
+
+### How much this matters depends on the register, and that is a decision you make early
+
+**The flat treatment is the source's, and it is defended in a *graphic* register.** The covers the
+formula comes from are gothic: five hues at high saturation, hard contrast, posterised light,
+performance pitched loud. There a cut-out reads as a design element and a seam is just the edge
+between two flat shapes — nobody looks for modelling, because nothing in the frame is modelled.
+
+**The quieter the palette, the more work the seam-closing passes have to do.** A muted range and a
+restrained performance take away what was carrying the picture, and the eye, given nothing else to
+attend to, goes to the edge — which becomes the most graphic thing in the frame. The technique has
+not failed; it has been moved somewhere it has nothing to hide behind.
+
+So decide which one you are making, **before** you replace the palette defaults:
+
+- **Saturated and graphic** — take the five hues as they come, tint whole, and the three passes above
+  are polish. Spend the clock on the arrangement.
+- **Muted, naturalistic, subdued** — a legitimate and often better answer to a quiet brief, but the
+  figure now has to earn its place some other way. The contact shadow, the directional rim and the
+  shared grain stop being polish and become the thing that integrates it. Budget a pass for them.
+
+Whichever you choose, say so in a `Stage.note` and again in `findings.md`. A reader looking at a
+quiet cover cannot tell a considered register from a palette that was simply desaturated.
 
 ---
 

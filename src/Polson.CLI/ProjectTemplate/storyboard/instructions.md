@@ -40,12 +40,25 @@ Not approximately — the actual list. Then requisition each character in **one 
 ```js
 const moss = await Assets.cutout('a lean ranch hand in his forties, head and shoulders, plain shirt', {
     variants: ['alert, looking right', 'alarmed, eyes wide', 'shouting', 'grim, looking down'],
-    size: 420, style: 'loose graphite storyboard sketch, clean line, no rendering'
+    size: 420, style: 'loose graphite storyboard sketch, clean line, no rendering',
+    tolerance: 0.10                              // 0.18 is wide enough to key away a face
 });
 if (!moss.success) { error(moss.remedy); exit(moss.failureName); }
 if (moss.split === 'even') Stage.note('cast sheet split evenly - check cells for clipped shoulders');
+for (const c of moss.cells) {
+    if (c.holes > 0.01) Stage.note(`${c.name}: ${(c.holes * 100).toFixed(1)}% enclosed gaps - the key took part of the face`);
+}
 Session.moss = moss.cells.map(c => ({ name: c.name, uri: c.toDataUri(), aspect: c.aspectRatio }));
 ```
+
+**Check `cell.holes`, not just `coverage`, because you are buying faces.** Coverage is a whole-cell
+number and a face is about 2% of a figure, so a key that reaches a skin tone removes the face, leaves
+the body, and reports a healthy figure. `holes` measures transparency *enclosed by the subject*, which
+is exactly what a punched-out face is. On the cover run that found this: 68% coverage, face alpha
+33/255, and four passes spent lighting a hole. `tolerance: 0.10` was the whole fix.
+
+**`background` steers the keyer, not the model.** Naming a colour the sheet was never painted in
+removes nothing and costs a generation. If a cell keyed badly the lever is `tolerance`.
 
 **One call per character, not one call for the cast.** `variants` means *the same subject in every
 cell* — that is the whole mechanism. Two characters in one call would ask for one person and describe

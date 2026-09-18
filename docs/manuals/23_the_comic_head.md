@@ -191,7 +191,7 @@ const ctx = canvas.getContext('2d');
 ctx.fillStyle = '#f5f2e9'; ctx.fillRect(0, 0, 900, 340);
 const INK = '#1a1a18';
 
-// The character is five numbers. Keep them at the top of artwork.js and the face keeps.
+// The character is a short list of numbers. Keep them at the top of artwork.js and the face keeps.
 const MORT = { eyesDistance: -0.4, eyesSize: 0.3, noseLength: -0.5, jawShape: 0.8, mouthWidth: 0.2 };
 
 const panels = [
@@ -224,7 +224,7 @@ canvas;
 
 Three things about it that matter for a page rather than for a single drawing:
 
-- **It is a pure function.** No clock, no randomness, no memory. The same five numbers give identical
+- **It is a pure function.** No clock, no randomness, no memory. The same numbers give identical
   landmarks every time, which is the entire mechanism — consistency lives in *you keeping the
   numbers*, not in anything remembering a face. A `const` at the top of the file is the whole of it.
 - **Displacements are fractions of the head's own height**, so the character survives a change of
@@ -245,6 +245,108 @@ modified, so one canon head can serve a whole cast in the same script.
 The parameter set follows Schwind et al., *FaceMaker* (Springer 2017), whose five most identity-bearing
 controls were drawn from surveying nine commercial character creators. Their system morphs 3D meshes;
 this moves Loomis landmarks, which is the same idea in the medium we actually draw in.
+
+## 6a. One dial from portrait to caricature
+
+> **Implemented by**: `Drawing.exaggerateHead(head, amount, reference)` and the primitive underneath
+> it, `Drawing.blendHead(base, from, to, amount)`.
+
+> **Source Reference**: Susan E. Brennan, *Caricature Generator: The Dynamic Exaggeration of Faces by
+> Computer*, **Leonardo 18(3):170–178, 1985** — §IV *A Theory of Caricature* and §VI *Implementation*.
+
+§6 makes a head a **particular** person. This makes that person **more so**, and it is one number:
+
+```js
+const canon = Drawing.createLoomisHead(400, 120, 240);
+const mort  = Drawing.createParametricHead(canon, MORT);
+
+Drawing.drawLoomisWireframe(ctx, mort);                          // the portrait
+Drawing.drawLoomisWireframe(ctx, Drawing.exaggerateHead(mort, 1));  // the caricature
+```
+
+**The theory is thriftier than it sounds, and that is what makes it implementable.** Brennan's
+premise is that a caricature exaggerates what distinguishes a face from a **norm** — but her program
+makes **no judgment at all** about which feature is distinctive. It exaggerates every spatial
+relationship in parallel, on the argument that *a relationship becomes a "feature" only when it
+differs significantly from the corresponding relationship on a comparison face*. The part that would
+otherwise need a trained model is the part being declined, and declining it costs nothing.
+
+Her own description of the arithmetic is the clearest one there is: **the converse of in-betweening —
+rather than averaging points together, the distance between them is increased.**
+
+### How far to push it
+
+Her published ladder runs **0, 50, 100, 140 and 160 per cent**, and she names **100** — `amount: 1`
+here — as the best caricature in her own sequence. The bound she quotes, from Francis Grose's *Rules
+for Drawing Caricaturas*, is the one worth holding: **a modest deviation causes laughter, a great one
+incites horror.**
+
+| `amount` | what you get |
+| ---: | :--- |
+| `0` | the head untouched |
+| `0.3`–`0.5` | a face that reads as drawn rather than constructed |
+| `1` | Brennan's best — unmistakably a caricature, still the same person |
+| `> 1.5` | the region Grose warns about |
+| `-1` | the reference itself |
+
+### Three things it is not
+
+**It is not a style setting.** Exaggeration moves landmarks; it does not change line weight, ink
+tier or the simplification level §3 governs. A caricatured head still wants §3's decisions made.
+
+**It does not survive a broken silhouette, and you can measure how close you are.** Brennan
+deliberately left her lines unconstrained, so at high exaggeration *an eye is free to float above an
+eyebrow* — she kept it because her users enjoyed finding the limit. But her users were watching a
+screen. `createHeadGeometry` (§7) unions its masses into **one contour**, so the same freedom arrives
+there as a broken outline rather than as a style, and it renders perfectly either way.
+
+```js
+const check = Drawing.verifyHeadOrdering(Drawing.exaggerateHead(mort, 1.4));
+Stage.check('head still reads as a face', check.ordered, `margin ${check.margin.toFixed(3)} H`);
+```
+
+**Watch `margin` rather than `ordered`.** It is the tightest gap between consecutive stations — crown,
+hairline, brow, eyes, nose, mouth, chin — as a fraction of head height, so it narrows toward zero
+*before* anything crosses. That is the difference between seeing the edge and discovering it.
+
+**Nothing is clamped, and the reason is a measurement rather than deference to Brennan.** How far a
+head can be pushed varies more than thirty-fold by character: the canon never breaks, a mild
+character holds past **12.6**, and one carrying `noseLength: 1` breaks at **0.40** — below the
+exaggeration Brennan recommends. No constant could serve both. **`noseLength` is the usual culprit**,
+because its full range already spends most of the canon's nose-to-mouth distance and leaves little to
+exaggerate.
+
+**One norm is the studio's simplification, not hers.** `exaggerateHead` defaults its reference to the
+canon — the same head with no character parameters — because that is the convenient answer. Brennan
+found the opposite: her results *"throw into question the idea that there need be only one strong
+norm for all human faces"*, and a successful caricature frequently came from comparing against **any
+face that simply seemed very different**. The third argument is how you disagree.
+
+### The same call does expression
+
+`exaggerateHead` is one spelling of a more general operation, and the general one is worth knowing
+because **an expression is reached the same way a caricature is.** Brennan's own animation package
+generated each frame by comparing a face to a stored template cycle — *"a generic smirk"* — which is
+the same subtraction with a different second argument:
+
+```js
+// A stored expression, applied at a weight. `neutral` and `smirk` are ordinary heads.
+const beat = Drawing.blendHead(mort, neutral, smirk, 0.6);
+```
+
+So a new expression is a **head you build once and keep**, not a rule someone has to write. That is
+the same economy §6 gets from a `const`: the character is data, and so is the performance.
+
+> **Normalisation is what lets a template travel.** Every value is measured in head units before it
+> is differenced — a point as `(p − origin) / unit.H` — so a template built once at the origin at
+> 240px applies at full strength to a head anywhere on the page at any size. Without that step the
+> blend amplifies differences of *size and position* rather than of *shape*, and the failure is
+> quiet: the face simply expresses less than it was told to.
+
+> **Both heads must be at the same yaw**, and a mismatch is refused rather than averaged.
+> Interpolating between a frontal and a three-quarter head passes through a projection corresponding
+> to no viewing angle, and reads as a face melting rather than turning. Pitch is not checked, because
+> it cannot be recovered from the head the way yaw can — that one is yours to keep straight.
 
 ## 7. Composing the head — a silhouette to put the features on
 
@@ -321,6 +423,58 @@ rather than a second construction to keep in step with the first:
 - **The jaw is the polygon through the six stations** `createParametricHead` displaces, so a squared or
   tapered jaw reaches the silhouette for free. Two characters get two outlines, not one outline with
   different marks inside it.
+- **`jawShape` widens the angle and the chin, and holds the station nearly still — because the station
+  is a joint.** Loomis hangs the jaw off the ball's halfway line *station to station*, so that point is
+  where the mandible meets the skull, and a skull does not widen when a character's jaw does. What a
+  square jaw actually broadens is the **gonion** and the chin.
+
+  > **This was the other way round until 2026-09-18, and the drawing is what showed it.** The station
+  > carried the full displacement, the angle 0.8 and the chin 0.35. Measured on a 240px head, the
+  > station sits at dx **76.7** against a cranium reaching **76.6** — exactly on the ball — and a full
+  > share took it to **93.1**. The jaw's top edge is a straight line between the two stations and the
+  > ball curves inward above them, so past the ball's reach the two met at a **sharp lateral spur**
+  > with nothing over it: a bow tie rather than a jaw, at every value above zero. The shares are now
+  > station `0.15`, angle `1.0`, chin `0.55`, and the outline stays smooth across the whole range.
+  >
+  > Worth knowing as a general case rather than as one fix: **a parameter that moves a landmark the
+  > construction uses as an *attachment* will break the silhouette**, because the mass it attaches to
+  > does not move with it. The stations, `jaw.ear` and the neck's anchor are all of that kind.
+- **`chinShape` is the jaw's second axis**, and it exists because one dial could not reach the faces a
+  page needs. `jawShape` spreads all six stations together — *how wide is this jaw* — so a broad jaw
+  ending in a **point**, or a narrow one ending **square**, were unreachable at every setting. This
+  moves the two chin corners against the chin itself, so the two multiply: three jaw widths by three
+  chin shapes is nine outlines, not three.
+
+  Negative points and drops the chin; positive squares and lifts it. The vertical part is a quarter of
+  the horizontal and is anatomical coupling rather than a length control — a chin coming to a point is
+  longer than one ending square.
+- **`chinLength` is the third axis, and it is the one that carries the jaw angle with it.** The note
+  above used to end *"chin length is still not reachable: lengthening the lower face properly means
+  taking the angle down with the chin, and moving the chin alone would only stretch the last inch of
+  the outline"*. That sentence is now the specification: the chin takes a full step and the **angle
+  takes half of one**, because a mandible that lengthens lengthens in two segments — the ramus from
+  the station down to the angle, and the body from the angle forward to the chin. Move the chin alone
+  and the jaw still ends where it did, with a spike hung off it.
+
+  **The stations stay exactly where they are**, which is the same rule the box above states for
+  `jawShape` read on the other axis: a station is the joint against the skull, and a skull does not
+  get *longer* because a jaw does any more than it gets wider. Three jaw widths × three chin shapes ×
+  three lengths is twenty-seven outlines from three numbers.
+
+  > **Only the shortening half constrains a caricature, and it constrains it loosely.** Against
+  > `verifyHeadOrdering` on 240px heads, `chinLength: -1` holds to λ **2.85** and `chinLength: +1`
+  > **never breaks** — a lengthening chin moves *away* from the mouth, so it widens the very gap the
+  > ladder measures. Compare `noseLength: 1`, which breaks at **0.40**, below Brennan's own
+  > recommended exaggeration. Full scale here is `0.05 H`, about a quarter of the canon's mouth-to-chin
+  > gap, deliberately more modest than the nose's `0.07 H`: this one moves the **silhouette**, so it
+  > reads at panel size at a fraction of what a mark inside the face needs.
+
+  > **It also shortens the neck, and nothing had to be changed for that.** `createHeadForFigure`
+  > measures chin-to-sternum *after* applying the character parameters — an order kept on the argument
+  > that a parameter which ever moved the top-level `chin` would otherwise hang the neck off a chin
+  > that no longer existed. `chinShape` and `chinLength` are that parameter, so a long-jawed character
+  > gets the shorter neck its own chin leaves room for, from a decision taken before there was
+  > anything to decide.
 - **The neck's *attachment* is cited; its length and thickness are the studio's.** Loomis puts the
   turning muscles on the skull *just behind the ears* at the top and on the breastbone between the
   collarbones at the bottom, and places the pivot *well inside the roundness of the neck and deep

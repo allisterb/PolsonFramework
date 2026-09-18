@@ -1127,10 +1127,10 @@ Also accessible via `Skia.Drawing`.
 
 ## Loomis Head & Feature Construction
 - `Drawing.createLoomisHead(originX: number, originY: number, headHeight: number, yawDeg?: number, pitchDeg?: number)` → `object` — Computes all 3D head landmarks, proportional ratios (Rule of Thirds, 1/5th eye width), temporal ovals, eye sockets, nose wedge, mouth guides, and jaw angles.
-- `Drawing.createParametricHead(headObj: object, parameters?: { eyesDistance?: number, eyesSize?: number, noseLength?: number, jawShape?: number, mouthWidth?: number })` → `object` — Displaces a Loomis head's landmarks by named character parameters and returns a **whole head**, ready for `drawLoomisWireframe` and the comic feature calls. Each parameter is a signed scale, `-1 … 0 … +1`, defaulting to `0`; out-of-range values are clamped, and a misspelled one is refused by name.
+- `Drawing.createParametricHead(headObj: object, parameters?: { eyesDistance?: number, eyesSize?: number, eyesOpening?: number, noseLength?: number, jawShape?: number, chinShape?: number, chinLength?: number, mouthWidth?: number })` → `object` — Displaces a Loomis head's landmarks by named character parameters and returns a **whole head**, ready for `drawLoomisWireframe` and the comic feature calls. Each parameter is a signed scale, `-1 … 0 … +1`, defaulting to `0`; out-of-range values are clamped, and a misspelled one is refused by name.
 
 > [!IMPORTANT]
-> **This is how a character survives a page.** It is a pure function of the head and the parameters — no clock, no randomness, no state — so the same five numbers give identical landmarks in panel 1 and panel 40. Consistency comes from *you keeping the numbers*, which a `const` at the top of `artwork.js` already does; nothing here remembers a face.
+> **This is how a character survives a page.** It is a pure function of the head and the parameters — no clock, no randomness, no state — so the same numbers give identical landmarks in panel 1 and panel 40. Consistency comes from *you keeping the numbers*, which a `const` at the top of `artwork.js` already does; nothing here remembers a face.
 >
 > ```javascript
 > const MORT = { eyesDistance: -0.4, eyesSize: 0.3, noseLength: -0.5, jawShape: 0.8, mouthWidth: 0.2 };
@@ -1143,7 +1143,7 @@ Also accessible via `Skia.Drawing`.
 > }
 > ```
 >
-> **Zero is the canon, exactly.** A head with no parameters — or with all five at `0` — is identical to the one that went in, down to every key. So adding this call to an existing script changes nothing until you give it a number.
+> **Zero is the canon, exactly.** A head with no parameters — or with every one at `0` — is identical to the one that went in, down to every key. So adding this call to an existing script changes nothing until you give it a number.
 >
 > **The head you pass in is never modified.** The result is a deep copy, which is what lets one canon head serve several characters in the same script. Reusing a head across `createParametricHead` calls is safe and is the intended way to draw a crowd.
 >
@@ -1155,9 +1155,109 @@ Also accessible via `Skia.Drawing`.
 > For a character who turns a long way, build the extreme angles as their own construction rather than trusting the parameters to carry across — and check it, since the failure is a face that subtly stops being the same person rather than anything that errors.
 
 > [!TIP]
-> **Five parameters, not the thirty-two a 3D generator would offer**, and they are the five that most change *who* a face is: eye spacing, eye size, nose length, jaw squareness, mouth width. `eyesOpening` is deliberately absent — it needs `drawComicEye` to take a lid aperture, which it does not yet.
+> **A handful of parameters, not the thirty-two a 3D generator would offer**, and they are the ones
+> that most change *who* a face is: eye spacing, eye size, **eye opening**, nose length, jaw
+> squareness, **chin shape**, **chin length**, mouth width.
+>
+> **`eyesOpening` was absent for a mechanical reason rather than a design one, and it is here now.**
+> `createLoomisHead` has always written `nearEye.height`, and `drawComicEye` read it nowhere — the
+> whole aperture was a fixed fraction of the eye's drawn *width*, so no parameter and no expression
+> could narrow a lid. The renderer now takes `height / width` as the opening, which is why this
+> parameter works and why an Action Unit layer above it will.
+>
+> **It is identity, not expression.** The range stops well short of a shut eye: a character who is
+> permanently blinking is not a character, and closing an eye belongs to a blend against an
+> expression template.
+>
+> **The jaw has three axes, not one dial at three strengths.** `jawShape` spreads all six jaw stations
+> together and answers *how wide*; `chinShape` moves the two chin corners against the chin itself and
+> answers *how pointed*; `chinLength` takes the chin and the jaw angle down together and answers *how
+> long*. So a broad jaw ending in a **point**, a narrow one ending **square**, and a **long** one of
+> either kind are all reachable, and none is a setting of the others.
+>
+> On `chinShape`, negative points the chin and drops it a little; positive squares it and lifts it.
+> That vertical component is a quarter of the horizontal one and is anatomical coupling rather than a
+> length control — a chin coming to a point is longer than one ending square.
+>
+> **`chinLength` moves the jaw *angle* at half the chin's step, and that is the whole of why it is a
+> separate parameter.** A mandible that lengthens lengthens in two places — the ramus down to the
+> angle, the body forward to the chin — so dropping the chin alone stretches the last inch of the
+> outline into a spike and leaves the jaw ending where it did. **The stations do not move at all**,
+> because they are the joint against a skull that has not got longer; the same reason they were taken
+> out of `jawShape` after they drew a spur off the cranium.
+>
+> **Only the shortening half is a constraint on exaggeration, and it is a loose one.** Measured against
+> `verifyHeadOrdering` on 240px heads: `chinLength: -1` holds to λ 2.85, `chinLength: +1` never breaks
+> at all — a lengthening chin moves *away* from the mouth, so it widens the gap the ladder measures.
+> Compare `noseLength: 1`, which breaks at **0.40**, below Brennan's own recommended setting.
 >
 > The taxonomy follows Schwind et al., *FaceMaker* (Springer 2017, DOI 10.1007/978-3-319-53088-8_6), whose parameter set was derived by surveying nine commercial RPG character creators. Their implementation morphs 3D meshes; this moves the landmarks Loomis construction already computes, which is the 2D analogue rather than a port.
+- `Drawing.blendHead(base: object, from: object, to: object, amount: number)` → `head` — **One head moved toward another**: `base + amount × (to − from)`, measured in head units rather than pixels. Returns a new head; none of the three arguments is modified.
+- `Drawing.exaggerateHead(headObj: object, amount: number, reference?: object)` → `head` — Pushes a head **further from** a reference. `0` leaves it alone, `1` doubles every difference. `reference` defaults to the canon — the same head with no character parameters, at its own size, position and turn.
+
+> [!IMPORTANT]
+> **These are one operation, and it is the one identity, caricature and expression all reduce to.**
+> Three arguments rather than two is what covers every case:
+>
+> | what you want | call |
+> | :--- | :--- |
+> | interpolate two faces | `blendHead(a, a, b, t)` |
+> | caricature | `exaggerateHead(subject, k)` |
+> | a stored expression at a weight | `blendHead(head, neutral, template, w)` |
+>
+> ```javascript
+> const canon = Drawing.createLoomisHead(400, 120, 240);
+> const mort  = Drawing.createParametricHead(canon, MORT);
+>
+> Drawing.drawLoomisWireframe(ctx, Drawing.exaggerateHead(mort, 0));     // the portrait
+> Drawing.drawLoomisWireframe(ctx, Drawing.exaggerateHead(mort, 1));     // the caricature
+> ```
+>
+> **A new character or a new expression becomes data rather than code.** `createParametricHead` has
+> the parameters it has because each one is a hand-written displacement rule, and the next one costs
+> another. A head blended against another head costs nothing — build the face once and keep it.
+>
+> The method is Susan Brennan's, and her description of it is the clearest available: *the converse
+> of in-betweening — rather than averaging points together, the distance between them is increased*
+> (**Leonardo 18(3):170–178, 1985**). `amount: 1` is her own choice of the best caricature in her
+> published sequence, and she quotes Francis Grose for the bound: **a modest deviation causes
+> laughter, a great one incites horror.**
+
+> [!IMPORTANT]
+> **Three refusals, each because the alternative renders perfectly and is wrong.**
+>
+> - **A landmark present in one head and missing from another** is refused **by name**. Blending
+>   around it would give a face that morphs everywhere except one feature, which reads as a bug in
+>   the renderer rather than in the data.
+> - **Heads at different yaws** are refused. Interpolating between a frontal and a three-quarter head
+>   passes through a projection corresponding to no viewing angle, and the result reads as a face
+>   melting rather than turning. Build both at the same `yawDeg`.
+> - **A non-finite `amount`** is refused, rather than reaching every coordinate at once and rendering
+>   an empty frame — which is indistinguishable from a clip that was never restored.
+>
+> **Pitch is not checked**, because it cannot be recovered from the head the way yaw can. That one is
+> yours to keep straight.
+
+> [!TIP]
+> **Normalisation is why this works at any size or position, and it is the part worth knowing about.**
+> Every value crosses into head-relative terms before it is differenced — a point as
+> `(p − origin) / unit.H` — and back afterwards. So a template built once at the origin applies to a
+> head anywhere on the page, and a difference measured between 240px heads arrives at full strength
+> on a 480px one.
+>
+> **`unit` and `origin` are never blended**, since they are the frame the measurement is made in.
+> They come from `base`.
+>
+> **At large amounts the silhouette can break**, and that is inherited rather than accidental:
+> Brennan deliberately left lines unconstrained, so at high exaggeration *an eye is free to float
+> above an eyebrow*. `createHeadGeometry` unions its masses into one contour, so the same freedom
+> shows up there as a broken outline. Nothing clamps it — look at the render.
+>
+> **One reference is the studio's simplification, not Brennan's finding.** She reports the opposite:
+> her results *"throw into question the idea that there need be only one strong norm for all human
+> faces"*, and a successful caricature often came from comparing against **any face that simply
+> seemed very different**. That is what the `reference` argument is for.
+
 - `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, neck }, bounds, padding, order }` — **The composed head**: the construction's four masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
 
 > [!IMPORTANT]
@@ -1232,7 +1332,19 @@ Also accessible via `Skia.Drawing`.
 > **Drawing it onto a body has two ordering rules that are not obvious and produce a wrong picture silently** — the head and neck go down **first** with the torso over them, or the neck's closed base is outlined across the chest; and the mannequin's own head egg has to be cut out of the body (`figGeo.silhouette.subtract(figGeo.groups.head)`) or it paints over the face. Worked through in `polson://manual/23` §8.
 
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
-- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**.
+- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**. **The lid opening is `eye.height / eye.width`**, so an eye narrows or widens by changing `height` — which is what `eyesOpening` and any expression blend move. The canon's own ratio is `0.45`, and an eye carrying neither field falls back to it, so nothing drawn before this was readable renders differently.
+
+> [!TIP]
+> **`height` was written by `createLoomisHead` and read by nothing until 2026-09-18.** Every
+> vertical extent came from the eye's drawn *width*, so the aperture was a fixed ratio and no
+> parameter could hood a lid or close one. Reading it as a **ratio** rather than as an absolute is
+> what keeps it safe under projection: the far eye is narrower at yaw, and dividing by its own
+> width is what stops it also reading as half shut.
+>
+> The iris is clipped to `aperture`, so a closing eye covers it correctly without anything else
+> being told. **Upper and lower lids are not separable yet** — one number moves the whole opening —
+> so an Action Unit layer above this can express closure and widening but not yet a lower-lid
+> tightener on its own.
 - `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` → `{ underPlane, bridge, nostril }` — Renders nose bridge, apex, nostril, and under-plane shadow, **returning each as a `CanvasPath`**.
 - `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string })` → `{ cavity, teeth, lipLine, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow, **returning each as a `CanvasPath`**.
 
@@ -1289,6 +1401,47 @@ Also accessible via `Skia.Drawing`.
 
 ## Measurement & Plumb Checks
 - `Drawing.verifyPlumbAlignment(topPoint: Point, bottomPoint: Point, maxTolerance?: number)` → `{ aligned: boolean, deltaX: number, message: string }` — Validates vertical alignment between anatomical landmarks.
+- `Drawing.verifyHeadOrdering(headObj: object)` → `{ ordered, margin, broken, message }` — **Whether a head's landmarks still run in the order a face's do**, and by how much. `margin` is the tightest gap between consecutive stations as a fraction of head height; `broken` names each crossed pair.
+
+> [!IMPORTANT]
+> **The check that turns "an eye is free to float above an eyebrow" into a number.** Exaggeration and
+> the character parameters can both push a head past the point where it reads as a face, and the
+> result **renders perfectly** — so nothing downstream can tell it from a drawing decision.
+>
+> ```javascript
+> const face = Drawing.exaggerateHead(mort, 1.4);
+> const check = Drawing.verifyHeadOrdering(face);
+> Stage.check('head still reads as a face', check.ordered, `margin ${check.margin.toFixed(3)} H`);
+> ```
+>
+> **`margin` is the field to watch, not `ordered`.** It shrinks toward zero *before* it crosses, so a
+> run can see the edge coming rather than discover it by rendering past it — which is the whole
+> difference between a measurement and an alarm. Negative means broken, and how badly. It is
+> normalised by head height, so a threshold chosen on a 240px draft means the same on a 900px final.
+
+> [!IMPORTANT]
+> **Nothing is clamped, and that is a measured decision rather than a faithful-to-Brennan one.** The
+> exaggeration a head tolerates before its stations cross varies **more than thirty-fold** between
+> characters:
+>
+> | character | breaks at | what crosses first |
+> | :--- | ---: | :--- |
+> | the canon | never | — |
+> | mild (`jawShape: 0.2`) | **12.65** | mouth above nose |
+> | `noseLength: 1` | **0.40** | mouth above nose |
+>
+> A constant clamp would have to be low enough for the long-nosed character, which would cap the mild
+> one at a twelfth of its range — **and would still not protect the long-nosed one at Brennan's own
+> recommended setting of 1.** So the honest move is to hand back the number.
+>
+> **The binding constraint is usually `noseLength`.** Its full range already spends most of the
+> canon's nose-to-mouth distance, so a head carrying `noseLength: 1` has little room left to
+> exaggerate. That composition is a known rough edge rather than a deliberate design.
+>
+> **This encodes a judgment, not a law.** A head whose stations run in order can still be a bad
+> drawing, and a deliberately grotesque one may cross a station on purpose. What it catches is the
+> specific failure that looks like a defect in the toolkit rather than a choice by the artist.
+
 - `Drawing.computeRelativeDistance(headHeight: number, pointA: Point, pointB: Point)` → `number` — Computes distance in head-length units ($d / H$).
 
 ## Linear Perspective & 3D Forms
@@ -1434,7 +1587,124 @@ The figure also reports what the pose did to it, which is what a later pass read
 > comparing the sagitta of `fingers[i].knuckle` against `fingers[i].joints[2]` tests whether the
 > proportions survived whatever you did to them. A hand whose rows are equally flat is a rake.
 
-- `Drawing.applyFacialExpression(headObj: object, expressionType: 'joy' | 'anger' | 'fear' | 'sadness' | 'surprise' | 'disgust', intensity?: number)` → `object` — Modifies Loomis head brow, eye, and mouth landmarks according to the 6 universal muscle expressions.
+- `Drawing.applyActionUnits(headObj: object, weights?: object)` → `head` — Displaces a head by named **muscle actions**: `{ AU4: 0.9, AU7: 0.7 }`. Additive and order-independent, so units compose. Returns a whole head; the one passed in is not modified.
+- `Drawing.expressionUnits(expressionType: string, intensity?: number)` → `object` — **What a named expression is, as muscle weights**: `expressionUnits('sadness')` → `{ AU1: 0.7, AU15: 0.75 }`. Read it, change a unit, pass it to `applyActionUnits`.
+- `Drawing.applyFacialExpression(headObj: object, expressionType: 'joy' | 'anger' | 'fear' | 'sadness' | 'surprise' | 'disgust', intensity?: number)` → `head` — The convenience: `applyActionUnits(head, expressionUnits(name, intensity))`. Aliases `happy`, `angry`, `scared` and `sad` resolve to their canonical name; an unknown one is refused.
+
+> [!IMPORTANT]
+> **The six tuples are the studio's, tuned by eye, and no source supplies them.** Loomis declines to
+> tabulate the emotions at all; Ekman & Friesen's code scores whether a unit is *present*, never what
+> an emotion is made of. `expressionUnits` exists so that this is **visible and arguable** rather
+> than buried — a named emotion should be a claim you can read, not a displacement you cannot.
+>
+> ```javascript
+> log(JSON.stringify(Drawing.expressionUnits('anger')));   // {"AU4":0.9,"AU7":0.6,"AU15":0.25}
+>
+> const mine = Drawing.expressionUnits('anger');
+> mine.AU15 = 0;                                            // disagree with the mouth
+> const face = Drawing.applyActionUnits(head, mine);
+> ```
+>
+> **How well each is served differs, and it is worth knowing which you are getting.** `joy` and
+> `sadness` are well served — their defining muscles are implemented and the mouth is where both
+> live. `anger` is good at the brow and approximate at the mouth, which Loomis has *squaring* and
+> nothing here can. **`fear` and `surprise` differ only in amount**, because what separates them is
+> AU4 knitting an already-raised brow and one `brow` landmark cannot both raise and knit.
+> **`disgust` is a placeholder** — its defining action is AU9/AU10 curling the upper lip, and the
+> upper lip is a single `upperLipY` that would rise whole.
+>
+> **`sadness` names AU1 without AU4 deliberately.** The canonical oblique sad brow is both together;
+> on one landmark they cancel exactly, and the result would be a face with no brow movement at all.
+
+> [!IMPORTANT]
+> **Reimplemented 2026-09-18, and what these six draw has changed.** Each used to displace one or two
+> landmarks directly, and several did not do what their own manual entry described: **`sadness` was
+> documented as lifting the inner brow and dropping the mouth corners, and moved only the mouth.**
+>
+> A live run asked for it *"at 0.22 for the inner-brow lift only"*, recorded a careful threshold above
+> which that lift would become a grimace, and received about **two and a half pixels** of a movement
+> it had not wanted. Nothing was wrong with the render, the manual, or the agent's reasoning — the
+> name simply promised one muscle and moved another, and no check compared the two.
+>
+> Two other behaviours changed with it. **An unknown expression is now refused** rather than silently
+> returning the head unchanged, which previously drew a neutral face and read as the intensity being
+> too low. And **the clone is deep**: the old one copied the top level only, so the returned head's
+> `jaw` was the caller's `jaw`.
+
+> [!IMPORTANT]
+> **Muscles, not emotions — and that is a decision with a source rather than a style.** Loomis sets
+> aside the psychological phase of expression explicitly, calls the emotions *too numerous to
+> tabulate*, and works from two antagonist muscle groups plus a few wrinkle muscles. Ekman & Friesen
+> reach the same anatomy from measurement. What is finite is the muscles; a named emotion is a tuple
+> of them, and a contested one.
+>
+> ```javascript
+> const worried = Drawing.applyActionUnits(mort, { AU1: 0.7, AU4: 0.4, AU15: 0.6 });
+> const alarmed = Drawing.applyActionUnits(mort, { AU1: 0.9, AU5: 0.8, AU26: 0.7 });
+> ```
+>
+> **Seven units, bounded by what this head can show** rather than by the coding system:
+>
+> | | name | muscle | what moves |
+> | :--- | :--- | :--- | :--- |
+> | `AU1` | Inner Brow Raiser | Frontalis, Pars Medialis | the brow, up |
+> | `AU4` | Brow Lowerer | Corrugator and depressors | the brow, down |
+> | `AU5` | Upper Lid Raiser | Levator Palpebrae Superioris | the lid aperture, open |
+> | `AU7` | Lid Tightener | Orbicularis Oculi, Pars Palpebralis | the lid aperture, narrowed |
+> | `AU12` | Lip Corner Puller | Zygomatic Major | the mouth corners, out **and** up |
+> | `AU15` | Lip Corner Depressor | Triangularis | the mouth corners, down |
+> | `AU26` | Jaw Drop | masseter and pterygoids relaxed | the lower lip **and the chin** |
+>
+> **`AU12` moves the corners diagonally, and that is Loomis's observation rather than a detail.** His
+> "happy muscles" run from the cheekbones *diagonally down* to the mouth, so they pull out as well as
+> up — a corner lifted straight up reads as a smirk. `AU26` is the only unit that reaches the
+> **silhouette**, because `createHeadGeometry` builds its jaw polygon through the chin stations.
+
+> [!IMPORTANT]
+> **What is deliberately absent, and why each one would have been worse than an omission.**
+>
+> - **`AU2` (Outer Brow Raiser)** — the head carries a single `brow` centre point, so AU1 and AU2
+>   would be one displacement under two names. Their whole value is the difference: an inner-only
+>   lift is the worried inverted peak, an outer arch is surprise. **`AU1` therefore raises the whole
+>   brow here**, which is the honest reading of one landmark.
+> - **`AU6` (Cheek Raiser)** — there is no cheek, and `drawComicEye` draws no crow's feet, so the
+>   Duchenne marker has nowhere to land.
+> - **`AU9` / `AU10`** — the upper lip is a single `upperLipY`, so a sneer would read as the whole lip
+>   rising.
+> - **`AU17` (Chin Raiser)** — the mentalis bulge is a surface change rather than a landmark move.
+>
+> Naming one of these is **refused**, listing what is known, rather than binding and doing nothing.
+
+> [!IMPORTANT]
+> **A negative weight is refused rather than clamped**, because the opposing action is *its own
+> unit* — that separation is the coding system's whole design. `AU4: -0.5` means you wanted `AU1`,
+> and the message says so. A weight past `1` is clamped, as the character parameters are.
+>
+> **The magnitudes are the studio's, tuned by eye, and neither source supplies one.** Loomis gives
+> directions and a relaxed/contracted table; Ekman & Friesen's 1976 code scores **presence** — slight
+> against strong — not a continuous intensity. **Anything offering a measured decimal for these is
+> claiming more than either source says**, including published tables of emotion-to-unit weights.
+>
+> Sources: Andrew Loomis, *Drawing the Head and Hands* (Viking, 1956), pp. 45–47 and Plate 21;
+> Paul Ekman & Wallace V. Friesen, *Measuring Facial Movement*, Environmental Psychology and
+> Nonverbal Behavior 1(1):56–75, 1976, Table 1.
+
+> [!TIP]
+> **An expression is a head, so it stores.** The result is an ordinary head, which means a
+> performance built once becomes a template every character can borrow through `blendHead`:
+>
+> ```javascript
+> const neutral = Drawing.createLoomisHead(400, 120, 240);
+> const smirk   = Drawing.applyActionUnits(neutral, { AU12: 0.8, AU7: 0.3 });
+>
+> for (const panel of panels) {                       // the same smirk, at any strength
+>     const face = Drawing.blendHead(panel.character, neutral, smirk, panel.beat);
+> }
+> ```
+>
+> **Identity and performance stay separate.** A unit moves what it names and nothing else, so a smile
+> never quietly walks a character's jaw back toward the canon — which is what lets `exaggerateHead`,
+> `createParametricHead` and this compose in any order.
 
 ## Compositional Armatures, Notan & Visual Emphasis
 - `Drawing.createCompositionGrid(width: number, height: number, type?: 'ruleOfThirds' | 'goldenRatio' | 'dynamicSymmetry' | 'triangle', options?: object)` → `object` — Computes harmonic grid lines and focal power points.
@@ -2680,7 +2950,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > figure by construction.
 >
 > That is the arranged route's answer to what `Drawing.createParametricHead(...)` does for the
-> constructed one: there, five numbers kept in a `const` make panel 1 and panel 40 the same person.
+> constructed one: there, a few numbers kept in a `const` make panel 1 and panel 40 the same person.
 > Here, asking once makes them the same person. **Neither works retroactively** — plan the whole set
 > of poses before the first call, because a seventh expression is a new man.
 >

@@ -418,6 +418,17 @@ public class ConstructiveDrawingToolkit
         if (w <= 0.1f) w = 24f;
         var dir = outer.X > inner.X ? 1f : -1f;
 
+        // **The lid aperture, read from the eye rather than fixed here.** `height` is written by
+        // CreateLoomisHead and was read by nothing until 2026-09-18, so the whole opening was a
+        // hard-coded fraction of the eye's drawn width and no expression could close an eye.
+        //
+        // Taken as a RATIO against `width` rather than as an absolute, for two reasons. It is
+        // scale- and yaw-invariant, so a projected far eye narrows without also closing; and at the
+        // canon's own 0.45 it reproduces the previous constants exactly, which is what lets this
+        // change render every existing script byte-identically.
+        var openness = Ratio(eye, "height", "width", CanonOpenness);
+        var up = w * openness;
+
         var irisR = w * 0.32f;
         var irisX = center.X + dir * w * 0.08f;
         var irisY = center.Y - 1f;
@@ -426,10 +437,10 @@ public class ConstructiveDrawingToolkit
         // and stroked as the upper lid — so it is built once.
         var upperLid = new CanvasPath();
         upperLid.MoveTo(inner.X, inner.Y);
-        upperLid.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - w * 0.45f, inner.X + dir * w * 0.7f, inner.Y - w * 0.40f, outer.X, outer.Y);
+        upperLid.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - up, inner.X + dir * w * 0.7f, inner.Y - up * LidCrest, outer.X, outer.Y);
 
         var aperture = new CanvasPath(upperLid);
-        aperture.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, inner.X, inner.Y);
+        aperture.QuadraticCurveTo(center.X, inner.Y + up * LidFloor, inner.X, inner.Y);
         aperture.ClosePath();
 
         var iris = Disc(new Point2D(irisX, irisY), irisR);
@@ -437,8 +448,8 @@ public class ConstructiveDrawingToolkit
         var catchlight = Disc(new Point2D(irisX - irisR * 0.25f, irisY - irisR * 0.25f), irisR * 0.22f);
 
         var lowerLid = new CanvasPath();
-        lowerLid.MoveTo(inner.X + dir * w * 0.2f, inner.Y + w * 0.15f);
-        lowerLid.QuadraticCurveTo(center.X, inner.Y + w * 0.25f, outer.X - dir * w * 0.1f, outer.Y);
+        lowerLid.MoveTo(inner.X + dir * w * 0.2f, inner.Y + up * LowerLidStart);
+        lowerLid.QuadraticCurveTo(center.X, inner.Y + up * LidFloor, outer.X - dir * w * 0.1f, outer.Y);
 
         ctx.Save();
 
@@ -2955,13 +2966,16 @@ public class ConstructiveDrawingToolkit
     /// Accepted parameter names for <see cref="CreateParametricHead"/>. An unrecognised one is refused.
     /// </summary>
     /// <remarks>
-    /// Five to begin with, one per facial domain, chosen to answer whether a named character is
-    /// reachable at all before the other ten are worth writing. Refused rather than ignored for the
-    /// reason <c>ChartToolkit</c> gives: a misspelled key binds to nothing and silently draws the
-    /// canon, which looks like the parameter having no effect.
+    /// One per facial domain to begin with, chosen to answer whether a named character is reachable
+    /// at all before the rest of <i>FaceMaker</i>'s thirty-two are worth writing; the set has grown
+    /// since, and the count is deliberately not stated in prose anywhere — it has changed three times
+    /// and the prose went stale each time. Refused rather than ignored for the reason
+    /// <c>ChartToolkit</c> gives: a misspelled key binds to nothing and silently draws the canon,
+    /// which looks like the parameter having no effect.
     /// </remarks>
     private static readonly string[] HeadParameters =
-        ["eyesDistance", "eyesSize", "noseLength", "jawShape", "mouthWidth"];
+        ["eyesDistance", "eyesSize", "eyesOpening", "noseLength",
+         "jawShape", "chinShape", "chinLength", "mouthWidth"];
 
     /// <summary>
     /// Displaces a Loomis head's landmarks by named character parameters, and returns a whole head.
@@ -2989,10 +3003,13 @@ public class ConstructiveDrawingToolkit
     /// <see cref="ApplyFacialExpression"/>, which scales its offsets by <c>H</c> for the same reason.
     /// </para>
     /// <para>
-    /// <b>Returns a complete head, deliberately unlike <see cref="ApplyFacialExpression"/></b>, which
-    /// returns only the keys it changed — so passing its result to <c>drawLoomisWireframe</c> fails
-    /// on a missing <c>unit</c>. A result that cannot be drawn by the renderer that consumes it is a
-    /// trap, and this composes and chains instead.
+    /// <b>Returns a complete head, and a deeply cloned one.</b> This paragraph used to say that
+    /// <see cref="ApplyFacialExpression"/> "returns only the keys it changed — so passing its result
+    /// to <c>drawLoomisWireframe</c> fails on a missing <c>unit</c>". <b>That was false</b>: measured,
+    /// it copies every key and adds an <c>expression</c> marker, and its result draws. The real
+    /// difference is that its clone is <i>shallow</i>, so the returned head shares its nested groups
+    /// with the one passed in and writing to the result's <c>jaw</c> writes to the caller's. This one
+    /// copies all the way down.
     /// </para>
     /// <para>
     /// <b>Known limit: the head is already projected.</b> <see cref="CreateLoomisHead"/> applies yaw
@@ -3024,115 +3041,468 @@ public class ConstructiveDrawingToolkit
         // face at +1 should read as a different person, not as a deformity, and the canon sits in
         // the middle of a range a reader would accept as human.
         MoveEyes(result, P("eyesDistance") * eyeW * 0.45f, P("eyesSize"));
+        OpenEyes(result, P("eyesOpening"));
         StretchNose(result, P("noseLength") * H * 0.07f);
         SquareJaw(result, P("jawShape"));
+        ShapeChin(result, P("chinShape"), H);
+        LengthenChin(result, P("chinLength"), H);
         WidenMouth(result, P("mouthWidth") * H * 0.06f);
 
         return result;
     }
 
-    public Dictionary<string, object?> ApplyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
+    /// <summary>
+    /// Blends one head toward another: <c>base + amount * (to - from)</c>, in head-relative terms.
+    /// </summary>
+    /// <param name="baseObj">The head the result is built from. Its <c>unit</c> and <c>origin</c> are kept.</param>
+    /// <param name="fromObj">The reference the difference is measured from.</param>
+    /// <param name="toObj">The reference the difference is measured to.</param>
+    /// <param name="amount">How much of that difference to apply. Unbounded; see the remarks.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>One operation, because identity, caricature and expression are the same arithmetic.</b>
+    /// Brennan's Caricature Generator differenced two faces of identical topology point by point,
+    /// scaled the difference vectors, and added them back — and generated expression the same way,
+    /// by comparing a face to a stored template. Her description of it is the clearest: <i>the
+    /// converse of in-betweening — rather than averaging points together, the distance between them
+    /// is increased.</i> Three arguments rather than two is what covers both uses:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><c>blendHead(a, a, b, t)</c> — interpolate two faces.</item>
+    /// <item><c>blendHead(subject, norm, subject, k)</c> — caricature, which is her formula exactly.</item>
+    /// <item><c>blendHead(head, neutral, template, w)</c> — an expression applied at a weight, which
+    /// is FACS's formula exactly, and additive so several compose by folding.</item>
+    /// </list>
+    /// <para>
+    /// <b>Normalisation is not optional, and is the step a summary of this method drops.</b> Every
+    /// value is taken to head-relative terms before differencing — a point as
+    /// <c>(p - origin) / H</c>, a length as <c>s / H</c> — and returned to the base head's terms
+    /// after. Without it the blend amplifies differences of <i>size and position</i> rather than of
+    /// <i>shape</i>, so morphing a 200px head toward a 180px template shrinks the face and calls it
+    /// an expression. It runs, and it is wrong.
+    /// </para>
+    /// <para>
+    /// <b>Correspondence is by name, and a missing key is refused rather than skipped.</b> Brennan
+    /// needed points consistent in number and order, and carried invisible <i>virtual lines</i> on
+    /// faces without wrinkles so that the correspondence never broke. Every head from
+    /// <see cref="CreateLoomisHead"/> has an identical key tree, so we get that free — but a head
+    /// assembled by hand might not, and a silently skipped landmark is a face that blends everywhere
+    /// except one feature, which reads as a drawing bug rather than a data one.
+    /// </para>
+    /// <para>
+    /// <b>Yaw must agree.</b> Blending a frontal head with a three-quarter one interpolates through a
+    /// projection that corresponds to no viewing angle, and reads as a face melting rather than
+    /// turning. The turn is recovered from <c>farEye.width / unit.eyeW</c>, as
+    /// <see cref="CreateHeadGeometry"/> already does. Pitch is not separately recoverable from the
+    /// dictionary and remains the caller's responsibility.
+    /// </para>
+    /// <para>
+    /// Source: Susan E. Brennan, <i>Caricature Generator: The Dynamic Exaggeration of Faces by
+    /// Computer</i>, Leonardo 18(3):170-178, 1985.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> BlendHead(object baseObj, object fromObj, object toObj, float amount)
     {
-        if (JsInterop.AsDict(headObj) is not IDictionary head)
-            throw new ArgumentException("headObj must be a valid Loomis head dictionary", nameof(headObj));
+        if (JsInterop.AsDict(baseObj) is not IDictionary b)
+            throw new ArgumentException("base must be a head from createLoomisHead", nameof(baseObj));
+        if (JsInterop.AsDict(fromObj) is not IDictionary f)
+            throw new ArgumentException("from must be a head from createLoomisHead", nameof(fromObj));
+        if (JsInterop.AsDict(toObj) is not IDictionary t)
+            throw new ArgumentException("to must be a head from createLoomisHead", nameof(toObj));
 
-        // Create shallow clone of dictionary to avoid mutating caller unpredictably
-        var res = new Dictionary<string, object?>();
-        foreach (DictionaryEntry de in head)
-            res[de.Key.ToString()!] = de.Value;
-
-        var unit = JsInterop.AsDict(head["unit"]);
-        var H = unit != null && unit.Contains("H") ? Convert.ToSingle(unit["H"], CultureInfo.InvariantCulture) : 200f;
-        var scale = MathF.Max(0.1f, MathF.Min(2.0f, intensity));
-
-        var nearEye = JsInterop.AsDict(head["nearEye"]);
-        var farEye = JsInterop.AsDict(head["farEye"]);
-        var mouth = JsInterop.AsDict(head["mouthGuides"]);
-        var brow = ExtractPoint(head["brow"]);
-
-        var exp = expressionType.Trim().ToLowerInvariant();
-
-        switch (exp)
+        if (!float.IsFinite(amount))
         {
-            case "joy":
-            case "happy":
-                // Lift mouth corners up
-                if (mouth != null)
-                {
-                    var left = ExtractPoint(mouth["leftCorner"]);
-                    var right = ExtractPoint(mouth["rightCorner"]);
-                    var mDict = new Dictionary<string, object?>(mouth.Count);
-                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
-                    mDict["leftCorner"] = ToDict(new Point2D(left.X, left.Y - H * 0.05f * scale));
-                    mDict["rightCorner"] = ToDict(new Point2D(right.X, right.Y - H * 0.05f * scale));
-                    res["mouthGuides"] = mDict;
-                }
-                break;
-
-            case "anger":
-            case "angry":
-                // Pull brow down and in
-                res["brow"] = ToDict(new Point2D(brow.X, brow.Y + H * 0.06f * scale));
-                break;
-
-            case "fear":
-            case "scared":
-                // Raise brow high, drop mouth open
-                res["brow"] = ToDict(new Point2D(brow.X, brow.Y - H * 0.07f * scale));
-                if (mouth != null)
-                {
-                    var center = ExtractPoint(mouth["center"]);
-                    var mDict = new Dictionary<string, object?>(mouth.Count);
-                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
-                    mDict["center"] = ToDict(new Point2D(center.X, center.Y + H * 0.06f * scale));
-                    res["mouthGuides"] = mDict;
-                }
-                break;
-
-            case "sadness":
-            case "sad":
-                // Pull mouth corners down
-                if (mouth != null)
-                {
-                    var left = ExtractPoint(mouth["leftCorner"]);
-                    var right = ExtractPoint(mouth["rightCorner"]);
-                    var mDict = new Dictionary<string, object?>(mouth.Count);
-                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
-                    mDict["leftCorner"] = ToDict(new Point2D(left.X, left.Y + H * 0.05f * scale));
-                    mDict["rightCorner"] = ToDict(new Point2D(right.X, right.Y + H * 0.05f * scale));
-                    res["mouthGuides"] = mDict;
-                }
-                break;
-
-            case "surprise":
-                // Raise brow high & drop mouth center
-                res["brow"] = ToDict(new Point2D(brow.X, brow.Y - H * 0.08f * scale));
-                if (mouth != null)
-                {
-                    var center = ExtractPoint(mouth["center"]);
-                    var mDict = new Dictionary<string, object?>(mouth.Count);
-                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
-                    mDict["center"] = ToDict(new Point2D(center.X, center.Y + H * 0.08f * scale));
-                    res["mouthGuides"] = mDict;
-                }
-                break;
-
-            case "disgust":
-                // Raise upper lip
-                if (mouth != null)
-                {
-                    var center = ExtractPoint(mouth["center"]);
-                    var mDict = new Dictionary<string, object?>(mouth.Count);
-                    foreach (DictionaryEntry de in mouth) mDict[de.Key.ToString()!] = de.Value;
-                    mDict["upperLipY"] = center.Y - H * 0.06f * scale;
-                    res["mouthGuides"] = mDict;
-                }
-                break;
+            throw new ArgumentException(
+                $"blendHead amount must be a finite number, got {amount}. An amount of 0 returns the "
+                + "base head unchanged; 1 applies the whole difference.", nameof(amount));
         }
 
-        res["expression"] = exp;
-        return res;
+        // A blend across a turn interpolates through a projection nothing was ever seen at, so it is
+        // refused rather than averaged - the failure is a face that melts, which reads as a defect in
+        // the construction rather than in the arguments.
+        float yawA = HeadTurn(f), yawB = HeadTurn(t);
+        if (MathF.Abs(yawA - yawB) > 0.02f)
+        {
+            throw new ArgumentException(
+                $"blendHead cannot blend heads at different turns: from is at cos(yaw) {yawA:0.###} and "
+                + $"to is at {yawB:0.###}. Build both with the same yawDeg, or blend in head space "
+                + "before projecting.", nameof(toObj));
+        }
+
+        var result = CloneHead(b);
+        var (bo, bh) = HeadFrame(b, nameof(baseObj));
+        var (fo, fh) = HeadFrame(f, nameof(fromObj));
+        var (to_, th) = HeadFrame(t, nameof(toObj));
+
+        foreach (var (path, kind) in HeadSchema)
+        {
+            switch (kind)
+            {
+                case HeadValue.Point:
+                    var pb = SchemaPoint(b, path, nameof(baseObj));
+                    var pf = SchemaPoint(f, path, nameof(fromObj));
+                    var pt = SchemaPoint(t, path, nameof(toObj));
+                    var nx = ((pb.X - bo.X) / bh) + (amount * (((pt.X - to_.X) / th) - ((pf.X - fo.X) / fh)));
+                    var ny = ((pb.Y - bo.Y) / bh) + (amount * (((pt.Y - to_.Y) / th) - ((pf.Y - fo.Y) / fh)));
+                    WriteSchemaPoint(result, path, new Point2D(bo.X + (nx * bh), bo.Y + (ny * bh)));
+                    break;
+
+                default:
+                    float Norm(IDictionary h, Point2D o, float hh, string which)
+                    {
+                        var v = SchemaScalar(h, path, which);
+                        return kind switch
+                        {
+                            HeadValue.CoordX => (v - o.X) / hh,
+                            HeadValue.CoordY => (v - o.Y) / hh,
+                            _ => v / hh,
+                        };
+                    }
+
+                    var n = Norm(b, bo, bh, nameof(baseObj))
+                          + (amount * (Norm(t, to_, th, nameof(toObj)) - Norm(f, fo, fh, nameof(fromObj))));
+                    WriteSchemaScalar(result, path, kind switch
+                    {
+                        HeadValue.CoordX => bo.X + (n * bh),
+                        HeadValue.CoordY => bo.Y + (n * bh),
+                        _ => n * bh,
+                    });
+                    break;
+            }
+        }
+
+        return result;
     }
+
+    /// <summary>
+    /// Pushes a head further from a reference: Brennan's caricature dial.
+    /// </summary>
+    /// <param name="headObj">The subject.</param>
+    /// <param name="amount">
+    /// <c>0</c> leaves it alone; <c>1</c> doubles every difference from the reference, which is
+    /// Brennan's own choice of the best caricature in her published sequence. Negative values move
+    /// the face toward the reference and, past <c>-1</c>, out the other side of it.
+    /// </param>
+    /// <param name="referenceObj">
+    /// What to measure against. Omitted, the canon is used: the same head with no character
+    /// parameters, built at this head's own origin, size and turn.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>No feature is selected, and that is what makes it implementable.</b> Every spatial
+    /// relationship is exaggerated in parallel; Brennan's system makes no qualitative judgment about
+    /// which feature is distinctive, because <i>a relationship becomes a "feature" only when it
+    /// differs significantly from the corresponding relationship on a comparison face</i>. The part
+    /// that would otherwise need a trained model is the part being declined.
+    /// </para>
+    /// <para>
+    /// <b>The bound is worth knowing and is not enforced.</b> Brennan quotes Francis Grose: a modest
+    /// deviation causes laughter, a great one incites horror. Her published ladder runs 0, 50, 100,
+    /// 140 and 160 per cent, and she names 100 - <c>amount = 1</c> here - as the best of them.
+    /// </para>
+    /// <para>
+    /// <b>At large amounts the silhouette can break, and that is inherited rather than accidental.</b>
+    /// She deliberately left lines unconstrained, so that at high exaggeration <i>an eye is free to
+    /// float above an eyebrow</i>, and kept it because users enjoyed finding the limit.
+    /// <see cref="CreateHeadGeometry"/> unions its masses into one contour, so the same freedom shows
+    /// up there as a broken outline rather than as a style. Nothing clamps it; look at the render.
+    /// </para>
+    /// <para>
+    /// <b>One reference is our simplification, not her finding.</b> She reports the opposite - that
+    /// her results <i>throw into question the idea that there need be only one strong norm for all
+    /// human faces</i>, and that a successful caricature often came from comparing against any face
+    /// that simply seemed very different. The default is a convenience; <paramref name="referenceObj"/>
+    /// is how you disagree with it.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ExaggerateHead(object headObj, float amount, object? referenceObj = null)
+    {
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException("headObj must be a head from createLoomisHead", nameof(headObj));
+
+        var reference = referenceObj is not null && JsInterop.AsDict(referenceObj) is IDictionary r
+            ? r
+            : CanonFor(head);
+
+        return BlendHead(head, reference, head, amount);
+    }
+
+    /// <summary>
+    /// Displaces a head by named muscle actions: <c>{ AU4: 0.9, AU7: 0.7 }</c>.
+    /// </summary>
+    /// <param name="headObj">A head from <see cref="CreateLoomisHead"/>.</param>
+    /// <param name="weights">Action Unit names against weights in <c>0 … 1</c>. Unknown names are refused.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Muscles, not emotions, and that is a decision with a source.</b> Loomis sets aside the
+    /// psychological phase of expression explicitly, calling the emotions <i>too numerous to
+    /// tabulate</i>, and works instead from two antagonist muscle groups plus a handful of wrinkle
+    /// muscles. Ekman &amp; Friesen arrive at the same anatomy from measurement rather than from
+    /// drawing. What is finite here is the muscles; a named emotion is a tuple of these, and a
+    /// contested one.
+    /// </para>
+    /// <para>
+    /// <b>Additive and order-independent.</b> Each unit adds its own displacement, so
+    /// <c>{ AU4, AU7 }</c> means both and gives the same head whichever is folded first. That is what
+    /// makes a small set cover a large range of faces without a preset per combination.
+    /// </para>
+    /// <para>
+    /// <b>Seven units, chosen for what the construction can actually show.</b> A unit that moved a
+    /// landmark this head does not carry would be an API that quietly does nothing, which is worse
+    /// than an omission — so the set stops where the geometry does. What is missing and why is in the
+    /// remarks on <see cref="ActionUnits"/>.
+    /// </para>
+    /// <para>
+    /// <b>Magnitudes are the studio's, tuned by eye.</b> Neither source supplies displacement
+    /// numbers: Loomis gives directions and a relaxed/contracted table, and Ekman &amp; Friesen's
+    /// 1976 code scores <i>presence</i> — slight against strong — rather than a continuous
+    /// intensity. Anything claiming a measured decimal for these is claiming more than either source
+    /// says.
+    /// </para>
+    /// <para>
+    /// Sources: Andrew Loomis, <i>Drawing the Head and Hands</i> (Viking, 1956), pp. 45–47 and
+    /// Plate 21; Paul Ekman &amp; Wallace V. Friesen, <i>Measuring Facial Movement</i>, Environmental
+    /// Psychology and Nonverbal Behavior 1(1):56–75, 1976, Table 1.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ApplyActionUnits(object headObj, object? weights = null)
+    {
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException("headObj must be a head from createLoomisHead", nameof(headObj));
+
+        var opt = JsInterop.AsDict(weights);
+        var result = CloneHead(head);
+        if (opt is null) return result;
+
+        var h = Num(JsInterop.AsDict(head["unit"]), "H", 200f);
+
+        foreach (DictionaryEntry entry in opt)
+        {
+            var name = entry.Key?.ToString()?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(name)) continue;
+
+            if (!ActionUnits.TryGetValue(name, out var unit))
+            {
+                throw new ArgumentException(
+                    $"'{entry.Key}' is not an Action Unit this construction can draw. Known: "
+                    + string.Join(", ", ActionUnits.Keys.OrderBy(k => k, StringComparer.Ordinal))
+                    + ". The numbering is Ekman & Friesen's and is arbitrary by their own account, so "
+                    + "a unit absent here is one the head carries no landmark for rather than one "
+                    + "that does not exist.", nameof(weights));
+            }
+
+            var w = entry.Value is null ? 0f : Convert.ToSingle(entry.Value, CultureInfo.InvariantCulture);
+            if (!float.IsFinite(w))
+                throw new ArgumentException($"{name} weight must be a finite number, got {w}.", nameof(weights));
+
+            // Refused rather than clamped to zero, because the opposite of an Action Unit is a
+            // DIFFERENT unit - that separation is the whole design of the coding system, and a
+            // negative weight means the caller has the wrong unit rather than the wrong sign.
+            if (w < 0f)
+            {
+                throw new ArgumentException(
+                    $"{name} weight is {w}; Action Units do not run negative. The opposing action is "
+                    + "its own unit - AU1 raises the brow where AU4 lowers it, AU12 lifts the mouth "
+                    + "corners where AU15 drops them. Name the unit you mean.", nameof(weights));
+            }
+
+            unit(result, MathF.Min(w, 1f), h);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Whether a head's landmarks still run in the order a face's do, and by how much.
+    /// </summary>
+    /// <param name="headObj">Any head — constructed, parameterised, exaggerated or expressed.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>The check that turns "an eye is free to float above an eyebrow" into a number.</b> Brennan
+    /// deliberately left her lines unconstrained at high exaggeration and kept it because her users
+    /// enjoyed finding the limit — but her users were watching a screen. An agent reads images poorly
+    /// and will ship what comes out, so the limit needs to be *measurable* here rather than merely
+    /// visible.
+    /// </para>
+    /// <para>
+    /// <b>It reports rather than refuses, and the reason is measured.</b> The safe exaggeration
+    /// varies more than thirty-fold between characters — a mild one holds its order past λ 12, the
+    /// canon never breaks at all, and a head carrying <c>noseLength: 1</c> breaks at <b>0.40</b>,
+    /// below the setting Brennan recommends. No constant could clamp that, so the honest move is to
+    /// hand back the number and let the caller decide.
+    /// </para>
+    /// <para>
+    /// <b><c>margin</c> is the useful field, not <c>ordered</c>.</b> It is the smallest gap between
+    /// consecutive stations as a fraction of head height, so it is comparable across sizes and it
+    /// shrinks toward zero *before* it crosses — which is what lets a run see the edge coming rather
+    /// than discover it. Negative means broken, and how badly.
+    /// </para>
+    /// <para>
+    /// <b>This is a judgment encoded, not a law.</b> A face whose stations run in order can still be
+    /// a bad drawing, and a deliberately grotesque one may cross a station on purpose. What it
+    /// catches is the specific failure that renders perfectly and reads as a defect in the toolkit.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> VerifyHeadOrdering(object headObj)
+    {
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException("headObj must be a head from createLoomisHead", nameof(headObj));
+
+        var h = Num(JsInterop.AsDict(head["unit"]), "H", 200f);
+        if (h <= 0f) h = 200f;
+
+        // Top to bottom. The eye is read from the near eye's own centre rather than from `eyeLineY`,
+        // because the parameter layer moves the eye points and leaves that scalar where it was - so
+        // checking the scalar would pass on a head whose drawn eyes had crossed the brow.
+        var ladder = new (string Name, float Y)[]
+        {
+            ("crown", ExtractPoint(head["crown"]).Y),
+            ("hairline", ExtractPoint(head["hairline"]).Y),
+            ("brow", ExtractPoint(head["brow"]).Y),
+            ("eyes", ExtractPoint(JsInterop.AsDict(head["nearEye"])?["center"]).Y),
+            ("nose", ExtractPoint(head["noseBase"]).Y),
+            ("mouth", ExtractPoint(JsInterop.AsDict(head["mouthGuides"])?["center"]).Y),
+            ("chin", ExtractPoint(head["chin"]).Y),
+        };
+
+        var broken = new List<object?>();
+        var margin = float.MaxValue;
+
+        for (var i = 1; i < ladder.Length; i++)
+        {
+            var gap = (ladder[i].Y - ladder[i - 1].Y) / h;
+            margin = MathF.Min(margin, gap);
+            if (gap < 0f) broken.Add($"{ladder[i].Name} above {ladder[i - 1].Name}");
+        }
+
+        // A separate class of break: the mouth turning itself inside out. Reachable by exaggerating a
+        // narrowed mouth, and it draws as a bow-tie rather than as a mouth.
+        var mouth = JsInterop.AsDict(head["mouthGuides"]);
+        if (mouth is not null)
+        {
+            var left = ExtractPoint(mouth["leftCorner"]);
+            var right = ExtractPoint(mouth["rightCorner"]);
+            var width = (right.X - left.X) / h;
+            margin = MathF.Min(margin, MathF.Abs(width));
+            if (width <= 0f) broken.Add("mouth corners crossed");
+        }
+
+        if (margin == float.MaxValue) margin = 0f;
+        var ordered = broken.Count == 0;
+
+        return new Dictionary<string, object?>
+        {
+            ["ordered"] = ordered,
+            ["margin"] = margin,
+            ["broken"] = broken,
+            ["message"] = ordered
+                ? $"head stations in order, tightest gap {margin:0.###} H"
+                : $"head no longer reads as a face: {string.Join("; ", broken)} "
+                  + $"(margin {margin:0.###} H). Lower the exaggeration, or the character parameter "
+                  + "that closed the gap - noseLength is the usual one, since its full range already "
+                  + "spends most of the nose-to-mouth distance.",
+        };
+    }
+
+    /// <summary>
+    /// What a named expression is, as muscle weights: <c>expressionUnits('sadness')</c>.
+    /// </summary>
+    /// <param name="expressionType">One of the six, or an alias. Case and surrounding space ignored.</param>
+    /// <param name="intensity">Scales every weight. Defaults to full strength.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>This exists so that a named emotion is a claim you can read rather than a displacement you
+    /// cannot.</b> The six names were previously a closed door: a caller who wanted one muscle had to
+    /// buy a whole emotion and turn it down, and had no way to see what they were getting. Returning
+    /// the tuple makes the claim inspectable, adjustable, and — most usefully — arguable.
+    /// </para>
+    /// <para>
+    /// <b>The weights are the studio's, and no source supplies them.</b> Loomis gives directions and
+    /// a relaxed/contracted table; Ekman &amp; Friesen's 1976 code scores <i>presence</i>, slight
+    /// against strong, and contains the words <i>anger</i>, <i>happy</i> and <i>surprise</i> exactly
+    /// zero times. Published emotion-to-unit tables are somebody's interpretation, not a measurement,
+    /// and these are ours. Read them, disagree, pass your own dictionary to
+    /// <see cref="ApplyActionUnits"/>.
+    /// </para>
+    /// <para>
+    /// <b>Two consequences of the single brow landmark, both visible here.</b> A canonical sad brow is
+    /// AU1 with AU4 — the inner corners lift while the brows knit — but with one <c>brow</c> point
+    /// those two <b>cancel</b>, so <c>sadness</c> carries AU1 alone. And <c>fear</c> and
+    /// <c>surprise</c> differ only in amount, because what separates them in life is AU4 knitting a
+    /// raised brow, which this head cannot express either. Both are the same missing landmark, and
+    /// both resolve if <c>createLoomisHead</c> ever carries inner and outer brow stations.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ExpressionUnits(string expressionType, float intensity = 1.0f)
+    {
+        var name = (expressionType ?? string.Empty).Trim().ToLowerInvariant();
+        var canonical = name switch
+        {
+            "happy" => "joy",
+            "angry" => "anger",
+            "scared" => "fear",
+            "sad" => "sadness",
+            _ => name,
+        };
+
+        if (!ExpressionTuples.TryGetValue(canonical, out var tuple))
+        {
+            throw new ArgumentException(
+                $"'{expressionType}' is not a named expression. Known: "
+                + string.Join(", ", ExpressionTuples.Keys.OrderBy(k => k, StringComparer.Ordinal))
+                + ". These six are the toolkit's enumeration rather than a claim that the emotions "
+                + "number six - Loomis calls them too numerous to tabulate. For anything else, name "
+                + "the muscles: applyActionUnits(head, { AU4: 0.9 }).", nameof(expressionType));
+        }
+
+        if (!float.IsFinite(intensity) || intensity < 0f)
+        {
+            throw new ArgumentException(
+                $"intensity must be a finite number of zero or more, got {intensity}. A negative "
+                + "expression is not a thing: the opposite of a raised brow is a lowered one, which "
+                + "is its own Action Unit.", nameof(intensity));
+        }
+
+        var scaled = new Dictionary<string, object?>(tuple.Count, StringComparer.Ordinal);
+        foreach (var (unit, weight) in tuple) scaled[unit] = MathF.Min(weight * intensity, 1f);
+        return scaled;
+    }
+
+    /// <summary>
+    /// Applies a named expression. A thin wrapper over <see cref="ApplyActionUnits"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Reimplemented 2026-09-18, and what it draws has changed.</b> Each of the six used to
+    /// displace one or two landmarks directly, and several did not do what their own manual entry
+    /// described: <c>sadness</c> was documented as lifting the inner brow and dropping the mouth
+    /// corners, and moved only the mouth. A live run asked for it <i>"at 0.22 for the inner-brow lift
+    /// only"</i>, recorded a careful threshold at which the lift would become a grimace, and received
+    /// about two and a half pixels of a movement it had not wanted. That is the defect this replaces:
+    /// not thinness, but a name that promised one muscle and moved another.
+    /// </para>
+    /// <para>
+    /// <b>Prefer <see cref="ApplyActionUnits"/> where you know what you want.</b> This is the
+    /// convenience call, and its tuples are visible through <see cref="ExpressionUnits"/> precisely
+    /// so that reaching past it is easy.
+    /// </para>
+    /// <para>
+    /// An unknown name is now <b>refused</b> rather than silently returning the head unchanged, and
+    /// the result is a deep clone rather than a shallow one, so writing to its <c>jaw</c> no longer
+    /// writes to the caller's.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ApplyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
+    {
+        var head = ApplyActionUnits(headObj, ExpressionUnits(expressionType, intensity));
+
+        // Kept from the previous implementation: a head that can say what it is costs nothing, and
+        // something downstream may be reading it. Written after the units so a caller cannot smuggle
+        // an `expression` key in through the weights.
+        head["expression"] = (expressionType ?? string.Empty).Trim().ToLowerInvariant();
+        return head;
+    }
+
     #endregion
 
     #region Composition Armatures, Notan & Visual Emphasis
@@ -3958,6 +4328,392 @@ public class ConstructiveDrawingToolkit
     /// the canon it came from — and the second call with the same head would start from the first
     /// call's face, which is exactly the consistency this exists to provide, destroyed.
     /// </remarks>
+    /// <summary>
+    /// The muscle actions this construction can actually show, by Ekman &amp; Friesen's numbering.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Seven, because the head carries seven actions' worth of landmarks.</b> The set is bounded
+    /// by the construction rather than by the coding system: a unit whose landmark this head does not
+    /// have would bind, run, and change nothing, which reads as the parameter having no effect.
+    /// </para>
+    /// <para>
+    /// <b>What is deliberately absent, and why.</b>
+    /// </para>
+    /// <list type="bullet">
+    /// <item><b>AU2 (Outer Brow Raiser).</b> The head carries a single <c>brow</c> centre point and
+    /// no inner or outer station, so AU1 and AU2 would be the same displacement under two names —
+    /// and their whole value is the difference between them: the inner-only lift is the worried
+    /// inverted peak, the outer arch is surprise. Shipping both would be shipping a distinction the
+    /// geometry cannot make. <b>AU1 therefore lifts the whole brow here</b>, which is the honest
+    /// reading of one point.</item>
+    /// <item><b>AU6 (Cheek Raiser).</b> There is no cheek. <c>createHeadGeometry</c> says so in its
+    /// own limits, and <c>drawComicEye</c> draws no crow's feet, so the Duchenne marker has nowhere
+    /// to land.</item>
+    /// <item><b>AU9/AU10 (Nose Wrinkler, Upper Lip Raiser).</b> The nose wedge has landmarks but the
+    /// upper lip is a single <c>upperLipY</c>, so a sneer would read as the whole lip rising.
+    /// Reachable later; not honest yet.</item>
+    /// <item><b>AU17 (Chin Raiser).</b> The mentalis bulge is a surface change rather than a landmark
+    /// move, and nothing downstream draws chin texture.</item>
+    /// </list>
+    /// <para>
+    /// Each unit <b>adds</b> its displacement, so folding several is order-independent. Magnitudes
+    /// are fractions of the head's own height, so a unit means the same thing at any scale — the
+    /// same discipline <see cref="CreateParametricHead"/> follows, and for the same reason.
+    /// </para>
+    /// </remarks>
+    private static readonly Dictionary<string, Action<Dictionary<string, object?>, float, float>> ActionUnits =
+        new(StringComparer.Ordinal)
+        {
+            // Frontalis, Pars Medialis. Loomis's wrinkle muscles at the inner brow: worry, pleading.
+            ["AU1"] = (head, w, h) => NudgePoint(head, "brow", 0f, -0.035f * h * w),
+
+            // Depressor Glabellae / Supercilii / Corrugator. Loomis has the unhappy group pulling the
+            // inside corner of the brow down into a frown, which is this unit from the other side.
+            ["AU4"] = (head, w, h) => NudgePoint(head, "brow", 0f, 0.030f * h * w),
+
+            // Levator Palpebrae Superioris - the lid opens. Reachable only since drawComicEye began
+            // reading `height`; before that this unit would have bound and drawn nothing.
+            ["AU5"] = (head, w, h) => ScaleAperture(head, 0.020f * h * w),
+
+            // Orbicularis Oculi, Pars Palpebralis - the lid narrows.
+            ["AU7"] = (head, w, h) => ScaleAperture(head, -0.018f * h * w),
+
+            // Zygomatic Major. Loomis's "happy muscles", which pull the corners OUT and diagonally
+            // UP - the diagonal is his, and a corner lifted straight up reads as a smirk.
+            ["AU12"] = (head, w, h) => MoveMouthCorners(head, 0.018f * h * w, -0.032f * h * w),
+
+            // Triangularis. The corners drop and do not spread; Loomis's leer is the round-cornered
+            // failure of this one.
+            ["AU15"] = (head, w, h) => MoveMouthCorners(head, 0f, 0.028f * h * w),
+
+            // Masseter and the pterygoids relaxed. The one unit that reaches the silhouette, so a
+            // dropped jaw changes the head's outline rather than only its marks.
+            ["AU26"] = (head, w, h) => DropJaw(head, 0.055f * h * w),
+        };
+
+    /// <summary>Adds an offset to a top-level landmark.</summary>
+    static void NudgePoint(Dictionary<string, object?> head, string key, float dx, float dy)
+    {
+        var p = ExtractPoint(head[key]);
+        head[key] = ToDict(new Point2D(p.X + dx, p.Y + dy));
+    }
+
+    /// <summary>Opens or narrows both lids, which is a change to each eye's own aperture.</summary>
+    static void ScaleAperture(Dictionary<string, object?> head, float delta)
+    {
+        foreach (var group in new[] { "nearEye", "farEye" })
+        {
+            if (head[group] is not Dictionary<string, object?> eye) continue;
+            if (!eye.TryGetValue("height", out var v) || v is null) continue;
+
+            // Floored rather than allowed negative: a lid past shut is not a lid, and a negative
+            // aperture would invert the eyelid curve into a shape nothing in the face explains.
+            var next = Convert.ToSingle(v, CultureInfo.InvariantCulture) + delta;
+            eye["height"] = MathF.Max(0f, next);
+        }
+    }
+
+    /// <summary>Moves both mouth corners outward and vertically, each away from the mouth's centre.</summary>
+    /// <remarks>
+    /// The outward direction is read off the corners' own positions rather than assumed from their
+    /// names, for the reason <c>MoveEyes</c> gives: at yaw the two are not symmetric about the axis,
+    /// and "left" in the dictionary is a name rather than a guarantee about x.
+    /// </remarks>
+    static void MoveMouthCorners(Dictionary<string, object?> head, float spread, float lift)
+    {
+        if (head["mouthGuides"] is not Dictionary<string, object?> mouth) return;
+
+        var centre = ExtractPoint(mouth["center"]);
+        foreach (var key in new[] { "leftCorner", "rightCorner" })
+        {
+            if (!mouth.ContainsKey(key)) continue;
+            var p = ExtractPoint(mouth[key]);
+            var away = MathF.Sign(p.X - centre.X);
+            if (away == 0) away = key == "rightCorner" ? 1 : -1;
+            mouth[key] = ToDict(new Point2D(p.X + (away * spread), p.Y + lift));
+        }
+    }
+
+    /// <summary>Drops the jaw: the lower lip opens and the chin stations follow it down.</summary>
+    /// <remarks>
+    /// The chin moves because a jaw drop is a change to the head's <i>outline</i>, not only to the
+    /// marks inside it — <c>createHeadGeometry</c> builds its jaw polygon through these stations, so
+    /// an open mouth that left them alone would draw a dropped lip inside a closed face.
+    /// </remarks>
+    static void DropJaw(Dictionary<string, object?> head, float drop)
+    {
+        if (head["mouthGuides"] is Dictionary<string, object?> mouth
+            && mouth.TryGetValue("lowerLipY", out var lower) && lower is not null)
+        {
+            mouth["lowerLipY"] = Convert.ToSingle(lower, CultureInfo.InvariantCulture) + drop;
+        }
+
+        NudgePoint(head, "chin", 0f, drop * 0.55f);
+        if (head["jaw"] is not Dictionary<string, object?> jaw) return;
+
+        foreach (var key in new[] { "chin", "chinNear", "chinFar", "nearStation", "farStation" })
+        {
+            if (!jaw.ContainsKey(key)) continue;
+            var p = ExtractPoint(jaw[key]);
+            // The stations behind the chin move less: the jaw hinges rather than translating.
+            var share = key.StartsWith("chin", StringComparison.Ordinal) ? 0.55f : 0.25f;
+            jaw[key] = ToDict(new Point2D(p.X, p.Y + (drop * share)));
+        }
+    }
+
+    /// <summary>
+    /// The six named expressions as Action Unit weights. <b>Ours, tuned by eye.</b>
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>No source supplies these numbers, and that is the first thing to know about them.</b>
+    /// Loomis gives muscle directions and a relaxed/contracted table and declines to tabulate the
+    /// emotions at all; Ekman &amp; Friesen's 1976 code scores whether a unit is present, slight or
+    /// strong, and never names an emotion. So these are the studio's reading of Manual 08 §4's muscle
+    /// descriptions, constrained to the seven units this construction can draw, and they are meant to
+    /// be argued with rather than trusted.
+    /// </para>
+    /// <para>
+    /// <b>How well each is served differs a lot, and pretending otherwise would be the failure this
+    /// replaces.</b>
+    /// </para>
+    /// <list type="bullet">
+    /// <item><b>joy</b> and <b>sadness</b> are well served: their defining muscles — Zygomatic Major
+    /// and Triangularis — are both implemented, and the mouth is where both live.</item>
+    /// <item><b>anger</b> is good at the brow and approximate at the mouth: Loomis has it squaring,
+    /// and there is no unit for that, so AU15 stands in.</item>
+    /// <item><b>fear</b> and <b>surprise</b> differ only in amount. What separates them in life is
+    /// AU4 knitting an already-raised brow, and a single <c>brow</c> landmark cannot both raise and
+    /// knit. They are the most confusable pair in the literature even on real faces; here they are
+    /// nearly the same face.</item>
+    /// <item><b>disgust</b> is the worst served and should be treated as a placeholder. Its defining
+    /// action is Levator Labii Superioris curling the upper lip and wrinkling the nose — AU9 and
+    /// AU10, neither implemented, because the upper lip is one <c>upperLipY</c> and would rise
+    /// whole.</item>
+    /// </list>
+    /// <para>
+    /// <b>sadness carries AU1 without AU4 deliberately.</b> The canonical oblique sad brow is both
+    /// together; with one brow point they cancel exactly, and the result would be a face with no brow
+    /// movement at all — which is close to what the previous implementation shipped.
+    /// </para>
+    /// </remarks>
+    private static readonly Dictionary<string, Dictionary<string, float>> ExpressionTuples =
+        new(StringComparer.Ordinal)
+        {
+            // Zygomatic major pulls the corners out and up; the eye narrowing is the part of Loomis's
+            // cheek-puff this construction can actually show.
+            ["joy"] = new(StringComparer.Ordinal) { ["AU12"] = 0.85f, ["AU7"] = 0.25f },
+
+            // Corrugator hard down, eyes narrowed. The mouth "squares" in Loomis and cannot here.
+            ["anger"] = new(StringComparer.Ordinal) { ["AU4"] = 0.90f, ["AU7"] = 0.60f, ["AU15"] = 0.25f },
+
+            // Frontalis lifts, the lids pop, the jaw goes. Weighted toward the eyes.
+            ["fear"] = new(StringComparer.Ordinal) { ["AU1"] = 0.80f, ["AU5"] = 0.80f, ["AU26"] = 0.45f },
+
+            // Inner brow up, corners down. AU4 omitted - see the remarks; it would cancel AU1.
+            ["sadness"] = new(StringComparer.Ordinal) { ["AU1"] = 0.70f, ["AU15"] = 0.75f },
+
+            // As fear, weighted toward the brow and the jaw rather than the lids.
+            ["surprise"] = new(StringComparer.Ordinal) { ["AU1"] = 0.95f, ["AU5"] = 0.65f, ["AU26"] = 0.75f },
+
+            // A placeholder until AU9/AU10 exist. Reads as a sour narrowing rather than a sneer.
+            ["disgust"] = new(StringComparer.Ordinal) { ["AU4"] = 0.40f, ["AU7"] = 0.45f, ["AU15"] = 0.50f },
+        };
+
+    /// <summary>What a head's leaves mean, which is what says how each is normalised.</summary>
+    private enum HeadValue { Point, Length, CoordX, CoordY }
+
+    /// <summary>
+    /// Every blendable value in a head, by path, with what kind of measurement it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Enumerated rather than inferred, because the three kinds normalise differently</b> and
+    /// nothing in a key's name reliably says which it is: <c>width</c> is a length, <c>eyeLineY</c>
+    /// is a coordinate, and guessing from a trailing letter would work until the first landmark
+    /// named otherwise. The set is closed - one function builds every head - so enumerating it costs
+    /// nothing and buys a refusal for anything unrecognised.
+    /// </para>
+    /// <para>
+    /// <c>unit</c> and <c>origin</c> are deliberately absent. They are the frame the blend is
+    /// measured in, so blending them would move the ruler along with the thing being measured; they
+    /// are copied from the base head instead.
+    /// </para>
+    /// </remarks>
+    private static readonly (string Path, HeadValue Kind)[] HeadSchema =
+    [
+        ("crown", HeadValue.Point),
+        ("hairline", HeadValue.Point),
+        ("brow", HeadValue.Point),
+        ("noseBase", HeadValue.Point),
+        ("mouthCenter", HeadValue.Point),
+        ("chin", HeadValue.Point),
+        ("eyeLineY", HeadValue.CoordY),
+
+        ("nearEye.inner", HeadValue.Point),
+        ("nearEye.outer", HeadValue.Point),
+        ("nearEye.center", HeadValue.Point),
+        ("nearEye.width", HeadValue.Length),
+        ("nearEye.height", HeadValue.Length),
+
+        ("farEye.inner", HeadValue.Point),
+        ("farEye.outer", HeadValue.Point),
+        ("farEye.center", HeadValue.Point),
+        ("farEye.width", HeadValue.Length),
+        ("farEye.height", HeadValue.Length),
+
+        ("noseWedge.bridgeTop", HeadValue.Point),
+        ("noseWedge.apex", HeadValue.Point),
+        ("noseWedge.underNose", HeadValue.Point),
+        ("noseWedge.nearNostril", HeadValue.Point),
+
+        ("mouthGuides.center", HeadValue.Point),
+        ("mouthGuides.leftCorner", HeadValue.Point),
+        ("mouthGuides.rightCorner", HeadValue.Point),
+        ("mouthGuides.upperLipY", HeadValue.CoordY),
+        ("mouthGuides.lowerLipY", HeadValue.CoordY),
+
+        ("jaw.ear", HeadValue.Point),
+        ("jaw.angle", HeadValue.Point),
+        ("jaw.nearAngle", HeadValue.Point),
+        ("jaw.farStation", HeadValue.Point),
+        ("jaw.nearStation", HeadValue.Point),
+        ("jaw.chinFar", HeadValue.Point),
+        ("jaw.chinNear", HeadValue.Point),
+        ("jaw.chin", HeadValue.Point),
+        ("jaw.cheekApex", HeadValue.Point),
+
+        ("temporalOval.cx", HeadValue.CoordX),
+        ("temporalOval.cy", HeadValue.CoordY),
+        ("temporalOval.rx", HeadValue.Length),
+        ("temporalOval.ry", HeadValue.Length),
+    ];
+
+    /// <summary>The frame a blend is measured in: the head's origin and its height.</summary>
+    static (Point2D Origin, float H) HeadFrame(IDictionary head, string which)
+    {
+        var unit = JsInterop.AsDict(head["unit"]);
+        var origin = JsInterop.AsDict(head["origin"]);
+        var h = Num(unit, "H", float.NaN);
+        if (!float.IsFinite(h) || h <= 0f)
+        {
+            throw new ArgumentException(
+                $"{which} has no usable unit.H, so there is no scale to measure a blend against. "
+                + "Pass a head from createLoomisHead.", which);
+        }
+
+        return (new Point2D(Num(origin, "x", 0f), Num(origin, "y", 0f)), h);
+    }
+
+    /// <summary>How far the head is turned, as <c>cos(yaw)</c>, read off its own far eye.</summary>
+    static float HeadTurn(IDictionary head)
+    {
+        var eyeW = Num(JsInterop.AsDict(head["unit"]), "eyeW", 0f);
+        if (eyeW <= 0f) return 1f;
+        return Math.Clamp(Num(JsInterop.AsDict(head["farEye"]), "width", eyeW) / eyeW, 0f, 1f);
+    }
+
+    /// <summary>Walks a dotted path to the group holding its last segment.</summary>
+    static IDictionary? PathParent(IDictionary head, string path, out string leaf)
+    {
+        var cut = path.IndexOf('.', StringComparison.Ordinal);
+        if (cut < 0)
+        {
+            leaf = path;
+            return head;
+        }
+
+        leaf = path[(cut + 1)..];
+        return JsInterop.AsDict(head[path[..cut]]);
+    }
+
+    static Point2D SchemaPoint(IDictionary head, string path, string which)
+    {
+        var parent = PathParent(head, path, out var leaf);
+        var value = parent?.Contains(leaf) == true ? parent[leaf] : null;
+        if (JsInterop.AsDict(value) is not IDictionary p || !p.Contains("x") || !p.Contains("y"))
+        {
+            throw new ArgumentException(
+                $"{which} has no point at '{path}', so there is nothing to blend it against. Every "
+                + "head in a blend must carry the same landmarks; build them all with "
+                + "createLoomisHead.", which);
+        }
+
+        return ExtractPoint(p);
+    }
+
+    static float SchemaScalar(IDictionary head, string path, string which)
+    {
+        var parent = PathParent(head, path, out var leaf);
+        var value = parent?.Contains(leaf) == true ? parent[leaf] : null;
+        if (value is null || !float.IsFinite(Convert.ToSingle(value, CultureInfo.InvariantCulture)))
+        {
+            throw new ArgumentException(
+                $"{which} has no number at '{path}', so there is nothing to blend it against. Every "
+                + "head in a blend must carry the same landmarks; build them all with "
+                + "createLoomisHead.", which);
+        }
+
+        return Convert.ToSingle(value, CultureInfo.InvariantCulture);
+    }
+
+    static void WriteSchemaPoint(Dictionary<string, object?> head, string path, Point2D value)
+    {
+        var cut = path.IndexOf('.', StringComparison.Ordinal);
+        if (cut < 0) head[path] = ToDict(value);
+        else SetPoint(head, path[..cut], path[(cut + 1)..], value);
+    }
+
+    static void WriteSchemaScalar(Dictionary<string, object?> head, string path, float value)
+    {
+        var cut = path.IndexOf('.', StringComparison.Ordinal);
+        if (cut < 0) { head[path] = value; return; }
+        if (head[path[..cut]] is Dictionary<string, object?> group) group[path[(cut + 1)..]] = value;
+    }
+
+    /// <summary>The unparameterised head this one is a variation of, at its own size and turn.</summary>
+    /// <remarks>
+    /// Rebuilt from the construction rather than carried on the head, so that a caller who never
+    /// asked for a caricature pays nothing for one. The turn is recovered rather than remembered,
+    /// which is the same route <see cref="CreateHeadGeometry"/> takes and for the same reason: yaw
+    /// is not stored on the head, and re-deriving it is exact enough for a reference face.
+    /// </remarks>
+    static Dictionary<string, object?> CanonFor(IDictionary head)
+    {
+        var (origin, h) = HeadFrame(head, "headObj");
+        var yaw = MathF.Acos(Math.Clamp(HeadTurn(head), 0f, 1f)) * 180f / MathF.PI;
+        return new ConstructiveDrawingToolkit().CreateLoomisHead(origin.X, origin.Y, h, yaw);
+    }
+
+    /// <summary>The canon's own <c>height / width</c> for an eye, and the aperture's shape at it.</summary>
+    /// <remarks>
+    /// Kept as ratios of the upper deflection rather than as independent fractions of eye width, so
+    /// that moving <c>height</c> opens and closes the whole aperture coherently instead of only
+    /// lifting its top. At <see cref="CanonOpenness"/> these reproduce the constants that were
+    /// written inline before the aperture was readable — 0.45, 0.40, 0.25 and 0.15 of the drawn
+    /// width — which is what makes the change invisible to every script that does not use it.
+    /// </remarks>
+    private const float CanonOpenness = 0.45f;
+    private const float LidCrest = 0.40f / 0.45f;
+    private const float LidFloor = 0.25f / 0.45f;
+    private const float LowerLidStart = 0.15f / 0.45f;
+
+    /// <summary>One measurement of a group divided by another, or <paramref name="fallback"/>.</summary>
+    /// <remarks>
+    /// A ratio rather than an absolute is what makes a landmark-derived proportion survive
+    /// projection: the far eye is narrower at yaw, and dividing by its own width is what stops it
+    /// also reading as half shut.
+    /// </remarks>
+    static float Ratio(IDictionary? d, string numerator, string denominator, float fallback)
+    {
+        var n = Num(d, numerator, float.NaN);
+        var q = Num(d, denominator, float.NaN);
+        if (!float.IsFinite(n) || !float.IsFinite(q) || q <= 0.01f || n < 0f) return fallback;
+        var r = n / q;
+        return float.IsFinite(r) ? r : fallback;
+    }
+
     static Dictionary<string, object?> CloneHead(IDictionary head)
     {
         var copy = new Dictionary<string, object?>(head.Count);
@@ -3992,6 +4748,35 @@ public class ConstructiveDrawingToolkit
     /// eye about its own centre, so the spacing set above survives it — doing them the other way
     /// round makes the two parameters fight, and a reader cannot tell which one they are adjusting.
     /// </remarks>
+    /// <summary>
+    /// Opens or hoods the lids, by scaling each eye's <c>height</c> and leaving its width alone.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The sixth parameter, and it was absent for a mechanical reason rather than a design one:</b>
+    /// <see cref="DrawComicEye"/> derived the whole aperture from eye width, so <c>height</c> was
+    /// written by the construction and read by nothing. Now that the renderer takes it as a ratio
+    /// against width, changing it here is the difference between a hooded eye and a staring one.
+    /// </para>
+    /// <para>
+    /// <b>This is identity, not expression.</b> The range tops out well short of a shut eye, because
+    /// a character who is permanently blinking is not a character. Closing an eye is an Action Unit
+    /// and belongs to the expression layer, which drives the same field through a blend.
+    /// </para>
+    /// </remarks>
+    static void OpenEyes(Dictionary<string, object?> head, float opening)
+    {
+        if (opening == 0f) return;
+
+        var scale = 1f + (opening * 0.6f);
+        foreach (var group in new[] { "nearEye", "farEye" })
+        {
+            if (head[group] is not Dictionary<string, object?> eye) continue;
+            if (eye.TryGetValue("height", out var h) && h is not null)
+                eye["height"] = Convert.ToSingle(h, CultureInfo.InvariantCulture) * scale;
+        }
+    }
+
     static void MoveEyes(Dictionary<string, object?> head, float spacing, float size)
     {
         foreach (var (group, sign) in new[] { ("nearEye", 1f), ("farEye", -1f) })
@@ -4059,6 +4844,110 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>
+    /// Points or squares the chin alone, leaving the jaw's own width where <c>jawShape</c> put it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A second axis rather than more of the first.</b> <c>jawShape</c> spreads all six stations
+    /// together, so it answers <i>how wide is this jaw</i> and nothing else — a broad jaw ending in a
+    /// point, or a narrow one ending square, were both unreachable. This moves the two chin corners
+    /// against the chin itself, so the two parameters multiply instead of duplicating.
+    /// </para>
+    /// <para>
+    /// <b>The vertical component is deliberate and small.</b> Negative pulls the corners in and drops
+    /// the point, which is what a pointed chin does; positive spreads them and lifts it a little,
+    /// which flattens. The coupling is anatomical — a chin that comes to a point is longer than one
+    /// that ends square — and it is kept to a quarter of the horizontal move so this stays a
+    /// <i>shape</i> control rather than a length one. <b>Length is <see cref="LengthenChin"/>'s</b>,
+    /// which takes the jaw angle down with the chin as lengthening the lower face requires; this
+    /// small dy is coupling, not a second way to reach it.
+    /// </para>
+    /// <para>
+    /// <b>Both chins move.</b> The construction records the chin twice — <c>head.chin</c> and
+    /// <c>jaw.chin</c> — and only the first is read by <see cref="CreateHeadGeometry"/>. Moving one
+    /// and not the other would leave a duplicate disagreeing with the drawing, which is the kind of
+    /// divergence that surfaces later as a blend doing something inexplicable.
+    /// </para>
+    /// </remarks>
+    static void ShapeChin(Dictionary<string, object?> head, float amount, float H)
+    {
+        if (amount == 0f) return;
+
+        // Read before anything moves: the axis is the chin's own x, and the point is about to shift.
+        var chin = ExtractPoint(head.TryGetValue("chin", out var c) ? c : null);
+
+        foreach (var key in new[] { "chinNear", "chinFar" })
+        {
+            var p = GetPoint(head, "jaw", key);
+            var outward = p.X - chin.X;
+            if (outward == 0f) continue;
+            SetPoint(head, "jaw", key, new Point2D(p.X + (MathF.Sign(outward) * amount * H * 0.045f), p.Y));
+        }
+
+        var dy = -amount * H * 0.012f;
+        head["chin"] = ToDict(new Point2D(chin.X, chin.Y + dy));
+
+        var jawChin = GetPoint(head, "jaw", "chin");
+        SetPoint(head, "jaw", "chin", new Point2D(jawChin.X, jawChin.Y + dy));
+    }
+
+    /// <summary>
+    /// Lower-face length: the whole mandible grows or shortens, chin and angle together.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The angle comes down with the chin, and that is the entire difference between this and
+    /// moving the chin point.</b> A mandible that lengthens lengthens in two places — the ramus, from
+    /// the station down to the angle, and the body, from the angle forward to the chin — so dropping
+    /// the chin alone would stretch the last inch of the outline into a spike and leave a jaw that
+    /// still ended where it did. The angle takes half a step to the chin's one, which is the share
+    /// that keeps the two segments in proportion to each other.
+    /// </para>
+    /// <para>
+    /// <b>The stations do not move at all.</b> They are the joint against the skull, and a skull does
+    /// not get longer because a jaw does — the same reasoning that took the stations out of
+    /// <see cref="SquareJaw"/> after they drew a lateral spur, and the same reasoning that gives them
+    /// the smallest share in <see cref="DropJaw"/>. This is the axis <c>jawShape</c> works along
+    /// turned ninety degrees: that one asks how wide, this one asks how long, and they compose.
+    /// </para>
+    /// <para>
+    /// <b>Full scale is 0.05 H, about a quarter of the canon's mouth-to-chin gap and a sixth of the
+    /// lower face.</b> Deliberately more modest than <c>noseLength</c>'s <c>0.07 H</c>, which already
+    /// spends most of its own gap and is the binding constraint on every caricature: this one moves
+    /// the <i>silhouette</i>, so it reads at panel size at a fraction of the displacement a feature
+    /// inside the face needs. At <c>-1</c> the chin still sits <c>0.14 H</c> below the mouth, so the
+    /// full range stays a face and <see cref="VerifyHeadOrdering"/> keeps room to report on.
+    /// </para>
+    /// <para>
+    /// <b>Order against <see cref="ShapeChin"/> does not matter</b>, since that one reads the chin's
+    /// <c>x</c> and writes <c>x</c> and <c>y</c> on the corners while this writes <c>y</c> only. They
+    /// are run in the documented order anyway, so a reader never has to establish that.
+    /// </para>
+    /// </remarks>
+    static void LengthenChin(Dictionary<string, object?> head, float amount, float H)
+    {
+        if (amount == 0f) return;
+
+        var dy = amount * H * 0.05f;
+
+        if (head.TryGetValue("chin", out var c) && c is not null)
+        {
+            var chin = ExtractPoint(c);
+            head["chin"] = ToDict(new Point2D(chin.X, chin.Y + dy));
+        }
+
+        if (head["jaw"] is not Dictionary<string, object?> jaw) return;
+
+        foreach (var (key, share) in new[] { ("chin", 1f), ("chinNear", 1f), ("chinFar", 1f),
+                                             ("angle", 0.5f), ("nearAngle", 0.5f) })
+        {
+            if (!jaw.ContainsKey(key)) continue;
+            var p = ExtractPoint(jaw[key]);
+            jaw[key] = ToDict(new Point2D(p.X, p.Y + (dy * share)));
+        }
+    }
+
+    /// <summary>
     /// Jaw shape, from tapering toward the chin to squared at the angle.
     /// </summary>
     /// <remarks>
@@ -4076,9 +4965,22 @@ public class ConstructiveDrawingToolkit
         var W = unit is not null && unit.TryGetValue("W", out var w) && w is not null
             ? Convert.ToSingle(w, CultureInfo.InvariantCulture) : 160f;
 
-        foreach (var (key, share) in new[] { ("nearStation", 1f), ("farStation", 1f),
-                                             ("nearAngle", 0.8f), ("angle", 0.8f),
-                                             ("chinNear", 0.35f), ("chinFar", 0.35f) })
+        // **The station barely moves, and that is the whole shape of a squared jaw.** Loomis hangs the
+        // jaw off the ball's halfway line station to station, so the station is a *joint* - the point
+        // where the mandible meets the skull - and the skull does not widen when a character's jaw
+        // does. Displacing it was this call's first behaviour and it produced a sharp lateral spur at
+        // every value above zero: the jaw's top edge is a straight line between the two stations, the
+        // ball curves inward above them, and past the ball's own reach the two meet at a corner with
+        // nothing over it. Measured on a 240px head, `nearStation` sits at dx 76.7 against a ball
+        // reaching 76.6 - exactly on it - and the old full share took it to 93.1, seventeen pixels
+        // into open air.
+        //
+        // What a square jaw actually widens is the **angle** (the gonion) and the **chin**, which is
+        // where the shares now sit. A small residual at the station keeps the ramus from reading as a
+        // parallel-sided slab.
+        foreach (var (key, share) in new[] { ("nearStation", 0.15f), ("farStation", 0.15f),
+                                             ("nearAngle", 1f), ("angle", 1f),
+                                             ("chinNear", 0.55f), ("chinFar", 0.55f) })
         {
             var p = GetPoint(head, "jaw", key);
             var outward = p.X - axis;
@@ -4411,11 +5313,14 @@ public class ConstructiveDrawingToolkit
     /// <para>
     /// <c>yawDeg</c> defaults to <b>0</b> rather than <c>createLoomisHead</c>'s 35: a head on a figure
     /// faces where the figure faces until told otherwise. <c>character</c> is passed to
-    /// <see cref="CreateParametricHead"/> before the neck is measured. <b>That order changes nothing
-    /// today and is kept anyway</b>: of the five parameters only <c>jawShape</c> goes near the chin,
-    /// and it displaces <c>jaw.chinNear</c> and <c>jaw.chinFar</c> rather than the top-level
-    /// <c>chin</c> the neck hangs from. A parameter that ever moves that one would silently hang the
-    /// neck off a chin that no longer exists, and measuring last costs nothing.
+    /// <see cref="CreateParametricHead"/> before the neck is measured, and <b>that order is now
+    /// load-bearing rather than merely tidy.</b> It was kept when nothing depended on it — the
+    /// parameters of the day reached <c>jaw.chinNear</c> and <c>jaw.chinFar</c> and never the
+    /// top-level <c>chin</c> the neck hangs from — on the argument that a parameter which ever moved
+    /// that one would silently hang the neck off a chin that no longer existed. <c>chinShape</c> and
+    /// <c>chinLength</c> are both that parameter, so a long-jawed character now gets the shorter neck
+    /// its own chin leaves room for, and did so the day it was added without anything being changed
+    /// here. <b>Measuring last cost nothing and bought exactly this.</b>
     /// </para>
     /// <para>
     /// <b><c>fit</c> travels with the head</b>, so <c>createHeadGeometry</c> reads <c>neckLength</c>
@@ -4456,8 +5361,8 @@ public class ConstructiveDrawingToolkit
             head = CreateParametricHead(head, character);
 
         // Measured on the figure in hand rather than on the canon, which is what lets a posed figure
-        // get the neck its own pose needs. Taken after any character parameters, which today move no
-        // landmark this reads - see the remarks for why the order is kept regardless.
+        // get the neck its own pose needs. Taken after any character parameters, which is now what
+        // makes a long- or short-chinned character get the neck its own chin leaves room for.
         var chin = ExtractPoint(head["chin"]);
         var sternum = ExtractPoint(fig["sternum"]);
         var reach = MathF.Sqrt((sternum.X - chin.X) * (sternum.X - chin.X)

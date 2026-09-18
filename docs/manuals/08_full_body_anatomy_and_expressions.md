@@ -347,10 +347,25 @@ axis and the collarbones are two different lines and must stay separate.
 
 ## 4. Facial Expression — Muscles, Not a Taxonomy of Emotions
 
-> **Implemented by**: `Drawing.applyFacialExpression(head, expressionType, intensity)` → a modified `LoomisHead`. Build the head with `Drawing.createLoomisHead(...)` first, then render the displaced landmarks with `Drawing.drawComicEye(...)` and `Drawing.drawComicMouth(...)`.
+> **Implemented by**: `Drawing.applyActionUnits(head, weights)` — **the call to reach for** — and `Drawing.applyFacialExpression(head, expressionType, intensity)`, which predates it. Build the head with `Drawing.createLoomisHead(...)` first, then render the displaced landmarks with `Drawing.drawComicEye(...)` and `Drawing.drawComicMouth(...)`.
+
+> **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956), pp. 45–47 and Plate 21, for the mechanics; Paul Ekman & Wallace V. Friesen, *Measuring Facial Movement*, Environmental Psychology and Nonverbal Behavior 1(1):56–75, 1976, Table 1, for the numbering and the muscle names.
+
+### The muscle layer, and why it is the one to use
+
+**`applyActionUnits` takes muscles and the six presets take feelings, which is the whole argument of this section made into an API.** Loomis sets the emotions aside as *too numerous to tabulate* and gives the muscle groups instead; Ekman & Friesen, measuring rather than drawing, arrive at the same anatomy and number it. Two schools, two vocabularies, one set of muscles.
+
+```js
+const worried = Drawing.applyActionUnits(head, { AU1: 0.7, AU4: 0.4, AU15: 0.6 });
+```
+
+Units are **additive and order-independent**, so a handful covers a wide range of faces without a preset per combination — which is exactly Loomis's point about the emotions being uncountable while the muscles are not. Seven are implemented; `polson://sdk/core/Drawing` lists them, and lists what is absent and why, because the set is bounded by what this construction carries landmarks for rather than by the coding system.
+
+> **Neither source supplies a magnitude.** Loomis gives directions and a relaxed/contracted table; the 1976 code scores **presence** — slight against strong — rather than a continuous intensity. The displacement numbers are the studio's, tuned by eye, and **a published table of emotion-to-unit weights is claiming more than either source says**. Tune them against a render rather than trusting a decimal.
 
 > **Principle**:
-> The six presets each displace a set of head landmarks. What each is doing, in muscle terms:
+> The six presets are **Action Unit tuples**, and `Drawing.expressionUnits(name)` hands you the tuple
+> so you can read it, change a unit and pass it on. What each is doing, in muscle terms:
 >
 > 1. **`"joy"`**: Zygomaticus major contracts $\implies$ mouth corners pull up & out; Orbicularis oculi contracts $\implies$ lower eyelids push up, crinkling crow's feet.
 > 2. **`"anger"`**: Corrugator supercilii contracts $\implies$ eyebrows pull sharply down and inward into a fierce V-shape; eyes narrow; mouth squares.
@@ -358,6 +373,36 @@ axis and the collarbones are two different lines and must stay separate.
 > 4. **`"sadness"`**: Frontalis (medial) contracts while Corrugator relaxes $\implies$ inner eyebrow tips pull up into an inverted peak ($\land$ shape); mouth corners pull down (Depressor anguli oris).
 > 5. **`"surprise"`**: Eyebrows arch high in uniform curves; eyes widen in circles; jaw drops open into a relaxed vertical oval.
 > 6. **`"disgust"`**: Levator labii superioris contracts $\implies$ upper lip curls upward in a sneer, wrinkling the bridge of the nose; eyebrows lower slightly.
+
+### What the six actually resolve to, and how far to trust each
+
+| preset | units | how well served |
+| :--- | :--- | :--- |
+| `joy` | `AU12` 0.85, `AU7` 0.25 | **well** — Zygomatic Major is implemented and the mouth is where it lives |
+| `sadness` | `AU1` 0.70, `AU15` 0.75 | **well** — Triangularis and the inner-brow lift both reachable |
+| `anger` | `AU4` 0.90, `AU7` 0.60, `AU15` 0.25 | good at the brow; Loomis's *squaring* mouth has no unit, so AU15 stands in |
+| `fear` | `AU1` 0.80, `AU5` 0.80, `AU26` 0.45 | differs from `surprise` **only in amount** — see below |
+| `surprise` | `AU1` 0.95, `AU5` 0.65, `AU26` 0.75 | as above |
+| `disgust` | `AU4` 0.40, `AU7` 0.45, `AU15` 0.50 | **a placeholder** — its real action is AU9/AU10, unimplemented |
+
+**These weights are the studio's and no source supplies them.** Loomis gives directions and a
+relaxed/contracted table; Ekman & Friesen score presence rather than amount. Published
+emotion-to-unit tables are somebody's interpretation. Tune against a render, not against a decimal.
+
+> **Two of the six are limited by one missing landmark, and it is the same one.** The head carries a
+> single `brow` centre point. So **`fear` and `surprise` are nearly the same face**, because what
+> separates them in life is AU4 knitting an already-raised brow; and **`sadness` names AU1 without
+> AU4**, because the canonical oblique sad brow is both at once and on one landmark they cancel
+> exactly. Giving `createLoomisHead` inner and outer brow stations fixes both at a stroke, and is the
+> obvious next increment on this section.
+
+> **The defect this replaced is worth keeping, because it survived everything.** Until 2026-09-18 the
+> presets displaced landmarks directly, and `'sadness'` — described in this manual as lifting the
+> inner brow **and** dropping the mouth corners — moved only the mouth. A live run asked for it
+> *"at 0.22 for the inner-brow lift only"*, wrote a careful note about the intensity above which that
+> lift would become a grimace, and got about two and a half pixels of a movement it had not wanted.
+> The manual was right, the agent reasoned correctly, the render was fine. **Nothing compared the
+> name to the displacement**, and for a face that is all it takes.
 
 ### Loomis works from muscles, and declines to tabulate the emotions
 

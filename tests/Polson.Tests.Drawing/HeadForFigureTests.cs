@@ -221,6 +221,41 @@ public class HeadForFigureTests : TestsRuntime
             "the tapered jaw reaches as far as the squared one — the two characters share an outline");
     }
 
+    /// <summary>A longer chin gets a shorter neck, because the neck is measured after the character.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The payoff of an ordering decision taken before there was anything to pay off.</b> The neck
+    /// is measured chin-to-sternum <i>after</i> <c>createParametricHead</c> runs, and that order was
+    /// kept when no parameter reached the top-level <c>chin</c> — on the argument that one which ever
+    /// did would otherwise hang the neck off a chin that no longer existed. <c>chinLength</c> is that
+    /// parameter, and this is the assertion that it landed rather than merely that it could.
+    /// </para>
+    /// <para>
+    /// Both directions, because a test of the long half alone passes on an implementation that
+    /// clamps at the canon — and a short chin needing a <i>longer</i> neck is the half a reader is
+    /// more likely to doubt.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestAChinLengthChangesTheNeckItIsMeasuredFor()
+    {
+        var fig = Figure();
+
+        float NeckFor(float chinLength) => Num(Sub(Fitted(fig, new Dictionary<string, object?>
+        {
+            ["character"] = new Dictionary<string, object?> { ["chinLength"] = chinLength }
+        }), "fit"), "neckLength");
+
+        var longChin = NeckFor(1f);
+        var canon = NeckFor(0f);
+        var shortChin = NeckFor(-1f);
+
+        Assert.True(longChin < canon,
+            $"a long chin should leave less neck to the sternum: {longChin:F4} against {canon:F4}");
+        Assert.True(shortChin > canon,
+            $"a short chin should leave more: {shortChin:F4} against {canon:F4}");
+    }
+
     /// <summary>A misspelled option is refused by name rather than silently drawing the canon.</summary>
     [Fact]
     public void TestAnUnknownOptionIsRefused()

@@ -257,9 +257,10 @@ The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is
 | --- | --- | --- |
 | `head.unit` | `{ H, W, eyeW, thirdH }` | `thirdH` is Loomis's unit, `H/3.5`; `eyeW` is half of one, so the head is 6 eye-widths wide. |
 | `head.crown`, `head.hairline` | Top dome bounds | The dome above the upper third. |
-| `head.brow`, `head.eyeLineY` | Brow line and eye line | `eyeLineY` is **exactly** `H/2`, at 1¾ units. |
+| `head.brow`, `head.eyeLineY` | Brow line and eye line | `eyeLineY` is **exactly** `H/2`, at 1¾ units. **`head.brow` is the ball's equator, not an eyebrow** — `createHeadGeometry` takes the cranium's centre and radius from it, and nothing but the construction sheet draws it. |
 | `head.noseBase`, `head.mouthCenter`, `head.chin` | Lower two thirds | Each division is one `unit.thirdH`; the lip line is ⅓ of one below the nose. |
 | `head.nearEye`, `head.farEye` | `{ inner, outer, center, width, height }` | Pass straight to `Drawing.drawComicEye(...)`. |
+| `head.nearBrow`, `head.farBrow` | `{ inner, peak, outer, thickness }` | The **drawn** eyebrows, one per eye — pass straight to `Drawing.drawComicBrow(...)`. Three stations because two cannot carry an arch, and the arch is where AU1 differs from AU2. |
 | `head.noseWedge` | `{ bridgeTop, apex, underNose, nearNostril }` | Pass straight to `Drawing.drawComicNose(...)`. |
 | `head.mouthGuides` | `{ center, leftCorner, rightCorner, upperLipY, lowerLipY }` | Pass straight to `Drawing.drawComicMouth(...)`. |
 | `head.jaw` | `{ ear, angle, nearAngle, farStation, nearStation, chinFar, chinNear, chin, cheekApex }` | The whole jaw frame, ordered left to right. Both stations are the ball's halfway line, foreshortened by the turn — §2a. |
@@ -271,7 +272,7 @@ The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is
 
 ## 4. Drawing Facial Features Step-by-Step
 
-> **Implemented by**: `Drawing.drawComicEye(ctx, eyeObj, isFar, options)`, `Drawing.drawComicNose(ctx, noseObj, options)`, and `Drawing.drawComicMouth(ctx, mouthObj, options)` — each consumes the matching sub-object of the `LoomisHead` directly. For an emotional pose, run the head through `Drawing.applyFacialExpression(head, type, intensity)` first (Manual 08 §4).
+> **Implemented by**: `Drawing.drawComicBrow(ctx, browObj, isFar, options)`, `Drawing.drawComicEye(ctx, eyeObj, isFar, options)`, `Drawing.drawComicNose(ctx, noseObj, options)`, and `Drawing.drawComicMouth(ctx, mouthObj, options)` — each consumes the matching sub-object of the `LoomisHead` directly. For an emotional pose, run the head through `Drawing.applyFacialExpression(head, type, intensity)` first (Manual 08 §4).
 
 ### A. The Comic Eye (Intense 3/4 Gaze)
 
@@ -306,6 +307,7 @@ looked at:
 | Call | Returns |
 | :--- | :--- |
 | `drawComicEye` | `aperture`, `iris`, `pupil`, `catchlight`, `upperLid`, `lowerLid` |
+| `drawComicBrow` | `mass`, `spine` |
 | `drawComicNose` | `underPlane`, `bridge`, `nostril` |
 | `drawComicMouth` | `cavity`, `teeth`, `lipLine`, `lowerLip` |
 

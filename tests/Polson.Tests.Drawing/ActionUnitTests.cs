@@ -98,6 +98,11 @@ public class ActionUnitTests : TestsRuntime
 
     #region Direction Tests
     /// <summary>AU1 raises the brow and AU4 lowers it — antagonists, as the coding system has them.</summary>
+    /// <remarks>
+    /// Measured at the brow's <b>inner station</b>, not at <c>head.brow</c>. That landmark is the
+    /// ball's equator rather than a drawn eyebrow, and these units stopped moving it on 2026-09-18 —
+    /// see <see cref="TestTheBrowUnitsLeaveTheCraniumAlone"/> for what moving it did.
+    /// </remarks>
     [Fact]
     public void TestTheBrowUnitsOpposeEachOther()
     {
@@ -105,8 +110,84 @@ public class ActionUnitTests : TestsRuntime
         var raised = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU1"] = 1f });
         var lowered = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU4"] = 1f });
 
-        Assert.True(Y(raised, "brow") < Y(head, "brow"), "AU1 must raise the brow");
-        Assert.True(Y(lowered, "brow") > Y(head, "brow"), "AU4 must lower the brow");
+        Assert.True(BrowY(raised, "inner") < BrowY(head, "inner"), "AU1 must raise the inner brow");
+        Assert.True(BrowY(lowered, "inner") > BrowY(head, "inner"), "AU4 must lower the brow");
+    }
+
+    /// <summary>
+    /// AU1 lifts the inner end and AU2 the outer one — which is why both exist.
+    /// </summary>
+    /// <remarks>
+    /// <b>The distinction the brow stations were added for.</b> With one <c>brow</c> point these were
+    /// the same displacement under two names, and the difference between them is the difference
+    /// between worry and surprise. Each unit is asserted to leave the <i>other</i> end alone, because
+    /// two units that both lifted the whole brow would pass a test that only checked their own end.
+    /// </remarks>
+    [Fact]
+    public void TestTheTwoFrontalisUnitsLiftOppositeEndsOfTheBrow()
+    {
+        var head = Head();
+        var inner = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU1"] = 1f });
+        var outer = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU2"] = 1f });
+
+        Assert.True(BrowY(inner, "inner") < BrowY(head, "inner"), "AU1 must lift the inner end");
+        Assert.Equal(BrowY(head, "outer"), BrowY(inner, "outer"), 3);
+
+        Assert.True(BrowY(outer, "outer") < BrowY(head, "outer"), "AU2 must lift the tail");
+        Assert.Equal(BrowY(head, "inner"), BrowY(outer, "inner"), 3);
+    }
+
+    /// <summary>
+    /// The brow units do not resize the cranium, because they no longer move the ball's equator.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A regression test for a defect that shipped and was invisible.</b> AU1 and AU4 used to
+    /// displace <c>head["brow"]</c> — which <c>createHeadGeometry</c> reads as the cranium's centre
+    /// <i>and</i>, against the crown, as its radius. So raising the eyebrows shrank the skull and
+    /// frowning grew it. Measured on a 240px head before the fix: neutral silhouette
+    /// <b>208.5px</b> wide, <c>AU1</c> at full weight <b>188.9</b>, <c>AU4</c> <b>225.4</b> — a
+    /// 36.5px swing across one expression range on a character meant to stay the same person.
+    /// </para>
+    /// <para>
+    /// Nothing could have caught it downstream: a head with raised brows simply looks like a
+    /// slightly narrower head, and only two panels side by side would show it.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestTheBrowUnitsLeaveTheCraniumAlone()
+    {
+        var head = Head();
+        var canonBrow = Y(head, "brow");
+
+        foreach (var unit in new[] { "AU1", "AU2", "AU4" })
+        {
+            var posed = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { [unit] = 1f });
+
+            Assert.Equal(canonBrow, Y(posed, "brow"), 3);
+            Assert.Equal(Y(head, "crown"), Y(posed, "crown"), 3);
+        }
+    }
+
+    /// <summary>AU4 knits: the inner ends of both brows come toward the facial axis, not leftward.</summary>
+    /// <remarks>
+    /// <b>Both brows, because a signed screen-x displacement would knit one and spread the other.</b>
+    /// That renders as a face with one raised and one dropped inner corner — a drawing fault rather
+    /// than an expression, and one nothing downstream could report.
+    /// </remarks>
+    [Fact]
+    public void TestAU4DrawsBothInnerBrowsTowardTheAxis()
+    {
+        var head = Head();
+        var knit = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU4"] = 1f });
+        var axis = X(head, "brow");
+
+        foreach (var brow in new[] { "nearBrow", "farBrow" })
+        {
+            var before = MathF.Abs(BrowX(head, brow, "inner") - axis);
+            var after = MathF.Abs(BrowX(knit, brow, "inner") - axis);
+            Assert.True(after < before, $"{brow} inner end moved away from the axis: {before:F2} → {after:F2}");
+        }
     }
 
     /// <summary>AU5 opens the lids and AU7 narrows them.</summary>
@@ -203,17 +284,38 @@ public class ActionUnitTests : TestsRuntime
 
     /// <summary>A unit the head has no landmark for is refused rather than silently absent.</summary>
     /// <remarks>
-    /// AU2 is a real Action Unit and is deliberately not implemented, because the head carries one
-    /// brow point and cannot distinguish an outer arch from an inner lift. Accepting it and doing
-    /// nothing would be the worst of the three options.
+    /// <para>
+    /// Each of these is a real Action Unit deliberately not implemented, because the landmark it
+    /// would move does not exist: there is no cheek for AU6, the upper lip is a single scalar so
+    /// AU9 and AU10 would raise the whole of it, and AU17's mentalis bulge is a surface change
+    /// rather than a landmark move. Accepting one and doing nothing is the worst of the three
+    /// options, since it reads as the weight being too low.
+    /// </para>
+    /// <para>
+    /// <b>This test named AU2 until 2026-09-18</b>, when the head grew inner and outer brow
+    /// stations and AU2 became implementable. A refusal list is a statement about the geometry, so
+    /// it has to move when the geometry does.
+    /// </para>
     /// </remarks>
-    [Fact]
-    public void TestAUnitTheGeometryCannotShowIsRefused()
+    [Theory]
+    [InlineData("AU6")]
+    [InlineData("AU9")]
+    [InlineData("AU17")]
+    public void TestAUnitTheGeometryCannotShowIsRefused(string unit)
     {
         var ex = Assert.Throws<ArgumentException>(
-            () => Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { ["AU2"] = 0.5f }));
+            () => Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { [unit] = 0.5f }));
 
-        Assert.Contains("AU2", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(unit, ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>AU2 is accepted now that the brow carries a tail to raise.</summary>
+    [Fact]
+    public void TestAU2IsImplementedNowThatTheBrowHasStations()
+    {
+        var posed = Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { ["AU2"] = 0.5f });
+
+        Assert.True(BrowY(posed, "outer") < BrowY(Head(), "outer"));
     }
 
     /// <summary>A negative weight is refused, because the opposing action is its own unit.</summary>
@@ -312,6 +414,16 @@ public class ActionUnitTests : TestsRuntime
 
     static float Y(Dictionary<string, object?> head, string key) =>
         Convert.ToSingle(((Dictionary<string, object?>)head[key]!)["y"]);
+
+    static float X(Dictionary<string, object?> head, string key) =>
+        Convert.ToSingle(((Dictionary<string, object?>)head[key]!)["x"]);
+
+    /// <summary>A named station on the near brow — the drawn eyebrow, not the ball's equator.</summary>
+    static float BrowY(Dictionary<string, object?> head, string station) =>
+        Convert.ToSingle(((Dictionary<string, object?>)G(head, "nearBrow")[station]!)["y"]);
+
+    static float BrowX(Dictionary<string, object?> head, string brow, string station) =>
+        Convert.ToSingle(((Dictionary<string, object?>)G(head, brow)[station]!)["x"]);
 
     static float Aperture(Dictionary<string, object?> head) =>
         Convert.ToSingle(G(head, "nearEye")["height"]);

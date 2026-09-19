@@ -1582,6 +1582,128 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.True(mass.Path.Bounds.Height > ((CanvasPath)nose["underPlane"]!).Path.Bounds.Height);
     }
 
+    /// <summary>The brow comes back as a filled mass and its centre-line, and sits above its eye.</summary>
+    /// <remarks>
+    /// <b>The drawer exists so the brow stations are not another <c>eye.height</c>.</b> Landmarks
+    /// nothing reads are the failure this construction has already shipped once — so a test that the
+    /// brow occupies real area, above the eye rather than anywhere, is the cheapest guard that the
+    /// stations reach a picture at all.
+    /// </remarks>
+    [Fact]
+    public void TestComicBrowReturnsAMassAboveItsEye()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(300f, 250f, 300f, 12f, 0f);
+        var ctx = new SkiaCanvas(600, 600).GetContext("2d");
+
+        var brow = toolkit.DrawComicBrow(ctx, head["nearBrow"]!, false, null);
+
+        Assert.Equal(new[] { "mass", "spine" }, brow.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+
+        var mass = ((CanvasPath)brow["mass"]!).Path.Bounds;
+        var eye = ((CanvasPath)toolkit.DrawComicEye(ctx, head["nearEye"]!, false, null)["aperture"]!).Path.Bounds;
+
+        Assert.True(mass.Width > 0 && mass.Height > 0, "the brow must have area, not be an empty path");
+        Assert.True(mass.Bottom < eye.MidY, "the brow must sit above the eye it belongs to");
+        Assert.True(mass.MidX > eye.Left && mass.MidX < eye.Right, "and over it rather than beside it");
+    }
+
+    /// <summary>
+    /// The far brow keeps the near one's weight under the turn, because weight comes from the arch.
+    /// </summary>
+    /// <remarks>
+    /// <b>A brow foreshortens horizontally and not vertically.</b> Weight taken from the projected
+    /// span would return a far brow up to 45% too thin at the yaw clamp — so it is taken from
+    /// <c>|peak.y − inner.y|</c>, which is a vertical measure and does not foreshorten at all. Same
+    /// reasoning that made <c>drawComicEye</c> read its aperture as a ratio. Asserted against a
+    /// <i>turned</i> head, since at yaw 0 any derivation passes.
+    /// </remarks>
+    [Fact]
+    public void TestTheFarBrowDoesNotThinWithTheTurn()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var ctx = new SkiaCanvas(600, 600).GetContext("2d");
+
+        float FarHeight(float yaw)
+        {
+            var head = toolkit.CreateLoomisHead(300f, 250f, 300f, yaw, 0f);
+            return ((CanvasPath)toolkit.DrawComicBrow(ctx, head["farBrow"]!, true, null)["mass"]!).Path.Bounds.Height;
+        }
+
+        // The span really does foreshorten, or the test below would be measuring nothing.
+        var frontal = toolkit.CreateLoomisHead(300f, 250f, 300f, 0f, 0f);
+        var turned = toolkit.CreateLoomisHead(300f, 250f, 300f, 40f, 0f);
+        float Span(Dictionary<string, object?> h)
+        {
+            var b = (Dictionary<string, object?>)h["farBrow"]!;
+            return MathF.Abs(Convert.ToSingle(((Dictionary<string, object?>)b["outer"]!)["x"])
+                           - Convert.ToSingle(((Dictionary<string, object?>)b["inner"]!)["x"]));
+        }
+
+        Assert.True(Span(turned) < Span(frontal) * 0.9f, "the far brow's span must foreshorten");
+        Assert.Equal(FarHeight(0f), FarHeight(40f), 2);
+    }
+
+    /// <summary>An expression changes where the brow is, never how heavy it is drawn.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The regression test for a defect a render caught and every assertion missed.</b> The first
+    /// version of <c>drawComicBrow</c> took its weight from the arch, <c>|peak.y − inner.y|</c>, on
+    /// the reasoning that a vertical measure does not foreshorten. True, and beside the point: the
+    /// arch is a quantity the Action Units <i>move</i>. AU1 raises the inner end toward the peak, so
+    /// <c>sadness</c> flattens it — on a 760px head from <b>15.2px to 0.9px</b> — and the brow drew
+    /// as a hairline while the landmarks, the tuples and the ordering ladder were all correct.
+    /// </para>
+    /// <para>
+    /// It is the same shape as the defect this whole change fixed: a drawn quantity derived from
+    /// something an expression displaces. Weight is now its own measurement on the brow, as
+    /// <c>width</c> and <c>height</c> are on the eye.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("sadness")]
+    [InlineData("surprise")]
+    [InlineData("anger")]
+    [InlineData("fear")]
+    public void TestAnExpressionDoesNotChangeHowHeavyTheBrowIsDrawn(string expression)
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var ctx = new SkiaCanvas(1200, 1200).GetContext("2d");
+        var neutral = toolkit.CreateLoomisHead(600f, 500f, 760f, 0f, 0f);
+        var posed = toolkit.ApplyFacialExpression(neutral, expression, 1f);
+
+        // **Across the mass, not around it.** The bounding box is the wrong measure and saying so is
+        // half the point: a slanted brow occupies a taller box than a flat one at identical weight,
+        // and a flattened arch occupies a shorter one — so the box moves for reasons that have
+        // nothing to do with how heavy the mark is. Cutting a one-pixel column out of the shape near
+        // its blunt end measures the thing itself.
+        float Weight(Dictionary<string, object?> head)
+        {
+            var brow = (Dictionary<string, object?>)head["nearBrow"]!;
+            var mass = (CanvasPath)toolkit.DrawComicBrow(ctx, head["nearBrow"]!, false, null)["mass"]!;
+            var innerX = Convert.ToSingle(((Dictionary<string, object?>)brow["inner"]!)["x"]);
+            var outerX = Convert.ToSingle(((Dictionary<string, object?>)brow["outer"]!)["x"]);
+            var atX = innerX + ((outerX - innerX) * 0.1f);
+
+            var column = new CanvasPath();
+            column.Rect(atX - 0.5f, mass.Path.Bounds.Top - 10f, 1f, mass.Path.Bounds.Height + 20f);
+            return mass.Intersect(column).Path.Bounds.Height;
+        }
+
+        // The stations really did move, or this asserts nothing.
+        var before = (Dictionary<string, object?>)neutral["nearBrow"]!;
+        var after = (Dictionary<string, object?>)posed["nearBrow"]!;
+        Assert.NotEqual(Convert.ToSingle(((Dictionary<string, object?>)before["inner"]!)["y"]),
+                        Convert.ToSingle(((Dictionary<string, object?>)after["inner"]!)["y"]), 1);
+
+        // And the weight the drawer reads is untouched by them.
+        Assert.Equal(Convert.ToSingle(before["thickness"]), Convert.ToSingle(after["thickness"]), 4);
+
+        // A slanted brow is taller in its bounding box but must never be *thinner* than a flat one.
+        Assert.True(Weight(posed) >= Weight(neutral) * 0.95f,
+            $"'{expression}' drew a brow {Weight(posed):F1}px against a neutral {Weight(neutral):F1}px");
+    }
+
     /// <summary>The hand comes back as one silhouette plus its named block forms.</summary>
     /// <remarks>
     /// The same gap the mannequin had, at a tenth the size: eleven boxes with their own outlines are

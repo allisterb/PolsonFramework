@@ -122,6 +122,44 @@ public class ConstructiveDrawingToolkit
         var farOuter = new Point2D(farInnerX - eyeWFar, yEye - 2f);
         var farCenter = new Point2D(farInnerX - eyeWFar * 0.5f, yEye);
 
+        // Brows. Loomis puts the brow line at 1.5 units and the eyes at 1.75, so a brow belongs to its
+        // own eye rather than to the head's centre - which is all the single `brow` landmark could
+        // ever express. **That landmark stays exactly where it is and keeps its meaning**: it is the
+        // ball's equator, the radius `createHeadGeometry` builds the cranium from, and a construction
+        // line rather than a drawn eyebrow. These are the drawn ones.
+        //
+        // Three stations each, because two cannot carry an arch and the arch is precisely where AU1
+        // and AU2 differ - an inner lift against an outer one is worry against surprise. The tail
+        // runs a little past the eye's outer corner, as a brow does, and the peak sits two thirds
+        // out, which is roughly over the outer limbus.
+        //
+        // `span` is signed, so it carries which way "outward" runs on this side of the face and the
+        // same arithmetic builds both brows: the far eye's outer corner is at negative x from its
+        // inner one, so the tail extends away from the axis there too without a sign to get wrong.
+        var browArch = unit * 0.07f;
+        Dictionary<string, object?> Brow(Point2D eyeInner, Point2D eyeOuter)
+        {
+            var span = eyeOuter.X - eyeInner.X;
+            var inner = new Point2D(eyeInner.X, yBrow);
+            var outer = new Point2D(eyeOuter.X + (span * 0.12f), yBrow);
+            return new Dictionary<string, object?>
+            {
+                ["inner"] = ToDict(inner),
+                ["peak"] = ToDict(new Point2D(inner.X + ((outer.X - inner.X) * 0.66f), yBrow - browArch)),
+                ["outer"] = ToDict(outer),
+
+                // How heavy the brow is drawn, carried as its own measurement exactly as the eye
+                // carries `width` and `height`. **It is not derived from the stations, and that is
+                // the whole reason it is here.** Thickness taken from the arch - which is what
+                // `drawComicBrow` did when it was written - collapses under any unit that flattens
+                // the brow: `sadness` raises the inner end toward the peak, and on a 760px head the
+                // arch went from 15.2px to **0.9px**, so the drawn brow came out a hairline. A
+                // vertical measure held apart from the stations is immune to that and to the turn
+                // alike, since neither an expression nor a yaw changes how thick an eyebrow is.
+                ["thickness"] = unit * 0.12f
+            };
+        }
+
         // Ear & Jaw
         // The 3-unit width INCLUDES the ears (Plate 18), and an ear is one unit tall - so as a circle it
         // is half a unit across and its centre sits one unit off the axis, putting its outer edge exactly
@@ -201,6 +239,8 @@ public class ConstructiveDrawingToolkit
                 ["width"] = eyeWFar,
                 ["height"] = eyeWFar * 0.45f
             },
+            ["nearBrow"] = Brow(nearInner, nearOuter),
+            ["farBrow"] = Brow(farInner, farOuter),
             ["noseWedge"] = new Dictionary<string, object?>
             {
                 ["bridgeTop"] = ToDict(bridgeTopPt),
@@ -361,6 +401,22 @@ public class ConstructiveDrawingToolkit
         ctx.QuadraticCurveTo(farInner.X + (farOuter.X - farInner.X) * 0.5f, farInner.Y - 10f, farOuter.X, farOuter.Y);
         ctx.Stroke();
 
+        // Brow stations. Drawn as the spine each brow is built on rather than as the filled mass, so
+        // the sheet shows where AU1, AU2 and AU4 act — which is the point of a construction sheet and
+        // was unshowable while the brow was one point on the meridian.
+        foreach (var group in new[] { "nearBrow", "farBrow" })
+        {
+            if (JsInterop.AsDict(head[group]) is not IDictionary b) continue;
+            var bi = ExtractPoint(b["inner"]);
+            var bp = ExtractPoint(b["peak"]);
+            var bo = ExtractPoint(b["outer"]);
+            var bc = ControlThrough(bi, bp, bo);
+            ctx.BeginPath();
+            ctx.MoveTo(bi.X, bi.Y);
+            ctx.QuadraticCurveTo(bc.X, bc.Y, bo.X, bo.Y);
+            ctx.Stroke();
+        }
+
         // Nose Wedge Guideline
         ctx.BeginPath();
         ctx.MoveTo(bridgeTop.X, bridgeTop.Y);
@@ -494,6 +550,99 @@ public class ConstructiveDrawingToolkit
             ["upperLid"] = upperLid,
             ["lowerLid"] = lowerLid
         };
+    }
+
+    /// <summary>
+    /// Draws one eyebrow and <b>returns the parts it built</b>: <c>mass</c> (the filled brow) and
+    /// <c>spine</c> (its centre-line, through the peak).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This exists so the brow stations are not another <c>eye.height</c>.</b> That field was
+    /// written by <see cref="CreateLoomisHead"/> and read by nothing for as long as it existed, so
+    /// every expression that meant to narrow a lid silently did nothing. Inner and outer brow
+    /// stations without a call that draws them would be the same defect a second time: AU1 and AU2
+    /// would differ in the landmark data and be indistinguishable in every render, which is the one
+    /// outcome worse than not separating them at all.
+    /// </para>
+    /// <para>
+    /// <b>The weight is read from the brow's own <c>thickness</c>, not derived from its stations.</b>
+    /// A brow foreshortens horizontally and not vertically, so weight taken from the projected span
+    /// would return a far brow 45% too thin at the yaw clamp — the same trap <c>drawComicEye</c>
+    /// avoids by reading its aperture as a ratio. <b>But the arch is not the fix either</b>, and the
+    /// first version of this call used it: <c>|peak.y − inner.y|</c> is vertical, yet it is also a
+    /// quantity the Action Units <i>move</i>. AU1 raises the inner end toward the peak, so
+    /// <c>sadness</c> flattens the arch — measured on a 760px head it fell from <b>15.2px to
+    /// 0.9px</b> and the brow drew as a hairline. A measurement held apart from the stations, exactly
+    /// as the eye holds <c>width</c> and <c>height</c>, is immune to the expression and to the turn
+    /// alike.
+    /// </para>
+    /// <para>
+    /// <c>isFar</c> thins the mass to match the lighter stroke <see cref="DrawComicEye"/> already
+    /// gives a far eye, so a far brow and the eye under it read at one weight.
+    /// </para>
+    /// <para>
+    /// <c>options</c>: <c>inkColor</c>, and <c>thickness</c> as a multiplier on the default rather
+    /// than a pixel count, so it survives a change of head size.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> DrawComicBrow(CanvasRenderingContext2D ctx, object browObj, bool isFar = false, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (JsInterop.AsDict(browObj) is not IDictionary brow) return [];
+
+        var optDict = JsInterop.AsDict(options);
+        var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
+        var weight = optDict is not null && optDict.Contains("thickness")
+            ? Convert.ToSingle(optDict["thickness"], CultureInfo.InvariantCulture) : 1f;
+
+        var inner = ExtractPoint(brow["inner"]);
+        var peak = ExtractPoint(brow["peak"]);
+        var outer = ExtractPoint(brow["outer"]);
+
+        // **Read, never derived from the stations.** This was `|peak.y - inner.y| * 0.85` when it was
+        // written, on the reasoning that a vertical measure does not foreshorten - true, and beside
+        // the point: the arch is a quantity the ACTION UNITS MOVE. AU1 lifts the inner end toward the
+        // peak, so `sadness` flattens the arch, and on a 760px head it fell from 15.2px to 0.9px and
+        // drew a hairline. Same shape of mistake as the brow units moving the cranium's own landmark:
+        // a drawn quantity taken from something an expression displaces.
+        //
+        // The fallbacks are for a hand-built or legacy brow that carries no measurement, and only
+        // there is the arch used - a thin brow beats no brow.
+        var thickness = Convert.ToSingle(brow.Contains("thickness") ? brow["thickness"] : 0f,
+                                         CultureInfo.InvariantCulture);
+        if (thickness <= 0.1f) thickness = MathF.Abs(peak.Y - inner.Y) * 1.7f;
+        if (thickness <= 0.1f) thickness = MathF.Abs(outer.X - inner.X) * 0.14f;
+        if (thickness <= 0.1f) return [];
+
+        var half = thickness * 0.5f * weight * (isFar ? FarFeatureWeight : 1f);
+
+        // The stations say where the brow goes; these put the curve THROUGH the peak rather than
+        // merely toward it. A quadratic's midpoint is a quarter of each end plus half the control,
+        // so the control has to overshoot - aimed at the peak instead, the arch reads about half as
+        // high as the landmark states and `peak` stops meaning what its name says.
+        var crest = ControlThrough(inner, peak, outer);
+        var spine = new CanvasPath();
+        spine.MoveTo(inner.X, inner.Y);
+        spine.QuadraticCurveTo(crest.X, crest.Y, outer.X, outer.Y);
+
+        // The mass tapers to nothing at the tail and stays blunt at the head, which is the shape of a
+        // brow rather than of a leaf: both ends pointed reads as a moustache set above the eye.
+        var top = ControlThrough(new Point2D(inner.X, inner.Y - half), new Point2D(peak.X, peak.Y - half), outer);
+        var under = ControlThrough(outer, new Point2D(peak.X, peak.Y + (half * 0.55f)), new Point2D(inner.X, inner.Y + half));
+
+        var mass = new CanvasPath();
+        mass.MoveTo(inner.X, inner.Y - half);
+        mass.QuadraticCurveTo(top.X, top.Y, outer.X, outer.Y);
+        mass.QuadraticCurveTo(under.X, under.Y, inner.X, inner.Y + half);
+        mass.ClosePath();
+
+        ctx.Save();
+        ctx.FillStyle = inkColor;
+        ctx.Fill(mass);
+        ctx.Restore();
+
+        return new Dictionary<string, object?> { ["mass"] = mass, ["spine"] = spine };
     }
 
     /// <summary>
@@ -3354,11 +3503,17 @@ public class ConstructiveDrawingToolkit
         // Top to bottom. The eye is read from the near eye's own centre rather than from `eyeLineY`,
         // because the parameter layer moves the eye points and leaves that scalar where it was - so
         // checking the scalar would pass on a head whose drawn eyes had crossed the brow.
+        //
+        // **The brow is read the same way, and for the same reason one step later.** `head["brow"]`
+        // is the ball's equator and no expression moves it any more - AU1, AU2 and AU4 move the brow
+        // stations. Read from that landmark this ladder would report a fixed brow line however far a
+        // frown had driven the drawn brows into the eyes, which is precisely the failure the eye
+        // entry above already exists to prevent. The LOWEST station is the one that crosses first.
         var ladder = new (string Name, float Y)[]
         {
             ("crown", ExtractPoint(head["crown"]).Y),
             ("hairline", ExtractPoint(head["hairline"]).Y),
-            ("brow", ExtractPoint(head["brow"]).Y),
+            ("brow", DrawnBrowY(head)),
             ("eyes", ExtractPoint(JsInterop.AsDict(head["nearEye"])?["center"]).Y),
             ("nose", ExtractPoint(head["noseBase"]).Y),
             ("mouth", ExtractPoint(JsInterop.AsDict(head["mouthGuides"])?["center"]).Y),
@@ -3425,12 +3580,15 @@ public class ConstructiveDrawingToolkit
     /// <see cref="ApplyActionUnits"/>.
     /// </para>
     /// <para>
-    /// <b>Two consequences of the single brow landmark, both visible here.</b> A canonical sad brow is
-    /// AU1 with AU4 — the inner corners lift while the brows knit — but with one <c>brow</c> point
-    /// those two <b>cancel</b>, so <c>sadness</c> carries AU1 alone. And <c>fear</c> and
-    /// <c>surprise</c> differ only in amount, because what separates them in life is AU4 knitting a
-    /// raised brow, which this head cannot express either. Both are the same missing landmark, and
-    /// both resolve if <c>createLoomisHead</c> ever carries inner and outer brow stations.
+    /// <b>Three of these tuples changed on 2026-09-18, when the head grew brow stations.</b> This
+    /// paragraph used to record two consequences of there being one <c>brow</c> point: a canonical
+    /// sad brow is AU1 with AU4 — the inner corners lift while the brows knit — and on one landmark
+    /// those two <b>cancelled</b>, so <c>sadness</c> carried AU1 alone; and <c>fear</c> and
+    /// <c>surprise</c> differed only in amount, because what separates them in life is AU4 knitting
+    /// an already-raised brow. It ended by saying both would resolve if <see cref="CreateLoomisHead"/>
+    /// ever carried inner and outer brow stations. It does, and they did: <c>sadness</c> names AU1
+    /// and AU4 together for the oblique brow, and <c>fear</c> carries the corrugator where
+    /// <c>surprise</c> arches without it.
     /// </para>
     /// </remarks>
     public Dictionary<string, object?> ExpressionUnits(string expressionType, float intensity = 1.0f)
@@ -4333,20 +4491,35 @@ public class ConstructiveDrawingToolkit
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Seven, because the head carries seven actions' worth of landmarks.</b> The set is bounded
-    /// by the construction rather than by the coding system: a unit whose landmark this head does not
-    /// have would bind, run, and change nothing, which reads as the parameter having no effect.
+    /// <b>The set is bounded by the construction rather than by the coding system</b>: a unit whose
+    /// landmark this head does not have would bind, run, and change nothing, which reads as the
+    /// parameter having no effect.
     /// </para>
     /// <para>
-    /// <b>What is deliberately absent, and why.</b>
+    /// <b>AU2 was the sharpest absence and is now here, because the head grew the landmarks for it.</b>
+    /// <see cref="CreateLoomisHead"/> carries <c>nearBrow</c> and <c>farBrow</c> as inner, peak and
+    /// outer stations, so an inner-only lift and an outer arch are two different displacements rather
+    /// than one under two names — which is the difference between worry and surprise, and between
+    /// fear and surprise in <see cref="ExpressionTuples"/>.
+    /// </para>
+    /// <para>
+    /// <b>The same change fixed a defect the brow units had all along, and it was not a subtle one.</b>
+    /// AU1 and AU4 used to displace <c>head["brow"]</c> — which is not a drawn eyebrow at all but the
+    /// ball's equator, the landmark <see cref="CreateHeadGeometry"/> takes the cranium's centre and
+    /// radius from. So raising the brows shrank the skull and lowering them grew it. Measured on a
+    /// 240px head: <c>AU1</c> at full weight took the silhouette from <b>208.5px wide to 188.9</b>,
+    /// and <c>AU4</c> took it to <b>225.4</b> — a <b>36.5px swing in head width across one
+    /// expression range</b>, on a face meant to be the same character from panel to panel. It is
+    /// invisible in any single render, since a head with raised brows merely looks like a slightly
+    /// narrower head; only two panels side by side would show it, and by then it reads as the
+    /// toolkit being inconsistent. The brow units now move the brow stations and never that
+    /// landmark, which is the same rule Manual 23 states for the jaw: <b>a parameter that moves a
+    /// landmark the construction uses as an attachment will break the silhouette.</b>
+    /// </para>
+    /// <para>
+    /// <b>What is still deliberately absent, and why.</b>
     /// </para>
     /// <list type="bullet">
-    /// <item><b>AU2 (Outer Brow Raiser).</b> The head carries a single <c>brow</c> centre point and
-    /// no inner or outer station, so AU1 and AU2 would be the same displacement under two names —
-    /// and their whole value is the difference between them: the inner-only lift is the worried
-    /// inverted peak, the outer arch is surprise. Shipping both would be shipping a distinction the
-    /// geometry cannot make. <b>AU1 therefore lifts the whole brow here</b>, which is the honest
-    /// reading of one point.</item>
     /// <item><b>AU6 (Cheek Raiser).</b> There is no cheek. <c>createHeadGeometry</c> says so in its
     /// own limits, and <c>drawComicEye</c> draws no crow's feet, so the Duchenne marker has nowhere
     /// to land.</item>
@@ -4366,11 +4539,28 @@ public class ConstructiveDrawingToolkit
         new(StringComparer.Ordinal)
         {
             // Frontalis, Pars Medialis. Loomis's wrinkle muscles at the inner brow: worry, pleading.
-            ["AU1"] = (head, w, h) => NudgePoint(head, "brow", 0f, -0.035f * h * w),
+            // The inner end carries it, the peak follows at less than half, and the tail does not
+            // move at all - which is the whole distinction from AU2 below.
+            ["AU1"] = (head, w, h) => MoveBrows(head, 0f, -0.045f * h * w, 0f, -0.018f * h * w, 0f, 0f),
+
+            // Frontalis, Pars Lateralis. The outer arch: the tail and the peak rise and the inner end
+            // stays. **Unreachable before the brow carried stations**, because with one centre point
+            // this and AU1 were the same displacement under two names - and the difference between
+            // them is the difference between worry and surprise.
+            ["AU2"] = (head, w, h) => MoveBrows(head, 0f, 0f, 0f, -0.030f * h * w, 0f, -0.040f * h * w),
 
             // Depressor Glabellae / Supercilii / Corrugator. Loomis has the unhappy group pulling the
             // inside corner of the brow down into a frown, which is this unit from the other side.
-            ["AU4"] = (head, w, h) => NudgePoint(head, "brow", 0f, 0.030f * h * w),
+            //
+            // **It knits as well as lowers, and the inward move is what stops it cancelling AU1.**
+            // Corrugator draws the heads of the brows together; with one landmark that was a pure
+            // vertical, so AU1 and AU4 subtracted to nothing and `sadness` had to omit AU4 to show
+            // anything at all. Here AU1 lifts only the inner end while this lowers all three, so the
+            // pair leaves the brow **oblique** - inner up, tail down - which is the sad brow itself
+            // rather than an absence of one.
+            ["AU4"] = (head, w, h) => MoveBrows(head, -0.020f * h * w, 0.030f * h * w,
+                                                     0f, 0.030f * h * w,
+                                                     0f, 0.030f * h * w),
 
             // Levator Palpebrae Superioris - the lid opens. Reachable only since drawComicEye began
             // reading `height`; before that this unit would have bound and drawn nothing.
@@ -4391,6 +4581,73 @@ public class ConstructiveDrawingToolkit
             // dropped jaw changes the head's outline rather than only its marks.
             ["AU26"] = (head, w, h) => DropJaw(head, 0.055f * h * w),
         };
+
+    /// <summary>
+    /// Displaces both brows station by station, with <paramref name="innerDx"/> read as <b>inward</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Inward rather than leftward, because a face has two sides.</b> A knit draws the heads of
+    /// the brows toward each other, so the same unit has to move the near brow one way and the far
+    /// brow the other. Taking the displacement as signed screen-x would knit one brow and spread the
+    /// other, which renders as a face with one raised and one dropped inner corner — a drawing fault
+    /// rather than an expression, and one nothing downstream could report.
+    /// </para>
+    /// <para>
+    /// <b>The axis is the old <c>brow</c> landmark</b>, which is exactly what it is for: the head's
+    /// own facial centre at the brow line, left where the construction put it. This call never moves
+    /// it — see <see cref="ActionUnits"/> for why that matters more than it sounds.
+    /// </para>
+    /// </remarks>
+    static void MoveBrows(Dictionary<string, object?> head,
+                          float innerDx, float innerDy, float peakDx, float peakDy, float outerDx, float outerDy)
+    {
+        var axis = ExtractPoint(head.TryGetValue("brow", out var b) ? b : null).X;
+
+        foreach (var group in new[] { "nearBrow", "farBrow" })
+        {
+            if (head[group] is not Dictionary<string, object?> brow) continue;
+
+            // Which way "outward" runs on this side, taken from the brow's own geometry rather than
+            // from the group's name: a head mirrored or rebuilt at another yaw stays correct.
+            float outward = MathF.Sign(ExtractPoint(brow["outer"]).X - axis);
+            if (outward == 0f) outward = 1f;
+
+            foreach (var (key, dx, dy) in new[] { ("inner", innerDx, innerDy),
+                                                  ("peak", peakDx, peakDy),
+                                                  ("outer", outerDx, outerDy) })
+            {
+                if (!brow.ContainsKey(key)) continue;
+                var p = ExtractPoint(brow[key]);
+                brow[key] = ToDict(new Point2D(p.X + (outward * dx), p.Y + dy));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The lowest drawn brow station on the near side, or the construction landmark when a head
+    /// carries no stations.
+    /// </summary>
+    /// <remarks>
+    /// The lowest rather than an average, because the ladder asks which landmark crosses the one
+    /// below it and an averaged brow would report a face as ordered while its inner corners sat in
+    /// the eyes. The fallback keeps a hand-built or legacy head measurable rather than reporting it
+    /// as broken at <c>y = 0</c>.
+    /// </remarks>
+    static float DrawnBrowY(IDictionary head)
+    {
+        var construction = ExtractPoint(head["brow"]).Y;
+        if (JsInterop.AsDict(head["nearBrow"]) is not IDictionary brow) return construction;
+
+        var lowest = float.MinValue;
+        foreach (var key in new[] { "inner", "peak", "outer" })
+        {
+            if (!brow.Contains(key)) continue;
+            lowest = MathF.Max(lowest, ExtractPoint(brow[key]).Y);
+        }
+
+        return lowest == float.MinValue ? construction : lowest;
+    }
 
     /// <summary>Adds an offset to a top-level landmark.</summary>
     static void NudgePoint(Dictionary<string, object?> head, string key, float dx, float dy)
@@ -4483,19 +4740,22 @@ public class ConstructiveDrawingToolkit
     /// and Triangularis — are both implemented, and the mouth is where both live.</item>
     /// <item><b>anger</b> is good at the brow and approximate at the mouth: Loomis has it squaring,
     /// and there is no unit for that, so AU15 stands in.</item>
-    /// <item><b>fear</b> and <b>surprise</b> differ only in amount. What separates them in life is
-    /// AU4 knitting an already-raised brow, and a single <c>brow</c> landmark cannot both raise and
-    /// knit. They are the most confusable pair in the literature even on real faces; here they are
-    /// nearly the same face.</item>
+    /// <item><b>fear</b> and <b>surprise</b> are separated by AU4, which is what separates them in
+    /// life: fear's frontalis lifts against a knitting corrugator, giving it a strained flat brow,
+    /// where surprise arches cleanly with no corrugator at all. They are the most confusable pair in
+    /// the literature even on real faces — but they are now two faces here rather than one at two
+    /// strengths, which they were while the head had a single <c>brow</c> landmark.</item>
     /// <item><b>disgust</b> is the worst served and should be treated as a placeholder. Its defining
     /// action is Levator Labii Superioris curling the upper lip and wrinkling the nose — AU9 and
     /// AU10, neither implemented, because the upper lip is one <c>upperLipY</c> and would rise
     /// whole.</item>
     /// </list>
     /// <para>
-    /// <b>sadness carries AU1 without AU4 deliberately.</b> The canonical oblique sad brow is both
-    /// together; with one brow point they cancel exactly, and the result would be a face with no brow
-    /// movement at all — which is close to what the previous implementation shipped.
+    /// <b>sadness carries AU1 and AU4 together, which is the canonical oblique sad brow.</b> It
+    /// omitted AU4 until the head had brow stations, because on one point the two cancelled exactly
+    /// and the result was a face with no brow movement at all — close to what the implementation
+    /// before that shipped. AU1 now lifts only the inner end while AU4 lowers all three, so the pair
+    /// slants the brow instead of erasing itself.
     /// </para>
     /// </remarks>
     private static readonly Dictionary<string, Dictionary<string, float>> ExpressionTuples =
@@ -4505,17 +4765,34 @@ public class ConstructiveDrawingToolkit
             // cheek-puff this construction can actually show.
             ["joy"] = new(StringComparer.Ordinal) { ["AU12"] = 0.85f, ["AU7"] = 0.25f },
 
-            // Corrugator hard down, eyes narrowed. The mouth "squares" in Loomis and cannot here.
+            // Corrugator hard down and knitting, eyes narrowed. The mouth "squares" in Loomis and
+            // cannot here.
             ["anger"] = new(StringComparer.Ordinal) { ["AU4"] = 0.90f, ["AU7"] = 0.60f, ["AU15"] = 0.25f },
 
-            // Frontalis lifts, the lids pop, the jaw goes. Weighted toward the eyes.
-            ["fear"] = new(StringComparer.Ordinal) { ["AU1"] = 0.80f, ["AU5"] = 0.80f, ["AU26"] = 0.45f },
+            // **Fear and surprise are now two expressions rather than one at two strengths, and AU4
+            // is the whole of the difference.** Fear knits the brow while raising it - the frontalis
+            // lifts and the corrugator fights it, which is what gives fear its strained flat brow -
+            // where surprise arches cleanly with no corrugator at all. With a single brow landmark
+            // that distinction could not be drawn, so the two were separated only by how much AU1
+            // and AU5 each carried, and the comment here read "as fear, weighted toward the brow".
+            ["fear"] = new(StringComparer.Ordinal)
+            {
+                ["AU1"] = 0.80f, ["AU2"] = 0.50f, ["AU4"] = 0.60f, ["AU5"] = 0.80f, ["AU26"] = 0.45f
+            },
 
-            // Inner brow up, corners down. AU4 omitted - see the remarks; it would cancel AU1.
-            ["sadness"] = new(StringComparer.Ordinal) { ["AU1"] = 0.70f, ["AU15"] = 0.75f },
+            // **Sadness carries AU4 again, which is the oblique brow it is named for.** The tuple used
+            // to omit it with the comment "it would cancel AU1" - true when both were one vertical on
+            // one point, and the reason the canonical sad brow was the one expression this set could
+            // not draw. AU1 now lifts only the inner end and AU4 lowers all three, so the pair leaves
+            // the brow slanting up toward the nose instead of leaving it flat.
+            ["sadness"] = new(StringComparer.Ordinal) { ["AU1"] = 0.70f, ["AU4"] = 0.40f, ["AU15"] = 0.75f },
 
-            // As fear, weighted toward the brow and the jaw rather than the lids.
-            ["surprise"] = new(StringComparer.Ordinal) { ["AU1"] = 0.95f, ["AU5"] = 0.65f, ["AU26"] = 0.75f },
+            // The clean arch: both frontalis parts, no corrugator. Weighted toward the brow and the
+            // jaw rather than the lids, which is what separates it from fear at the eyes as well.
+            ["surprise"] = new(StringComparer.Ordinal)
+            {
+                ["AU1"] = 0.90f, ["AU2"] = 0.90f, ["AU5"] = 0.65f, ["AU26"] = 0.75f
+            },
 
             // A placeholder until AU9/AU10 exist. Reads as a sour narrowing rather than a sneer.
             ["disgust"] = new(StringComparer.Ordinal) { ["AU4"] = 0.40f, ["AU7"] = 0.45f, ["AU15"] = 0.50f },
@@ -4562,6 +4839,16 @@ public class ConstructiveDrawingToolkit
         ("farEye.center", HeadValue.Point),
         ("farEye.width", HeadValue.Length),
         ("farEye.height", HeadValue.Length),
+
+        ("nearBrow.inner", HeadValue.Point),
+        ("nearBrow.peak", HeadValue.Point),
+        ("nearBrow.outer", HeadValue.Point),
+        ("nearBrow.thickness", HeadValue.Length),
+
+        ("farBrow.inner", HeadValue.Point),
+        ("farBrow.peak", HeadValue.Point),
+        ("farBrow.outer", HeadValue.Point),
+        ("farBrow.thickness", HeadValue.Length),
 
         ("noseWedge.bridgeTop", HeadValue.Point),
         ("noseWedge.apex", HeadValue.Point),
@@ -4698,6 +4985,23 @@ public class ConstructiveDrawingToolkit
     private const float LidCrest = 0.40f / 0.45f;
     private const float LidFloor = 0.25f / 0.45f;
     private const float LowerLidStart = 0.15f / 0.45f;
+
+    /// <summary>
+    /// How much lighter a far feature is drawn, taken from <see cref="DrawComicEye"/>'s own lid
+    /// weights (2.6 against 3.8) so a far brow and the far eye under it agree.
+    /// </summary>
+    private const float FarFeatureWeight = 2.6f / 3.8f;
+
+    /// <summary>
+    /// The quadratic control point that makes the curve pass <b>through</b> <paramref name="through"/>.
+    /// </summary>
+    /// <remarks>
+    /// A quadratic at its midpoint is a quarter of each end plus half its control, so a control set
+    /// at the landmark puts the curve only halfway to it. Solving for the control instead is the
+    /// difference between a named station meaning what it says and meaning about half of it.
+    /// </remarks>
+    static Point2D ControlThrough(Point2D from, Point2D through, Point2D to) =>
+        new((2f * through.X) - ((from.X + to.X) * 0.5f), (2f * through.Y) - ((from.Y + to.Y) * 0.5f));
 
     /// <summary>One measurement of a group divided by another, or <paramref name="fallback"/>.</summary>
     /// <remarks>

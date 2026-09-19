@@ -288,13 +288,24 @@ imply she endorsed it — the `reference` parameter exists precisely so a caller
    all, against the nose's **0.40**. So the answer to this question is now known to be *yes, and a
    quarter of the gap is enough to read at panel size*; what remains is only whether to spend the
    redraw on the characters already carrying a `noseLength`.
-5. ~~**How many Action Units?**~~ **Settled: seven** — AU1, AU4, AU5, AU7, AU12, AU15, AU26. The set
-   is bounded by what the construction carries landmarks for rather than by the coding system, and
-   the four notable absences each have a reason recorded beside them. The sharpest is **AU2**: the
-   head has one `brow` point, so an outer arch and an inner lift would be one displacement under two
-   names — and the difference between them *is* the difference between surprise and worry. Giving
-   the brow inner and outer stations is the obvious next increment, and it is a change to
-   `createLoomisHead` rather than to this layer.
+5. ~~**How many Action Units?**~~ **Settled: seven, then eight.** The set is bounded by what the
+   construction carries landmarks for rather than by the coding system. The sharpest absence was
+   **AU2**, and the note here read: *"the head has one `brow` point, so an outer arch and an inner
+   lift would be one displacement under two names — and the difference between them is the
+   difference between surprise and worry. Giving the brow inner and outer stations is the obvious
+   next increment, and it is a change to `createLoomisHead` rather than to this layer."*
+
+   **Done, and it was a change to `createLoomisHead` exactly as predicted.** The head carries
+   `nearBrow` and `farBrow` as `{ inner, peak, outer }`, `Drawing.drawComicBrow(...)` inks them, and
+   AU2 exists. AU6, AU9/AU10 and AU17 remain absent for their own recorded reasons.
+
+   **It also closed a defect nobody was looking for.** AU1 and AU4 had been displacing `head.brow` —
+   which is not a drawn eyebrow but the ball's equator, the landmark `createHeadGeometry` takes the
+   cranium's centre and radius from. So raising the brows shrank the skull and frowning grew it:
+   **208.5px of silhouette width at rest, 188.9 under AU1, 225.4 under AU4** on a 240px head. That is
+   the same class of fault Manual 23 records for the jaw stations — *a parameter that moves a landmark
+   the construction uses as an attachment will break the silhouette* — and the head-level instance of
+   it had been shipping the whole time.
 
 ---
 
@@ -310,6 +321,12 @@ imply she endorsed it — the `reference` parameter exists precisely so a caller
 | 6 | Action Unit deltas and `applyActionUnits` | **done** — seven units, Loomis for the mechanics and Ekman & Friesen for the numbering |
 | 7 | reimplement `applyFacialExpression` | **done** — B and C together: `expressionUnits` exposes the tuple, the preset call wraps it |
 | 8 | `chinShape`, then `chinLength` | **done** — the jaw becomes three axes: how wide, how pointed, how long |
+| 9 | brow inner/outer stations, `drawComicBrow`, AU2 | **done** — and it fixed AU1/AU4 resizing the cranium, which nothing was looking for |
+
+> **Step 9 shipped a drawer alongside the landmarks, deliberately.** Stations that nothing draws are
+> `eye.height` again: AU1 and AU2 would differ in the data and be indistinguishable in every render,
+> which is worse than not separating them. The rule this spec has now hit twice is that **a landmark
+> and the call that reads it are one change, not two.**
 
 > **The parameter count is deliberately not stated in this table any more.** It was written as "six
 > parameters now" at step 5 and was wrong twice within the week. The count is discoverable from the

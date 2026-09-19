@@ -28,7 +28,12 @@ using Xunit;
 public class ExpressionPresetTests : TestsRuntime
 {
     #region Behaviour Tests
-    /// <summary>Sadness lifts the brow, which is the defect this reimplementation exists for.</summary>
+    /// <summary>Sadness lifts the inner brow, which is the defect this reimplementation exists for.</summary>
+    /// <remarks>
+    /// Read at the inner station rather than at <c>head.brow</c>: that landmark is the ball's equator
+    /// and no expression moves it any more. The lift is now a <i>net</i> one — AU1 raises the inner
+    /// end and AU4 lowers all three — which is what makes the brow oblique rather than merely high.
+    /// </remarks>
     [Fact]
     public void TestSadnessLiftsTheBrow()
     {
@@ -36,7 +41,27 @@ public class ExpressionPresetTests : TestsRuntime
 
         var sad = Toolkit.ApplyFacialExpression(head, "sadness", 1f);
 
-        Assert.True(Y(sad, "brow") < Y(head, "brow"), "sadness must raise the inner brow");
+        Assert.True(BrowY(sad, "inner") < BrowY(head, "inner"), "sadness must raise the inner brow");
+    }
+
+    /// <summary>
+    /// And the tail goes the other way, which is the oblique brow sadness is named for.
+    /// </summary>
+    /// <remarks>
+    /// <b>The expression this set could not draw until the brow carried stations.</b> The inner end
+    /// rising while the tail falls is the whole shape of a sad brow; with one landmark AU1 and AU4
+    /// were opposing verticals on the same point and cancelled, so the tuple had to omit AU4 and the
+    /// result was a face with no brow movement at all.
+    /// </remarks>
+    [Fact]
+    public void TestSadnessSlantsTheBrowRatherThanRaisingAllOfIt()
+    {
+        var head = Head();
+
+        var sad = Toolkit.ApplyFacialExpression(head, "sadness", 1f);
+
+        Assert.True(BrowY(sad, "inner") < BrowY(head, "inner"), "the inner end must rise");
+        Assert.True(BrowY(sad, "outer") > BrowY(head, "outer"), "and the tail must fall");
     }
 
     /// <summary>And still drops the mouth corners, which is the half that did work.</summary>
@@ -52,9 +77,11 @@ public class ExpressionPresetTests : TestsRuntime
 
     /// <summary>Every preset moves something at full intensity.</summary>
     /// <remarks>
-    /// The cheapest guard against a tuple naming units that cancel — which is a live hazard here,
-    /// since AU1 and AU4 act on the same single landmark in opposite directions, and a tuple holding
-    /// both would produce a face that reports six working expressions and draws one.
+    /// The cheapest guard against a tuple naming units that cancel. <b>It was a live hazard until
+    /// 2026-09-18</b>, when AU1 and AU4 acted on the same single <c>brow</c> point in opposite
+    /// directions and a tuple holding both drew nothing — which is why <c>sadness</c> had to omit
+    /// AU4. They now act on separate brow stations, so the pair composes into the oblique brow
+    /// instead; the guard stays because the next cancelling pair will not announce itself either.
     /// </remarks>
     [Theory]
     [InlineData("joy")]
@@ -74,10 +101,12 @@ public class ExpressionPresetTests : TestsRuntime
 
     /// <summary>Each preset is distinguishable from the others, so the six are six faces.</summary>
     /// <remarks>
-    /// <b>Fear and surprise are the pair at risk</b>, because what separates them in life is AU4
-    /// knitting an already-raised brow and this head has one brow landmark. They are kept apart by
-    /// weighting alone, so the threshold here is deliberately low — it asserts they are not the same
-    /// face, not that they read as different emotions.
+    /// <b>Fear and surprise used to be the pair at risk</b>, because what separates them in life is
+    /// AU4 knitting an already-raised brow and the head carried one brow landmark — so they were kept
+    /// apart by weighting alone, and this threshold was set deliberately low to assert only that they
+    /// were not the same face. They are now separated by the mechanism itself; see
+    /// <see cref="TestFearKnitsTheBrowAndSurpriseDoesNot"/>, which asserts the shape rather than the
+    /// difference. This one stays as the cheap all-pairs guard it always was.
     /// </remarks>
     [Fact]
     public void TestThePresetsAreDistinguishableFromEachOther()
@@ -155,19 +184,57 @@ public class ExpressionPresetTests : TestsRuntime
         AssertSameShape(byTuple, byName, "head");
     }
 
-    /// <summary>Sadness names AU1 and does not name AU4, which would cancel it.</summary>
+    /// <summary>Sadness names AU1 and AU4 together, which is the canonical oblique sad brow.</summary>
     /// <remarks>
-    /// Asserted because it is a deliberate departure from the canonical oblique sad brow, made for a
-    /// geometric reason rather than an expressive one. If the head ever gains inner and outer brow
-    /// stations this test should fail, and the failure is the reminder to revisit the tuple.
+    /// <b>This test asserted the opposite until 2026-09-18, and said so on purpose.</b> Its remark
+    /// read: <i>"a deliberate departure from the canonical oblique sad brow, made for a geometric
+    /// reason rather than an expressive one. If the head ever gains inner and outer brow stations
+    /// this test should fail, and the failure is the reminder to revisit the tuple."</i> The head
+    /// gained them, the test failed, and this is the revisit — which is the value of writing a
+    /// compromise down as an assertion rather than as a comment.
     /// </remarks>
     [Fact]
-    public void TestSadnessOmitsTheBrowKnitThatWouldCancelItsLift()
+    public void TestSadnessNamesTheBrowKnitThatMakesItOblique()
     {
         var units = Toolkit.ExpressionUnits("sadness");
 
         Assert.True(units.ContainsKey("AU1"), "sadness must lift the inner brow");
-        Assert.False(units.ContainsKey("AU4"), "AU4 would cancel AU1 on a single brow landmark");
+        Assert.True(units.ContainsKey("AU4"), "and knit it, which no longer cancels the lift");
+        Assert.True(Convert.ToSingle(units["AU4"]) < Convert.ToSingle(units["AU1"]),
+            "the knit must not overpower the lift");
+    }
+
+    /// <summary>
+    /// Fear and surprise are two expressions rather than one at two strengths, and AU4 is why.
+    /// </summary>
+    /// <remarks>
+    /// <b>The separation the brow stations were added for.</b> Fear knits the brow while raising it —
+    /// frontalis lifting against corrugator, which is what gives fear its strained flat brow — where
+    /// surprise arches cleanly with no corrugator at all. Asserted on the tuples <i>and</i> on the
+    /// resulting geometry, because two tuples that differ on paper and draw the same face would be
+    /// the distinction existing in the data and nowhere a reader can see it.
+    /// </remarks>
+    [Fact]
+    public void TestFearKnitsTheBrowAndSurpriseDoesNot()
+    {
+        var fear = Toolkit.ExpressionUnits("fear");
+        var surprise = Toolkit.ExpressionUnits("surprise");
+
+        Assert.True(fear.ContainsKey("AU4"), "fear must carry the corrugator");
+        Assert.False(surprise.ContainsKey("AU4"), "surprise must not");
+        Assert.True(Convert.ToSingle(surprise["AU2"]) > Convert.ToSingle(fear["AU2"]),
+            "surprise must arch harder than fear");
+
+        var head = Head();
+        var afraid = Toolkit.ApplyFacialExpression(head, "fear", 1f);
+        var startled = Toolkit.ApplyFacialExpression(head, "surprise", 1f);
+
+        Assert.True(BrowY(startled, "outer") < BrowY(afraid, "outer"),
+            "surprise must carry the tail higher than fear, or the two read as one expression");
+
+        var axis = Convert.ToSingle(((Dictionary<string, object?>)head["brow"]!)["x"]);
+        Assert.True(MathF.Abs(BrowX(afraid, "inner") - axis) < MathF.Abs(BrowX(startled, "inner") - axis),
+            "fear must knit the inner ends in and surprise must leave them out");
     }
 
     /// <summary>Aliases resolve to the same tuple as their canonical name.</summary>
@@ -234,6 +301,15 @@ public class ExpressionPresetTests : TestsRuntime
 
     static Dictionary<string, object?> Head() =>
         new ConstructiveDrawingToolkit().CreateLoomisHead(400f, 120f, 240f, 0f, 0f);
+
+    /// <summary>A named station on the near brow — the drawn eyebrow, not the ball's equator.</summary>
+    static float BrowY(Dictionary<string, object?> head, string station) =>
+        Convert.ToSingle(((Dictionary<string, object?>)
+            ((Dictionary<string, object?>)head["nearBrow"]!)[station]!)["y"]);
+
+    static float BrowX(Dictionary<string, object?> head, string station) =>
+        Convert.ToSingle(((Dictionary<string, object?>)
+            ((Dictionary<string, object?>)head["nearBrow"]!)[station]!)["x"]);
 
     static Dictionary<string, object?> ToPoint(float x, float y) =>
         new() { ["x"] = x, ["y"] = y };

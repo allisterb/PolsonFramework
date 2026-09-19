@@ -347,7 +347,7 @@ axis and the collarbones are two different lines and must stay separate.
 
 ## 4. Facial Expression — Muscles, Not a Taxonomy of Emotions
 
-> **Implemented by**: `Drawing.applyActionUnits(head, weights)` — **the call to reach for** — and `Drawing.applyFacialExpression(head, expressionType, intensity)`, which predates it. Build the head with `Drawing.createLoomisHead(...)` first, then render the displaced landmarks with `Drawing.drawComicEye(...)` and `Drawing.drawComicMouth(...)`.
+> **Implemented by**: `Drawing.applyActionUnits(head, weights)` — **the call to reach for** — and `Drawing.applyFacialExpression(head, expressionType, intensity)`, which predates it. Build the head with `Drawing.createLoomisHead(...)` first, then render the displaced landmarks with `Drawing.drawComicBrow(...)`, `Drawing.drawComicEye(...)` and `Drawing.drawComicMouth(...)` — **all three, because the brow is where four of the seven units act** and a face posed without it shows a third of the expression it was given.
 
 > **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956), pp. 45–47 and Plate 21, for the mechanics; Paul Ekman & Wallace V. Friesen, *Measuring Facial Movement*, Environmental Psychology and Nonverbal Behavior 1(1):56–75, 1976, Table 1, for the numbering and the muscle names.
 
@@ -369,8 +369,8 @@ Units are **additive and order-independent**, so a handful covers a wide range o
 >
 > 1. **`"joy"`**: Zygomaticus major contracts $\implies$ mouth corners pull up & out; Orbicularis oculi contracts $\implies$ lower eyelids push up, crinkling crow's feet.
 > 2. **`"anger"`**: Corrugator supercilii contracts $\implies$ eyebrows pull sharply down and inward into a fierce V-shape; eyes narrow; mouth squares.
-> 3. **`"fear"`**: Frontalis contracts $\implies$ inner and outer eyebrows raise high and flatten; eyes pop wide with upper sclera visible; mouth drops open.
-> 4. **`"sadness"`**: Frontalis (medial) contracts while Corrugator relaxes $\implies$ inner eyebrow tips pull up into an inverted peak ($\land$ shape); mouth corners pull down (Depressor anguli oris).
+> 3. **`"fear"`**: Frontalis contracts $\implies$ inner and outer eyebrows raise high, while Corrugator pulls against it and **flattens** them — that opposition is what makes fear's brow strained rather than arched, and it is the whole of what separates it from `"surprise"`; eyes pop wide with upper sclera visible; mouth drops open.
+> 4. **`"sadness"`**: Frontalis (medial) contracts $\implies$ inner eyebrow tips pull up into an inverted peak ($\land$ shape), while Corrugator draws those same tips **together and down** $\implies$ the tail falls as the head rises, which is the **oblique** brow; mouth corners pull down (Depressor anguli oris).
 > 5. **`"surprise"`**: Eyebrows arch high in uniform curves; eyes widen in circles; jaw drops open into a relaxed vertical oval.
 > 6. **`"disgust"`**: Levator labii superioris contracts $\implies$ upper lip curls upward in a sneer, wrinkling the bridge of the nose; eyebrows lower slightly.
 
@@ -379,22 +379,34 @@ Units are **additive and order-independent**, so a handful covers a wide range o
 | preset | units | how well served |
 | :--- | :--- | :--- |
 | `joy` | `AU12` 0.85, `AU7` 0.25 | **well** — Zygomatic Major is implemented and the mouth is where it lives |
-| `sadness` | `AU1` 0.70, `AU15` 0.75 | **well** — Triangularis and the inner-brow lift both reachable |
+| `sadness` | `AU1` 0.70, `AU4` 0.40, `AU15` 0.75 | **well** — the oblique brow and Triangularis both reachable |
 | `anger` | `AU4` 0.90, `AU7` 0.60, `AU15` 0.25 | good at the brow; Loomis's *squaring* mouth has no unit, so AU15 stands in |
-| `fear` | `AU1` 0.80, `AU5` 0.80, `AU26` 0.45 | differs from `surprise` **only in amount** — see below |
-| `surprise` | `AU1` 0.95, `AU5` 0.65, `AU26` 0.75 | as above |
+| `fear` | `AU1` 0.80, `AU2` 0.50, `AU4` 0.60, `AU5` 0.80, `AU26` 0.45 | **well** — the corrugator is what makes it not `surprise` |
+| `surprise` | `AU1` 0.90, `AU2` 0.90, `AU5` 0.65, `AU26` 0.75 | **well** — the clean arch, no corrugator |
 | `disgust` | `AU4` 0.40, `AU7` 0.45, `AU15` 0.50 | **a placeholder** — its real action is AU9/AU10, unimplemented |
 
 **These weights are the studio's and no source supplies them.** Loomis gives directions and a
 relaxed/contracted table; Ekman & Friesen score presence rather than amount. Published
 emotion-to-unit tables are somebody's interpretation. Tune against a render, not against a decimal.
 
-> **Two of the six are limited by one missing landmark, and it is the same one.** The head carries a
-> single `brow` centre point. So **`fear` and `surprise` are nearly the same face**, because what
-> separates them in life is AU4 knitting an already-raised brow; and **`sadness` names AU1 without
-> AU4**, because the canonical oblique sad brow is both at once and on one landmark they cancel
-> exactly. Giving `createLoomisHead` inner and outer brow stations fixes both at a stroke, and is the
-> obvious next increment on this section.
+> **Three of the six were limited by one missing landmark, and on 2026-09-18 the head grew it.** This
+> box used to read: *"the head carries a single `brow` centre point. So `fear` and `surprise` are
+> nearly the same face, because what separates them in life is AU4 knitting an already-raised brow;
+> and `sadness` names AU1 without AU4, because the canonical oblique sad brow is both at once and on
+> one landmark they cancel exactly. Giving `createLoomisHead` inner and outer brow stations fixes
+> both at a stroke, and is the obvious next increment on this section."*
+>
+> That is what was done. `createLoomisHead` now carries **`nearBrow` and `farBrow`**, each
+> `{ inner, peak, outer }`, `Drawing.drawComicBrow(...)` inks them, and **`AU2` exists**. So `AU1`
+> lifts only the inner end, `AU2` only the tail, and `AU4` lowers all three *and knits the inner ends
+> inward* — which means `AU1` and `AU4` compose into the oblique sad brow instead of cancelling, and
+> `fear` and `surprise` are separated by the corrugator rather than by weighting. All three tuples
+> above changed with it.
+>
+> **A prediction written into a manual is cheap; the same prediction written into a test is what
+> actually collected.** `TestSadnessOmitsTheBrowKnitThatWouldCancelItsLift` carried the note *"if the
+> head ever gains inner and outer brow stations this test should fail, and the failure is the reminder
+> to revisit the tuple"* — and it failed on exactly that change, naming the tuple to revisit.
 
 > **The defect this replaced is worth keeping, because it survived everything.** Until 2026-09-18 the
 > presets displaced landmarks directly, and `'sadness'` — described in this manual as lifting the

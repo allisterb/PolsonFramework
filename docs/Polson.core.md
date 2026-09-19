@@ -1126,7 +1126,12 @@ Algorithmic drawing and constructive anatomy engine based on classical studio te
 Also accessible via `Skia.Drawing`.
 
 ## Loomis Head & Feature Construction
-- `Drawing.createLoomisHead(originX: number, originY: number, headHeight: number, yawDeg?: number, pitchDeg?: number)` → `object` — Computes all 3D head landmarks, proportional ratios (Rule of Thirds, 1/5th eye width), temporal ovals, eye sockets, nose wedge, mouth guides, and jaw angles.
+- `Drawing.createLoomisHead(originX: number, originY: number, headHeight: number, yawDeg?: number, pitchDeg?: number)` → `object` — Computes all 3D head landmarks, proportional ratios (Rule of Thirds, 1/5th eye width), temporal ovals, eye sockets, **brow stations**, nose wedge, mouth guides, and jaw angles.
+
+> [!TIP]
+> **Two things named `brow`, and they are not the same thing.** `head.brow` is a single point on the facial meridian at the 1.5-unit line: it is the **ball's equator**, the landmark `createHeadGeometry` takes the cranium's centre and radius from, and the axis `AU4` knits toward. Nothing draws it but the construction sheet. `head.nearBrow` and `head.farBrow` are the **drawn eyebrows** — `{ inner, peak, outer, thickness }` apiece, sitting over their own eye, and what `drawComicBrow` and the brow Action Units act on.
+>
+> Three stations rather than two because two cannot carry an arch, and the arch is exactly where `AU1` and `AU2` differ. The tail runs a little past the eye's outer corner and the peak sits two thirds out, roughly over the outer limbus.
 - `Drawing.createParametricHead(headObj: object, parameters?: { eyesDistance?: number, eyesSize?: number, eyesOpening?: number, noseLength?: number, jawShape?: number, chinShape?: number, chinLength?: number, mouthWidth?: number })` → `object` — Displaces a Loomis head's landmarks by named character parameters and returns a **whole head**, ready for `drawLoomisWireframe` and the comic feature calls. Each parameter is a signed scale, `-1 … 0 … +1`, defaulting to `0`; out-of-range values are clamped, and a misspelled one is refused by name.
 
 > [!IMPORTANT]
@@ -1345,6 +1350,24 @@ Also accessible via `Skia.Drawing`.
 > being told. **Upper and lower lids are not separable yet** — one number moves the whole opening —
 > so an Action Unit layer above this can express closure and widening but not yet a lower-lid
 > tightener on its own.
+- `Drawing.drawComicBrow(ctx: CanvasRenderingContext2D, browObj: object, isFar?: boolean, options?: { inkColor?: string, thickness?: number })` → `{ mass, spine }` — Renders one eyebrow from its three stations, **returning the filled brow and its centre-line as `CanvasPath`s**. Pass `head.nearBrow` and `head.farBrow`.
+
+> [!IMPORTANT]
+> **The brow is a station pair per eye, not a point at the head's centre — and `head.brow` is not it.** `createLoomisHead` carries `nearBrow` and `farBrow`, each `{ inner, peak, outer, thickness }`, and those are the drawn eyebrows. **`head.brow` stays what it always was**: the ball's equator, the landmark `createHeadGeometry` takes the cranium's centre and radius from, and a construction line rather than anything you ink.
+>
+> ```javascript
+> const head = Drawing.applyFacialExpression(Drawing.createLoomisHead(400, 140, 260), 'sadness', 0.8);
+> Drawing.drawComicBrow(ctx, head.farBrow, true, { inkColor: '#15151a' });
+> Drawing.drawComicBrow(ctx, head.nearBrow, false, { inkColor: '#15151a' });
+> Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: '#15151a' });
+> ```
+>
+> **Confusing the two was a real defect, not a hypothetical one.** Until 2026-09-18 `AU1` and `AU4` displaced `head.brow`, so raising the eyebrows **shrank the skull** and frowning grew it: measured on a 240px head, the silhouette went from **208.5px wide at rest to 188.9 under `AU1`** and **225.4 under `AU4`** — a 36.5px swing across one expression range, on a character meant to stay the same person from panel to panel. It is invisible in any single render, because a head with raised brows just looks like a slightly narrower head. The brow units now move the stations and never that landmark.
+>
+> **Weight is read from `brow.thickness`, not derived from the stations**, exactly as an eye carries `width` and `height`. Two traps sit either side of that. Derive it from the projected *span* and a far brow comes back 45% too thin at the yaw clamp, because a brow foreshortens horizontally and not vertically. Derive it from the *arch* — which is vertical, and was this call's first implementation — and it collapses under any unit that flattens the brow: `AU1` raises the inner end toward the peak, so `sadness` took the arch from **15.2px to 0.9px** on a 760px head and drew a hairline. The `thickness` **option** is a multiplier on the head's own measurement rather than a pixel count, so it survives a change of head size.
+>
+> **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
+
 - `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` → `{ underPlane, bridge, nostril }` — Renders nose bridge, apex, nostril, and under-plane shadow, **returning each as a `CanvasPath`**.
 - `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string })` → `{ cavity, teeth, lipLine, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow, **returning each as a `CanvasPath`**.
 
@@ -1608,13 +1631,19 @@ The figure also reports what the pose did to it, which is what a later pass read
 > **How well each is served differs, and it is worth knowing which you are getting.** `joy` and
 > `sadness` are well served — their defining muscles are implemented and the mouth is where both
 > live. `anger` is good at the brow and approximate at the mouth, which Loomis has *squaring* and
-> nothing here can. **`fear` and `surprise` differ only in amount**, because what separates them is
-> AU4 knitting an already-raised brow and one `brow` landmark cannot both raise and knit.
-> **`disgust` is a placeholder** — its defining action is AU9/AU10 curling the upper lip, and the
-> upper lip is a single `upperLipY` that would rise whole.
+> nothing here can. **`disgust` is a placeholder** — its defining action is AU9/AU10 curling the upper
+> lip, and the upper lip is a single `upperLipY` that would rise whole.
 >
-> **`sadness` names AU1 without AU4 deliberately.** The canonical oblique sad brow is both together;
-> on one landmark they cancel exactly, and the result would be a face with no brow movement at all.
+> **`fear` and `surprise` became two expressions on 2026-09-18, and AU4 is the whole difference.**
+> They used to differ only in amount, because what separates them is AU4 knitting an already-raised
+> brow and one `brow` landmark could not both raise and knit. With inner and outer stations, `fear`
+> carries the corrugator — frontalis lifting against it, which is what gives fear its strained flat
+> brow — and `surprise` arches cleanly with none.
+>
+> **`sadness` names AU1 *and* AU4, which is the oblique sad brow it is named for.** It omitted AU4
+> until the same date, because on one landmark the two cancelled exactly and the result was a face
+> with no brow movement at all. AU1 now lifts only the inner end while AU4 lowers all three, so the
+> pair leaves the brow slanting up toward the nose.
 
 > [!IMPORTANT]
 > **Reimplemented 2026-09-18, and what these six draw has changed.** Each used to displace one or two
@@ -1643,12 +1672,13 @@ The figure also reports what the pose did to it, which is what a later pass read
 > const alarmed = Drawing.applyActionUnits(mort, { AU1: 0.9, AU5: 0.8, AU26: 0.7 });
 > ```
 >
-> **Seven units, bounded by what this head can show** rather than by the coding system:
+> **Bounded by what this head can show** rather than by the coding system:
 >
 > | | name | muscle | what moves |
 > | :--- | :--- | :--- | :--- |
-> | `AU1` | Inner Brow Raiser | Frontalis, Pars Medialis | the brow, up |
-> | `AU4` | Brow Lowerer | Corrugator and depressors | the brow, down |
+> | `AU1` | Inner Brow Raiser | Frontalis, Pars Medialis | the brow's **inner end**, up |
+> | `AU2` | Outer Brow Raiser | Frontalis, Pars Lateralis | the brow's **tail**, up |
+> | `AU4` | Brow Lowerer | Corrugator and depressors | all three stations down, **and the inner ends inward** |
 > | `AU5` | Upper Lid Raiser | Levator Palpebrae Superioris | the lid aperture, open |
 > | `AU7` | Lid Tightener | Orbicularis Oculi, Pars Palpebralis | the lid aperture, narrowed |
 > | `AU12` | Lip Corner Puller | Zygomatic Major | the mouth corners, out **and** up |
@@ -1659,14 +1689,16 @@ The figure also reports what the pose did to it, which is what a later pass read
 > "happy muscles" run from the cheekbones *diagonally down* to the mouth, so they pull out as well as
 > up — a corner lifted straight up reads as a smirk. `AU26` is the only unit that reaches the
 > **silhouette**, because `createHeadGeometry` builds its jaw polygon through the chin stations.
+>
+> **`AU4` knits as well as lowers, and the inward move is what stops it cancelling `AU1`.** Corrugator
+> draws the heads of the brows together, so this unit moves each inner end *toward the facial axis* —
+> inward, not leftward, since a signed screen-x displacement would knit one brow and spread the other.
+> Combined with `AU1`, which lifts only the inner end, the pair leaves the brow **oblique** rather than
+> flat: that is the sad brow, and it was unreachable while the head had one brow point.
 
 > [!IMPORTANT]
 > **What is deliberately absent, and why each one would have been worse than an omission.**
 >
-> - **`AU2` (Outer Brow Raiser)** — the head carries a single `brow` centre point, so AU1 and AU2
->   would be one displacement under two names. Their whole value is the difference: an inner-only
->   lift is the worried inverted peak, an outer arch is surprise. **`AU1` therefore raises the whole
->   brow here**, which is the honest reading of one landmark.
 > - **`AU6` (Cheek Raiser)** — there is no cheek, and `drawComicEye` draws no crow's feet, so the
 >   Duchenne marker has nowhere to land.
 > - **`AU9` / `AU10`** — the upper lip is a single `upperLipY`, so a sneer would read as the whole lip

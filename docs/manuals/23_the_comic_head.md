@@ -93,6 +93,63 @@ older character: a more **angular jawline**, more **arched eyebrows**, the **out
 eyes raised**, the **nose straightened** (p. 100). For a villain, any head shape at all — square,
 round, wide, narrow, pear — chosen so the shape suits the character.
 
+### 4a. The eyebrows, which were the one of the three nothing could draw
+
+The chapter names **mouth, eyes and eyebrows**. The toolkit had `drawComicMouth` and `drawComicEye`
+and, until 2026-09-18, nothing at all for the third — the head carried a single `brow` point on the
+facial meridian, and that point is not an eyebrow. It is the **ball's equator**: the landmark
+`createHeadGeometry` takes the cranium's centre and radius from, and the axis a knit is measured
+against. A construction line, drawn only on the sheet.
+
+**So the head now carries `nearBrow` and `farBrow`, each `{ inner, peak, outer, thickness }`, and
+`Drawing.drawComicBrow(ctx, brow, isFar, options)` inks them.** Three stations rather than two,
+because two cannot carry an arch — and the arch is precisely where an inner lift differs from an
+outer one, which is the chapter's own "more arched eyebrows" and the difference between worry and
+surprise.
+
+```javascript
+const INK = '#15151a';
+const ctx = createCanvas(800, 520).getContext('2d');
+
+const head = Drawing.applyFacialExpression(Drawing.createLoomisHead(400, 140, 260), 'sadness', 0.8);
+Drawing.drawComicBrow(ctx, head.farBrow, true, { inkColor: INK });
+Drawing.drawComicBrow(ctx, head.nearBrow, false, { inkColor: INK });
+Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: INK });
+
+// The construction landmark is untouched by the expression, which is the point of the box below.
+log(`brow line ${head.brow.y.toFixed(1)}, drawn inner end ${head.nearBrow.inner.y.toFixed(1)}`);
+```
+
+- **Weight is its own measurement, `brow.thickness`, and is derived from neither the span nor the
+  arch.** Both derivations are wrong and the second is instructive. The **span** foreshortens, so a
+  far brow sized from its projected width returns 45% too thin at the yaw clamp. The **arch** does
+  not foreshorten — and that is why it was this call's first implementation — but it is a quantity
+  the *Action Units move*: AU1 raises the inner end toward the peak, so `sadness` flattened the arch
+  from **15.2px to 0.9px** on a 760px head and drew a hairline. A brow carries its weight the way an
+  eye carries `width` and `height`, held apart from anything an expression displaces.
+
+  > **Found by looking at a render, after every assertion passed.** The landmarks were right, the
+  > tuples were right, the ordering ladder was right, and the drawing was wrong. It is the same shape
+  > as the defect this whole section describes — a drawn quantity taken from something an expression
+  > moves — which is worth noticing, because it means the first fix did not teach the lesson
+  > thoroughly enough to prevent the second.
+- **The curve passes through `peak`, not toward it.** A quadratic's midpoint is a quarter of each end
+  plus half its control, so a control set at the landmark reaches only halfway to it and the arch
+  draws at about half the height the landmark states.
+- **The mass is blunt at the head and pointed at the tail.** Taper both ends and it reads as a
+  moustache set above the eye.
+
+> **The landmark this replaced was doing active harm, and the harm was invisible.** `AU1` and `AU4`
+> displaced `head.brow` — the cranium's own centre and radius. So **raising the eyebrows shrank the
+> skull and frowning grew it.** Measured on a 240px head: silhouette **208.5px** wide at rest,
+> **188.9** under `AU1` at full weight, **225.4** under `AU4` — a **36.5px swing in head width across
+> one expression range**, on a character meant to stay the same person from panel to panel.
+>
+> Nothing downstream could report it, and no single render shows it: a head with raised brows simply
+> looks like a slightly narrower head. It is §7's rule from the other direction — **a parameter that
+> moves a landmark the construction uses as an *attachment* will break the silhouette** — and the
+> brow was the head-level instance of the same mistake the jaw stations made.
+
 ## 5. Both schools on one head
 
 The comparison is the manual: draw the Loomis construction, drop the Marvel triangle on it, and read

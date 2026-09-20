@@ -3137,7 +3137,7 @@ canvas;
 > - **One texture.** A `FaceMesh` holds a single image, so the **first** base-colour image in the file is taken and any others are not sampled. For a generated character that is usually the whole asset; a multi-material import loses the rest.
 > - **65,535 vertices is a hard ceiling**, because the index buffer is 16-bit. A mesh above it is **refused by name** with the count, rather than wrapping silently into shredded geometry.
 >
-> **Posing is not wired up yet.** This reads and draws a skinned mesh in its bind pose; there is no call that takes joint rotations. The skinning itself is present and evaluated — see `docs/pose-to-mannequin.md` for where this is going.
+> Posing a loaded skeleton is `mesh.pose(...)` — see below.
 - `Mesh.fromObj(objText: string)` → `FaceMesh` — The same, from OBJ text a script already holds. **OBJ only** — there is no `fromGltf`, because a glTF's buffers and images are binary and a script holds a string.
 - `Mesh.draw(ctx: CanvasRenderingContext2D, mesh: FaceMesh, options?: object)` → `{ bounds, triangles, textured }` — Draws the mesh, deformed, posed and depth-sorted. `options`: `{ x, y, scale, yawDeg, pitchDeg, rollDeg, texture, wireframe, inkColor, lineWidth, shape, expression, side }`. An unrecognised option is refused by name.
 
@@ -3197,6 +3197,46 @@ canvas;
 - `mesh.fitOutline(outline: CanvasPath, options?)` → `FaceMesh` — Pushes the boundary out to a drawn outline. `options`: `{ center, strength, falloff }`.
 - `mesh.boundary()` → `number[]` — The vertices on the edge of the surface, computed rather than listed: an edge belonging to exactly one triangle is a boundary edge.
 - `mesh.clone()` → `FaceMesh` — A copy.
+
+## Posing a skeleton — `mesh.pose(...)`
+
+- `mesh.posable` → `boolean` — Whether the file declares a **skin**, so rotating a joint deforms geometry. **Ask before committing to a route that needs it**, exactly as you would `Skia.tracer.available`: an OBJ never has one, and neither does an unrigged glTF — which is what the single-image generators produce.
+- `mesh.joints` → `string[]` — A handle for every node the armature carries, in the file's own order. Empty when there is no rig.
+- `mesh.pose(rotations)` → `FaceMesh` — Rotates joints and returns the deformed mesh.
+
+An illustration rather than a runnable program, because **posing needs a rigged asset and the toolkit ships none** — for the licence reasons stated above, and because a skinned glTF cannot be built inline the way the OBJ examples on this page are:
+
+```js
+const character = Mesh.load('models/character.glb');
+if (!character.posable) exit('this asset carries no skeleton — it can be turned, not posed');
+log(character.joints.join(', '));
+
+const waving = character.pose({
+    'mixamorig:LeftArm':     { zDeg: -75 },
+    'mixamorig:LeftForeArm': { zDeg: -40, yDeg: 15 }
+});
+Mesh.draw(ctx, waving, { x: 400, y: 300, scale: 160, yawDeg: 20 });
+```
+
+> [!IMPORTANT]
+> **Read `mesh.joints` rather than guessing a name.** Joint names come from whoever exported the file — `mixamorig:LeftForeArm`, `J_Bip_L_UpperArm`, `bone_012` — and no convention spans the exporters. **A name the file does not have is refused and the nearest real ones are named**, because accepting it silently would leave you looking at an unchanged figure and blaming the renderer.
+>
+> **glTF does not require a node to be named, and a rigged file may have none.** Khronos's own `SimpleSkin` is exactly that: two working joints, both anonymous. Those appear as **`node:0`, `node:1`** and so on, so `mesh.joints` always hands back something you can pass straight back in.
+
+> [!IMPORTANT]
+> **Every pose is measured from the BIND pose, never from wherever the mesh already is.** So `pose` is a pure function of its argument: two poses taken from one character cannot interfere, posing a posed mesh re-poses the original rather than accumulating, and the mesh you posed *from* is untouched. Without that, a panel loop drifts — silently, because every individual frame still looks reasonable.
+>
+> Rotations are **degrees about the joint's own axes**, applied yaw (Y), then pitch (X), then roll (Z). Any of the three may be left out. A key that is not one of `xDeg`, `yDeg`, `zDeg` is **refused by name**.
+>
+> **A posed mesh keeps the bind geometry as its reference**, so `shape` and `expression` bands still key on where a feature anatomically is rather than on where a pose has swung it — the same discipline `fitOutline` is held to.
+
+> [!IMPORTANT]
+> **These are thrown errors, not failure objects.** A bad joint name **ends the script**, exactly as `Drawing.createPerspectiveBox` does past its limit — there is no `success` field to check and nothing downstream runs. Check `mesh.posable` and read `mesh.joints` first; that is what they are for.
+
+> [!TIP]
+> **This is linear blend skinning, so it does what LBS does** — worth knowing before blaming the asset. A joint bent hard pinches on the inside of the bend, and clothing modelled onto a body deforms *with* the body rather than draping over it. Neither is a defect here; both are what the technique is, and they are why `polson://manual/22`'s fold mechanics cannot be had this way.
+>
+> Verified against Khronos's `SimpleSkin`, whose answer is knowable independently: its strip runs to `(0.5, 2.0)` and a 90° rotation about Z at the root maps `(x, y)` to `(−y, x)`, so the tip lands at **`(−2.0, 0.5)`** — which is what it measures.
 
 > [!IMPORTANT]
 > **Every call that changes a mesh returns a new one.** A mesh *is* the identity of a character, and a route whose whole selling point is that panel 1 and panel 40 are the same face cannot have a fit quietly mutate what it was derived from.

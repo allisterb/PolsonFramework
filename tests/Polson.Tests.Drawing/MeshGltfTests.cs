@@ -353,6 +353,131 @@ public class MeshGltfTests : TestsRuntime
         output.WriteLine($"{flipped} of the first 64 texture coordinates moved under the flip");
     }
 
+    /// <summary>
+    /// A joint rotation moves the mesh, about that joint's own origin, by exactly the amount asked.
+    /// </summary>
+    /// <remarks>
+    /// <b>Checkable without trusting anything.</b> <c>SimpleSkin</c>'s root joint sits at the origin
+    /// and its strip runs up to (0.5, 2). A rotation of 90° about Z maps (x, y) to (−y, x), so the
+    /// tip must land at (−2, 0.5) — a number derived from the geometry rather than recorded from a
+    /// previous run, which is what separates a test from a snapshot.
+    /// </remarks>
+    [Fact]
+    public void AJointRotationMovesTheMeshAboutThatJointsOwnOrigin()
+    {
+        var mesh = Load("SimpleSkin.gltf");
+        Assert.True(mesh.Posable, "SimpleSkin declares a skin");
+
+        var tip = mesh.VertexCount - 1;
+        var bind = mesh.Vertex(tip);
+        Assert.Equal(0.5f, Convert.ToSingle(bind["x"]), 3);
+        Assert.Equal(2.0f, Convert.ToSingle(bind["y"]), 3);
+
+        var posed = mesh.Pose(new Dictionary<string, object?>
+        {
+            [mesh.Joints[1]] = new Dictionary<string, object?> { ["zDeg"] = 90.0 }
+        });
+
+        var moved = posed.Vertex(tip);
+        Assert.Equal(-2.0f, Convert.ToSingle(moved["x"]), 3);
+        Assert.Equal(0.5f, Convert.ToSingle(moved["y"]), 3);
+        output.WriteLine($"tip (0.5, 2.0) --90deg about Z--> " +
+                         $"({Convert.ToSingle(moved["x"]):F3}, {Convert.ToSingle(moved["y"]):F3})");
+    }
+
+    /// <summary>A pose is measured from bind, not from wherever the mesh already is.</summary>
+    /// <remarks>
+    /// <b>The property that makes <c>pose</c> a pure function of its argument.</b> Without it,
+    /// posing a posed mesh would accumulate, two poses taken from one character would depend on the
+    /// order they were asked for, and a panel loop would drift — silently, because each individual
+    /// frame would look reasonable.
+    /// </remarks>
+    [Fact]
+    public void APoseIsMeasuredFromBindRatherThanFromWhereverTheMeshAlreadyIs()
+    {
+        var mesh = Load("SimpleSkin.gltf");
+        var tip = mesh.VertexCount - 1;
+        var bindX = Convert.ToSingle(mesh.Vertex(tip)["x"]);
+
+        var bend = new Dictionary<string, object?>
+        {
+            [mesh.Joints[1]] = new Dictionary<string, object?> { ["zDeg"] = 45.0 }
+        };
+
+        var once = mesh.Pose(bend);
+        var twice = once.Pose(bend);
+
+        Assert.Equal(Convert.ToSingle(once.Vertex(tip)["x"]),
+                     Convert.ToSingle(twice.Vertex(tip)["x"]), 4);
+
+        // And the mesh a pose was taken from is untouched, which a shared rig could easily break.
+        Assert.Equal(bindX, Convert.ToSingle(mesh.Vertex(tip)["x"]), 6);
+    }
+
+    /// <summary>An unnamed node still gets a usable handle.</summary>
+    /// <remarks>
+    /// <b>glTF does not require a node to be named, and a rigged file may have none</b> — Khronos's
+    /// own <c>SimpleSkin</c> is exactly that, two joints and no names. An API keyed only on names
+    /// reports it as having no joints, which reads as "cannot be posed" when the truth is "does not
+    /// label its bones". This is the test that caught that, and it is why the handles exist.
+    /// </remarks>
+    [Fact]
+    public void AnUnnamedNodeStillGetsAHandleThatCanBePosedBy()
+    {
+        var mesh = Load("SimpleSkin.gltf");
+
+        Assert.NotEmpty(mesh.Joints);
+        Assert.All(mesh.Joints, j => Assert.False(string.IsNullOrWhiteSpace(j)));
+        Assert.Equal(mesh.Joints.Length, mesh.Joints.Distinct(StringComparer.Ordinal).Count());
+
+        // Every handle it reports must be one it will accept back.
+        foreach (var joint in mesh.Joints)
+            mesh.Pose(new Dictionary<string, object?>
+            {
+                [joint] = new Dictionary<string, object?> { ["yDeg"] = 5.0 }
+            });
+
+        output.WriteLine("handles: " + string.Join(", ", mesh.Joints));
+    }
+
+    /// <summary>The three refusals, each because the alternative is a silent no-op.</summary>
+    /// <remarks>
+    /// These throw rather than returning a failure object, and a throw ends the script — the same
+    /// contract <c>Drawing.createPerspectiveBox</c> states. That is why they are asserted here and
+    /// not in a JS probe, where the error is not catchable.
+    /// </remarks>
+    [Fact]
+    public void PosingRefusesWhatWouldOtherwiseDoNothingVisible()
+    {
+        var mesh = Load("SimpleSkin.gltf");
+
+        // A joint name the file does not have — and the message must name real ones, because
+        // exporter joint names cannot be guessed.
+        var unknown = Assert.Throws<ArgumentException>(() => mesh.Pose(
+            new Dictionary<string, object?> { ["LeftArm"] = new Dictionary<string, object?>() }));
+        Assert.Contains("LeftArm", unknown.Message);
+        Assert.Contains("mesh.joints", unknown.Message);
+
+        // A rotation key that is not one of the three. Accepting it would rotate nothing.
+        var badKey = Assert.Throws<ArgumentException>(() => mesh.Pose(
+            new Dictionary<string, object?>
+            {
+                [mesh.Joints[1]] = new Dictionary<string, object?> { ["rollDeg"] = 20.0 }
+            }));
+        Assert.Contains("rollDeg", badKey.Message);
+        Assert.Contains("xDeg", badKey.Message);
+
+        // A mesh with no skeleton at all, which is what every OBJ and every unrigged glTF is.
+        var obj = new MeshToolkit().FromObj("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3");
+        Assert.False(obj.Posable);
+        Assert.Empty(obj.Joints);
+        var unrigged = Assert.Throws<ArgumentException>(() => obj.Pose(
+            new Dictionary<string, object?> { ["any"] = new Dictionary<string, object?>() }));
+        Assert.Contains("no skeleton", unrigged.Message);
+
+        output.WriteLine(unknown.Message);
+    }
+
     /// <summary>Adding a second reader did not disturb the first.</summary>
     /// <remarks>
     /// <c>Load</c> now picks a reader by extension, so the OBJ path is reachable only if that choice

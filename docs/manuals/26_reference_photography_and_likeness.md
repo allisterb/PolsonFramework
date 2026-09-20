@@ -635,3 +635,47 @@ takes an expression and a one-sided brow.
 without rendering anything. Front projection is monotonic, so the mesh’s leftmost vertex must sample
 left of its rightmost one — and drawing every `uvAt` over the source image is how you see, rather
 than assume, that the map landed on the features.
+
+### 7f. A skeleton, which a face does not have
+
+> **Implemented by**: `mesh.posable`, `mesh.joints` and `mesh.pose(...)`.
+
+This section is about a face, and the three calls above are about a body. They live here because they
+arrived with the **file format** rather than with the subject: `Mesh.load(...)` reads glTF as well as
+OBJ now, and a glTF can carry `JOINTS_0`, `WEIGHTS_0`, `inverseBindMatrices` and a node hierarchy —
+things an OBJ has no way to express. One reader serves both, so one section documents both.
+
+**Ask `mesh.posable` before planning a route that needs posing**, in exactly the spirit §7e asks you
+to look at the wireframe first, and `Skia.tracer.available` asks you to check for potrace. **Most
+assets answer no**, and the ones that answer no are the ones you are most likely to have: every OBJ,
+and every mesh from a single-image generator, because those reconstruct a surface and do not rig it.
+A script that commits to a posed figure and discovers this on its fourth pass has spent them.
+
+**Read `mesh.joints` rather than guessing a name.** They come from whoever exported the file —
+`mixamorig:LeftForeArm`, `J_Bip_L_UpperArm`, `bone_012` — and no convention spans the exporters, so
+a guessed name is a guess about somebody else's tool. A name the file does not have is refused and
+the nearest real ones are named, which is the same treatment §7d-ii gives an ARKit unit this geometry
+cannot show, and for the same reason: silently accepting it leaves you looking at an unchanged figure
+and blaming the renderer.
+
+> [!IMPORTANT]
+> **glTF does not require a node to be named, and a rigged file may have none.** Khronos's own
+> `SimpleSkin` is two working joints and no names at all. Those come back as `node:0`, `node:1`, so
+> `mesh.joints` always hands you something you can pass straight back — but it also means **an empty
+> `mesh.joints` is a statement about the rig, never about the naming**, which is precisely the
+> confusion that would arise if the handles were not there.
+
+**Every pose is measured from the bind pose**, never from wherever the mesh already is. So posing a
+posed mesh re-poses the original rather than accumulating, two poses taken from one character cannot
+interfere, and the mesh you posed *from* is untouched. That is the same guarantee §7d-ii gives the
+expression units — identity and performance stay separate — and it matters for the same reason: a
+panel loop that drifted would drift silently, because every individual frame still looks reasonable.
+
+> [!IMPORTANT]
+> **This is linear blend skinning, and it does what linear blend skinning does.** A joint bent hard
+> pinches on the inside of the bend. Clothing modelled onto a body deforms *with* the body rather
+> than draping over it — so **none of Manual 22's fold mechanics are reachable this way**: no ring
+> folds at a crushed sleeve, no folds radiating from a point of pull, because the cloth is not
+> separate from the limb it is painted onto. Neither is a defect in the asset or in this toolkit;
+> both are what the technique is, and knowing that is what stops an afternoon spent hunting a bug
+> that is a method.

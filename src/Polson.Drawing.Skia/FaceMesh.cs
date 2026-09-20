@@ -403,7 +403,55 @@ public class FaceMesh
     /// <summary>A copy, so a character can be kept and a variant drawn from it.</summary>
     public FaceMesh Clone() =>
         new((SKPoint3[])Vertices.Clone(), (SKPoint[])Uvs.Clone(), (ushort[])Indices.Clone(), HasUvs, Source)
-        { Texture = Texture, Fitted = Fitted, Reference = Reference };
+        { Texture = Texture, Fitted = Fitted, Reference = Reference, Rig = Rig };
+
+    /// <summary>Whether this mesh carries a skeleton, so <see cref="Pose"/> will do anything.</summary>
+    /// <remarks>
+    /// <b>Ask before planning a route around posing.</b> An OBJ never has one, and neither does an
+    /// unrigged glTF — which is what the single-image generators produce. Same discipline as
+    /// <c>Skia.tracer.available</c>: a script that commits to posing and only then discovers it
+    /// cannot has spent its passes for nothing.
+    /// </remarks>
+    public bool Posable => Rig?.Skinned == true;
+
+    /// <summary>The joint names this file declares, or empty when it carries no skin.</summary>
+    /// <remarks>
+    /// <b>Read these rather than guessing.</b> Names come from whoever exported the file —
+    /// <c>mixamorig:LeftForeArm</c>, <c>J_Bip_L_UpperArm</c>, <c>bone_012</c> — and no convention
+    /// spans the exporters. <see cref="Pose"/> refuses an unknown name and suggests the nearest.
+    /// </remarks>
+    public string[] Joints => Rig?.JointNames ?? [];
+
+    /// <summary>
+    /// Rotates joints and returns the deformed mesh: <c>{ 'LeftArm': { zDeg: -40 } }</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Always measured from the BIND pose, never from wherever this mesh already is.</b> So a
+    /// pose is a pure function of its argument rather than of the order calls happened in, and two
+    /// poses taken from one mesh cannot interfere. Posing a posed mesh re-poses the original.
+    /// </para>
+    /// <para>
+    /// Rotations are degrees about the joint's <b>own</b> axes, applied yaw (Y), then pitch (X),
+    /// then roll (Z). Any of the three may be left out. An unknown joint name, or a key that is not
+    /// one of <c>xDeg</c>/<c>yDeg</c>/<c>zDeg</c>, is refused by name — accepting it silently is how
+    /// a caller ends up looking at an unchanged figure and blaming the renderer.
+    /// </para>
+    /// <para>
+    /// <b>This is linear blend skinning, so it does what LBS does.</b> A joint bent hard pinches on
+    /// the inside of the bend, and clothing modelled onto a body deforms with the body rather than
+    /// draping. Neither is a defect here; both are what the technique is.
+    /// </para>
+    /// </remarks>
+    public FaceMesh Pose(object? pose)
+    {
+        if (Rig is null)
+            throw new ArgumentException(
+                $"Mesh '{Source}' was not read from a glTF, so it has no skeleton. Only .glb and " +
+                ".gltf carry joints; an OBJ cannot express one.");
+
+        return Rig.Pose(JsInterop.AsDict(pose), Reference);
+    }
     #endregion
 
     #region Internal
@@ -431,6 +479,13 @@ public class FaceMesh
     internal bool HasUvs { get; }
 
     internal SKBitmap? Texture { get; init; }
+
+    /// <summary>The open glTF this came from, when it came from one, so it can be posed.</summary>
+    /// <remarks>
+    /// Shared between a mesh and every pose taken from it, which is safe because a pose snapshots
+    /// its vertices: the rig is re-evaluated per call and holds no state a caller depends on.
+    /// </remarks>
+    internal MeshRig? Rig { get; init; }
 
     internal bool Fitted { get; init; }
 

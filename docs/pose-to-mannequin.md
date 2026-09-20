@@ -230,8 +230,27 @@ It would want, before shipping:
   separate process, `available` gated on configuration.
 - **The silent-failure guard made loud.** A caller needs `facing conflict` and `dropped` in front
   of them, because both are invisible in the render.
-- **A measured decision on the padding ladder.** It is carried over from the face probe on faith;
-  every case here came back `pad=0`, so it may be dead weight.
+- ~~**A measured decision on the padding ladder.**~~ **Settled, against the guess.** It was carried
+  over from the face probe on faith and every case here came back `pad=0`, so it looked like dead
+  weight — but Popeye needed **pad=480**, because a trimmed transparent cutout arrives at 100% of
+  frame and the detector's scale window rejects it. That is the case `Assets.cutout` produces every
+  time. Keep it.
+
+## The gap this leaves, now that the other end exists
+
+**A mesh can be posed as of 2026-09-20** — `mesh.posable`, `mesh.joints`, `mesh.pose(...)`, on
+SharpGLTF's `SkinnedTransform`; see `polson://sdk/core/Mesh` and `polson://manual/26` §7f. So both
+ends are built and **nothing joins them**.
+
+The detector answers in the mannequin's vocabulary — screen-space `shoulderDeg` absolute,
+`elbowDeg` relative, 90° being straight down — and a glTF skeleton wants rotations about each
+joint's **own** axes, in whatever frame its exporter chose. Those are different coordinate systems
+and neither is convertible to the other without knowing the rig's bind orientation per joint.
+
+That mapping is the remaining piece, and it is not a small one. It is also worth weighing against
+what §"On a DRAWN figure" measures: the detector reads a photograph or a realistically-proportioned
+illustration well and a stylised character not at all, so the chain would be *reference photograph →
+rigged character*, never *comic panel → rigged character*.
 
 ## What it does not touch
 

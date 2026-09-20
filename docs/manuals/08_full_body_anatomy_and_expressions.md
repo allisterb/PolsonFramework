@@ -377,8 +377,8 @@ Units are **additive and order-independent**, so a handful covers a wide range o
 >
 > 1. **`"joy"`**: Zygomaticus major contracts $\implies$ mouth corners pull up & out; Orbicularis oculi contracts $\implies$ lower eyelids push up, crinkling crow's feet.
 > 2. **`"anger"`**: Corrugator supercilii contracts $\implies$ eyebrows pull sharply down and inward into a fierce V-shape; eyes narrow; mouth squares.
-> 3. **`"fear"`**: Frontalis contracts $\implies$ inner and outer eyebrows raise high, while Corrugator pulls against it and **flattens** them — that opposition is what makes fear's brow strained rather than arched, and it is the whole of what separates it from `"surprise"`; eyes pop wide with upper sclera visible; mouth drops open.
-> 4. **`"sadness"`**: Frontalis (medial) contracts $\implies$ inner eyebrow tips pull up into an inverted peak ($\land$ shape), while Corrugator draws those same tips **together and down** $\implies$ the tail falls as the head rises, which is the **oblique** brow; mouth corners pull down (Depressor anguli oris).
+> 3. **`"fear"`**: Frontalis contracts $\implies$ inner and outer eyebrows raise high, while Corrugator pulls against it and **flattens** them — that opposition is what makes fear's brow strained rather than arched; eyes pop wide with upper sclera visible, **wider than in `"surprise"`**, which is the second thing separating the two; mouth drops open.
+> 4. **`"sadness"`**: Frontalis (medial) contracts $\implies$ inner eyebrow tips pull up into an inverted peak ($\land$ shape), while Corrugator draws those same tips **together and down** $\implies$ the tail falls as the head rises, which is the **oblique** brow; Orbicularis oculi squeezes the aperture; mouth corners pull down (Depressor anguli oris).
 > 5. **`"surprise"`**: Eyebrows arch high in uniform curves; eyes widen in circles; jaw drops open into a relaxed vertical oval.
 > 6. **`"disgust"`**: Levator labii superioris contracts $\implies$ upper lip curls upward in a sneer, wrinkling the bridge of the nose; eyebrows lower slightly.
 
@@ -387,15 +387,43 @@ Units are **additive and order-independent**, so a handful covers a wide range o
 | preset | units | how well served |
 | :--- | :--- | :--- |
 | `joy` | `AU12` 0.85, `AU7` 0.25 | **well** — Zygomatic Major is implemented and the mouth is where it lives |
-| `sadness` | `AU1` 0.70, `AU4` 0.40, `AU15` 0.75 | **well** — the oblique brow and Triangularis both reachable |
+| `sadness` | `AU1` 0.70, `AU4` 0.40, `AU7` 0.40, `AU15` 0.75 | **well** — the oblique brow, the eye squeeze and Triangularis all reachable |
 | `anger` | `AU4` 0.90, `AU7` 0.60, `AU15` 0.25 | good at the brow; Loomis's *squaring* mouth has no unit, so AU15 stands in |
-| `fear` | `AU1` 0.80, `AU2` 0.50, `AU4` 0.60, `AU5` 0.80, `AU26` 0.45 | **well** — the corrugator is what makes it not `surprise` |
+| `fear` | `AU1` 0.80, `AU2` 0.50, `AU4` 0.60, `AU5` 0.95, `AU26` 0.45 | **well** — the corrugator and the extra sclera both separate it from `surprise` |
 | `surprise` | `AU1` 0.90, `AU2` 0.90, `AU5` 0.65, `AU26` 0.75 | **well** — the clean arch, no corrugator |
 | `disgust` | `AU4` 0.40, `AU7` 0.45, `AU15` 0.50 | **a placeholder** — its real action is AU9/AU10, unimplemented |
 
 **These weights are the studio's and no source supplies them.** Loomis gives directions and a
 relaxed/contracted table; Ekman & Friesen score presence rather than amount. Published
 emotion-to-unit tables are somebody's interpretation. Tune against a render, not against a decimal.
+
+> **Two of them moved on 2026-09-20, and both moves came from one page of Gautier.** He is the only
+> source in `reference/` that names all six by name *and* says what each does to the eye.
+>
+> **`sadness` had no eye component at all.** *"When sorrow falls upon us, our mouths purse and curl
+> while the intricate network of muscles around the eyes squeezes tightly together"* (*Drawing and
+> Cartooning 1,001 Faces*, Perigee 1993, book p. 81). The tuple moved a brow and two mouth corners
+> and left the aperture exactly as it found it — so every other preset in the table touched the eye
+> and the one he describes as eye-centred did not. It carries `AU7` 0.40 now, between `joy`'s 0.25
+> and `disgust`'s 0.45.
+>
+> **`fear` now shows more sclera than `surprise`.** He puts the *whole* difference there — both widen
+> and drop the jaw, *"with fear, however, the eyes widen more, so more white is revealed around the
+> pupil"* — and calls the difference *minimal* in the same breath (p. 80). `AU5` went 0.80 → 0.95
+> against surprise's 0.65. **The gap stays modest on purpose**: a decisive one would overstate a
+> source that calls it slight. The corrugator work above is unaffected — a brow reads differently in
+> life, sclera reads on a drawn face, and we now have both.
+>
+> **FACS would give `fear` AU7 as well and this head cannot take it.** Ekman codes it
+> AU1+2+4+5+7+20+26 — the lower lid tenses while the upper raises — but `AU5` and `AU7` here are one
+> `eye.height` scaled in opposite directions, so AU7 would undo the widening rather than tense
+> anything. A limit of one aperture per eye, not a reading of the source; the same limit §4 records
+> for `drawComicEye`.
+>
+> Note what this does **not** license. He also gives a variant reached by the same dial — *"calm down
+> the eyes, show less white, and the expression turns benign"* — and warns two pages earlier that too
+> much white *beneath* the pupil reads sinister. One mechanism, three uses, and only the first is
+> implemented.
 
 > **Three of the six were limited by one missing landmark, and on 2026-09-18 the head grew it.** This
 > box used to read: *"the head carries a single `brow` centre point. So `fear` and `surprise` are

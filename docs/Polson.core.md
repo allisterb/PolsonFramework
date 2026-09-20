@@ -1722,16 +1722,38 @@ The figure also reports what the pose did to it, which is what a later pass read
 > nothing here can. **`disgust` is a placeholder** — its defining action is AU9/AU10 curling the upper
 > lip, and the upper lip is a single `upperLipY` that would rise whole.
 >
-> **`fear` and `surprise` became two expressions on 2026-09-18, and AU4 is the whole difference.**
+> **`fear` and `surprise` became two expressions on 2026-09-18, and they differ in two places.**
 > They used to differ only in amount, because what separates them is AU4 knitting an already-raised
 > brow and one `brow` landmark could not both raise and knit. With inner and outer stations, `fear`
 > carries the corrugator — frontalis lifting against it, which is what gives fear its strained flat
 > brow — and `surprise` arches cleanly with none.
 >
+> **The second place is the sclera, and it is Gautier's rather than the studio's.** He puts the *whole*
+> difference there — both widen the eyes and drop the jaw, *"with fear, however, the eyes widen more,
+> so more white is revealed around the pupil"* — while saying in the same breath that *"the difference
+> is minimal"* (*Drawing and Cartooning 1,001 Faces*, Perigee 1993, p. 80). So on 2026-09-20 `fear`'s
+> AU5 went from `0.80` to `0.95` against `surprise`'s `0.65`, doubling a gap that was sub-pixel on a
+> 240px head. **It is still a modest gap, deliberately** — a decisive one would overstate a source
+> that calls the difference slight.
+>
+> **FACS would also give `fear` AU7, and this construction cannot take it.** Ekman codes fear as
+> AU1+2+4+5+7+20+26: the lower lid tenses while the upper raises. Here **AU5 and AU7 are one
+> `eye.height` scaled in opposite directions**, so adding AU7 would not tense a lower lid — it would
+> quietly undo the widening. That is a limit of one aperture per eye rather than a reading of the
+> source, and it is the same limit `drawComicEye` names when it says upper and lower lids are not yet
+> separable.
+>
 > **`sadness` names AU1 *and* AU4, which is the oblique sad brow it is named for.** It omitted AU4
 > until the same date, because on one landmark the two cancelled exactly and the result was a face
 > with no brow movement at all. AU1 now lifts only the inner end while AU4 lowers all three, so the
 > pair leaves the brow slanting up toward the nose.
+>
+> **And it carries AU7 as of 2026-09-20, because before that it was a sorrow with no eyes in it.**
+> Gautier again: *"when sorrow falls upon us, our mouths purse and curl while the intricate network of
+> muscles around the eyes squeezes tightly together"* (p. 81). The tuple moved a brow and two mouth
+> corners and left the aperture exactly as it found it — so every other expression in the table
+> touched the eye and the one described as eye-centred did not. `0.40` sits between `joy`'s `0.25` and
+> `disgust`'s `0.45`: a squeeze, short of the hard narrowing `anger` gets at `0.60`.
 
 > [!IMPORTANT]
 > **Reimplemented 2026-09-18, and what these six draw has changed.** Each used to displace one or two

@@ -452,3 +452,12 @@ src/adk_agent/artifact_versions/
 # assessments, anything naming a live project id, region, bucket or service. Kept on disk and
 # backed up separately, deliberately outside the repository - see docs/ for what IS published.
 docs/internal/
+
+# Fetched model weights for the optional vision backend. Apache 2.0 (each of the three models
+# in the bundle carries its own model card saying so), but not ours to redistribute casually and
+# not something a git history wants: 3.6 MB of binary per copy, versioned by URL rather than by
+# us. Fetched on demand, exactly as bin/ holds potrace without committing it.
+#
+#   curl -o models/face_landmarker.task \
+#     https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+models/

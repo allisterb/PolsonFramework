@@ -5130,23 +5130,49 @@ public class ConstructiveDrawingToolkit
             // cannot here.
             ["anger"] = new(StringComparer.Ordinal) { ["AU4"] = 0.90f, ["AU7"] = 0.60f, ["AU15"] = 0.25f },
 
-            // **Fear and surprise are now two expressions rather than one at two strengths, and AU4
-            // is the whole of the difference.** Fear knits the brow while raising it - the frontalis
-            // lifts and the corrugator fights it, which is what gives fear its strained flat brow -
-            // where surprise arches cleanly with no corrugator at all. With a single brow landmark
-            // that distinction could not be drawn, so the two were separated only by how much AU1
-            // and AU5 each carried, and the comment here read "as fear, weighted toward the brow".
+            // **Fear and surprise are two expressions rather than one at two strengths, and the
+            // difference is carried in two places.** Fear knits the brow while raising it - the
+            // frontalis lifts and the corrugator fights it, which is what gives fear its strained
+            // flat brow - where surprise arches cleanly with no corrugator at all. With a single
+            // brow landmark that distinction could not be drawn at all, and until 2026-09-18 the two
+            // were separated only by how much AU1 and AU5 each carried.
+            //
+            // **The second place is the sclera, and it is Gautier's rather than ours.** He puts the
+            // WHOLE difference here - "fear and surprise both cause the eyes to widen while the jaw
+            // drops helplessly. With fear, however, the eyes widen more, so more white is revealed
+            // around the pupil" - and says in the same breath that "the difference is minimal"
+            // (Drawing and Cartooning 1,001 Faces, Perigee 1993, book p. 80). AU5 therefore went
+            // from 0.80 to 0.95 against surprise's 0.65, doubling a gap that was sub-pixel on a
+            // 240px head. It is still a modest gap, which is the point: a decisive one would be
+            // overstating a source that calls the difference minimal.
+            //
+            // **FACS would also give fear AU7, and this construction cannot take it.** Ekman codes
+            // fear as AU1+2+4+5+7+20+26 - the lower lid tenses while the upper raises. Here AU5 and
+            // AU7 are the same `eye.height` scaled in opposite directions, so adding AU7 would not
+            // tense a lower lid, it would quietly undo the widening that is the whole point. The
+            // omission is a limit of one aperture per eye rather than a reading of the source.
             ["fear"] = new(StringComparer.Ordinal)
             {
-                ["AU1"] = 0.80f, ["AU2"] = 0.50f, ["AU4"] = 0.60f, ["AU5"] = 0.80f, ["AU26"] = 0.45f
+                ["AU1"] = 0.80f, ["AU2"] = 0.50f, ["AU4"] = 0.60f, ["AU5"] = 0.95f, ["AU26"] = 0.45f
             },
 
-            // **Sadness carries AU4 again, which is the oblique brow it is named for.** The tuple used
-            // to omit it with the comment "it would cancel AU1" - true when both were one vertical on
+            // **Sadness carries AU4, which is the oblique brow it is named for.** The tuple used to
+            // omit it with the comment "it would cancel AU1" - true when both were one vertical on
             // one point, and the reason the canonical sad brow was the one expression this set could
             // not draw. AU1 now lifts only the inner end and AU4 lowers all three, so the pair leaves
             // the brow slanting up toward the nose instead of leaving it flat.
-            ["sadness"] = new(StringComparer.Ordinal) { ["AU1"] = 0.70f, ["AU4"] = 0.40f, ["AU15"] = 0.75f },
+            //
+            // **And it carries AU7, because until 2026-09-20 this was a sorrow with no eyes in it.**
+            // Gautier: "when sorrow falls upon us, our mouths purse and curl while the intricate
+            // network of muscles around the eyes squeezes tightly together" (book p. 81). The tuple
+            // moved a brow and two mouth corners and left the aperture exactly as it found it, so
+            // every other expression in this table touched the eye and the one he describes as
+            // eye-centred did not. 0.40 sits between joy's 0.25 and disgust's 0.45: enough to read
+            // as a squeeze, short of the hard narrowing anger gets at 0.60.
+            ["sadness"] = new(StringComparer.Ordinal)
+            {
+                ["AU1"] = 0.70f, ["AU4"] = 0.40f, ["AU7"] = 0.40f, ["AU15"] = 0.75f
+            },
 
             // The clean arch: both frontalis parts, no corrugator. Weighted toward the brow and the
             // jaw rather than the lids, which is what separates it from fear at the eyes as well.

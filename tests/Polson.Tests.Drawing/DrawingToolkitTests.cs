@@ -1743,6 +1743,84 @@ public class DrawingToolkitTests : TestsRuntime
             $"'{expression}' drew a brow {Weight(posed):F1}px against a neutral {Weight(neutral):F1}px");
     }
 
+    /// <summary>Sorrow reaches the eyes, which it did not until 2026-09-20.</summary>
+    /// <remarks>
+    /// <para>
+    /// Gautier puts the eye at the centre of it — <i>"when sorrow falls upon us, our mouths purse and
+    /// curl while the intricate network of muscles around the eyes squeezes tightly together"</i>
+    /// (<i>Drawing and Cartooning 1,001 Faces</i>, Perigee 1993, book p. 81) — and the tuple moved a
+    /// brow and two mouth corners and left the aperture exactly as it found it.
+    /// </para>
+    /// <para>
+    /// <b>The shape of the defect is the one this file keeps finding:</b> every part that was there
+    /// was correct, so nothing failed and nothing looked wrong. A sad face with unchanged eyes is
+    /// simply a slightly less sad face, which is indistinguishable from the intensity being low.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestSadnessNarrowsTheEye()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var neutral = toolkit.CreateLoomisHead(400f, 300f, 240f);
+        var sad = toolkit.ApplyFacialExpression(neutral, "sadness", 1f);
+
+        float Aperture(Dictionary<string, object?> head) =>
+            Convert.ToSingle(((Dictionary<string, object?>)head["nearEye"]!)["height"]);
+
+        Assert.True(Aperture(sad) < Aperture(neutral) - 0.5f,
+            $"sadness left the aperture at {Aperture(sad):F2} against a neutral {Aperture(neutral):F2}");
+
+        // A squeeze, not a squint: anger narrows harder, and sadness must not overtake it.
+        var angry = toolkit.ApplyFacialExpression(neutral, "anger", 1f);
+        Assert.True(Aperture(sad) > Aperture(angry),
+            $"sadness narrowed to {Aperture(sad):F2}, past anger's {Aperture(angry):F2}");
+
+        // And the unit is declared rather than only implied by the geometry, so a caller reading
+        // `expressionUnits('sadness')` sees the claim before drawing anything.
+        Assert.True(toolkit.ExpressionUnits("sadness").ContainsKey("AU7"));
+    }
+
+    /// <summary>
+    /// **Fear shows more white than surprise, which is where Gautier puts the whole difference.**
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <i>"Fear and surprise both cause the eyes to widen while the jaw drops helplessly. With fear,
+    /// however, the eyes widen more, so more white is revealed around the pupil"</i> — and, in the
+    /// same breath, <i>"the difference is minimal"</i> (book p. 80). So this asserts a direction and
+    /// deliberately not a large margin: a decisive gap would overstate a source that calls it slight.
+    /// </para>
+    /// <para>
+    /// <b>FACS would also give fear AU7 and this construction cannot take it.</b> Ekman codes fear
+    /// as AU1+2+4+5+7+20+26 — the lower lid tenses while the upper raises — but here AU5 and AU7 are
+    /// one <c>eye.height</c> scaled in opposite directions, so adding AU7 would undo the widening
+    /// rather than tense anything. That is a limit of one aperture per eye, recorded here so the
+    /// omission is not read as a reading of the source.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestFearShowsMoreScleraThanSurprise()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var neutral = toolkit.CreateLoomisHead(400f, 300f, 240f);
+
+        float Aperture(string expression) => Convert.ToSingle(
+            ((Dictionary<string, object?>)toolkit.ApplyFacialExpression(
+                neutral, expression, 1f)["nearEye"]!)["height"]);
+
+        float rest = Convert.ToSingle(((Dictionary<string, object?>)neutral["nearEye"]!)["height"]);
+        float fear = Aperture("fear"), surprise = Aperture("surprise");
+
+        // Both widen — that is the half of his account the two expressions share.
+        Assert.True(surprise > rest, $"surprise did not widen the eye: {rest:F2} to {surprise:F2}");
+        Assert.True(fear > surprise, $"fear {fear:F2} did not out-widen surprise {surprise:F2}");
+
+        // The brow still separates them too, so the sclera is an addition rather than a replacement
+        // for the corrugator work — fear knits, surprise arches cleanly.
+        Assert.True(toolkit.ExpressionUnits("fear").ContainsKey("AU4"));
+        Assert.False(toolkit.ExpressionUnits("surprise").ContainsKey("AU4"));
+    }
+
     /// <summary>The hand comes back as one silhouette plus its named block forms.</summary>
     /// <remarks>
     /// The same gap the mannequin had, at a tenth the size: eleven boxes with their own outlines are

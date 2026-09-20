@@ -843,13 +843,150 @@ soft mark aimed **below** the ear — not closed up, and not run to the ear itse
   and note that **`parts.nearEar` is meant to vanish**: it stops altering the outline at 10°, which
   is the near ear going behind the head rather than a mass failing to build.
 
+## 8a. The ear, and what ink a feature is worth
+
+> **Implemented by**: `Drawing.drawComicEar(ctx, earObj, isFar, options)`, and the `ears` block
+> `Drawing.createHeadGeometry(...)` now returns beside `parts`.
+
+> **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking, 1956), **Plate 26,
+> "Construction of the nose and the ears"** — for what it declines to give as much as for what it
+> does. Line weight is Klaus Janson's, through `polson://manual/03` §1.
+
+### The ear had a mass and no drawing
+
+§7 composes an ear into the silhouette and has since it was written, but `parts.ear` is a padded
+ellipse: a shape, with no helix, no bowl, no lobe. **Every head this studio drew before 2026-09-19
+wore two blank flaps**, and §9's first bullet said so without anyone reading it as a list of work —
+*it does not shade them.*
+
+`drawComicEar` takes `geo.ears.far` or `geo.ears.near`, each carrying `{ center, width, height,
+faceDir }`, and inks four parts: the **helix** (the outer rim), the **antihelix** (the ridge inside
+it), the **concha** (the bowl between them) and the **lobe**.
+
+```javascript
+const canvas = createCanvas(420, 520);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f4f1ea';
+ctx.fillRect(0, 0, 420, 520);
+
+const head = Drawing.createLoomisHead(210, 250, 300, 0);
+const geo = Drawing.createHeadGeometry(head, { skull: 'comic' });
+
+ctx.fillStyle = '#efe3d2';
+ctx.fill(geo.silhouette);
+ctx.strokeStyle = '#15151a';
+ctx.lineWidth = 2;
+ctx.stroke(geo.mass);
+
+// The ears come from the GEOMETRY, because an ear's centre rides the cranium's own silhouette.
+Drawing.drawComicEar(ctx, geo.ears.far, true, { inkColor: '#15151a' });
+Drawing.drawComicEar(ctx, geo.ears.near, false, { inkColor: '#15151a' });
+
+Drawing.drawComicBrow(ctx, head.farBrow, true, { inkColor: '#15151a' });
+Drawing.drawComicBrow(ctx, head.nearBrow, false, { inkColor: '#15151a' });
+Drawing.drawComicEye(ctx, head.farEye, true, { inkColor: '#15151a' });
+Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: '#15151a' });
+Drawing.drawComicNose(ctx, head.noseWedge, { inkColor: '#15151a' });
+Drawing.drawComicMouth(ctx, head.mouthGuides, { inkColor: '#15151a' });
+
+log(`ear ${geo.ears.near.width.toFixed(1)} x ${geo.ears.near.height.toFixed(1)}`);
+canvas;
+```
+
+**The placement lives with the geometry rather than with the landmarks, and that is not an
+arrangement of convenience.** An ear's centre rides the cranium's own silhouette, so where it sits
+depends on the skull — and `skull: 'comic'` narrows that by a sixth (§1). A head knows its `jaw.ear`
+attachment point; only the composed geometry knows the ball it attaches to.
+
+**It takes no yaw.** An ear foreshortens the *opposite* way to an eye — edge-on frontally, full-face
+in profile — and the width in that block already carries the turn, so a narrow ear simply draws
+narrow. `faceDir` points from the ear toward the facial axis, which is what keeps the helix and the
+lobe the right way round on each side.
+
+> [!IMPORTANT]
+> **A mass can be unioned blind; a mark cannot.** §7 unions both ears into the silhouette without
+> caring whether either is hidden, because a hidden ear adds nothing to an outline — the near one
+> "stops altering the outline at 10°" and that is the end of it. **An inked ear is painted on top**,
+> so the same blindness put the near ear's rim and bowl on the cheek beside the near eye at yaw 38.
+> Nothing in the composition could have caught it, and no test did: the silhouette was correct.
+>
+> Each ear block now carries **`visible`** — whether it still stands outside the skull at its own
+> height — and `drawComicEar` inks nothing when it is false. This is the same lesson §9's second
+> bullet states for the jaw and the neck, arriving from the other direction: **construction order is
+> not depth, and a drawing call is where that starts to matter.**
+
+> [!IMPORTANT]
+> **Loomis declines to give a canon for the shape, and that decides what this call can honestly be.**
+> Plate 26: *"The real problem is much more one of setting them into the construction of the head in
+> their correct positions than one of drawing the actual details themselves. Noses and ears vary
+> widely in shape but not a great deal in basic construction."*
+>
+> So there is no measured ear here to implement. The placement half is what §7 already does; what
+> this adds is the basic construction, and **the proportions in it are the studio's, by eye, and are
+> not his.** The same honesty the expression tuples in `polson://manual/08` are held to.
+
+### Plate 26's one measurable rule, which we were not following
+
+The same page gives a rule that *is* checkable: **the nostrils sit evenly on the line running from
+the base of the nose to the base of the ear.** The ear's foot lands exactly on the nose line — it is
+one unit tall centred between brow and nose — so that line is a real construction rather than a rule
+of thumb.
+
+`createLoomisHead` used to place the nostril at a fixed `H × 0.02` below the nose line, which is
+close at yaw 0 and drifts off the line at every other angle. It is now derived. On a 240px frontal
+head the nostril moves **1.5px lower**, which is the measure of how nearly right the constant was
+rather than a reason to have kept it.
+
+### Ink weight is a tier, and a tier is not a pixel count
+
+Every weight in the feature drawers was an absolute number of pixels — the eyelid at 3.8, the nose
+bridge at 2.4, the nostril a literal 3.5px arc. Those are not arbitrary: they are Manual 03 §1's
+**Tier 2 and Tier 3**, frozen at one head size. The geometry scaled with the head and the ink did
+not, so a feature was correct at exactly one size and wrong everywhere else — a hairline with a dot
+for a nostril at 600px, a blob at 60px. **The mouth's geometry was absolute too**: a 12px cavity and
+a 6px lower lip, so a large mouth had a cavity a fortieth of its own width.
+
+> [!IMPORTANT]
+> **Scaling the tiers linearly is the obvious fix and is wrong as drawing.** Rendered, it turns a
+> 560px head's nose bridge into a black dagger down the middle of the face. **An inker drawing a long
+> shot simplifies — fewer marks — rather than reaching for a finer nib**, which is Janson's doctrine
+> in Manual 03 and the reduction test in `polson://manual/20`.
+>
+> The tiers now follow a **square root** of head height: exactly the old constants at the 240px head
+> they were calibrated on, and 0.68× / 1.53× at 110px and 560px rather than 0.46× / 2.33×. Each
+> drawer recovers the implied head from the feature it was handed, so a feature drawn onto its own
+> plate — for a mesh texture, `polson://manual/26` §7 — still comes out at the right weight.
+>
+> `weight` on each drawer is a multiplier on that tier rather than a pixel count, as
+> `drawComicBrow`'s `thickness` already was.
+
+### The bridge and the lip line are tapered marks now
+
+Manual 03 §3 states it plainly: *a constant-width stroke reads as a technical drawing, not as
+inking.* These two were drawing one. They are now `createTaperedStrokePath` envelopes, heaviest in
+the middle and lifting at both ends, and the peak sits at **π/2** of the tier so the average ink is
+where it was rather than 36% lighter.
+
+**A frontal nose all but loses its bridge, on purpose.** At yaw 0 the nose's three landmarks are
+collinear and vertical, so a full-weight mark can only be a wedge down the centre of the face — and
+comic practice inks a frontal nose with its nostrils and its under-plane, letting the brow carry the
+bridge. The bridge line is the break between the front plane and the side plane, so it belongs to a
+turned head. The turn is recovered from the nose's own landmarks, not passed in, so it survives an
+expression or a blend.
+
+`bridge` and `lipLine` keep their documented meaning as open centre-lines; the filled marks arrive
+beside them as **`bridgeMark`** and **`lipMark`**. Changing what an existing key held would break
+every caller that re-strokes it at its own tier, which is the thing those returns exist to allow.
+
+---
+
 ## 9. What this does not give you
 
 - **A composed head is not a rendered one.** §7 closed the gap this section used to name: there is
-  now a silhouette, an ear and a neck, and §8 joins it to a body. What it gives you is *shape* — four
-  masses and their union. It does not shade them, and knows nothing about hair, which is now the
-  largest untouched thing on a comic head. `Drawing.drawHairRibbon(...)` draws one strand
-  and nothing decides where strands go.
+  now a silhouette, an ear and a neck, §8 joins it to a body, and §8a inks the ear and puts the
+  features on a tier. What §7 gives you is still *shape* — four masses and their union — and it does
+  not shade them. **Hair is now the largest untouched thing on a comic head**:
+  `Drawing.drawHairRibbon(...)` draws one strand and nothing decides where strands go.
 - **Nothing in it is depth.** `order` is the sequence the masses are built in, not a z-order, exactly
   as on a figure. A head turned far enough that the far jaw passes behind the neck still needs you to
   say so with a clip.

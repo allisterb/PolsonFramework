@@ -247,7 +247,7 @@ Prefer a drawn or typographic treatment when:
 ## 7. One Portrait, Every Angle — the Face as a Surface
 
 > **Implemented by**: `Mesh.load(...)`, `mesh.fitTexture(...)`, `mesh.fitOutline(...)`, `mesh.landmark(...)`, `mesh.uvAt(...)`,
-> `mesh.vertex(...)`, `mesh.boundary()`, `mesh.clone()`, `mesh.bounds`, `mesh.vertexCount`,
+> `mesh.vertex(...)`, `mesh.boundary()`, `mesh.clone()`, `mesh.bounds`, `mesh.vertexCount`, `mesh.uvSpace`,
 > `mesh.triangleCount`, `mesh.textured`, `mesh.source`, `Mesh.fromObj(...)` and `Mesh.draw(...)`.
 
 > **Source Reference**: Jared Sanson & Richard Green, *Face Replacement Demo using the Kinect Depth
@@ -275,6 +275,33 @@ Identity stops being something you hope the model holds and becomes structural.
 There is **no face detector anywhere in this stack.** `fitTexture` asks for three points in the
 image's own pixels — the two eyes and the mouth — and solves a similarity transform from them, so
 scale and position fall out of the fit.
+
+> [!IMPORTANT]
+> **`mesh.landmark(x, y, z)` is not that, and the two are one word apart.** It is a nearest-vertex
+> search over the *loaded geometry* — *which vertex of this mesh is closest to this point in its own
+> 3D model space* — and it never looks at an image. It exists so that no vertex index is ever quoted
+> from memory. The **only** thing we hold from MediaPipe is `canonical_face_model.obj`, a static
+> neutral mesh; the ledger's own row for `modules/face_landmark/` records that it is graph wiring
+> with **no model binaries and no data of any kind**, the `.tflite` files being fetched at build time.
+
+**So how are the three points actually got?** Three routes, and only the middle one involves looking:
+
+1. **A face the studio drew** — free and exact, below.
+2. **A portrait you were handed** — read them off it. An agent can see the image, so this is ordinary
+   looking; putting a labelled coordinate grid over it at 4–6× first turns a guess into a reading.
+3. **Ask a model** — `Documents.ask` takes a PNG and could be asked for the pixels. Metered, and
+   **untested for this**; a route rather than a recommendation.
+
+> [!TIP]
+> **Drawing the mesh over the image is how you check a fit, not how you find the points**, and the
+> cheaper check needs no render: `uvAt` reports where each vertex landed, so a fit is verifiable as
+> arithmetic. `wireframe: true` is for when you want to see it.
+>
+> **And a misread costs about what it was worth.** Perturbing one landmark at a time across a 5×
+> range, the ratio of worst drift elsewhere on the face to the size of the error holds **constant** —
+> 1.02× slipping an eye vertically, 1.65× horizontally, 2.05× for the mouth. A similarity transform
+> from three points cannot amplify, so there is no cliff: read them to within a few percent of the
+> eye separation and the face lands within a few percent. Pinned by a test rather than argued here.
 
 For a photograph you read them off it. **For a face the studio drew itself they are free**, which is
 the asymmetry worth exploiting:
@@ -438,6 +465,46 @@ closed it, on 2026-09-19:
 `Mesh.draw(ctx, mesh, { wireframe: true })` draws the triangles as lines, which is how you check a fit
 before spending a texture on it — the role `drawLoomisWireframe` plays for the constructed head. A
 mesh with no texture draws as a wireframe whatever you pass, rather than silently drawing nothing.
+> [!IMPORTANT]
+> **`mesh.uvSpace` is the other thing to put in that note, and it is the one that was wrong.** A mesh
+> holds its texture coordinates as **pixels** when `fitTexture` wrote them and as an **atlas** —
+> `0…1`, `v` up from the bottom — when they came from an OBJ. Until 2026-09-19 the draw path assumed
+> pixels, so a mesh drawn straight from its own file sampled the rectangle from `(0,0)` to `(1,1)`:
+> **the whole head in one flat colour**, no error, nothing in the picture to say a mapping had
+> failed. The atlas had been loaded correctly the whole time and nothing read it.
+>
+> **The atlas is the better surface for a plate the studio draws**, because a front projection cannot
+> represent the sides of a head — triangles at the silhouette project to near-zero area, which is the
+> smear on a turned panel. It is also the reachable half of the **shape-free texture** this route's
+> literature is built on (Ahlberg, *EURASIP JASP* 2002:6, 566–571, crediting Ström et al. 1997): that
+> warp exists to drag a *captured* image into canonical shape, and **a plate authored in atlas space
+> is already there**. For a photograph it still needs a full landmark set, and §7b's first line
+> stands — there is no face detector anywhere in this stack.
+
+### 7c-i. Painting into the atlas, and the one thing that goes wrong
+
+The whole route in four steps: ask the mesh where each feature sits with
+`uvAt(landmark(...))`, draw the feature with the ordinary comic drawers, stamp it at that place, and
+draw the mesh with the plate as its texture. Tested end to end with `drawComicEye`, `drawComicBrow`,
+`drawComicNose` and `drawComicMouth` — the same head turns to **yaw 70**, near profile, and still
+takes an expression and a one-sided brow.
+
+> [!IMPORTANT]
+> **An atlas is not an isotropic picture of the face, and stamping a plate as though it were is the
+> mistake to expect.** An unwrap is laid out for texel budget and seam placement, not to look like a
+> portrait, so *across the face* and *down the face* are not in the ratio a frontal view has.
+>
+> Measured on MediaPipe's canonical model at a 768px plate: eye separation **240.6px**, eye-to-mouth
+> **193.5px**. The same two distances on a Loomis head are 114.3 and 123.8 — so the atlas runs
+> **about 26% flatter**, and a feature scaled uniformly off the eye span arrives that much too tall.
+> Drawn that way the first render put the **lower lip below the chin line** and stretched the nose
+> into a streak; nothing errored, and it looked like the drawers were at fault rather than the
+> stamping.
+>
+> Take **two** metrics — eye separation for `x`, eye-to-mouth for `y` — and scale each axis on its
+> own. Both are free from `uvAt`. And **measure the atlas you loaded** rather than carrying those
+> numbers across, for the same reason §7d gives for never quoting a vertex index from memory.
+
 `mesh.textured`, `mesh.vertexCount`, `mesh.triangleCount`, `mesh.bounds` and `mesh.source` are what a
 `Stage.note` should carry when a run uses this route, because none of it is visible in the render.
 

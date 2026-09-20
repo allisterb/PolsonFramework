@@ -773,9 +773,9 @@ Both honour `globalAlpha`, `globalCompositeOperation`, `filter`, `colorFilter`, 
 Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with the leading context argument dropped: `Drawing.drawPerspectiveGrid(ctx, grid, options)` and `ctx.drawPerspectiveGrid(grid, options)` are the same call.
 
 > [!IMPORTANT]
-> **This list is exhaustive — taking a context as its first parameter is not enough.** Six toolkit
+> **This list is exhaustive — taking a context as its first parameter is not enough.** Seven toolkit
 > methods that do take one have no shortcut: `drawLoomisWireframe`, `drawMannequinWireframe`,
-> `drawMannequinSolid`, `drawComicEye`, `drawComicNose` and `drawComicMouth`. Call those as
+> `drawMannequinSolid`, `drawComicEye`, `drawComicNose`, `drawComicMouth` and `drawComicEar`. Call those as
 > `Drawing.drawLoomisWireframe(ctx, head)`.
 >
 > The mannequin and hand pairs are the traps worth knowing, because each shortcut exists under a
@@ -1263,7 +1263,7 @@ Also accessible via `Skia.Drawing`.
 > faces"*, and a successful caricature often came from comparing against **any face that simply
 > seemed very different**. That is what the `reference` argument is for.
 
-- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, bounds, padding, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
+- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, ears: { far, near }, bounds, padding, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
 
 > [!IMPORTANT]
 > **This is what stops features being marks floating in space.** `createLoomisHead` places landmarks and the comic feature drawers put marks at them, and until this there was nothing in between — a live run drew two correctly proportioned faces that read as **masks on undifferentiated shoulder-masses**, because the features had nothing to sit on. Clip them to `mass` and they belong to a head.
@@ -1349,7 +1349,7 @@ Also accessible via `Skia.Drawing`.
 > **Drawing it onto a body has two ordering rules that are not obvious and produce a wrong picture silently** — the head and neck go down **first** with the torso over them, or the neck's closed base is outlined across the chest; and the mannequin's own head egg has to be cut out of the body (`figGeo.silhouette.subtract(figGeo.groups.head)`) or it paints over the face. Worked through in `polson://manual/23` §8.
 
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
-- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string, irisRatio?: number })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**. **The lid opening is `eye.height / eye.width`**, so an eye narrows or widens by changing `height` — which is what `eyesOpening` and any expression blend move. The canon's own ratio is `0.45`, and an eye carrying neither field falls back to it, so nothing drawn before this was readable renders differently.
+- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string, irisRatio?: number, weight?: number })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**. **The lid opening is `eye.height / eye.width`**, so an eye narrows or widens by changing `height` — which is what `eyesOpening` and any expression blend move. The canon's own ratio is `0.45`, and an eye carrying neither field falls back to it, so nothing drawn before this was readable renders differently.
 
 > [!TIP]
 > **`height` was written by `createLoomisHead` and read by nothing until 2026-09-18.** Every
@@ -1391,8 +1391,41 @@ Also accessible via `Skia.Drawing`.
 >
 > **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
 
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string })` → `{ underPlane, bridge, nostril }` — Renders nose bridge, apex, nostril, and under-plane shadow, **returning each as a `CanvasPath`**.
-- `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string })` → `{ cavity, teeth, lipLine, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow, **returning each as a `CanvasPath`**.
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number })` → `{ underPlane, bridge, bridgeMark, nostril }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**.
+- `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string, weight?: number })` → `{ cavity, teeth, lipLine, lipMark, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow. `lipLine` stays the open centre-line; **`lipMark` is the tapered mark actually filled**.
+- `Drawing.drawComicEar(ctx: CanvasRenderingContext2D, earObj: object, isFar?: boolean, options?: { inkColor?: string, shadowColor?: string, weight?: number, hatch?: boolean })` → `{ helix, antihelix, concha, lobe }` — Renders one ear: the outer rim, the ridge inside it, the bowl between them and the lobe. Pass **`geo.ears.far`** or **`geo.ears.near`** from `createHeadGeometry`.
+
+> [!IMPORTANT]
+> **Until 2026-09-19 nothing drew an ear at all**, and every head this studio produced wore two blank flaps. `createHeadGeometry` has carried `parts.ear` and `parts.nearEar` since the same week, but those are *masses* — padded ellipses unioned into the silhouette — with no internal structure. Manual 23 §9 named it: what the composition gives you is shape, and *"it does not shade them"*.
+>
+> ```javascript
+> const geo = Drawing.createHeadGeometry(head);
+> ctx.fill(geo.silhouette);
+> Drawing.drawComicEar(ctx, geo.ears.far, true, { inkColor: '#15151a' });
+> Drawing.drawComicEar(ctx, geo.ears.near, false, { inkColor: '#15151a' });
+> ```
+>
+> **The ear's placement belongs to the geometry rather than to the landmarks**, which is why it comes from there: an ear's centre rides the cranium's own silhouette, and `skull: 'comic'` narrows that. `ears.far` and `ears.near` each carry `{ center, width, height, faceDir, visible }` — `faceDir` pointing toward the facial axis, which is what tells the drawer which way round the helix and the lobe go.
+>
+> **`visible` is false once the ear has gone behind the skull, and the drawer then inks nothing.** The masses can be unioned blind, because a hidden ear adds nothing to a silhouette — but a drawn one is painted on top, so past about 35 degrees of yaw the near ear's rim and bowl appeared on the cheek beside the near eye. An ear dict you build yourself and do not flag still draws.
+>
+> **An ear foreshortens the opposite way to an eye** — edge-on frontally, full-face in profile — and the width in that block already carries the turn, so this call takes no yaw: a narrow ear simply draws narrow.
+>
+> **Loomis declines to give a canon for the shape, and that decides what this call is.** Plate 26: *the real problem is much more one of setting them into the construction of the head in their correct positions than one of drawing the actual details*, and noses and ears *vary widely in shape but not a great deal in basic construction*. So there is no measured ear to implement — the placement half is what the geometry already does, and this is the basic construction. **The proportions are the studio's, by eye, and are not his.**
+>
+> `hatch: false` drops the cross-contour arcs in the bowl. They are omitted automatically below about eight pixels of bowl, where they merge into the blob they exist to avoid.
+
+> [!IMPORTANT]
+> **Every ink weight on a feature used to be an absolute pixel count, and now scales with the feature — sub-linearly.** The geometry has always scaled with head height and the ink did not, so a feature was correct at exactly one head size: at a 600px portrait the nose came back as a hairline with a 3.5px dot for a nostril, and at a 60px long shot the same constants read as a blob. **The mouth's geometry was absolute too** — a 12px cavity, a 6px lower lip 16px below centre — so a big mouth had a cavity a fortieth of its own width.
+>
+> **Linear scaling was the obvious fix and is also wrong as drawing.** It turns a 560px head's nose bridge into a black dagger down the middle of the face. An inker drawing a long shot *simplifies* rather than reaching for a finer nib, so the tiers follow a **square root** of head height: exactly right at the 240px head they were calibrated on, and 0.68× / 1.53× at 110px and 560px rather than 0.46× / 2.33×.
+>
+> **`weight` is a multiplier on the feature's own tier**, as `drawComicBrow`'s `thickness` already was — so a tier chosen for a panel survives a change of head size. Manual 03 §1 has the hierarchy.
+
+> [!TIP]
+> **The nose bridge and the lip line are tapered marks now, not constant-width strokes.** Manual 03 §3 says outright that a constant-width stroke reads as a technical drawing rather than as inking, and these two were drawing one. The envelope is heaviest in the middle and lifts at both ends.
+>
+> **A frontal nose all but loses its bridge, deliberately.** At yaw 0 the nose's three landmarks are collinear and vertical, so a full-weight mark can only be a wedge down the centre of the face. The bridge line is the break between the front plane and the side plane, so it belongs to a turned head — and the turn is recovered from the nose's own landmarks rather than passed in, so it survives an expression or a blend.
 
 > [!TIP]
 > **`aperture` is the one to reach for.** It is both the sclera fill and the clip the interior is drawn inside, so it is what a highlight, a reflected window, or a hard-edged shadow from the brow gets clipped to — and rebuilding it means re-deriving the eyelid curve from `inner`, `outer` and the eye's own width.
@@ -2966,9 +2999,43 @@ canvas;
 
 - `mesh.vertexCount` → `number` · `mesh.triangleCount` → `number` · `mesh.source` → `string`
 - `mesh.textured` → `boolean` — Whether an image is attached, so a draw will texture rather than wireframe. **Not the same as "the file had UVs"**: an OBJ can carry a coordinate for every vertex and still have no picture to sample.
-- `mesh.uvAt(index: number)` → `{ x, y, index }` — The texture coordinate one vertex samples, in the texture’s own pixels. The pair to `vertex(...)`, and how a fit is checked without rendering it.
+- `mesh.uvAt(index: number)` → `{ x, y, index }` — The texture coordinate one vertex samples, **in the space `uvSpace` names**. The pair to `vertex(...)`, and how a fit is checked without rendering it.
+- `mesh.uvSpace` → `string` — `'pixels'`, `'atlas'` or `'none'`. **Read this before comparing a UV against pixels.**
+
+> [!IMPORTANT]
+> **A mesh carries its texture coordinates in one of two spaces, and a number that could be either is a bug waiting to happen.** `fitTexture` writes them as **pixels** in the image it fitted to. An **OBJ** writes them as an **atlas** — `0 … 1`, with `v` measured *up* from the bottom, against an image's `y` measured down. A mesh with neither reports `'none'`.
+>
+> ```javascript
+> const mesh = Mesh.load('models/face.obj');
+> log(mesh.uvSpace);                                   // 'atlas' — the file's own layout
+> Mesh.draw(ctx, mesh, { x, y, scale, texture: plate });  // painted in atlas space, drawn as such
+> ```
+>
+> **This was broken until 2026-09-19 and it was broken silently.** The draw path sampled every coordinate as pixels, so a mesh drawn straight from its own file sampled the rectangle from `(0,0)` to `(1,1)` and returned **the whole head in one flat colour** — the texture's top-left pixel, with no error and nothing in the render to suggest a mapping had failed. MediaPipe's canonical model loads at `u 0.008…0.992, v 0.046…0.893`, so the atlas was there and correct the entire time; nothing consumed it.
+>
+> **Drawing a texture on a mesh with no coordinates now falls back to the wireframe** rather than painting a flat fill, for the same reason an untextured mesh does: a fill that renders perfectly is indistinguishable from a drawing decision.
+
+> [!TIP]
+> **The atlas is the better surface for a plate the studio draws, and `fitTexture` is for a picture it was given.** A front projection cannot represent the sides of a head — triangles at the silhouette project to near-zero area, which is the smear you see on a turned panel. The mesh's own atlas unwraps the whole surface, so a procedurally-painted plate wraps round rather than stopping at the profile.
+>
+> This is the reachable half of what the Active Appearance Model literature calls a **shape-free** or **geometrically normalised** texture (Ahlberg, *EURASIP JASP* 2002:6, 566–571, crediting Ström et al. 1997). There the texture is warped into the model's canonical shape *first*, so that shape and texture are independent — and the warp exists because the source is a **captured** image. **A plate authored in atlas space is already in canonical shape, so the warp is free.** Doing it for a photograph needs a full landmark set on the source, and there is no face detector in this stack.
+
+> [!IMPORTANT]
+> **An atlas is not an isotropic picture of the face, so a feature stamped into it needs two scales, not one.** An unwrap is laid out for texel budget and seam placement, not to look like a portrait — so the ratio between *across the face* and *down the face* is not the one a frontal view has.
+>
+> Measured on MediaPipe's canonical model at a 768px plate: the eye separation is **240.6px** while eye-to-mouth is **193.5px**. On a Loomis head the same two distances are 114.3 and 123.8 — so the atlas runs **about 26% flatter**, and a plate scaled uniformly from the eye span comes out that much too tall. Drawn that way the nose stretches and the lower lip lands below the chin line. Both metrics are free:
+>
+> ```javascript
+> const eyeL = mesh.uvAt(mesh.landmark(-3.18, 2.64, 3.4));     // atlas fractions
+> const eyeR = mesh.uvAt(mesh.landmark(3.18, 2.64, 3.4));
+> const mouth = mesh.uvAt(mesh.landmark(0, -3.4, 6.0));
+> const sx = Math.abs(eyeR.x - eyeL.x) * plate.width / headEyeSpan;
+> const sy = Math.abs(mouth.y - eyeR.y) * plate.height / headEyeToMouth;
+> ```
+>
+> The numbers above are that model's; **measure the atlas you loaded** rather than carrying them across, for the same reason no vertex index is ever quoted from memory.
 - `mesh.bounds` → `object` — The model-space extent: the usual `{ x, y, width, height, x2, y2, cx, cy }` plus `z`, `z2` and `depth`.
-- `mesh.landmark(x: number, y: number, z: number)` → `number` — The index of the vertex nearest a point in the model's own space.
+- `mesh.landmark(x: number, y: number, z: number)` → `number` — **The index of the vertex nearest a point in the mesh's own 3D model space.** A nearest-vertex search over the loaded geometry: *which vertex of this mesh is closest to here*. It never looks at an image, and it is not facial-landmark detection — **there is no detector anywhere in this stack.** Pair it with `vertex(...)` to get the position back, or with `uvAt(...)` to get the pixel or atlas coordinate that vertex samples.
 - `mesh.vertex(index: number)` → `{ x, y, z, index }` — Where one vertex is.
 - `mesh.fitTexture(image, options)` → `FaceMesh` — Textures the mesh from a frontal image by front projection. `options`: `{ eyeLeft, eyeRight, mouth }`, each `{ x, y }` in the **image's own pixels**.
 - `mesh.fitOutline(outline: CanvasPath, options?)` → `FaceMesh` — Pushes the boundary out to a drawn outline. `options`: `{ center, strength, falloff }`.
@@ -2989,6 +3056,24 @@ canvas;
 > - **There is no rotation term**, so a tilted head is not straightened.
 > - **Only two internal ratios are pinned** — eye separation and eye-to-mouth. Every other proportion is the mesh's, so a face built to other proportions is redistributed onto this one.
 > - **There is no face detector anywhere in this stack**, so the three landmarks are yours to supply. For a photograph that means reading them off it. **For a face the studio drew itself they are free**: `createLoomisHead` already reports `farEye.center`, `nearEye.center` and `mouthGuides.center`.
+
+> [!TIP]
+> **Where the three points come from, and how exact they have to be.**
+>
+> There are three routes, and only the middle one involves looking at anything:
+>
+> 1. **A face the studio drew** — free, and exact. The construction already knows where its own eyes and mouth are. Nothing is read, nothing is detected.
+> 2. **A portrait you were handed** — read them off the picture. An agent can see the image, so this is an ordinary act of looking; overlaying a labelled coordinate grid at 4–6× first makes it a reading rather than a guess.
+> 3. **Ask a model** — `Documents.ask` takes a `.png` and could be asked for the eye and mouth pixels. Metered, and **untested for this** — treat it as a route rather than a recommendation.
+>
+> **Drawing the mesh over the image is how you CHECK a fit, not how you find the points.** `wireframe: true` puts the triangles over the source so a bad fit is visible — but the cheaper check needs no render at all, because `uvAt` reports where each vertex landed:
+>
+> ```javascript
+> const fitted = mesh.fitTexture(photo, { eyeLeft, eyeRight, mouth });
+> log(JSON.stringify(fitted.uvAt(fitted.landmark(-3.18, 2.64, 3.4))));   // should be your eyeLeft
+> ```
+>
+> **How exact is exact enough: an error costs about what it was worth, and never more.** Measured by perturbing one landmark at a time across a 5× range, the ratio of worst-case drift elsewhere on the face to the size of the misread is **constant** — 1.02× for slipping an eye vertically, 1.65× horizontally, 2.05× for the mouth. The fit is a similarity transform from three points, so **nothing amplifies and there is no cliff**: read them to within a few percent of the eye separation and the whole face lands within a few percent. It is pinned by a test.
 
 > [!IMPORTANT]
 > **`fitOutline` is what a cartoon face needs, and without it the mesh imposes a human head on everything.** Texturing alone puts a drawing's features in the right places and then cuts them out with an average human mask — measured on our own comic head, the features read correctly and **the jaw and cranium do not survive at all**, because the outline belongs to the mesh rather than to the drawing.

@@ -1565,9 +1565,9 @@ public class DrawingToolkitTests : TestsRuntime
 
         Assert.Equal(new[] { "aperture", "catchlight", "iris", "lowerLid", "pupil", "upperLid" },
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "bridge", "nostril", "underPlane" },
+        Assert.Equal(new[] { "bridge", "bridgeMark", "nostril", "underPlane" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "cavity", "lipLine", "lowerLip", "teeth" },
+        Assert.Equal(new[] { "cavity", "lipLine", "lipMark", "lowerLip", "teeth" },
             mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
 
         // The iris sits inside the aperture it is clipped to, which is the relationship that makes
@@ -1870,6 +1870,196 @@ public class DrawingToolkitTests : TestsRuntime
         var arm = ((CanvasPath)groups["leftArm"]!).Path.Bounds;
         Assert.True(arm.Contains(forearm), "the leftArm group should contain leftForearm");
     }
+
+    #region Feature ink
+    /// <summary>The peak thickness of the nose's tapered bridge mark, in pixels.</summary>
+    /// <remarks>
+    /// **Measured off the mark rather than counted in pixels, and the first attempt got that wrong.**
+    /// Counting a feature's dark pixels sounds like measuring its ink and is not: an eye's count is
+    /// dominated by the *filled* sclera, iris and pupil, whose area goes as the square of the eye, so
+    /// the reading rose with head size no matter what the strokes did. A frontal head's nose is the
+    /// one mark here that is exactly vertical — its three landmarks are collinear at yaw 0 — so the
+    /// filled mark's bounding width *is* its peak thickness, with nothing else in it.
+    /// </remarks>
+    private static float BridgeThickness(ConstructiveDrawingToolkit toolkit, float headHeight, float yaw = 0f)
+    {
+        var head = toolkit.CreateLoomisHead(450f, 450f, headHeight, yaw);
+        var nose = toolkit.DrawComicNose(new SkiaCanvas(4, 4).GetContext("2d"), head["noseWedge"]!, null);
+        return ((CanvasPath)nose["bridgeMark"]!).Path.Bounds.Width;
+    }
+
+    /// <summary>
+    /// **A feature's ink scales with the head, and does so sub-linearly.**
+    /// </summary>
+    /// <remarks>
+    /// Every weight in these drawers was an absolute pixel count until 2026-09-19, so a feature was
+    /// correct at exactly one head size and wrong at every other. Scaling them <i>linearly</i> was the
+    /// obvious fix and is also wrong as drawing — it gives a 560px head a black dagger down the middle
+    /// of the face and a 110px head half-pixel eyelids. An inker drawing a long shot simplifies rather
+    /// than reaching for a finer nib, so the tiers follow a square root: each doubling of head height
+    /// should multiply the weight by about 1.41 rather than by 1 or by 2.
+    /// </remarks>
+    [Fact]
+    public void TestFeatureInkScalesSubLinearlyWithTheHead()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        float small = BridgeThickness(toolkit, 120f),
+              mid = BridgeThickness(toolkit, 240f),
+              large = BridgeThickness(toolkit, 480f);
+
+        // Absolute pixels would hold these at 1.0; linear scaling would put them at 2.0.
+        Assert.InRange(mid / small, 1.30f, 1.55f);
+        Assert.InRange(large / mid, 1.30f, 1.55f);
+    }
+
+    /// <summary>
+    /// **A turned head gets its bridge line; a frontal one all but loses it.**
+    /// </summary>
+    /// <remarks>
+    /// At yaw 0 the nose's three landmarks are collinear and vertical, so a full-weight bridge can
+    /// only be a wedge down the middle of the face. The bridge is the break between the front and
+    /// side planes, so it belongs to a turned head — and the turn is recovered from the nose itself
+    /// rather than passed in, which is what makes it survive an expression or a blend.
+    /// </remarks>
+    [Fact]
+    public void TestTheNoseBridgeIsLighterOnAFrontalHead()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+
+        // The frontal mark is exactly vertical, so its bounding width is its peak thickness; the
+        // turned one leans, so its width is thickness plus lean — which only strengthens the claim.
+        var frontal = BridgeThickness(toolkit, 300f, 0f);
+        var turned = BridgeThickness(toolkit, 300f, 40f);
+        Assert.True(turned > frontal * 1.5f,
+            $"a turned bridge should carry more ink than a frontal one: {turned:F2} against {frontal:F2}");
+        Assert.True(frontal > 0.2f, "a frontal bridge should be light rather than absent");
+    }
+
+    /// <summary>The nostril sits on Loomis's line from the base of the nose to the base of the ear.</summary>
+    /// <remarks>
+    /// Plate 26 gives the rule and this is the whole of it. Before 2026-09-19 the nostril sat at a
+    /// fixed <c>H × 0.02</c> below the nose line, which happens to be close at yaw 0 and drifts off
+    /// the line at every other angle.
+    /// </remarks>
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(20f)]
+    [InlineData(40f)]
+    public void TestTheNostrilSitsOnLoomisLine(float yaw)
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(400f, 400f, 280f, yaw);
+        var nose = (IDictionary<string, object?>)head["noseWedge"]!;
+        var jaw = (IDictionary<string, object?>)head["jaw"]!;
+        var unit = (IDictionary<string, object?>)head["unit"]!;
+
+        var under = (IDictionary<string, object?>)nose["underNose"]!;
+        var nostril = (IDictionary<string, object?>)nose["nearNostril"]!;
+        var ear = (IDictionary<string, object?>)jaw["ear"]!;
+
+        // The near ear's base, mirroring the far one the construction records, on the nose line.
+        float ux = Convert.ToSingle(under["x"]), uy = Convert.ToSingle(under["y"]);
+        var earBaseX = (2f * 400f) - Convert.ToSingle(ear["x"]);
+        var noseLineY = uy - (Convert.ToSingle(unit["H"]) * 0.035f);
+
+        float nx = Convert.ToSingle(nostril["x"]), ny = Convert.ToSingle(nostril["y"]);
+        var t = (nx - ux) / (earBaseX - ux);
+        var expected = uy + (t * (noseLineY - uy));
+
+        Assert.Equal(expected, ny, 0.5f);
+    }
+
+    /// <summary>An ear is drawn, which nothing in this toolkit did before 2026-09-19.</summary>
+    [Fact]
+    public void TestAnEarIsDrawnFromTheGeometrysOwnBlock()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(450f, 450f, 300f, 25f);
+        var geo = toolkit.CreateHeadGeometry(head);
+        var ears = (IDictionary<string, object?>)geo["ears"]!;
+
+        Assert.Equal(new[] { "far", "near" }, ears.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+
+        var far = (IDictionary<string, object?>)ears["far"]!;
+        var near = (IDictionary<string, object?>)ears["near"]!;
+
+        // An ear is one unit tall — Plate 18 — and both are the same height whatever the turn does
+        // to their width.
+        var unitH = Convert.ToSingle(((IDictionary<string, object?>)head["unit"]!)["thirdH"]);
+        Assert.Equal(unitH, Convert.ToSingle(far["height"]), 0.5f);
+        Assert.Equal(Convert.ToSingle(far["height"]), Convert.ToSingle(near["height"]), 0.01f);
+
+        // The far ear widens with the turn while the near one narrows — the reverse of an eye.
+        Assert.True(Convert.ToSingle(far["width"]) > Convert.ToSingle(near["width"]),
+            "at yaw the far ear should be the wider of the two");
+
+        // `faceDir` points from each ear toward the facial axis, so the two disagree.
+        Assert.Equal(-Convert.ToSingle(far["faceDir"]), Convert.ToSingle(near["faceDir"]), 0.01f);
+
+        var canvas = new SkiaCanvas(900, 900);
+        var parts = toolkit.DrawComicEar(canvas.GetContext("2d"), ears["far"]!, true,
+            new Dictionary<string, object?> { ["inkColor"] = "#000000" });
+
+        Assert.Equal(new[] { "antihelix", "concha", "helix", "lobe" },
+            parts.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+
+        // The rim encloses the bowl: an ear whose helix does not contain its concha is two marks
+        // rather than one form.
+        var helix = ((CanvasPath)parts["helix"]!).Path.Bounds;
+        var concha = ((CanvasPath)parts["concha"]!).Path.Bounds;
+        Assert.True(helix.Height > concha.Height, "the rim should be taller than the bowl inside it");
+        Assert.True(helix.Height > 0f && concha.Width > 0f);
+    }
+
+    /// <summary>
+    /// **An ear that has gone behind the head is not inked on the cheek.**
+    /// </summary>
+    /// <remarks>
+    /// The masses can be unioned blind, because a hidden ear simply adds nothing to a silhouette —
+    /// which is why nothing caught this until a turned head was rendered. A *drawn* ear is painted on
+    /// top, so past about 35° the near ear's rim and bowl appeared beside the near eye.
+    /// </remarks>
+    [Fact]
+    public void TestAHiddenEarIsNotInked()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var canvas = new SkiaCanvas(64, 64);
+
+        static bool Visible(ConstructiveDrawingToolkit tk, float yaw, string side)
+        {
+            var geo = tk.CreateHeadGeometry(tk.CreateLoomisHead(450f, 450f, 300f, yaw));
+            var ear = (IDictionary<string, object?>)((IDictionary<string, object?>)geo["ears"]!)[side]!;
+            return Convert.ToBoolean(ear["visible"]);
+        }
+
+        // Frontally both ears stand clear of the skull; turned, the near one has swung behind it.
+        Assert.True(Visible(toolkit, 0f, "near"));
+        Assert.True(Visible(toolkit, 0f, "far"));
+        Assert.True(Visible(toolkit, 45f, "far"));
+        Assert.False(Visible(toolkit, 45f, "near"));
+
+        var turned = toolkit.CreateHeadGeometry(toolkit.CreateLoomisHead(450f, 450f, 300f, 45f));
+        var ears = (IDictionary<string, object?>)turned["ears"]!;
+        Assert.Empty(toolkit.DrawComicEar(canvas.GetContext("2d"), ears["near"]!));
+        Assert.NotEmpty(toolkit.DrawComicEar(canvas.GetContext("2d"), ears["far"]!, true));
+    }
+
+    /// <summary>A degenerate ear draws nothing rather than dividing by its own size.</summary>
+    [Fact]
+    public void TestAnEarWithNoSizeDrawsNothing()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var canvas = new SkiaCanvas(64, 64);
+        var parts = toolkit.DrawComicEar(canvas.GetContext("2d"), new Dictionary<string, object?>
+        {
+            ["center"] = new Dictionary<string, object?> { ["x"] = 32f, ["y"] = 32f },
+            ["width"] = 0f,
+            ["height"] = 0f
+        });
+
+        Assert.Empty(parts);
+    }
+    #endregion
 
     private static double Distance(IDictionary<string, object?> limb, string a, string b)
     {

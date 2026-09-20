@@ -575,4 +575,208 @@ public class MeshToolkitTests : TestsRuntime
         }
     }
     #endregion
+
+    #region Texture coordinate space
+    /// <summary>The distinct colours a textured draw actually put on the canvas.</summary>
+    static HashSet<string> Drawn(FaceMesh mesh, object texture, int size = 400)
+    {
+        var canvas = new SkiaCanvas(size, size);
+        new MeshToolkit().Draw(canvas.GetContext("2d"), mesh, new Dictionary<string, object?>
+        {
+            ["x"] = size / 2f, ["y"] = size / 2f, ["scale"] = size / 26f, ["texture"] = texture
+        });
+
+        var bitmap = canvas.ToBitmap();
+        HashSet<string> seen = [];
+        for (var y = 0; y < size; y += 3)
+            for (var x = 0; x < size; x += 3)
+            {
+                var px = bitmap.GetPixel(x, y);
+                if (px != "#00000000") seen.Add(px);
+            }
+
+        return seen;
+    }
+
+    /// <summary>A plate divided into four quadrants, so a mapping that collapses is visible.</summary>
+    static SkiaCanvas Quadrants(int size = 512)
+    {
+        var canvas = new SkiaCanvas(size, size);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = "#c9553d"; ctx.FillRect(0, 0, size / 2f, size / 2f);
+        ctx.FillStyle = "#1f6f8b"; ctx.FillRect(size / 2f, 0, size / 2f, size / 2f);
+        ctx.FillStyle = "#5fb49c"; ctx.FillRect(0, size / 2f, size / 2f, size / 2f);
+        ctx.FillStyle = "#e5a93c"; ctx.FillRect(size / 2f, size / 2f, size / 2f, size / 2f);
+        return canvas;
+    }
+
+    /// <summary>
+    /// **A mesh drawn straight from its own file uses its own UV atlas.**
+    /// </summary>
+    /// <remarks>
+    /// Until 2026-09-19 it did not, and the failure was silent: an OBJ's coordinates are an atlas —
+    /// <c>0..1</c>, <c>v</c> measured up from the bottom — and the draw path sampled them as pixels,
+    /// so the whole head came back in the colour of the texture's top-left pixel. **The atlas was
+    /// loaded correctly the entire time**; nothing consumed it. Four coloured quadrants in, one
+    /// colour out, no error.
+    /// </remarks>
+    [Fact]
+    public void TestAnUnfittedMeshSamplesItsOwnAtlas()
+    {
+        var mesh = Mesh();
+        Assert.Equal("atlas", mesh.UvSpace);
+
+        var seen = Drawn(mesh, Quadrants());
+        Assert.True(seen.Count > 2,
+            $"an atlas mapping should reach several quadrants; saw {seen.Count}: {string.Join(", ", seen)}");
+    }
+
+    /// <summary>The <c>v</c> axis is flipped, because an OBJ measures it up and an image measures it down.</summary>
+    /// <remarks>
+    /// Getting this backwards renders a face upside down on its own head and nothing errors, so it is
+    /// asserted against a plate whose halves differ only top from bottom.
+    /// </remarks>
+    [Fact]
+    public void TestTheAtlasVAxisIsFlippedAgainstTheImage()
+    {
+        var plate = new SkiaCanvas(256, 256);
+        var pctx = plate.GetContext("2d");
+        pctx.FillStyle = "#c9553d"; pctx.FillRect(0, 0, 256, 128);      // top of the image
+        pctx.FillStyle = "#1f6f8b"; pctx.FillRect(0, 128, 256, 128);    // bottom of the image
+
+        var mesh = Mesh();
+
+        // The grid's own top row carries v near 1, which is the image's TOP once flipped.
+        var top = mesh.UvAt(mesh.Landmark(0f, 8f, 0f));
+        Assert.True(Convert.ToSingle(top["y"]) > 0.5f, "the mesh's top row should hold a high atlas v");
+
+        // So the crown of the drawn head must be the colour at the top of the plate.
+        var canvas = new SkiaCanvas(400, 400);
+        new MeshToolkit().Draw(canvas.GetContext("2d"), mesh, new Dictionary<string, object?>
+        {
+            ["x"] = 200f, ["y"] = 200f, ["scale"] = 14f, ["texture"] = plate
+        });
+
+        var bitmap = canvas.ToBitmap();
+        string? crown = null, chin = null;
+        for (var y = 0; y < 400 && crown is null; y++)
+            if (bitmap.GetPixel(200, y) != "#00000000") crown = bitmap.GetPixel(200, y);
+        for (var y = 399; y >= 0 && chin is null; y--)
+            if (bitmap.GetPixel(200, y) != "#00000000") chin = bitmap.GetPixel(200, y);
+
+        Assert.Equal("#C9553DFF", crown);
+        Assert.Equal("#1F6F8BFF", chin);
+    }
+
+    /// <summary>
+    /// **A texture with nothing to map it by falls back to a wireframe rather than a flat fill.**
+    /// </summary>
+    [Fact]
+    public void TestATextureWithNoCoordinatesDrawsAWireframe()
+    {
+        // The same grid with every `vt` and every `f v/vt` pairing stripped out.
+        var bare = string.Join("\n", Obj().Split('\n')
+            .Where(l => !l.StartsWith("vt ", StringComparison.Ordinal))
+            .Select(l => l.StartsWith("f ", StringComparison.Ordinal)
+                ? string.Join(" ", l.Split(' ').Select(p => p.Split('/')[0]))
+                : l));
+
+        var mesh = new MeshToolkit().FromObj(bare);
+        Assert.Equal("none", mesh.UvSpace);
+
+        var canvas = new SkiaCanvas(400, 400);
+        var result = new MeshToolkit().Draw(canvas.GetContext("2d"), mesh, new Dictionary<string, object?>
+        {
+            ["x"] = 200f, ["y"] = 200f, ["scale"] = 14f, ["texture"] = Quadrants(), ["inkColor"] = "#123456"
+        });
+
+        Assert.False(Convert.ToBoolean(result["textured"]));
+
+        // What reached the canvas is the ink, not one of the plate's four colours.
+        var seen = Drawn(mesh, Quadrants());
+        Assert.DoesNotContain("#C9553DFF", seen);
+    }
+
+    /// <summary>
+    /// **A misread landmark costs about what it was misread by — it does not cascade.**
+    /// </summary>
+    /// <remarks>
+    /// The three points are the caller's to supply and there is no detector in this stack, so for a
+    /// photograph they are read by eye. What decides whether that is workable is not how exact the
+    /// reading is but whether an error in it <i>amplifies</i>, and the fit is a similarity transform
+    /// from three points, so it should not. Measured rather than argued: the ratio of probe drift to
+    /// landmark error is **constant** across a 5× range of error, at 1.02× for a vertical eye slip,
+    /// 1.65× for a horizontal one and 2.05× for the mouth. There is no cliff to fall off.
+    /// </remarks>
+    [Fact]
+    public void TestAMisreadLandmarkDoesNotAmplify()
+    {
+        var mesh = Mesh();
+        var plate = Texture(256);
+
+        static Dictionary<string, object?> Pts(float rx, float ry, float my) => new()
+        {
+            ["eyeLeft"] = new Dictionary<string, object?> { ["x"] = 80f, ["y"] = 96f },
+            ["eyeRight"] = new Dictionary<string, object?> { ["x"] = rx, ["y"] = ry },
+            ["mouth"] = new Dictionary<string, object?> { ["x"] = 128f, ["y"] = my }
+        };
+
+        var truth = mesh.FitTexture(plate, Pts(176f, 96f, 184f));
+
+        // The corners of the mesh, which are the furthest a landmark error has to reach.
+        int[] probes =
+        [
+            mesh.Landmark(0f, -9f, 0f), mesh.Landmark(0f, 8f, 0f),
+            mesh.Landmark(-6f, 0f, 0f), mesh.Landmark(6f, 0f, 0f)
+        ];
+
+        float Drift(FaceMesh other)
+        {
+            var worst = 0f;
+            foreach (var i in probes)
+            {
+                var a = truth.UvAt(i);
+                var b = other.UvAt(i);
+                float dx = Convert.ToSingle(a["x"]) - Convert.ToSingle(b["x"]),
+                      dy = Convert.ToSingle(a["y"]) - Convert.ToSingle(b["y"]);
+                worst = MathF.Max(worst, MathF.Sqrt((dx * dx) + (dy * dy)));
+            }
+
+            return worst;
+        }
+
+        float? firstRatio = null;
+        foreach (var k in new[] { 2f, 5f, 10f })
+        {
+            var ratios = new[]
+            {
+                Drift(mesh.FitTexture(plate, Pts(176f + k, 96f, 184f))) / k,
+                Drift(mesh.FitTexture(plate, Pts(176f, 96f + k, 184f))) / k,
+                Drift(mesh.FitTexture(plate, Pts(176f, 96f, 184f + k))) / k
+            };
+
+            foreach (var r in ratios)
+                Assert.True(r < 2.6f, $"a landmark error of {k}px moved a probe {r:F2}x as far");
+
+            // The same error, five times larger, must cost five times as much and no more — which is
+            // what "no cliff" means and is the property a caller is relying on when reading by eye.
+            firstRatio ??= ratios[0];
+            Assert.Equal(firstRatio.Value, ratios[0], 0.01f);
+        }
+    }
+
+    /// <summary>A fitted mesh keeps reporting pixels, so nothing already written changes.</summary>
+    [Fact]
+    public void TestAFittedMeshStillReportsPixels()
+    {
+        var fitted = Mesh().FitTexture(Texture(), Fit(256));
+        Assert.Equal("pixels", fitted.UvSpace);
+
+        // Pixel-space coordinates run to the texture's own dimensions rather than to 1.
+        var uv = fitted.UvAt(fitted.Landmark(6f, -9f, 0f));
+        Assert.True(Convert.ToSingle(uv["x"]) > 1.5f, "a fitted UV should be a pixel position");
+
+        Assert.Equal("atlas", Mesh().UvSpace);
+    }
+    #endregion
 }

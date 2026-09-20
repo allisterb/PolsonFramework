@@ -220,11 +220,31 @@ public class ConstructiveDrawingToolkit
         var bridgeTopPt = new Point2D(centerAxisX, yBrow + (yEye - yBrow) * 0.5f);
         var noseApexPt = new Point2D(centerAxisX + turnX * 0.35f, yNose);
         var underNosePt = new Point2D(centerAxisX, yNose + H * 0.035f);
-        var nearNostrilPt = new Point2D(centerAxisX + eyeW * 0.50f, yNose + H * 0.02f);
+        // **The nostril sits on Loomis's own line, not at a fixed drop below the nose.** Plate 26:
+        // *"The nostrils should be set evenly on the line running from the base of the nose to the
+        // base of the ear."* The base of the ear is the nose line itself — the ear is one unit tall
+        // centred between brow and nose, so its foot lands exactly on `yNose` — which makes the line
+        // a real construction rather than a rule of thumb, and it tilts correctly under pitch and
+        // yaw where the old `yNose + H*0.02` could not.
+        //
+        // Its x is unchanged, so the nostril keeps its lateral station; only the height is now
+        // derived. On a 240px frontal head that moves it **1.5px lower**, which is the measure of how
+        // close the old constant was rather than a licence to have kept it.
+        var earBaseX = originX + unit * MathF.Cos(rad);          // the NEAR ear, mirroring `earPt`
+        var nostrilX = centerAxisX + eyeW * 0.50f;
+        var nostrilRun = earBaseX - centerAxisX;
+
+        // Clamped to the segment: past roughly 60 degrees the near ear has swung behind the facial
+        // axis and the line reverses, which would throw the nostril up the bridge rather than fail.
+        var nostrilT = MathF.Abs(nostrilRun) < 0.01f
+            ? 0f : Math.Clamp((nostrilX - centerAxisX) / nostrilRun, 0f, 1f);
+        var nearNostrilPt = new Point2D(nostrilX, (yNose + H * 0.035f) + (nostrilT * -H * 0.035f));
 
         // Mouth Guides
         var mouthLeft = new Point2D(centerAxisX - eyeW * 0.55f * farScale, yMouth);
-        var mouthRight = new Point2D(centerAxisX + eyeW * 0.85f, yMouth + 1f);
+        // The 1px drop on the near corner was the last absolute left in the mouth's construction; as a
+        // fraction of head height it is the same nudge at 240px and a real one at 900.
+        var mouthRight = new Point2D(centerAxisX + eyeW * 0.85f, yMouth + (H / 240f));
 
         return new Dictionary<string, object?>
         {
@@ -486,6 +506,10 @@ public class ConstructiveDrawingToolkit
         var irisColor = optDict?["irisColor"]?.ToString() ?? "#3b6884";
         var scleraColor = optDict?["scleraColor"]?.ToString() ?? "#f1f4f7";
 
+        // A multiplier on the feature's own weights rather than a pixel count, as `drawComicBrow`'s
+        // `thickness` already is — so a tier chosen here survives a change of head size.
+        var weight = Fraction(optDict, "weight", 1f);
+
         var inner = ExtractPoint(eye["inner"]);
         var outer = ExtractPoint(eye["outer"]);
         var center = ExtractPoint(eye["center"]);
@@ -549,7 +573,7 @@ public class ConstructiveDrawingToolkit
         ctx.FillStyle = irisColor;
         ctx.Fill(iris);
         ctx.StrokeStyle = inkColor;
-        ctx.LineWidth = 1.2f;
+        ctx.LineWidth = Tier(IrisRimTier, w, EyeWidthAt240, weight);
         ctx.Stroke(iris);                 // dark iris rim
 
         ctx.FillStyle = inkColor;
@@ -561,12 +585,12 @@ public class ConstructiveDrawingToolkit
 
         // 3. Thick Inked S-Curve Upper Eyelid
         ctx.StrokeStyle = inkColor;
-        ctx.LineWidth = isFar ? 2.6f : 3.8f;
+        ctx.LineWidth = Tier(LidTier, w, EyeWidthAt240, weight * (isFar ? FarFeatureWeight : 1f));
         ctx.LineCap = "round";
         ctx.Stroke(upperLid);
 
         // 4. Delicate Lower Eyelid
-        ctx.LineWidth = 1.6f;
+        ctx.LineWidth = Tier(LowerLidTier, w, EyeWidthAt240, weight);
         ctx.Stroke(lowerLid);
 
         ctx.Restore();
@@ -693,11 +717,16 @@ public class ConstructiveDrawingToolkit
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
         var shadowColor = optDict?["shadowColor"]?.ToString() ?? "#b06f4c";
+        var weight = Fraction(optDict, "weight", 1f);
 
         var bridgeTop = ExtractPoint(nose["bridgeTop"]);
         var apex = ExtractPoint(nose["apex"]);
         var underNose = ExtractPoint(nose["underNose"]);
         var nearNostril = ExtractPoint(nose["nearNostril"]);
+
+        // The nose's own length, which is what every weight here is measured against.
+        var len = MathF.Abs(underNose.Y - bridgeTop.Y);
+        if (len <= 0.1f) len = NoseLengthAt240;
 
         var underPlane = new CanvasPath();
         underPlane.MoveTo(apex.X, apex.Y);
@@ -705,25 +734,65 @@ public class ConstructiveDrawingToolkit
         underPlane.LineTo(underNose.X, underNose.Y);
         underPlane.ClosePath();
 
+        // **The bridge is a tapered mark, not a constant-width polyline.** Manual 03 §3 says outright
+        // that a constant-width stroke reads as a technical drawing rather than as inking, and this
+        // call was drawing one. The envelope is heaviest in the middle and vanishes at both ends,
+        // which is where a nose actually carries its weight: the ball is the form, the bridge fades
+        // into the brow, and the base is picked up by the nostril rather than by a line.
+        //
+        // The two control points run through the apex, so the mark passes over the ball rather than
+        // cutting the corner between the three landmarks.
+        // **The mark starts below the brow, not at it.** The landmarks run from `bridgeTop`, which is
+        // halfway between brow and eye, and a mark carried all the way up from there reads as a line
+        // ruled down the middle of the face — tolerable while it was a 2.4px hairline, and a wedge
+        // once the weight scaled with the head. Comic practice inks the lower bridge and the ball and
+        // lets the upper bridge be carried by the brow, so the run begins 45% of the way down.
+        var markTop = new Point2D(
+            bridgeTop.X + ((apex.X - bridgeTop.X) * 0.45f),
+            bridgeTop.Y + ((apex.Y - bridgeTop.Y) * 0.45f));
+
+        // **A frontal nose has no bridge shadow, and drawing one gives it a dagger down the middle.**
+        // At yaw 0 the three landmarks are collinear and vertical, so the mark can only be a vertical
+        // wedge — tolerable while it was a 2.4px hairline, and the first thing a reader saw once the
+        // weight scaled. The bridge line is the break between the front plane and the side plane, so
+        // it belongs to a turned head; comic practice inks a frontal nose with its nostrils and its
+        // under-plane and lets the bridge go.
+        //
+        // How far the head has turned is recoverable from the nose itself — `apex` carries the lateral
+        // offset the construction gave it — so this needs no yaw argument and works on a head that has
+        // been through `applyActionUnits` or a blend.
+        var turn = Math.Clamp(MathF.Abs(apex.X - underNose.X) / (len * 0.15f), 0f, 1f);
+        var thickness = Tier(NoseBridgeTier, len, NoseLengthAt240,
+                             weight * TaperGain * (FrontalBridge + ((1f - FrontalBridge) * turn)));
+        var bridgeMark = CreateTaperedStrokePath(
+            markTop,
+            new Point2D(apex.X, markTop.Y + ((apex.Y - markTop.Y) * 0.6f)),
+            apex,
+            underNose,
+            thickness);
+
+        // **`bridge` keeps its meaning — the open centre-line — and the filled mark arrives beside it
+        // as `bridgeMark`.** Changing what an existing key holds would break every caller that strokes
+        // it at its own tier, which is exactly the thing these returns exist to allow.
         var bridge = new CanvasPath();
         bridge.MoveTo(bridgeTop.X, bridgeTop.Y);
         bridge.LineTo(apex.X, apex.Y);
         bridge.LineTo(underNose.X, underNose.Y);
 
         var nostril = new CanvasPath();
-        nostril.Arc(nearNostril.X, nearNostril.Y, 3.5f, 0.2f, MathF.PI * 1.5f);
+        nostril.Arc(nearNostril.X, nearNostril.Y, len * (NostrilRadiusTier / NoseLengthAt240), 0.2f, MathF.PI * 1.5f);
 
         ctx.Save();
 
         ctx.FillStyle = shadowColor;
         ctx.Fill(underPlane);
 
-        ctx.StrokeStyle = inkColor;
-        ctx.LineWidth = 2.4f;
-        ctx.LineCap = "round";
-        ctx.Stroke(bridge);
+        ctx.FillStyle = inkColor;
+        ctx.Fill(bridgeMark);
 
-        ctx.LineWidth = 2.0f;
+        ctx.StrokeStyle = inkColor;
+        ctx.LineWidth = Tier(NostrilTier, len, NoseLengthAt240, weight);
+        ctx.LineCap = "round";
         ctx.Stroke(nostril);
 
         ctx.Restore();
@@ -732,7 +801,143 @@ public class ConstructiveDrawingToolkit
         {
             ["underPlane"] = underPlane,
             ["bridge"] = bridge,
+            ["bridgeMark"] = bridgeMark,
             ["nostril"] = nostril
+        };
+    }
+
+    /// <summary>
+    /// Draws one ear and <b>returns the parts it built</b>: <c>helix</c>, <c>antihelix</c>,
+    /// <c>concha</c> and <c>lobe</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Until 2026-09-19 nothing drew an ear at all.</b> <c>createHeadGeometry</c> has carried
+    /// <c>parts.ear</c> and <c>parts.nearEar</c> since the same week, but those are *masses* — padded
+    /// ellipses unioned into the silhouette — with no internal structure whatever, so every head this
+    /// studio drew wore two blank flaps. Manual 23 §9 named the gap in its own words: what the
+    /// composition gives you is shape, and *"it does not shade them"*.
+    /// </para>
+    /// <para>
+    /// <b>Loomis declines to give a canon for the shape, and that decides what this call is.</b> Plate
+    /// 26: *"The real problem is much more one of setting them into the construction of the head in
+    /// their correct positions than one of drawing the actual details themselves. Noses and ears vary
+    /// widely in shape but not a great deal in basic construction."* So there is no measured ear to
+    /// implement — the placement half is what <c>createHeadGeometry</c> already does, and this is the
+    /// basic construction: an outer rim, the ridge inside it, the bowl between them, and the lobe.
+    /// The proportions below are the studio's, by eye, and are not his.
+    /// </para>
+    /// <para>
+    /// Pass <c>geo.ears.far</c> or <c>geo.ears.near</c>. An ear foreshortens the opposite way to an
+    /// eye — edge-on frontally, full-face in profile — and the width in that block already carries
+    /// the turn, so this call needs no yaw: a narrow ear simply draws narrow.
+    /// </para>
+    /// <para>
+    /// <c>options</c>: <c>inkColor</c>, <c>shadowColor</c>, <c>weight</c> as a multiplier, and
+    /// <c>hatch</c> (default <c>true</c>) for the cross-contour arcs inside the bowl.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> DrawComicEar(CanvasRenderingContext2D ctx, object earObj, bool isFar = false, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (JsInterop.AsDict(earObj) is not IDictionary ear) return [];
+
+        var optDict = JsInterop.AsDict(options);
+        var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
+
+        // **A neutral, near-transparent bowl rather than the nose's orange under-plane.** The first
+        // version borrowed `#b06f4c` from `drawComicNose` and at panel size the ear read as a bruise:
+        // the concha is a hollow catching less light, not a lit plane of its own.
+        var shadowColor = optDict?["shadowColor"]?.ToString() ?? "rgba(0,0,0,0.13)";
+        var weight = Fraction(optDict, "weight", 1f);
+        var hatch = optDict is null || !optDict.Contains("hatch") || Convert.ToBoolean(optDict["hatch"]);
+
+        var center = ExtractPoint(ear["center"]);
+        var w = Num(ear, "width", 0f);
+        var h = Num(ear, "height", 0f);
+        if (w <= 0.5f || h <= 0.5f) return [];
+
+        // **An ear that no longer stands outside the skull is not inked**, because it is behind the
+        // head. The masses can be unioned blind — a hidden ear adds nothing to a silhouette — but a
+        // drawn one is painted on top, and past about 35 degrees of yaw the near ear's rim and bowl
+        // landed on the cheek beside the near eye. Defaults to drawing, so a hand-built ear that
+        // carries no such flag still draws.
+        if (ear.Contains("visible") && ear["visible"] is not null && !Convert.ToBoolean(ear["visible"]))
+            return [];
+
+        // Which way the face lies. Without it the helix would run round the wrong side and the lobe
+        // would sit behind the jaw rather than in front of it.
+        var faceDir = Num(ear, "faceDir", -1f) >= 0f ? 1f : -1f;
+        float rx = w * 0.5f, ry = h * 0.5f;
+        var back = -faceDir;                       // away from the face, where the rim is widest
+
+        var tier = isFar ? FarFeatureWeight : 1f;
+
+        // **The helix — the outer rim, from the top of the ear round the back to the lobe.** Tapered,
+        // because a rim is a rolled edge: it is fullest where it turns away from the light at the back
+        // and thins where it meets the skull at either end.
+        var helixTop = new Point2D(center.X + (faceDir * rx * 0.35f), center.Y - ry);
+        var helixLobe = new Point2D(center.X + (faceDir * rx * 0.15f), center.Y + ry);
+        var helix = CreateTaperedStrokePath(
+            helixTop,
+            new Point2D(center.X + (back * rx * 1.02f), center.Y - (ry * 0.70f)),
+            new Point2D(center.X + (back * rx * 0.90f), center.Y + (ry * 0.52f)),
+            helixLobe,
+            Tier(HelixTier, h, EarHeightAt240, weight * tier * TaperGain));
+
+        // **The antihelix — the Y-shaped ridge inside the rim**, drawn as its single strong arm. It
+        // runs roughly parallel to the helix at about half the radius, which is what gives an ear its
+        // depth rather than reading as a flat disc.
+        var antihelix = CreateTaperedStrokePath(
+            new Point2D(center.X + (faceDir * rx * 0.10f), center.Y - (ry * 0.62f)),
+            new Point2D(center.X + (back * rx * 0.58f), center.Y - (ry * 0.42f)),
+            new Point2D(center.X + (back * rx * 0.50f), center.Y + (ry * 0.18f)),
+            new Point2D(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 0.46f)),
+            Tier(AntihelixTier, h, EarHeightAt240, weight * tier * TaperGain));
+
+        // **The concha — the bowl the ridge encloses**, toward the face and slightly below centre.
+        float cx = center.X + (faceDir * rx * 0.22f), cy = center.Y + (ry * 0.02f);
+        float crx = rx * 0.34f, cry = ry * 0.24f;
+        var concha = new CanvasPath();
+        concha.Ellipse(cx, cy, crx, cry, 0f, 0f, MathF.PI * 2f, false);
+
+        // The lobe, a short soft arc at the foot, in front of the helix's own end.
+        var lobe = new CanvasPath();
+        lobe.Arc(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 0.78f), rx * 0.34f,
+                 MathF.PI * 0.05f, MathF.PI * 0.95f);
+
+        ctx.Save();
+
+        ctx.FillStyle = shadowColor;
+        ctx.Fill(concha);
+
+        // **Cross-contour arcs across the bowl, which is what `drawCrossContourHatch` is for.** They
+        // run across the form rather than along it, so they state the hollow instead of shading it
+        // flat — the same reason Manual 03 §4 hatches a three-quarter head at two different angles.
+        // Three arcs rather than four, and only where they are big enough to read: below about eight
+        // pixels of bowl they merge into the blob they were drawn to avoid.
+        if (hatch && cry > 4f)
+            DrawCrossContourHatch(ctx, cx, cy, crx * 0.82f, cry * 0.82f,
+                                  MathF.PI * 0.15f, MathF.PI * 0.85f, 3, inkColor,
+                                  MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier * 0.8f)));
+
+        ctx.FillStyle = inkColor;
+        ctx.Fill(helix);
+        ctx.Fill(antihelix);
+
+        ctx.StrokeStyle = inkColor;
+        ctx.LineWidth = MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier));
+        ctx.LineCap = "round";
+        ctx.Stroke(lobe);
+
+        ctx.Restore();
+
+        return new Dictionary<string, object?>
+        {
+            ["helix"] = helix,
+            ["antihelix"] = antihelix,
+            ["concha"] = concha,
+            ["lobe"] = lobe
         };
     }
 
@@ -757,41 +962,78 @@ public class ConstructiveDrawingToolkit
         var teethColor = optDict?["teethColor"]?.ToString() ?? "#fbf8ee";
         var cavityColor = optDict?["cavityColor"]?.ToString() ?? "#3a1215";
 
+        var weight = Fraction(optDict, "weight", 1f);
+
         var center = ExtractPoint(mouth["center"]);
         var left = ExtractPoint(mouth["leftCorner"]);
         var right = ExtractPoint(mouth["rightCorner"]);
 
+        // **The mouth's GEOMETRY was in absolute pixels too, not just its ink** — the cavity 12px
+        // deep, the lower lip a 6px disc 16px below centre, the teeth inset 3px from each corner.
+        // So a mouth on a 600px head had a cavity a fortieth of its own width and a lower lip that
+        // had all but vanished, while a 60px head wore a lip larger than the mouth. Every offset is
+        // now a fraction of the mouth's own width, calibrated on the 240px head that produced the
+        // constants, so that size is unchanged and the rest are no longer wrong.
+        var mw = MathF.Abs(right.X - left.X);
+        if (mw <= 0.1f) mw = MouthWidthAt240;
+        float F(float px) => mw * (px / MouthWidthAt240);
+
         // The upper lip curve bounds the cavity and is also the inked line, so it is built once.
         var lipLine = new CanvasPath();
         lipLine.MoveTo(left.X, left.Y);
-        lipLine.QuadraticCurveTo(center.X, center.Y - 2f, right.X, right.Y);
+        lipLine.QuadraticCurveTo(center.X, center.Y - F(2f), right.X, right.Y);
 
         var cavity = new CanvasPath(lipLine);
-        cavity.QuadraticCurveTo(center.X, center.Y + 12f, left.X, left.Y);
+        cavity.QuadraticCurveTo(center.X, center.Y + F(12f), left.X, left.Y);
         cavity.ClosePath();
 
         var teeth = new CanvasPath();
-        teeth.MoveTo(left.X + 3f, left.Y);
-        teeth.QuadraticCurveTo(center.X, center.Y - 2f, right.X - 3f, right.Y);
-        teeth.LineTo(right.X - 4f, right.Y + 4f);
-        teeth.QuadraticCurveTo(center.X, center.Y + 3f, left.X + 4f, left.Y + 3f);
+        teeth.MoveTo(left.X + F(3f), left.Y);
+        teeth.QuadraticCurveTo(center.X, center.Y - F(2f), right.X - F(3f), right.Y);
+        teeth.LineTo(right.X - F(4f), right.Y + F(4f));
+        teeth.QuadraticCurveTo(center.X, center.Y + F(3f), left.X + F(4f), left.Y + F(3f));
         teeth.ClosePath();
 
         var lowerLip = new CanvasPath();
-        lowerLip.Arc(center.X, center.Y + 16f, 6f, 0.2f, MathF.PI - 0.2f);
+        lowerLip.Arc(center.X, center.Y + F(16f), F(6f), 0.2f, MathF.PI - 0.2f);
+
+        // **The lip slit as a tapered mark.** Full weight through the middle and lifting at both
+        // corners, which is what stops a mouth reading as a drawn-on line. `lipLine` keeps its
+        // documented meaning as the open centre-line; the filled mark arrives beside it.
+        var lipMark = CreateTaperedStrokePath(
+            left,
+            new Point2D(left.X + ((center.X - left.X) * 0.6f), center.Y - F(2f)),
+            new Point2D(right.X - ((right.X - center.X) * 0.6f), center.Y - F(2f)),
+            right,
+            Tier(LipLineTier, mw, MouthWidthAt240, weight * TaperGain));
 
         ctx.Save();
 
         ctx.FillStyle = cavityColor;
         ctx.Fill(cavity);
 
+        // **Clipped to the cavity, because teeth outside a mouth are a hole in the face.** The teeth
+        // polygon's lower edge dips below the cavity's return curve at whichever corner is longer —
+        // this construction's corners are not symmetric — so a wedge of white stood outside the mouth.
+        // It was always there and was four pixels wide at 240px; scaling the geometry made it visible
+        // rather than making it happen.
+        ctx.Save();
+        ctx.Clip(cavity);
         ctx.FillStyle = teethColor;
         ctx.Fill(teeth);
+        ctx.Restore();
 
+        // **A hairline along the centre-line under the tapered mark, to seal the corners.** The taper
+        // lifts to nothing at each corner, and the teeth's top edge follows the same curve — so
+        // without this the white of the teeth shows through as a notch at whichever corner is longer.
+        // The round-capped constant stroke used to cover it by being constant.
         ctx.StrokeStyle = inkColor;
-        ctx.LineWidth = 2.4f;
+        ctx.LineWidth = MathF.Max(0.4f, Tier(LipLineTier, mw, MouthWidthAt240, weight * 0.4f));
         ctx.LineCap = "round";
         ctx.Stroke(lipLine);
+
+        ctx.FillStyle = inkColor;
+        ctx.Fill(lipMark);
 
         ctx.FillStyle = lipColor;
         ctx.Fill(lowerLip);
@@ -803,6 +1045,7 @@ public class ConstructiveDrawingToolkit
             ["cavity"] = cavity,
             ["teeth"] = teeth,
             ["lipLine"] = lipLine,
+            ["lipMark"] = lipMark,
             ["lowerLip"] = lowerLip
         };
     }
@@ -5070,6 +5313,93 @@ public class ConstructiveDrawingToolkit
     private const float FarFeatureWeight = 2.6f / 3.8f;
 
     /// <summary>
+    /// Every ink weight on a feature, as a fraction of that feature's own measured size.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>These were absolute pixel counts until 2026-09-19, and that is a defect rather than a
+    /// simplification.</b> The geometry has always scaled with head height and the ink did not, so a
+    /// feature was correct at exactly one head size: at a 600px portrait the nose came back as a
+    /// hairline with a 3.5px dot for a nostril, and at a 60px long shot the same constants read as a
+    /// blob. Nothing errored, and the failure looks like a styling choice.
+    /// </para>
+    /// <para>
+    /// <b>The constants they replace were not arbitrary — they were Manual 03's tier table frozen at
+    /// one scale.</b> 2.4px is inside Tier 2 (2.0–3.0px, whose examples are "eyelid creases, nose
+    /// bridge, lip slit"), and 1.2–1.6px is Tier 3. A tier is a page-scale convention, so the fix is
+    /// to hold the tier <i>relative to the feature</i> rather than to the page. Each fraction below
+    /// is the old pixel count divided by the feature's own measure on a <b>240px</b> head — the size
+    /// Manual 23 takes its measurements at and the one the tests use — so a 240px head renders
+    /// exactly as it did and every other size is now right instead of wrong.
+    /// </para>
+    /// <para>
+    /// <b>Each feature scales off its own measurement rather than off the head</b>, because a drawer
+    /// is handed the feature and never the head. That is also what lets a feature be drawn standalone
+    /// — onto its own plate, for a mesh texture — and still come out at the right weight.
+    /// </para>
+    /// </remarks>
+    /// <summary>The head height these tiers were set at, and the feature measures it produces.</summary>
+    private const float TierHead = 240f;
+    private const float EyeWidthAt240 = TierHead / 7f;          // unit × 0.5, unit = H / 3.5
+    private const float NoseLengthAt240 = 68.4f;                // bridgeTop → underNose, frontal
+    private const float MouthWidthAt240 = TierHead / 5f;        // leftCorner → rightCorner, frontal
+    private const float EarHeightAt240 = TierHead / 3.5f;       // one unit, Plate 18
+
+    /// <summary>The tier each mark is inked at, in pixels on a 240px head.</summary>
+    private const float LidTier = 3.8f;
+    private const float LowerLidTier = 1.6f;
+    private const float IrisRimTier = 1.2f;
+    private const float NoseBridgeTier = 2.4f;
+    private const float NostrilTier = 2.0f;
+    private const float NostrilRadiusTier = 3.5f;
+    private const float LipLineTier = 2.4f;
+    private const float HelixTier = 2.6f;
+    private const float AntihelixTier = 1.6f;
+    private const float ConchaTier = 1.2f;
+
+    /// <summary>What is left of the bridge mark on a head with no turn in it.</summary>
+    private const float FrontalBridge = 0.38f;
+
+    /// <summary>
+    /// A tier's width on a head of this size — <b>sub-linear, and that is the whole point</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The first fix for the absolute constants scaled them <i>linearly</i> with the feature, which is
+    /// defensible arithmetic and wrong as drawing. Rendered, it turned a 560px head's nose bridge into
+    /// a 5.6px black dagger down the middle of the face and shrank a 110px head's eyelid to under half
+    /// a pixel. **Line weight does not track subject size**: an inker drawing a long shot *simplifies*
+    /// — fewer marks — rather than reaching for a finer nib, which is Janson's doctrine in Manual 03
+    /// and Lee &amp; Buscema's reduction test in Manual 20.
+    /// </para>
+    /// <para>
+    /// A square root is the honest middle. Against the old constants it is <b>exactly right at 240px</b>
+    /// — so a head at the calibration size renders unchanged — and at 110px and 560px it gives 0.68×
+    /// and 1.53× rather than 0.46× and 2.33×. The reference head is stated rather than implied, which
+    /// is the difference between this and what it replaced.
+    /// </para>
+    /// <para>
+    /// The implied head is recovered from the feature's own measure, because a drawer is handed the
+    /// feature and never the head — which is also what lets a feature be drawn onto its own plate for
+    /// a mesh texture and still come out at the right weight.
+    /// </para>
+    /// </remarks>
+    private static float Tier(float tierPx, float measured, float measuredAt240, float multiplier = 1f) =>
+        tierPx * MathF.Sqrt(MathF.Max(0.02f, measured / MathF.Max(0.01f, measuredAt240))) * multiplier;
+
+    /// <summary>
+    /// What a tapered mark's peak has to be to carry the same ink as the constant-width line it replaced.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="BuildTaperedStroke"/>'s envelope is <c>maxThickness × sin(tπ)</c>, whose mean over
+    /// the run is <c>2/π</c> of its peak — so a taper set to the old tier width lays down about 64%
+    /// of the ink and reads noticeably lighter, which would make a change meant to improve the
+    /// drawing look like a regression. Peaking at <c>π/2</c> of the tier keeps the average weight
+    /// where it was and puts the variation either side of it.
+    /// </remarks>
+    private const float TaperGain = MathF.PI / 2f;
+
+    /// <summary>
     /// The quadratic control point that makes the curve pass <b>through</b> <paramref name="through"/>.
     /// </summary>
     /// <remarks>
@@ -5792,6 +6122,48 @@ public class ConstructiveDrawingToolkit
                 ["farCheek"] = farCheek,
                 ["nearCheek"] = nearCheek,
                 ["neck"] = neck
+            },
+            // **Where each ear is, so something can draw one.** `parts.ear` is a mass and has no
+            // internal structure; these are what `drawComicEar` needs, and they live here rather than
+            // on the head because an ear's placement depends on the cranium — its centre rides the
+            // ball's own silhouette, which `skull: 'comic'` narrows. The radii are the unpadded ones.
+            // `faceDir` points from the ear toward the facial axis, which is what tells the drawer
+            // which way round the helix and the lobe go.
+            ["ears"] = new Dictionary<string, object?>
+            {
+                ["far"] = new Dictionary<string, object?>
+                {
+                    ["center"] = ToDict(new Point2D(earCx, ear.Y)),
+                    ["width"] = (earRx - padding) * 2f,
+                    ["height"] = (earRy - padding) * 2f,
+                    ["faceDir"] = -earDir,
+
+                    // **The far ear rotates in FRONT of the ball, so it is never occluded by it.**
+                    // It is also the one that widens with the turn (`+0.10 * sin` on its radius),
+                    // which is the same fact: an ear is edge-on frontally and full-face in profile.
+                    // At three-quarters it sits inside the silhouette rather than on it, and that is
+                    // what an ear does — being inside the outline is not being hidden.
+                    ["visible"] = true
+                },
+                ["near"] = new Dictionary<string, object?>
+                {
+                    ["center"] = ToDict(new Point2D(nearEarCx, ear.Y)),
+                    ["width"] = (nearEarRx - padding) * 2f,
+                    ["height"] = (earRy - padding) * 2f,
+                    ["faceDir"] = earDir,
+
+                    // **The near ear rotates BEHIND the ball, so the skull occludes it — and the
+                    // test for that is exactly the protrusion the note above already measured.** The
+                    // masses can be unioned blind, because a hidden ear adds nothing to a
+                    // silhouette; a *drawn* one is painted on top, so without this its rim and bowl
+                    // appeared on the cheek beside the near eye at yaw 38.
+                    //
+                    // Asked of the real paths rather than of an approximation of them, so it agrees
+                    // with that measurement — 2.71px of protrusion frontally, 0.57px at 8 degrees,
+                    // nothing from 10 on — instead of drifting from it by however much the padding
+                    // and the skull's own narrowing happen to be worth.
+                    ["visible"] = nearEarPath.Subtract(cranium).Path.Bounds.Width > 0.75f
+                }
             },
             ["bounds"] = x0 > x1
                 ? new Dictionary<string, object?>

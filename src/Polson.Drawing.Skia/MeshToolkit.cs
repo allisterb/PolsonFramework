@@ -97,6 +97,12 @@ public class MeshToolkit
         var wireframe = opt is not null && opt.Contains("wireframe") && Convert.ToBoolean(opt["wireframe"]);
         var texture = opt?["texture"] is { } t ? AsBitmap(t) : mesh.Texture;
 
+        // **A texture with nothing to map it by is a wireframe, not a flat fill.** A mesh that was
+        // never fitted and whose file carried no `vt` has every texture coordinate at the origin, so
+        // sampling it paints the whole head in one pixel's colour — which renders perfectly and is
+        // indistinguishable from a drawing decision. The same fallback an untextured mesh gets.
+        if (texture is not null && !mesh.Fitted && !mesh.HasUvs) texture = null;
+
         if (wireframe || texture is null)
         {
             var ink = opt?["inkColor"]?.ToString() ?? "#1f6f8b";
@@ -119,9 +125,25 @@ public class MeshToolkit
             for (var tri = 0; tri < order.Length; tri++)
                 for (var k = 0; k < 3; k++) sorted[(tri * 3) + k] = mesh.Indices[(order[tri] * 3) + k];
 
+            // **A mesh carries its texture coordinates in one of two spaces, and the draw path has to
+            // know which.** `fitTexture` writes them as pixels in the image it fitted to; an OBJ
+            // writes them as an atlas, `0..1` with `v` measured up from the bottom. Until 2026-09-19
+            // only the first was handled, so a mesh drawn straight from its own file sampled the
+            // rectangle from `(0,0)` to `(1,1)` — **the whole 468-vertex head in one flat colour**,
+            // with no error. MediaPipe's canonical model loads at `u 0.008..0.992, v 0.046..0.893`,
+            // so the atlas was there and correct the entire time; nothing consumed it.
+            var uvs = mesh.Uvs;
+            if (!mesh.Fitted)
+            {
+                uvs = new SKPoint[mesh.Uvs.Length];
+                for (var i = 0; i < uvs.Length; i++)
+                    uvs[i] = new SKPoint(mesh.Uvs[i].X * texture.Width,
+                                         (1f - mesh.Uvs[i].Y) * texture.Height);
+            }
+
             using var shader = texture.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp);
             using var paint = new SKPaint { Shader = shader, IsAntialias = true };
-            using var verts = SKVertices.CreateCopy(SKVertexMode.Triangles, placed, mesh.Uvs, null, sorted);
+            using var verts = SKVertices.CreateCopy(SKVertexMode.Triangles, placed, uvs, null, sorted);
             ctx.Canvas.SkCanvas.DrawVertices(verts, SKBlendMode.Dst, paint);
         }
 

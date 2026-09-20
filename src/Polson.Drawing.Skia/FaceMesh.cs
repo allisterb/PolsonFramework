@@ -330,10 +330,24 @@ public class FaceMesh
         { Texture = Texture, Fitted = Fitted, Reference = Reference };
     }
 
-    /// <summary>The texture coordinate one vertex samples, in the texture's own pixels.</summary>
+    /// <summary>
+    /// Which space this mesh's texture coordinates are in: <c>pixels</c>, <c>atlas</c> or <c>none</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>There are two, and a number that could be either is the defect this reports its way out
+    /// of.</b> <see cref="FitTexture"/> writes coordinates as pixels in the image it fitted to;
+    /// an OBJ writes them as an atlas, <c>0..1</c> with <c>v</c> measured up from the bottom. A mesh
+    /// carrying neither reports <c>none</c>, and drawing it with a texture falls back to a wireframe
+    /// rather than painting the head in one pixel's colour.
+    /// </remarks>
+    public string UvSpace => Fitted ? "pixels" : HasUvs ? "atlas" : "none";
+
+    /// <summary>The texture coordinate one vertex samples, in the space <see cref="UvSpace"/> names.</summary>
     /// <remarks>
     /// The pair to <see cref="Vertex"/>, and how a caller checks a fit without rendering it: front
     /// projection is monotonic, so a mesh's leftmost vertex must sample left of its rightmost one.
+    /// <b>Read <see cref="UvSpace"/> before comparing these against pixels</b> — an unfitted mesh
+    /// reports its file's atlas coordinates, which are fractions rather than pixel positions.
     /// </remarks>
     public Dictionary<string, object?> UvAt(int index)
     {

@@ -151,6 +151,13 @@ public static class JsSurface
         new("Mesh", typeof(MeshToolkit), "Mesh", false),
         new("mesh", typeof(FaceMesh), "Mesh", true),
 
+        // Landmarks from an image, when the optional backend is installed. Declared whether or not
+        // it is available here, because the manifest describes the surface a script can reach and
+        // `Face.available` is the thing a script asks — a global missing from the manifest is
+        // invisible, which is worse than one that reports itself absent.
+        new("Face", typeof(FaceApi), "Face", false),
+        new("detection", typeof(FaceDetection), "Face", true),
+
         // SPIKE: frame capture and animated encoding. Declared here so the manifest stays honest
         // about what a script can reach, not because the surface is settled.
         new("Motion", typeof(MotionToolkit), "Motion", false),

@@ -389,6 +389,37 @@ internal class Program : Runtime
                  + "(Debian: apt-get install potrace) or set Tools:Potrace.");
     }
 
+    /// <summary>Points <c>Face.detect(...)</c> at a backend, and says whether it found one.</summary>
+    /// <remarks>
+    /// <para>
+    /// Three settings rather than one, because unlike potrace this is not a single binary: an
+    /// interpreter, a script and a model bundle, each of which can be missing on its own. All three
+    /// are overrides rather than requirements — the detector walks up from the assembly looking for
+    /// <c>python-mediapipe/</c>, <c>src/vision/</c> and <c>models/</c>, which is the developer case.
+    /// </para>
+    /// <para>
+    /// Announced either way, and the absence names what is missing. This capability is the difference
+    /// between reading three landmarks off a photograph by eye and measuring them, so a run that
+    /// quietly could not detect is worth distinguishing from one that never tried.
+    /// </para>
+    /// </remarks>
+    static void ConfigureFaceDetection()
+    {
+        if (Setting("Tools:FacePython") is { Length: > 0 } python)
+            FaceDetector.PythonOverride = python;
+        if (Setting("Tools:FaceScript") is { Length: > 0 } script)
+            FaceDetector.ScriptOverride = script;
+        if (Setting("Tools:FaceModel") is { Length: > 0 } model)
+            FaceDetector.ModelOverride = model;
+
+        if (FaceDetector.Available)
+            Info("Face detection enabled ({0}).", FaceDetector.Model);
+        else
+            Warn("Face detection unavailable: missing {0}. Face.detect() will refuse, and a mesh "
+                 + "textured from a photograph needs its three landmarks supplied by hand. "
+                 + "See src/vision/requirements.in.", FaceDetector.Missing);
+    }
+
     static async Task HandleServerArgs(ServerOptions opts)
     {
         if (opts.Timeout.HasValue && opts.Timeout.Value > 0)
@@ -401,6 +432,7 @@ internal class Program : Runtime
         }
 
         ConfigureTracing();
+        ConfigureFaceDetection();
 
         var projectDir = !string.IsNullOrWhiteSpace(opts.ProjectDir)
             ? Path.GetFullPath(opts.ProjectDir)

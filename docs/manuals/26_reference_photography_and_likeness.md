@@ -272,9 +272,26 @@ Identity stops being something you hope the model holds and becomes structural.
 
 ### 7b. Three landmarks, and where they come from
 
-There is **no face detector anywhere in this stack.** `fitTexture` asks for three points in the
-image's own pixels — the two eyes and the mouth — and solves a similarity transform from them, so
-scale and position fall out of the fit.
+`fitTexture` asks for three points in the image's own pixels — the two eyes and the mouth — and
+solves a similarity transform from them, so scale and position fall out of the fit.
+
+> [!IMPORTANT]
+> **There used to be no face detector anywhere in this stack, and that sentence appeared in four
+> places in the documentation. It is no longer true.** `Face.detect(image)` returns 478 landmarks,
+> and **`mesh.fitDetected(image, detection)` does this whole section in one call** — it resolves each
+> of the three anchors by *position* through `landmark(x, y, z)` on the mesh in hand, then reads that
+> index out of the detection. Nothing is read by eye and no vertex number is remembered.
+>
+> **It is optional and it says so.** `Face.available` is the gate, for the reason `Skia.tracer` has
+> one: a route that needs landmarks should find that out before it spends its passes. The three
+> routes below remain exactly right when it is absent — and route 1, a face the studio drew, is still
+> free and exact rather than merely accurate.
+>
+> **One thing the detector will do that nothing warns you about**: a face filling the whole frame is
+> **not found at all**. The window is roughly 35–70% of frame width, and `Assets.cutout` trims every
+> cell to its own extent, so a cutout portrait sits at 100% and fails. `detect` pads and retries for
+> you, and reports what it needed as `pad`. A face too *small* in frame it cannot rescue, because
+> cropping to a face means already knowing where it is.
 
 > [!IMPORTANT]
 > **`mesh.landmark(x, y, z)` is not that, and the two are one word apart.** It is a nearest-vertex
@@ -283,6 +300,55 @@ scale and position fall out of the fit.
 > from memory. The **only** thing we hold from MediaPipe is `canonical_face_model.obj`, a static
 > neutral mesh; the ledger's own row for `modules/face_landmark/` records that it is graph wiring
 > with **no model binaries and no data of any kind**, the `.tflite` files being fetched at build time.
+
+#### 7b-i. Reading the detector, and what each field is for
+
+```js
+if (!Face.available) {
+    Stage.note(`no landmark backend here (${Face.missing}) — reading the three points by eye`);
+} else {
+    Stage.note(`landmarks from ${Face.python} against ${Face.model}`);
+    const found = Face.detect(plate);
+    if (!found.found) exit(found.reason);
+    const fitted = mesh.fitDetected(plate, found);
+}
+```
+
+**`Face.available` is the gate and `Face.missing` is the explanation.** The two never disagree — one
+is exactly the other being null — so a script can branch on the first and print the second. What is
+missing is usually the venv or the model rather than both, and saying which saves a guess.
+**`Face.python`** and **`Face.model`** name what would actually be used; put them in a stage note, for
+the same reason `Skia.tracer.path` is worth recording: a run that used a different backend than you
+think is otherwise indistinguishable from one that did not.
+
+**`detection.found` is the first thing to read, and `detection.reason` is why not.** A missed face is
+a *result*: only an absent backend throws. **`detection.count`** is 478 with this bundle — the
+468-vertex base mesh plus five iris points per eye — which matters the moment you pair it against a
+canonical model, because that has 468 and indexing past the end would fit to whatever happened to
+exist. **`detection.at(i)`** gives one landmark in the image's own pixels and answers **null** rather
+than throwing when `i` is outside the list, because a caller pairing a mesh against a detection is
+asking a question. **`detection.bounds`** is the whole extent, and **`detection.width`**,
+**`detection.height`** and **`detection.pad`** say what image it measured and how much framing it had
+to add.
+
+**`detection.yawDeg`, `detection.pitchDeg` and `detection.rollDeg` are the source's pose, and they are
+pose ONLY.** They come off a transformation matrix whose own solver header states its three
+components as *uniform scale, rotation, translation* — `R`, `s`, `t` in CANDIDE's
+`g' = R·s·(g + S·σ + A·α) + t`, with the deformation terms absent. Their real use here is a check
+rather than an input: `fitTexture` has **no rotation term**, so a source much off frontal is one the
+fit cannot straighten, and this is how you find that out before spending a texture on it.
+
+**`detection.blendshapes` is 51 ARKit-named coefficients** — the same vocabulary `Mesh.draw`'s
+expression units took in §7d-ii, so a reading transfers without translation. Treat it as a *read* of
+the source rather than as a control: it says what the face in the photograph is doing.
+
+> [!IMPORTANT]
+> **Expect `eyeLookUp` around 0.6 on anything the studio drew, and do not chase it.** Measured on
+> three of our own rendered faces and on a generated comic portrait: every one came back
+> `eyeLookUpLeft`/`eyeLookUpRight` at 0.4–0.7 while looking straight ahead. It is correct. Our eye
+> convention puts the pupil high — Gautier's *"the pupil seems to hang from the upper lid"* — with an
+> iris the ledger measures at **1.70× life size**, and a big iris riding high in the aperture *is*
+> looking up to a regressor trained on photographs. The detector is reading a deliberate house style.
 
 **So how are the three points actually got?** Three routes, and only the middle one involves looking:
 

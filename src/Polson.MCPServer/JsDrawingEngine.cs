@@ -373,6 +373,12 @@ public partial class JsDrawingEngine : Runtime
             var meshToolkit = new MeshToolkit(ProjectRoot);
             engine.SetValue("Mesh", meshToolkit);
 
+            // Face landmarks, when an optional backend is installed. Gated on `Face.available` for
+            // the reason `Skia.tracer` is: a route that needs landmarks should find out before it
+            // spends its passes, not halfway through. Absent on a machine without the venv, which is
+            // the ordinary case rather than a fault.
+            engine.SetValue("Face", new FaceApi());
+
             // SPIKE: frame capture and animated encoding. Holds bitmaps for the life of the
             // execution, so it is disposed with the engine rather than left to the collector.
             motionToolkit = new MotionToolkit(ProjectRoot);

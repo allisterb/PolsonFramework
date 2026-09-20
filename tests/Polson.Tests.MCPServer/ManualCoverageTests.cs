@@ -134,6 +134,18 @@ public class ManualCoverageTests : TestsRuntime
         // apply to it unchanged. A face that can be turned and deformed is a stronger reason to
         // gate a likeness, not a weaker one.
         ["Mesh"] = 100,
+
+        // Face landmarks, added 2026-09-20 into Manual 26 section 7b rather than into a manual of
+        // its own — that section already existed to answer "where do the three points come from",
+        // and its honest answer for a year was that there was no detector anywhere in this stack.
+        // The surface belongs where the gap was recorded, so a reader arrives at the answer by the
+        // same route they arrived at the problem.
+        //
+        // A full floor despite being an OPTIONAL backend, because the thing most worth finding is
+        // not the call but the caveat: a face filling the frame is not detected at all, and a
+        // trimmed `Assets.cutout` cell is always exactly that. An agent that cannot find that
+        // paragraph loses an afternoon to a portrait which is, visibly, perfectly good.
+        ["Face"] = 100,
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>

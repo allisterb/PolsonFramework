@@ -204,6 +204,48 @@ public class FaceMesh
         return boundary;
     }
 
+    /// <summary>Textures this mesh from an image a detector has already found a face in.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the step that used to be done by eye.</b> <see cref="FitTexture"/> needs three
+    /// points in the image's own pixels, and before a detector existed a caller either read them off
+    /// a photograph by looking or took them free from a face the studio had itself constructed. Four
+    /// separate places in this SDK's documentation recorded the gap in the same words — <i>there is
+    /// no face detector anywhere in this stack</i>.
+    /// </para>
+    /// <para>
+    /// <b>The indices are derived, never remembered.</b> Each anchor is a POSITION in the canonical
+    /// model's own space; <see cref="Landmark"/> finds the vertex nearest it on the mesh actually in
+    /// hand, and that index is then read out of the detection. A vertex number quoted from memory is
+    /// a claim about one export of one mesh, which is the trap this whole class was built to avoid.
+    /// </para>
+    /// </remarks>
+    public FaceMesh FitDetected(object image, FaceDetection detection)
+    {
+        ArgumentNullException.ThrowIfNull(detection);
+        if (!detection.Found)
+            throw new ArgumentException(
+                $"No face was found in that image, so there is nothing to fit: {detection.Reason}",
+                nameof(detection));
+
+        Dictionary<string, object?> Anchor((float X, float Y, float Z) at, string name)
+        {
+            var i = Landmark(at.X, at.Y, at.Z);
+            return detection.At(i) ?? throw new ArgumentException(
+                $"This mesh wanted vertex {i} for '{name}' and the detection carries "
+                + $"{detection.Count} landmarks, so the two do not share a topology. A canonical "
+                + "face model has 468 vertices against the detector's 478, whose last ten are the "
+                + "iris refinement.", nameof(detection));
+        }
+
+        return FitTexture(image, new Dictionary<string, object?>
+        {
+            ["eyeLeft"] = Anchor(EyeLeftAt, "eyeLeft"),
+            ["eyeRight"] = Anchor(EyeRightAt, "eyeRight"),
+            ["mouth"] = Anchor(MouthAt, "mouth")
+        });
+    }
+
     /// <summary>
     /// Pushes the mesh's boundary out to a drawn outline, so a face that is not a human average keeps
     /// its own silhouette.
@@ -497,6 +539,21 @@ public class FaceMesh
     };
 
     internal static readonly string[] FitOptions = ["eyeLeft", "eyeRight", "mouth"];
+
+    /// <summary>Where <see cref="FitDetected"/>'s three anchors sit in the canonical model's space.</summary>
+    /// <remarks>
+    /// <b>Positions rather than indices, and measured rather than recalled.</b> The eye line and the
+    /// pupils were read off MediaPipe's <c>face_model_with_iris.obj</c> by deriving them from the
+    /// geometry — the two iris centres at <c>y = 2.636</c>, <c>x = ±3.182</c> — and the mouth centre
+    /// is where the midline meets the lip line. <see cref="Landmark"/> resolves each to whatever
+    /// vertex is nearest on the mesh in hand, so a differently-exported model still answers
+    /// correctly instead of silently addressing the wrong point.
+    /// </remarks>
+    internal static readonly (float X, float Y, float Z) EyeLeftAt = (-3.18f, 2.64f, 3.4f);
+
+    internal static readonly (float X, float Y, float Z) EyeRightAt = (3.18f, 2.64f, 3.4f);
+
+    internal static readonly (float X, float Y, float Z) MouthAt = (0f, -3.4f, 6.0f);
 
     internal static readonly string[] OutlineOptions = ["center", "strength", "falloff"];
 

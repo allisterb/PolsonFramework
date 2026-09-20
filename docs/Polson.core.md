@@ -2958,6 +2958,109 @@ canvas;
 
 ---
 
+# Face (Landmarks From an Image)
+
+Finds a face in a bitmap and reports where its features are. **Optional**, exactly as `Skia.tracer` is — ask before you commit to a route that needs it.
+
+```javascript
+if (!Face.available) exit(`no face backend: ${Face.missing}`);
+
+// Any image with a face in it. Drawn here so the example runs anywhere — and a face the studio
+// draws is found about as readily as a photograph, measured at 2.3% of face span against 2.0%.
+const plate = createCanvas(512, 512);
+const pctx = plate.getContext('2d');
+pctx.fillStyle = '#6e6a63';
+pctx.fillRect(0, 0, 512, 512);
+
+const head = Drawing.createLoomisHead(256, 215, 330);
+const geo = Drawing.createHeadGeometry(head);
+pctx.fillStyle = '#edd6bd';
+pctx.fill(geo.silhouette);                    // the silhouette is not decoration: features
+pctx.save();                                  // floating on a flat ground are not a face,
+pctx.clip(geo.mass);                          // and are not detected
+const ink = { inkColor: '#241c14' };
+Drawing.drawComicBrow(pctx, head.farBrow, true, ink);
+Drawing.drawComicBrow(pctx, head.nearBrow, false, ink);
+Drawing.drawComicEye(pctx, head.farEye, true, ink);
+Drawing.drawComicEye(pctx, head.nearEye, false, ink);
+Drawing.drawComicNose(pctx, head.noseWedge, ink);
+Drawing.drawComicMouth(pctx, head.mouthGuides, ink);
+pctx.restore();
+
+const found = Face.detect(plate);
+if (!found.found) exit(found.reason);
+log(`${found.count} landmarks, yaw ${found.yawDeg.toFixed(1)}, padded ${found.pad}px`);
+
+// A mesh is normally loaded — `Mesh.load('models/face.obj')`. Built inline here for the same
+// reason the Mesh section builds one: the toolkit deliberately ships no face data.
+const cols = 13, rows = 25, obj = [];
+for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+        const x = -6 + (12 * c) / (cols - 1), y = 8 - (17 * r) / (rows - 1);
+        obj.push(`v ${x.toFixed(3)} ${y.toFixed(3)} 3`);
+    }
+for (let r = 0; r < rows - 1; r++)
+    for (let c = 0; c < cols - 1; c++) {
+        const a = r * cols + c + 1;
+        obj.push(`f ${a} ${a + cols} ${a + 1}`);
+    }
+
+// The three points fitTexture needs, resolved from the mesh rather than read by eye.
+const fitted = Mesh.fromObj(obj.join('\n')).fitDetected(plate, found);
+
+const canvas = createCanvas(640, 340);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f2efe8';
+ctx.fillRect(0, 0, 640, 340);
+Mesh.draw(ctx, fitted, { x: 170, y: 180, scale: 13 });
+Mesh.draw(ctx, fitted, { x: 460, y: 180, scale: 13, yawDeg: 25,
+                         expression: { browDown: 0.9, mouthFrown: 0.7 } });
+canvas;
+```
+
+- `Face.available` → `boolean` · `Face.missing` → `string?` — what is absent, or null when nothing is.
+- `Face.python` · `Face.model` → `string?` — what would be used. Worth a `Stage.note`.
+- `Face.detect(image, timeoutMs?)` → `FaceDetection` — `image` is a bitmap or a canvas.
+
+## `FaceDetection`
+
+- `detection.found` → `boolean` · `detection.reason` → `string?` — **read `found` first.**
+- `detection.count` → `number` — **478** with this bundle: the 468-vertex base mesh plus five iris points per eye.
+- `detection.at(index)` → `{ x, y, index }?` — one landmark in the image's own pixels, or **null** out of range.
+- `detection.bounds` → `Rect` — the landmarks' extent, with the usual `x2`, `y2`, `cx`, `cy`.
+- `detection.width` · `detection.height` → `number` — the image's own size.
+- `detection.pad` → `number` — how many pixels of padding detection needed. Zero for an ordinary photograph.
+- `detection.yawDeg` · `detection.pitchDeg` · `detection.rollDeg` → `number` — the source's head pose.
+- `detection.blendshapes` → `object` — 51 ARKit-named coefficients as the model read them.
+
+> [!IMPORTANT]
+> **Not finding a face is a result, not an error.** Only an absent or broken backend throws — the same line `bitmap.trace` draws, because that is an environment to fix rather than an outcome to handle. A perfectly good portrait can come back `found: false`, and `reason` says why.
+>
+> **The commonest cause is the detector's scale window, and it is handled for you in one direction only.** A face must fill roughly **35–70%** of the frame. Measured on one portrait: 100% is **not** found, 39–66% is, 32% is not either. `Assets.cutout` **trims every cell to its own extent**, so a cutout portrait always arrives at 100% and would always fail — `detect` therefore pads and retries, then subtracts the offset so the landmarks come back in your image's pixels. `pad` reports what it needed.
+>
+> **Padding cannot rescue a face that is too small in frame**, since cropping to it would mean already knowing where it is. A press photograph with a distant subject comes back `found: false` and has to be cropped by the caller.
+
+> [!IMPORTANT]
+> **`pose` only — there is no shape here.** `yawDeg`/`pitchDeg`/`rollDeg` come from a transformation matrix whose own solver header states its three components as *uniform scale, rotation, translation*. It is `R`, `s`, `t` in CANDIDE's `g' = R·s·(g + S·σ + A·α) + t` — the outside of that equation, with the deformation terms absent.
+>
+> **And the metric face mesh is not reachable from here at all.** The Python task API returns normalised image coordinates; the metric mesh lives in the C++ geometry pipeline. Face is the **only** landmarker with no world-space output — `PoseLandmarkerResult`, `HandLandmarkerResult` and `HolisticLandmarkerResult` all carry world landmarks and face carries none. So a 3D shape residual is not available, and the 2D one was measured across seven photographs and **does not carry identity**: same-person pairs averaged 1.71% of face span against 1.97% for different people, and the closest pair in the matrix was two different men.
+
+> [!TIP]
+> **`mesh.fitDetected(image, detection)` is the call this exists for.** `fitTexture` needs three points in the image's pixels, and before a detector those were read off a photograph by eye. It resolves each anchor by **position** — `landmark(x, y, z)` on the mesh in hand — rather than by a remembered vertex number, then reads that index out of the detection.
+>
+> To use a landmark yourself, pair the two the same way:
+>
+> ```javascript
+> const chin = found.at(mesh.landmark(0, -9.4, 3.0));     // ask the mesh, then read the detection
+> ```
+>
+> **A mesh and a detection must share a topology**, and a canonical model's 468 against the detector's 478 is the case that bites. `fitDetected` refuses a mismatch by name rather than indexing past the end.
+
+> [!NOTE]
+> **Installed separately, and the studio runs without it.** mediapipe lives in its own `python-mediapipe/` venv (hash-pinned in `src/vision/requirements.lock.txt`) with the model fetched into `models/`. It is invoked as a **separate process** over stdin and stdout — nothing written to disk, no path crossing the boundary — exactly as potrace is. Licence is Apache 2.0 for the code and for all three models in the bundle; the ledger row records that those terms are stated on the model cards and *not* beside the weights.
+
+---
+
 # Mesh (A Face as a Textured Surface)
 
 The studio's **third creation route**. The *constructed* route (`Drawing.createLoomisHead`) draws a face from landmarks and is fully articulate, but its turn is a screen-space approximation and it can only draw what somebody wrote a rule for. The *arranged* route (`Scene` plus a requisitioned `Assets.cutout`) buys a whole picture and cannot change it — **a seventh expression is a new person**, because generation is not deterministic across calls.

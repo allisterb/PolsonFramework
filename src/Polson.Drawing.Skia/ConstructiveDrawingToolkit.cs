@@ -230,15 +230,35 @@ public class ConstructiveDrawingToolkit
         // Its x is unchanged, so the nostril keeps its lateral station; only the height is now
         // derived. On a 240px frontal head that moves it **1.5px lower**, which is the measure of how
         // close the old constant was rather than a licence to have kept it.
-        var earBaseX = originX + unit * MathF.Cos(rad);          // the NEAR ear, mirroring `earPt`
-        var nostrilX = centerAxisX + eyeW * 0.50f;
-        var nostrilRun = earBaseX - centerAxisX;
+        //
+        // **And there are two of them, which is where the nose's width comes from.** Gautier gives
+        // the one measurement every other reference here declines to: *"The width of the base of the
+        // nose measures exactly one eye width, the same as the distance between the eyes measured
+        // from the inside corner"* (*Drawing and Cartooning 1,001 Faces*, p. 27). Both quantities are
+        // already in this construction — `eyeW`, and an inner-corner gap set to exactly one
+        // eye-width above — so the nostrils sit half an eye-width either side of the meridian and the
+        // base spans `eyeW` by construction. Faragasso reaches the same span from the brows instead
+        // of from the eyes, which is two independent routes to one number.
+        //
+        // Until 2026-09-19 only the near one existed, so the nose had **no width anywhere**: a
+        // bridge line on the axis and a single nostril beside it.
+        Point2D Nostril(float side, float scale)
+        {
+            // The ear on that side, mirrored about the crown axis exactly as the jaw stations are.
+            var earX = originX + (side * unit * MathF.Cos(rad));
+            var x = centerAxisX + (side * eyeW * 0.50f * scale);
+            var run = earX - centerAxisX;
 
-        // Clamped to the segment: past roughly 60 degrees the near ear has swung behind the facial
-        // axis and the line reverses, which would throw the nostril up the bridge rather than fail.
-        var nostrilT = MathF.Abs(nostrilRun) < 0.01f
-            ? 0f : Math.Clamp((nostrilX - centerAxisX) / nostrilRun, 0f, 1f);
-        var nearNostrilPt = new Point2D(nostrilX, (yNose + H * 0.035f) + (nostrilT * -H * 0.035f));
+            // Clamped to the segment: past roughly 60 degrees the near ear has swung behind the
+            // facial axis and the line reverses, which would throw the nostril up the bridge.
+            var t = MathF.Abs(run) < 0.01f ? 0f : Math.Clamp((x - centerAxisX) / run, 0f, 1f);
+            return new Point2D(x, (yNose + (H * 0.035f)) + (t * -H * 0.035f));
+        }
+
+        var nearNostrilPt = Nostril(1f, 1f);
+
+        // The far wing foreshortens with the turn, as the far eye and the far mouth corner do.
+        var farNostrilPt = Nostril(-1f, farScale);
 
         // Mouth Guides
         var mouthLeft = new Point2D(centerAxisX - eyeW * 0.55f * farScale, yMouth);
@@ -286,7 +306,8 @@ public class ConstructiveDrawingToolkit
                 ["bridgeTop"] = ToDict(bridgeTopPt),
                 ["apex"] = ToDict(noseApexPt),
                 ["underNose"] = ToDict(underNosePt),
-                ["nearNostril"] = ToDict(nearNostrilPt)
+                ["nearNostril"] = ToDict(nearNostrilPt),
+                ["farNostril"] = ToDict(farNostrilPt)
             },
             ["mouthGuides"] = new Dictionary<string, object?>
             {
@@ -724,14 +745,25 @@ public class ConstructiveDrawingToolkit
         var underNose = ExtractPoint(nose["underNose"]);
         var nearNostril = ExtractPoint(nose["nearNostril"]);
 
+        // A nose built before the far wing existed still draws: without one, the bottom plane falls
+        // back to the single-sided triangle it used to be.
+        var hasFar = nose.Contains("farNostril") && nose["farNostril"] is not null;
+        var farNostril = hasFar ? ExtractPoint(nose["farNostril"]) : underNose;
+
         // The nose's own length, which is what every weight here is measured against.
         var len = MathF.Abs(underNose.Y - bridgeTop.Y);
         if (len <= 0.1f) len = NoseLengthAt240;
 
+        // **The bottom plane spans both wings.** Both sources describe it that way and neither
+        // describes half of one: Loomis's Plate 26 runs it *"from a point on the ball of the nose to
+        // a point on the lower corner of the nostril"*, and Faragasso's front view terminates his two
+        // nasal-bone lines at *the corners of the top of the bottom plane* — corners, plural. It was
+        // a one-sided triangle here only because the far wing was not a landmark.
         var underPlane = new CanvasPath();
         underPlane.MoveTo(apex.X, apex.Y);
         underPlane.LineTo(nearNostril.X, nearNostril.Y);
         underPlane.LineTo(underNose.X, underNose.Y);
+        if (hasFar) underPlane.LineTo(farNostril.X, farNostril.Y);
         underPlane.ClosePath();
 
         // **The bridge is a tapered mark, not a constant-width polyline.** Manual 03 §3 says outright
@@ -779,8 +811,17 @@ public class ConstructiveDrawingToolkit
         bridge.LineTo(apex.X, apex.Y);
         bridge.LineTo(underNose.X, underNose.Y);
 
+        // **Two wings, mirrored.** The near one keeps its arc exactly; the far one is its reflection,
+        // so a frontal nose is symmetric and a turned one foreshortens with the landmark rather than
+        // by a factor applied here.
+        var wingR = len * (NostrilRadiusTier / NoseLengthAt240);
         var nostril = new CanvasPath();
-        nostril.Arc(nearNostril.X, nearNostril.Y, len * (NostrilRadiusTier / NoseLengthAt240), 0.2f, MathF.PI * 1.5f);
+        nostril.Arc(nearNostril.X, nearNostril.Y, wingR, 0.2f, MathF.PI * 1.5f);
+
+        var farNostrilPath = new CanvasPath();
+        if (hasFar)
+            farNostrilPath.Arc(farNostril.X, farNostril.Y, wingR,
+                               MathF.PI - (MathF.PI * 1.5f), MathF.PI - 0.2f);
 
         ctx.Save();
 
@@ -794,6 +835,7 @@ public class ConstructiveDrawingToolkit
         ctx.LineWidth = Tier(NostrilTier, len, NoseLengthAt240, weight);
         ctx.LineCap = "round";
         ctx.Stroke(nostril);
+        if (hasFar) ctx.Stroke(farNostrilPath);
 
         ctx.Restore();
 
@@ -802,7 +844,8 @@ public class ConstructiveDrawingToolkit
             ["underPlane"] = underPlane,
             ["bridge"] = bridge,
             ["bridgeMark"] = bridgeMark,
-            ["nostril"] = nostril
+            ["nostril"] = nostril,
+            ["farNostril"] = farNostrilPath
         };
     }
 
@@ -895,16 +938,27 @@ public class ConstructiveDrawingToolkit
             new Point2D(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 0.46f)),
             Tier(AntihelixTier, h, EarHeightAt240, weight * tier * TaperGain));
 
-        // **The concha — the bowl the ridge encloses**, toward the face and slightly below centre.
+        // **The ear is three thirds, and each one has a name.** Gautier, p. 29: the top third is where
+        // it attaches to the head, *"the second section is the largest opening, the bowl"*, and the
+        // bottom third is the lobe. The first version of this call had the bowl at 0.24 of the
+        // half-height and the lobe at 0.78 — by eye, and both wrong against a published proportion
+        // that was sitting in a book on the shelf. A third of the half-height is 0.333.
         float cx = center.X + (faceDir * rx * 0.22f), cy = center.Y + (ry * 0.02f);
-        float crx = rx * 0.34f, cry = ry * 0.24f;
+        float crx = rx * 0.34f, cry = ry * Third;
         var concha = new CanvasPath();
         concha.Ellipse(cx, cy, crx, cry, 0f, 0f, MathF.PI * 2f, false);
 
-        // The lobe, a short soft arc at the foot, in front of the helix's own end.
+        // The lobe fills the bottom third, so it is centred at two thirds down rather than at 0.78.
         var lobe = new CanvasPath();
-        lobe.Arc(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 0.78f), rx * 0.34f,
+        lobe.Arc(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 2f * Third), rx * 0.34f,
                  MathF.PI * 0.05f, MathF.PI * 0.95f);
+
+        // **The tragus, which nothing drew.** *"That small, hard piece of flesh that covers the hole
+        // to the ear, is the midpoint of the ear"* — so it is the one part whose position is exactly
+        // stated rather than estimated, and it is what stops the bowl reading as an empty dish.
+        var tragus = new CanvasPath();
+        tragus.Arc(cx + (faceDir * crx * 0.72f), center.Y, MathF.Max(0.4f, rx * 0.15f),
+                   MathF.PI * (faceDir > 0f ? 1.42f : 0.42f), MathF.PI * (faceDir > 0f ? 2.42f : 1.42f));
 
         ctx.Save();
 
@@ -929,6 +983,7 @@ public class ConstructiveDrawingToolkit
         ctx.LineWidth = MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier));
         ctx.LineCap = "round";
         ctx.Stroke(lobe);
+        ctx.Stroke(tragus);
 
         ctx.Restore();
 
@@ -937,7 +992,8 @@ public class ConstructiveDrawingToolkit
             ["helix"] = helix,
             ["antihelix"] = antihelix,
             ["concha"] = concha,
-            ["lobe"] = lobe
+            ["lobe"] = lobe,
+            ["tragus"] = tragus
         };
     }
 
@@ -5159,6 +5215,7 @@ public class ConstructiveDrawingToolkit
         ("noseWedge.apex", HeadValue.Point),
         ("noseWedge.underNose", HeadValue.Point),
         ("noseWedge.nearNostril", HeadValue.Point),
+        ("noseWedge.farNostril", HeadValue.Point),
 
         ("mouthGuides.center", HeadValue.Point),
         ("mouthGuides.leftCorner", HeadValue.Point),
@@ -5356,6 +5413,9 @@ public class ConstructiveDrawingToolkit
     private const float HelixTier = 2.6f;
     private const float AntihelixTier = 1.6f;
     private const float ConchaTier = 1.2f;
+
+    /// <summary>An ear divides into thirds — attachment, bowl, lobe — which is Gautier, p. 29.</summary>
+    private const float Third = 1f / 3f;
 
     /// <summary>What is left of the bridge mark on a head with no turn in it.</summary>
     private const float FrontalBridge = 0.38f;
@@ -5591,7 +5651,7 @@ public class ConstructiveDrawingToolkit
     {
         if (dy == 0f) return;
 
-        foreach (var key in new[] { "apex", "underNose", "nearNostril" })
+        foreach (var key in new[] { "apex", "underNose", "nearNostril", "farNostril" })
         {
             var p = GetPoint(head, "noseWedge", key);
             SetPoint(head, "noseWedge", key, new Point2D(p.X, p.Y + dy));
@@ -5973,10 +6033,16 @@ public class ConstructiveDrawingToolkit
         var earDir = ear.X < brow.X ? -1f : 1f;
         var earDy = ear.Y - brow.Y;
         var earRy = thirdH * 0.5f + padding;                       // one unit tall — Plate 18
-        // Roughly 1:0.55 tall to wide, opening toward profile. Thinner than this and the mass reads
-        // as a chip taken out of the skull rather than as an ear: half of it is inside the cranium,
-        // so what the reader sees is one radius wide against a full unit tall.
-        var earRx = thirdH * (0.18f + 0.10f * sin) + padding;
+        // **1:2 tall to wide at profile, which is Gautier's measurement rather than our estimate.**
+        // *"Divide its length in thirds, then check to see that the widest part of the ear ... is half
+        // the length"* (*Drawing and Cartooning 1,001 Faces*, p. 29). This read `0.18 + 0.10 * sin`,
+        // peaking at 0.56 of the height — the comment beside it said "roughly 1:0.55", which was an
+        // estimate by eye landing within a twentieth of the published figure. The frontal value is
+        // unchanged, because that is the ear foreshortened rather than its own proportion; only the
+        // profile limit moves, so a frontal head renders exactly as before and a turned one narrows
+        // slightly. Thinner than this and the mass reads as a chip out of the skull rather than as an
+        // ear: half of it is inside the cranium, so the reader sees one radius against a full unit.
+        var earRx = thirdH * (0.18f + 0.07f * sin) + padding;
         var earOut = Reach(ear.Y) * cos - earRx * 0.3f;
         var earCx = crown.X + earDir * earOut;
         var earPath = OrientedEllipse(new Point2D(earCx, ear.Y), earRx, earRy, 0f);

@@ -38,6 +38,31 @@ Six is not an accident of our code: the construction's own comment cites *Plate 
 its eye** — which is the same statement as *the eye is larger* — and carries **a wider mouth**. Two
 numbers, and between them most of what makes a face read as drawn for a panel rather than for a wall.
 
+> [!IMPORTANT]
+> **The table above reads five as the comic number and six as the realistic one. On the evidence now
+> in `reference/`, that is the wrong way round — and this section should be read with that in mind
+> until somebody settles it.**
+>
+> Three independent sources cluster at **five**, and only Loomis says six:
+>
+> | source | head width in eye-widths | what it is |
+> | :--- | ---: | :--- |
+> | Loomis, *Drawing the Head and Hands*, Plate 19 | **6.0** | a portrait canon |
+> | Lee & Buscema, *How to Draw Comics the Marvel Way*, ch. 8 | **5** | a comic canon |
+> | **Faragasso**, *Mastering Drawing the Human Figure*, ch. 18 (book p. 171) | **5** | an academic, Reilly-method canon |
+> | MediaPipe canonical face model, measured | **4.87** | a mean of real faces, ears excluded |
+>
+> Faragasso is the one that changes the reading. He is not drawing comics — he teaches the Reilly
+> method for figure painting — and he marks the frontal head off as **five equal eye spaces** on a
+> horizontal line. So "five" is not a stylisation of six; it is what two canons and one measurement
+> independently report, with Loomis the outlier. **`skull: 'comic'` may simply be the accurate skull**,
+> and the name a misnomer.
+>
+> It is left as a flag rather than a change, because the difference is load-bearing: every head this
+> studio has drawn used `loomis` by default, and `createHeadForFigure` already overrides to `comic`
+> for a reason measured against the mannequin. What would settle it is reading Loomis's Plate 19
+> directly to see whether his six includes an allowance the others do not.
+
 ## 2. Finding the mouth and the chin by construction
 
 Lee & Buscema do not place the mouth by proportion; they *derive* it (p. 87).
@@ -916,14 +941,49 @@ lobe the right way round on each side.
 > not depth, and a drawing call is where that starts to matter.**
 
 > [!IMPORTANT]
-> **Loomis declines to give a canon for the shape, and that decides what this call can honestly be.**
-> Plate 26: *"The real problem is much more one of setting them into the construction of the head in
-> their correct positions than one of drawing the actual details themselves. Noses and ears vary
-> widely in shape but not a great deal in basic construction."*
+> **Loomis declines to give a canon for the shape.** Plate 26: *"The real problem is much more one of
+> setting them into the construction of the head in their correct positions than one of drawing the
+> actual details themselves. Noses and ears vary widely in shape but not a great deal in basic
+> construction."*
 >
-> So there is no measured ear here to implement. The placement half is what §7 already does; what
-> this adds is the basic construction, and **the proportions in it are the studio's, by eye, and are
-> not his.** The same honesty the expression tuples in `polson://manual/08` are held to.
+> **Dick Gautier does not decline, and this section was written before we had him.** It used to end
+> here saying the proportions were the studio's, by eye. They are now his, and **three of the four
+> were wrong**:
+>
+> | | *Drawing and Cartooning 1,001 Faces*, p. 29 | what this shipped |
+> | :--- | :--- | :--- |
+> | widest part | **half the length** | 0.56 of it |
+> | the **bowl** | fills the **middle third** | 0.24 of the half-height |
+> | the **lobe** | fills the **bottom third** | centred at 0.78 |
+> | the **tragus** | **the ear's midpoint** | not drawn at all |
+>
+> His drawing order is the one this already built — *a top-heavy C or shell shape*, then the outer
+> rim, then the large inner curve tied into it, which is helix, antihelix and concha in that order.
+> What it had by eye was the sequence; what it did not have was the measurements.
+>
+> **Only the profile width changed the silhouette**, and only there: a frontal ear is that proportion
+> foreshortened rather than its own, so a frontal head renders exactly as before. The estimate it
+> replaced was 0.56 against a published 0.5 — a comment in that code already said *"roughly 1:0.55"*,
+> which is an eye landing within a twentieth of a number that was in print.
+
+### The nose had no width, and one eye is the answer
+
+`noseWedge` ran from a single `bridgeTop` on the meridian, through the apex, to `underNose` — with
+one nostril beside it. **No width anywhere.** Gautier gives it in a sentence (p. 27): *the width of
+the base of the nose measures exactly one eye width, the same as the distance between the eyes
+measured from the inside corner.*
+
+**Both quantities were already here.** `unit.eyeW` is the eye's width, and §1's construction sets the
+inner corners half an eye-width either side of the meridian, so the gap between them is exactly one.
+The wings therefore sit half an eye-width out on each side and the base spans `eyeW` by
+construction — no new constant, and the two measures agree because the construction makes them agree.
+
+Faragasso reaches the same span from the other direction, dropping two lines from below the eyebrows
+at the nasal bone's width to the corners of the bottom plane. Two references, two routes, one number.
+
+`noseWedge` now carries **`farNostril`**, foreshortening with the turn as the far eye and the far
+mouth corner do, and the **bottom plane spans both wings** — which is how both sources describe it
+and neither describes half of one.
 
 ### Plate 26's one measurable rule, which we were not following
 

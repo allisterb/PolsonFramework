@@ -1391,9 +1391,16 @@ Also accessible via `Skia.Drawing`.
 >
 > **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
 
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number })` → `{ underPlane, bridge, bridgeMark, nostril }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**.
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings come back separately.
+
+> [!IMPORTANT]
+> **The nose has a width, and it is exactly one eye across.** Dick Gautier gives the one measurement the other head references decline to: *"The width of the base of the nose measures exactly one eye width, the same as the distance between the eyes measured from the inside corner"* (*Drawing and Cartooning 1,001 Faces*, Perigee 1993, p. 27). **Both quantities were already in `createLoomisHead`** — `unit.eyeW`, and an inner-corner gap the construction sets to exactly one eye-width — and the nose used neither: it ran from a single point on the axis to one nostril, so it had no width anywhere.
+>
+> `noseWedge` now carries **`farNostril`** beside `nearNostril`, foreshortening with the turn as the far eye and the far mouth corner do. The bottom plane spans both wings rather than being a one-sided triangle — Loomis runs it *"from a point on the ball of the nose to a point on the lower corner of the nostril"* and Faragasso terminates his two nasal-bone lines at *the corners* of it, plural. Faragasso reaches the same span from the brows instead of from the eyes, which is two independent routes to one number.
+>
+> A nose object built before this still draws: with no `farNostril`, the bottom plane falls back to the triangle it was.
 - `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string, weight?: number })` → `{ cavity, teeth, lipLine, lipMark, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow. `lipLine` stays the open centre-line; **`lipMark` is the tapered mark actually filled**.
-- `Drawing.drawComicEar(ctx: CanvasRenderingContext2D, earObj: object, isFar?: boolean, options?: { inkColor?: string, shadowColor?: string, weight?: number, hatch?: boolean })` → `{ helix, antihelix, concha, lobe }` — Renders one ear: the outer rim, the ridge inside it, the bowl between them and the lobe. Pass **`geo.ears.far`** or **`geo.ears.near`** from `createHeadGeometry`.
+- `Drawing.drawComicEar(ctx: CanvasRenderingContext2D, earObj: object, isFar?: boolean, options?: { inkColor?: string, shadowColor?: string, weight?: number, hatch?: boolean })` → `{ helix, antihelix, concha, lobe, tragus }` — Renders one ear: the outer rim, the ridge inside it, the bowl between them, the lobe and the tragus. Pass **`geo.ears.far`** or **`geo.ears.near`** from `createHeadGeometry`.
 
 > [!IMPORTANT]
 > **Until 2026-09-19 nothing drew an ear at all**, and every head this studio produced wore two blank flaps. `createHeadGeometry` has carried `parts.ear` and `parts.nearEar` since the same week, but those are *masses* — padded ellipses unioned into the silhouette — with no internal structure. Manual 23 §9 named it: what the composition gives you is shape, and *"it does not shade them"*.
@@ -1411,7 +1418,18 @@ Also accessible via `Skia.Drawing`.
 >
 > **An ear foreshortens the opposite way to an eye** — edge-on frontally, full-face in profile — and the width in that block already carries the turn, so this call takes no yaw: a narrow ear simply draws narrow.
 >
-> **Loomis declines to give a canon for the shape, and that decides what this call is.** Plate 26: *the real problem is much more one of setting them into the construction of the head in their correct positions than one of drawing the actual details*, and noses and ears *vary widely in shape but not a great deal in basic construction*. So there is no measured ear to implement — the placement half is what the geometry already does, and this is the basic construction. **The proportions are the studio's, by eye, and are not his.**
+> **Loomis declines to give a canon for the shape** — Plate 26: *the real problem is much more one of setting them into the construction of the head in their correct positions than one of drawing the actual details*. **Gautier does not decline**, and his numbers replaced the estimates this call shipped with:
+>
+> | | Gautier, p. 29 | what this had by eye |
+> | :--- | :--- | :--- |
+> | widest part | **half the length** | 0.56 of it |
+> | the **bowl** | fills the **middle third** | 0.24 of the half-height |
+> | the **lobe** | fills the **bottom third** | centred at 0.78 |
+> | the **tragus** | **the ear's midpoint** | not drawn at all |
+>
+> His drawing order is the same one this builds in: a top-heavy C, then the outer rim, then the large inner curve tied into it — helix, antihelix, concha. Three of the four numbers were wrong, and the fourth was a part that did not exist.
+>
+> **Only the profile width moved**, because a frontal ear is that proportion foreshortened rather than its own: a frontal head renders exactly as before and a turned one narrows slightly.
 >
 > `hatch: false` drops the cross-contour arcs in the bowl. They are omitted automatically below about eight pixels of bowl, where they merge into the blob they exist to avoid.
 

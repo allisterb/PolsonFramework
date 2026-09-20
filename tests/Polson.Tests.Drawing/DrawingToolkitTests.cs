@@ -1565,7 +1565,7 @@ public class DrawingToolkitTests : TestsRuntime
 
         Assert.Equal(new[] { "aperture", "catchlight", "iris", "lowerLid", "pupil", "upperLid" },
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "bridge", "bridgeMark", "nostril", "underPlane" },
+        Assert.Equal(new[] { "bridge", "bridgeMark", "farNostril", "nostril", "underPlane" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "cavity", "lipLine", "lipMark", "lowerLip", "teeth" },
             mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
@@ -1969,6 +1969,87 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.Equal(expected, ny, 0.5f);
     }
 
+    /// <summary>
+    /// **The nose has a width, and it is exactly one eye across.**
+    /// </summary>
+    /// <remarks>
+    /// Gautier, *Drawing and Cartooning 1,001 Faces*, p. 27: *"The width of the base of the nose
+    /// measures exactly one eye width, the same as the distance between the eyes measured from the
+    /// inside corner."* Both quantities were already in this construction and the nose used neither —
+    /// it ran from a single point on the axis to one nostril, so it had no width anywhere.
+    /// </remarks>
+    [Fact]
+    public void TestTheNoseBaseIsOneEyeWide()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(400f, 400f, 280f, 0f);
+        var nose = (IDictionary<string, object?>)head["noseWedge"]!;
+        var unit = (IDictionary<string, object?>)head["unit"]!;
+        var near = (IDictionary<string, object?>)nose["nearNostril"]!;
+        var far = (IDictionary<string, object?>)nose["farNostril"]!;
+
+        var eyeW = Convert.ToSingle(unit["eyeW"]);
+        var baseWidth = Convert.ToSingle(near["x"]) - Convert.ToSingle(far["x"]);
+        Assert.Equal(eyeW, baseWidth, 0.01f);
+
+        // The same measure taken the other way: the gap between the eyes' inner corners. Gautier's
+        // claim is that these two are the same number, and here they are by construction.
+        var nearEye = (IDictionary<string, object?>)head["nearEye"]!;
+        var farEye = (IDictionary<string, object?>)head["farEye"]!;
+        var innerGap = Convert.ToSingle(((IDictionary<string, object?>)nearEye["inner"]!)["x"])
+                     - Convert.ToSingle(((IDictionary<string, object?>)farEye["inner"]!)["x"]);
+        Assert.Equal(innerGap, baseWidth, 0.01f);
+
+        // Frontally the wings are level and symmetric about the meridian.
+        Assert.Equal(Convert.ToSingle(near["y"]), Convert.ToSingle(far["y"]), 0.01f);
+
+        // Turned, the far wing foreshortens rather than holding its distance.
+        var turned = (IDictionary<string, object?>)
+            toolkit.CreateLoomisHead(400f, 400f, 280f, 45f)["noseWedge"]!;
+        var tNear = (IDictionary<string, object?>)turned["nearNostril"]!;
+        var tFar = (IDictionary<string, object?>)turned["farNostril"]!;
+        Assert.True(Convert.ToSingle(tNear["x"]) - Convert.ToSingle(tFar["x"]) < baseWidth * 0.95f,
+            "a turned nose should show a narrower base than a frontal one");
+    }
+
+    /// <summary>The ear's proportions are Gautier's thirds, not the estimates they replaced.</summary>
+    /// <remarks>
+    /// Book p. 29: divide the length in thirds — attachment, bowl, lobe — the widest part is half the
+    /// length, and the tragus is the ear's midpoint. Four numbers, all of which this call previously
+    /// had by eye and three of which were wrong.
+    /// </remarks>
+    [Fact]
+    public void TestTheEarFollowsGautiersThirds()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+
+        // Near profile, where the ear shows its own proportion rather than a foreshortened one.
+        var geo = toolkit.CreateHeadGeometry(toolkit.CreateLoomisHead(450f, 450f, 300f, 88f));
+        var ear = (IDictionary<string, object?>)((IDictionary<string, object?>)geo["ears"]!)["far"]!;
+        float w = Convert.ToSingle(ear["width"]), h = Convert.ToSingle(ear["height"]);
+
+        // "The widest part of the ear is half the length."
+        Assert.Equal(0.5f, w / h, 0.02f);
+
+        var canvas = new SkiaCanvas(900, 900);
+        var parts = toolkit.DrawComicEar(canvas.GetContext("2d"), ear, false,
+            new Dictionary<string, object?> { ["inkColor"] = "#000000" });
+
+        var centreY = Convert.ToSingle(((IDictionary<string, object?>)ear["center"]!)["y"]);
+        var bowl = ((CanvasPath)parts["concha"]!).Path.Bounds;
+        var lobe = ((CanvasPath)parts["lobe"]!).Path.Bounds;
+        var tragus = ((CanvasPath)parts["tragus"]!).Path.Bounds;
+
+        // The bowl fills the middle third: two thirds of the height is h/3 tall.
+        Assert.Equal(h / 3f, bowl.Height, h * 0.04f);
+
+        // The lobe sits in the bottom third rather than below it.
+        Assert.InRange(lobe.MidY, centreY + (h / 6f), centreY + (h / 2f));
+
+        // And the tragus is the midpoint of the ear, which is the one position the source states exactly.
+        Assert.Equal(centreY, tragus.MidY, h * 0.04f);
+    }
+
     /// <summary>An ear is drawn, which nothing in this toolkit did before 2026-09-19.</summary>
     [Fact]
     public void TestAnEarIsDrawnFromTheGeometrysOwnBlock()
@@ -2000,7 +2081,7 @@ public class DrawingToolkitTests : TestsRuntime
         var parts = toolkit.DrawComicEar(canvas.GetContext("2d"), ears["far"]!, true,
             new Dictionary<string, object?> { ["inkColor"] = "#000000" });
 
-        Assert.Equal(new[] { "antihelix", "concha", "helix", "lobe" },
+        Assert.Equal(new[] { "antihelix", "concha", "helix", "lobe", "tragus" },
             parts.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
 
         // The rim encloses the bowl: an ear whose helix does not contain its concha is two marks

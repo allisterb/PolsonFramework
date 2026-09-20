@@ -3124,8 +3124,21 @@ canvas;
 
 ## `Mesh`
 
-- `Mesh.load(filePath: string)` → `FaceMesh` — Reads a Wavefront OBJ carrying `v`, optional `vt`, and `f` faces. The path is relative to the project directory and contained exactly as `outFile` is. Quads and n-gons are fan-triangulated rather than dropped.
-- `Mesh.fromObj(objText: string)` → `FaceMesh` — The same, from text a script already holds.
+- `Mesh.load(filePath: string)` → `FaceMesh` — Reads a mesh from disk. The path is relative to the project directory and contained exactly as `outFile` is, and the reader is chosen by **extension**:
+  - **`.obj`** (or anything else) — a Wavefront OBJ carrying `v`, optional `vt`, and `f` faces. Quads and n-gons are fan-triangulated rather than dropped.
+  - **`.glb` / `.gltf`** — glTF 2.0, in either the binary or the JSON container. The scene is flattened to one buffer in its **bind pose**, placed by the node hierarchy rather than dumped at the origin, and an embedded base-colour image is decoded into the mesh's texture.
+
+> [!IMPORTANT]
+> **Prefer glTF for anything that has to be posed later.** An OBJ carries geometry and a UV atlas and nothing else — it cannot express a skeleton, so a character read from one can be turned but never posed. glTF carries `JOINTS_0`, `WEIGHTS_0`, `inverseBindMatrices` and a node hierarchy, and it is what the generators actually emit: Stable Fast 3D writes GLB, VRoid Studio and UniRig write glTF-derived formats.
+>
+> Three things are worth knowing before you rely on it:
+>
+> - **The texture's vertical origin is normalised on the way in.** glTF puts the UV origin at the top-left and OBJ at the bottom-left, so a glTF atlas is flipped at load to the one convention `Mesh.draw` samples in. You never see the difference — which is the point, because passing one through unchanged renders the texture upside down and looks like a broken asset rather than a convention mismatch.
+> - **One texture.** A `FaceMesh` holds a single image, so the **first** base-colour image in the file is taken and any others are not sampled. For a generated character that is usually the whole asset; a multi-material import loses the rest.
+> - **65,535 vertices is a hard ceiling**, because the index buffer is 16-bit. A mesh above it is **refused by name** with the count, rather than wrapping silently into shredded geometry.
+>
+> **Posing is not wired up yet.** This reads and draws a skinned mesh in its bind pose; there is no call that takes joint rotations. The skinning itself is present and evaluated — see `docs/pose-to-mannequin.md` for where this is going.
+- `Mesh.fromObj(objText: string)` → `FaceMesh` — The same, from OBJ text a script already holds. **OBJ only** — there is no `fromGltf`, because a glTF's buffers and images are binary and a script holds a string.
 - `Mesh.draw(ctx: CanvasRenderingContext2D, mesh: FaceMesh, options?: object)` → `{ bounds, triangles, textured }` — Draws the mesh, deformed, posed and depth-sorted. `options`: `{ x, y, scale, yawDeg, pitchDeg, rollDeg, texture, wireframe, inkColor, lineWidth, shape, expression, side }`. An unrecognised option is refused by name.
 
 > [!TIP]

@@ -600,6 +600,19 @@
           "Serilog": "2.10.0"
         }
       },
+      "SharpGLTF.Core": {
+        "type": "Transitive",
+        "resolved": "1.0.7",
+        "contentHash": "dZHCUl2jH1ViiLbAwyYbVfZnFqsF1e/9OhZAfLBoggOpqnsbgKQghldK3LnobmtNRp6GNZMyaNkPceqERkqmsQ=="
+      },
+      "SharpGLTF.Runtime": {
+        "type": "Transitive",
+        "resolved": "1.0.7",
+        "contentHash": "nHLEn7HlVq4KEc/2LSXtjMiWqabIirgS42kPogH6UQ+GhXUGQEOd/UjYb3xYI+ijfM9T7Q098Y9SqwbWfqs3NA==",
+        "dependencies": {
+          "SharpGLTF.Core": "1.0.7"
+        }
+      },
       "ShimSkiaSharp": {
         "type": "Transitive",
         "resolved": "5.2.1",
@@ -716,6 +729,8 @@
         "dependencies": {
           "Polson.Drawing.Svg": "[0.1.0, )",
           "Polson.Runtime": "[0.1.0, )",
+          "SharpGLTF.Core": "[1.0.7, )",
+          "SharpGLTF.Runtime": "[1.0.7, )",
           "SkiaSharp": "[4.148.0, )",
           "SkiaSharp.NativeAssets.Linux": "[4.148.0, )"
         }

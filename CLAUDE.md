@@ -51,7 +51,7 @@
   code a malformed file is a crash rather than a compromise, so prefer a clear
   failure to a silent one, and never let a parse failure be interpreted as "no
   data".
-
+- **Prefer Python or PowerShell for scripting over Bash to avoid issues with escaping and quoting which can cause accidental deletions**
 ## 1. Project Overview
 This project is an agentic, co-creative visual art and graphic design studio built on the principles of Enactive Cognition. Rather than treating AI as a "prompt-and-wait" generator, the system treats AI agents as active participants that co-construct meaning dynamically alongside a human director — and alongside other agents, where the work calls for them. 
 

@@ -65,7 +65,12 @@ public class MeshToolkit
             throw new FileNotFoundException(
                 $"No such mesh file: '{filePath}'. The path is relative to the project directory.", full);
 
-        return Parse(File.ReadLines(full), filePath);
+        // Chosen by extension rather than by sniffing the bytes: a caller naming a `.glb` means one,
+        // and guessing would make a mistyped extension into a confusing parse error instead of a
+        // clear one. OBJ stays the default so nothing written against it changes.
+        return MeshGltf.Handles(filePath)
+            ? MeshGltf.Load(full, filePath)
+            : Parse(File.ReadLines(full), filePath);
     }
 
     /// <summary>The same, from OBJ text a script already holds.</summary>

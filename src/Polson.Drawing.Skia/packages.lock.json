@@ -2,6 +2,21 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "SharpGLTF.Core": {
+        "type": "Direct",
+        "requested": "[1.0.7, )",
+        "resolved": "1.0.7",
+        "contentHash": "dZHCUl2jH1ViiLbAwyYbVfZnFqsF1e/9OhZAfLBoggOpqnsbgKQghldK3LnobmtNRp6GNZMyaNkPceqERkqmsQ=="
+      },
+      "SharpGLTF.Runtime": {
+        "type": "Direct",
+        "requested": "[1.0.7, )",
+        "resolved": "1.0.7",
+        "contentHash": "nHLEn7HlVq4KEc/2LSXtjMiWqabIirgS42kPogH6UQ+GhXUGQEOd/UjYb3xYI+ijfM9T7Q098Y9SqwbWfqs3NA==",
+        "dependencies": {
+          "SharpGLTF.Core": "1.0.7"
+        }
+      },
       "SkiaSharp": {
         "type": "Direct",
         "requested": "[4.148.0, )",

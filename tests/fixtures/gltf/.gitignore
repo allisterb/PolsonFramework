@@ -1,0 +1,9 @@
+# Fetched by fetch.py rather than committed — 49 KB and 428 KB respectively, and the repository
+# already declines to carry potrace's binary and the mediapipe weights for the same reason.
+# `SimpleSkin.gltf` is 3.5 KB and IS committed, so the reader tests always assert something.
+RiggedFigure.glb
+CesiumMan.glb
+
+# Written fresh by MeshGltfTests on every run — a minimal textured quad whose texture coordinates
+# the test specifies, so the UV-flip check never depends on a fetched fixture.
+_*.gltf

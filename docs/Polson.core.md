@@ -1263,7 +1263,7 @@ Also accessible via `Skia.Drawing`.
 > faces"*, and a successful caricature often came from comparing against **any face that simply
 > seemed very different**. That is what the `reference` argument is for.
 
-- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, neck }, bounds, padding, order }` — **The composed head**: the construction's four masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
+- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, bounds, padding, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
 
 > [!IMPORTANT]
 > **This is what stops features being marks floating in space.** `createLoomisHead` places landmarks and the comic feature drawers put marks at them, and until this there was nothing in between — a live run drew two correctly proportioned faces that read as **masks on undifferentiated shoulder-masses**, because the features had nothing to sit on. Clip them to `mass` and they belong to a head.
@@ -1302,7 +1302,19 @@ Also accessible via `Skia.Drawing`.
 > **`order` is construction order, not depth**, as on a figure. A head turned far enough that the far jaw passes behind the neck still needs a clip to say so.
 
 > [!WARNING]
-> **Two things it does not compose, both visible rather than theoretical.** There is **no cheek**, so where the ball's inward curve crosses the jaw's outward one the union shows a shallow concave step — a cheekbone at panel size, a seam at portrait size; ink over it or union your own wedge in. And there is **one ear**, on the side `jaw.ear` names, which is right for a three-quarter view and wrong for a frontal one: mirror `parts.ear` about `crown.x` when the head is square on.
+> **~~There is no cheek.~~ Fixed 2026-09-19 — `parts.farCheek` and `parts.nearCheek`.** This note used to read: *"where the ball's inward curve crosses the jaw's outward one the union shows a shallow concave step — a cheekbone at panel size, a seam at portrait size; ink over it or union your own wedge in."* Both halves of that were wrong, and the way they were wrong is worth more than the fix.
+>
+> **It was not shallow, and not where the note said.** Printing the outline row by row — rather than scoring it against a local chord, which is what a first pass did — a 480px frontal head holds 205–211px off its axis from the brow all the way down to y=564 and then reads **153 at y=572**: a 45px cliff in eight rows, with everything above and below it already smooth. The ball meeting the jaw has nothing to do with it. It is **the foot of the ear** — a tall narrow ellipse riding a ball that is collapsing underneath it, stopping dead at the nose line.
+>
+> **The cheek is the outer tangent from the jaw angle to the ear**, which is the masseter's own run from the zygomatic arch to the angle of the mandible. Touching the ear tangentially is what makes the join seamless: the outline never leaves the ear, it rolls off it. Because both ends are landmarks the construction already carries, **there is not one constant in it** — nothing to tune and nothing to defend. Measured on the same head, the worst single-row drop goes from **38px to 4px**, and 4px is the floor: a turned head with no cheek acting measures the same.
+>
+> **It cannot widen a head**, being strung between two things already on the outline, so every head drawn before this keeps the width it had and stops having a bite taken out of it. **The near cheek empties on its own as the head turns** — it hangs off the near ear, which already narrows and rides inboard, so past about 35° the triangle falls inside the cranium with nothing applying a turn factor to it. Frontal and near-frontal heads are what change.
+>
+> `Drawing.drawLoomisWireframe(...)` has always inked the far half of this band from `jaw.cheekApex`, and `polson://manual/04` names it as the *cheek hollow / mandible plane*. What was missing was never the anatomy, only a mass.
+>
+> **Both ears are drawn as of 2026-09-19, and the advice that used to be here is now wrong.** This note read: *"there is one ear, on the side `jaw.ear` names, which is right for a three-quarter view and wrong for a frontal one: mirror `parts.ear` about `crown.x` when the head is square on."* It is `parts.ear` **and** `parts.nearEar` now, so a caller still mirroring by hand gets three. `ear` keeps its name and its side — it is the far one, the ear `jaw.ear` locates — because renaming it to `farEar` would break every caller to make a pair read tidily.
+>
+> **The near ear narrows where the far one widens**, which is the same fact from the other side: an ear is edge-on frontally and full-face in profile. At yaw 0 the two are identical and the head is symmetric; past that the near one is swallowed by the cranium it is unioned into. **Measured on a 240px head it stops altering the outline at 10°** — 2.71px of protrusion frontally, 0.57px at 8°, nothing from 10° on. That is the physics rather than a fudge: a frontal ear sits exactly *on* the ball's silhouette, so any turn toward it puts it behind the head's own edge. **A turned head therefore renders byte-identically to before**; only frontal ones change, and they change by gaining the ear they should always have had.
 - `Drawing.createHeadForFigure(figureObj: object, options?: { yawDeg?: number, pitchDeg?: number, skull?: 'loomis' | 'comic', neckLength?: number, character?: object })` → `head` — **A head built to sit on a mannequin.** Returns an ordinary head — everything that takes one works unchanged — carrying an extra `fit` block: `{ rollDeg, pivot, headHeight, neckLength, reach, skull }`.
 
 > [!IMPORTANT]
@@ -1337,7 +1349,7 @@ Also accessible via `Skia.Drawing`.
 > **Drawing it onto a body has two ordering rules that are not obvious and produce a wrong picture silently** — the head and neck go down **first** with the torso over them, or the neck's closed base is outlined across the chest; and the mannequin's own head egg has to be cut out of the body (`figGeo.silhouette.subtract(figGeo.groups.head)`) or it paints over the face. Worked through in `polson://manual/23` §8.
 
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
-- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**. **The lid opening is `eye.height / eye.width`**, so an eye narrows or widens by changing `height` — which is what `eyesOpening` and any expression blend move. The canon's own ratio is `0.45`, and an eye carrying neither field falls back to it, so nothing drawn before this was readable renders differently.
+- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string, irisRatio?: number })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**. **The lid opening is `eye.height / eye.width`**, so an eye narrows or widens by changing `height` — which is what `eyesOpening` and any expression blend move. The canon's own ratio is `0.45`, and an eye carrying neither field falls back to it, so nothing drawn before this was readable renders differently.
 
 > [!TIP]
 > **`height` was written by `createLoomisHead` and read by nothing until 2026-09-18.** Every
@@ -1350,6 +1362,17 @@ Also accessible via `Skia.Drawing`.
 > being told. **Upper and lower lids are not separable yet** — one number moves the whole opening —
 > so an Action Unit layer above this can express closure and widening but not yet a lower-lid
 > tightener on its own.
+
+> [!TIP]
+> **`irisRatio` is the iris radius as a fraction of the eye's drawn width, and its default of `0.32` is a comic iris rather than a real one.** A real iris measures **0.19** here: on MediaPipe's canonical face model (Apache 2.0, 468 vertices) the iris diameter is **0.1886 of the interpupillary distance**, measured off the iris ring vertices with nothing inferred — and this construction places the pupils one eye-width either side of the facial axis, so IPD is exactly twice the drawn width and the two ratios are the same number.
+>
+> **So the default is 1.70× life size**, which is the idiom and not a defect: `polson://manual/23` §1 measures the comic head as *narrower relative to its eye* than Loomis's, and a bigger iris is that same observation from the other side. It is left alone for the reason the aperture's `0.45` was — moving it would restyle every face already drawn.
+>
+> ```javascript
+> Drawing.drawComicEye(ctx, head.nearEye, false, { irisRatio: 0.19 });   // a naturalistic eye
+> ```
+>
+> A non-positive or non-finite value falls back to the default rather than drawing an invisible iris.
 - `Drawing.drawComicBrow(ctx: CanvasRenderingContext2D, browObj: object, isFar?: boolean, options?: { inkColor?: string, thickness?: number })` → `{ mass, spine }` — Renders one eyebrow from its three stations, **returning the filled brow and its centre-line as `CanvasPath`s**. Pass `head.nearBrow` and `head.farBrow`.
 
 > [!IMPORTANT]
@@ -1610,9 +1633,23 @@ The figure also reports what the pose did to it, which is what a later pass read
 > comparing the sagitta of `fingers[i].knuckle` against `fingers[i].joints[2]` tests whether the
 > proportions survived whatever you did to them. A hand whose rows are equally flat is a rake.
 
-- `Drawing.applyActionUnits(headObj: object, weights?: object)` → `head` — Displaces a head by named **muscle actions**: `{ AU4: 0.9, AU7: 0.7 }`. Additive and order-independent, so units compose. Returns a whole head; the one passed in is not modified.
+- `Drawing.applyActionUnits(headObj: object, weights?: object, options?: { side?: 'both' | 'near' | 'far' })` → `head` — Displaces a head by named **muscle actions**: `{ AU4: 0.9, AU7: 0.7 }`. Additive and order-independent, so units compose. Returns a whole head; the one passed in is not modified.
+
+> [!IMPORTANT]
+> **`side` acts on one half of the face, and it is what makes a raised eyebrow and a smirk reachable at all.** Every unit moved both halves until 2026-09-19, so the single most recognisable comic brow — one up, one not — could not be drawn at any weight, and neither could a one-sided smile.
+>
+> ```javascript
+> const quizzical = Drawing.applyActionUnits(head, { AU2: 0.9 }, { side: 'near' });
+> const smirk     = Drawing.applyActionUnits(head, { AU12: 0.8 }, { side: 'near' });
+> ```
+>
+> **`near` and `far` name the two halves this construction already has — they are not `left` and `right`, and those two spellings are refused by name.** `nearEye`, `nearBrow` and the mouth's `rightCorner` are all the **`+x`** side of the facial axis, at every yaw. That is a side of the *page*, not of the character: naming it left or right would be a claim about the character's own anatomy that a turned head cannot keep, so the refusal explains itself rather than mapping quietly onto the wrong half.
+>
+> **`AU26` ignores the option**, because a jaw does not drop on one side. It is documented rather than refused: a tuple carrying `AU26` beside brow units is an ordinary thing to ask for one-sided, and refusing the whole call over the one central unit would be worse than applying it centrally and saying so. Omitting `side` moves both halves, so nothing written before this changes.
+>
+> **Three lineages split their brow units per side and this one did not**, which is why it is here: ARKit and MediaPipe carry `browDownLeft`/`browDownRight` and `browOuterUpLeft`/`Right`; CANDIDE-3’s model file carries an *Eyes vertical difference* shape unit (the file, not Ahlberg’s report — it was added in v3.1.6). Asymmetry was the one axis every source had and this construction had nowhere.
 - `Drawing.expressionUnits(expressionType: string, intensity?: number)` → `object` — **What a named expression is, as muscle weights**: `expressionUnits('sadness')` → `{ AU1: 0.7, AU15: 0.75 }`. Read it, change a unit, pass it to `applyActionUnits`.
-- `Drawing.applyFacialExpression(headObj: object, expressionType: 'joy' | 'anger' | 'fear' | 'sadness' | 'surprise' | 'disgust', intensity?: number)` → `head` — The convenience: `applyActionUnits(head, expressionUnits(name, intensity))`. Aliases `happy`, `angry`, `scared` and `sad` resolve to their canonical name; an unknown one is refused.
+- `Drawing.applyFacialExpression(headObj: object, expressionType: 'joy' | 'anger' | 'fear' | 'sadness' | 'surprise' | 'disgust', intensity?: number, options?: { side?: 'both' | 'near' | 'far' })` → `head` — The convenience: `applyActionUnits(head, expressionUnits(name, intensity), options)`. Aliases `happy`, `angry`, `scared` and `sad` resolve to their canonical name; an unknown one is refused. **`side` passes straight through**, though it suits a single unit better than a whole tuple — a one-sided `surprise` still gets a fully dropped jaw, since `AU26` is central.
 
 > [!IMPORTANT]
 > **The six tuples are the studio's, tuned by eye, and no source supplies them.** Loomis declines to
@@ -1699,8 +1736,9 @@ The figure also reports what the pose did to it, which is what a later pass read
 > [!IMPORTANT]
 > **What is deliberately absent, and why each one would have been worse than an omission.**
 >
-> - **`AU6` (Cheek Raiser)** — there is no cheek, and `drawComicEye` draws no crow's feet, so the
->   Duchenne marker has nowhere to land.
+> - **`AU6` (Cheek Raiser)** — `createHeadGeometry` now composes a cheek, but it is *derived* from the
+>   ear and the jaw angle rather than being a landmark, so there is nothing for a unit to displace;
+>   and `drawComicEye` draws no crow's feet, so the Duchenne marker still has nowhere to land.
 > - **`AU9` / `AU10`** — the upper lip is a single `upperLipY`, so a sneer would read as the whole lip
 >   rising.
 > - **`AU17` (Chin Raiser)** — the mentalis bulge is a surface change rather than a landmark move.
@@ -2844,6 +2882,175 @@ for (const label of chart.labels) ctx.fillText(label.text, label.x, label.y);
 
 canvas;
 ```
+
+---
+
+# Mesh (A Face as a Textured Surface)
+
+The studio's **third creation route**. The *constructed* route (`Drawing.createLoomisHead`) draws a face from landmarks and is fully articulate, but its turn is a screen-space approximation and it can only draw what somebody wrote a rule for. The *arranged* route (`Scene` plus a requisitioned `Assets.cutout`) buys a whole picture and cannot change it — **a seventh expression is a new person**, because generation is not deterministic across calls.
+
+This route takes **one** frontal image and gives it a surface. After that the same face turns, reshapes and takes an expression — and it is the same face every time, because there is only ever one of them.
+
+```javascript
+// A mesh is normally loaded — `Mesh.load('models/face.obj')`. Built inline here so the example
+// runs anywhere, since the toolkit deliberately ships no face data (see below).
+const cols = 9, rows = 11, obj = [];
+for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+        const x = -6 + (12 * c) / (cols - 1), y = 8 - (17 * r) / (rows - 1);
+        obj.push(`v ${x.toFixed(3)} ${y.toFixed(3)} ${(7 - (x * x + y * y * 0.35) * 0.12).toFixed(3)}`);
+    }
+for (let r = 0; r < rows - 1; r++)
+    for (let c = 0; c < cols - 1; c++) {
+        const a = r * cols + c + 1, b = a + 1, d = a + cols, e = d + 1;
+        obj.push(`f ${a} ${d} ${b}`, `f ${b} ${d} ${e}`);
+    }
+const mesh = Mesh.fromObj(obj.join('\n'));
+
+// Any frontal face image will do. Here the studio draws one, which is the case where the three
+// landmarks the fit needs are free rather than read off a photograph.
+const face = createCanvas(512, 512);
+const fctx = face.getContext('2d');
+fctx.fillStyle = '#efd9c0';
+fctx.fillRect(0, 0, 512, 512);
+const head = Drawing.createLoomisHead(256, 268, 420);
+Drawing.drawComicBrow(fctx, head.farBrow, true);
+Drawing.drawComicBrow(fctx, head.nearBrow, false);
+Drawing.drawComicEye(fctx, head.farEye, true);
+Drawing.drawComicEye(fctx, head.nearEye, false);
+Drawing.drawComicNose(fctx, head.noseWedge);
+Drawing.drawComicMouth(fctx, head.mouthGuides);
+
+const fitted = mesh.fitTexture(face.toBitmap(), {
+    eyeLeft: head.farEye.center,          // the construction already knows where they are
+    eyeRight: head.nearEye.center,
+    mouth: head.mouthGuides.center
+});
+
+const canvas = createCanvas(760, 340);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f2efe8';
+ctx.fillRect(0, 0, 760, 340);
+
+Mesh.draw(ctx, fitted, { x: 170, y: 190, scale: 15 });
+Mesh.draw(ctx, fitted, { x: 400, y: 190, scale: 15, yawDeg: 28 });
+Mesh.draw(ctx, fitted, { x: 620, y: 190, scale: 15, pitchDeg: -20, side: 'near',
+          expression: { browLower: 1, browKnit: 0.9, squint: 0.55, mouthCornerDown: 0.85 } });
+log(`${fitted.vertexCount} vertices, ${fitted.triangleCount} triangles, textured ${fitted.textured}`);
+
+canvas;
+```
+
+> [!IMPORTANT]
+> **It ships no mesh, and that is a decision rather than an omission.** The two face meshes this studio has read carry different terms — MediaPipe's canonical model is **Apache 2.0** and genuinely usable with attribution, while **CANDIDE-3's data states no licence at all**, as its own report confirms. Committing either into the assembly is a redistribution decision for the director, not a default for a toolkit. `Mesh.load(...)` reads an OBJ you supply.
+>
+> **The technique is not ours and the citation is owed**: Jared Sanson & Richard Green, *Face Replacement Demo using the Kinect Depth Sensor* (COSC428, University of Canterbury). Their §III.D names both texturing routes and rejects the automatic one because *"this technique may fail if the head is rotated, due to obscured regions in the face"* — an objection about a **live video frame** where the head may already be turned. A studio chooses its own portrait, so frontality is ours to require, and the automatic route is the one implemented here.
+
+## `Mesh`
+
+- `Mesh.load(filePath: string)` → `FaceMesh` — Reads a Wavefront OBJ carrying `v`, optional `vt`, and `f` faces. The path is relative to the project directory and contained exactly as `outFile` is. Quads and n-gons are fan-triangulated rather than dropped.
+- `Mesh.fromObj(objText: string)` → `FaceMesh` — The same, from text a script already holds.
+- `Mesh.draw(ctx: CanvasRenderingContext2D, mesh: FaceMesh, options?: object)` → `{ bounds, triangles, textured }` — Draws the mesh, deformed, posed and depth-sorted. `options`: `{ x, y, scale, yawDeg, pitchDeg, rollDeg, texture, wireframe, inkColor, lineWidth, shape, expression, side }`. An unrecognised option is refused by name.
+
+> [!TIP]
+> **Negative `pitchDeg` looks up**: the crown rotates away and the chin toward the viewer. This is a real rotation about the model's own X axis, so there is none of the constructed head's 40° limit.
+
+> [!IMPORTANT]
+> **`v` and `vt` are the same count and not the same order**, and assuming otherwise is the first thing that goes wrong. MediaPipe's canonical model writes `f 174/43 …` — vertex 174 paired with texture coordinate **43**. Indexing the texture array by the vertex index produces confetti that renders perfectly and is obviously wrong only when you look. `load` resolves the pairing once, so a mesh always carries one texture coordinate per vertex.
+>
+> **There is no depth buffer in `DrawVertices`, so the triangle order is the caller's problem — and `draw` solves it.** Without a back-to-front sort a turned head paints its far cheek over its near eye, a sliver that reads as a rendering fault. On a 900-triangle head the sort costs nothing worth measuring.
+>
+> **Deformation happens in model space and the pose is applied afterwards.** That is the one thing this route gets right that the landmark head does not: `createLoomisHead` projects first and the parameter layer displaces in screen space, which is why its own documentation warns that past roughly 40° a widened jaw widens the wrong way. This is the ordering CANDIDE states as `g' = R·s·(g + S·σ + A·α) + t`, and it has no such limit.
+
+## `FaceMesh`
+
+- `mesh.vertexCount` → `number` · `mesh.triangleCount` → `number` · `mesh.source` → `string`
+- `mesh.textured` → `boolean` — Whether an image is attached, so a draw will texture rather than wireframe. **Not the same as "the file had UVs"**: an OBJ can carry a coordinate for every vertex and still have no picture to sample.
+- `mesh.uvAt(index: number)` → `{ x, y, index }` — The texture coordinate one vertex samples, in the texture’s own pixels. The pair to `vertex(...)`, and how a fit is checked without rendering it.
+- `mesh.bounds` → `object` — The model-space extent: the usual `{ x, y, width, height, x2, y2, cx, cy }` plus `z`, `z2` and `depth`.
+- `mesh.landmark(x: number, y: number, z: number)` → `number` — The index of the vertex nearest a point in the model's own space.
+- `mesh.vertex(index: number)` → `{ x, y, z, index }` — Where one vertex is.
+- `mesh.fitTexture(image, options)` → `FaceMesh` — Textures the mesh from a frontal image by front projection. `options`: `{ eyeLeft, eyeRight, mouth }`, each `{ x, y }` in the **image's own pixels**.
+- `mesh.fitOutline(outline: CanvasPath, options?)` → `FaceMesh` — Pushes the boundary out to a drawn outline. `options`: `{ center, strength, falloff }`.
+- `mesh.boundary()` → `number[]` — The vertices on the edge of the surface, computed rather than listed: an edge belonging to exactly one triangle is a boundary edge.
+- `mesh.clone()` → `FaceMesh` — A copy.
+
+> [!IMPORTANT]
+> **Every call that changes a mesh returns a new one.** A mesh *is* the identity of a character, and a route whose whole selling point is that panel 1 and panel 40 are the same face cannot have a fit quietly mutate what it was derived from.
+
+> [!IMPORTANT]
+> **`landmark` exists so that nothing here is a remembered vertex index.** A vertex number quoted from memory is a claim about one export of one mesh — and the three copies of "CANDIDE-3" in `reference/` differ from each other while all claiming the same version, one declaring 38 shape units where another declares 14. Ask the mesh in front of you where its eye is.
+
+> [!IMPORTANT]
+> **What `fitTexture` absorbs, and what it does not — measured rather than assumed.**
+>
+> - **Scale and position: absorbed completely.** The fit is a similarity transform solved from three landmarks, so the same photograph at 100% and at 42% shoved into a corner gives the same head at the same size.
+> - **The face must be wholly inside the image.** A crop that runs off the edge has no pixels to sample and smears at the boundary. That is a limit of the picture, not of the fit.
+> - **There is no rotation term**, so a tilted head is not straightened.
+> - **Only two internal ratios are pinned** — eye separation and eye-to-mouth. Every other proportion is the mesh's, so a face built to other proportions is redistributed onto this one.
+> - **There is no face detector anywhere in this stack**, so the three landmarks are yours to supply. For a photograph that means reading them off it. **For a face the studio drew itself they are free**: `createLoomisHead` already reports `farEye.center`, `nearEye.center` and `mouthGuides.center`.
+
+> [!IMPORTANT]
+> **`fitOutline` is what a cartoon face needs, and without it the mesh imposes a human head on everything.** Texturing alone puts a drawing's features in the right places and then cuts them out with an average human mask — measured on our own comic head, the features read correctly and **the jaw and cranium do not survive at all**, because the outline belongs to the mesh rather than to the drawing.
+>
+> Each boundary vertex is moved along the ray from the face's centre until it meets the outline, and the interior follows by inverse-distance weighting so the features do not tear away from the edge. `strength` scales the whole correction, `falloff` how tightly the interior follows.
+>
+> **It is the poor relation of a shape unit** — a real one displaces named groups — but it is derived from the drawing rather than from a table, which is the half we could not license anyway: the mesh with the displacement data states no terms, and the mesh with terms states no displacement data.
+
+## Deforming: `shape` and `expression`
+
+Both are passed to `Mesh.draw`, both take `-1 … 0 … +1`, both clamp, and an unrecognised unit is refused by name.
+
+| `shape` | |
+| :--- | :--- |
+| `width` · `height` | the whole head |
+| `jawWidth` | weighted toward the chin |
+| `browHeight` · `eyeSize` · `noseLength` | banded around their own feature |
+
+| `expression` | | the muscle |
+| :--- | :--- | :--- |
+| `mouthWide` · `mouthOpen` | the mouth and the jaw | |
+| `mouthCornerDown` | the mouth corners, down | Triangularis, AU15 |
+| `browRaise` · `browLower` | the brow band, up or down | Frontalis · Corrugator, AU4 |
+| `browKnit` | the brow **heads**, toward the midline | Corrugator's inward half |
+| `squint` | the lid line | Orbicularis Oculi |
+
+> [!IMPORTANT]
+> **These are the studio's, written by hand, and they are not CANDIDE's Shape Units.** The mesh this route is designed against ships a neutral surface and **no displacement data at all** — that is the whole licensing asymmetry. So each unit here is a rule about which vertices move and by how much, tuned by eye, exactly as `applyActionUnits`'s magnitudes are. **Anything offering a measured decimal for these is claiming more than any source in `reference/` supports.**
+>
+> They are still coarser than the constructed head's — seven expression units against eight named Action Units, six shape units against CANDIDE's file's 38 — and `Drawing.applyActionUnits` remains the better tool for a performance. What this route buys that the other cannot is **rotation and identity from one image**.
+
+> [!IMPORTANT]
+> **An angry mouth needs `mouthCornerDown` and an angry brow needs `browKnit`; without them the set reaches as far as *sullen* and stops.** Both were absent until 2026-09-19 and their absence was invisible — `browLower` alone lowers a flat brow, which reads as sulking, and nothing in the set turned a lip down at all.
+>
+> **`browKnit` is deliberately separate from `browLower` rather than folded into it**, unlike the constructed head's `AU4` which does both at once. Corrugator draws the brow *heads* together and depressors lower the whole brow; splitting them is what lets a **raised** brow also be knitted, which is the strained flat brow of fear. The weight peaks at the head of the brow and is zero at the midline, which has nothing to move toward.
+>
+> ```javascript
+> Mesh.draw(ctx, face, { x, y, scale, expression: {
+>     browLower: 1, browKnit: 0.9, squint: 0.55, mouthCornerDown: 0.85, mouthWide: -0.2 } });
+> ```
+
+> [!IMPORTANT]
+> **`side` acts on one half of the face, and it is what makes a raised eyebrow and a smirk reachable at all.** Every unit moved both halves until 2026-09-19, so the single most recognisable comic brow — one up, one not — could not be drawn at any weight.
+>
+> ```javascript
+> Mesh.draw(ctx, face, { x, y, scale, side: 'near',
+>                        expression: { browRaise: 1, mouthCornerDown: 0.9 } });
+> ```
+>
+> **`near` and `far` name the two halves the mesh already has — they are not `left` and `right`, and those two spellings are refused by name.** `near` is the **`+x`** side of the mesh's own facial axis at every yaw. That is a side of the *page*, not of the character: naming it left or right would be a claim about the character's anatomy that a turned head cannot keep. The same decision `applyActionUnits` makes, for the same reason.
+>
+> **`mouthOpen` ignores the option**, because a jaw does not drop on one side — documented rather than refused, since asking for a one-sided brow beside an open mouth is an ordinary thing to want. Omitting `side` moves both halves, so nothing written before this changes. `shape` is unaffected: asymmetric *identity* is a real thing (CANDIDE's file carries an *Eyes vertical difference* unit) but it is not what this option is for.
+
+> [!IMPORTANT]
+> **Every station and magnitude is a fraction of the mesh's own frame, so a mesh at any scale deforms.** They were literal coordinates until 2026-09-19 — the brow band sat at `y = 3.6`, which is MediaPipe's number and nobody else's. **A mesh authored at a tenth of that scale got no deformation at all**: every band fell outside its own geometry, and a call asking for anger returned a neutral face with no error and no warning. The fractions reproduce the old absolutes exactly on the canonical model, so nothing already drawn with it changed.
+>
+> The frame assumes the mesh's extent **is a face** — chin at the bottom, brow or forehead at the top, midline in the middle. That is what every face mesh this studio has read actually is, and it is the only assumption available without semantic landmarks an OBJ does not carry. A mesh carrying a whole head with hair would put the stations too low, and the wireframe would show it.
+>
+> **The bands are measured against the geometry as loaded, never as deformed**, which is what makes them survive `fitOutline`. That call moves vertices — pushing the boundary out to a drawing's silhouette and carrying the interior with it — so a band keyed on where a vertex *now* sits would slide off the feature it was named for. Which vertex is a brow vertex is a fact about the anatomy, not about where the brow has been pushed.
+
+> [!TIP]
+> **Wireframe first.** `wireframe: true` draws the triangles as lines in non-repro blue and is how you check a fit before spending a texture on it — the same role `drawLoomisWireframe` plays for the constructed head. A mesh with no texture draws as a wireframe whatever you pass, rather than silently drawing nothing.
 
 ---
 

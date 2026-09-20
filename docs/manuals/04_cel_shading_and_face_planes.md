@@ -39,6 +39,13 @@ In comic illustration, lighting is typically established by a strong **Key Light
 
 > **Implemented by**: no dedicated call — the planes are polygons you fill, but their corners come from the `LoomisHead` landmarks (`head.jaw.cheekApex`, `head.temporalOval`, `head.noseWedge`), not from eyeballed coordinates.
 
+> **One of the five now has geometry.** Since 2026-09-19 `Drawing.createHeadGeometry(...)` returns
+> `parts.farCheek` and `parts.nearCheek` — the cheek hollow / mandible plane below as a real
+> `CanvasPath`, built as the outer tangent from the jaw angle to the ear. It is there to close a
+> hole in the *silhouette* rather than to shade anything, so it is the mass rather than the lit
+> plane; but it is the right shape to clip a hollow to, and it moves with `squareJaw` because the
+> jaw angle does. The other four are still yours to fill.
+
 > **Source**: Andrew Loomis, *Drawing the Head and Hands* — Plate 9, "Basic and secondary planes of
 > the head" (p. 29), and Plate 32, "Modeling the planes" (p. 61).
 

@@ -217,15 +217,31 @@ than reverse-engineering them: `farStation`, `angle`, `chinFar`, `chinNear`, `ne
 the chin corners are taken from the two angles rather than from a fraction of `W` — which is what
 keeps the chin inside its own jaw at every yaw.
 
+> **At yaw 0 the frame is an exact mirror, and it was not until 2026-09-19.** `angle` is derived
+> from the ear landmark and `nearAngle` is that value mirrored about the cranium axis; the two
+> stations are `±√(ballR² − unit²)`; the chin corners are 0.8 of their own angle's span from a chin
+> that sits on the axis. Before that date `nearAngle` had its own formula, measured from the
+> **station** rather than from the **ear** — 1.118 units against 1.000 — so a head with no turn in it
+> came out −0.750 against +0.868 and drew 7.48px wider on one side. Manual 23 §9 has the whole
+> account; the lesson for this page is that two spellings of one rule will eventually disagree.
+
 > [!IMPORTANT]
-> **Past about 60° the construction runs out, and it holds rather than inverting.** The facial axis
-> swings out faster than the near station comes in, so beyond that the near jaw would cross the chin
-> and the path would turn inside out. `nearAngle` is floored just clear of the axis instead: the near
+> **Past about 35° the construction runs out, and it holds rather than inverting.** The facial axis
+> swings out faster than the near angle comes in, so beyond that the near jaw would cross the chin
+> and the path would turn inside out. `nearAngle` is floored just clear of the chin instead: the near
 > jaw goes on shortening with the turn, but the left-to-right ordering of the frame holds, which
 > `TestLoomisJawStaysOrderedAcrossTheTurn` asserts at 0°, 35°, 55°, 70° and 85°.
 >
-> §3's documented range for a 3/4 head is 30°–45°, where none of this bites. Past 60° treat the near
-> jaw as approximate.
+> **This said "about 60°" until 2026-09-19 and was wrong by twenty degrees.** Measured by sweeping
+> the yaw in half-degree steps and watching for the floor to take over, it engaged at **40°** under
+> the old near-angle formula and engages at **35.5°** now that the near angle mirrors the far one.
+> Nobody had measured it; the figure was an estimate that read as a fact, and it sat two paragraphs
+> from a documented working range of 30°-45° that it contradicts.
+>
+> §3's documented range for a 3/4 head is 30°–45°, so the floor engages **inside** that range rather
+> than safely beyond it — which is the practical reason to know the real number. At 40° and beyond
+> the near jaw is the floor's output rather than the construction's, so treat it as approximate
+> there, not at 60°.
 
 ### Still unsourced, and marked as such
 

@@ -1582,6 +1582,45 @@ public class DrawingToolkitTests : TestsRuntime
         Assert.True(mass.Path.Bounds.Height > ((CanvasPath)nose["underPlane"]!).Path.Bounds.Height);
     }
 
+    /// <summary>
+    /// The iris is a settable fraction of the eye's width, and its default is the comic one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The default is asserted, not just the option.</b> A real iris measures <b>0.19</b> of the
+    /// eye width in this construction — measured off the iris ring of MediaPipe's canonical face
+    /// model (Apache 2.0), where iris diameter is 0.1886 of the interpupillary distance, and this
+    /// head places the pupils one eye-width either side of the axis so IPD is exactly twice the drawn
+    /// width. <b>0.32 is 1.70× that</b>, which is the comic idiom rather than an error and is what
+    /// every face already drawn uses.
+    /// </para>
+    /// <para>
+    /// So the test that matters is that the default did <i>not</i> move: this parameter exists to
+    /// make a naturalistic eye reachable, not to restyle the ones already drawn.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestTheIrisRatioIsSettableAndDefaultsToTheComicCanon()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(300f, 250f, 300f, 0f, 0f);
+        var eye = (Dictionary<string, object?>)head["nearEye"]!;
+        var ctx = new SkiaCanvas(600, 600).GetContext("2d");
+
+        var w = MathF.Abs(Convert.ToSingle(((Dictionary<string, object?>)eye["outer"]!)["x"])
+                        - Convert.ToSingle(((Dictionary<string, object?>)eye["inner"]!)["x"]));
+
+        float IrisRadius(object? options) =>
+            ((CanvasPath)toolkit.DrawComicEye(ctx, head["nearEye"]!, false, options)["iris"]!).Path.Bounds.Width / 2f;
+
+        Assert.Equal(0.32f, IrisRadius(null) / w, 2);
+        Assert.Equal(0.19f, IrisRadius(new Dictionary<string, object?> { ["irisRatio"] = 0.19f }) / w, 2);
+
+        // A nonsense ratio falls back rather than drawing an invisible or inverted iris: an option is
+        // a preference, and a silently absent feature is worse than an ignored number.
+        Assert.Equal(IrisRadius(null), IrisRadius(new Dictionary<string, object?> { ["irisRatio"] = -1f }), 3);
+    }
+
     /// <summary>The brow comes back as a filled mass and its centre-line, and sits above its eye.</summary>
     /// <remarks>
     /// <b>The drawer exists so the brow stations are not another <c>eye.height</c>.</b> Landmarks

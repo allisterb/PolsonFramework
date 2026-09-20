@@ -309,6 +309,117 @@ public class ActionUnitTests : TestsRuntime
         Assert.Contains(unit, ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// <c>side</c> acts on one half of the face, which is what makes a raised eyebrow reachable.
+    /// </summary>
+    /// <remarks>
+    /// <b>The single most recognisable comic brow, and it could not be drawn until 2026-09-19.</b>
+    /// Every unit moved both brows, so one-up-one-not was not expressible at any weight. Asserted in
+    /// both directions — the named side moves <i>and</i> the other side does not — because a test of
+    /// the first alone passes on an implementation that still moves both.
+    /// </remarks>
+    [Theory]
+    [InlineData("near", "nearBrow", "farBrow")]
+    [InlineData("far", "farBrow", "nearBrow")]
+    public void TestASideRaisesOneBrowAndLeavesTheOther(string side, string moved, string held)
+    {
+        var canon = Head();
+        var posed = Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { ["AU2"] = 1f },
+            new Dictionary<string, object?> { ["side"] = side });
+
+        Assert.True(Y(G(posed, moved), "outer") < Y(G(canon, moved), "outer"), $"{moved} tail should rise");
+        Assert.Equal(Y(G(canon, held), "outer"), Y(G(posed, held), "outer"), 3);
+    }
+
+    /// <summary>A one-sided smile is a smirk, and the mouth maps onto the same near/far halves.</summary>
+    /// <remarks>
+    /// The mouth is named by hand (<c>leftCorner</c>/<c>rightCorner</c>) where the eyes are named by
+    /// depth, so the mapping — <c>rightCorner</c> is the <c>+x</c> corner and therefore the near
+    /// one — is a fact about the construction rather than about the names, and is pinned here.
+    /// </remarks>
+    [Fact]
+    public void TestASideSmileLiftsOneMouthCornerOnly()
+    {
+        var canon = Head();
+        var smirk = Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { ["AU12"] = 1f },
+            new Dictionary<string, object?> { ["side"] = "near" });
+
+        var mouth = G(smirk, "mouthGuides");
+        var was = G(canon, "mouthGuides");
+
+        Assert.True(Y(mouth, "rightCorner") < Y(was, "rightCorner"), "the near corner should lift");
+        Assert.Equal(Y(was, "leftCorner"), Y(mouth, "leftCorner"), 3);
+    }
+
+    /// <summary>Omitting the option moves both halves, so nothing written before this changes.</summary>
+    [Fact]
+    public void TestWithoutASideBothHalvesStillMove()
+    {
+        var canon = Head();
+        var weights = new Dictionary<string, object?> { ["AU2"] = 1f };
+
+        var implicitBoth = Toolkit.ApplyActionUnits(Head(), weights);
+        var explicitBoth = Toolkit.ApplyActionUnits(Head(), weights,
+            new Dictionary<string, object?> { ["side"] = "both" });
+
+        foreach (var brow in new[] { "nearBrow", "farBrow" })
+        {
+            Assert.True(Y(G(implicitBoth, brow), "outer") < Y(G(canon, brow), "outer"), $"{brow} should rise");
+            Assert.Equal(Y(G(implicitBoth, brow), "outer"), Y(G(explicitBoth, brow), "outer"), 4);
+        }
+    }
+
+    /// <summary>The jaw ignores <c>side</c>, because a jaw does not drop on one side.</summary>
+    /// <remarks>
+    /// Documented rather than refused: a tuple carrying AU26 alongside brow units is an ordinary
+    /// thing to ask for one-sided, and refusing the whole call over the one central unit would be
+    /// worse than applying it centrally and saying so.
+    /// </remarks>
+    [Fact]
+    public void TestTheJawIgnoresTheSideOption()
+    {
+        var both = Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { ["AU26"] = 1f });
+        var near = Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { ["AU26"] = 1f },
+            new Dictionary<string, object?> { ["side"] = "near" });
+
+        Assert.Equal(Y(both, "chin"), Y(near, "chin"), 4);
+        Assert.Equal(LowerLip(both), LowerLip(near), 4);
+    }
+
+    /// <summary>
+    /// <c>left</c> and <c>right</c> are refused by name, with the reason rather than a silent mapping.
+    /// </summary>
+    /// <remarks>
+    /// <b>The spelling a caller arriving from ARKit or MediaPipe will type</b>, both of which split
+    /// their units left and right. This head is near and far — "near" is the <c>+x</c> side at every
+    /// yaw — so accepting those names would be a claim about the character's own anatomy that a
+    /// turned head cannot keep.
+    /// </remarks>
+    [Theory]
+    [InlineData("left")]
+    [InlineData("right")]
+    [InlineData("middle")]
+    public void TestAnUnusableSideIsRefusedByName(string side)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => Toolkit.ApplyActionUnits(
+            Head(), new Dictionary<string, object?> { ["AU2"] = 1f },
+            new Dictionary<string, object?> { ["side"] = side }));
+
+        Assert.Contains(side, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("near", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A misspelled option is refused rather than silently ignored.</summary>
+    [Fact]
+    public void TestAnUnknownOptionIsRefused()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => Toolkit.ApplyActionUnits(
+            Head(), new Dictionary<string, object?> { ["AU2"] = 1f },
+            new Dictionary<string, object?> { ["sides"] = "near" }));
+
+        Assert.Contains("sides", ex.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>AU2 is accepted now that the brow carries a tail to raise.</summary>
     [Fact]
     public void TestAU2IsImplementedNowThatTheBrowHasStations()

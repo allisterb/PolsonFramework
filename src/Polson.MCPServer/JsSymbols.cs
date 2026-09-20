@@ -1,4 +1,4 @@
-namespace Polson.MCPServer;
+﻿namespace Polson.MCPServer;
 
 using System;
 using System.Collections.Generic;
@@ -146,6 +146,10 @@ public static class JsSurface
         // Constructions above those primitives. Its own area rather than more of Scale, because
         // Scale is deliberately "draws nothing and knows no forms" and that is worth keeping.
         new("Chart", typeof(ChartToolkit), "Chart", false),
+
+        // The third creation route: a face as a textured, deformable surface.
+        new("Mesh", typeof(MeshToolkit), "Mesh", false),
+        new("mesh", typeof(FaceMesh), "Mesh", true),
 
         // SPIKE: frame capture and animated encoding. Declared here so the manifest stays honest
         // about what a script can reach, not because the surface is settled.

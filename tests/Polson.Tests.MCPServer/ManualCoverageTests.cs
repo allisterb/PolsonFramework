@@ -1,4 +1,4 @@
-namespace Polson.Tests.MCPServer;
+﻿namespace Polson.Tests.MCPServer;
 
 using System;
 using System.Collections.Generic;
@@ -126,6 +126,14 @@ public class ManualCoverageTests : TestsRuntime
         // settled all three: the score lives in the engine, is seekable rather than played, and is
         // not baked to SMIL. Manual 25 is written against that shape and names every member.
         ["Motion"] = 100,
+
+        // Arrived at its floor on 2026-09-19 rather than climbing to it: Manual 26 section 7 was
+        // written in the same stretch as the surface, so there was never a version an agent could
+        // not find. Placed in the reference-photography manual rather than in a new one because the
+        // route's input IS a portrait, and sections 2 and 3 of that manual — identity and terms —
+        // apply to it unchanged. A face that can be turned and deformed is a stronger reason to
+        // gate a likeness, not a weaker one.
+        ["Mesh"] = 100,
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>

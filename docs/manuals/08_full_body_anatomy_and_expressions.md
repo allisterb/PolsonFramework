@@ -351,6 +351,14 @@ axis and the collarbones are two different lines and must stay separate.
 
 > **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking Press, 1956), pp. 45–47 and Plate 21, for the mechanics; Paul Ekman & Wallace V. Friesen, *Measuring Facial Movement*, Environmental Psychology and Nonverbal Behavior 1(1):56–75, 1976, Table 1, for the numbering and the muscle names.
 
+> **Ekman & Friesen are cited above for the numbering and the muscle names, and deliberately not for
+> the idea.** Ahlberg's CANDIDE-3 report credits the concept of Action Units to **Carl-Herman
+> Hjortsjö**, *Människans ansikte och det mimiska språket* (“Man’s Face and the Mimic Language”,
+> Studentlitteratur, Lund, 1969), and describes FACS as a later extension of that work. **We hold
+> Hjortsjö not at all** — this is Ahlberg’s attribution, not our reading — so he is named here to
+> keep a claim off the page rather than to put one on it: nothing in this manual says Ekman and
+> Friesen originated Action Units, and nothing should be edited to.
+
 ### The muscle layer, and why it is the one to use
 
 **`applyActionUnits` takes muscles and the six presets take feelings, which is the whole argument of this section made into an API.** Loomis sets the emotions aside as *too numerous to tabulate* and gives the muscle groups instead; Ekman & Friesen, measuring rather than drawing, arrive at the same anatomy and number it. Two schools, two vocabularies, one set of muscles.

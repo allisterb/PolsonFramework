@@ -133,6 +133,69 @@ log(`brow line ${head.brow.y.toFixed(1)}, drawn inner end ${head.nearBrow.inner.
   > as the defect this whole section describes — a drawn quantity taken from something an expression
   > moves — which is worth noticing, because it means the first fix did not teach the lesson
   > thoroughly enough to prevent the second.
+
+### 4b. One brow, not two — asymmetry
+
+The chapter's three features are mouth, eyes and eyebrows, and it is silent on whether they move
+together. They do not. **The single most recognisable comic brow is one raised and one not** — the
+quizzical, the sceptical, the unimpressed — and until 2026-09-19 no weight of any unit could draw it,
+because every unit moved both halves of the face at once. The same was true of the **smirk**: `AU12`
+lifted both mouth corners, so a one-sided smile did not exist.
+
+```javascript
+const INK = '#15151a';
+const ctx = createCanvas(760, 420).getContext('2d');
+const head = Drawing.createLoomisHead(220, 200, 260, 0, 0);
+
+const quizzical = Drawing.applyActionUnits(head, { AU2: 0.9 },  { side: 'near' });
+const smirk     = Drawing.applyActionUnits(head, { AU12: 0.8 }, { side: 'near' });
+
+for (const face of [quizzical, smirk]) {
+    const geo = Drawing.createHeadGeometry(face, { neckLength: 0.12 });
+    ctx.save();
+    ctx.clip(geo.mass);
+    Drawing.drawComicBrow(ctx, face.farBrow, true, { inkColor: INK });
+    Drawing.drawComicBrow(ctx, face.nearBrow, false, { inkColor: INK });
+    Drawing.drawComicMouth(ctx, face.mouthGuides, { inkColor: INK });
+    ctx.restore();
+    ctx.translate(320, 0);
+}
+
+// One brow moved and the other did not, which is the whole of it.
+log(`near tail ${quizzical.nearBrow.outer.y.toFixed(1)}, far tail ${quizzical.farBrow.outer.y.toFixed(1)}`);
+ctx;
+```
+
+- **`near` and `far`, never `left` and `right`.** `nearEye`, `nearBrow` and the mouth's
+  `rightCorner` are all the **`+x`** side of the facial axis at every yaw — a side of the *page*, not
+  of the character. Left and right would be a claim about the character's own anatomy that a turned
+  head cannot keep, so those two spellings are **refused by name** with that reason rather than
+  quietly mapped onto whichever half happens to face us.
+- **`AU26` ignores it**, because a jaw does not drop on one side. Documented rather than refused: a
+  tuple carrying a jaw drop beside brow units is an ordinary thing to ask for one-sided.
+- **Omitting the option moves both halves**, so nothing drawn before this changes.
+
+> **This came from outside the corpus, and from three directions at once.** ARKit and MediaPipe both
+> split their brow units per side — `browDownLeft`/`browDownRight`, `browOuterUpLeft`/`Right` — and
+> CANDIDE-3’s model file carries an *Eyes vertical difference* shape unit — the file rather than
+> Ahlberg’s report, which documents twelve shape units and not that one. **Asymmetry was the one axis every one
+> of those models had and this construction had nowhere at all**, which is a good argument for
+> reading a model built for a completely different purpose: a tracker and a videophone codec both
+> found it necessary, and a drawing manual never thought to mention it.
+
+### 4c. The iris is drawn 1.7× life size, and that is the idiom
+
+`drawComicEye` puts the iris radius at **0.32 of the eye's drawn width**. Measured against a real
+face it should be **0.19**: on MediaPipe's canonical face model (Apache 2.0, 468 vertices) the iris
+diameter is **0.1886 of the interpupillary distance**, read straight off the iris ring vertices — and
+this construction places the pupils one eye-width either side of the facial axis, so the
+interpupillary distance is exactly twice the drawn width and the two ratios are the same number.
+
+**So the default is 1.70× life size, and it stays.** §1 measures the comic head as *narrower relative
+to its eye* than Loomis's; a larger iris is that same finding from the other side, and the two
+together are most of why a comic face reads as drawn rather than observed. Pass
+`irisRatio: 0.19` for a naturalistic eye; the default is left alone for the reason the aperture's
+`0.45` was, because moving it would restyle every face already drawn.
 - **The curve passes through `peak`, not toward it.** A quadratic's midpoint is a quarter of each end
   plus half its control, so a control set at the landmark reaches only halfway to it and the arch
   draws at about half the height the landmark states.
@@ -776,7 +839,9 @@ soft mark aimed **below** the ear — not closed up, and not run to the ear itse
   of this list called the neck *thin* — measured, it is nearer Faragasso's **widest** relation, and
   what looks thin is the mannequin's narrow shoulder span.)
 - **The ear is easy to lose at a small yaw.** It straddles the ball's silhouette, so at the yaws a
-  figure shot usually wants it is a few pixels wide. Check `parts.ear` rather than assuming it drew.
+  figure shot usually wants it is a few pixels wide. Check `parts.ear` rather than assuming it drew —
+  and note that **`parts.nearEar` is meant to vanish**: it stops altering the outline at 10°, which
+  is the near ear going behind the head rather than a mass failing to build.
 
 ## 9. What this does not give you
 
@@ -788,13 +853,91 @@ soft mark aimed **below** the ear — not closed up, and not run to the ear itse
 - **Nothing in it is depth.** `order` is the sequence the masses are built in, not a z-order, exactly
   as on a figure. A head turned far enough that the far jaw passes behind the neck still needs you to
   say so with a clip.
-- **There is no cheek, so the ball and the jaw meet at a corner.** The ball's outline curves inward
-  while the jaw's curves outward, and where they cross the union shows a shallow concave step. A real
-  head has a mass bridging them and this does not; at panel size it reads as a cheekbone, at portrait
-  size it reads as a seam. Ink over it, or union your own wedge in.
-- **One ear, on the side `jaw.ear` names.** The construction carries a single ear landmark, which is
-  right for a three-quarter view — the far ear is hidden by the head — and wrong for a frontal one,
-  where a reader expects two. Mirror `parts.ear` about `crown.x` when the head is square on.
+- **~~There is no cheek.~~ Fixed 2026-09-19 — `parts.farCheek` and `parts.nearCheek`.** This limit
+  read: *"the ball's outline curves inward while the jaw's curves outward, and where they cross the
+  union shows a shallow concave step. A real head has a mass bridging them and this does not; at
+  panel size it reads as a cheekbone, at portrait size it reads as a seam. Ink over it, or union
+  your own wedge in."*
+
+  > **Every clause of that was wrong, and the sequence of wrong answers is the lesson.** Three
+  > constructions were built and measured before the right one, and two of them appeared to work.
+  >
+  > The note said *shallow*. Scored the way the note implied — how far the edge falls inside its own
+  > 40px chord, which a convex outline never does — the dip measures 6.5px on a 480px head, and a
+  > wedge that reduced that number looked like a fix. **Printing the outline row by row instead**
+  > said something else entirely: the far edge holds 205–211px off the axis from the brow down to
+  > y=564 and then reads **153 at y=572**. A 45px cliff in eight rows, with everything above and
+  > below it already smooth and monotonic.
+  >
+  > The note said *where the ball crosses the jaw*. It is neither: it is **the foot of the ear**. An
+  > ear here is a tall narrow ellipse riding the ball's silhouette, so its lower half hangs a long
+  > way outboard of a ball that is collapsing under it — and then it simply stops at the nose line.
+  >
+  > **A capsule from the cheekbone to the jaw angle moved the notch rather than removing it**, from
+  > 62% of brow-to-chin to 70% — its own toe, landing on a jawline it was not tangent to. **A wedge
+  > carried on to the chin corner** removed more of it and added **23–34px of width** to the lower
+  > face, five times the defect it was correcting. **A straight line from the ear's widest point to
+  > the jaw angle did nothing at all**: it lies inside the ball for its whole length. The A/B render
+  > is what said so, after a metric had implied it worked.
+
+  The cheek is the **outer tangent from the jaw angle to the ear** — the masseter's own run, from the
+  zygomatic arch to the angle of the mandible. Tangency is what makes the join seamless: the outline
+  never leaves the ear, it rolls off it. Both ends are landmarks the construction already carries, so
+  **the call gained no constant** — nothing to tune, nothing to defend by eye. The worst single-row
+  drop goes from **38px to 4px** on a 240px head, and 4px is the floor: a head turned far enough that
+  no cheek is acting measures the same.
+
+  It **cannot widen a head**, being strung between two things already on the outline, so every head
+  drawn before this keeps its width and stops having a bite taken out of it. The **near cheek empties
+  on its own** as the head turns, with no factor applied — it hangs off the near ear, which is already
+  narrowing and riding inboard, so past about 35° the triangle falls inside the cranium. Frontal and
+  near-frontal heads are what change.
+
+  > **And it found a defect upstream that nothing was looking for — now fixed, same day.** A frontal
+  > head's jaw was not symmetric: `jaw.angle` sat at **−0.750 units** off the axis and
+  > `jaw.nearAngle` at **+0.868**, because the far angle was derived from the ear landmark
+  > (`originX − unit × cos`) and the near one from the jaw station (`originX + √(ballR² − unit²)`) —
+  > 1.000 units against 1.118. The chin corners inherited it, −0.600 against +0.694, and a 240px
+  > frontal silhouette measured **7.48px wider on one side** through the jaw, 3% of head height on a
+  > head with no turn in it.
+  >
+  > **`nearAngleX` is now written as the far angle mirrored about the axis** —
+  > `MathF.Max((2f * originX) - jawAnglePt.X, …)` — rather than as a second formula for the same
+  > rule, so the two cannot restate it differently again. The chin guard that stops the near jaw
+  > crossing the chin at high yaw is untouched.
+  >
+  > **Measured, the change reaches nothing past 40°.** Diffing every jaw landmark between the two
+  > builds across the canon and two parametric characters: the near angle moves **8.09px at yaw 0**
+  > on a 240px head, 6.63px at 35°, and **0.000px from 40° on** — the chin guard already governed it
+  > there, so every turned head renders exactly as it did. `chinShape`, `chinLength` and `jawShape`
+  > displace on top and move by the same amount as the canon, so no character is affected
+  > differently from any other.
+  >
+  > **What let it hide is worth more than the fix.** `TestAFrontalHeadIsSymmetricAboutItsOwnAxis`
+  > compared the silhouette's **bounds**, and a head's width is set by its ears — so the box is
+  > symmetric whatever the jaw does underneath it. One number at the widest point cannot see a
+  > shape. That test now walks the outline from brow to chin with a sub-pixel bisection and asserts
+  > both sides agree within 0.5px, and `TestAFrontalHeadsJawMirrorsItself` asserts the landmarks
+  > directly. Both fail against the old code; the first reports *"7.48px wider on one side at
+  > y 210"*, which is the defect in the words of the test that should have caught it.
+- **~~One ear, on the side `jaw.ear` names.~~ Fixed 2026-09-19 — both are drawn.** This limit read:
+  *"the construction carries a single ear landmark, which is right for a three-quarter view — the far
+  ear is hidden by the head — and wrong for a frontal one, where a reader expects two. Mirror
+  `parts.ear` about `crown.x` when the head is square on."* `createHeadGeometry` now returns
+  `parts.nearEar` beside `parts.ear`, so a caller still mirroring by hand gets **three**.
+
+  > **Worth keeping as a lesson about defaults rather than about ears.** The limit was documented,
+  > accurately, in two places — and the person who wrote both of them then drew a frontal expression
+  > sheet with this toolkit and shipped eight one-eared heads without noticing. A documented defect
+  > is still a defect: it was anatomy rather than style, so nobody had chosen it, and the workaround
+  > asked every caller to remember something on every frontal head forever. **The director spotted it
+  > in the render.** If a note has to tell callers to correct the output, the output is wrong.
+
+  The near ear **narrows where the far one widens** — an ear is edge-on frontally and full-face in
+  profile, so that is one fact read from both sides. Measured on a 240px head it stops altering the
+  outline at **10°** (2.71px frontally, 0.57px at 8°, nothing beyond), which is the physics rather
+  than a fudge: a frontal ear sits exactly *on* the ball's silhouette, so any turn toward it puts it
+  behind the head's own edge. Turned heads render byte-identically to before.
 - **The plates carry what the text cannot.** The five- and six-step figures for the female head and
   profile are drawings; the text gives their order and their rules, which is what is distilled above.
 - **Nothing here is about likeness.** Neither school offers it, and no construction will.

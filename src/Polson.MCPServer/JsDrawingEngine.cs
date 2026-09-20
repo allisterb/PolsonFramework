@@ -367,6 +367,12 @@ public partial class JsDrawingEngine : Runtime
             var chartToolkit = new ChartToolkit();
             engine.SetValue("Chart", chartToolkit);
 
+            // A face as a textured, deformable surface — the third creation route, beside the
+            // constructed head and the arranged scene. Ships no mesh: `Mesh.load` reads an OBJ the
+            // caller supplies, contained exactly as `outFile` is.
+            var meshToolkit = new MeshToolkit(ProjectRoot);
+            engine.SetValue("Mesh", meshToolkit);
+
             // SPIKE: frame capture and animated encoding. Holds bitmaps for the life of the
             // execution, so it is disposed with the engine rather than left to the collector.
             motionToolkit = new MotionToolkit(ProjectRoot);

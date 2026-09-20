@@ -241,3 +241,207 @@ Prefer a drawn or typographic treatment when:
 
 > [!TIP]
 > A ranked list of people is the case that most often *does* justify photographs — the reader is scanning for a face they recognise, and that recognition is the graphic's whole mechanism. Even then, one consistent treatment across all of them beats five faithful but mismatched snapshots.
+
+---
+
+## 7. One Portrait, Every Angle — the Face as a Surface
+
+> **Implemented by**: `Mesh.load(...)`, `mesh.fitTexture(...)`, `mesh.fitOutline(...)`, `mesh.landmark(...)`, `mesh.uvAt(...)`,
+> `mesh.vertex(...)`, `mesh.boundary()`, `mesh.clone()`, `mesh.bounds`, `mesh.vertexCount`,
+> `mesh.triangleCount`, `mesh.textured`, `mesh.source`, `Mesh.fromObj(...)` and `Mesh.draw(...)`.
+
+> **Source Reference**: Jared Sanson & Richard Green, *Face Replacement Demo using the Kinect Depth
+> Sensor* (COSC428 Computer Vision, University of Canterbury) — the pipeline of a parameterised mesh,
+> UV-mapped to a face image, deformed and drawn. The mesh itself is yours to supply; see §7d.
+
+### 7a. The problem it solves, which is consistency rather than realism
+
+The studio has two ways to put a face on a page and **neither gives you the same face at a second
+angle.**
+
+- The **constructed** head (`polson://manual/23`) is fully articulate and completely consistent —
+  a `const` of parameters makes panel 1 and panel 40 the same person. But it draws a *drawing*, and
+  its turn is an approximation that its own documentation limits to about 40°.
+- The **arranged** route — a requisitioned `Assets.cutout` — gives you a picture you could not draw,
+  and then cannot change it. Generation is not deterministic across calls, so **a seventh expression
+  is a new man**. You must plan every pose before the first call.
+
+This route takes **one** frontal image and gives it a surface. After that the face turns, reshapes and
+takes an expression, and it is the same face every time **because there is only ever one of them.**
+Identity stops being something you hope the model holds and becomes structural.
+
+### 7b. Three landmarks, and where they come from
+
+There is **no face detector anywhere in this stack.** `fitTexture` asks for three points in the
+image's own pixels — the two eyes and the mouth — and solves a similarity transform from them, so
+scale and position fall out of the fit.
+
+For a photograph you read them off it. **For a face the studio drew itself they are free**, which is
+the asymmetry worth exploiting:
+
+```javascript
+// A mesh is normally loaded — `Mesh.load('models/face.obj')`. Built inline here so the example
+// runs anywhere, since the toolkit deliberately ships no face data (see below).
+const cols = 9, rows = 11, obj = [];
+for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+        const x = -6 + (12 * c) / (cols - 1), y = 8 - (17 * r) / (rows - 1);
+        obj.push(`v ${x.toFixed(3)} ${y.toFixed(3)} ${(7 - (x * x + y * y * 0.35) * 0.12).toFixed(3)}`);
+    }
+for (let r = 0; r < rows - 1; r++)
+    for (let c = 0; c < cols - 1; c++) {
+        const a = r * cols + c + 1, b = a + 1, d = a + cols, e = d + 1;
+        obj.push(`f ${a} ${d} ${b}`, `f ${b} ${d} ${e}`);
+    }
+const mesh = Mesh.fromObj(obj.join('\n'));
+
+// Any frontal face image will do. Here the studio draws one, which is the case where the three
+// landmarks the fit needs are free rather than read off a photograph.
+const face = createCanvas(512, 512);
+const fctx = face.getContext('2d');
+fctx.fillStyle = '#efd9c0';
+fctx.fillRect(0, 0, 512, 512);
+const head = Drawing.createLoomisHead(256, 268, 420);
+Drawing.drawComicBrow(fctx, head.farBrow, true);
+Drawing.drawComicBrow(fctx, head.nearBrow, false);
+Drawing.drawComicEye(fctx, head.farEye, true);
+Drawing.drawComicEye(fctx, head.nearEye, false);
+Drawing.drawComicNose(fctx, head.noseWedge);
+Drawing.drawComicMouth(fctx, head.mouthGuides);
+
+const fitted = mesh.fitTexture(face.toBitmap(), {
+    eyeLeft: head.farEye.center,          // the construction already knows where they are
+    eyeRight: head.nearEye.center,
+    mouth: head.mouthGuides.center
+});
+
+const canvas = createCanvas(760, 340);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f2efe8';
+ctx.fillRect(0, 0, 760, 340);
+
+Mesh.draw(ctx, fitted, { x: 170, y: 190, scale: 15 });
+Mesh.draw(ctx, fitted, { x: 400, y: 190, scale: 15, yawDeg: 28 });
+Mesh.draw(ctx, fitted, { x: 620, y: 190, scale: 15, pitchDeg: -20, side: 'near',
+          expression: { browLower: 1, browKnit: 0.9, squint: 0.55, mouthCornerDown: 0.85 } });
+log(`${fitted.vertexCount} vertices, ${fitted.triangleCount} triangles, textured ${fitted.textured}`);
+
+canvas;
+```
+
+That is a **comic head that turns in real 3D** — the constructed route's articulation, with the mesh
+route's rotation.
+
+### 7c. What the fit absorbs, and what it does not
+
+Measured rather than assumed, on one portrait at three framings:
+
+- **Scale and position: absorbed completely.** The same photograph at 100% and at 42% pushed into a
+  corner produces the same head at the same size in the same place.
+- **The face must be wholly inside the image.** A crop that runs off the edge has no pixels to
+  sample and smears — a limit of the picture, not of the fit.
+- **No rotation term**, so a tilted head is not straightened.
+- **Only two internal ratios are pinned**, eye separation and eye-to-mouth. Every other proportion
+  is the mesh's, so a face built to other proportions is redistributed onto this one.
+
+> [!IMPORTANT]
+> **A cartoon face needs `fitOutline` or the mesh imposes a human head on it.** Texturing alone puts
+> a drawing's features in the right places and then cuts them out with an average human mask.
+> Measured on our own comic head: the eyes, brows, nose and mouth all read correctly and turn
+> convincingly, and **the jaw and cranium do not survive at all** — the outline belongs to the mesh.
+>
+> `fitOutline(geo.mass)` moves each boundary vertex out along the ray from the face's centre until it
+> meets the drawn outline, and carries the interior with it. Use `mesh.boundary()` to see which
+> vertices those are; it is computed from the triangles — an edge belonging to exactly one triangle
+> is a boundary edge — rather than listed, so it is right for whatever mesh was loaded.
+
+### 7d. The mesh is yours to supply, and the reason is the licence
+
+`Mesh.load(...)` and `Mesh.fromObj(...)` read an OBJ; **the toolkit ships no face data.** That is a
+deliberate refusal rather than an omission, and the reason is a split worth knowing before you go
+looking for a model:
+
+**The mesh with the deformation data states no licence, and the mesh with a licence states no
+deformation data.** CANDIDE-3's `.wfm` carries shape and animation units — the whole parameterisation
+— and Ahlberg's own report grants nothing, saying only that the model is *"publically available"*.
+MediaPipe's canonical face model is Apache 2.0 and carries a full UV map, and ships a **neutral**
+surface with no units at all. So whichever you pick, **the displacement layer is ours to author** —
+which is exactly what `Mesh.draw`'s `shape` and `expression` units are.
+
+> [!IMPORTANT]
+> **Those units are the studio's, tuned by eye, and they are not CANDIDE's.** Six shape units against
+> that file's 38, and seven expression units against `applyActionUnits`'s eight named muscles.
+> **Anything offering a measured decimal for them is claiming more than any source in `reference/`
+> supports.** This route buys rotation and identity from one image; it does not buy the articulation
+> the constructed head has, and `Drawing.applyActionUnits(...)` remains the better tool for a
+> performance.
+
+### 7d-i. What an angry face needs, and what it took three units to reach
+
+The set opened at five units — `mouthWide`, `mouthOpen`, `browRaise`, `browLower`, `squint` — and the
+gap in it was not obvious until somebody asked for anger. **`browLower` on its own lowers a *flat*
+brow, which reads as sulking, and nothing in the set turned a lip down at all.** The three that
+closed it, on 2026-09-19:
+
+- **`mouthCornerDown`** — Triangularis, AU15. Loomis's "unhappy muscles", running from beside the
+  nose down to the jaw. Its weight rises to the mouth's corner and **falls away again past it**,
+  because the mouth band alone reaches the cheeks: weighting purely by distance from the midline
+  drags half the face down with the lip.
+- **`browKnit`** — the inward half of AU4. Corrugator draws the brow *heads* together, so the weight
+  peaks at the head of the brow and is zero at the midline, which has nothing to move toward.
+- **`side`** — `'near'`, `'far'` or `'both'`, on `Mesh.draw` rather than in the unit list.
+
+> [!IMPORTANT]
+> **`browKnit` is a separate unit from `browLower` rather than folded into it**, which is where this
+> surface departs from the constructed head: there, `AU4` lowers *and* knits in one weight. Splitting
+> them is what lets a **raised** brow also be knitted — frontalis lifting against corrugator, which is
+> the strained flat brow of fear rather than the clean arch of surprise. `applyActionUnits` reaches
+> the same expression by a different route; this one reaches it by composition.
+
+> [!IMPORTANT]
+> **`near` and `far` are the sides of the *page*, and `left`/`right` are refused by name** — the same
+> decision, and the same refusal message, as `applyActionUnits`. `near` is the `+x` side of the mesh's
+> own facial axis at every yaw, so calling it the character's left would be a claim a turned head
+> cannot keep. `mouthOpen` ignores the option, because a jaw does not drop on one side.
+>
+> It exists because **one raised eyebrow and a one-sided smirk are the two most recognisable comic
+> expressions there are**, and neither was reachable at any weight while every unit moved both halves.
+> Three lineages split their brow units per side and this one did not: ARKit and MediaPipe carry
+> `browDownLeft`/`browDownRight`, and `candide3.wfm` v3.1.6 carries an *Eyes vertical difference*
+> shape unit. Asymmetry was the one axis every source had and this route had nowhere.
+
+> [!IMPORTANT]
+> **Every station is a fraction of the mesh's own frame, and until 2026-09-19 it was a literal
+> coordinate.** The brow band sat at `y = 3.6` — MediaPipe's number and nobody else's — so **a mesh
+> authored at another scale got no deformation at all.** Every band fell outside its own geometry, and
+> a call asking for anger returned a neutral face with no error and no warning, which is the worst
+> shape a defect can take on this surface: the render is perfect and the expression is simply absent.
+>
+> Two things follow that are worth knowing before you load a model. The frame assumes the mesh's
+> extent **is a face** — chin at the bottom, brow or forehead at the top — which is what every face
+> mesh in `reference/` actually is, and is the only assumption available without semantic landmarks an
+> OBJ does not carry. **Check it with the wireframe.** And the bands are measured against the geometry
+> *as loaded*, never as deformed, which is what makes them survive `fitOutline`: that call moves
+> vertices, and which vertex is a brow vertex is a fact about the anatomy rather than about where the
+> brow has been pushed.
+
+> [!IMPORTANT]
+> **A likeness on a surface is still a likeness, and §2 and §3 of this manual still apply in full.**
+> Nothing about mapping a face onto a mesh changes whose face it is. `Photo.of(...)` gates identity
+> and terms before any bytes arrive, and it is the route to a real person; `Assets.cutout(...)` is the
+> route to a generated one. **A borrowed portrait with no stated terms is not an input**, however
+> convenient it is to have on disk — and a face that can now be turned and deformed is a stronger
+> reason to be careful about that, not a weaker one.
+
+### 7e. Wireframe first
+
+`Mesh.draw(ctx, mesh, { wireframe: true })` draws the triangles as lines, which is how you check a fit
+before spending a texture on it — the role `drawLoomisWireframe` plays for the constructed head. A
+mesh with no texture draws as a wireframe whatever you pass, rather than silently drawing nothing.
+`mesh.textured`, `mesh.vertexCount`, `mesh.triangleCount`, `mesh.bounds` and `mesh.source` are what a
+`Stage.note` should carry when a run uses this route, because none of it is visible in the render.
+
+`mesh.uvAt(i)` is the finer check: it reports the pixel a vertex samples, so a fit can be verified
+without rendering anything. Front projection is monotonic, so the mesh’s leftmost vertex must sample
+left of its rightmost one — and drawing every `uvAt` over the source image is how you see, rather
+than assume, that the map landed on the features.

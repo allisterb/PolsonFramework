@@ -186,10 +186,30 @@ public class ConstructiveDrawingToolkit
         var stationHalf = MathF.Sqrt(MathF.Max(1f, ballR * ballR - unit * unit)) * MathF.Cos(rad);
         var farStationPt = new Point2D(originX - stationHalf, yNose);
 
-        // Past about 60 degrees the facial axis has swung further out than the near station has come in,
-        // and unguarded the near jaw crosses the chin and the path turns inside out. Hold it clear of the
-        // axis instead: the near jaw goes on shortening, but the chin stays between its own two angles.
-        var nearAngleX = MathF.Max(originX + stationHalf - unit * 0.25f, chinPt.X + unit * 0.15f);
+        // **The near angle is the far one mirrored about the cranium axis, stated as a mirror so it
+        // cannot drift again.** It did drift: this read `originX + stationHalf - unit * 0.25f`, which
+        // measures from the *station* while the far angle measures from the *ear* — and those are two
+        // different quantities, 1.118 units and 1.000 units off the axis at yaw 0. So a head that was
+        // square on had `jaw.angle` at -0.750 units and `jaw.nearAngle` at +0.868, with `chinFar` and
+        // `chinNear` inheriting it at -0.600 against +0.694. **Measured on the rasterised silhouette,
+        // a 240px frontal head came out 7px wider on one side through the jaw** — 3% of head height,
+        // on a head with no turn in it at all.
+        //
+        // The comment above the stations has always said the near one is the far one mirrored, and
+        // for the *stations* that was true. Nothing said it for the angles, and nothing checked:
+        // `TestAFrontalHeadIsSymmetricAboutItsOwnAxis` measured the reported bounds, and the bounds
+        // are set by the ears. A crooked jaw inside a symmetric box passes that test forever.
+        //
+        // **The guard stays, and it is what actually governs a turned head.** Past the point where
+        // the facial axis has swung further out than the near angle has come in, the near jaw would
+        // cross the chin and the path would turn inside out; holding it clear of the chin instead
+        // lets the near jaw go on shortening while the chin stays between its own two angles. The
+        // note here used to say "past about 60 degrees". **Measured by sweeping the yaw in half-degree
+        // steps and watching for the floor to take over: it engages at 35.5, and it engaged at 40
+        // before this change.** So the mirror moved that boundary by four and a half degrees, and the
+        // figure that was written down was wrong by twenty. It had never been measured — which is
+        // also how 60 came to sit next to a range this call documents as 30-45.
+        var nearAngleX = MathF.Max((2f * originX) - jawAnglePt.X, chinPt.X + unit * 0.15f);
         var nearAnglePt = new Point2D(nearAngleX, jawAnglePt.Y);
         var nearStationPt = new Point2D(MathF.Max(originX + stationHalf, nearAngleX + unit * 0.1f), yNose);
         var chinFarPt = new Point2D(chinPt.X + (jawAnglePt.X - chinPt.X) * 0.8f, yChin);
@@ -485,7 +505,17 @@ public class ConstructiveDrawingToolkit
         var openness = Ratio(eye, "height", "width", CanonOpenness);
         var up = w * openness;
 
-        var irisR = w * 0.32f;
+        // **The iris, as a settable fraction of the eye's own width, defaulting to the comic canon.**
+        // 0.32 is a deliberately large iris and is what every existing script draws; the measured
+        // figure for a real face is **0.19**, taken off the iris ring in MediaPipe's canonical face
+        // model — iris diameter is 0.1886 of the interpupillary distance there, and this
+        // construction places the pupils one eye-width either side of the axis, so IPD is exactly
+        // twice `w` and the two ratios are the same number. **Ours is therefore 1.70x life size**,
+        // which is the comic idiom rather than an error: Manual 23 §1 measures the comic head as
+        // narrower relative to its eye than Loomis's, and a bigger iris is the other half of that.
+        // Left as the default for the reason `CanonOpenness` was: moving it would restyle every
+        // face already drawn.
+        var irisR = w * Fraction(optDict, "irisRatio", CanonIrisRatio);
         var irisX = center.X + dir * w * 0.08f;
         var irisY = center.Y - 1f;
 
@@ -3396,10 +3426,25 @@ public class ConstructiveDrawingToolkit
     /// makes a small set cover a large range of faces without a preset per combination.
     /// </para>
     /// <para>
-    /// <b>Seven units, chosen for what the construction can actually show.</b> A unit that moved a
+    /// <b>The units are chosen for what the construction can actually show.</b> A unit that moved a
     /// landmark this head does not carry would be an API that quietly does nothing, which is worse
     /// than an omission — so the set stops where the geometry does. What is missing and why is in the
     /// remarks on <see cref="ActionUnits"/>.
+    /// </para>
+    /// <para>
+    /// <b><c>options.side</c> acts on one half of the face, and it is what makes a raised eyebrow and
+    /// a smirk reachable at all.</b> Every unit moved both halves until 2026-09-19, so the single
+    /// most recognisable comic brow — one up, one not — could not be drawn, and neither could a
+    /// one-sided smile. <c>'near'</c> and <c>'far'</c> name the two halves this construction already
+    /// has; see <see cref="FaceSide"/> for why they are not called left and right. <b><c>AU26</c>
+    /// ignores the option</b>, because a jaw does not drop on one side, and an option silently doing
+    /// nothing there is better than a half-open jaw that no anatomy explains.
+    /// </para>
+    /// <para>
+    /// <b>Three lineages split their brow units per side and this construction did not.</b> ARKit and
+    /// MediaPipe carry <c>browDownLeft</c>/<c>browDownRight</c> and <c>browOuterUpLeft</c>/<c>Right</c>;
+    /// CANDIDE-3 carries an <i>Eyes vertical difference</i> shape unit. Asymmetry was the one axis
+    /// every one of those sources had and this one had nowhere at all.
     /// </para>
     /// <para>
     /// <b>Magnitudes are the studio's, tuned by eye.</b> Neither source supplies displacement
@@ -3414,10 +3459,14 @@ public class ConstructiveDrawingToolkit
     /// Psychology and Nonverbal Behavior 1(1):56–75, 1976, Table 1.
     /// </para>
     /// </remarks>
-    public Dictionary<string, object?> ApplyActionUnits(object headObj, object? weights = null)
+    public Dictionary<string, object?> ApplyActionUnits(object headObj, object? weights = null, object? options = null)
     {
         if (JsInterop.AsDict(headObj) is not IDictionary head)
             throw new ArgumentException("headObj must be a head from createLoomisHead", nameof(headObj));
+
+        var optionDict = JsInterop.AsDict(options);
+        RefuseUnknownHeadParameters(optionDict, ActionUnitOptions, "applyActionUnits option");
+        var side = ReadSide(optionDict);
 
         var opt = JsInterop.AsDict(weights);
         var result = CloneHead(head);
@@ -3455,11 +3504,14 @@ public class ConstructiveDrawingToolkit
                     + "corners where AU15 drops them. Name the unit you mean.", nameof(weights));
             }
 
-            unit(result, MathF.Min(w, 1f), h);
+            unit(result, MathF.Min(w, 1f), h, side);
         }
 
         return result;
     }
+
+    /// <summary>Accepted option names for <see cref="ApplyActionUnits"/>.</summary>
+    private static readonly string[] ActionUnitOptions = ["side"];
 
     /// <summary>
     /// Whether a head's landmarks still run in the order a face's do, and by how much.
@@ -3650,9 +3702,10 @@ public class ConstructiveDrawingToolkit
     /// writes to the caller's.
     /// </para>
     /// </remarks>
-    public Dictionary<string, object?> ApplyFacialExpression(object headObj, string expressionType, float intensity = 1.0f)
+    public Dictionary<string, object?> ApplyFacialExpression(object headObj, string expressionType,
+                                                             float intensity = 1.0f, object? options = null)
     {
-        var head = ApplyActionUnits(headObj, ExpressionUnits(expressionType, intensity));
+        var head = ApplyActionUnits(headObj, ExpressionUnits(expressionType, intensity), options);
 
         // Kept from the previous implementation: a head that can say what it is costs nothing, and
         // something downstream may be reading it. Written after the units so a caller cannot smuggle
@@ -4520,9 +4573,10 @@ public class ConstructiveDrawingToolkit
     /// <b>What is still deliberately absent, and why.</b>
     /// </para>
     /// <list type="bullet">
-    /// <item><b>AU6 (Cheek Raiser).</b> There is no cheek. <c>createHeadGeometry</c> says so in its
-    /// own limits, and <c>drawComicEye</c> draws no crow's feet, so the Duchenne marker has nowhere
-    /// to land.</item>
+    /// <item><b>AU6 (Cheek Raiser).</b> <c>createHeadGeometry</c> composes a cheek as of 2026-09-19,
+    /// but it is <em>derived</em> from the ear and the jaw angle rather than being a landmark, so
+    /// there is nothing here for a unit to displace; and <c>drawComicEye</c> draws no crow's feet, so
+    /// the Duchenne marker still has nowhere to land.</item>
     /// <item><b>AU9/AU10 (Nose Wrinkler, Upper Lip Raiser).</b> The nose wedge has landmarks but the
     /// upper lip is a single <c>upperLipY</c>, so a sneer would read as the whole lip rising.
     /// Reachable later; not honest yet.</item>
@@ -4535,19 +4589,19 @@ public class ConstructiveDrawingToolkit
     /// same discipline <see cref="CreateParametricHead"/> follows, and for the same reason.
     /// </para>
     /// </remarks>
-    private static readonly Dictionary<string, Action<Dictionary<string, object?>, float, float>> ActionUnits =
+    private static readonly Dictionary<string, Action<Dictionary<string, object?>, float, float, FaceSide>> ActionUnits =
         new(StringComparer.Ordinal)
         {
             // Frontalis, Pars Medialis. Loomis's wrinkle muscles at the inner brow: worry, pleading.
             // The inner end carries it, the peak follows at less than half, and the tail does not
             // move at all - which is the whole distinction from AU2 below.
-            ["AU1"] = (head, w, h) => MoveBrows(head, 0f, -0.045f * h * w, 0f, -0.018f * h * w, 0f, 0f),
+            ["AU1"] = (head, w, h, s) => MoveBrows(head, 0f, -0.045f * h * w, 0f, -0.018f * h * w, 0f, 0f, s),
 
             // Frontalis, Pars Lateralis. The outer arch: the tail and the peak rise and the inner end
             // stays. **Unreachable before the brow carried stations**, because with one centre point
             // this and AU1 were the same displacement under two names - and the difference between
             // them is the difference between worry and surprise.
-            ["AU2"] = (head, w, h) => MoveBrows(head, 0f, 0f, 0f, -0.030f * h * w, 0f, -0.040f * h * w),
+            ["AU2"] = (head, w, h, s) => MoveBrows(head, 0f, 0f, 0f, -0.030f * h * w, 0f, -0.040f * h * w, s),
 
             // Depressor Glabellae / Supercilii / Corrugator. Loomis has the unhappy group pulling the
             // inside corner of the brow down into a frown, which is this unit from the other side.
@@ -4558,28 +4612,28 @@ public class ConstructiveDrawingToolkit
             // anything at all. Here AU1 lifts only the inner end while this lowers all three, so the
             // pair leaves the brow **oblique** - inner up, tail down - which is the sad brow itself
             // rather than an absence of one.
-            ["AU4"] = (head, w, h) => MoveBrows(head, -0.020f * h * w, 0.030f * h * w,
-                                                     0f, 0.030f * h * w,
-                                                     0f, 0.030f * h * w),
+            ["AU4"] = (head, w, h, s) => MoveBrows(head, -0.020f * h * w, 0.030f * h * w,
+                                                        0f, 0.030f * h * w,
+                                                        0f, 0.030f * h * w, s),
 
             // Levator Palpebrae Superioris - the lid opens. Reachable only since drawComicEye began
             // reading `height`; before that this unit would have bound and drawn nothing.
-            ["AU5"] = (head, w, h) => ScaleAperture(head, 0.020f * h * w),
+            ["AU5"] = (head, w, h, s) => ScaleAperture(head, 0.020f * h * w, s),
 
             // Orbicularis Oculi, Pars Palpebralis - the lid narrows.
-            ["AU7"] = (head, w, h) => ScaleAperture(head, -0.018f * h * w),
+            ["AU7"] = (head, w, h, s) => ScaleAperture(head, -0.018f * h * w, s),
 
             // Zygomatic Major. Loomis's "happy muscles", which pull the corners OUT and diagonally
             // UP - the diagonal is his, and a corner lifted straight up reads as a smirk.
-            ["AU12"] = (head, w, h) => MoveMouthCorners(head, 0.018f * h * w, -0.032f * h * w),
+            ["AU12"] = (head, w, h, s) => MoveMouthCorners(head, 0.018f * h * w, -0.032f * h * w, s),
 
             // Triangularis. The corners drop and do not spread; Loomis's leer is the round-cornered
             // failure of this one.
-            ["AU15"] = (head, w, h) => MoveMouthCorners(head, 0f, 0.028f * h * w),
+            ["AU15"] = (head, w, h, s) => MoveMouthCorners(head, 0f, 0.028f * h * w, s),
 
             // Masseter and the pterygoids relaxed. The one unit that reaches the silhouette, so a
             // dropped jaw changes the head's outline rather than only its marks.
-            ["AU26"] = (head, w, h) => DropJaw(head, 0.055f * h * w),
+            ["AU26"] = (head, w, h, _) => DropJaw(head, 0.055f * h * w),
         };
 
     /// <summary>
@@ -4600,12 +4654,14 @@ public class ConstructiveDrawingToolkit
     /// </para>
     /// </remarks>
     static void MoveBrows(Dictionary<string, object?> head,
-                          float innerDx, float innerDy, float peakDx, float peakDy, float outerDx, float outerDy)
+                          float innerDx, float innerDy, float peakDx, float peakDy, float outerDx, float outerDy,
+                          FaceSide side = FaceSide.Both)
     {
         var axis = ExtractPoint(head.TryGetValue("brow", out var b) ? b : null).X;
 
         foreach (var group in new[] { "nearBrow", "farBrow" })
         {
+            if (!SideCovers(side, group == "nearBrow")) continue;
             if (head[group] is not Dictionary<string, object?> brow) continue;
 
             // Which way "outward" runs on this side, taken from the brow's own geometry rather than
@@ -4657,10 +4713,11 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>Opens or narrows both lids, which is a change to each eye's own aperture.</summary>
-    static void ScaleAperture(Dictionary<string, object?> head, float delta)
+    static void ScaleAperture(Dictionary<string, object?> head, float delta, FaceSide side = FaceSide.Both)
     {
         foreach (var group in new[] { "nearEye", "farEye" })
         {
+            if (!SideCovers(side, group == "nearEye")) continue;
             if (head[group] is not Dictionary<string, object?> eye) continue;
             if (!eye.TryGetValue("height", out var v) || v is null) continue;
 
@@ -4677,13 +4734,18 @@ public class ConstructiveDrawingToolkit
     /// names, for the reason <c>MoveEyes</c> gives: at yaw the two are not symmetric about the axis,
     /// and "left" in the dictionary is a name rather than a guarantee about x.
     /// </remarks>
-    static void MoveMouthCorners(Dictionary<string, object?> head, float spread, float lift)
+    static void MoveMouthCorners(Dictionary<string, object?> head, float spread, float lift,
+                                 FaceSide side = FaceSide.Both)
     {
         if (head["mouthGuides"] is not Dictionary<string, object?> mouth) return;
 
         var centre = ExtractPoint(mouth["center"]);
         foreach (var key in new[] { "leftCorner", "rightCorner" })
         {
+            // `rightCorner` is the +x corner, which is the side `nearEye` and `nearBrow` are on —
+            // the construction names the mouth by hand and the eyes by depth, so the mapping has to
+            // be stated somewhere rather than inferred from the names.
+            if (!SideCovers(side, key == "rightCorner")) continue;
             if (!mouth.ContainsKey(key)) continue;
             var p = ExtractPoint(mouth[key]);
             var away = MathF.Sign(p.X - centre.X);
@@ -4987,6 +5049,21 @@ public class ConstructiveDrawingToolkit
     private const float LowerLidStart = 0.15f / 0.45f;
 
     /// <summary>
+    /// The iris radius as a fraction of the eye's drawn width. <b>A comic iris, not a real one.</b>
+    /// </summary>
+    /// <remarks>
+    /// A real iris measures <b>0.19</b> of the eye width in this construction — its diameter is
+    /// 0.1886 of the interpupillary distance on MediaPipe's canonical face model (Apache 2.0, 468
+    /// vertices; measured off the iris ring vertices, nothing inferred), and the pupils here sit one
+    /// eye-width either side of the facial axis, so IPD is exactly twice the drawn width and the two
+    /// ratios coincide. <b>0.32 is therefore 1.70× life size</b>, which is the comic idiom rather
+    /// than a mistake — Manual 23 §1 measures the comic head as narrower relative to its eye than
+    /// Loomis's, and a larger iris is the same observation from the other side. Kept as the default
+    /// so that no face already drawn changes; pass <c>irisRatio: 0.19</c> for a naturalistic eye.
+    /// </remarks>
+    private const float CanonIrisRatio = 0.32f;
+
+    /// <summary>
     /// How much lighter a far feature is drawn, taken from <see cref="DrawComicEye"/>'s own lid
     /// weights (2.6 against 3.8) so a far brow and the far eye under it agree.
     /// </summary>
@@ -5016,6 +5093,56 @@ public class ConstructiveDrawingToolkit
         if (!float.IsFinite(n) || !float.IsFinite(q) || q <= 0.01f || n < 0f) return fallback;
         var r = n / q;
         return float.IsFinite(r) ? r : fallback;
+    }
+
+    /// <summary>Which side of the face an Action Unit acts on.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Near and far, not left and right, because that is what the construction has.</b> A head
+    /// carries <c>nearEye</c>/<c>farEye</c> and <c>nearBrow</c>/<c>farBrow</c>, and "near" is always
+    /// the <c>+x</c> side of the facial axis whatever the yaw — it is a side of the *page*, not an
+    /// anatomical left or right. Naming these <c>left</c> and <c>right</c> would be a claim about the
+    /// character's own anatomy that the model cannot keep across a turn, so those two spellings are
+    /// refused by name rather than quietly mapped.
+    /// </para>
+    /// </remarks>
+    private enum FaceSide { Both, Near, Far }
+
+    /// <summary>Whether <paramref name="side"/> includes the near (<c>+x</c>) or far half.</summary>
+    static bool SideCovers(FaceSide side, bool isNear) =>
+        side == FaceSide.Both || (isNear ? side == FaceSide.Near : side == FaceSide.Far);
+
+    /// <summary>Reads the <c>side</c> option, refusing anything it cannot honestly honour.</summary>
+    static FaceSide ReadSide(IDictionary? opt)
+    {
+        var raw = opt?["side"]?.ToString()?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(raw)) return FaceSide.Both;
+
+        return raw switch
+        {
+            "both" => FaceSide.Both,
+            "near" => FaceSide.Near,
+            "far" => FaceSide.Far,
+            "left" or "right" => throw new ArgumentException(
+                $"side '{raw}' is not available: this head is built as near and far rather than left "
+                + "and right, and 'near' is the +x side of the facial axis at every yaw. Left and "
+                + "right would be a claim about the character's own anatomy that a turned head "
+                + "cannot keep. Accepted: both, near, far."),
+            _ => throw new ArgumentException($"side '{raw}' not recognised. Accepted: both, near, far.")
+        };
+    }
+
+    /// <summary>A positive finite option read from a dictionary, or <paramref name="fallback"/>.</summary>
+    /// <remarks>
+    /// Distinct from <see cref="Ratio"/>, which divides one measurement of a group by another. This
+    /// reads a ratio the caller states outright — a non-positive or non-finite one falls back rather
+    /// than drawing a zero-radius iris or throwing, since an option is a preference and a silently
+    /// absent feature is worse than an ignored number.
+    /// </remarks>
+    static float Fraction(IDictionary? d, string key, float fallback)
+    {
+        var v = Num(d, key, float.NaN);
+        return float.IsFinite(v) && v > 0f ? v : fallback;
     }
 
     static Dictionary<string, object?> CloneHead(IDictionary head)
@@ -5525,6 +5652,102 @@ public class ConstructiveDrawingToolkit
         var earPath = OrientedEllipse(new Point2D(earCx, ear.Y), earRx, earRy, 0f);
         Extent(earCx, ear.Y, earRx, earRy);
 
+        // **The other ear, which this call drew for nobody until 2026-09-19.** A head has two, and
+        // `jaw.ear` names only the far one — so every frontal head came back lopsided, with a bump on
+        // one side and a clean curve on the other. The limits note used to say so and tell the caller
+        // to mirror `parts.ear` about `crown.x` themselves, which is the wrong default twice over: it
+        // is anatomy rather than style, so nobody chose it; and the instruction was missed by the
+        // author of this very toolkit the first time he drew a frontal sheet with it.
+        //
+        // **It narrows where the far ear widens, which is the same fact read from the other side.**
+        // An ear is edge-on frontally and full-face in profile, so as the head turns the far ear
+        // opens toward the viewer (`+0.10 * sin` above) and the near one closes away from them. At
+        // yaw 0 the two widths are identical and the head is symmetric, which is the whole point.
+        //
+        // **Nothing here models the occlusion, and nothing needs to.** Its centre rides the ball at
+        // `Reach * cos` exactly as the far one does, so as it narrows it is swallowed by the cranium
+        // ellipse it is unioned into. **Measured on a 240px head it stops altering the outline at
+        // 10 degrees** — 2.71px of protrusion frontally, 0.57px at 8, nothing from 10 on — and that
+        // is the physics rather than an aggressive fudge: a frontal ear sits exactly ON the ball's
+        // silhouette, so any turn toward it puts it behind the head's own edge. The union does the
+        // hiding for free, which is as well, since a construction with no cheek could not do it any
+        // other way.
+        var nearEarRx = MathF.Max(0f, thirdH * 0.18f * (1f - sin)) + padding;
+        var nearEarCx = crown.X - (earDir * (Reach(ear.Y) * cos - (nearEarRx * 0.3f)));
+        var nearEarPath = OrientedEllipse(new Point2D(nearEarCx, ear.Y), nearEarRx, earRy, 0f);
+        Extent(nearEarCx, ear.Y, nearEarRx, earRy);
+
+        // **The cheek, and it is the last hole this call's own limits note admitted to.** The note
+        // called it "a shallow concave step" where the ball's inward curve crosses the jaw's outward
+        // one, and told the caller to ink over it or union their own wedge in. Both halves of that
+        // sentence were wrong: it is neither shallow nor where it said, and a caller cannot fix
+        // anatomy with ink.
+        //
+        // **Printing the outline row by row is what found it.** On a 480px frontal head the far edge
+        // holds 205-211px off the axis from the brow all the way down to y=564, and then reads 153 at
+        // y=572 — a **45px cliff in eight rows**, with everything above and below it already smooth
+        // and monotonic. It is not the jaw meeting the ball at all: it is **the foot of the ear**. The
+        // ear is a tall narrow ellipse riding the ball's silhouette, so its lower half hangs a long
+        // way outboard of a ball that is collapsing under it, and at the nose line it simply stops.
+        // Every head had a V bitten out under the ear.
+        //
+        // **Three constructions were measured before this one, and the first two are worth recording
+        // because they looked right.** A capsule from the cheekbone to the jaw angle moved the notch
+        // instead of removing it, from 62% of brow-to-chin to 70% — its own toe, landing on a jawline
+        // it was not tangent to. A wedge carried on to the chin corner removed more of it but added
+        // **23-34px of width** to the lower face, five times the defect it was correcting. A straight
+        // line from the ear's widest point to the jaw angle did nothing whatsoever: it lies inside the
+        // ball for its whole length, and the A/B render is what said so after a metric had implied it
+        // worked.
+        //
+        // **What it is now: the outer tangent from the jaw angle to the ear.** The cheek is the
+        // triangle between the point where that tangent touches the ear, the angle itself, and the
+        // ball's centre. Touching the ear tangentially is what makes the join seamless — there is no
+        // step at the ear's foot because the outline never leaves the ear, it rolls off it — and the
+        // whole thing is solved from the ear and the jaw angle, so **there is not one constant in it
+        // to tune or to defend.** Measured on the same 480px head, the worst single-row drop goes from
+        // **38px to 4px**, and 4px is the floor: a turned head with no cheek acting measures the same.
+        //
+        // Anatomically this is the masseter, which runs from the zygomatic arch — the ear — to the
+        // angle of the jaw, and it is drawn twice elsewhere already: `drawLoomisWireframe` inks its
+        // far half from `jaw.cheekApex`, and Studio Manual 04 names the band as the *cheek hollow /
+        // mandible plane*. What was missing was never the anatomy, only a mass.
+        //
+        // **The near cheek empties on its own as the head turns, with no factor applied.** It is
+        // strung from the near ear, and that ear is already narrowing and riding inboard at
+        // `Reach × cos`, so past a small turn the whole triangle falls inside the cranium. A cheek is
+        // at the silhouette when you are looking at the front of a head and in the middle of the face
+        // once that side comes toward you, which this does without being told.
+        Point2D? EarTangent(float cx, float rx, float ry, Point2D angle, float side)
+        {
+            if (rx <= 0.01f || ry <= 0.01f) return null;
+
+            // Solved on the unit circle the ellipse maps to, which is why an ear that is nearly
+            // edge-on at yaw is still exact rather than nearly-degenerate.
+            float px = (angle.X - cx) / rx, py = (angle.Y - ear.Y) / ry;
+            var d2 = (px * px) + (py * py);
+            if (d2 <= 1.0001f) return null;          // the jaw angle is inside the ear: no tangent
+
+            var s = MathF.Sqrt(d2 - 1f) / d2;
+            Point2D On(float ux, float uy) => new(cx + (ux * rx), ear.Y + (uy * ry));
+            Point2D a = On((px / d2) + (s * py), (py / d2) - (s * px));
+            Point2D b = On((px / d2) - (s * py), (py / d2) + (s * px));
+            // Of the two tangents, the one further from the facial axis is the outer one.
+            return (a.X - crown.X) * side > (b.X - crown.X) * side ? a : b;
+        }
+
+        // The ear radii carry `padding` already, so the tangent is taken against the bare ear and
+        // `Polygon` grows the triangle — which lands it exactly where the padded ear and the padded
+        // jaw put their own edges, instead of padding it twice.
+        CanvasPath Cheek(float cx, float rx, Point2D angle, float side)
+        {
+            var touch = EarTangent(cx, rx - padding, earRy - padding, angle, side);
+            return touch is null ? new CanvasPath() : Polygon([touch.Value, angle, craniumC], padding);
+        }
+
+        var farCheek = Cheek(earCx, earRx, ExtractPoint(jaw?["angle"]), earDir);
+        var nearCheek = Cheek(nearEarCx, nearEarRx, ExtractPoint(jaw?["nearAngle"]), -earDir);
+
         // Behind the ear at the top, deep under the skull — the cited part. How far down and how
         // thick are the studio's, and both are in head units so they scale.
         var neckHalf = MathF.Max(thirdH * 0.2f, Num(opt, "neckWidth", thirdH * 1.30f) * 0.5f);
@@ -5547,7 +5770,9 @@ public class ConstructiveDrawingToolkit
             Extent(neckBase.X, neckBase.Y, baseR, baseR);
         }
 
-        var mass = cranium.Union(jawPath).Union(earPath);
+        var mass = cranium.Union(farCheek).Union(nearCheek).Union(jawPath).Union(earPath).Union(nearEarPath);
+        // The cheek reaches no further out than the ear and the jaw angle it is strung between, so it
+        // can add nothing to the extent those two already recorded — nothing to measure here.
 
         return new Dictionary<string, object?>
         {
@@ -5558,7 +5783,14 @@ public class ConstructiveDrawingToolkit
             {
                 ["cranium"] = cranium,
                 ["jaw"] = jawPath,
+                // `ear` keeps its name and its side — it is the FAR ear, the one `jaw.ear` locates,
+                // and renaming it to `farEar` would break every caller to make a pair read tidily.
                 ["ear"] = earPath,
+                ["nearEar"] = nearEarPath,
+                // Named by side from the start, unlike `ear` — there is no caller to keep faith with
+                // here, so the pair reads as a pair.
+                ["farCheek"] = farCheek,
+                ["nearCheek"] = nearCheek,
                 ["neck"] = neck
             },
             ["bounds"] = x0 > x1
@@ -5576,7 +5808,10 @@ public class ConstructiveDrawingToolkit
             // Construction order, NOT depth — as on a figure. The neck goes down first because the
             // jaw overlaps it; on a head turned far enough that the far jaw passes behind the neck,
             // the caller still has to say so.
-            ["order"] = new List<object?> { "neck", "cranium", "jaw", "ear" }
+            // The near ear goes down before the cranium: it sits behind the face on a turned head,
+            // and on a frontal one it is symmetric with the far ear so the order cannot show.
+            ["order"] = new List<object?>
+                { "neck", "nearEar", "cranium", "farCheek", "nearCheek", "jaw", "ear" }
         };
     }
 

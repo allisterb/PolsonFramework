@@ -406,30 +406,159 @@ public class FaceMesh
     internal static readonly string[] ShapeUnits =
         ["width", "height", "jawWidth", "browHeight", "eyeSize", "noseLength"];
 
+    /// <summary>
+    /// The expression units, named for ARKit's blendshape vocabulary wherever ARKit has a name.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The names are a published interface; every displacement behind them is still ours.</b>
+    /// Apple's 52-blendshape set is a naming specification that ARKit, MediaPipe's Face Landmarker
+    /// and most rigging tools already speak, so borrowing it costs nothing and lets a preset written
+    /// for one of those be read here — exactly as this studio borrowed FACS's AU numbering for
+    /// <c>applyActionUnits</c>.
+    /// </para>
+    /// <para>
+    /// <b>What it does not do is supply a single number, and that is worth stating because it is
+    /// routinely claimed otherwise.</b> MediaPipe's blendshape graph is a regressor from landmarks
+    /// <i>to</i> coefficients — its own header reads <i>"Predicts face blendshapes from
+    /// landmarks"</i> — and what the file carries is <c>std::array&lt;string_view, 52&gt;</c>, fifty-two
+    /// strings. The model producing the weights is a TFLite binary fetched at build time and absent
+    /// from the tree, and it runs the wrong way for us in any case. ARKit likewise hands an
+    /// application coefficients and expects the application's own rigged model to carry the deltas.
+    /// So the licensing asymmetry is unchanged: the model with usable terms has no units, the model
+    /// with units states no terms, and every magnitude here is hand-written and tuned by eye.
+    /// </para>
+    /// <para>
+    /// <b>Two of these are ours and have no ARKit counterpart.</b> <c>browRaise</c> lifts the whole
+    /// brow, which ARKit expresses only as inner and outer separately; <c>browKnit</c> draws the brow
+    /// heads together, which ARKit folds into <c>browDown</c>. Both are kept because the geometry can
+    /// show them, and because a name that already worked should go on working.
+    /// </para>
+    /// <para>
+    /// <b>No unit here carries a side in its name.</b> ARKit's are per-side — <c>browDownLeft</c>,
+    /// <c>mouthSmileRight</c> — and this construction deliberately has no left and right: its halves
+    /// are <c>near</c> and <c>far</c>, sides of the page rather than of the character, because a
+    /// turned head cannot keep the other claim. A suffixed name is refused by name and pointed at the
+    /// <c>side</c> option, the same judgment <c>Pose.ReadSide</c> makes.
+    /// </para>
+    /// </remarks>
     internal static readonly string[] ExpressionUnits =
-        ["mouthWide", "mouthOpen", "mouthCornerDown", "browRaise", "browLower", "browKnit", "squint"];
+    [
+        "browDown", "browInnerUp", "browOuterUp", "browKnit", "browRaise",
+        "eyeBlink", "eyeSquint", "eyeWide",
+        "jawOpen", "mouthFrown", "mouthSmile", "mouthStretch"
+    ];
+
+    /// <summary>The pre-ARKit spellings, so nothing written before 2026-09-19 stops working.</summary>
+    private static readonly Dictionary<string, string> ExpressionAliases = new(StringComparer.Ordinal)
+    {
+        ["browLower"] = "browDown",
+        ["squint"] = "eyeSquint",
+        ["mouthOpen"] = "jawOpen",
+        ["mouthCornerDown"] = "mouthFrown",
+        ["mouthWide"] = "mouthStretch"
+    };
+
+    /// <summary>ARKit blendshapes this construction cannot show, and what each would need.</summary>
+    /// <remarks>
+    /// <b>Named and declined rather than left to the generic refusal</b>, for the reason
+    /// <c>applyActionUnits</c> names AU6, AU9 and AU17 in its own documentation: a real name that is
+    /// merely absent from the accepted list reads as a typo, when the truth is that the geometry
+    /// cannot carry it. Accepting all fifty-two and letting two thirds of them quietly do nothing
+    /// would be worse than either — an API that silently does nothing is the failure this whole file
+    /// was corrected for once already, when every band sat at an absolute coordinate and a mesh at
+    /// another scale returned a neutral face from a call asked for anger.
+    /// </remarks>
+    private static readonly Dictionary<string, string> ExpressionDeclined = new(StringComparer.Ordinal)
+    {
+        ["cheekPuff"] = "this mesh has no cheek band to inflate",
+        ["cheekSquint"] = "this mesh has no cheek band",
+        ["eyeLookDown"] = "the eyeball is not separate from the socket here",
+        ["eyeLookIn"] = "the eyeball is not separate from the socket here",
+        ["eyeLookOut"] = "the eyeball is not separate from the socket here",
+        ["eyeLookUp"] = "the eyeball is not separate from the socket here",
+        ["jawForward"] = "the jaw moves only open here",
+        ["jawLeft"] = "the jaw moves only open here",
+        ["jawRight"] = "the jaw moves only open here",
+        ["mouthClose"] = "the lips are one band rather than two, so they cannot close against each other",
+        ["mouthDimple"] = "a dimple is a surface crease rather than a landmark move",
+        ["mouthFunnel"] = "the lips are a band rather than a ring",
+        ["mouthLeft"] = "lateral mouth shift is not implemented",
+        ["mouthRight"] = "lateral mouth shift is not implemented",
+        ["mouthLowerDown"] = "upper and lower lips are not separable here",
+        ["mouthPress"] = "the lips are a band rather than a ring",
+        ["mouthPucker"] = "the lips are a band rather than a ring",
+        ["mouthRollLower"] = "the lips are a band rather than a ring",
+        ["mouthRollUpper"] = "the lips are a band rather than a ring",
+        ["mouthShrugLower"] = "the chin is not a separate mass here",
+        ["mouthShrugUpper"] = "the chin is not a separate mass here",
+        ["mouthUpperUp"] = "upper and lower lips are not separable here (AU10)",
+        ["noseSneer"] = "the nose has no band that can curl (AU9)"
+    };
 
     internal static readonly string[] FitOptions = ["eyeLeft", "eyeRight", "mouth"];
 
     internal static readonly string[] OutlineOptions = ["center", "strength", "falloff"];
 
-    internal static Dictionary<string, float> ReadUnits(object? o, string[] accepted, string what)
+    /// <param name="arkit">
+    /// Whether to resolve the pre-ARKit aliases and refuse a known ARKit name by name. Expression
+    /// units do; shape units have no such vocabulary and are matched exactly.
+    /// </param>
+    internal static Dictionary<string, float> ReadUnits(object? o, string[] accepted, string what,
+                                                        bool arkit = false)
     {
         Dictionary<string, float> units = [];
         if (JsInterop.AsDict(o) is not IDictionary d) return units;
 
         foreach (var key in d.Keys)
         {
-            var name = key?.ToString();
-            if (name is null) continue;
+            var given = key?.ToString();
+            if (given is null) continue;
+
+            // The value is looked up by the spelling the caller used, never by the canonical one —
+            // an alias resolved before the read would ask the dictionary for a key it has not got
+            // and quietly apply zero, which is the silent-no-op failure this file already has a
+            // scar from.
+            var name = arkit ? Canonical(given, accepted, what) : given;
             if (!accepted.Contains(name, StringComparer.Ordinal))
                 throw new ArgumentException(
-                    $"{what} unit not recognised: {name}. Accepted: {string.Join(", ", accepted)}.");
+                    $"{what} unit not recognised: {given}. Accepted: {string.Join(", ", accepted)}.");
 
-            units[name] = Math.Clamp(MeshToolkit.Num(d, name, 0f), -1f, 1f);
+            units[name] = Math.Clamp(MeshToolkit.Num(d, given, 0f), -1f, 1f);
         }
 
         return units;
+    }
+
+    /// <summary>Resolves an alias or an ARKit spelling, refusing by name what cannot be shown.</summary>
+    /// <remarks>
+    /// Order matters here. A declined stem is reported as declined even when the caller also wrote a
+    /// side, because telling them to drop the side first would cost a turn and then refuse anyway.
+    /// </remarks>
+    private static string Canonical(string given, string[] accepted, string what)
+    {
+        if (accepted.Contains(given, StringComparer.Ordinal)) return given;
+        if (ExpressionAliases.TryGetValue(given, out var canonical)) return canonical;
+
+        var stem = given;
+        var sided = false;
+        if (given.EndsWith("Left", StringComparison.Ordinal)) { stem = given[..^4]; sided = true; }
+        else if (given.EndsWith("Right", StringComparison.Ordinal)) { stem = given[..^5]; sided = true; }
+
+        if (ExpressionDeclined.TryGetValue(stem, out var why))
+            throw new ArgumentException(
+                $"{what} unit '{given}' is an ARKit blendshape this construction cannot show: {why}. "
+                + $"It is declined by name rather than accepted and ignored. "
+                + $"Accepted: {string.Join(", ", accepted)}.");
+
+        if (sided && accepted.Contains(stem, StringComparer.Ordinal))
+            throw new ArgumentException(
+                $"{what} unit '{given}' names a side. This construction has no left and right — its "
+                + $"halves are 'near' and 'far', sides of the page rather than of the character, "
+                + $"because a turned head cannot keep the other claim. Write '{stem}' and pass "
+                + $"{{ side: 'near' }} or {{ side: 'far' }}.");
+
+        return given;
     }
 
     /// <summary>One vertex, deformed in the model's own space.</summary>
@@ -486,26 +615,67 @@ public class FaceMesh
             // **A jaw does not drop on one side**, so `mouthOpen` ignores the option rather than
             // refusing the whole call over it — the same judgment `applyActionUnits` makes for AU26,
             // and for the same reason: asking for a one-sided brow beside an open mouth is ordinary.
-            var w = name == "mouthOpen" ? 1f : f.SideWeight(r.X, side);
+            var w = name == "jawOpen" ? 1f : f.SideWeight(r.X, side);
             if (w <= 0f) continue;
 
             switch (name)
             {
-                case "mouthWide":
+                case "mouthStretch":
                     x = f.Cx + ((x - f.Cx) * (1f + (0.20f * a * w * f.Band(r.Y, MouthY, MouthBand))));
                     break;
-                case "mouthOpen": y -= MouthOpenMag * f.H * a * f.Below(r.Y, JawDropY); break;
-                case "mouthCornerDown":
-                    y -= CornerDownMag * f.H * a * w * f.Band(r.Y, MouthY, MouthBand) * f.Corner(r.X);
+                case "jawOpen": y -= MouthOpenMag * f.H * a * f.Below(r.Y, JawDropY); break;
+                case "mouthFrown":
+                    y -= CornerDownMag * f.H * a * w * f.Band(r.Y, MouthY, MouthBand)
+                       * f.Peak(r.X, MouthCornerX, CornerFade);
                     break;
+
+                // **Out as well as up, which is Loomis's observation rather than a detail.** His
+                // "happy muscles" run from the cheekbones diagonally down to the mouth, so they pull
+                // the corner outward too; a corner lifted straight up reads as a smirk. The same
+                // reasoning `applyActionUnits` gives for AU12, and the mesh route had no smile unit
+                // at all before this — as CANDIDE-3 has none, which is what a model built for
+                // videophone bitrate would choose and not what a comic face needs.
+                case "mouthSmile":
+                    var smile = a * w * f.Band(r.Y, MouthY, MouthBand)
+                              * f.Peak(r.X, MouthCornerX, CornerFade);
+                    x += MathF.Sign(r.X - f.Cx) * SmileOutMag * f.HalfW * smile;
+                    y += SmileUpMag * f.H * smile;
+                    break;
+
                 case "browRaise": y += BrowMoveMag * f.H * a * w * f.Band(r.Y, BrowY, BrowBand); break;
-                case "browLower": y -= BrowMoveMag * f.H * a * w * f.Band(r.Y, BrowY, BrowBand); break;
+                case "browDown": y -= BrowMoveMag * f.H * a * w * f.Band(r.Y, BrowY, BrowBand); break;
+                case "browInnerUp":
+                    y += BrowMoveMag * f.H * a * w * f.Band(r.Y, BrowY, BrowBand)
+                       * f.Peak(r.X, KnitPeakX, KnitFade);
+                    break;
+                case "browOuterUp":
+                    y += BrowMoveMag * f.H * a * w * f.Band(r.Y, BrowY, BrowBand)
+                       * f.Peak(r.X, OuterPeakX, OuterFade);
+                    break;
                 case "browKnit":
                     x -= MathF.Sign(r.X - f.Cx) * KnitMag * f.HalfW * a * w
-                       * f.Band(r.Y, BrowY, BrowBand) * f.Inner(r.X);
+                       * f.Band(r.Y, BrowY, BrowBand) * f.Peak(r.X, KnitPeakX, KnitFade);
                     break;
-                case "squint":
+
+                // Orbicularis oculi tightens both lids, so this draws the whole aperture toward the
+                // eye line. The two below act on the upper lid alone, which is what separates them:
+                // a blink is not a hard squint and a widened eye is not an un-squint.
+                case "eyeSquint":
                     y += (f.Y(EyeY) - r.Y) * 0.45f * a * w * f.Band(r.Y, EyeY, SquintBand);
+                    break;
+                case "eyeBlink":
+                    if (r.Y > f.Y(EyeY))
+                        y += (f.Y(EyeY) - r.Y) * BlinkMag * a * w * f.Band(r.Y, EyeY, SquintBand);
+                    break;
+
+                // **The sclera dial, and it is expressive in both directions.** Gautier locates the
+                // whole difference between surprise and fear here — the eyes widen more in fear, so
+                // more white shows round the pupil — and warns on the same page that too much white
+                // *beneath* the pupil reads as sinister. Raising the upper lid is the half of that
+                // which this band can reach.
+                case "eyeWide":
+                    if (r.Y > f.Y(EyeY))
+                        y += (r.Y - f.Y(EyeY)) * EyeWideMag * a * w * f.Band(r.Y, EyeY, SquintBand);
                     break;
             }
         }
@@ -577,6 +747,34 @@ public class FaceMesh
     private const float KnitPeakX = 0.20f;
     private const float KnitFade = 2.75f;
 
+    /// <summary>Where the brow's tail is, for the outer raise.</summary>
+    /// <remarks>
+    /// Further out than <see cref="KnitPeakX"/> and fading sooner, so <c>browOuterUp</c> and
+    /// <c>browInnerUp</c> overlap in the middle of the brow rather than meeting at a seam — which is
+    /// what lets the pair compose into an arch, and what makes each alone read as one end lifting.
+    /// </remarks>
+    private const float OuterPeakX = 0.60f;
+    private const float OuterFade = 1.8f;
+
+    /// <summary>How far a lid travels, as a share of its own distance from the eye line.</summary>
+    /// <remarks>
+    /// Proportional rather than absolute, so the lid arrives <i>at</i> the eye line as the weight
+    /// reaches 1 whatever the eye's size — a fixed drop would overshoot a small eye and leave a large
+    /// one open. A blink nearly closes at full weight; the widening is deliberately gentler, because
+    /// the whole of its expressive work is how much white it reveals.
+    /// </remarks>
+    private const float BlinkMag = 0.90f;
+    private const float EyeWideMag = 0.35f;
+
+    /// <summary>How far a smile takes the corners out, and up.</summary>
+    /// <remarks>
+    /// Out slightly less than up, and both close to <see cref="CornerDownMag"/>, so a smile and a
+    /// frown are the same size of gesture in opposite directions. Tuned by eye like every other
+    /// magnitude here; neither ARKit nor MediaPipe supplies one.
+    /// </remarks>
+    private const float SmileOutMag = 0.030f;
+    private const float SmileUpMag = 0.034f;
+
     /// <summary>How wide the blend across the midline is when only one half is acting.</summary>
     /// <remarks>A hard cut at the axis leaves a seam down the nose; this is about a fifth of a half-face.</remarks>
     private const float SideBlend = 0.18f;
@@ -629,18 +827,20 @@ public class FaceMesh
         internal float Below(float y, float station) =>
             Math.Clamp((Y(station) - y) / (BelowRamp * H), 0f, 1f);
 
-        /// <summary>1 at the mouth's corner, 0 at the midline and 0 again out on the cheek.</summary>
-        internal float Corner(float x)
+        /// <summary>
+        /// 1 at a station out from the midline, 0 at the midline and 0 again past the fade.
+        /// </summary>
+        /// <remarks>
+        /// <b>One shape serving the mouth corner, the brow head and the brow tail.</b> It replaced a
+        /// <c>Corner</c> and an <c>Inner</c> that differed only in whether the falloff was normalised
+        /// — and did not actually differ, because the corner's fade of 2.0 makes its divisor exactly
+        /// 1. The band alone cannot do this work: weighting purely by distance from the midline drags
+        /// half the face along with whatever is being moved.
+        /// </remarks>
+        internal float Peak(float x, float station, float fade)
         {
-            var t = MathF.Abs(x - Cx) / MathF.Max(1e-4f, MouthCornerX * HalfW);
-            return t <= 1f ? t : MathF.Max(0f, CornerFade - t);
-        }
-
-        /// <summary>1 at the head of the brow, 0 at the midline and 0 again at the tail.</summary>
-        internal float Inner(float x)
-        {
-            var t = MathF.Abs(x - Cx) / MathF.Max(1e-4f, KnitPeakX * HalfW);
-            return t <= 1f ? t : MathF.Max(0f, (KnitFade - t) / (KnitFade - 1f));
+            var t = MathF.Abs(x - Cx) / MathF.Max(1e-4f, station * HalfW);
+            return t <= 1f ? t : MathF.Max(0f, (fade - t) / MathF.Max(1e-4f, fade - 1f));
         }
 
         /// <summary>How much of a one-sided unit this vertex takes: 0 for both halves, ±1 to pick one.</summary>

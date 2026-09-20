@@ -350,7 +350,7 @@ ctx.fillRect(0, 0, 760, 340);
 Mesh.draw(ctx, fitted, { x: 170, y: 190, scale: 15 });
 Mesh.draw(ctx, fitted, { x: 400, y: 190, scale: 15, yawDeg: 28 });
 Mesh.draw(ctx, fitted, { x: 620, y: 190, scale: 15, pitchDeg: -20, side: 'near',
-          expression: { browLower: 1, browKnit: 0.9, squint: 0.55, mouthCornerDown: 0.85 } });
+          expression: { browDown: 1, browKnit: 0.9, eyeSquint: 0.55, mouthFrown: 0.85 } });
 log(`${fitted.vertexCount} vertices, ${fitted.triangleCount} triangles, textured ${fitted.textured}`);
 
 canvas;
@@ -397,7 +397,7 @@ which is exactly what `Mesh.draw`'s `shape` and `expression` units are.
 
 > [!IMPORTANT]
 > **Those units are the studio's, tuned by eye, and they are not CANDIDE's.** Six shape units against
-> that file's 38, and seven expression units against `applyActionUnits`'s eight named muscles.
+> that file's 38, and twelve expression units against `applyActionUnits`'s eight named muscles.
 > **Anything offering a measured decimal for them is claiming more than any source in `reference/`
 > supports.** This route buys rotation and identity from one image; it does not buy the articulation
 > the constructed head has, and `Drawing.applyActionUnits(...)` remains the better tool for a
@@ -405,12 +405,12 @@ which is exactly what `Mesh.draw`'s `shape` and `expression` units are.
 
 ### 7d-i. What an angry face needs, and what it took three units to reach
 
-The set opened at five units — `mouthWide`, `mouthOpen`, `browRaise`, `browLower`, `squint` — and the
-gap in it was not obvious until somebody asked for anger. **`browLower` on its own lowers a *flat*
+The set opened at five units — `mouthStretch`, `jawOpen`, `browRaise`, `browDown`, `eyeSquint` — and
+the gap in it was not obvious until somebody asked for anger. **`browDown` on its own lowers a *flat*
 brow, which reads as sulking, and nothing in the set turned a lip down at all.** The three that
 closed it, on 2026-09-19:
 
-- **`mouthCornerDown`** — Triangularis, AU15. Loomis's "unhappy muscles", running from beside the
+- **`mouthFrown`** — Triangularis, AU15. Loomis's "unhappy muscles", running from beside the
   nose down to the jaw. Its weight rises to the mouth's corner and **falls away again past it**,
   because the mouth band alone reaches the cheeks: weighting purely by distance from the midline
   drags half the face down with the lip.
@@ -419,7 +419,7 @@ closed it, on 2026-09-19:
 - **`side`** — `'near'`, `'far'` or `'both'`, on `Mesh.draw` rather than in the unit list.
 
 > [!IMPORTANT]
-> **`browKnit` is a separate unit from `browLower` rather than folded into it**, which is where this
+> **`browKnit` is a separate unit from `browDown` rather than folded into it**, which is where this
 > surface departs from the constructed head: there, `AU4` lowers *and* knits in one weight. Splitting
 > them is what lets a **raised** brow also be knitted — frontalis lifting against corrugator, which is
 > the strained flat brow of fear rather than the clean arch of surprise. `applyActionUnits` reaches
@@ -429,13 +429,70 @@ closed it, on 2026-09-19:
 > **`near` and `far` are the sides of the *page*, and `left`/`right` are refused by name** — the same
 > decision, and the same refusal message, as `applyActionUnits`. `near` is the `+x` side of the mesh's
 > own facial axis at every yaw, so calling it the character's left would be a claim a turned head
-> cannot keep. `mouthOpen` ignores the option, because a jaw does not drop on one side.
+> cannot keep. `jawOpen` ignores the option, because a jaw does not drop on one side.
 >
 > It exists because **one raised eyebrow and a one-sided smirk are the two most recognisable comic
 > expressions there are**, and neither was reachable at any weight while every unit moved both halves.
 > Three lineages split their brow units per side and this one did not: ARKit and MediaPipe carry
 > `browDownLeft`/`browDownRight`, and `candide3.wfm` v3.1.6 carries an *Eyes vertical difference*
 > shape unit. Asymmetry was the one axis every source had and this route had nowhere.
+
+### 7d-ii. Borrowing ARKit's names, and what borrowing them does not buy
+
+The units took ARKit's blendshape spelling on 2026-09-19 — `browDown` rather than `browLower`,
+`eyeSquint` rather than `squint`, `jawOpen` rather than `mouthOpen`. It is the same move this studio
+made with FACS's AU numbering: **a published vocabulary that other tools already speak, adopted for
+the names alone.** Every old spelling still resolves and draws what it drew.
+
+**The reason to write this down is the claim that comes attached to it.** The suggestion that
+prompted the change — a commissioned model review — proposed applying ARKit coefficients to
+MediaPipe's canonical mesh through a `blendshapeDeltas` table, which would have made the whole
+displacement layer free. **There is no such table, in MediaPipe or anywhere else.** The blendshape
+graph's own header states the direction: *"Predicts face blendshapes **from landmarks**"* — inputs
+`LANDMARKS`, outputs a `ClassificationList` of 52 coefficients. It is a regressor that **reads** faces,
+and what the file holds beside it is `std::array<string_view, 52>`: fifty-two strings. The model
+producing the weights is a TFLite binary fetched at build time and not in the tree, and it runs the
+wrong way for us regardless.
+
+**ARKit does not close the gap either, and this is the part most often misread.** Apple's 52
+blendshapes are an *interface specification*. ARKit hands an application coefficients; the
+application's own rigged model carries the deltas. Anyone shipping ARKit-compatible geometry authored
+or bought it.
+
+So the asymmetry §7d opens with is unchanged: **the model with usable terms has no units, the model
+with units states no terms**, and every magnitude here is still hand-written. Two of ours have no
+ARKit counterpart at all — `browRaise`, which ARKit expresses only as inner and outer separately, and
+`browKnit`, which ARKit folds into `browDown`.
+
+> [!IMPORTANT]
+> **A real ARKit name this geometry cannot show is refused *by name*, with the reason.** `cheekPuff`,
+> `noseSneer`, `mouthPucker`, `eyeLookUp`, `jawForward` and the rest are correctly spelled, so a bare
+> "not recognised" would send you hunting for a typo that is not there. **Accepting all fifty-two so
+> that two thirds could quietly do nothing would be worse** — that is precisely the failure the
+> literal-coordinate bug above produced, and it is the reason `applyActionUnits` names AU6, AU9 and
+> AU17 in its own documentation rather than binding them to nothing.
+>
+> **And no unit carries a side in its name, where ARKit's do.** `browDownLeft` is refused and pointed
+> at `browDown` with `{ side: 'near' }`, for the reason the note above gives: a left and a right are
+> a claim about the character that a turned head cannot keep.
+
+**What the borrowing did buy is resolution where this route was thinnest.** A brow that could only
+rise as a whole cannot arch, and a lid that could only tighten cannot widen:
+
+- **`browInnerUp`** (AU1) and **`browOuterUp`** (AU2) are the two ends of the brow, overlapping in the
+  middle so the pair composes into an arch and each alone reads as one end lifting.
+- **`eyeWide`** (AU5) and **`eyeBlink`** (AU45) act on the **upper lid alone**, which is what separates
+  them from `eyeSquint` — orbicularis tightens both lids, so a blink is not a hard squint and a
+  widened eye is not an un-squint.
+- **`mouthSmile`** (AU12) takes the corners **out as well as up**, which is Loomis's observation rather
+  than a detail: a corner lifted straight up reads as a smirk. **This route had no smile unit at
+  all** until now — as CANDIDE-3 has none, a speech-coding selection rather than an expressive one.
+
+`eyeWide` is worth one more line, because a second source lands on it. Gautier puts the **whole**
+difference between surprise and fear in the sclera — the eyes widen more in fear, so more white shows
+round the pupil — and warns on the same page that too much white *beneath* the pupil reads as
+sinister (*Drawing and Cartooning 1,001 Faces*, Perigee 1993, pp. 28 and 80). That is one mechanism
+read twice: the share of visible sclera is expressive, and it has a defect at one end.
 
 > [!IMPORTANT]
 > **Every station is a fraction of the mesh's own frame, and until 2026-09-19 it was a literal

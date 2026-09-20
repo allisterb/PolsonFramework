@@ -61,6 +61,17 @@ public class MeshToolkitTests : TestsRuntime
 
     static FaceMesh Mesh() => new MeshToolkit().FromObj(Obj());
 
+    /// <summary>A mesh fine enough that every band contains vertices.</summary>
+    /// <remarks>
+    /// <b>The default 7×9 grid puts its rows 2.125 apart, and the eye band's radius is 0.962 — so no
+    /// vertex lies inside it and <c>eyeSquint</c> has never moved anything on that mesh.</b> That is
+    /// a property of the test fixture rather than of the code, and it is exactly the sampling trap a
+    /// band-weighted deformation invites: a unit that works perfectly reads as doing nothing, which
+    /// is indistinguishable from the real silent-no-op this file already has a scar from. Anything
+    /// asserting a magnitude uses this.
+    /// </remarks>
+    static FaceMesh Dense() => new MeshToolkit().FromObj(Obj(13, 25));
+
     static SkiaCanvas Texture(int size = 256)
     {
         var canvas = new SkiaCanvas(size, size);
@@ -183,7 +194,7 @@ public class MeshToolkitTests : TestsRuntime
                 ["expression"] = new Dictionary<string, object?> { ["smile"] = 1f }
             }));
         Assert.Contains("smile", unit.Message, StringComparison.Ordinal);
-        Assert.Contains("mouthWide", unit.Message, StringComparison.Ordinal);
+        Assert.Contains("mouthStretch", unit.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -573,6 +584,196 @@ public class MeshToolkitTests : TestsRuntime
             var b = bent[i].Y - bentRest[i].Y;
             Assert.Equal(a, b, 0.0001f);
         }
+    }
+
+    /// <summary>
+    /// **Every pre-ARKit spelling still draws, and draws exactly what it always drew.**
+    /// </summary>
+    /// <remarks>
+    /// The point of aliasing rather than renaming. A name that stops working is a broken script; a
+    /// name that keeps working but moves something *else* is far worse, so this asserts the vertices
+    /// rather than merely that the call did not throw.
+    /// </remarks>
+    [Theory]
+    [InlineData("browLower", "browDown")]
+    [InlineData("squint", "eyeSquint")]
+    [InlineData("mouthOpen", "jawOpen")]
+    [InlineData("mouthCornerDown", "mouthFrown")]
+    [InlineData("mouthWide", "mouthStretch")]
+    public void TestTheOldUnitNamesStillDrawWhatTheyDrew(string old, string canonical)
+    {
+        var mesh = Dense();
+        var byOld = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { [old] = 0.8f } });
+        var byNew = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { [canonical] = 0.8f } });
+        var rest = Placed(mesh, []);
+
+        var moved = 0;
+        for (var i = 0; i < byOld.Length; i++)
+        {
+            Assert.Equal(byNew[i].X, byOld[i].X, 0.0001f);
+            Assert.Equal(byNew[i].Y, byOld[i].Y, 0.0001f);
+
+            // Both axes: `mouthStretch` moves x alone, so a y-only check would call it inert.
+            if (MathF.Abs(byOld[i].Y - rest[i].Y) > 0.001f
+                || MathF.Abs(byOld[i].X - rest[i].X) > 0.001f) moved++;
+        }
+
+        // And it must actually do something — an alias resolving to a key the dictionary has not
+        // got would apply zero everywhere and agree with itself perfectly.
+        Assert.True(moved > 0, $"'{old}' resolved but moved nothing");
+    }
+
+    /// <summary>
+    /// **A side in the name is refused by name, because this head's halves are near and far.**
+    /// </summary>
+    [Theory]
+    [InlineData("browDownLeft", "browDown")]
+    [InlineData("mouthSmileRight", "mouthSmile")]
+    [InlineData("eyeWideLeft", "eyeWide")]
+    public void TestASidedArkitNameIsRefusedAndPointsAtTheSideOption(string given, string stem)
+    {
+        var toolkit = new MeshToolkit();
+        var ctx = new SkiaCanvas(64, 64).GetContext("2d");
+
+        var e = Assert.Throws<ArgumentException>(() => toolkit.Draw(ctx, Mesh(),
+            new Dictionary<string, object?>
+            {
+                ["expression"] = new Dictionary<string, object?> { [given] = 1f }
+            }));
+
+        Assert.Contains(given, e.Message, StringComparison.Ordinal);
+        Assert.Contains(stem, e.Message, StringComparison.Ordinal);
+        Assert.Contains("side", e.Message, StringComparison.Ordinal);
+
+        // It must say what to write instead rather than only what is wrong.
+        Assert.Contains("near", e.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// **An ARKit unit this geometry cannot show is declined by name, not reported as a typo.**
+    /// </summary>
+    /// <remarks>
+    /// The whole argument for holding a declined list. <c>cheekPuff</c> is a real, correctly spelled
+    /// blendshape, so "not recognised" would send a caller hunting for a misspelling that is not
+    /// there — and accepting it to do nothing would be worse again.
+    /// </remarks>
+    [Theory]
+    [InlineData("cheekPuff")]
+    [InlineData("noseSneerLeft")]
+    [InlineData("mouthPucker")]
+    [InlineData("eyeLookUpRight")]
+    [InlineData("jawForward")]
+    public void TestAnArkitUnitThisMeshCannotShowIsDeclinedByName(string given)
+    {
+        var toolkit = new MeshToolkit();
+        var ctx = new SkiaCanvas(64, 64).GetContext("2d");
+
+        var e = Assert.Throws<ArgumentException>(() => toolkit.Draw(ctx, Mesh(),
+            new Dictionary<string, object?>
+            {
+                ["expression"] = new Dictionary<string, object?> { [given] = 1f }
+            }));
+
+        Assert.Contains(given, e.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot show", e.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("not recognised", e.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// **The brow raises at one end or the other, which is the resolution ARKit has and we lacked.**
+    /// </summary>
+    [Fact]
+    public void TestTheBrowCanRaiseAtOneEndOnly()
+    {
+        var mesh = Dense();
+        var rest = Placed(mesh, []);
+        var inner = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { ["browInnerUp"] = 1f } });
+        var outer = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { ["browOuterUp"] = 1f } });
+
+        int head = At(mesh, -1f, 3.75f), tail = At(mesh, -4f, 3.75f);
+
+        float innerHead = inner[head].Y - rest[head].Y, innerTail = inner[tail].Y - rest[tail].Y;
+        float outerHead = outer[head].Y - rest[head].Y, outerTail = outer[tail].Y - rest[tail].Y;
+
+        Assert.True(innerHead > 0.02f, $"AU1 did not lift the brow head: {innerHead}");
+        Assert.True(outerTail > 0.02f, $"AU2 did not lift the brow tail: {outerTail}");
+
+        // Each must favour its own end. That is the whole difference between the two, and the thing
+        // a single `browRaise` could not express.
+        Assert.True(innerHead > innerTail,
+                    $"browInnerUp must favour the head: head {innerHead}, tail {innerTail}");
+        Assert.True(outerTail > outerHead,
+                    $"browOuterUp must favour the tail: tail {outerTail}, head {outerHead}");
+    }
+
+    /// <summary>
+    /// **The upper lid moves on its own, in both directions, and the lower lid stays put.**
+    /// </summary>
+    /// <remarks>
+    /// <c>eyeSquint</c> closes the aperture from both sides because orbicularis oculi tightens both
+    /// lids; these two are the levator and the blink, which act on the upper lid alone. Asserting
+    /// the lower lid is unmoved is what distinguishes them from a differently weighted squint.
+    /// </remarks>
+    [Fact]
+    public void TestTheUpperLidWidensAndCloses()
+    {
+        var mesh = Dense();
+        var rest = Placed(mesh, []);
+        var wide = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { ["eyeWide"] = 1f } });
+        var shut = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { ["eyeBlink"] = 1f } });
+
+        // The eye line sits at y = 2.59 on this mesh, so these straddle it inside the band.
+        int upper = At(mesh, -3f, 3.04f), lower = At(mesh, -3f, 2.33f);
+
+        Assert.True(wide[upper].Y > rest[upper].Y + 0.01f,
+                    $"eyeWide did not raise the upper lid: {rest[upper].Y} to {wide[upper].Y}");
+        Assert.True(shut[upper].Y < rest[upper].Y - 0.01f,
+                    $"eyeBlink did not drop the upper lid: {rest[upper].Y} to {shut[upper].Y}");
+
+        // Neither touches the lower lid, which is what makes them not a squint.
+        Assert.Equal(rest[lower].Y, wide[lower].Y, 0.0001f);
+        Assert.Equal(rest[lower].Y, shut[lower].Y, 0.0001f);
+
+        // A blink travels most of the way to the eye line; a widening is deliberately gentler.
+        Assert.True(MathF.Abs(shut[upper].Y - rest[upper].Y) > MathF.Abs(wide[upper].Y - rest[upper].Y),
+                    "a blink should outrun a widening");
+    }
+
+    /// <summary>
+    /// **A smile takes the corners out as well as up — the mesh route had no smile unit at all.**
+    /// </summary>
+    /// <remarks>
+    /// Loomis's happy muscles run from the cheekbones diagonally down to the mouth, so a corner
+    /// lifted straight up reads as a smirk. CANDIDE-3 has no AU12 either, which is what a model
+    /// built for videophone bitrate would choose and not what a comic face needs.
+    /// </remarks>
+    [Fact]
+    public void TestAMouthCanSmileOutwardAndUpward()
+    {
+        var mesh = Dense();
+        var rest = Placed(mesh, []);
+        var smiling = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { ["mouthSmile"] = 1f } });
+        var frowning = Placed(mesh, new Dictionary<string, object?>
+        { ["expression"] = new Dictionary<string, object?> { ["mouthFrown"] = 1f } });
+
+        int corner = At(mesh, -2f, -3.33f), axis = At(mesh, 0f, -3.33f);
+
+        Assert.True(smiling[corner].Y > rest[corner].Y + 0.01f,
+                    $"the corner did not lift: {rest[corner].Y} to {smiling[corner].Y}");
+        Assert.True(smiling[corner].X < rest[corner].X - 0.005f,
+                    $"the corner did not pull outward: {rest[corner].X} to {smiling[corner].X}");
+
+        // Up and down are the same gesture reversed, so the two must disagree in sign at the corner
+        // and agree in leaving the midline alone.
+        Assert.True(frowning[corner].Y < rest[corner].Y, "mouthFrown should drop the same corner");
+        Assert.Equal(rest[axis].X, smiling[axis].X, 0.0001f);
     }
     #endregion
 

@@ -189,7 +189,8 @@ public class MeshToolkit
                 Cr = MathF.Cos(Num(opt, "rollDeg", 0f) * MathF.PI / 180f),
                 Sr = MathF.Sin(Num(opt, "rollDeg", 0f) * MathF.PI / 180f),
                 Shape = FaceMesh.ReadUnits(opt?["shape"], FaceMesh.ShapeUnits, "shape"),
-                Expression = FaceMesh.ReadUnits(opt?["expression"], FaceMesh.ExpressionUnits, "expression"),
+                Expression = FaceMesh.ReadUnits(opt?["expression"], FaceMesh.ExpressionUnits,
+                                                "expression", arkit: true),
                 Side = ReadSide(opt)
             };
             return p;

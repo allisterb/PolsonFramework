@@ -2986,7 +2986,7 @@ ctx.fillRect(0, 0, 760, 340);
 Mesh.draw(ctx, fitted, { x: 170, y: 190, scale: 15 });
 Mesh.draw(ctx, fitted, { x: 400, y: 190, scale: 15, yawDeg: 28 });
 Mesh.draw(ctx, fitted, { x: 620, y: 190, scale: 15, pitchDeg: -20, side: 'near',
-          expression: { browLower: 1, browKnit: 0.9, squint: 0.55, mouthCornerDown: 0.85 } });
+          expression: { browDown: 1, browKnit: 0.9, eyeSquint: 0.55, mouthFrown: 0.85 } });
 log(`${fitted.vertexCount} vertices, ${fitted.triangleCount} triangles, textured ${fitted.textured}`);
 
 canvas;
@@ -3110,27 +3110,50 @@ Both are passed to `Mesh.draw`, both take `-1 … 0 … +1`, both clamp, and an 
 | `jawWidth` | weighted toward the chin |
 | `browHeight` · `eyeSize` · `noseLength` | banded around their own feature |
 
-| `expression` | | the muscle |
-| :--- | :--- | :--- |
-| `mouthWide` · `mouthOpen` | the mouth and the jaw | |
-| `mouthCornerDown` | the mouth corners, down | Triangularis, AU15 |
-| `browRaise` · `browLower` | the brow band, up or down | Frontalis · Corrugator, AU4 |
-| `browKnit` | the brow **heads**, toward the midline | Corrugator's inward half |
-| `squint` | the lid line | Orbicularis Oculi |
+**The expression units are named for ARKit's blendshape vocabulary**, which ARKit, MediaPipe's Face Landmarker and most rigging tools already speak. Two carry no side in their name because this construction has none — see `side` below.
+
+| `expression` | | ARKit | the muscle |
+| :--- | :--- | :--- | :--- |
+| `browDown` | all three brow stations down | `browDown*` | Corrugator and depressors, AU4 |
+| `browInnerUp` | the brow's **inner end**, up | `browInnerUp` | Frontalis Pars Medialis, AU1 |
+| `browOuterUp` | the brow's **tail**, up | `browOuterUp*` | Frontalis Pars Lateralis, AU2 |
+| `browKnit` | the brow **heads**, toward the midline | — *ours* | Corrugator's inward half |
+| `browRaise` | the whole brow band, up | — *ours* | both frontalis parts together |
+| `eyeBlink` | the **upper** lid, down to the eye line | `eyeBlink*` | Orbicularis Oculi, AU45 |
+| `eyeSquint` | **both** lids, toward the eye line | `eyeSquint*` | Orbicularis Oculi, AU7 |
+| `eyeWide` | the **upper** lid, up — more sclera | `eyeWide*` | Levator Palpebrae, AU5 |
+| `jawOpen` | the jaw and everything below it | `jawOpen` | AU26 |
+| `mouthFrown` | the mouth corners, down | `mouthFrown*` | Triangularis, AU15 |
+| `mouthSmile` | the corners **out and up** | `mouthSmile*` | Zygomatic Major, AU12 |
+| `mouthStretch` | the mouth, wider or narrower | `mouthStretch*` | |
 
 > [!IMPORTANT]
-> **These are the studio's, written by hand, and they are not CANDIDE's Shape Units.** The mesh this route is designed against ships a neutral surface and **no displacement data at all** — that is the whole licensing asymmetry. So each unit here is a rule about which vertices move and by how much, tuned by eye, exactly as `applyActionUnits`'s magnitudes are. **Anything offering a measured decimal for these is claiming more than any source in `reference/` supports.**
+> **The names are a published interface; every displacement behind them is still the studio's, written by hand.** Borrowing ARKit's vocabulary costs nothing and lets a preset written for another tool be read here — exactly as this studio borrowed FACS's AU numbering for `applyActionUnits`.
 >
-> They are still coarser than the constructed head's — seven expression units against eight named Action Units, six shape units against CANDIDE's file's 38 — and `Drawing.applyActionUnits` remains the better tool for a performance. What this route buys that the other cannot is **rotation and identity from one image**.
+> **What it does not do is supply a single number, and that is worth stating because it is routinely claimed otherwise.** MediaPipe's blendshape graph is a **regressor from landmarks *to* coefficients** — its own header reads *"Predicts face blendshapes from landmarks"* — and what the file carries is `std::array<string_view, 52>`, fifty-two strings. The model producing the weights is a TFLite binary fetched at build time, absent from the tree, and running the wrong way for us in any case. ARKit likewise hands an application coefficients and expects the application's **own rigged model** to carry the deltas.
+>
+> So the licensing asymmetry is unchanged and is the whole reason these are hand-written: **the model with usable terms has no units, the model with units states no terms.** Anything offering a measured decimal for them is claiming more than any source in `reference/` supports.
+>
+> `Drawing.applyActionUnits` is still the better tool for a performance — what this route buys that the other cannot is **rotation and identity from one image**.
 
 > [!IMPORTANT]
-> **An angry mouth needs `mouthCornerDown` and an angry brow needs `browKnit`; without them the set reaches as far as *sullen* and stops.** Both were absent until 2026-09-19 and their absence was invisible — `browLower` alone lowers a flat brow, which reads as sulking, and nothing in the set turned a lip down at all.
+> **A real ARKit name this construction cannot show is refused *by name*, with the reason** — `cheekPuff`, `noseSneer`, `mouthPucker`, `eyeLookUp`, `jawForward` and the rest. They are correctly spelled, so a bare "not recognised" would send you hunting for a typo that is not there; and accepting all fifty-two so two thirds could quietly do nothing is the silent-no-op failure this file has a scar from. The same judgment `applyActionUnits` makes for AU6, AU9 and AU17.
 >
-> **`browKnit` is deliberately separate from `browLower` rather than folded into it**, unlike the constructed head's `AU4` which does both at once. Corrugator draws the brow *heads* together and depressors lower the whole brow; splitting them is what lets a **raised** brow also be knitted, which is the strained flat brow of fear. The weight peaks at the head of the brow and is zero at the midline, which has nothing to move toward.
+> **The pre-ARKit spellings still work and draw exactly what they drew** — `browLower`, `squint`, `mouthOpen`, `mouthCornerDown` and `mouthWide` resolve to `browDown`, `eyeSquint`, `jawOpen`, `mouthFrown` and `mouthStretch`. Asserted vertex-by-vertex, not merely by not throwing.
+
+> [!IMPORTANT]
+> **The brow and the upper lid are where this route was thinnest, and they are what the ARKit set added.** A brow that could only rise as a whole cannot arch; `browInnerUp` and `browOuterUp` are the two ends, and they overlap in the middle so the pair composes into one.
+>
+> **`eyeWide` is the sclera dial, and it is expressive in both directions.** Gautier puts the whole difference between surprise and fear here — the eyes widen more in fear, so more white shows round the pupil — and warns on the same page that too much white *beneath* the pupil reads as sinister (*Drawing and Cartooning 1,001 Faces*, Perigee 1993, pp. 28, 80). Raising the upper lid is the half of that this band can reach.
+>
+> **`mouthSmile` takes the corners out as well as up**, which is Loomis's observation rather than a detail: his happy muscles run from the cheekbones diagonally down to the mouth, so a corner lifted straight up reads as a smirk. **The mesh route had no smile unit at all before this** — as CANDIDE-3 has none, which is what a model built for videophone bitrate would choose and not what a comic face needs.
 >
 > ```javascript
 > Mesh.draw(ctx, face, { x, y, scale, expression: {
->     browLower: 1, browKnit: 0.9, squint: 0.55, mouthCornerDown: 0.85, mouthWide: -0.2 } });
+>     browDown: 1, browKnit: 0.9, eyeSquint: 0.55, mouthFrown: 0.85, mouthStretch: -0.2 } });
+>
+> Mesh.draw(ctx, face, { x, y, scale, expression: {      // fear, not surprise: the brow knits
+>     browInnerUp: 0.8, browOuterUp: 0.5, browKnit: 0.6, eyeWide: 0.8, jawOpen: 0.45 } });
 > ```
 
 > [!IMPORTANT]
@@ -3138,12 +3161,14 @@ Both are passed to `Mesh.draw`, both take `-1 … 0 … +1`, both clamp, and an 
 >
 > ```javascript
 > Mesh.draw(ctx, face, { x, y, scale, side: 'near',
->                        expression: { browRaise: 1, mouthCornerDown: 0.9 } });
+>                        expression: { browOuterUp: 1, mouthSmile: 0.9 } });
 > ```
 >
 > **`near` and `far` name the two halves the mesh already has — they are not `left` and `right`, and those two spellings are refused by name.** `near` is the **`+x`** side of the mesh's own facial axis at every yaw. That is a side of the *page*, not of the character: naming it left or right would be a claim about the character's anatomy that a turned head cannot keep. The same decision `applyActionUnits` makes, for the same reason.
 >
-> **`mouthOpen` ignores the option**, because a jaw does not drop on one side — documented rather than refused, since asking for a one-sided brow beside an open mouth is an ordinary thing to want. Omitting `side` moves both halves, so nothing written before this changes. `shape` is unaffected: asymmetric *identity* is a real thing (CANDIDE's file carries an *Eyes vertical difference* unit) but it is not what this option is for.
+> **This is also why no unit carries a side in its name, where ARKit's do.** `browDownLeft` and `mouthSmileRight` are refused by name and pointed at the stem plus this option — `browDown` with `{ side: 'near' }` — rather than being quietly mapped onto a half the character cannot keep through a turn.
+>
+> **`jawOpen` ignores the option**, because a jaw does not drop on one side — documented rather than refused, since asking for a one-sided brow beside an open mouth is an ordinary thing to want. Omitting `side` moves both halves, so nothing written before this changes. `shape` is unaffected: asymmetric *identity* is a real thing (CANDIDE's file carries an *Eyes vertical difference* unit) but it is not what this option is for.
 
 > [!IMPORTANT]
 > **Every station and magnitude is a fraction of the mesh's own frame, so a mesh at any scale deforms.** They were literal coordinates until 2026-09-19 — the brow band sat at `y = 3.6`, which is MediaPipe's number and nobody else's. **A mesh authored at a tenth of that scale got no deformation at all**: every band fell outside its own geometry, and a call asking for anger returned a neutral face with no error and no warning. The fractions reproduce the old absolutes exactly on the canonical model, so nothing already drawn with it changed.

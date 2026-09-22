@@ -270,6 +270,51 @@ public class BlenderDriverTests : Polson.Tests.TestsRuntime
         output.WriteLine($"plain {a.Bytes} B / {a.Verts} verts, bevelled {b.Bytes} B / {b.Verts} verts");
     }
 
+    /// <summary>A modifier reaches its own object and no other — section 9's second half.</summary>
+    /// <remarks>
+    /// <b>This exists because <see cref="ABevelReachesTheArtifact"/> passed while the bug was live.</b>
+    /// That test asserts the bevel reaches the GLB, which it did — onto the legs as well as the seat,
+    /// because Blender's <c>join</c> merges the selection into the <i>active</i> object and the active
+    /// object keeps its modifier stack. Bytes went up, the test went green, and the chair was wrong.
+    /// <para>
+    /// Single assignment does not help: it stops a name meaning two different objects and says
+    /// nothing about whose modifiers reach the merged geometry. So the arithmetic is asserted
+    /// exactly rather than as an inequality — measured before the fix, joining a bevelled cube to a
+    /// plain one gave <b>192</b> verts, precisely twice the bevelled cube, where scoped is 96 + 8.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AModifierDoesNotLeakAcrossAJoin()
+    {
+        if (!Ready()) return;
+
+        const string Cube = """{"op":"prim","shape":"cube","name":"%","loc":[%x,0,0],"scale":[1,1,1]}""";
+        string One(string name, int x) => Cube.Replace("%x", x.ToString()).Replace("%", name);
+
+        using var d1 = new TempDirectory();
+        using var d2 = new TempDirectory();
+        using var d3 = new TempDirectory();
+
+        var bevelled = BlenderDriver.Build(
+            $$"""{"ops":[{{One("a", 0)}},{"op":"bevel","on":"a","width":0.1,"segments":3}],"export":"a"}""",
+            d1.Path);
+        var plain = BlenderDriver.Build($$"""{"ops":[{{One("a", 0)}}],"export":"a"}""", d2.Path);
+        var joined = BlenderDriver.Build(
+            $$"""
+            {"ops":[{{One("a", 0)}},{{One("b", 3)}},
+                    {"op":"bevel","on":"a","width":0.1,"segments":3},
+                    {"op":"join","names":["a","b"],"name":"j"}],"export":"j"}
+            """, d3.Path);
+
+        Assert.True(bevelled.Ok, bevelled.Error);
+        Assert.True(plain.Ok, plain.Error);
+        Assert.True(joined.Ok, joined.Error);
+
+        Assert.Equal(bevelled.MeshVerts + plain.MeshVerts, joined.MeshVerts);
+        output.WriteLine($"bevelled {bevelled.MeshVerts} + plain {plain.MeshVerts} "
+            + $"= joined {joined.MeshVerts} (a leak would read {bevelled.MeshVerts * 2})");
+    }
+
     /// <summary>The interpreter refuses the same lists, for the same stated reasons.</summary>
     /// <remarks>
     /// <b>The test the duplication exists for.</b> <see cref="BlenderDriver.Build"/> never lets a bad

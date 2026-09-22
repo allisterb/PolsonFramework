@@ -190,13 +190,37 @@ def op_boolean(reg, op, index):
     reg.consume(op["with"], "boolean", index)
 
 
+def _apply_modifiers(obj):
+    """Bake an object's modifier stack into its mesh, in order.
+
+    **This is the second half of section 9's finding, and it is not the naming half.** Blender's
+    `join` merges the selection into the ACTIVE object, and the active object keeps its modifier
+    stack -- which then applies to the merged result. So a bevel on `seat` rounds the legs too, and
+    a boolean on a wheel rim eats the spokes that were joined into it.
+
+    Measured, before this existed: one bevelled cube is 96 verts and a plain one is 8, so a correctly
+    scoped join is 104. Joining them gave **192**, exactly twice the bevelled cube.
+
+    Single assignment does not help here. It stops `seat` meaning two different objects; it says
+    nothing about whose modifiers reach the merged geometry. Section 9 named both remedies -- "apply
+    modifiers before the join, or scope them explicitly" -- and this is the first.
+    """
+    if not obj.modifiers:
+        return
+    _select_only(obj)
+    for modifier in list(obj.modifiers):
+        bpy.ops.object.modifier_apply(modifier=modifier.name)
+
+
 def op_join(reg, op, index):
     """Merge several objects into one, under a FRESH name.
 
-    This is the op that section 9's bug came from. Blender's own `join` merges the selection into the
-    active object, so the result really is one of the inputs -- but the name it is bound to here is
-    new, every input is consumed, and `on: "seat"` therefore cannot start meaning the whole chair
-    halfway down a list.
+    This is the op section 9's bug came from, in both of its halves. Blender's own `join` merges the
+    selection into the active object, so the result really is one of the inputs -- but the name it is
+    bound to here is new, every input is consumed, and `on: "seat"` therefore cannot start meaning
+    the whole chair halfway down a list.
+
+    Every input's modifiers are baked first; see `_apply_modifiers` for why that is not optional.
     """
     names = op.get("names")
     if not isinstance(names, list) or len(names) < 2:
@@ -205,6 +229,9 @@ def op_join(reg, op, index):
     objs = [reg.get(n, index) for n in names]
     if len(set(names)) != len(names):
         raise OpError("join names must be distinct", index, "join-duplicate")
+
+    for obj in objs:
+        _apply_modifiers(obj)
 
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objs:

@@ -33,6 +33,7 @@ import os
 import sys
 import time
 
+import bmesh
 import bpy
 
 
@@ -53,6 +54,12 @@ PRIMS = {
 BOOLEANS = {"difference": "DIFFERENCE", "union": "UNION", "intersect": "INTERSECT"}
 
 UV_PROJECTIONS = ("smart", "cube")
+
+# How close two lathe vertices must be to be welded after a revolve. A profile point at radius 0
+# sits ON the axis, so the spin leaves one coincident copy of it per step and a fan of zero-area
+# quads; welding turns that into a proper pole. Tight enough that two genuinely distinct profile
+# points cannot be merged by it -- a micrometre apart is a degenerate profile, not a design.
+AXIS_MERGE = 1e-6
 
 
 class OpError(Exception):
@@ -149,6 +156,126 @@ def op_prim(reg, op, index):
     PRIMS[shape](sides)
     obj = bpy.context.object
     obj.name = op["name"]
+    obj.location = tuple(op.get("loc", (0.0, 0.0, 0.0)))
+    obj.scale = tuple(op.get("scale", (1.0, 1.0, 1.0)))
+    obj.rotation_mode = "XYZ"
+    obj.rotation_euler = tuple(_radians(d) for d in op.get("rotDeg", (0.0, 0.0, 0.0)))
+    reg.bind(op["name"], obj, index)
+
+
+def _profile(raw, index):
+    """Check a lathe profile and return it as a list of (radius, height) floats.
+
+    **This is the only op field that carries geometry rather than a scalar or a name**, and it is
+    still pure data -- a list of numbers, with nothing to evaluate. Section 7 of the design doc
+    records that as a deliberate widening of the boundary rather than an accident of this op.
+    """
+    if not isinstance(raw, list) or len(raw) < 2:
+        raise OpError(
+            "a lathe needs a 'profile' of at least two [radius, height] points",
+            index, "bad-profile")
+
+    points = []
+    for point in raw:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise OpError(
+                "every profile point must be a [radius, height] pair, got %r" % (point,),
+                index, "bad-profile")
+        try:
+            radius, height = float(point[0]), float(point[1])
+        except (TypeError, ValueError):
+            raise OpError(
+                "profile points must be numbers, got %r" % (point,), index, "bad-profile")
+
+        # A negative radius sweeps the wall through the axis and out the far side, so the solid
+        # comes back inside out -- which builds, exports and renders perfectly, and is obviously
+        # wrong only once it is lit. Refused rather than absolute-valued: it means the profile was
+        # authored against the wrong sign convention, so the rest of it is suspect too.
+        if radius < 0.0:
+            raise OpError(
+                "profile radius %g is negative; a radius is a distance from the axis" % radius,
+                index, "bad-profile")
+        points.append((radius, height))
+
+    if all(radius == 0.0 for radius, _ in points):
+        raise OpError(
+            "every profile radius is zero, so the profile lies on the axis and sweeps nothing",
+            index, "bad-profile")
+
+    return points
+
+
+def op_lathe(reg, op, index):
+    """Revolve a 2D profile about Z -- the one form no combination of primitives reaches.
+
+    A primitive's profile is fixed: a cylinder's is a rectangle and a cone's a triangle, so radius
+    can be constant in height or linear in it and nothing else. Anything whose radius follows a
+    *curve* is unreachable, and unioning forty short cylinders leaves visible steps. Section 11
+    named this as the single gap five probe props found -- the barrel that **bulges** -- and it buys
+    bottles, columns with entasis, balusters, finials, goblets, vases and lamp bases with it.
+
+    **Caps are expressed in the profile rather than as a flag.** A point at radius 0 sits on the
+    axis, so a profile that begins and ends there closes:
+    ``[[0,0],[0.3,0],[0.35,0.5],[0.3,1],[0,1]]`` is a shut barrel. Leave an end off the axis and
+    that end is open, which is what a bowl or a pipe wants. One fewer field, one fewer operator, and
+    it composes -- where a `capTop` boolean would have to mean something for a partial revolve too.
+
+    **`scale` means something different here from on `prim`, deliberately.** A primitive is built at
+    unit extent, so there `scale` is the object's size in metres. A profile already carries real
+    dimensions, so here it multiplies them. Stated rather than reconciled: the alternative was
+    normalising the profile to unit extent, which would discard the one thing the caller took
+    trouble over.
+
+    Built through ``bmesh`` rather than ``bpy.ops.mesh.spin``, so no edit mode, no selection and no
+    hidden context enters into it. It is the one op in this file that needs no `_select_only`.
+    """
+    profile = _profile(op.get("profile"), index)
+
+    sides = int(op.get("sides", 32))
+    if sides < 3:
+        raise OpError("sides must be at least 3, got %d" % sides, index, "bad-sides")
+
+    # 360 is the default because a solid of revolution is the point; a smaller angle is a genuine
+    # form of its own (a bowl section, an apse, a swept arch) and comes free. Zero sweeps nothing
+    # and more than a full turn folds the surface back through itself, so both are refused.
+    angle = float(op.get("angleDeg", 360.0))
+    if angle == 0.0 or abs(angle) > 360.0:
+        raise OpError(
+            "angleDeg must be non-zero and within one full turn, got %g" % angle,
+            index, "bad-angle")
+
+    mesh = bpy.data.meshes.new(op["name"])
+    obj = bpy.data.objects.new(op["name"], mesh)
+    bpy.context.scene.collection.objects.link(obj)
+
+    bm = bmesh.new()
+    try:
+        verts = [bm.verts.new((radius, 0.0, height)) for radius, height in profile]
+        edges = [bm.edges.new((verts[i], verts[i + 1])) for i in range(len(verts) - 1)]
+
+        bmesh.ops.spin(
+            bm, geom=verts + edges, cent=(0.0, 0.0, 0.0), axis=(0.0, 0.0, 1.0),
+            angle=_radians(angle), steps=sides, use_merge=abs(angle) >= 360.0)
+
+        # Welds the axis poles described above, and any seam `use_merge` did not close.
+        bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=AXIS_MERGE)
+
+        # A revolve's winding depends on which way the profile was written, so without this a
+        # bottom-up profile and a top-down one differ by their normals alone -- the same picture in
+        # a wireframe and inside out once lit. Made consistent here rather than asked of the caller.
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+
+        # Loose edges survive a revolve at an open end and along the axis. glTF exports triangles,
+        # so they would be dropped silently at the boundary; dropped here instead, where the vertex
+        # count reported back still means what it says.
+        wire = [edge for edge in bm.edges if edge.is_wire]
+        if wire:
+            bmesh.ops.delete(bm, geom=wire, context="EDGES")
+
+        bm.to_mesh(mesh)
+    finally:
+        bm.free()
+
     obj.location = tuple(op.get("loc", (0.0, 0.0, 0.0)))
     obj.scale = tuple(op.get("scale", (1.0, 1.0, 1.0)))
     obj.rotation_mode = "XYZ"
@@ -267,6 +394,7 @@ def op_uv(reg, op, index):
 
 OPS = {
     "prim": op_prim,
+    "lathe": op_lathe,
     "bevel": op_bevel,
     "boolean": op_boolean,
     "join": op_join,
@@ -274,7 +402,7 @@ OPS = {
 }
 
 # Which field of an op binds a fresh name. Everything else that names something is a reference.
-BINDS = {"prim": "name", "join": "name"}
+BINDS = {"prim": "name", "lathe": "name", "join": "name"}
 
 
 def _radians(degrees):

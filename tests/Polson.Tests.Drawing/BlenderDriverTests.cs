@@ -34,6 +34,28 @@ public class BlenderDriverTests : Polson.Tests.TestsRuntime
         ]}
         """;
 
+    //: A barrel, which is the prop section 11 named as the one gap five probes found: it BULGES, so
+    //: no combination of a cylinder and a cone reaches it — a primitive's profile is fixed, and
+    //: radius can be constant in height or linear in it and nothing else. Both ends sit on the axis,
+    //: which is how a cap is expressed here rather than as a flag.
+    const int BarrelSides = 24;
+
+    const string Barrel = """
+        {"ops":[
+          {"op":"lathe","name":"barrel","sides":24,
+           "profile":[[0,0],[0.30,0],[0.34,0.15],[0.36,0.40],[0.34,0.65],[0.30,0.80],[0,0.80]]}
+        ],"export":"barrel"}
+        """;
+
+    //: The same wall, written top-down. A revolve's winding follows the profile's direction, so this
+    //: is the pair that separates "the same shape" from "the same solid".
+    const string ReversedBarrel = """
+        {"ops":[
+          {"op":"lathe","name":"barrel","sides":24,
+           "profile":[[0,0.80],[0.30,0.80],[0.34,0.65],[0.36,0.40],[0.34,0.15],[0.30,0],[0,0]]}
+        ],"export":"barrel"}
+        """;
+
     /// <summary>Op lists that must be refused, and the rule that must refuse each.</summary>
     /// <remarks>
     /// <b>This corpus is run against BOTH validators</b> — the C# pre-flight here, and the
@@ -115,6 +137,57 @@ public class BlenderDriverTests : Polson.Tests.TestsRuntime
         ("a uv projection nobody implements", "unknown-uv", 1, """
             {"ops":[{"op":"prim","shape":"cube","name":"a"},
                     {"op":"uv","on":"a","how":"spherical"}]}
+            """),
+
+        ("a lathe with no profile", "bad-profile", 0, """
+            {"ops":[{"op":"lathe","name":"b"}]}
+            """),
+
+        ("a profile of one point", "bad-profile", 0, """
+            {"ops":[{"op":"lathe","name":"b","profile":[[0.2,0]]}]}
+            """),
+
+        //: A negative radius sweeps the wall through the axis and out the far side, so the solid
+        //: comes back inside out — which builds and exports perfectly and is visible only once lit.
+        ("a negative profile radius", "bad-profile", 0, """
+            {"ops":[{"op":"lathe","name":"b","profile":[[0.2,0],[-0.3,1]]}]}
+            """),
+
+        ("a profile lying entirely on the axis", "bad-profile", 0, """
+            {"ops":[{"op":"lathe","name":"b","profile":[[0,0],[0,1]]}]}
+            """),
+
+        ("a profile point that is not a pair", "bad-profile", 0, """
+            {"ops":[{"op":"lathe","name":"b","profile":[[0.2,0,5],[0.3,1,5]]}]}
+            """),
+
+        ("a profile point that is not a number", "bad-profile", 0, """
+            {"ops":[{"op":"lathe","name":"b","profile":[[0.2,0],["x",1]]}]}
+            """),
+
+        ("a lathe sweeping nothing", "bad-angle", 0, """
+            {"ops":[{"op":"lathe","name":"b","angleDeg":0,"profile":[[0.2,0],[0.3,1]]}]}
+            """),
+
+        ("a lathe sweeping past a full turn", "bad-angle", 0, """
+            {"ops":[{"op":"lathe","name":"b","angleDeg":540,"profile":[[0.2,0],[0.3,1]]}]}
+            """),
+
+        ("a lathe with two sides", "bad-sides", 0, """
+            {"ops":[{"op":"lathe","name":"b","sides":2,"profile":[[0.2,0],[0.3,1]]}]}
+            """),
+
+        //: The pair below pins the ORDER of the checks, not just their presence. The interpreter
+        //: tests its `BINDS` field before dispatching an op at all, so a nameless op reports the
+        //: missing name even when its own fields are wrong too — and both of these have two faults.
+        //: The pre-flight got this backwards until the lathe was added, reporting `bad-shape` for
+        //: the prim; nothing caught it, because every earlier corpus entry carried a name.
+        ("a nameless lathe with a bad profile too", "missing-name", 0, """
+            {"ops":[{"op":"lathe"}]}
+            """),
+
+        ("a nameless prim with a bad shape too", "missing-name", 0, """
+            {"ops":[{"op":"prim","shape":"torus"}]}
             """),
 
         ("no ops at all", "no-ops", null, """{"ops":[]}"""),
@@ -209,6 +282,17 @@ public class BlenderDriverTests : Polson.Tests.TestsRuntime
 
         var projections = Regex.Match(source, @"UV_PROJECTIONS = \(([^)]*)\)").Groups[1].Value;
         Assert.Equal(["cube", "smart"], Quoted(projections).Order());
+
+        //: Matched as key/value PAIRS rather than through `Keys`, because BINDS is the one mirrored
+        //: dict whose values are lowercase quoted strings — `Keys` would return "name" alongside the
+        //: op names and the comparison would say less than it appears to.
+        var pairs = Regex.Matches(
+                Regex.Match(source, @"BINDS = \{([^}]*)\}").Groups[1].Value,
+                @"""(\w+)"":\s*""(\w+)""")
+            .ToDictionary(m => m.Groups[1].Value, m => m.Groups[2].Value);
+
+        Assert.NotEmpty(pairs);
+        Assert.Equal(pairs.OrderBy(p => p.Key), BlenderDriver.KnownBinds.OrderBy(p => p.Key));
     }
 
     /// <summary>A real chair, and the numbers it comes back with.</summary>
@@ -315,6 +399,86 @@ public class BlenderDriverTests : Polson.Tests.TestsRuntime
             + $"= joined {joined.MeshVerts} (a leak would read {bevelled.MeshVerts * 2})");
     }
 
+    /// <summary>A lathe passes the pre-flight and reports what it would export.</summary>
+    [Fact]
+    public void PreflightPassesABarrel()
+    {
+        var result = BlenderDriver.Validate(Barrel);
+
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal("barrel", result.Export);
+        Assert.Equal(["barrel"], result.Live);
+    }
+
+    /// <summary>A barrel comes back as the solid of revolution its profile describes, exactly.</summary>
+    /// <remarks>
+    /// <b>Both assertions are closed form rather than golden numbers</b>, which is what makes this a
+    /// check on the revolve rather than a record of one run. The counts follow from the profile: five
+    /// of its seven points sit off the axis and sweep a ring apiece, the two on it weld to one pole
+    /// each, and the two bands touching a pole are triangles where the other four are quads. The
+    /// volume follows from the frustum formula times the inscription factor of a 24-sided polygon —
+    /// so it would catch a revolve that produced the right topology at the wrong radius, which the
+    /// counts cannot see.
+    /// <para>
+    /// The <i>sign</i> is the winding. A mesh built inside out has the same counts and the same
+    /// volume magnitude and differs only here — it renders perfectly in a wireframe and is lit
+    /// inside out, which is the failure the interpreter's <c>recalc_face_normals</c> exists to stop.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ABarrelIsTheSolidItsProfileDescribes()
+    {
+        if (!Ready()) return;
+
+        using var dir = new TempDirectory();
+        var build = BlenderDriver.Build(Barrel, dir.Path);
+
+        Assert.True(build.Ok, build.Error + " " + build.Diagnostics);
+        Assert.Equal("barrel", build.Exported);
+
+        Assert.Equal((5 * BarrelSides) + 2, build.MeshVerts);
+        Assert.Equal((2 * BarrelSides) + (4 * BarrelSides * 2), build.MeshTris);
+
+        var volume = SignedVolume(new MeshToolkit(dir.Path).Load("prop.glb"));
+        Assert.Equal(BarrelVolume(BarrelSides), volume, 4);
+
+        output.WriteLine($"barrel: {build.MeshVerts} verts / {build.MeshTris} tris, "
+            + $"volume {volume:+0.000000;-0.000000} against "
+            + $"{BarrelVolume(BarrelSides):0.000000} predicted, {build.Ms} ms");
+    }
+
+    /// <summary>A profile written top-down gives the same solid as one written bottom-up.</summary>
+    /// <remarks>
+    /// A revolve's face winding follows the direction the profile was written in, so without the
+    /// interpreter's normal pass these two would be the same shape with opposite normals — identical
+    /// in a wireframe, one of them lit inside out. The volume's <b>sign</b> is what separates them
+    /// and the counts are not, which is why both are asserted.
+    /// </remarks>
+    [Fact]
+    public void AProfileWrittenEitherWayGivesTheSameSolid()
+    {
+        if (!Ready()) return;
+
+        using var down = new TempDirectory();
+        using var up = new TempDirectory();
+
+        var a = BlenderDriver.Build(Barrel, down.Path);
+        var b = BlenderDriver.Build(ReversedBarrel, up.Path);
+
+        Assert.True(a.Ok, a.Error);
+        Assert.True(b.Ok, b.Error);
+        Assert.Equal(a.MeshVerts, b.MeshVerts);
+        Assert.Equal(a.MeshTris, b.MeshTris);
+
+        var forward = SignedVolume(new MeshToolkit(down.Path).Load("prop.glb"));
+        var reversed = SignedVolume(new MeshToolkit(up.Path).Load("prop.glb"));
+
+        Assert.Equal(forward, reversed, 4);
+        Assert.True(forward > 0, $"the barrel is wound inside out: volume {forward}");
+
+        output.WriteLine($"bottom-up {forward:0.000000} == top-down {reversed:0.000000}");
+    }
+
     /// <summary>The interpreter refuses the same lists, for the same stated reasons.</summary>
     /// <remarks>
     /// <b>The test the duplication exists for.</b> <see cref="BlenderDriver.Build"/> never lets a bad
@@ -351,6 +515,52 @@ public class BlenderDriverTests : Polson.Tests.TestsRuntime
         if (BlenderDriver.Available) return true;
         output.WriteLine($"NOT RUN: building props needs {BlenderDriver.Missing}.");
         return false;
+    }
+
+    /// <summary>A mesh's volume by the divergence theorem, signed by its winding.</summary>
+    /// <remarks>
+    /// Outward winding on a closed mesh gives a positive volume and inside out gives the same
+    /// magnitude negative, so this is the one measurement that reads both the shape and the
+    /// orientation. Blender's Z-up to glTF's Y-up is a rotation rather than a reflection, so the
+    /// sign survives the export.
+    /// </remarks>
+    static double SignedVolume(FaceMesh mesh)
+    {
+        var volume = 0.0;
+        for (var t = 0; t < mesh.Indices.Length / 3; t++)
+        {
+            var a = mesh.Vertices[mesh.Indices[(t * 3) + 0]];
+            var b = mesh.Vertices[mesh.Indices[(t * 3) + 1]];
+            var c = mesh.Vertices[mesh.Indices[(t * 3) + 2]];
+            volume += ((a.X * ((b.Y * c.Z) - (b.Z * c.Y)))
+                     - (a.Y * ((b.X * c.Z) - (b.Z * c.X)))
+                     + (a.Z * ((b.X * c.Y) - (b.Y * c.X)))) / 6.0;
+        }
+
+        return volume;
+    }
+
+    /// <summary>What <see cref="Barrel"/> should displace, from the profile and nothing else.</summary>
+    /// <remarks>
+    /// The wall is a stack of frustums, each of volume <c>π h (r1² + r1 r2 + r2²) / 3</c>. A revolve
+    /// of <paramref name="sides"/> steps inscribes that circle rather than matching it, so the
+    /// result is short by a factor the polygon's own area ratio gives — 1.14% at 24 sides. Including
+    /// it is what makes this an equality rather than an inequality with a fudge in it.
+    /// </remarks>
+    static double BarrelVolume(int sides)
+    {
+        (double R, double Z)[] wall =
+            [(0.30, 0.0), (0.34, 0.15), (0.36, 0.40), (0.34, 0.65), (0.30, 0.80)];
+
+        var exact = 0.0;
+        for (var i = 0; i < wall.Length - 1; i++)
+        {
+            var (r1, z1) = wall[i];
+            var (r2, z2) = wall[i + 1];
+            exact += Math.PI * (z2 - z1) * ((r1 * r1) + (r1 * r2) + (r2 * r2)) / 3.0;
+        }
+
+        return exact * (sides / (2 * Math.PI)) * Math.Sin(2 * Math.PI / sides);
     }
 
     /// <summary>Invokes the interpreter with no pre-flight, so its own verdict can be read.</summary>

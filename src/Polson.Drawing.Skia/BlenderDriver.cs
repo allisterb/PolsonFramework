@@ -3,6 +3,7 @@ namespace Polson.Drawing.Skia;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -47,10 +48,17 @@ public static class BlenderDriver
     //: Mirrors of the interpreter's own dispatch tables. They are duplicated rather than shared
     //: because nothing can be imported across the boundary, and `BlenderDriverTests` reads
     //: build_prop.py to assert the two agree — a drift guard rather than a hope.
-    static readonly string[] ops = ["prim", "bevel", "boolean", "join", "uv"];
+    static readonly string[] ops = ["prim", "lathe", "bevel", "boolean", "join", "uv"];
     static readonly string[] shapes = ["cube", "cylinder", "sphere", "cone"];
     static readonly string[] booleans = ["difference", "union", "intersect"];
     static readonly string[] projections = ["smart", "cube"];
+
+    //: Which field of an op binds a fresh name, mirroring the interpreter's `BINDS`. It is a table
+    //: rather than a line in each case because the interpreter checks the field's *presence* before
+    //: dispatching the op at all — so a lathe with no name and a bad profile reports the missing
+    //: name, and a check folded into `Bind` would run after the profile's and report the other one.
+    static readonly Dictionary<string, string> binds =
+        new() { ["prim"] = "name", ["lathe"] = "name", ["join"] = "name" };
     #endregion
 
     #region Properties
@@ -95,6 +103,9 @@ public static class BlenderDriver
 
     /// <summary>The primitive shapes the interpreter accepts.</summary>
     public static IReadOnlyList<string> KnownShapes => shapes;
+
+    /// <summary>Which field of each op binds a fresh name, keyed by op.</summary>
+    public static IReadOnlyDictionary<string, string> KnownBinds => binds;
     #endregion
 
     #region Methods
@@ -249,6 +260,12 @@ public static class BlenderDriver
             return PropValidation.Fail("unknown-op", index,
                 $"unknown op '{kind}'; known ops are {string.Join(", ", ops.Order())}");
 
+        //: Checked here rather than in `Bind` so the order matches the interpreter's, which tests
+        //: its `BINDS` field before dispatching the op and therefore reports a missing name ahead of
+        //: anything wrong with the op's own fields.
+        if (binds.TryGetValue(kind, out var bound) && Text(op, bound) is not { Length: > 0 })
+            return PropValidation.Fail("missing-name", index, $"a {kind} needs a '{bound}'");
+
         switch (kind)
         {
             case "prim":
@@ -260,6 +277,20 @@ public static class BlenderDriver
                     && sides.ValueKind == JsonValueKind.Number && sides.GetInt32() < 3)
                     return PropValidation.Fail("bad-sides", index,
                         $"sides must be at least 3, got {sides.GetInt32()}");
+                return Bind(op, index, names);
+
+            case "lathe":
+                if (Profile(op, index) is { } badProfile) return badProfile;
+                if (op.TryGetProperty("sides", out var steps)
+                    && steps.ValueKind == JsonValueKind.Number && steps.GetInt32() < 3)
+                    return PropValidation.Fail("bad-sides", index,
+                        $"sides must be at least 3, got {steps.GetInt32()}");
+                if (op.TryGetProperty("angleDeg", out var sweep)
+                    && sweep.ValueKind == JsonValueKind.Number
+                    && (sweep.GetDouble() == 0 || Math.Abs(sweep.GetDouble()) > 360))
+                    return PropValidation.Fail("bad-angle", index,
+                        "angleDeg must be non-zero and within one full turn, got "
+                        + Number(sweep.GetDouble()));
                 return Bind(op, index, names);
 
             case "bevel":
@@ -310,6 +341,51 @@ public static class BlenderDriver
 
         return null;
     }
+
+    /// <summary>Checks a lathe's profile, which is the one op field carrying geometry.</summary>
+    /// <remarks>
+    /// A negative radius is refused rather than absolute-valued. It sweeps the wall through the axis
+    /// and out the far side, so the solid comes back inside out — which builds, exports and renders
+    /// perfectly, and is obviously wrong only once it is lit; and it means the profile was authored
+    /// against the wrong sign convention, so the rest of it is suspect too.
+    /// </remarks>
+    static PropValidation? Profile(JsonElement op, int index)
+    {
+        if (!op.TryGetProperty("profile", out var profile)
+            || profile.ValueKind != JsonValueKind.Array || profile.GetArrayLength() < 2)
+            return PropValidation.Fail("bad-profile", index,
+                "a lathe needs a 'profile' of at least two [radius, height] points");
+
+        var onAxis = true;
+        foreach (var point in profile.EnumerateArray())
+        {
+            if (point.ValueKind != JsonValueKind.Array || point.GetArrayLength() != 2)
+                return PropValidation.Fail("bad-profile", index,
+                    "every profile point must be a [radius, height] pair");
+
+            foreach (var value in point.EnumerateArray())
+                if (value.ValueKind != JsonValueKind.Number)
+                    return PropValidation.Fail("bad-profile", index,
+                        "profile points must be numbers");
+
+            var radius = point[0].GetDouble();
+            if (radius < 0)
+                return PropValidation.Fail("bad-profile", index,
+                    $"profile radius {Number(radius)} is negative; a radius is a distance from "
+                    + "the axis");
+            if (radius != 0) onAxis = false;
+        }
+
+        return onAxis
+            ? PropValidation.Fail("bad-profile", index,
+                "every profile radius is zero, so the profile lies on the axis and sweeps nothing")
+            : null;
+    }
+
+    //: Six significant digits and no trailing zeros, which is what the interpreter's `%g` gives, so
+    //: the two validators' messages read the same for the same input. Invariant because a machine
+    //: with a comma decimal separator would otherwise phrase a refusal differently from Blender's.
+    static string Number(double value) => value.ToString("G6", CultureInfo.InvariantCulture);
 
     static PropValidation? Bind(
         JsonElement op, int index, Dictionary<string, (string By, int At)?> names)

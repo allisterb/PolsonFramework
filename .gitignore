@@ -460,5 +460,19 @@ docs/internal/
 #
 #   curl -o models/face_landmarker.task \
 #     https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+#
+#   curl -o models/pose_landmarker_full.task \
+#     https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task
+#
+# Image segmentation (spike, src/vision/segment.py). Two models answering different
+# questions: deeplab_v3 gives a whole-figure `person` matte and works on drawn art;
+# selfie_multiclass gives hair/skin/clothes sub-regions and is OUT OF DOMAIN on a
+# full-body drawing -- measured 2026-09-22, it collapses the figure to `clothes` and
+# finds no hair or skin at all. Fetch both only if you mean to re-measure that.
+#
+#   curl -o models/deeplab_v3.tflite \
+#     https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite
+#   curl -o models/selfie_multiclass_256x256.tflite \
+#     https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite
 models/
 assets/

@@ -1,6 +1,7 @@
 namespace Polson.ExtendedMind.ObjectGeneration;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -93,6 +94,12 @@ public sealed class TrellisClient : Runtime, IDisposable
     /// <summary>Readiness. A container answers this long before it can generate.</summary>
     public const string ReadyPath = "/v1/health/ready";
 
+    /// <summary>The service's own schema, which is where the loaded variant's limits are declared.</summary>
+    public const string SchemaPath = "/openapi.json";
+
+    /// <summary>Which variant is loaded, by NGC profile name.</summary>
+    public const string MetadataPath = "/v1/metadata";
+
     /// <summary>The service's bounds, from <c>Object3DRequest</c>.</summary>
     public const int MinSamplingSteps = 10;
 
@@ -144,6 +151,37 @@ public sealed class TrellisClient : Runtime, IDisposable
         }
     }
 
+    /// <summary>What the loaded variant accepts, read once and cached for this client.</summary>
+    /// <remarks>
+    /// <b>Ask this before committing to a modality</b>, exactly as a script asks
+    /// <c>Skia.tracer.available</c>. The answer is a property of the container that happens to be
+    /// running rather than of TRELLIS, and it changes when the variant is switched — which is how a
+    /// text-mode default silently starts failing against a box that was image-only all along.
+    /// <para>
+    /// Cached per client because the base address is fixed at construction. A failed read is cached
+    /// too: an endpoint serving no schema will not grow one, and re-asking on every generation would
+    /// pay a timeout per call to learn the same nothing.
+    /// </para>
+    /// </remarks>
+    public async Task<TrellisCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+    {
+        if (this.capabilities is { } cached)
+        {
+            return cached;
+        }
+
+        var read = await ReadCapabilitiesAsync(cancellationToken);
+
+        // Not cached when the caller's own token cancelled the read: that says nothing about the
+        // endpoint, and caching it would make one cancellation poison every later call.
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            this.capabilities = read;
+        }
+
+        return read;
+    }
+
     /// <summary>Generates one model, retrying a service-side fault.</summary>
     /// <param name="attempts">
     /// How many times to try. <b>Above one only helps a hosted endpoint</b>, whose failures are
@@ -162,6 +200,21 @@ public sealed class TrellisClient : Runtime, IDisposable
         if (Validate(request) is { } invalid)
         {
             return invalid;
+        }
+
+        //: The static bounds above accept 'text' and 'image' because both are real TRELLIS modes.
+        //: Only the loaded variant knows which of them IT serves, so this is the one check that has
+        //: to ask the service — and it fails OPEN, so an endpoint with no schema behaves as before.
+        var caps = await GetCapabilitiesAsync(cancellationToken);
+        var mode = EffectiveMode(request);
+        if (!caps.Accepts(mode))
+        {
+            return Invalid(
+                $"This endpoint's loaded variant accepts mode {caps.ModeList()}, not '{mode}'"
+                + (caps.Profile is { } p ? $" — it is running {p}" : string.Empty)
+                + $". Supply {(caps.Modes.Contains("image") ? "an image" : "a prompt")} instead, or "
+                + "load a variant that serves both. The accepted mode is a property of the container "
+                + "that happens to be running, not of TRELLIS.");
         }
 
         var started = System.Diagnostics.Stopwatch.StartNew();
@@ -263,6 +316,138 @@ public sealed class TrellisClient : Runtime, IDisposable
     #endregion
 
     #region Methods (private)
+    /// <summary>The mode the service will actually apply, inferred the way the service infers it.</summary>
+    /// <remarks>
+    /// <c>mode</c> is optional, and the schema says an unset one is <i>"determined based on the image
+    /// and prompt inputs"</i>. So a request that never names a mode still has one, and a text prompt
+    /// against an image-only variant fails whether or not the caller spelled it out.
+    /// </remarks>
+    internal static string EffectiveMode(TrellisRequest request) =>
+        request.Mode ?? (request.Image is not null ? "image" : "text");
+
+    async Task<TrellisCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            using var response = await this.http.GetAsync(this.baseUrl + SchemaPath, cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new TrellisCapabilities
+                {
+                    Available = false,
+                    Error = $"{SchemaPath} answered {(int)response.StatusCode}."
+                };
+            }
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token));
+            if (!doc.RootElement.TryGetProperty("components", out var components)
+                || !components.TryGetProperty("schemas", out var schemas)
+                || !schemas.TryGetProperty("Object3DRequest", out var schema)
+                || !schema.TryGetProperty("properties", out var fields))
+            {
+                return new TrellisCapabilities
+                {
+                    Available = false,
+                    Error = "The schema carries no Object3DRequest."
+                };
+            }
+
+            return new TrellisCapabilities
+            {
+                Available = true,
+                Profile = await ReadProfileAsync(cts.Token),
+                Modes = Literals(fields, "mode"),
+                OutputFormats = Literals(fields, "output_format"),
+                MultiImageAlgorithms = Literals(fields, "multiimage_algo"),
+                AcceptsImageArray = Branches(fields, "image")
+                    .Any(b => b.TryGetProperty("type", out var t) && t.ValueEquals("array")),
+                MaxSamples = Branches(fields, "samples")
+                    .Where(b => b.TryGetProperty("maximum", out _))
+                    .Select(b => (int)b.GetProperty("maximum").GetDouble())
+                    .DefaultIfEmpty(1)
+                    .Max()
+            };
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException
+            or OperationCanceledException or JsonException)
+        {
+            return new TrellisCapabilities { Available = false, Error = e.Message };
+        }
+    }
+
+    /// <summary>The loaded variant's profile name, which is diagnostic rather than load-bearing.</summary>
+    async Task<string?> ReadProfileAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await this.http.GetAsync(this.baseUrl + MetadataPath, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+
+            //: Several models are listed — the generator, a guardrails model and a metadata stub.
+            //: The one with a backend in its name is the generator; anything else is scaffolding.
+            return doc.RootElement.TryGetProperty("modelInfo", out var models)
+                && models.ValueKind == JsonValueKind.Array
+                ? models.EnumerateArray()
+                    .Select(m => m.TryGetProperty("shortName", out var n) ? n.GetString() : null)
+                    .FirstOrDefault(n => n is not null && n.Contains("pytorch", StringComparison.OrdinalIgnoreCase))
+                : null;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException
+            or OperationCanceledException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The string values a field is constrained to, across every branch of its union.</summary>
+    /// <remarks>
+    /// <b>The constraint lives inside an <c>anyOf</c>, not beside it</b> — every optional field is a
+    /// union with <c>null</c>, so the branch carries the <c>const</c> or <c>enum</c> and the property
+    /// itself carries neither. Reading only the top level reports every field as unconstrained, which
+    /// is a wrong answer that looks like a permissive one.
+    /// </remarks>
+    static IReadOnlyList<string> Literals(JsonElement fields, string name)
+    {
+        List<string> found = [];
+
+        foreach (var branch in Branches(fields, name))
+        {
+            if (branch.TryGetProperty("const", out var one) && one.ValueKind == JsonValueKind.String)
+            {
+                found.Add(one.GetString()!);
+            }
+
+            if (branch.TryGetProperty("enum", out var many) && many.ValueKind == JsonValueKind.Array)
+            {
+                found.AddRange(many.EnumerateArray()
+                    .Where(v => v.ValueKind == JsonValueKind.String)
+                    .Select(v => v.GetString()!));
+            }
+        }
+
+        return found.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>A field's union branches, or the field itself when it is not a union.</summary>
+    static IEnumerable<JsonElement> Branches(JsonElement fields, string name)
+    {
+        if (!fields.TryGetProperty(name, out var field)) yield break;
+
+        if (field.TryGetProperty("anyOf", out var any) && any.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var branch in any.EnumerateArray()) yield return branch;
+        }
+        else
+        {
+            yield return field;
+        }
+    }
+
     async Task<TrellisResult> AttemptAsync(
         TrellisRequest request, TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -430,6 +615,11 @@ public sealed class TrellisClient : Runtime, IDisposable
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+
+    //: The loaded variant's limits, read once. Not `volatile` and not locked: a racing pair of
+    //: callers performs the read twice and stores the same answer, which is cheaper than the
+    //: synchronisation and cannot be wrong.
+    TrellisCapabilities? capabilities;
 
     readonly HttpClient http;
     readonly string baseUrl;

@@ -1,6 +1,83 @@
 namespace Polson.ExtendedMind.ObjectGeneration;
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
+
+#region Capabilities
+
+/// <summary>What the <b>loaded model variant</b> accepts, read from the service's own schema.</summary>
+/// <remarks>
+/// <para>
+/// <b>The accepted <c>mode</c> is narrowed by the loaded variant at runtime, and nothing in the
+/// published documentation says so.</b> A <c>base:text</c> container declares <c>text</c>; a
+/// <c>large:image</c> one declares <c>image</c> and refuses <c>"text"</c> outright — with a 422
+/// naming a field the caller set deliberately. That follows from the model rather than from the API:
+/// TRELLIS conditions text through CLIP and images through DINOv2 (arXiv 2412.01506v3), so the
+/// variants are genuinely different models and a text container has no image encoder to hand a
+/// picture to.
+/// </para>
+/// <para>
+/// <b>Read from the schema rather than probed for.</b> The constraint is declared: <c>mode</c> is an
+/// <c>anyOf</c> carrying a <c>const</c>, or an <c>enum</c> where one variant serves both. Probing
+/// would cost a deliberate 422 per question and say no more than one cheap GET does.
+/// </para>
+/// <para>
+/// <b>Absence is not a refusal.</b> An endpoint that serves no schema — the hosted route does not —
+/// yields <see cref="Available"/> false, and callers treat that as "unknown" rather than as "no".
+/// A detection failure must never block a generation that would have worked.
+/// </para>
+/// </remarks>
+public sealed class TrellisCapabilities
+{
+    #region Properties
+    /// <summary>Whether a schema was read. False means unknown, never "refused".</summary>
+    public bool Available { get; init; }
+
+    /// <summary>Why the schema could not be read, when it could not.</summary>
+    public string? Error { get; init; }
+
+    /// <summary>The variant's NGC profile name, from <c>/v1/metadata</c>. Null when unread.</summary>
+    /// <remarks>
+    /// Worth carrying because it is the only human-legible statement of <i>which</i> variant is up —
+    /// <c>trellis:1.0.0-pytorch-generic-large</c> against <c>…-base-text</c>. The mode list says what
+    /// it accepts; this says what it is.
+    /// </remarks>
+    public string? Profile { get; init; }
+
+    /// <summary>The <c>mode</c> values this variant accepts. Empty when unknown.</summary>
+    public IReadOnlyList<string> Modes { get; init; } = [];
+
+    /// <summary>The <c>output_format</c> values it accepts — <c>glb</c> and <c>stl</c> in 1.0.2.</summary>
+    public IReadOnlyList<string> OutputFormats { get; init; } = [];
+
+    /// <summary>The <c>multiimage_algo</c> values, used only when more than one image is supplied.</summary>
+    public IReadOnlyList<string> MultiImageAlgorithms { get; init; } = [];
+
+    /// <summary>Whether <c>image</c> accepts an array, which is how multi-view input is supplied.</summary>
+    public bool AcceptsImageArray { get; init; }
+
+    /// <summary>The <c>samples</c> ceiling.</summary>
+    /// <remarks>
+    /// <b>It is 1, and the schema says so twice</b> — <c>maximum: 1</c> and a description reading
+    /// <i>"Only samples=1 is supported."</i> Surfaced because this is the one field that looks as
+    /// though it might return several variants of a prop from one call, and it cannot.
+    /// </remarks>
+    public int MaxSamples { get; init; } = 1;
+    #endregion
+
+    #region Methods
+    /// <summary>Whether this variant takes that mode. <b>Unknown counts as yes</b>, per the remarks.</summary>
+    public bool Accepts(string? mode) =>
+        !this.Available || this.Modes.Count == 0 || mode is null
+            || this.Modes.Contains(mode, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The accepted modes as prose, for a message a reader can act on.</summary>
+    public string ModeList() => this.Modes.Count == 0 ? "(unknown)" : string.Join(" or ", this.Modes.Select(m => $"'{m}'"));
+    #endregion
+}
+#endregion
 
 #region Request
 

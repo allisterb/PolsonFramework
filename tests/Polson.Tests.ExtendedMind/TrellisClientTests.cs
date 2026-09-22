@@ -1,7 +1,10 @@
 namespace Polson.Tests.ExtendedMind;
 
 using System;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 using SkiaSharp;
@@ -23,6 +26,23 @@ public class TrellisClientTests : TestsRuntime
     #region Fields
     readonly ITestOutputHelper output;
     readonly string? baseUrl;
+
+    /// <summary>The <c>Object3DRequest</c> fragment a <c>large:image</c> container really serves.</summary>
+    /// <remarks>
+    /// Trimmed to the constrained fields and copied from the live schema rather than invented, so the
+    /// shape under test is the shape that arrives: every optional field is an <c>anyOf</c> against
+    /// <c>null</c>, and the <c>const</c> or <c>enum</c> rides on the non-null branch.
+    /// </remarks>
+    const string ImageOnlySchema = """
+        {"components":{"schemas":{"Object3DRequest":{"properties":{
+          "mode":{"anyOf":[{"type":"string","const":"image"},{"type":"null"}]},
+          "prompt":{"anyOf":[{"type":"string"},{"type":"null"}]},
+          "image":{"anyOf":[{"type":"string"},{"items":{"type":"string"},"type":"array"},{"type":"null"}]},
+          "multiimage_algo":{"anyOf":[{"type":"string","enum":["stochastic","multidiffusion"]},{"type":"null"}],"default":"stochastic"},
+          "samples":{"anyOf":[{"type":"integer","maximum":1.0,"minimum":1.0},{"type":"null"}],"default":1},
+          "output_format":{"anyOf":[{"type":"string","enum":["glb","stl"]},{"type":"null"}],"default":"glb"}
+        }}}}}
+        """;
     #endregion
 
     #region Constructors
@@ -154,6 +174,122 @@ public class TrellisClientTests : TestsRuntime
     }
     #endregion
 
+    #region Capabilities
+    /// <summary>The accepted mode is read from the schema, where it is a <c>const</c> in an union.</summary>
+    /// <remarks>
+    /// <b>The constraint sits INSIDE the <c>anyOf</c>, not beside it</b>, because every optional field
+    /// is a union with null. Reading only the top level reports the field as unconstrained — a wrong
+    /// answer that looks like a permissive one, and the mistake made while first reading this schema
+    /// by hand: a pass that checked only for a top-level <c>enum</c> concluded `mode` was free.
+    /// </remarks>
+    [Fact]
+    public async Task Capabilities_ReadTheLoadedVariantsModeFromTheSchema()
+    {
+        using var client = Stubbed(ImageOnlySchema);
+        var caps = await client.GetCapabilitiesAsync();
+
+        Assert.True(caps.Available);
+        Assert.Equal(["image"], caps.Modes);
+        Assert.Equal(["glb", "stl"], caps.OutputFormats);
+        Assert.Equal(["stochastic", "multidiffusion"], caps.MultiImageAlgorithms);
+        Assert.True(caps.AcceptsImageArray);
+
+        //: Declared `maximum: 1` with a description reading "Only samples=1 is supported". Surfaced
+        //: because it is the one field that looks as though it might return several variants at once.
+        Assert.Equal(1, caps.MaxSamples);
+    }
+
+    /// <summary>A variant serving both declares an enum rather than a const, and both are read.</summary>
+    [Fact]
+    public async Task Capabilities_ReadAnEnumWhereAVariantServesBothModes()
+    {
+        using var client = Stubbed(ImageOnlySchema.Replace(
+            """{"type":"string","const":"image"}""",
+            """{"type":"string","enum":["text","image"]}"""));
+
+        var caps = await client.GetCapabilitiesAsync();
+
+        Assert.Equal(["text", "image"], caps.Modes);
+        Assert.True(caps.Accepts("text"));
+        Assert.True(caps.Accepts("image"));
+    }
+
+    /// <summary>An endpoint serving no schema is UNKNOWN, never "refuses everything".</summary>
+    [Fact]
+    public async Task Capabilities_AreUnknownWhenNoSchemaIsServed()
+    {
+        using var client = Stubbed(null);
+        var caps = await client.GetCapabilitiesAsync();
+
+        Assert.False(caps.Available);
+        Assert.NotNull(caps.Error);
+        Assert.True(caps.Accepts("text"));
+        Assert.True(caps.Accepts("image"));
+    }
+
+    /// <summary>A mode the loaded variant does not serve is refused HERE, before any generation.</summary>
+    /// <remarks>
+    /// <b>This is the failure the detection exists for.</b> The client defaults to <c>text</c>, and a
+    /// <c>large:image</c> container answers a 422 naming <c>mode</c> — so a run whose container was
+    /// switched fails on every call, having spent a round trip each time, with a message about a field
+    /// the caller thought was fine. Asserting that <b>no POST was made</b> is the half that matters.
+    /// </remarks>
+    [Fact]
+    public async Task Generate_RefusesAModeTheLoadedVariantDoesNotServe()
+    {
+        var handler = new StubHandler(ImageOnlySchema);
+        using var client = new TrellisClient("http://stub", httpClient: new HttpClient(handler));
+
+        var result = await client.GenerateAsync(new TrellisRequest { Prompt = "a wooden barrel" });
+
+        Assert.False(result.Success);
+        Assert.Equal(TrellisFailure.InvalidRequest, result.Failure);
+        Assert.Contains("'image'", result.Remedy);
+        Assert.Contains("not 'text'", result.Remedy);
+        Assert.False(result.Retryable);
+        Assert.Equal(0, handler.Posts);
+
+        output.WriteLine(result.Remedy);
+    }
+
+    /// <summary>When capabilities are unknown the request still goes out. Detection fails OPEN.</summary>
+    /// <remarks>
+    /// The hosted route serves no <c>openapi.json</c>, so a detection that refused on absence would
+    /// break the one endpoint it was never tested against. A capability check must be able to say
+    /// "I do not know" and get out of the way.
+    /// </remarks>
+    [Fact]
+    public async Task Generate_ProceedsWhenCapabilitiesAreUnknown()
+    {
+        var handler = new StubHandler(null);
+        using var client = new TrellisClient("http://stub", httpClient: new HttpClient(handler));
+
+        var result = await client.GenerateAsync(new TrellisRequest { Prompt = "a wooden barrel" });
+
+        Assert.NotEqual(TrellisFailure.InvalidRequest, result.Failure);
+        Assert.Equal(1, handler.Posts);
+    }
+
+    /// <summary>An unset mode still has one, inferred the way the service infers it.</summary>
+    /// <remarks>
+    /// The schema says an absent <c>mode</c> is <i>"determined based on the image and prompt inputs"</i>,
+    /// so a text prompt against an image-only variant fails whether or not the caller spelled the mode
+    /// out. Checking only an explicit <c>Mode</c> would miss every request that left it null — which is
+    /// the common case, since it is optional.
+    /// </remarks>
+    [Theory]
+    [InlineData(null, false, "text")]
+    [InlineData(null, true, "image")]
+    [InlineData("text", true, "text")]
+    public void EffectiveMode_IsInferredFromWhatIsSet(string? mode, bool hasImage, string expected) =>
+        Assert.Equal(expected, TrellisClient.EffectiveMode(new TrellisRequest
+        {
+            Mode = mode,
+            Prompt = hasImage ? null : "a barrel",
+            Image = hasImage ? "data:image/png;base64,AAAA" : null
+        }));
+    #endregion
+
     #region Live
     /// <summary>One real generation, whichever mode the loaded variant accepts.</summary>
     /// <remarks>
@@ -254,5 +390,53 @@ public class TrellisClientTests : TestsRuntime
     [Fact]
     public async Task IsReady_IsFalseForAnUnreachableEndpoint() =>
         Assert.False(await new TrellisClient("http://127.0.0.1:9").IsReadyAsync());
+    #endregion
+
+    #region Methods (private)
+    /// <summary>A client whose schema read is answered by <paramref name="schema"/>, or 404 when null.</summary>
+    static TrellisClient Stubbed(string? schema) =>
+        new("http://stub", httpClient: new HttpClient(new StubHandler(schema)));
+    #endregion
+
+    #region Types
+    /// <summary>Answers the schema and metadata reads, and counts inference attempts.</summary>
+    /// <remarks>
+    /// <b>The POST count is the assertion that matters</b> in two of the tests above: a refusal is
+    /// only worth having if it happens BEFORE the round trip, and a generation is only proven to have
+    /// been attempted if something saw it. Both are invisible from the result alone.
+    /// </remarks>
+    sealed class StubHandler(string? schema) : HttpMessageHandler
+    {
+        internal int Posts { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                this.Posts++;
+
+                //: A 500 rather than a success: these tests are about whether the call was MADE, and
+                //: a stubbed artifact would assert the decoding path all over again for nothing.
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("stub")
+                });
+            }
+
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == TrellisClient.SchemaPath && schema is not null)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(schema)
+                });
+            }
+
+            //: Metadata is deliberately absent, so `Profile` comes back null and the refusal message
+            //: has to read sensibly without it.
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
     #endregion
 }

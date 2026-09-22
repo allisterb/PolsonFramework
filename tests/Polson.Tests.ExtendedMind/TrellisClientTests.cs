@@ -290,6 +290,197 @@ public class TrellisClientTests : TestsRuntime
         }));
     #endregion
 
+    #region Hosted
+    /// <summary>The URL's shape picks the endpoint kind, and with it the inference URL.</summary>
+    /// <remarks>
+    /// <b>The bug this fixes was a hardcoded path.</b> <c>baseUrl + "/v1/infer"</c> cannot produce
+    /// <c>/v1/genai/microsoft/trellis</c> by any choice of base, so the client could not reach the
+    /// hosted route at all — measured, it 404s. One setting selects both now, because a URL plus a
+    /// separate mode flag is two things to keep in step and one of them gets forgotten.
+    /// </remarks>
+    [Theory]
+    [InlineData("http://localhost:8000", false, "http://localhost:8000/v1/infer")]
+    [InlineData("http://192.168.8.171:8000/", false, "http://192.168.8.171:8000/v1/infer")]
+    [InlineData(TrellisClient.HostedUrl, true, TrellisClient.HostedUrl)]
+    public void Endpoint_IsChosenByTheUrlsShape(string baseUrl, bool hosted, string infer)
+    {
+        using var client = new TrellisClient(baseUrl);
+
+        Assert.Equal(hosted, client.IsHosted);
+        Assert.Equal(infer, client.InferUrl);
+    }
+
+    /// <summary>Nothing pattern-matches on NVIDIA's hostname, so a proxied route still reads hosted.</summary>
+    [Fact]
+    public void Endpoint_DoesNotKeyOnTheHostname()
+    {
+        using var proxied = new TrellisClient("https://gateway.internal/models/trellis");
+
+        Assert.True(proxied.IsHosted);
+        Assert.Equal("https://gateway.internal/models/trellis", proxied.InferUrl);
+    }
+
+    /// <summary>The hosted route serves no schema, so its limits are unknown and nothing is refused.</summary>
+    /// <remarks>
+    /// Verified against the real service: <c>/openapi.json</c> 404s there. Reported as unknown
+    /// <b>without spending a round trip</b> to rediscover that, and <c>Accepts</c> then waves every
+    /// mode through — the same fail-open the container path relies on when a schema cannot be read.
+    /// </remarks>
+    [Fact]
+    public async Task Hosted_ReportsItsCapabilitiesAsUnknownWithoutAsking()
+    {
+        var handler = new StubHandler(ImageOnlySchema);
+        using var client = new TrellisClient(
+            TrellisClient.HostedUrl, "k", new HttpClient(handler));
+
+        var caps = await client.GetCapabilitiesAsync();
+
+        Assert.False(caps.Available);
+        Assert.NotNull(caps.Error);
+        Assert.True(caps.Accepts("text"));
+
+        //: The schema stub would have answered had it been asked. Nothing asked it.
+        Assert.Equal(0, handler.Gets);
+    }
+
+    /// <summary>no_texture is refused for hosted rather than dropped.</summary>
+    /// <remarks>
+    /// It is honoured by a container and not by the hosted route — measured. Stripping it silently
+    /// would hand back a <i>textured</i> mesh to a caller who asked for none: billed, slower and
+    /// 6.7x larger, with nothing in the result saying the flag had been ignored.
+    /// </remarks>
+    [Fact]
+    public async Task Hosted_RefusesNoTextureRatherThanDroppingIt()
+    {
+        var handler = new StubHandler(null);
+        using var client = new TrellisClient(
+            TrellisClient.HostedUrl, "k", new HttpClient(handler));
+
+        var result = await client.GenerateAsync(
+            new TrellisRequest { Prompt = "a barrel", NoTexture = true });
+
+        Assert.Equal(TrellisFailure.InvalidRequest, result.Failure);
+        Assert.Contains("no_texture", result.Remedy);
+        Assert.Equal(0, handler.Posts);
+
+        //: The same request without the flag is not refused locally — so the assertion above is
+        //: about the flag rather than about hosted requests being blocked wholesale.
+        var allowed = await client.GenerateAsync(new TrellisRequest { Prompt = "a barrel" });
+        Assert.NotEqual(TrellisFailure.InvalidRequest, allowed.Failure);
+    }
+
+    /// <summary>The hosted route refuses an image of your own, and says why.</summary>
+    /// <remarks>
+    /// <b>Its image field takes only NVIDIA's four canned demos.</b> Found by walking every encoding
+    /// against the live service: inline base64 answers <i>"Expected: example_id, got: base64"</i>;
+    /// an uploaded NVCF asset answers <i>"got: asset_id"</i> — and the upload succeeds first, so a
+    /// caller doing it by hand gets no warning until the generation; and the right token answers
+    /// <i>"Not valid example_id, expected value 0, 1, 2, 3"</i>.
+    /// <para>
+    /// Refused here so the message explains it once, rather than each caller decoding a 422 about a
+    /// token they never wrote. <b>It closes the draw-then-turn route on hosted</b>, which is the one
+    /// that matters most to this studio, so it is worth stating loudly rather than discovering.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task Hosted_RefusesAnImageOfYourOwnAndNamesTheReason()
+    {
+        var handler = new StubHandler(null);
+        using var client = new TrellisClient(
+            TrellisClient.HostedUrl, "k", new HttpClient(handler));
+
+        var result = await client.GenerateAsync(new TrellisRequest
+        {
+            Mode = "image",
+            Image = "data:image/png;base64,AAAA"
+        });
+
+        Assert.Equal(TrellisFailure.InvalidRequest, result.Failure);
+        Assert.Contains("example_id", result.Remedy);
+        Assert.Equal(0, handler.Posts);
+    }
+
+    /// <summary>One of its own demo references is allowed through rather than blocked.</summary>
+    /// <remarks>
+    /// Declining it would be this client overruling the service about its own behaviour. Useless for
+    /// a studio drawing its own elevations, and not ours to forbid.
+    /// </remarks>
+    [Fact]
+    public async Task Hosted_AllowsItsOwnExampleReference()
+    {
+        var handler = new StubHandler(null);
+        using var client = new TrellisClient(
+            TrellisClient.HostedUrl, "k", new HttpClient(handler));
+
+        var result = await client.GenerateAsync(new TrellisRequest
+        {
+            Mode = "image",
+            Image = "data:image/png;example_id,0"
+        });
+
+        Assert.NotEqual(TrellisFailure.InvalidRequest, result.Failure);
+        Assert.Equal(1, handler.Posts);
+    }
+
+    /// <summary>A container takes an image of your own, which is the contrast that matters.</summary>
+    [Fact]
+    public async Task AContainerTakesAnImageOfYourOwn()
+    {
+        var handler = new StubHandler(ImageOnlySchema);
+        using var client = new TrellisClient("http://stub", httpClient: new HttpClient(handler));
+
+        var result = await client.GenerateAsync(new TrellisRequest
+        {
+            Mode = "image",
+            Image = "data:image/png;base64,AAAA"
+        });
+
+        Assert.NotEqual(TrellisFailure.InvalidRequest, result.Failure);
+        Assert.Equal(1, handler.Posts);
+    }
+
+    /// <summary>A 202 is polled to its result rather than parsed as one.</summary>
+    /// <remarks>
+    /// <b><c>IsSuccessStatusCode</c> is true for 202</b>, so without this the body of an
+    /// acknowledgement is handed to the parser as though it were a finished generation — and fails
+    /// naming the wrong thing. The stub answers 202 once, then 202 again (still working), then the
+    /// artifact, which is the shape NVCF actually produces.
+    /// </remarks>
+    [Fact]
+    public async Task Hosted_PollsA202ToItsResult()
+    {
+        var handler = new StubHandler(null) { AcceptThenPoll = true };
+        using var client = new TrellisClient(
+            TrellisClient.HostedUrl, "k", new HttpClient(handler));
+
+        var result = await client.GenerateAsync(
+            new TrellisRequest { Prompt = "a barrel" }, timeout: TimeSpan.FromSeconds(30));
+
+        Assert.True(result.Success, result.Remedy + " " + result.Error);
+        Assert.NotEmpty(result.Bytes);
+        Assert.True(handler.Polls >= 2, $"expected the status route to be polled, saw {handler.Polls}");
+    }
+
+    /// <summary>A 202 with no request id says so, rather than becoming a generic service error.</summary>
+    /// <remarks>
+    /// That is a different repair from a failed generation — it means <i>this endpoint asked us to
+    /// poll and we could not tell where</i> — and guessing between the two wastes the run.
+    /// </remarks>
+    [Fact]
+    public async Task Hosted_SaysSoWhenA202CarriesNoRequestId()
+    {
+        var handler = new StubHandler(null) { AcceptThenPoll = true, OmitRequestId = true };
+        using var client = new TrellisClient(
+            TrellisClient.HostedUrl, "k", new HttpClient(handler));
+
+        var result = await client.GenerateAsync(new TrellisRequest { Prompt = "a barrel" });
+
+        Assert.False(result.Success);
+        Assert.Contains("NVCF-REQID", result.Remedy);
+        Assert.Equal(0, handler.Polls);
+    }
+    #endregion
+
     #region Live
     /// <summary>One real generation, whichever mode the loaded variant accepts.</summary>
     /// <remarks>
@@ -407,24 +598,69 @@ public class TrellisClientTests : TestsRuntime
     /// </remarks>
     sealed class StubHandler(string? schema) : HttpMessageHandler
     {
+        /// <summary>Answer the first POST with 202, then make the status route work for it.</summary>
+        internal bool AcceptThenPoll { get; init; }
+
+        /// <summary>Send the 202 without its NVCF-REQID, which is the case that cannot be followed.</summary>
+        internal bool OmitRequestId { get; init; }
+
         internal int Posts { get; private set; }
+
+        internal int Gets { get; private set; }
+
+        internal int Polls { get; private set; }
+
+        //: A one-pixel GLB stand-in. The bytes are never decoded by these tests — what is asserted
+        //: is that a poll reached a result at all — so any non-empty payload serves.
+        static string Artifact() =>
+            """{"artifacts":[{"base64":"Z2xURgIAAAA=","finishReason":"SUCCESS","seed":7}]}""";
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            var path = request.RequestUri!.AbsolutePath;
+
             if (request.Method == HttpMethod.Post)
             {
                 this.Posts++;
 
-                //: A 500 rather than a success: these tests are about whether the call was MADE, and
-                //: a stubbed artifact would assert the decoding path all over again for nothing.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                if (!this.AcceptThenPoll)
                 {
-                    Content = new StringContent("stub")
-                });
+                    //: A 500 rather than a success: those tests are about whether the call was MADE,
+                    //: and a stubbed artifact would assert the decoding path again for nothing.
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                    {
+                        Content = new StringContent("stub")
+                    });
+                }
+
+                var accepted = new HttpResponseMessage(HttpStatusCode.Accepted)
+                {
+                    Content = new StringContent("{\"status\":\"pending\"}")
+                };
+                if (!this.OmitRequestId) accepted.Headers.TryAddWithoutValidation("NVCF-REQID", "req-1");
+                return Task.FromResult(accepted);
             }
 
-            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("/status/", StringComparison.Ordinal))
+            {
+                this.Polls++;
+
+                //: Still working on the first poll, finished on the second — so the test proves the
+                //: loop actually loops rather than passing on a single lucky answer.
+                return Task.FromResult(this.Polls < 2
+                    ? new HttpResponseMessage(HttpStatusCode.Accepted)
+                    {
+                        Content = new StringContent("{}")
+                    }
+                    : new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(Artifact())
+                    });
+            }
+
+            this.Gets++;
+
             if (path == TrellisClient.SchemaPath && schema is not null)
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

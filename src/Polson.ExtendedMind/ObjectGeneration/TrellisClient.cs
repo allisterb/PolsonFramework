@@ -41,9 +41,20 @@ using System.Threading.Tasks;
 /// </list>
 /// <para>
 /// <b>Configuration.</b> <c>Trellis:BaseUrl</c> points at a local container
-/// (<c>http://localhost:8000</c>) or at NVIDIA's hosted route. <c>ApiKeys:NvidiaNIM</c> is required
-/// for the hosted endpoint and unnecessary for a local one, which is why the key is optional here
-/// and <see cref="ParallelSearch.ParallelClient"/>'s is not.
+/// (<c>http://localhost:8000</c>) or at NVIDIA's hosted route (<see cref="HostedUrl"/>).
+/// <c>ApiKeys:NvidiaNIM</c> is required for the hosted endpoint and unnecessary for a local one,
+/// which is why the key is optional here and <see cref="ParallelSearch.ParallelClient"/>'s is not.
+/// </para>
+/// <para>
+/// <b>The two endpoints differ in four ways, and all four follow from one fact:</b> a container is
+/// an <i>origin</i> with routes beneath it, and the hosted route is a <i>complete endpoint</i> with
+/// no neighbours. So <see cref="IsHosted"/> is derived from the URL's shape and everything else
+/// follows — where a generation is posted; that <c>/v1/health/ready</c> and <c>/openapi.json</c>
+/// exist only on a container (both 404 hosted, measured); that a hosted job may answer
+/// <c>202 Accepted</c> and need polling; and that <c>no_texture</c> is honoured only locally.
+/// <b>Three of those were silent failures before they were handled</b> — the wrong path 404s, a
+/// missing health route reports a working endpoint as down, and 202 is a <i>success</i> status whose
+/// body would be parsed as a result.
 /// </para>
 /// <para>
 /// <b>Measured, RTX 5060 Ti, local container:</b> 18.0 s textured at 25 steps, 20.3 s at 10 —
@@ -61,7 +72,12 @@ using System.Threading.Tasks;
 public sealed class TrellisClient : Runtime, IDisposable
 {
     #region Constructors
-    /// <param name="baseUrl">Origin only, no path. Defaults to a local container.</param>
+    /// <param name="baseUrl">
+    /// <b>An origin for a container, or a complete endpoint for the hosted route</b> — and the shape
+    /// is what selects the behaviour, so there is one setting rather than a URL plus a mode nobody
+    /// remembers to change with it. <c>http://localhost:8000</c> is a container;
+    /// <see cref="HostedUrl"/> is the hosted route. Defaults to a local container.
+    /// </param>
     /// <param name="apiKey">
     /// <c>ApiKeys:NvidiaNIM</c>. Required by the hosted endpoint, ignored by a local container —
     /// so null is legitimate here rather than a misconfiguration.
@@ -77,6 +93,13 @@ public sealed class TrellisClient : Runtime, IDisposable
         this.apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey;
         this.baseUrl = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
         this.ownsHttp = httpClient is null;
+
+        // **One discriminator rather than four flags.** A container is an ORIGIN and serves its
+        // inference, health and schema routes beneath it; the hosted route is a COMPLETE endpoint
+        // (`…/v1/genai/microsoft/trellis`) with none of those neighbours. Every difference between
+        // the two follows from that, so it is derived once here rather than asked four times.
+        this.hosted = HasPath(this.baseUrl);
+        this.inferUrl = this.hosted ? this.baseUrl : this.baseUrl + InferPath;
 
         // No client-wide timeout: each call sets its own, and they differ by an order of magnitude
         // between a local container (~20 s) and the hosted route's ~90 s wall.
@@ -99,6 +122,30 @@ public sealed class TrellisClient : Runtime, IDisposable
 
     /// <summary>Which variant is loaded, by NGC profile name.</summary>
     public const string MetadataPath = "/v1/metadata";
+
+    /// <summary>NVIDIA's hosted route. A different origin <i>and</i> a different path.</summary>
+    public const string HostedUrl = "https://ai.api.nvidia.com/v1/genai/microsoft/trellis";
+
+    /// <summary>Where a hosted 202's result is collected from.</summary>
+    /// <remarks>
+    /// NVCF may answer a long job with <c>202 Accepted</c> and an <c>NVCF-REQID</c>, expecting the
+    /// caller to poll. <b><see cref="HttpResponseMessage.IsSuccessStatusCode"/> is true for 202</b>,
+    /// so without this the body of an <i>acknowledgement</i> is parsed as though it were a result.
+    /// </remarks>
+    public const string StatusUrl = "https://api.nvcf.nvidia.com/v2/nvcf/pexec/status/";
+
+    /// <summary>The exact URL a generation is posted to, origin and path resolved.</summary>
+    public string InferUrl => this.inferUrl;
+
+    /// <summary>
+    /// Whether this endpoint is a complete hosted route rather than a container origin.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the URL's shape, which is the honest discriminator: a base URL carrying a path is
+    /// the endpoint itself, and one carrying none is an origin with routes beneath it. Nothing here
+    /// pattern-matches on NVIDIA's hostname, so a hosted route behind a proxy still behaves as one.
+    /// </remarks>
+    public bool IsHosted => this.hosted;
 
     /// <summary>The service's bounds, from <c>Object3DRequest</c>.</summary>
     public const int MinSamplingSteps = 10;
@@ -142,8 +189,27 @@ public sealed class TrellisClient : Runtime, IDisposable
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
 
-            using var response = await this.http.GetAsync(this.baseUrl + ReadyPath, cts.Token);
-            return response.IsSuccessStatusCode;
+            if (!this.hosted)
+            {
+                using var response = await this.http.GetAsync(this.baseUrl + ReadyPath, cts.Token);
+                return response.IsSuccessStatusCode;
+            }
+
+            // **The hosted route has no health path — it 404s — so asking for one reported a working
+            // endpoint as DOWN.** Quietly, and in the worst place: anything gated on this concluded
+            // the service was absent and skipped, including this project's own live test, which
+            // printed NOT RUN and passed. So readiness is answered here by the only question the
+            // caller actually has — *would a generation get through?* — and a deliberately malformed
+            // body answers it for nothing: it proves DNS, TLS, routing and the key in ~0.6 s without
+            // starting any work. A 4xx is therefore the SUCCESS case.
+            using var probe = Authorized(HttpMethod.Post, this.inferUrl);
+            probe.Content = new StringContent("{\"\":0}", Encoding.UTF8, "application/json");
+
+            using var answer = await this.http.SendAsync(probe, cts.Token);
+
+            // Auth failures are reachable-but-unusable, which is not ready by any useful definition.
+            return answer.StatusCode is not (HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                or HttpStatusCode.NotFound);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or OperationCanceledException)
         {
@@ -215,6 +281,27 @@ public sealed class TrellisClient : Runtime, IDisposable
                 + $". Supply {(caps.Modes.Contains("image") ? "an image" : "a prompt")} instead, or "
                 + "load a variant that serves both. The accepted mode is a property of the container "
                 + "that happens to be running, not of TRELLIS.");
+        }
+
+        //: Refused rather than stripped. Dropping it silently would return a TEXTURED mesh to a
+        //: caller who asked for none — billed, slower, and 6.7x larger — and nothing in the result
+        //: would say the flag had been ignored.
+        if (this.hosted && request.NoTexture == true)
+        {
+            return Invalid(
+                "no_texture is not accepted by the hosted route, though a local container honours "
+                + "it. Drop the flag for this endpoint, or point 'Trellis:BaseUrl' at a container.");
+        }
+
+        if (this.hosted && EffectiveMode(request) == "image" && !IsHostedExample(request.Image))
+        {
+            return Invalid(
+                "The hosted route cannot take an image of your own. Its 'image' field accepts only "
+                + "NVIDIA's four built-in demos — 'data:image/png;example_id,0' through '3' — and it "
+                + "refuses base64 and NVCF asset references alike. Measured: inline base64 gives "
+                + "\"Expected: example_id, got: base64\", and an uploaded asset gives the same with "
+                + "\"got: asset_id\", though the upload itself succeeds. So image-to-3D on your own "
+                + "artwork needs a local container; hosted is text-to-3D only.");
         }
 
         var started = System.Diagnostics.Stopwatch.StartNew();
@@ -316,6 +403,94 @@ public sealed class TrellisClient : Runtime, IDisposable
     #endregion
 
     #region Methods (private)
+    /// <summary>Whether an image is one of the hosted route's own demo references.</summary>
+    /// <remarks>
+    /// <b>The hosted endpoint does not accept a caller's image at all</b>, which its refusals spell
+    /// out one token at a time: inline base64 answers <i>"Expected: example_id, got: base64"</i>, an
+    /// uploaded NVCF asset answers the same with <i>"got: asset_id"</i> — and the upload itself
+    /// succeeds, so nothing goes wrong until the generation — and the right token answers <i>"Not
+    /// valid example_id, expected value 0, 1, 2, 3"</i>. Four canned demos, and no way in for
+    /// anything else.
+    /// <para>
+    /// Allowed through rather than refused outright, because it is what that endpoint supports and
+    /// declining it would be this client overruling the service on its own behaviour.
+    /// </para>
+    /// </remarks>
+    static bool IsHostedExample(object? image) =>
+        image is string s && s.Contains(";example_id,", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether a base URL names a complete endpoint rather than an origin.</summary>
+    static bool HasPath(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.AbsolutePath.Trim('/').Length > 0;
+
+    /// <summary>A request carrying the key, when there is one to carry.</summary>
+    /// <remarks>
+    /// The header goes on the request rather than on the client's default headers, so one
+    /// <see cref="HttpClient"/> can be shared and a local container is never handed a key it has no
+    /// use for. <b>Nothing here ever logs it</b>, and no failure path puts it in a message.
+    /// </remarks>
+    HttpRequestMessage Authorized(HttpMethod method, string url)
+    {
+        var message = new HttpRequestMessage(method, url);
+        if (this.apiKey is not null)
+        {
+            message.Headers.TryAddWithoutValidation("Authorization", "Bearer " + this.apiKey);
+        }
+
+        return message;
+    }
+
+    /// <summary>Follows a hosted <c>202 Accepted</c> to its result.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>202 is a success status, which is the trap.</b> NVCF answers a long job with an
+    /// acknowledgement and an <c>NVCF-REQID</c>, and <see cref="HttpResponseMessage.IsSuccessStatusCode"/>
+    /// is true for it — so the acknowledgement's body would be handed to <see cref="Parse"/> as
+    /// though it were a finished generation, and fail for a reason naming the wrong thing.
+    /// </para>
+    /// <para>
+    /// <b>A 202 that cannot be followed is reported as itself</b> rather than mapped onto a generic
+    /// service error. If the header is missing or renamed, the remedy needs to say <i>this endpoint
+    /// asked us to poll and we could not tell where</i>, because that is a different repair from a
+    /// failed generation and guessing between them wastes the run.
+    /// </para>
+    /// </remarks>
+    async Task<TrellisResult> CollectAsync(
+        HttpResponseMessage accepted, TrellisRequest request,
+        System.Diagnostics.Stopwatch watch, CancellationToken cancellationToken)
+    {
+        var id = accepted.Headers.TryGetValues("NVCF-REQID", out var values)
+            ? values.FirstOrDefault()
+            : null;
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return TrellisResult.Fail(TrellisFailure.ServiceError,
+                "The endpoint answered 202 Accepted, which means the result must be polled for — but "
+                + "it carried no NVCF-REQID header, so there is nothing to poll. If the header has "
+                + "been renamed, TrellisClient.CollectAsync is where to teach it the new name.",
+                retryable: true, ms: (int)watch.ElapsedMilliseconds);
+        }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+
+            using var poll = Authorized(HttpMethod.Get, StatusUrl + id);
+            using var response = await this.http.SendAsync(poll, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (response.StatusCode == HttpStatusCode.Accepted) continue;   // still working
+
+            return response.IsSuccessStatusCode
+                ? Parse(body, request, (int)watch.ElapsedMilliseconds)
+                : Classify(response.StatusCode, body, (int)watch.ElapsedMilliseconds);
+        }
+
+        return TrellisResult.Fail(TrellisFailure.Cancelled, "The caller cancelled while polling.",
+            retryable: false, ms: (int)watch.ElapsedMilliseconds);
+    }
+
     /// <summary>The mode the service will actually apply, inferred the way the service infers it.</summary>
     /// <remarks>
     /// <c>mode</c> is optional, and the schema says an unset one is <i>"determined based on the image
@@ -327,6 +502,19 @@ public sealed class TrellisClient : Runtime, IDisposable
 
     async Task<TrellisCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken)
     {
+        // The hosted route serves no schema — verified, it 404s — so asking is a round trip spent to
+        // learn nothing. Reported as unknown, which is the same answer the 404 would have produced
+        // and which `Accepts` already treats as "get out of the way".
+        if (this.hosted)
+        {
+            return new TrellisCapabilities
+            {
+                Available = false,
+                Error = "The hosted route serves no openapi.json, so its limits cannot be read. "
+                      + "Both modes are attempted rather than refused locally."
+            };
+        }
+
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -456,23 +644,19 @@ public sealed class TrellisClient : Runtime, IDisposable
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(timeout);
 
-        using var message = new HttpRequestMessage(HttpMethod.Post, this.baseUrl + InferPath)
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(request, SerializerOptions), Encoding.UTF8, "application/json")
-        };
-
-        //: On the request rather than on the client's default headers, so one HttpClient can be
-        //: shared and a local container is never handed a key it has no use for.
-        if (this.apiKey is not null)
-        {
-            message.Headers.TryAddWithoutValidation("Authorization", "Bearer " + this.apiKey);
-        }
+        using var message = Authorized(HttpMethod.Post, this.inferUrl);
+        message.Content = new StringContent(
+            JsonSerializer.Serialize(request, SerializerOptions), Encoding.UTF8, "application/json");
 
         try
         {
             using var response = await this.http.SendAsync(message, cts.Token);
             var body = await response.Content.ReadAsStringAsync(cts.Token);
+
+            if (response.StatusCode == HttpStatusCode.Accepted)
+            {
+                return await CollectAsync(response, request, watch, cts.Token);
+            }
 
             return response.IsSuccessStatusCode
                 ? Parse(body, request, (int)watch.ElapsedMilliseconds)
@@ -623,6 +807,8 @@ public sealed class TrellisClient : Runtime, IDisposable
 
     readonly HttpClient http;
     readonly string baseUrl;
+    readonly string inferUrl;
+    readonly bool hosted;
     readonly string? apiKey;
     readonly bool ownsHttp;
     #endregion

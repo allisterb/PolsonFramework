@@ -170,8 +170,8 @@ public class MeshToolkit
 
     #region Fields
     internal static readonly string[] DrawOptions =
-        ["x", "y", "scale", "yawDeg", "pitchDeg", "rollDeg", "texture", "wireframe", "inkColor",
-         "lineWidth", "shape", "expression", "side"];
+        ["x", "y", "scale", "stretch", "yawDeg", "pitchDeg", "rollDeg", "texture", "wireframe",
+         "inkColor", "lineWidth", "shape", "expression", "side"];
 
     private readonly string? projectRoot;
     #endregion
@@ -198,7 +198,66 @@ public class MeshToolkit
                                                 "expression", arkit: true),
                 Side = ReadSide(opt)
             };
+
+            var stretch = ReadStretch(opt);
+            (p.StretchX, p.StretchY, p.StretchZ) = (stretch[0], stretch[1], stretch[2]);
             return p;
+        }
+
+        /// <summary>Per-axis multipliers in the mesh's own space, or all ones when unasked.</summary>
+        /// <remarks>
+        /// <b>What it is for: imposing proportions you already know.</b> A generated mesh comes back
+        /// with its shape reinterpreted — measured on TRELLIS with a drawn chest of known
+        /// <c>2 : 0.5 : 1</c>, the returned depth was about 0.85 of the height against a true 0.5, and
+        /// feeding a second elevation did not fix it because the API carries no camera pose and two
+        /// images cannot be triangulated without one. That is a <i>scale</i> error, and the true
+        /// proportions are ours — we drew the elevation — so they are cheaper to impose afterwards
+        /// than to ask a model to infer.
+        /// <para>
+        /// Axes are the mesh's own, so <c>mesh.bounds</c> is what you derive the factors from. A glTF
+        /// is Y-up, which makes <c>[width, height, depth]</c> the usual reading.
+        /// </para>
+        /// <para>
+        /// <b>A negative factor mirrors and is allowed</b> — it is how a left and a right bookend come
+        /// from one asset. The painter's sort stays correct because it is computed on the final
+        /// geometry rather than on the mesh as loaded. <b>Zero is refused</b>: it collapses the mesh
+        /// to a plane, which renders as nothing and is indistinguishable from a mesh that failed to
+        /// load.
+        /// </para>
+        /// </remarks>
+        internal static float[] ReadStretch(IDictionary? opt)
+        {
+            var value = opt?["stretch"];
+            if (value is null) return [1f, 1f, 1f];
+
+            if (value is not IEnumerable list || value is string)
+            {
+                throw new ArgumentException(
+                    "stretch must be [x, y, z] — three per-axis multipliers in the mesh's own space. "
+                    + "For one number that changes the drawn size, use 'scale'.");
+            }
+
+            var axes = list.Cast<object?>()
+                .Select(v => v is null ? float.NaN : Convert.ToSingle(v, CultureInfo.InvariantCulture))
+                .ToArray();
+
+            if (axes.Length != 3)
+            {
+                throw new ArgumentException(
+                    $"stretch needs exactly three components [x, y, z]; got {axes.Length}.");
+            }
+
+            foreach (var (axis, k) in axes.Select((a, i) => (a, "xyz"[i])))
+            {
+                if (!float.IsFinite(axis) || axis == 0f)
+                {
+                    throw new ArgumentException(
+                        $"stretch {k} must be a non-zero finite number; got {axis}. Zero collapses the "
+                        + "mesh to a plane, which draws nothing and reads as a mesh that failed to load.");
+                }
+            }
+
+            return axes;
         }
 
         /// <summary>
@@ -237,6 +296,12 @@ public class MeshToolkit
         }
 
         internal float X, Y, Scale, Cy, Sy, Cp, Sp, Cr, Sr, Side;
+
+        //: Per-axis multipliers in the MESH's own space, spelled out rather than folded into `Scale`
+        //: because they are applied at a different point in the pipeline and the two do not commute.
+        //: Named in full: `Sy` already means sin(yaw) here, and a second `Sy` would be a quiet disaster.
+        internal float StretchX = 1f, StretchY = 1f, StretchZ = 1f;
+
         internal Dictionary<string, float> Shape = [];
         internal Dictionary<string, float> Expression = [];
 
@@ -254,12 +319,31 @@ public class MeshToolkit
             var outp = new SKPoint[mesh.Vertices.Length];
             for (var i = 0; i < mesh.Vertices.Length; i++)
             {
-                var v = mesh.Displace(i, Shape, Expression, Side);
-                var r = Rotate(v);
+                var r = Place(mesh, i);
                 outp[i] = new SKPoint(X + (r.X * Scale), Y - (r.Y * Scale));
             }
 
             return outp;
+        }
+
+        /// <summary>One vertex, deformed then stretched then rotated. The whole model-space pass.</summary>
+        /// <remarks>
+        /// <b>Both the projection and the depth sort go through here, and that is the point.</b> They
+        /// each rebuilt the chain independently before this existed, so a step added to one and not
+        /// the other would sort triangles by geometry that is not the geometry being drawn — a
+        /// z-fighting-shaped bug with no z-buffer to blame.
+        /// <para>
+        /// <b>The stretch is applied in model space, before the rotation</b>, because it describes the
+        /// object rather than the view. Applied afterwards it would squash the <i>screen</i> whichever
+        /// way the object happened to be facing, so a turned prop would change proportion as it
+        /// turned. A uniform scale commutes with rotation and a non-uniform one does not, which is
+        /// exactly why this cannot just be folded into <see cref="Scale"/>.
+        /// </para>
+        /// </remarks>
+        internal SKPoint3 Place(FaceMesh mesh, int index)
+        {
+            var v = mesh.Displace(index, Shape, Expression, Side);
+            return Rotate(new SKPoint3(v.X * StretchX, v.Y * StretchY, v.Z * StretchZ));
         }
 
         internal SKPoint3 Rotate(SKPoint3 v)
@@ -281,7 +365,7 @@ public class MeshToolkit
                 order[t] = t;
                 var z = 0f;
                 for (var k = 0; k < 3; k++)
-                    z += Rotate(mesh.Displace(mesh.Indices[(t * 3) + k], Shape, Expression, Side)).Z;
+                    z += Place(mesh, mesh.Indices[(t * 3) + k]).Z;
                 depth[t] = z;
             }
 

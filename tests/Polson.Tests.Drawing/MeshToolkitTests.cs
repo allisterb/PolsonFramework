@@ -980,4 +980,143 @@ public class MeshToolkitTests : TestsRuntime
         Assert.Equal("atlas", Mesh().UvSpace);
     }
     #endregion
+
+    #region Stretch
+    /// <summary>A mesh with no stretch draws exactly where it drew before.</summary>
+    [Fact]
+    public void TestOmittingStretchChangesNothing()
+    {
+        Assert.Equal(DrawnWidth(null, 0f), DrawnWidth([1f, 1f, 1f], 0f), 3);
+        Assert.Equal(DrawnHeight(null, 0f), DrawnHeight([1f, 1f, 1f], 0f), 3);
+    }
+
+    /// <summary>A stretch on one axis moves that axis and leaves the others alone.</summary>
+    [Fact]
+    public void TestStretchScalesOneAxisOnly()
+    {
+        Assert.Equal(2 * DrawnWidth(null, 0f), DrawnWidth([2f, 1f, 1f], 0f), 2);
+        Assert.Equal(DrawnHeight(null, 0f), DrawnHeight([2f, 1f, 1f], 0f), 2);
+
+        Assert.Equal(2 * DrawnHeight(null, 0f), DrawnHeight([1f, 2f, 1f], 0f), 2);
+        Assert.Equal(DrawnWidth(null, 0f), DrawnWidth([1f, 2f, 1f], 0f), 2);
+    }
+
+    /// <summary>The stretch is in MODEL space: turn the mesh and the stretch turns with it.</summary>
+    /// <remarks>
+    /// <b>The test the feature exists for, and the only one that can tell the two implementations
+    /// apart.</b> At 90 degrees of yaw the mesh's X axis points into the screen, so doubling X must
+    /// make the prop <i>deeper</i> and leave its drawn width alone. A stretch applied after the
+    /// rotation would instead squash the screen whichever way the object faced — the drawn width
+    /// would double here — so a turned prop would change proportion as it turned.
+    /// <para>
+    /// The fixture has a 12-unit X extent against a 7.7-unit Z, so the two are not interchangeable
+    /// and an implementation that confused them cannot pass by symmetry.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestStretchIsAppliedInModelSpaceNotScreenSpace()
+    {
+        var plain = DrawnWidth(null, 90f);
+        var stretched = DrawnWidth([2f, 1f, 1f], 90f);
+
+        Assert.Equal(plain, stretched, 2);
+        Assert.NotEqual(2 * plain, stretched, 2);
+
+        //: And the same stretch at yaw 0 DOES double the width — so the assertion above is about
+        //: which space the stretch acts in, not about the stretch quietly doing nothing.
+        Assert.Equal(2 * DrawnWidth(null, 0f), DrawnWidth([2f, 1f, 1f], 0f), 2);
+    }
+
+    /// <summary>The depth sort reads the stretched geometry, not the mesh as loaded.</summary>
+    /// <remarks>
+    /// Mirroring in Z reverses which triangles are furthest away, so the painter's order must come
+    /// back reversed. If the sort rebuilt the chain without the stretch — which it did, independently,
+    /// before <c>Place</c> existed — it would return the same order and the mesh would paint back to
+    /// front against its own geometry. There is no depth buffer to catch that.
+    /// </remarks>
+    [Fact]
+    public void TestTheDepthSortSeesTheStretch()
+    {
+        var mesh = Dense();
+        var plain = MeshToolkit.Pose.From(Opts(null, 0f), mesh).DepthOrder(mesh);
+        var mirrored = MeshToolkit.Pose.From(Opts([1f, 1f, -1f], 0f), mesh).DepthOrder(mesh);
+
+        Assert.Equal(plain.Length, mirrored.Length);
+        Assert.Equal(plain, mirrored.Reverse().ToArray());
+    }
+
+    /// <summary>A negative factor mirrors rather than being refused.</summary>
+    /// <remarks>
+    /// It is how a left and a right bookend come from one asset. The extent is unchanged either way,
+    /// because a reflection is a rigid motion of the silhouette; what moves is which side is which.
+    /// <para>
+    /// <b>Mirrored in Y rather than in X, and that is not arbitrary.</b> The fixture's X runs −6 to
+    /// +6 and is symmetric, so an X mirror is invisible <i>by construction</i> — an assertion against
+    /// it would pass whether or not the factor was applied at all, which is the shape of a test that
+    /// proves nothing. Y runs 8 to −9, so its centre really moves.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TestANegativeStretchMirrors()
+    {
+        Assert.Equal(DrawnHeight(null, 0f), DrawnHeight([1f, -1f, 1f], 0f), 3);
+
+        static float Cy(float[]? stretch)
+        {
+            var opt = Opts(stretch, 0f);
+            opt["scale"] = 10f;                   // so one model unit is ten pixels, not one
+            return Convert.ToSingle(((Dictionary<string, object?>)new MeshToolkit()
+                .Draw(Ctx(), Mesh(), opt)["bounds"]!)["cy"]);
+        }
+
+        //: The mesh spans 8 to −9, so its centre sits half a unit below the origin and a mirror moves
+        //: it half a unit above: one model unit apart, ten pixels at this scale.
+        Assert.Equal(10f, Math.Abs(Cy(null) - Cy([1f, -1f, 1f])), 2);
+    }
+
+    /// <summary>Malformed stretches are refused by name rather than silently normalised.</summary>
+    [Theory]
+    [InlineData(new[] { 1f, 1f }, "three components")]
+    [InlineData(new[] { 1f, 1f, 1f, 1f }, "three components")]
+    [InlineData(new[] { 2f, 0f, 1f }, "non-zero")]
+    public void TestABadStretchIsRefused(float[] stretch, string expected)
+    {
+        var e = Assert.Throws<ArgumentException>(
+            () => new MeshToolkit().Draw(Ctx(), Mesh(), Opts(stretch, 0f)));
+
+        Assert.Contains(expected, e.Message);
+    }
+
+    /// <summary>A single number is refused, and the message names the option that does take one.</summary>
+    [Fact]
+    public void TestAScalarStretchIsRefusedAndPointsAtScale()
+    {
+        var e = Assert.Throws<ArgumentException>(() => new MeshToolkit().Draw(
+            Ctx(), Mesh(), new Dictionary<string, object?> { ["stretch"] = 2f }));
+
+        Assert.Contains("'scale'", e.Message);
+    }
+    #endregion
+
+    #region Methods (stretch helpers)
+    static CanvasRenderingContext2D Ctx() => new SkiaCanvas(64, 64).GetContext("2d");
+
+    static Dictionary<string, object?> Opts(float[]? stretch, float yawDeg)
+    {
+        var opt = new Dictionary<string, object?>
+        {
+            ["x"] = 32f, ["y"] = 32f, ["scale"] = 1f, ["yawDeg"] = yawDeg
+        };
+        if (stretch is not null) opt["stretch"] = stretch;
+        return opt;
+    }
+
+    static float Drawn(float[]? stretch, float yawDeg, string axis) =>
+        Convert.ToSingle(((Dictionary<string, object?>)new MeshToolkit()
+            .Draw(Ctx(), Mesh(), Opts(stretch, yawDeg))["bounds"]!)[axis]);
+
+    static float DrawnWidth(float[]? stretch, float yawDeg) => Drawn(stretch, yawDeg, "width");
+
+    static float DrawnHeight(float[]? stretch, float yawDeg) => Drawn(stretch, yawDeg, "height");
+    #endregion
 }

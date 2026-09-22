@@ -3139,7 +3139,7 @@ canvas;
 >
 > Posing a loaded skeleton is `mesh.pose(...)` — see below.
 - `Mesh.fromObj(objText: string)` → `FaceMesh` — The same, from OBJ text a script already holds. **OBJ only** — there is no `fromGltf`, because a glTF's buffers and images are binary and a script holds a string.
-- `Mesh.draw(ctx: CanvasRenderingContext2D, mesh: FaceMesh, options?: object)` → `{ bounds, triangles, textured }` — Draws the mesh, deformed, posed and depth-sorted. `options`: `{ x, y, scale, yawDeg, pitchDeg, rollDeg, texture, wireframe, inkColor, lineWidth, shape, expression, side }`. An unrecognised option is refused by name.
+- `Mesh.draw(ctx: CanvasRenderingContext2D, mesh: FaceMesh, options?: object)` → `{ bounds, triangles, textured }` — Draws the mesh, deformed, posed and depth-sorted. `options`: `{ x, y, scale, stretch, yawDeg, pitchDeg, rollDeg, texture, wireframe, inkColor, lineWidth, shape, expression, side }`. An unrecognised option is refused by name.
 
 > [!TIP]
 > **Negative `pitchDeg` looks up**: the crown rotates away and the chin toward the viewer. This is a real rotation about the model's own X axis, so there is none of the constructed head's 40° limit.
@@ -3149,6 +3149,34 @@ canvas;
 >
 > **There is no depth buffer in `DrawVertices`, so the triangle order is the caller's problem — and `draw` solves it.** Without a back-to-front sort a turned head paints its far cheek over its near eye, a sliver that reads as a rendering fault. On a 900-triangle head the sort costs nothing worth measuring.
 >
+> [!TIP]
+> **`stretch: [x, y, z]` is per-axis scale in the MESH's own space, and it is how you impose proportions you already know.** `scale` is one number for how big the prop is on the page; this is three for what shape it is.
+>
+> A generated mesh comes back with its proportions reinterpreted. Measured on TRELLIS with a chest drawn at a known **2 : 0.5 : 1**, the returned depth was about 0.85 of the height against a true 0.5 — and feeding it a second elevation did **not** fix that, because the API carries no camera pose and two images cannot be triangulated without one. It is a *scale* error, and the true proportions are yours: you drew the elevation. So impose them afterwards rather than asking a model to infer a number it cannot see.
+>
+> ```javascript
+> const b = mesh.bounds;
+> const raw = { x: b.width, y: b.height, z: b.depth };
+>
+> // A generated mesh's orientation is NOT guaranteed - this one came back long along z. glTF is
+> // Y-up, which anchors height; of the two horizontal axes the longer is width, the shorter depth.
+> const [wAxis, dAxis] = raw.x >= raw.z ? ['x', 'z'] : ['z', 'x'];
+> const want = { [wAxis]: 2, y: 1, [dAxis]: 0.5 };
+>
+> const k = { x: want.x / raw.x, y: want.y / raw.y, z: want.z / raw.z };
+> const m = Math.max(k.x, k.y, k.z);                       // keep the prop its current size
+> Mesh.draw(ctx, mesh, { x, y, scale, stretch: [k.x / m, k.y / m, k.z / m] });
+> ```
+>
+> **Identify the axes rather than assuming them.** The snippet above reads them off `mesh.bounds`, because a first attempt that assumed *x is width* squashed the chest's long axis instead and produced the right ratios on the wrong axes — which renders perfectly and is wrong.
+>
+> **A negative factor mirrors**, which is how a left and a right bookend come from one asset; the depth sort stays correct because it is computed on the final geometry. **Zero is refused** — it collapses the mesh to a plane, which draws nothing and reads exactly like a mesh that failed to load.
+
+> [!IMPORTANT]
+> **`stretch` acts before the rotation and `scale` after it, and the difference is not cosmetic.** A uniform scale commutes with a rotation; a non-uniform one does not. Applied after, doubling `x` would squash the *screen* whichever way the prop happened to be facing — so a prop would change proportion as it turned. Applied in model space it turns with the object, which is what "this chest is twice as wide as it is deep" means.
+>
+> The depth sort reads the stretched geometry too. It has to: a painter's-order sort computed on geometry that is not the geometry being drawn is a z-fighting-shaped bug with no z-buffer to blame.
+
 > **Deformation happens in model space and the pose is applied afterwards.** That is the one thing this route gets right that the landmark head does not: `createLoomisHead` projects first and the parameter layer displaces in screen space, which is why its own documentation warns that past roughly 40° a widened jaw widens the wrong way. This is the ordering CANDIDE states as `g' = R·s·(g + S·σ + A·α) + t`, and it has no such limit.
 
 ## `FaceMesh`

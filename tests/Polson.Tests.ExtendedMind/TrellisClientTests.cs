@@ -4,6 +4,8 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using SkiaSharp;
+
 using global::Polson.Tests;
 using Polson.ExtendedMind.ObjectGeneration;
 using Xunit;
@@ -153,9 +155,22 @@ public class TrellisClientTests : TestsRuntime
     #endregion
 
     #region Live
-    /// <summary>One real generation, if an endpoint is configured and warmed.</summary>
+    /// <summary>One real generation, whichever mode the loaded variant accepts.</summary>
+    /// <remarks>
+    /// <b>The accepted <c>mode</c> is narrowed by the loaded model variant, at runtime.</b> The
+    /// container's own <c>openapi.json</c> declares <c>mode</c> as <c>text | image</c> — but that
+    /// spec was served by a <c>base:text</c> container, and a <c>large:image</c> one refuses
+    /// <c>"text"</c> outright: <c>{"loc":["body","mode"],"msg":"Input should be 'image'"}</c>.
+    /// <para>
+    /// That follows from the model rather than the API. TRELLIS conditions text through CLIP and
+    /// images through DINOv2 (arXiv 2412.01506v3 §3.3), so the variants are genuinely different
+    /// models and <c>base:text</c> has no image encoder to hand a picture to. A test that hardcodes
+    /// one modality therefore passes or fails on which variant happens to be loaded — this one
+    /// asserts only that <i>some</i> modality works, and reports which.
+    /// </para>
+    /// </remarks>
     [Fact]
-    public async Task Generates_AGlbFromAPrompt()
+    public async Task Generates_AGlbInWhicheverModeTheVariantAccepts()
     {
         if (string.IsNullOrWhiteSpace(this.baseUrl))
         {
@@ -171,19 +186,54 @@ public class TrellisClientTests : TestsRuntime
             return;
         }
 
-        var result = await client.GenerateAsync(
-            new TrellisRequest { Prompt = "a small ceramic teapot", NoTexture = true, Seed = 42 },
-            attempts: 3);
+        TrellisRequest[] candidates =
+        [
+            new() { Mode = "image", Image = "data:image/png;base64," + Convert.ToBase64String(Shape()),
+                    NoTexture = true, Seed = 42 },
+            new() { Mode = "text", Prompt = "a small ceramic teapot", NoTexture = true, Seed = 42 }
+        ];
 
-        Assert.True(result.Success, $"{result.FailureName}: {result.Remedy} {result.Error}");
-        Assert.Equal(TrellisFinishReason.Success, result.FinishReason);
-        Assert.Equal(42, result.Seed);
+        TrellisResult? last = null;
+        foreach (var request in candidates)
+        {
+            last = await client.GenerateAsync(request, attempts: 2);
+            if (last.Success) break;
+
+            //: A refusal naming `mode` means the wrong variant is loaded, not a bad request — so
+            //: try the other modality rather than failing the run.
+            if (last.Failure != TrellisFailure.InvalidRequest || last.Error?.Contains("mode") != true)
+            {
+                break;
+            }
+
+            output.WriteLine($"{request.Mode}: refused by this variant, trying the other");
+        }
+
+        Assert.NotNull(last);
+        Assert.True(last!.Success, $"{last.FailureName}: {last.Remedy} {last.Error}");
+        Assert.Equal(TrellisFinishReason.Success, last.FinishReason);
+        Assert.Equal(42, last.Seed);
 
         //: glTF's magic, so this asserts a model came back rather than merely some bytes.
-        Assert.True(result.Bytes.Length > 1000, $"only {result.Bytes.Length} bytes");
-        Assert.Equal("glTF"u8.ToArray(), result.Bytes[..4]);
+        Assert.True(last.Bytes.Length > 1000, $"only {last.Bytes.Length} bytes");
+        Assert.Equal("glTF"u8.ToArray(), last.Bytes[..4]);
 
-        output.WriteLine($"{result.Bytes.Length} bytes in {result.Ms} ms, {result.Attempts} attempt(s)");
+        output.WriteLine($"{last.Bytes.Length} bytes in {last.Ms} ms, {last.Attempts} attempt(s)");
+    }
+
+    /// <summary>A plain solid on white — enough for an image prompt to have something to read.</summary>
+    static byte[] Shape()
+    {
+        using var bitmap = new SKBitmap(320, 320);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.White);
+            using var paint = new SKPaint { Color = new SKColor(0x8a, 0x5c, 0x34), IsAntialias = true };
+            canvas.DrawOval(new SKRect(70, 40, 250, 280), paint);
+        }
+
+        using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
     }
 
     /// <summary>An endpoint that is not there is a result, not an exception.</summary>

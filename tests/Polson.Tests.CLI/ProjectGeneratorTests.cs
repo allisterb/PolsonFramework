@@ -350,6 +350,64 @@ public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
         Assert.DoesNotContain("agents.json", string.Join(' ', files));
     }
 
+    /// <summary>
+    /// A role's filename, the stage it renders, every stage it names and the director's table all
+    /// describe one pipeline.
+    /// </summary>
+    /// <remarks>
+    /// They drifted apart once, and silently. ADK runs roles in filename order while Antigravity follows
+    /// the director's table, so one <c>comic_studio</c> template ran penciler → inker → colorist under
+    /// one runtime and penciler → colorist → inker under the other, and each role file was internally
+    /// half of each.
+    /// </remarks>
+    [Fact]
+    public void TestMultiAgentRolesAgreeOnOneStageOrder()
+    {
+        Assert.True(ProjectGenerator.Create(Options("order", o => o.Workflow = "comic_studio")));
+        var dir = Path.Combine(root, "order");
+
+        var roles = Directory.GetFiles(Path.Combine(dir, "roles"), "*.md")
+            .Select(p => Path.GetFileNameWithoutExtension(p))
+            .Select(stem => (Stage: int.Parse(stem[..2]), Name: stem[3..], Text: File.ReadAllText(Path.Combine(dir, "roles", stem + ".md"))))
+            .OrderBy(r => r.Stage)
+            .ToArray();
+        var stageOf = roles.ToDictionary(r => r.Name, r => r.Stage);
+
+        foreach (var role in roles)
+        {
+            foreach (Match m in StageRender().Matches(role.Text))
+                Assert.True(int.Parse(m.Groups[1].Value) == role.Stage, $"{role.Name} renders as stage {m.Groups[1].Value}");
+
+            foreach (Match m in StageLoad().Matches(role.Text))
+                Assert.True(int.Parse(m.Groups[1].Value) < role.Stage, $"{role.Name} loads {m.Value}, which has not been rendered yet");
+
+            // Any artifact named for a role carries that role's stage number, whoever mentions it.
+            foreach (Match m in StageArtifact().Matches(role.Text).Where(m => stageOf.ContainsKey(m.Groups[2].Value)))
+                Assert.True(int.Parse(m.Groups[1].Value) == stageOf[m.Groups[2].Value], $"{role.Name} names {m.Value}");
+        }
+
+        var rows = StageTableRow().Matches(File.ReadAllText(Path.Combine(dir, "GEMINI.md")));
+        Assert.Equal(roles.Length, rows.Count);
+        foreach (Match row in rows)
+        {
+            Assert.Equal(int.Parse(row.Groups[1].Value), int.Parse(row.Groups[2].Value));
+            Assert.Equal(int.Parse(row.Groups[1].Value), stageOf[row.Groups[3].Value]);
+        }
+    }
+
+    [GeneratedRegex(@"outFile:\s*'artifacts/stage(\d)_")]
+    private static partial Regex StageRender();
+
+    [GeneratedRegex(@"Image\.load\('artifacts/stage(\d)_")]
+    private static partial Regex StageLoad();
+
+    [GeneratedRegex(@"stage(\d)_([a-z]+)\.webp")]
+    private static partial Regex StageArtifact();
+
+    /// <summary>A row of the director's team table: stage number and the role file it points at.</summary>
+    [GeneratedRegex(@"^\|\s*(\d)\s*\|[^|\n]*\|\s*`roles/(\d\d)_([a-z]+)\.md`", RegexOptions.Multiline)]
+    private static partial Regex StageTableRow();
+
     #region Test-Mode Tests
     /// <summary>
     /// `--test` turns any workflow into a framework evaluation, prompt *and* permissions.

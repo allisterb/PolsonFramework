@@ -72,8 +72,8 @@ A stage that renders without anyone looking at the result has not been done.
 | Stage | Role | Spec | The artifact that proves it happened |
 | :--- | :--- | :--- | :--- |
 | 1 | **Penciler** — composition and pose | `roles/01_penciler.md` | Blue/graphite construction sheet on white: armature, perspective, primary volumes, anchors. **No colour fills.** |
-| 2 | **Colorist** — palette and lighting | `roles/03_colorist.md` | Painted cel: flats, shading planes following one light, procedural texture, atmosphere, rim light. **No ink yet.** |
-| 3 | **Inker** — contour and line art | `roles/02_inker.md` | Inked illustration: the three-tier weight hierarchy, tapered strokes, form-following hatching, solid blacks. |
+| 2 | **Colorist** — palette and lighting | `roles/02_colorist.md` | Painted cel: flats, shading planes following one light, procedural texture, atmosphere, rim light. **No ink yet.** |
+| 3 | **Inker** — contour and line art | `roles/03_inker.md` | Inked illustration: the three-tier weight hierarchy, tapered strokes, form-following hatching, solid blacks. |
 | 4 | **Critic** — drift and QA | `roles/04_critic.md` | The master. Adversarial audit against the reference, geometry verified with the toolkit's own checks, at least two refinement passes, then `output.webp` and `artwork.js`. |
 
 The stage order is deliberate: **pencil, colour, then ink.** Inking before colour buries the line

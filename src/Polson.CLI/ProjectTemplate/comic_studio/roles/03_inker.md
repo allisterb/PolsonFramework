@@ -35,23 +35,24 @@ are what to search for.
 ### 1. Ingest both representations
 
 - Open the reference image — for where its line weight is heavy and where it disappears.
-- **Load the pencils onto your canvas.** Looking is not loading, and this is the difference
+- **Load the painted cel onto your canvas.** Looking is not loading, and this is the difference
   between inking and starting over:
 
   ```javascript
-  const pencils = Skia.Image.load('artifacts/stage1_penciler.webp');
-  ctx.drawImage(pencils, 0, 0);        // now ink on top of this
+  const cel = Skia.Image.load('artifacts/stage2_colorist.webp');
+  ctx.drawImage(cel, 0, 0);            // now ink on top of this
   ```
 
-  `peek(...)` shows you the pencils; it does **not** put them under your ink. A script with no
-  `Skia.Image.load` in it is not an inking pass — it is a second drawing, and the Penciler's work
-  is gone.
-- Read the Penciler's script from `scripts/` for the anchor constants and paths. Use their
-  names; do not re-measure and drift.
+  `peek(...)` shows you the cel; it does **not** put it under your ink. A script with no
+  `Skia.Image.load` in it is not an inking pass — it is a second drawing, and the Penciler's and
+  Colorist's work is gone.
+- Read the Penciler's script from `scripts/` for the anchor constants and paths, and the
+  Colorist's `Stage.note` for the light direction — heavy line belongs where a form turns away from
+  that light. Use their names; do not re-measure and drift.
 
 ### 2. Ink
 
-Write the script and execute it with `outFile: 'artifacts/stage2_inker.webp'`. Build the ink in
+Write the script and execute it with `outFile: 'artifacts/stage3_inker.webp'`. Build the ink in
 weight order, heaviest first — the hierarchy is what makes ink read as depth rather than as outline.
 
 1. **Tier 1 — outer silhouette (roughly 3.5–5 px).** The contours separating the subject from the
@@ -87,12 +88,14 @@ Render, `peek(...)` at it, and work the checklist below.
 - [ ] Do tapered strokes actually taper to a point?
 - [ ] Does the hatching follow the form's curvature, or does it lie flat across it?
 - [ ] Is there a true solid black somewhere, and does it read as depth?
-- [ ] Has the ink *superseded* the pencils rather than traced them — is there a weight
-      hierarchy the construction lines did not already have?
+- [ ] Is the ink a drawing rather than a tracing of the Penciler's paths — is there a weight
+      hierarchy the construction did not already have?
+- [ ] Did the colour survive the ink — are the Colorist's shading planes still readable between
+      the lines, or has hatching buried them?
 
 ### 4. Hand off
 
-Leave the render at `artifacts/stage2_inker.webp`, and note in `critique_log.md` anything you inked
-around rather than fixed. The Colorist paints over this, and the Critic reads that list.
+Leave the render at `artifacts/stage3_inker.webp`, and note in `critique_log.md` anything you inked
+around rather than fixed. That list is where the Critic starts.
 
 {{TEST_ROLE}}

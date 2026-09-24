@@ -150,6 +150,7 @@ public static class JsSurface
         // The third creation route: a face as a textured, deformable surface.
         new("Mesh", typeof(MeshToolkit), "Mesh", false),
         new("mesh", typeof(FaceMesh), "Mesh", true),
+        new("faceSheet", typeof(FaceSheet), "Mesh", true),
 
         // Landmarks from an image, when the optional backend is installed. Declared whether or not
         // it is available here, because the manifest describes the surface a script can reach and

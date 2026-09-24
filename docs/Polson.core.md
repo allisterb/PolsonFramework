@@ -3229,7 +3229,7 @@ canvas;
 ## Posing a skeleton — `mesh.pose(...)`
 
 - `mesh.posable` → `boolean` — Whether the file declares a **skin**, so rotating a joint deforms geometry. **Ask before committing to a route that needs it**, exactly as you would `Skia.tracer.available`: an OBJ never has one, and neither does an unrigged glTF — which is what the single-image generators produce.
-- `mesh.joints` → `string[]` — A handle for every node the armature carries, in the file's own order. Empty when there is no rig.
+- `mesh.joints` → `string[]` — A handle for every **bone the file's skin declares**, parents before children. Scene nodes that are not bones — the root, the armature object, the mesh's own node, which Blender's exporter writes as `world`, `Armature` and `geometry_0` — are left out. Empty when there is no rig.
 - `mesh.pose(rotations)` → `FaceMesh` — Rotates joints and returns the deformed mesh.
 
 An illustration rather than a runnable program, because **posing needs a rigged asset and the toolkit ships none** — for the licence reasons stated above, and because a skinned glTF cannot be built inline the way the OBJ examples on this page are:
@@ -3249,7 +3249,9 @@ Mesh.draw(ctx, waving, { x: 400, y: 300, scale: 160, yawDeg: 20 });
 > [!IMPORTANT]
 > **Read `mesh.joints` rather than guessing a name.** Joint names come from whoever exported the file — `mixamorig:LeftForeArm`, `J_Bip_L_UpperArm`, `bone_012` — and no convention spans the exporters. **A name the file does not have is refused and the nearest real ones are named**, because accepting it silently would leave you looking at an unchanged figure and blaming the renderer.
 >
-> **glTF does not require a node to be named, and a rigged file may have none.** Khronos's own `SimpleSkin` is exactly that: two working joints, both anonymous. Those appear as **`node:0`, `node:1`** and so on, so `mesh.joints` always hands back something you can pass straight back in.
+> **glTF does not require a node to be named, and a rigged file may have none.** Khronos's own `SimpleSkin` is exactly that: two working joints, both anonymous. Those appear as **`node:1`, `node:2`** and so on — the number is the node's position in the scene, so it need not start at 0 — and `mesh.joints` always hands back something you can pass straight back in.
+>
+> **A scene node is refused by name, not as an unknown.** Rotating `Armature` or `world` would move the whole model or nothing rather than a limb, and the error says so. Turn the whole mesh with `yawDeg`/`pitchDeg`/`rollDeg` on `Mesh.draw(...)`.
 
 > [!IMPORTANT]
 > **Every pose is measured from the BIND pose, never from wherever the mesh already is.** So `pose` is a pure function of its argument: two poses taken from one character cannot interfere, posing a posed mesh re-poses the original rather than accumulating, and the mesh you posed *from* is untouched. Without that, a panel loop drifts — silently, because every individual frame still looks reasonable.
@@ -3305,6 +3307,55 @@ Mesh.draw(ctx, waving, { x: 400, y: 300, scale: 160, yawDeg: 20 });
 > Each boundary vertex is moved along the ray from the face's centre until it meets the outline, and the interior follows by inverse-distance weighting so the features do not tear away from the edge. `strength` scales the whole correction, `falloff` how tightly the interior follows.
 >
 > **It is the poor relation of a shape unit** — a real one displaces named groups — but it is derived from the drawing rather than from a table, which is the half we could not license anyway: the mesh with the displacement data states no terms, and the mesh with terms states no displacement data.
+
+## A drawn face on a generated character — `faceSheet`, `withFace`, `withExpression`
+
+A generated character's face is **paint, not geometry**. Measured on a TRELLIS figure rigged by UniRig, the whole face is about 280 triangles carrying about 124 px of texture, so there is nothing to deform into an expression and nothing crisp to show at close-up. These calls **draw a face and bake it into the model's own atlas**, so it rides the rig: it turns, nods, tilts and is occluded exactly as the head is, at no cost per panel.
+
+```js
+const julie = Mesh.load('models/julie.glb');
+
+// Fast path: the toolkit draws the features, in greyscale when the character is, and bakes them.
+const angry = julie.withExpression('anger');                       // any Drawing.expressionUnits name
+const sly   = julie.withExpression({ AU12: 0.9, AU2: 0.6 }, 1);    // or Action Units
+
+// Per panel: pose and draw as always. The baked face comes along.
+Mesh.draw(ctx, angry.pose({ bone_5: { yDeg: 30 } }), { x, y, scale });
+```
+
+- `mesh.faceSheet(anchors?)` → `FaceSheet` — A canvas lined up to this character's face, with its old painted features already erased over the character's own skin and shading.
+- `mesh.withFace(sheet, { resolution? })` → `FaceMesh` — Bakes whatever was drawn on the sheet and returns the mesh wearing it.
+- `mesh.withExpression(expression, amount?, options?)` → `FaceMesh` — `faceSheet`, draw, `withFace` in one call. `expression` is a name or Action Units; `amount` scales either. Options: `{ resolution, inkColor, weight }`, plus the anchors below.
+
+A `FaceSheet` carries:
+
+- `faceSheet.context` — **a context already carrying the alignment.** Draw `faceSheet.head`'s features on it with the ordinary calls and they land on the character's eyes and mouth.
+- `faceSheet.head` — a Loomis head at yaw 0. Pass it through `Drawing.applyActionUnits(...)` or `applyFacialExpression(...)` first, exactly as with any head.
+- `faceSheet.canvas` · `faceSheet.width` · `faceSheet.height` · `faceSheet.skin` (the sampled skin tone) · `faceSheet.greyscale` · `faceSheet.found` (`detected` or `anchors`) · `faceSheet.anchors` (eyes and mouth in model space)
+
+```js
+const sheet = julie.faceSheet();
+const head = Drawing.applyActionUnits(sheet.head, { AU12: 0.9, AU2: 0.6 }, { side: 'near' });
+const c = sheet.context;                                          // never reset its transform
+Drawing.drawComicEye(c, head.nearEye, false, { inkColor: '#1a1a1e', weight: 1.5 });
+Drawing.drawComicMouth(c, head.mouthGuides, { inkColor: '#1a1a1e', weight: 1.5 });
+// … brows, far eye, nose …
+const smirk = julie.withFace(sheet);
+```
+
+> [!IMPORTANT]
+> **The face is found for you when the face backend is installed** — the model is rendered from the front and the detector locates the eyes and mouth, once per character and cached. Without the backend `faceSheet()` is refused, naming what to pass instead: the three points in the model's own space, `{ eyeLeft: { x, y }, eyeRight: { x, y }, mouth: { x, y } }`. `withExpression` takes the same three in its options.
+>
+> **Keep and reuse the results.** Each bake is a new atlas — 4096 px square by default for a 1024 px original, about 64 MB — and takes a fraction of a second. Bake the expressions a sequence needs once, then pose and draw them per panel. Finding the face costs a few seconds the first time.
+>
+> **A sheet belongs to the mesh that made it**, and baking it onto another is refused rather than landing the face wherever that mesh's atlas says. A mesh textured by `fitTexture(...)` has no atlas and is refused too.
+
+> [!TIP]
+> **Measured on the character above: sound to 60° of turn, degrading at 75°, gone at 90°.** Through 60° the features hold and foreshorten with the head, including under a nod and a tilt; at 75° the far eye smears; at 90° nothing is left. **That limit is the model's, not the bake's** — the original painted face fails at the same angles, because a generated character's face is close to a flat plane with no nose standing out of it, so from the side there is no face to see. A profile is read from its silhouette, which texture cannot supply: **stage the shot at three-quarters, or draw that panel's head by construction** (`polson://manual/23`). A baked face changes the picture, never the shape — a dropped jaw moves no silhouette.
+>
+> **Only the surface nearest the viewer takes the face.** Anything behind the head that faces forward — a slung crossbow, a raised collar — keeps its own texture, and is not painted with skin that would show the moment the head turned.
+>
+> **Posing keeps the baked face.** `pose()` rebuilds the mesh from the rig, which only knows the file's own texture; until 2026-09-24 that meant a baked face vanished the moment the character moved, with the original face rendering in its place.
 
 ## Deforming: `shape` and `expression`
 

@@ -375,7 +375,7 @@ public class MeshGltfTests : TestsRuntime
 
         var posed = mesh.Pose(new Dictionary<string, object?>
         {
-            [mesh.Joints[1]] = new Dictionary<string, object?> { ["zDeg"] = 90.0 }
+            [mesh.Joints[0]] = new Dictionary<string, object?> { ["zDeg"] = 90.0 }
         });
 
         var moved = posed.Vertex(tip);
@@ -401,7 +401,7 @@ public class MeshGltfTests : TestsRuntime
 
         var bend = new Dictionary<string, object?>
         {
-            [mesh.Joints[1]] = new Dictionary<string, object?> { ["zDeg"] = 45.0 }
+            [mesh.Joints[0]] = new Dictionary<string, object?> { ["zDeg"] = 45.0 }
         };
 
         var once = mesh.Pose(bend);
@@ -440,6 +440,30 @@ public class MeshGltfTests : TestsRuntime
         output.WriteLine("handles: " + string.Join(", ", mesh.Joints));
     }
 
+    /// <summary>The joints are the skin's bones, not every node in the scene.</summary>
+    /// <remarks>
+    /// <b>A scene node is not a bone.</b> UniRig's merged output lists <c>world</c>,
+    /// <c>Armature</c> and <c>geometry_0</c> ahead of its 52 bones, and <c>mesh.joints</c> reported
+    /// all 55 — handing a caller names that rotate the whole model or nothing. <c>SimpleSkin</c> has
+    /// the same shape in miniature: node 0 carries the mesh, and its skin names nodes 1 and 2.
+    /// Rotating a scene node is refused by name rather than as an unknown, because the caller did
+    /// read that name from the file and deserves to be told why it is not a joint.
+    /// </remarks>
+    [Fact]
+    public void JointsAreTheSkinsBonesAndNotEverySceneNode()
+    {
+        var mesh = Load("SimpleSkin.gltf");
+
+        Assert.Equal(["node:1", "node:2"], mesh.Joints);
+
+        var notABone = Assert.Throws<ArgumentException>(() => mesh.Pose(
+            new Dictionary<string, object?> { ["node:0"] = new Dictionary<string, object?> { ["zDeg"] = 10.0 } }));
+        Assert.Contains("scene node", notABone.Message);
+        Assert.Contains("mesh.joints", notABone.Message);
+
+        output.WriteLine(notABone.Message);
+    }
+
     /// <summary>The three refusals, each because the alternative is a silent no-op.</summary>
     /// <remarks>
     /// These throw rather than returning a failure object, and a throw ends the script — the same
@@ -462,7 +486,7 @@ public class MeshGltfTests : TestsRuntime
         var badKey = Assert.Throws<ArgumentException>(() => mesh.Pose(
             new Dictionary<string, object?>
             {
-                [mesh.Joints[1]] = new Dictionary<string, object?> { ["rollDeg"] = 20.0 }
+                [mesh.Joints[0]] = new Dictionary<string, object?> { ["rollDeg"] = 20.0 }
             }));
         Assert.Contains("rollDeg", badKey.Message);
         Assert.Contains("xDeg", badKey.Message);

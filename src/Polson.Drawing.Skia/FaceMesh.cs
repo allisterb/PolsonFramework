@@ -450,7 +450,85 @@ public class FaceMesh
                 $"Mesh '{Source}' was not read from a glTF, so it has no skeleton. Only .glb and " +
                 ".gltf carry joints; an OBJ cannot express one.");
 
-        return Rig.Pose(JsInterop.AsDict(pose), Reference);
+        var posed = Rig.Pose(JsInterop.AsDict(pose), Reference);
+
+        // **A pose rebuilds the mesh from the rig, and the rig only knows the file's own texture.**
+        // Without carrying this mesh's texture across, a face baked with `withFace` vanishes the
+        // moment the character is posed — silently, since the original face still renders fine.
+        if (ReferenceEquals(posed.Texture, Texture)) return posed;
+        return new FaceMesh(posed.Vertices, posed.Uvs, posed.Indices, posed.HasUvs, posed.Source)
+        { Texture = Texture, Rig = posed.Rig, Reference = posed.Reference, Fitted = posed.Fitted };
+    }
+
+    /// <summary>
+    /// A drawing surface lined up to this character's face, for <see cref="WithFace"/> to bake.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The face is found for you</b> when the optional face backend is installed: the model is
+    /// rendered from the front and the detector locates the eyes and mouth. That is done once per
+    /// character and cached, so a second sheet costs a copy. Without the backend, pass the three
+    /// points in the model's own space: <c>{ eyeLeft: { x, y }, eyeRight: { x, y }, mouth: { x, y } }</c>.
+    /// </para>
+    /// <para>
+    /// <b>The sheet arrives with the old painted features already erased</b>, over the character's
+    /// own skin and shading, so whatever is drawn replaces them rather than doubling up.
+    /// </para>
+    /// </remarks>
+    public FaceSheet FaceSheet(object? options = null) =>
+        new(FaceBake.For(this, JsInterop.AsDict(options)));
+
+    /// <summary>Bakes a face sheet into this mesh's atlas and returns the mesh wearing it.</summary>
+    /// <remarks>
+    /// <b>The face then belongs to the head</b>: it turns, nods and tilts with the rig, and a hand
+    /// or the hair occludes it as the model does. The texture is a new atlas — 4096 px square by
+    /// default for a 1024 px original, about 64 MB, so keep and reuse the results rather than baking
+    /// per panel. Pass <c>{ resolution }</c> to change it.
+    /// </remarks>
+    public FaceMesh WithFace(FaceSheet sheet, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        var opt = JsInterop.AsDict(options);
+        MeshToolkit.RefuseUnknown(opt, BakeOptions, "withFace option");
+
+        var atlas = FaceBake.Bake(this, sheet, (int)MeshToolkit.Num(opt, "resolution", 0f));
+        return new FaceMesh(Vertices, Uvs, Indices, HasUvs, Source)
+        { Texture = atlas, Rig = Rig, Reference = Reference, Fitted = Fitted };
+    }
+
+    /// <summary>
+    /// Draws an expression onto this character's face and bakes it: <c>withExpression('anger', 0.8)</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The fast path.</b> <paramref name="expression"/> is a name <c>Drawing.expressionUnits</c>
+    /// knows, or Action Units such as <c>{ AU12: 0.8, AU6: 0.4 }</c>; <paramref name="amount"/> scales
+    /// either. Features are drawn with the comic feature calls, in greyscale when the character is.
+    /// </para>
+    /// <para>
+    /// For a face the toolkit's features do not suit, draw your own on <see cref="FaceSheet"/> and
+    /// bake it with <see cref="WithFace"/>. Options: <c>{ resolution, inkColor, weight }</c>, plus
+    /// the three anchor points when there is no face backend.
+    /// </para>
+    /// </remarks>
+    public FaceMesh WithExpression(object expression, float amount = 1f, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        var opt = JsInterop.AsDict(options);
+        MeshToolkit.RefuseUnknown(opt, ExpressionOptions, "withExpression option");
+
+        Dictionary<string, object?>? anchors = null;
+        if (opt is not null)
+            foreach (var key in FaceBake.AnchorOptions)
+                if (opt.Contains(key)) (anchors ??= [])[key] = opt[key];
+
+        var sheet = FaceSheet(anchors);
+        FaceBake.DrawExpression(sheet, expression, amount, opt);
+
+        var bake = opt is not null && opt.Contains("resolution")
+            ? new Dictionary<string, object?> { ["resolution"] = opt["resolution"] }
+            : null;
+        return WithFace(sheet, bake);
     }
     #endregion
 
@@ -611,6 +689,11 @@ public class FaceMesh
     internal static readonly (float X, float Y, float Z) MouthAt = (0f, -3.4f, 6.0f);
 
     internal static readonly string[] OutlineOptions = ["center", "strength", "falloff"];
+
+    internal static readonly string[] BakeOptions = ["resolution"];
+
+    internal static readonly string[] ExpressionOptions =
+        ["resolution", "inkColor", "weight", "eyeLeft", "eyeRight", "mouth"];
 
     /// <param name="arkit">
     /// Whether to resolve the pre-ARKit aliases and refuse a known ARKit name by name. Expression

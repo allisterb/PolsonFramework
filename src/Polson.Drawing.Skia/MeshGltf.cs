@@ -115,6 +115,14 @@ internal sealed class MeshRig
         decoded = model.LogicalMeshes.Decode();
         instance = SceneTemplate.Create(scene).CreateInstance();
 
+        // **A scene node is not a bone.** An exporter's scene carries a root, the armature object and
+        // the mesh's own node beside the joints — Blender's glTF writer gives `world`, `Armature` and
+        // `geometry_0` — and listing those as joints hands a caller names that rotate the whole model
+        // or nothing, not a limb. The skins say which nodes are bones; that is the list worth giving.
+        var bones = model.LogicalSkins.SelectMany(s => s.Joints).Select(n => n.LogicalIndex).ToHashSet();
+        var logical = instance.Armature.LogicalNodes;
+        var fileNodes = MatchFileNodes(scene, logical);
+
         // **glTF does not require a node to be named, and a rigged file may have none.** Khronos's
         // own `SimpleSkin` is exactly that: two joints, both anonymous. An API keyed only on names
         // reports such a file as having no joints at all, which reads as "this mesh cannot be
@@ -122,14 +130,19 @@ internal sealed class MeshRig
         // positional handle, and a caller passes back whatever `mesh.joints` handed it either way.
         var handles = new List<string>();
         nodes = [];
-        var logical = instance.Armature.LogicalNodes;
         for (var i = 0; i < logical.Count; i++)
         {
             var handle = string.IsNullOrEmpty(logical[i].Name) ? $"node:{i}" : logical[i].Name;
 
             // A file free to leave names off is also free to repeat them. Last-wins would make one
             // of a duplicated pair silently unreachable, so the later one takes its index instead.
-            if (nodes.ContainsKey(handle)) handle = $"node:{i}";
+            if (nodes.ContainsKey(handle) || sceneNodes.Contains(handle)) handle = $"node:{i}";
+
+            if (fileNodes[i] is not { } file || !bones.Contains(file.LogicalIndex))
+            {
+                sceneNodes.Add(handle);
+                continue;
+            }
 
             nodes[handle] = logical[i];
             handles.Add(handle);
@@ -142,8 +155,8 @@ internal sealed class MeshRig
 
     #region Properties
     /// <summary>
-    /// A handle for every node the armature carries, in its order: the exporter's name where there
-    /// is one, and <c>node:{i}</c> where there is not.
+    /// A handle for every bone the file's skins declare, parents first: the exporter's name where
+    /// there is one, and <c>node:{i}</c> where there is not. Empty when the file carries no skin.
     /// </summary>
     internal string[] JointNames { get; }
 
@@ -301,6 +314,47 @@ internal sealed class MeshRig
         return Matrix4x4.CreateFromYawPitchRoll(y * rad, x * rad, z * rad);
     }
 
+    /// <summary>The file node each runtime node was built from, or null where none matches.</summary>
+    /// <remarks>
+    /// <b>SharpGLTF exposes no link back.</b> The runtime flattens the scene parents-first rather than
+    /// in the file's order, and the template that remembers each node's source is internal — so the
+    /// correspondence is rebuilt by structure: the same parent, the same name, the same bind transform.
+    /// Parents-first order guarantees a node's parent is matched before it is. Siblings identical in
+    /// all three are interchangeable for this purpose, and are claimed in file order.
+    /// </remarks>
+    static Node?[] MatchFileNodes(Scene scene, IReadOnlyList<NodeInstance> runtime)
+    {
+        var matched = new Node?[runtime.Count];
+        var byInstance = new Dictionary<NodeInstance, Node>(ReferenceEqualityComparer.Instance);
+        var claimed = new HashSet<int>();
+
+        for (var i = 0; i < runtime.Count; i++)
+        {
+            var node = runtime[i];
+            IEnumerable<Node> candidates = node.VisualParent is null
+                ? scene.VisualChildren
+                : byInstance.TryGetValue(node.VisualParent, out var parent) ? parent.VisualChildren : [];
+
+            var open = candidates.Where(n => !claimed.Contains(n.LogicalIndex)
+                                          && string.Equals(n.Name ?? "", node.Name ?? "", StringComparison.Ordinal))
+                                 .ToArray();
+            var file = open.FirstOrDefault(n => Near(n.LocalMatrix, node.LocalMatrix)) ?? open.FirstOrDefault();
+            if (file is null) continue;
+
+            claimed.Add(file.LogicalIndex);
+            byInstance[node] = file;
+            matched[i] = file;
+        }
+
+        return matched;
+    }
+
+    static bool Near(Matrix4x4 a, Matrix4x4 b) =>
+        MathF.Abs(a.M11 - b.M11) + MathF.Abs(a.M12 - b.M12) + MathF.Abs(a.M13 - b.M13) +
+        MathF.Abs(a.M21 - b.M21) + MathF.Abs(a.M22 - b.M22) + MathF.Abs(a.M23 - b.M23) +
+        MathF.Abs(a.M31 - b.M31) + MathF.Abs(a.M32 - b.M32) + MathF.Abs(a.M33 - b.M33) +
+        MathF.Abs(a.M41 - b.M41) + MathF.Abs(a.M42 - b.M42) + MathF.Abs(a.M43 - b.M43) < 1e-4f;
+
     /// <summary>A joint name the file does not have, refused with the nearest ones it does.</summary>
     /// <remarks>
     /// Joint names come from whoever exported the file — <c>mixamorig:LeftForeArm</c>,
@@ -310,6 +364,12 @@ internal sealed class MeshRig
     /// </remarks>
     ArgumentException Unknown(string name)
     {
+        if (sceneNodes.Contains(name))
+            return new ArgumentException(
+                $"'{name}' in glTF '{source}' is a scene node, not a bone of the skin, so rotating it " +
+                "would move the whole model or nothing rather than a limb. Turn the whole mesh with " +
+                "yawDeg/pitchDeg/rollDeg on Mesh.draw(...); read mesh.joints for the bones.");
+
         var near = nodes.Keys
             .Where(k => k.Contains(name, StringComparison.OrdinalIgnoreCase) ||
                         (name.Length > 2 && name.Contains(k, StringComparison.OrdinalIgnoreCase)))
@@ -328,6 +388,7 @@ internal sealed class MeshRig
     readonly SceneInstance instance;
     readonly IMeshDecoder<Material>[] decoded;
     readonly Dictionary<string, NodeInstance> nodes;
+    readonly HashSet<string> sceneNodes = new(StringComparer.Ordinal);
     readonly string source;
     SKBitmap? texture;
     #endregion

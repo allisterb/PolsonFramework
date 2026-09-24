@@ -660,10 +660,14 @@ and blaming the renderer.
 
 > [!IMPORTANT]
 > **glTF does not require a node to be named, and a rigged file may have none.** Khronos's own
-> `SimpleSkin` is two working joints and no names at all. Those come back as `node:0`, `node:1`, so
-> `mesh.joints` always hands you something you can pass straight back — but it also means **an empty
-> `mesh.joints` is a statement about the rig, never about the naming**, which is precisely the
-> confusion that would arise if the handles were not there.
+> `SimpleSkin` is two working joints and no names at all. Those come back as `node:1`, `node:2` (the
+> number is the node's position in the scene), so `mesh.joints` always hands you something you can
+> pass straight back. It also means **an empty `mesh.joints` is a statement about the rig, never
+> about the naming**, which is precisely the confusion that would arise if the handles were not there.
+>
+> **Only the skin's bones are listed.** A scene node that is not a bone (the root, the armature
+> object, the mesh's own node) is left out, and naming one to `pose(...)` is refused by name, because
+> rotating it would move the whole model or nothing rather than a limb.
 
 **Every pose is measured from the bind pose**, never from wherever the mesh already is. So posing a
 posed mesh re-poses the original rather than accumulating, two poses taken from one character cannot
@@ -679,3 +683,44 @@ panel loop that drifted would drift silently, because every individual frame sti
 > separate from the limb it is painted onto. Neither is a defect in the asset or in this toolkit;
 > both are what the technique is, and knowing that is what stops an afternoon spent hunting a bug
 > that is a method.
+
+### 7g. A drawn face on a generated character
+
+> **Implemented by**: `mesh.faceSheet(...)`, `mesh.withFace(...)`, `mesh.withExpression(...)`, and
+> on the sheet `faceSheet.context`, `faceSheet.head`, `faceSheet.canvas`, `faceSheet.skin`,
+> `faceSheet.greyscale` and `faceSheet.anchors`.
+
+A body posed by §7f still has the face its generator painted, and **that face cannot act**. Measured
+on a TRELLIS figure rigged by UniRig, the whole face is about 280 triangles carrying about 124 px of
+texture: the eyes and mouth are paint on a few dozen triangles, so there is no geometry to move into
+an expression, and a close-up shows a blur. This is the same limit that gives such a figure mitten
+hands — the generator's voxel grid is coarser than a finger — and a bigger input image does not
+change it.
+
+**So the face is drawn and baked into the model's atlas rather than deformed.** `faceSheet()` finds
+the eyes and mouth on the model, erases the old painted features over the character's own skin and
+shading, and hands back a canvas whose context already carries the alignment. Draw the features of
+`faceSheet.head` on it with the calls §7a–§7d use for any comic head, and `withFace(...)` writes the
+result into a copy of the atlas. From then on the face belongs to the head: it turns, nods and tilts
+with the rig, and the hair and a raised hand occlude it as the model does. There is nothing to line
+up per panel, which is the whole difference from drawing a face over a rendered body.
+
+**`withExpression(...)` is that in one call**, and it is the right default under a deadline:
+`withExpression('anger')`, or Action Units such as `{ AU12: 0.9, AU2: 0.6 }` scaled by the second
+argument. The features are drawn with the toolkit's comic calls, in greyscale when `faceSheet.greyscale`
+says the character is — the drawers' colour defaults read as make-up, or as a moustache, on a
+greyscale figure. Draw your own on the sheet when the character wants a face those calls cannot give.
+
+> [!IMPORTANT]
+> **Bake once, draw many times.** A bake is a new atlas, about 64 MB at the default 4096 px, and
+> takes a fraction of a second; finding the face takes a few seconds the first time and is then
+> cached. So bake the handful of expressions a sequence needs up front and keep them, then pose and
+> draw per panel exactly as §7f does. **A pose keeps the baked face.**
+>
+> **Stage the head at three-quarters or nearer.** Measured on the character above, a baked face is
+> sound to 60° of turn, including under a nod and a tilt; at 75° the far eye smears, and at 90°
+> nothing is left. **The model sets that limit, not the bake**: its own painted face fails at the
+> same angles, because a generated face is close to a flat plane with no nose standing out of it, and
+> a profile is read from a silhouette that texture cannot give. For a true profile, draw that panel's
+> head by construction (Manual 23). And a baked face changes the picture, never the shape — a dropped
+> jaw moves no silhouette, and a scream that needs the chin to fall is beyond this route.

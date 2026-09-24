@@ -3021,17 +3021,52 @@ canvas;
 - `Face.available` → `boolean` · `Face.missing` → `string?` — what is absent, or null when nothing is.
 - `Face.python` · `Face.model` → `string?` — what would be used. Worth a `Stage.note`.
 - `Face.detect(image, timeoutMs?)` → `FaceDetection` — `image` is a bitmap or a canvas.
+- `Face.fromViews({ front, left?, right? }, { resolution? })` → `FaceMesh` — **a face that turns to profile in the artist's own drawing**, from a turnaround sheet's views.
+
+> [!TIP]
+> **`Face.fromViews` is the call for a character drawn on a turnaround sheet.** Crop each head — front, and either or both profiles — and pass the crops:
+>
+> ```js
+> const sheet = Skia.Image.load('refs/julie_turnaround.jpg');
+> const face = Face.fromViews({
+>     front: sheet.extractSubset(190, 70, 220, 220),
+>     left:  sheet.extractSubset(1270, 70, 220, 220),
+>     right: sheet.extractSubset(1590, 70, 220, 220)
+> });
+> Mesh.draw(ctx, face, { x, y, scale: 2, yawDeg: 90, expression: { browDown: 1 } });
+> log(face.source);   // triangles per view, and the scale each side was read at
+> ```
+>
+> **What it does with them.** The detector finds a drawn profile too — the landmarks on the side it can see land on the drawn eye, nose tip, mouth corner and chin — so each vertex takes its depth from where it sits in a side view that sees it, and each triangle is painted from the one view that sees it most squarely, through that view's own landmarks. Turn the result to 90° and you see the artist's side drawing, not the front drawing stretched. It is on MediaPipe's canonical topology and texture layout, so the expression units and `mesh.withFace(...)` work on it.
+>
+> **The crops need not match.** Which side each profile shows is read from its detected turn, so `left` and `right` are only labels. Each side view's scale and offset are fitted from where its features sit against the front's, so the crops need not be cut to one size — but the views must be **drawn** to one height scale, as a turnaround is; a view whose features will not line up is refused with the measurement.
+>
+> **Three limits.** One side view corrects only the half of the face it sees. A side view fixes shape but cannot say where zero depth is, so the face may sit a little forward or back — which moves only the point it turns about. And it is a face, not a head: no ears, hair or back. It needs the face backend; three detections take several seconds.
 
 ## `FaceDetection`
 
 - `detection.found` → `boolean` · `detection.reason` → `string?` — **read `found` first.**
 - `detection.count` → `number` — **478** with this bundle: the 468-vertex base mesh plus five iris points per eye.
-- `detection.at(index)` → `{ x, y, index }?` — one landmark in the image's own pixels, or **null** out of range.
+- `detection.at(index)` → `{ x, y, z?, index }?` — one landmark in the image's own pixels, or **null** out of range. `z` is its depth, in the same pixels, positive toward the viewer.
 - `detection.bounds` → `Rect` — the landmarks' extent, with the usual `x2`, `y2`, `cx`, `cy`.
 - `detection.width` · `detection.height` → `number` — the image's own size.
 - `detection.pad` → `number` — how many pixels of padding detection needed. Zero for an ordinary photograph.
 - `detection.yawDeg` · `detection.pitchDeg` · `detection.rollDeg` → `number` — the source's head pose.
 - `detection.blendshapes` → `object` — 51 ARKit-named coefficients as the model read them.
+- `detection.hasDepth` → `boolean` — whether the landmarks carry depth, so `mesh()` can build a face that turns.
+- `detection.mesh(image?)` → `FaceMesh` — **the face as a 3D mesh fitted to the image, textured by it when given.**
+
+> [!TIP]
+> **`detection.mesh(image)` turns any portrait — drawn or photographed — into a face that turns to profile.** Each of the 468 base landmarks carries a depth the landmark model predicts, so the mesh has a nose that stands out and a brow over the eyes; on MediaPipe's canonical topology, read from the model bundle itself. Vertices are in the image's own pixels, centred on the face, so `scale: 1` draws it at the portrait's size.
+>
+> ```js
+> const portrait = Skia.Image.load('refs/julie_front.png');
+> const face = Face.detect(portrait).mesh(portrait);
+> Mesh.draw(ctx, face, { x: 300, y: 300, scale: 1, yawDeg: 60,
+>                        expression: { browDown: 1, eyeSquint: 0.5 } });
+> ```
+>
+> It is the topology `Mesh.draw`'s expression units were written for, so `expression` and `side` work on it directly. **Three limits, all measured on a drawn character portrait:** the depth is the network's human prior rather than the character's own shape, so a stylised face regresses toward human proportions; the texture comes from one front view, so the far side streaks past about 60°; and a drawn mouth stays drawn — `jawOpen` lengthens the chin but the lips do not part, because they are painted closed. It is a face, not a head: no ears, hair or back.
 
 > [!IMPORTANT]
 > **Not finding a face is a result, not an error.** Only an absent or broken backend throws — the same line `bitmap.trace` draws, because that is an environment to fix rather than an outcome to handle. A perfectly good portrait can come back `found: false`, and `reason` says why.
@@ -3202,7 +3237,7 @@ canvas;
 > [!TIP]
 > **The atlas is the better surface for a plate the studio draws, and `fitTexture` is for a picture it was given.** A front projection cannot represent the sides of a head — triangles at the silhouette project to near-zero area, which is the smear you see on a turned panel. The mesh's own atlas unwraps the whole surface, so a procedurally-painted plate wraps round rather than stopping at the profile.
 >
-> This is the reachable half of what the Active Appearance Model literature calls a **shape-free** or **geometrically normalised** texture (Ahlberg, *EURASIP JASP* 2002:6, 566–571, crediting Ström et al. 1997). There the texture is warped into the model's canonical shape *first*, so that shape and texture are independent — and the warp exists because the source is a **captured** image. **A plate authored in atlas space is already in canonical shape, so the warp is free.** Doing it for a photograph needs a full landmark set on the source, and there is no face detector in this stack.
+> This is the reachable half of what the Active Appearance Model literature calls a **shape-free** or **geometrically normalised** texture (Ahlberg, *EURASIP JASP* 2002:6, 566–571, crediting Ström et al. 1997). There the texture is warped into the model's canonical shape *first*, so that shape and texture are independent — and the warp exists because the source is a **captured** image. **A plate authored in atlas space is already in canonical shape, so the warp is free.** Doing it for a photograph needs a full landmark set on the source — which `Face.detect` now supplies, though the warp itself is not implemented.
 
 > [!IMPORTANT]
 > **An atlas is not an isotropic picture of the face, so a feature stamped into it needs two scales, not one.** An unwrap is laid out for texel budget and seam placement, not to look like a portrait — so the ratio between *across the face* and *down the face* is not the one a frontal view has.
@@ -3281,7 +3316,7 @@ Mesh.draw(ctx, waving, { x: 400, y: 300, scale: 160, yawDeg: 20 });
 > - **The face must be wholly inside the image.** A crop that runs off the edge has no pixels to sample and smears at the boundary. That is a limit of the picture, not of the fit.
 > - **There is no rotation term**, so a tilted head is not straightened.
 > - **Only two internal ratios are pinned** — eye separation and eye-to-mouth. Every other proportion is the mesh's, so a face built to other proportions is redistributed onto this one.
-> - **There is no face detector anywhere in this stack**, so the three landmarks are yours to supply. For a photograph that means reading them off it. **For a face the studio drew itself they are free**: `createLoomisHead` already reports `farEye.center`, `nearEye.center` and `mouthGuides.center`.
+> - **The three landmarks come from `Face.detect`** when the face backend is installed — `mesh.fitDetected(image, detection)` resolves them for you. Without it, read them off the image. **For a face the studio drew itself they are free**: `createLoomisHead` already reports `farEye.center`, `nearEye.center` and `mouthGuides.center`.
 
 > [!TIP]
 > **Where the three points come from, and how exact they have to be.**

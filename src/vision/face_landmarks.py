@@ -94,7 +94,13 @@ def main():
             return 0
 
         # Back into the ORIGINAL image's pixels, which is the space a texture is addressed in.
-        pts = [[round(p.x * fw - pad, 3), round(p.y * fh - pad, 3)]
+        #
+        # **The third value is depth, and it was discarded until 2026-09-24.** The landmark model
+        # predicts a z for every point, on roughly the same scale as x and negative toward the
+        # camera, so `-z * fw` is depth in the same pixels as x — positive toward the viewer. It is
+        # the network's human-face prior rather than a measurement, but it is what turns 468 points
+        # into a face that can be turned to profile: a nose that stands out, a brow over the eyes.
+        pts = [[round(p.x * fw - pad, 3), round(p.y * fh - pad, 3), round(-p.z * fw, 3)]
                for p in r.face_landmarks[0]]
 
         out = {

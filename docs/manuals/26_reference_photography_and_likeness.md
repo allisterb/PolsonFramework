@@ -342,6 +342,32 @@ fit cannot straighten, and this is how you find that out before spending a textu
 expression units took in §7d-ii, so a reading transfers without translation. Treat it as a *read* of
 the source rather than as a control: it says what the face in the photograph is doing.
 
+**`detection.mesh(image)` is the face itself, in three dimensions.** Every landmark carries a depth
+the model predicts — **`detection.hasDepth`** says whether this backend supplied it — so the 468 base
+points make a face with a nose that stands out and a brow over the eyes, fitted to *this* portrait
+and textured by it. That is a different thing from `fitTexture`, which paints a portrait onto the
+canonical model's own shape: here the shape comes from the picture too. It turns to profile where a
+front-projected mesh smears, and it is the right starting point for a character whose only good face
+is a drawn one — measured on a turnaround sheet's front view, the drawn features survived to 90°.
+Treat the depth as a plausible human profile rather than the character's own, and expect the far
+side to streak past about 60°, since one front view has nothing to say about it.
+
+**`Face.fromViews({ front, left, right })` is what to use when the character comes on a turnaround
+sheet**, because the sheet already says what the side of the face looks like. The detector reads a
+drawn profile as well as a front — on the visible side its landmarks land on the drawn eye, nose tip,
+mouth corner and chin — so every vertex is seen squarely by one of the views. Each takes its depth
+from the side view that sees it, and each triangle is painted from the view that sees it best,
+through that view's own landmarks. Measured on a real sheet: the front-only mesh turned to 90°
+showed the front drawing smeared across the cheek; built from all three views it shows the artist's
+own profile, eye and cheek marks included.
+
+**Two approaches were tried first and failed, and the reasons are worth knowing before modifying
+this.** Scaling the whole depth to fit the drawn outline flattened the face into a blade — the outline
+measures how far the nose stands out from the chin, not how far the cheeks sit behind it. And
+correcting only the outline, then projecting the side drawings through the result, painted each eye
+twice, because the interior depths were still the network's. Using each view's own landmarks is what
+removed both.
+
 > [!IMPORTANT]
 > **Expect `eyeLookUp` around 0.6 on anything the studio drew, and do not chase it.** Measured on
 > three of our own rendered faces and on a generated comic portrait: every one came back

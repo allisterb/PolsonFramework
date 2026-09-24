@@ -142,8 +142,9 @@ public class FaceMesh
         if (eyeL is null || eyeR is null || mouth is null)
             throw new ArgumentException(
                 "fitTexture needs eyeLeft, eyeRight and mouth, each as { x, y } in the image's own pixels. "
-                + "There is no face detector in this stack, so the three points are yours to supply — "
-                + "from Drawing.createLoomisHead(...) for a drawn face, or read off a photograph.");
+                + "Take them from Face.detect(image) with mesh.fitDetected(image, detection), from "
+                + "Drawing.createLoomisHead(...) for a face you constructed, or read them off the image. "
+                + "For a face that turns, Face.detect(image).mesh(image) builds one fitted to the picture.");
 
         // **Where this mesh keeps its own eyes and mouth, as fractions of its own frame** — the same
         // normalisation the deformation bands use, and for the same reason: these were literal

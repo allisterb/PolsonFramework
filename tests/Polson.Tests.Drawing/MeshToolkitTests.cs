@@ -161,8 +161,8 @@ public class MeshToolkitTests : TestsRuntime
 
     /// <summary>A fit with a landmark missing is refused, and the message says where to get them.</summary>
     /// <remarks>
-    /// There is no face detector in this stack, so the three points are the caller's to supply. A
-    /// silent default would put every face on the same guess and render perfectly.
+    /// The three points are the caller's to supply, from <c>Face.detect</c> or by eye. A silent
+    /// default would put every face on the same guess and render perfectly.
     /// </remarks>
     [Fact]
     public void TestAFitWithoutLandmarksIsRefused()
@@ -171,7 +171,8 @@ public class MeshToolkitTests : TestsRuntime
             new Dictionary<string, object?> { ["eyeLeft"] = P(80f, 96f), ["eyeRight"] = P(176f, 96f) }));
 
         Assert.Contains("mouth", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("no face detector", error.Message, StringComparison.OrdinalIgnoreCase);
+        // The remedy names the detector, which exists now; the message used to say it did not.
+        Assert.Contains("Face.detect", error.Message, StringComparison.Ordinal);
     }
 
     /// <summary>An unrecognised option or deformation unit is refused by name.</summary>

@@ -574,7 +574,7 @@ internal static class FaceBake
     }
 
     /// <summary>A triangle grown outward about its centroid, so neighbouring bakes leave no seam.</summary>
-    static SKPath Grown(SKPoint[] t, float by)
+    internal static SKPath Grown(SKPoint[] t, float by)
     {
         var c = new SKPoint((t[0].X + t[1].X + t[2].X) / 3f, (t[0].Y + t[1].Y + t[2].Y) / 3f);
         return Path(t.Select(p =>

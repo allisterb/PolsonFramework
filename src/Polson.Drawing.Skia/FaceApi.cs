@@ -1,6 +1,7 @@
 namespace Polson.Drawing.Skia;
 
 using System;
+using System.Collections.Generic;
 
 /// <summary>The <c>Face</c> global — face landmarks from an image, when a backend is installed.</summary>
 /// <remarks>
@@ -54,5 +55,62 @@ public class FaceApi
 
         return FaceDetector.Detect(bitmap, timeoutMs);
     }
+
+    /// <summary>
+    /// A face that turns to profile in the artist's own drawing, from a turnaround's views:
+    /// <c>Face.fromViews({ front, left, right })</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Each view is a crop of one head</b>, as a bitmap or canvas. <c>front</c> is required;
+    /// <c>left</c> and <c>right</c> are optional, and <b>which is which is read from the drawing</b>
+    /// — each side view's turn is detected — so the names are only labels, and a sheet's own "LEFT"
+    /// may be either. Crops need not be the same size: each side view's scale and offset are fitted
+    /// from its features, and a view that will not line up is refused with the measurement.
+    /// </para>
+    /// <para>
+    /// The result is a mesh on MediaPipe's canonical topology and texture layout, so
+    /// <c>Mesh.draw</c>'s expression units and <c>mesh.withFace(...)</c> work on it. Its
+    /// <c>source</c> says how many triangles came from each view and at what scale each side was read.
+    /// Options: <c>{ resolution }</c>, the atlas size, 2048 by default.
+    /// </para>
+    /// </remarks>
+    public FaceMesh FromViews(object views, object? options = null)
+    {
+        var v = JsInterop.AsDict(views)
+            ?? throw new ArgumentException("Face.fromViews takes { front, left?, right? }, each a bitmap or canvas.", nameof(views));
+        MeshToolkit.RefuseUnknown(v, ViewNames, "Face.fromViews view");
+        var opt = JsInterop.AsDict(options);
+        MeshToolkit.RefuseUnknown(opt, ["resolution"], "Face.fromViews option");
+
+        if (!v.Contains("front") || v["front"] is null)
+            throw new ArgumentException(
+                "Face.fromViews needs a front view: { front, left?, right? }. The front gives every vertex its place; the sides correct its depth.",
+                nameof(views));
+
+        FaceViews.View Read(string name)
+        {
+            var bitmap = v[name] switch
+            {
+                SkiaBitmapWrapper b => b,
+                SkiaCanvas c => c.Bitmap,
+                var other => throw new ArgumentException(
+                    $"The '{name}' view must be a bitmap or a canvas, and got {other?.GetType().Name ?? "null"}.", nameof(views))
+            };
+            return new FaceViews.View(name, FaceDetector.Detect(bitmap), bitmap.Bitmap);
+        }
+
+        var front = Read("front");
+        List<FaceViews.View> sides = [];
+        foreach (var name in new[] { "left", "right" })
+            if (v.Contains(name) && v[name] is not null) sides.Add(Read(name));
+
+        return FaceViews.Build(front, sides, FaceDetector.Triangles(), FaceDetector.CanonicalUvs(),
+                               (int)MeshToolkit.Num(opt, "resolution", 0f));
+    }
+    #endregion
+
+    #region Fields
+    static readonly string[] ViewNames = ["front", "left", "right"];
     #endregion
 }

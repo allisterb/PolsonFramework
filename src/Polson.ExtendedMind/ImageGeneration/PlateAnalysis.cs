@@ -172,6 +172,60 @@ public static class PlateAnalysis
     }
 
     /// <summary>
+    /// Why an image is not a blocking, or null when it is one: black silhouettes on a single flat grey.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A blocking is the one image the studio sends a model that it did not generate</b>, so it is
+    /// also the one route by which a photograph or a drawn face could reach the model as something to
+    /// build around. A silhouette carries no likeness, which is the line a matte already draws, so the
+    /// test is on tone: every pixel near black, or near the one neutral tone the ground is painted in.
+    /// A photograph fails by colour and by tonal spread; a greyscale one by the spread alone.
+    /// </para>
+    /// <para>
+    /// The allowance for other tones is for antialiased edges, which fall between the two. Sampled at
+    /// 280 across, a skyline puts about 2% of its samples on an edge; 8% leaves room for a lacier
+    /// silhouette such as a tree line without letting a picture through.
+    /// </para>
+    /// </remarks>
+    public static string? BlockingProblem(SKBitmap blocking, int sample = 280)
+    {
+        ArgumentNullException.ThrowIfNull(blocking);
+
+        const double MaxOther = 0.08;
+        var h = Math.Max(1, sample * blocking.Height / Math.Max(1, blocking.Width));
+        var samples = new List<(double Luminance, int Chroma)>(sample * h);
+
+        for (var y = 0; y < h; y++)
+        {
+            for (var x = 0; x < sample; x++)
+            {
+                var c = blocking.GetPixel(x * blocking.Width / sample, y * blocking.Height / h);
+
+                // Transparency is ground: nothing is drawn there, so nothing is asked of the model.
+                samples.Add(c.Alpha < 128
+                    ? (-1, 0)
+                    : (Luminance(c), Math.Max(c.Red, Math.Max(c.Green, c.Blue)) - Math.Min(c.Red, Math.Min(c.Green, c.Blue))));
+            }
+        }
+
+        static bool Black((double Luminance, int Chroma) s) => s.Luminance is >= 0 and < 30 && s.Chroma < 40;
+
+        // The ground is whatever neutral tone most of the non-silhouette is painted in.
+        var neutral = samples.Where(s => s.Luminance >= 0 && !Black(s) && s.Chroma <= 24).ToList();
+        var ground = neutral.Count == 0 ? -1
+            : neutral.GroupBy(s => (int)Math.Round(s.Luminance / 4)).MaxBy(g => g.Count())!.Key * 4;
+
+        var other = samples.Count(s => s.Luminance >= 0 && !Black(s)
+                                       && !(s.Chroma <= 24 && Math.Abs(s.Luminance - ground) <= 12));
+        var share = (double)other / samples.Count;
+
+        return share <= MaxOther ? null
+            : $"{share:P0} of it is neither silhouette black nor the flat ground tone"
+              + (samples.Any(s => s.Chroma > 40) ? ", and it is in colour" : string.Empty);
+    }
+
+    /// <summary>
     /// Intersection-over-union of the plate's near-black region with the blocking's silhouette.
     /// </summary>
     public static double MaskAgreement(SKBitmap plate, SKBitmap blocking, int sample = 280)
@@ -483,6 +537,61 @@ public static class PlateAnalysis
                 var d = Math.Sqrt((dr * dr) + (dg * dg) + (db * db));
 
                 var alpha = d <= near ? 0.0 : d >= far ? 1.0 : (d - near) / (far - near);
+                keyed.SetPixel(x, y, new SKColor(c.Red, c.Green, c.Blue, (byte)Math.Round(alpha * 255)));
+            }
+        }
+
+        return keyed;
+    }
+
+    /// <summary>
+    /// Keys out a ground by how far each pixel leans toward the ground's hue, not by how close it is to
+    /// the ground's colour. Null when the ground does not lean that way enough to key on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why not <see cref="ChromaKey"/>.</b> The model draws its ground approximately and always toward
+    /// the middle: asked for <c>#FF00FF</c> it drew <c>#D34090</c>, asked for <c>#00FF00</c> about
+    /// <c>#74B060</c>. A distance key around a desaturated ground reaches whatever sits in the middle too,
+    /// and measured on live head sheets at tolerance 0.10 that was ruddy cheeks on magenta and a grey
+    /// beard on green. A lean key cannot do that: grey leans toward no hue at all, and skin leans red,
+    /// which is away from both green and the blue half of magenta.
+    /// </para>
+    /// <para>
+    /// The lean is <c>g − max(r, b)</c> for green, <c>min(r, b) − g</c> for magenta and
+    /// <c>b − max(r, g)</c> for blue, taken as a share of the measured ground's own. A pixel at 60% of it
+    /// or more is ground; at 30% or less it is subject; between the two it ramps, which keeps an
+    /// antialiased edge soft. <paramref name="tolerance"/> moves both, 0.10 giving exactly those.
+    /// </para>
+    /// </remarks>
+    public static SKBitmap? DifferenceKey(SKBitmap source, SKColor ground, string hue, double tolerance = 0.10)
+    {
+        Func<int, int, int, int> lean = hue.ToLowerInvariant() switch
+        {
+            "green" => (r, g, b) => g - Math.Max(r, b),
+            "magenta" => (r, g, b) => Math.Min(r, b) - g,
+            "blue" => (r, g, b) => b - Math.Max(r, g),
+            _ => throw new ArgumentException($"No lean is defined for a '{hue}' ground.", nameof(hue)),
+        };
+
+        // A ground that barely leans is not the hue it was asked for, and keying on it would take the subject.
+        double full = lean(ground.Red, ground.Green, ground.Blue);
+        if (full < 16)
+        {
+            return null;
+        }
+
+        var groundAt = Math.Clamp(0.7 - tolerance, 0.3, 0.9);
+        var subjectAt = groundAt / 2;
+        var keyed = new SKBitmap(source.Width, source.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                var c = source.GetPixel(x, y);
+                var t = lean(c.Red, c.Green, c.Blue) / full;
+                var alpha = t >= groundAt ? 0.0 : t <= subjectAt ? 1.0 : (groundAt - t) / (groundAt - subjectAt);
                 keyed.SetPixel(x, y, new SKColor(c.Red, c.Green, c.Blue, (byte)Math.Round(alpha * 255)));
             }
         }

@@ -1109,9 +1109,15 @@ Verification primitives. **"Look again at what you rendered" means comparing it 
 
 ## `ImageData`
 
+- `new ImageData(width: number, height: number)` → `ImageData` — A blank, fully transparent buffer. Same as `ctx.createImageData(width, height)`.
+- `new ImageData(data: Uint8ClampedArray | number[], width: number, height?: number)` → `ImageData` — A buffer holding `data`, `width × height × 4` values long; the height is read from the length when it is left out. **It copies `data`** rather than sharing it, which is where this differs from a browser: a later write to the source does not reach the new one.
+
 - `imageData.width` → `number` — Width in pixels.
 - `imageData.height` → `number` — Height in pixels.
-- `imageData.data` → `byte[]` — Flat array of RGBA byte values `[r0, g0, b0, a0, r1, g1, b1, a1, ...]`.
+- `imageData.data` → `Uint8ClampedArray` — Flat RGBA values `[r0, g0, b0, a0, r1, g1, b1, a1, ...]`, as in a browser. **It is the buffer, not a copy**: write into it and `ctx.putImageData(imageData, x, y)` puts the change on the canvas, and `imageData.data === imageData.data`. Values clamp to `0`–`255` and round, as the type does.
+
+> [!NOTE]
+> **Until 2026-09-24 every write here was silently lost.** Each read of `data` handed back a fresh copy, so a script that edited pixels and called `putImageData` put back exactly what it had been given, with no error. If an older run's notes say pixel editing "did nothing", this is why.
 - `imageData.toPngBytes(quality?: number)` → `byte[]` — Encodes pixel buffer to PNG bytes.
 - `imageData.toImageBytes(format?: string, quality?: number)` → `byte[]` — Encodes the buffer in any supported format (default WebP Q=85).
 - `imageData.toDataUri(format?: string, quality?: number)` → `string` — Base64 data URI in the given format.
@@ -3037,7 +3043,7 @@ canvas;
 > log(face.source);   // triangles per view, and the scale each side was read at
 > ```
 >
-> **What it does with them.** The detector finds a drawn profile too — the landmarks on the side it can see land on the drawn eye, nose tip, mouth corner and chin — so each vertex takes its depth from where it sits in a side view that sees it, and each triangle is painted from the one view that sees it most squarely, through that view's own landmarks. Turn the result to 90° and you see the artist's side drawing, not the front drawing stretched. It is on MediaPipe's canonical topology and texture layout, so the expression units and `mesh.withFace(...)` work on it.
+> **What it does with them.** The detector can find a drawn profile — on the turnaround this was built against, the landmarks on the side it can see land on the drawn eye, nose tip, mouth corner and chin — but **not reliably**: on generated head sheets of a bearded character it found no strict profile at any crop, and a profile it cannot find is refused by name. Where it does, each vertex takes its depth from where it sits in a side view that sees it, and each triangle is painted from the one view that sees it most squarely, through that view's own landmarks. Turn the result to 90° and you see the artist's side drawing, not the front drawing stretched. It is on MediaPipe's canonical topology and texture layout, so the expression units and `mesh.withFace(...)` work on it.
 >
 > **The crops need not match.** Which side each profile shows is read from its detected turn, so `left` and `right` are only labels. Each side view's scale and offset are fitted from where its features sit against the front's, so the crops need not be cut to one size — but the views must be **drawn** to one height scale, as a turnaround is; a view whose features will not line up is refused with the measurement.
 >
@@ -3544,11 +3550,19 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 > [!IMPORTANT]
 > **Views decide everything, so make them for this.** One character, one style, one scale, the whole figure in frame, standing in an **A-pose** with the arms clear of the body — a rigger cannot separate an arm drawn against the torso, and nothing can find a head that was cropped off. `front` is required; `back` and a profile each improve the body, and the profile gives the face its shape.
 >
-> **Make the views in one generation, and hand them over as one sheet.** Separate generations of "the same" character are different characters, so the three views come from one `Assets.cutout` call; drawing its cells side by side on one canvas makes a turnaround sheet, which `GenerateCharacter` splits itself and reads as front, side, back:
+> **Make the face first, then the body shown the face, and hand each over as one sheet.** Separate generations of "the same" character are different characters, so each sheet's views come from one `Assets.cutout` call, and the body call is passed the face as `reference`. Drawing a cutout's cells side by side on one canvas makes a sheet, which `GenerateCharacter` splits itself: the body as front, side, back, the face as a front then its profiles.
 >
 > ```javascript
-> const views = await Assets.cutout('a heavyset lighthouse keeper in his sixties, grey beard, oilskin coat, full figure standing in an A-pose', {
->     variants: ['front view', 'side view, in profile', 'back view'], size: 768 });
+> // Script 1: the face, large. framing: 'head' also keys it on green, which skin never is.
+> const face = await Assets.cutout('a heavyset lighthouse keeper in his sixties, full grey beard, black knitted cap, black oilskin coat', {
+>     variants: ['front, looking at the viewer', 'side view, in profile'], framing: 'head', size: 768, tolerance: 0.10 });
+> Session.face = face;   // then draw its cells as below, with outFile: 'refs/tomas-face.png'
+> ```
+>
+> ```javascript
+> // Script 2: the body, shown the face.
+> const views = await Assets.cutout('a heavyset lighthouse keeper in his sixties, full grey beard, black knitted cap, black oilskin coat, full figure standing in an A-pose', {
+>     variants: ['front view', 'side view, in profile', 'back view'], framing: 'full', reference: Session.face, size: 768, tolerance: 0.10 });
 > if (!views.success) exit(views.failureName + ': ' + views.remedy);
 >
 > const cells = views.cells.map(c => Skia.Image.fromDataUrl(c.toDataUri()));
@@ -3558,12 +3572,16 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 > sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, sheet.width, sheet.height);
 > let x = gap;
 > for (const c of cells) { sctx.drawImage(c, x, gap + (H - c.height)); x += c.width + gap; }   // feet on one line
-> sheet;   // run with outFile: 'refs/tomas-sheet.png', then GenerateCharacter({ name: 'tomas', sheet: 'refs/tomas-sheet.png' })
+> sheet;   // outFile: 'refs/tomas-sheet.png', then GenerateCharacter({ name: 'tomas', sheet: 'refs/tomas-sheet.png', faceSheet: 'refs/tomas-face.png' })
 > ```
+>
+> **Why the face comes first.** Cut out of a full-figure sheet a head is a tenth of the figure. `faceSheet` builds the face from the large front head instead; without one it is built from heads cropped out of the body sheet, as before. The order is the one *AI Cinematic Filmmaking: Pre-Production* ch. 8 gives: the face is the anchor, and everything after it is generated with the face attached.
+>
+> **A strict profile does not reach the face yet**, on either sheet. Measured on generated sheets (2026-09-24): the face detector found a face turned 14° and no drawn profile at any crop, so a profile is dropped with a warning and the face takes its shape from the front. It still earns its place on both sheets: the body is shown the face from the side, and the reconstruction uses the body's profile. Asking for a "three-quarter view" did not help — the model drew it as a near-profile too.
 >
 > **Ask for one profile, not a left and a right.** Asked for both, a generated sheet tends to return the front view twice, or two profiles facing the same way. One is enough: which way a profile faces is read from the picture, so it needs no label. `GenerateCharacter` reads three figures as front, side, back and four as front, back, left, right; `sheetOrder` names any other layout.
 >
-> **To redo one view, pass the sheet you have as `reference`** rather than generating again from the description, which draws somebody else. See *Adding to a subject later* under `polson://sdk/core/Assets`.
+> **To redo one view, pass the face or the body cutout as `reference`** rather than generating again from the description, which draws somebody else. See *Adding to a subject later* under `polson://sdk/core/Assets`.
 >
 > A sheet drawn by hand or by another tool works the same way, captions and all: the figures are found by the gaps between them. Leave a clear gap; figures touching are read as one.
 
@@ -3659,8 +3677,9 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 
 - `Assets.material(descriptor: string, options?: object)` → `Promise<MaterialAsset>` — A flat, seamlessly tiling swatch. Safest and most reusable: independent of geometry, so it survives any amount of redrawing. `options`: `{ size?: number (32–1024, default 512), tileable?: boolean (default true), format?: 'webp'|'png'|'jpeg', quality?: number, model?: string }`.
 - `Assets.backdrop(descriptor: string, options?: object)` → `Promise<BackdropPlate>` — A background plate composited beneath the scene. `options`: `{ width?: number, height?: number, keepQuiet?: 'lowerThird'|'upperThird'|'leftHalf'|'rightHalf'|'center'|'none', noHorizon?: boolean, noForeground?: boolean, conditionOn?: byte[], format?: string, quality?: number, model?: string }`.
+  - **`conditionOn` must be a blocking**: PNG bytes of the scene's foreground as flat black silhouettes on one flat grey ground, e.g. `#000000` on `#808080`. Anything with shading, colour or a range of greys is **refused before the network is touched**, because an image sent here reaches the model as something to build around — the one route by which a photograph or a likeness could arrive without the checks `Photo` applies. A silhouette carries no likeness, which is why it is allowed. Antialiased edges are fine.
 - `Assets.matte(descriptor: string, options?: object)` → `Promise<MatteAsset>` — A greyscale mask, height field, or displacement source for use as a shader input — **and, with `hardEdge`, a stencil.** `options`: `{ size?: number, invert?: boolean, hardEdge?: boolean, threshold?: number, model?: string }`.
-- `Assets.cutout(descriptor: string, options?: object)` → `Promise<CutoutAsset>` — Pictorial elements with a **real alpha channel**, cut from a flat keyed ground — and, with `variants`, several views of one subject from **one generation**. `options`: `{ variants?: string[] (max 6), size?: number (default 512), style?: string, background?: string, tolerance?: number (default 0.18), reference?: CutoutAsset | CutoutCell | string | Array (max 3), model?: string }`.
+- `Assets.cutout(descriptor: string, options?: object)` → `Promise<CutoutAsset>` — Pictorial elements with a **real alpha channel**, cut from a flat keyed ground — and, with `variants`, several views of one subject from **one generation**. `options`: `{ variants?: string[] (max 6), size?: number (default 512), style?: string, background?: string, tolerance?: number (default 0.18), reference?: CutoutAsset | CutoutCell | string | Array (max 3), framing?: 'head' | 'full' | string, keyColor?: 'green' | 'magenta' | 'blue', model?: string }`.
 
 > [!TIP]
 > **This is the one requisition that will answer a *form*, and that is deliberate.** `material()` refuses "a rearing horse" because a material has no silhouette; a matte is nothing *but* a silhouette, so the classifier does not run here. It is therefore the route to the bold graphic form a header or a section marker wants — and it stays on the right side of the line, because what comes back is a shape rather than a picture. Colour, scale, placement and composition all stay with your code.
@@ -3733,10 +3752,13 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 
 > [!IMPORTANT]
 > **A later call can be shown the earlier one.** Pass the earlier cutout as `reference` and the model is
-> handed that sheet and told to change nothing about the subject but what `variants` lists. How closely it
-> holds the likeness is the model's doing rather than a guarantee, so **look at the result beside the
-> first sheet** before building on it. This is what makes the plan-everything-first rule above survivable: a missed pose, a
-> closer head sheet, or one view that came back wrong can be redone without losing the person.
+> handed that sheet and told to **maintain that face and that costume** and to take the pose, expression,
+> angle and framing from the description. Measured on a live run: shown a face sheet and asked for a
+> keeper shouting with his arms raised, it drew a new pose, not a copy, with the same face, beard, cap and
+> coat down to the pocket flaps. How closely it holds a likeness is still the model's doing rather than a
+> guarantee, so **look at the result beside the first sheet** before building on it. This is what makes
+> the plan-everything-first rule above survivable: a missed pose, a new expression, or one view that came
+> back wrong can be redone without losing the person.
 >
 > ```javascript
 > const cast = await Assets.cutout('a weathered ranch hand in his fifties, head and shoulders', {
@@ -3753,6 +3775,33 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > cell stands for the whole sheet it was cut from, which is what is sent, so to redo one view you can pass
 > the cell you are replacing. **Keep the descriptor**: the reference shows the model who the subject is,
 > and the words still say what to draw.
+>
+> **An earlier wording asked the model to change nothing about the subject, and it copied everything**:
+> shown a full-figure sheet and asked for head and shoulders, it drew the same full figures, the profile
+> almost line for line. Naming what to keep is what lets the rest change.
+
+### Framing and the key colour — `framing`, `keyColor`
+
+> [!TIP]
+> **`framing` says how much of the subject each cell shows, as its own sentence to the model.** `'head'`
+> is a close-up portrait, head and shoulders, the face large; `'full'` is the whole figure from head to
+> feet; any other string is used as written. Stated separately it holds against a reference; buried in
+> the description it tends to lose to one.
+>
+> **`keyColor` is the ground the model draws and the keyer removes**: `'green'`, `'magenta'` or `'blue'`.
+> Unset, it is **green for `framing: 'head'`** and magenta otherwise. Choose the one the subject does not
+> contain: a figure in green clothes wants magenta, one in green and magenta wants blue. Unlike
+> `background`, this steers the model as well as the keyer, and an unknown name is refused before anything
+> is spent.
+>
+> **The ground is keyed by hue, not by distance.** The model never draws the pure colour: asked for
+> `#FF00FF` it drew `#D34090`, asked for `#00FF00` about `#74B060` — both drifting toward the middle,
+> where skin and grey live. A distance key around those took ruddy cheeks off the magenta sheet and a grey
+> beard off the green one. So a pixel is removed by how far it **leans toward the ground's hue** as a share
+> of how far the ground itself leans, and grey, which leans nowhere, and skin, which leans red, are never
+> taken. `tolerance` still widens or narrows the cut; `0.10` removes anything leaning at least 60% as far
+> as the ground. Passing an explicit `background` colour falls back to the distance key, because that
+> colour could be anything.
 
 > [!CAUTION]
 > **Only a cutout this project generated can be a reference.** It is looked up by id in the project's
@@ -3840,6 +3889,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 - `cutout.split` → `string` — `'single'`, `'gaps'`, or `'even'`. See above.
 - `cutout.backgroundColor` → `string` — The colour actually keyed out, as `#RRGGBB`.
 - `cutout.references` → `string[]` — The ids of the sheets passed as `reference`. Empty when none was.
+- `cutout.keyColor` → `string` — The ground the model was asked to draw: `'green'`, `'magenta'` or `'blue'`. `backgroundColor` is what actually came back.
 - `cutout.id` · `cutout.provenance` — `id` is what a later call passes as `reference`.
 
 ## `CutoutCell`

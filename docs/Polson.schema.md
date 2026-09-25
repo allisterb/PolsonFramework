@@ -177,7 +177,7 @@ Raw RGBA pixel buffer returned by `ctx.getImageData(...)` and `canvas.toImageDat
     "data": {
       "type": "array",
       "items": { "type": "integer", "minimum": 0, "maximum": 255 },
-      "description": "One-dimensional array containing RGBA pixel byte values in row-major order."
+      "description": "A Uint8ClampedArray of RGBA values in row-major order. It is the buffer itself, not a copy: writes reach the canvas through ctx.putImageData(...)."
     }
   },
   "required": ["width", "height", "data"]

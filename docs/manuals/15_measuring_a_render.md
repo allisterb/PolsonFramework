@@ -58,7 +58,7 @@ const decoded = Skia.Image.fromDataUrl(Session.oakUri);          // from a data 
 > [!IMPORTANT]
 > `canvas.bitmap` is **live** and `canvas.toBitmap()` is a **copy**. Writing through the live one changes the canvas; the copy is independent, as is `bitmap.clone()`. To hold a "before" while you keep drawing, you must take a copy — a live handle kept across further drawing is not a before, it is the after.
 
-`ctx.getImageData(x, y, w, h)` gives an `ImageData` whose `data` is a flat RGBA byte array: `[r0, g0, b0, a0, r1, …]`, length `w × h × 4`, each value `0`–`255`. Use it for a small region you genuinely need numerically. Over a whole frame, use the calls below instead.
+`ctx.getImageData(x, y, w, h)` gives an `ImageData` whose `data` is a `Uint8ClampedArray` of flat RGBA values: `[r0, g0, b0, a0, r1, …]`, length `w × h × 4`, each value `0`–`255`. It is the buffer itself, so writes to it reach the canvas through `ctx.putImageData(...)`. Use it for a small region you genuinely need numerically. Over a whole frame, use the calls below instead.
 
 ---
 

@@ -304,6 +304,128 @@ public class RequisitionSuccessPathTests : TestsRuntime
         Assert.NotNull(error);
     }
 
+    /// <summary>A blocking passes: black silhouettes on flat grey, antialiased edges and all.</summary>
+    [Fact]
+    public void TestABlockingIsRecognisedAsOne()
+    {
+        using var blocking = Blocking();
+        using var keyed = new SKBitmap(400, 225, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        using (var canvas = new SKCanvas(keyed))
+        {
+            canvas.Clear(SKColors.Transparent);
+            using var ink = new SKPaint { Color = SKColors.Black, IsAntialias = true };
+            canvas.DrawCircle(200, 150, 60, ink);
+        }
+
+        Assert.Null(PlateAnalysis.BlockingProblem(blocking));
+        Assert.Null(PlateAnalysis.BlockingProblem(keyed));
+    }
+
+    /// <summary>A picture is not a blocking, in colour or in grey.</summary>
+    /// <remarks>
+    /// A greyscale ramp is the case that matters: it has no colour to give it away, and a greyscale
+    /// photograph of a face is exactly what a tone check has to stop.
+    /// </remarks>
+    [Fact]
+    public void TestAPictureIsNotABlocking()
+    {
+        using var colour = SKBitmap.Decode(TilingMaster(256));
+        using var grey = new SKBitmap(256, 256);
+        for (var y = 0; y < 256; y++)
+        {
+            for (var x = 0; x < 256; x++)
+            {
+                grey.SetPixel(x, y, new SKColor((byte)x, (byte)x, (byte)x));
+            }
+        }
+
+        Assert.Contains("colour", PlateAnalysis.BlockingProblem(colour));
+        Assert.NotNull(PlateAnalysis.BlockingProblem(grey));
+        Assert.DoesNotContain("colour", PlateAnalysis.BlockingProblem(grey));
+    }
+
+    /// <summary>A backdrop conditioned on a picture is refused before anything is spent; on a blocking it is sent.</summary>
+    [Fact]
+    public async Task TestABackdropSendsABlockingAndRefusesAPicture()
+    {
+        var budget = new AssetBudget(3);
+        var generator = new FakeImageGenerator(TilingMaster(256));
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), budget, "Framer");
+
+        var refused = await toolkit.Backdrop("a stormy night sky", new BackdropOptions { ConditionOn = TilingMaster(256) });
+
+        Assert.False(refused.Success);
+        Assert.Equal(ImageGenerationFailure.InvalidRequest, refused.Failure);
+        Assert.Equal(0, generator.Calls);
+        Assert.Equal(0, budget.Spent);
+
+        using var blocking = Blocking();
+        var png = Encode(blocking);
+        var plate = await toolkit.Backdrop("a stormy night sky", new BackdropOptions { ConditionOn = png });
+
+        Assert.True(plate.Success, plate.Error);
+        Assert.Equal(png, Assert.Single(generator.Shown[0]));
+    }
+
+    /// <summary>A head sheet is framed on its own and keyed on green; anything else keeps magenta.</summary>
+    [Fact]
+    public async Task TestAHeadSheetIsFramedAndKeyedOnGreen()
+    {
+        var generator = new FakeImageGenerator(CutoutSheet());
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), new AssetBudget(5), "Framer");
+
+        var head = await toolkit.Cutout("a keeper", new CutoutOptions { Variants = ["front", "profile"], Framing = "head" });
+        var body = await toolkit.Cutout("a keeper", new CutoutOptions { Variants = ["front", "profile"], Framing = "full" });
+        var blue = await toolkit.Cutout("a keeper", new CutoutOptions { Framing = "a medium shot, from the waist up", KeyColor = "BLUE" });
+
+        Assert.Equal(["green", "magenta", "blue"], new[] { head.KeyColor, body.KeyColor, blue.KeyColor });
+        Assert.Contains("#00FF00", generator.Prompts[0]);
+        Assert.Contains("head and shoulders only", generator.Prompts[0]);
+        Assert.Contains("#FF00FF", generator.Prompts[1]);
+        Assert.Contains("whole figure in frame", generator.Prompts[1]);
+        Assert.Contains("#0000FF", generator.Prompts[2]);
+        Assert.Contains("Framing, for every one: a medium shot, from the waist up.", generator.Prompts[2]);
+    }
+
+    /// <summary>A key colour that is not offered is refused before anything is spent.</summary>
+    [Fact]
+    public async Task TestAnUnknownKeyColorIsRefused()
+    {
+        var generator = new FakeImageGenerator(CutoutSheet());
+        var budget = new AssetBudget(3);
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), budget, "Framer");
+
+        var refused = await toolkit.Cutout("a keeper", new CutoutOptions { KeyColor = "purple" });
+
+        Assert.False(refused.Success);
+        Assert.Equal(ImageGenerationFailure.InvalidRequest, refused.Failure);
+        Assert.Contains("green", refused.Error);
+        Assert.Equal(0, generator.Calls);
+        Assert.Equal(0, budget.Spent);
+    }
+
+    /// <summary>A reference is told what to keep, not to change nothing.</summary>
+    /// <remarks>
+    /// "Nothing about its design changed" came back as a copy of the reference, framing and all; "maintain
+    /// that face and that costume" came back as a new pose of the same person (2026-09-24, live).
+    /// </remarks>
+    [Fact]
+    public async Task TestAReferenceIsToldWhatToKeep()
+    {
+        var generator = new FakeImageGenerator(CutoutSheet());
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), new AssetBudget(3), "Framer");
+
+        var face = await toolkit.Cutout("a keeper", new CutoutOptions { Variants = ["front", "profile"], Framing = "head" });
+        await toolkit.Cutout("a keeper shouting", new CutoutOptions { Reference = face, Framing = "full" });
+
+        Assert.Contains("Maintain that face and that costume", generator.Prompts[1]);
+        Assert.DoesNotContain("nothing about its design", generator.Prompts[1]);
+    }
+
     /// <summary>A material reworded with the same words is still one material, and bills once.</summary>
     [Fact]
     public async Task TestARewordedMaterialIsServedFromCache()
@@ -343,6 +465,19 @@ public class RequisitionSuccessPathTests : TestsRuntime
     #endregion
 
     #region Helpers
+    /// <summary>A blocking as the reference describes one: black silhouettes on a flat grey ground.</summary>
+    static SKBitmap Blocking()
+    {
+        var bitmap = new SKBitmap(400, 225);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(new SKColor(0x80, 0x80, 0x80));
+        using var ink = new SKPaint { Color = SKColors.Black, IsAntialias = true };
+        canvas.DrawRect(SKRect.Create(0, 160, 400, 65), ink);
+        canvas.DrawRect(SKRect.Create(60, 90, 50, 80), ink);
+        canvas.DrawCircle(290, 130, 45, ink);
+        return bitmap;
+    }
+
     /// <summary>A magenta sheet carrying four grey figures with clear gaps between them.</summary>
     static byte[] CutoutSheet()
     {

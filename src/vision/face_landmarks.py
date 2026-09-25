@@ -86,8 +86,11 @@ def main():
             json.dump({
                 "found": False,
                 "width": rgb.shape[1], "height": rgb.shape[0],
-                "reason": "no face found at any padding; a face below the detector's scale "
-                          "window needs cropping, which this cannot do without first "
+                # Two causes, and the second was misreported as the first until 2026-09-24: a drawn
+                # profile was taken for a small face, when it is not found at any crop at all.
+                "reason": "no face found at any padding: either the face is turned too far - a "
+                          "strict profile is not detected, whatever its size - or it is too small "
+                          "in the frame, which needs cropping this cannot do without first "
                           "locating it",
                 "triedPads": list(PADS),
             }, sys.stdout, separators=(",", ":"))

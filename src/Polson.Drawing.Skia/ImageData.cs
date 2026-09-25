@@ -19,6 +19,12 @@ public class ImageData : IDataUriSource
         Data = new byte[Width * Height * 4];
     }
 
+    /// <summary>A buffer whose height is read from its length, as <c>new ImageData(data, width)</c> does.</summary>
+    public ImageData(byte[] data, int width)
+        : this(data, width, (data ?? throw new ArgumentNullException(nameof(data))).Length / Math.Max(1, Math.Max(1, width) * 4))
+    {
+    }
+
     public ImageData(byte[] data, int width, int height)
     {
         Width = Math.Max(1, width);
@@ -42,6 +48,13 @@ public class ImageData : IDataUriSource
 
     public int Width { get; }
     public int Height { get; }
+
+    /// <summary>The RGBA buffer, row-major, four bytes a pixel.</summary>
+    /// <remarks>
+    /// A script sees this as a <c>Uint8ClampedArray</c> sharing this array's storage, so a write from
+    /// JS lands here and <c>putImageData</c> reads it. The engine arranges that; see
+    /// <c>JsDrawingEngine</c>'s member accessor.
+    /// </remarks>
     public byte[] Data { get; }
     #endregion
 

@@ -8,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -183,6 +184,10 @@ public partial class JsDrawingEngine : Runtime
         // work the run had already done.
         Dictionary<string, JsValue>? liveSession = null;
 
+        // One pixel view per ImageData, for this engine only: an ImageData kept in Session outlives
+        // the engine that first wrapped it, and a view belongs to the realm that made it.
+        var pixelViews = new ConditionalWeakTable<ImageData, JsValue>();
+
         try
         {
             var engine = new Engine(options =>
@@ -232,8 +237,20 @@ public partial class JsDrawingEngine : Runtime
                 //   - Reads are *recorded*. A misspelled read is genuinely silent to the script —
                 //     `ctx.lineWidht * 2` is NaN — so the defence is seeing it rather than
                 //     preventing it, and every one lands in the run record as an `absent` probe.
-                options.SetMemberAccessor((_, target, member) =>
+                options.SetMemberAccessor((e, target, member) =>
                 {
+                    // `imageData.data` is a Uint8ClampedArray over the ImageData's own byte[], as in
+                    // a browser. Left to the default conversion, every read copied the buffer into a
+                    // new JS array, so `img.data === img.data` was false and every write was silently
+                    // lost: putImageData then put back the pixels it had been given. The ArrayBuffer
+                    // takes the array as its backing store rather than copying it, so a write lands
+                    // in the buffer putImageData reads.
+                    if (target is ImageData image && member is "data")
+                    {
+                        return pixelViews.GetValue(image, i =>
+                            e.Construct("Uint8ClampedArray", e.Intrinsics.ArrayBuffer.Construct(i.Data)));
+                    }
+
                     // `then` is answered undefined *unconditionally*, because `await` probes it on
                     // every value it resolves — a type that happened to carry a `Then` would
                     // silently hijack awaiting, which is not a trade worth any convenience.
@@ -634,28 +651,11 @@ public partial class JsDrawingEngine : Runtime
 
             engine.SetValue("Snap", snapFunc);
 
-            var imageDataConstructor = new ClrFunction(engine, "ImageData", (_, args) =>
-            {
-                if (args.Length >= 2 && args[0].ToObject() is object[] or byte[])
-                {
-                    var data = args[0].ToObject() is byte[] b
-                        ? b
-                        : ((object[])args[0].ToObject()!).Select(x => Convert.ToByte(x, CultureInfo.InvariantCulture)).ToArray();
-                    var w = Convert.ToInt32(args[1].ToObject(), CultureInfo.InvariantCulture);
-                    var h = args.Length > 2
-                        ? Convert.ToInt32(args[2].ToObject(), CultureInfo.InvariantCulture)
-                        : (data.Length / Math.Max(1, w * 4));
-                    return JsValue.FromObject(engine, new ImageData(data, w, h));
-                }
-                else if (args.Length >= 2)
-                {
-                    var w = Convert.ToInt32(args[0].ToObject(), CultureInfo.InvariantCulture);
-                    var h = Convert.ToInt32(args[1].ToObject(), CultureInfo.InvariantCulture);
-                    return JsValue.FromObject(engine, new ImageData(w, h));
-                }
-                return JsValue.FromObject(engine, new ImageData(1, 1));
-            });
-            engine.SetValue("ImageData", imageDataConstructor);
+            // A TypeReference for the same reason as CanvasPath below: a ClrFunction has no
+            // [[Construct]], so `new ImageData(w, h)` - the only spelling a browser accepts - threw
+            // "ImageData is not a constructor". Jint picks the constructor by argument type, and a
+            // Uint8ClampedArray converts to the byte[] the data overloads take.
+            engine.SetValue("ImageData", TypeReference.CreateTypeReference<ImageData>(engine));
 
             // Standalone path objects for ctx.fill/stroke/clip(path). Mirrors the DOM Path2D
             // constructors: empty, copy, or from an SVG "d" string. Both names are registered

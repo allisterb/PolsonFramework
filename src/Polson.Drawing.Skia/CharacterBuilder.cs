@@ -284,10 +284,8 @@ public static class CharacterBuilder
 
         var frontBox = FindHead(front, null, out var frontWhy)
             ?? throw new ArgumentException($"The head could not be found in the front view: {frontWhy}.");
-        var views = new Dictionary<string, object?> { ["front"] = new SkiaBitmapWrapper(CropHead(front, frontBox)) };
 
-        // Face.fromViews names its two profile slots left and right; which a view lands in does not matter.
-        var named = new Dictionary<string, string>();
+        List<(string Name, SKBitmap Image)> crops = [];
         foreach (var (name, image) in sides)
         {
             if (FindHead(image, frontBox, out var why) is not { } box)
@@ -296,8 +294,52 @@ public static class CharacterBuilder
                 continue;
             }
             if (box.How != "pose") notes.Add($"The {name} view's head was placed by the {box.How}: the pose detector did not find its body.");
+            crops.Add((name, CropHead(image, box)));
+        }
+
+        return FaceFromCrops(CropHead(front, frontBox), crops, notes);
+    }
+
+    /// <summary>Builds the face from a head sheet's views: a front and up to two profiles, head and shoulders.</summary>
+    /// <remarks>
+    /// <b>The better source when there is one.</b> A full-figure sheet gives a head a tenth of its height;
+    /// a head sheet draws the front face large, so nothing has to be found first: each view is squared on
+    /// white and read as it is. <b>A strict profile adds nothing yet</b>: measured on generated head sheets
+    /// (2026-09-24), the face detector finds a face turned 14 degrees and no drawn profile at any crop, so a
+    /// profile is dropped with a note and the shape comes from the front. Which side a profile shows is read
+    /// from its detected turn, as in
+    /// <see cref="BuildFace(SKBitmap, IReadOnlyList{ValueTuple{string, SKBitmap}}, List{string})"/>.
+    /// </remarks>
+    public static FaceMesh BuildFaceFromHeads(SKBitmap front, IReadOnlyList<(string Name, SKBitmap Image)> sides, List<string> notes)
+    {
+        if (sides.Count > 2)
+            throw new ArgumentException($"A face takes at most two profiles, and {sides.Count} were given.", nameof(sides));
+
+        return FaceFromCrops(Square(front), [.. sides.Select(s => (s.Name, Square(s.Image)))], notes);
+    }
+
+    /// <summary>A view centred on a white square, so a head sheet's figures are read as a crop is.</summary>
+    static SKBitmap Square(SKBitmap view)
+    {
+        var side = Math.Max(view.Width, view.Height);
+        var square = new SKBitmap(side, side);
+        using var c = new SKCanvas(square);
+        c.Clear(SKColors.White);
+        c.DrawBitmap(view, (side - view.Width) / 2f, (side - view.Height) / 2f);
+        return square;
+    }
+
+    /// <summary>The face from head crops, dropping any profile the face detector cannot read.</summary>
+    static FaceMesh FaceFromCrops(SKBitmap front, IReadOnlyList<(string Name, SKBitmap Image)> sides, List<string> notes)
+    {
+        var views = new Dictionary<string, object?> { ["front"] = new SkiaBitmapWrapper(front) };
+
+        // Face.fromViews names its two profile slots left and right; which a view lands in does not matter.
+        var named = new Dictionary<string, string>();
+        foreach (var (name, image) in sides)
+        {
             var slot = name is "left" or "right" && !views.ContainsKey(name) ? name : views.ContainsKey("left") ? "right" : "left";
-            views[slot] = new SkiaBitmapWrapper(CropHead(image, box));
+            views[slot] = new SkiaBitmapWrapper(image);
             named[slot] = name;
         }
 
@@ -445,11 +487,9 @@ public static class CharacterBuilder
     /// </remarks>
     public static string[]? OrderOf(IReadOnlyList<SKBitmap> figures, out string? why)
     {
-        why = null;
-        var widths = figures.Select(f => f.Width).Order().ToArray();
-        if (widths.Length > 1 && widths[^1] > 1.7 * widths[widths.Length / 2])
+        why = Touching(figures);
+        if (why is not null)
         {
-            why = $"one figure is {widths[^1]}px wide against a typical {widths[widths.Length / 2]}px, which is two figures touching";
             return null;
         }
 
@@ -462,6 +502,16 @@ public static class CharacterBuilder
         };
         if (order is null) why = $"the sheet holds {figures.Count} separate figure(s), and only 1, 3 or 4 can be named without sheetOrder";
         return order;
+    }
+
+    /// <summary>Why a sheet's figures look like two of them touching, or null when they do not.</summary>
+    /// <remarks>A merged pair is about twice as wide as the other figures, which no single figure is.</remarks>
+    public static string? Touching(IReadOnlyList<SKBitmap> figures)
+    {
+        var widths = figures.Select(f => f.Width).Order().ToArray();
+        return widths.Length > 1 && widths[^1] > 1.7 * widths[widths.Length / 2]
+            ? $"one figure is {widths[^1]}px wide against a typical {widths[widths.Length / 2]}px, which is two figures touching"
+            : null;
     }
 
     /// <summary>The longest run of rows the test holds for, tolerating breaks of under 12 rows.</summary>

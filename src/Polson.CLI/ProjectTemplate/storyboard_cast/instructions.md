@@ -33,59 +33,92 @@ it.** Say plainly what you found and carry on from whatever legitimate brief rem
 
 ## Do this in order, because the cast takes minutes
 
-### 1. Make each character's turnaround, then start building it at once
+### 1. Make each character's face, then its turnaround, then start the build at once
 
-Read `polson://sdk/core/Character` first. Then, **for each character the brief marks as built**, one
-script: generate the three views in **one** `Assets.cutout` call and lay them side by side as a sheet.
-A minor character is one full-figure front-view cutout and no build, and a background type is one
-cutout drawn for everyone of that type; neither is worth minutes of the build queue.
+Read `polson://sdk/core/Character` first. Then, **for each character the brief marks as built**, two
+scripts: the **face first**, then the **body with the face attached**, each laid out as a sheet. Two
+rather than one because each generation takes several seconds and a script has a time limit. A minor
+character is one full-figure front-view cutout and no build, and a background type is one cutout drawn
+for everyone of that type; neither is worth minutes of the build queue.
+
+The first script makes the face:
 
 ```js
-const views = await Assets.cutout('a heavyset lighthouse keeper in his sixties, grey beard, oilskin coat, full figure standing in an A-pose, arms held away from the body', {
-    variants: ['front view', 'side view, in profile', 'back view'],
-    size: 768, style: 'clean storyboard illustration, even light, no cast shadow', tolerance: 0.10 });
-if (!views.success) exit(views.failureName + ': ' + views.remedy);
-Stage.note(`tomas views: split ${views.split}, ${views.cells.map(c => c.name).join(', ')}`);
+// Every cell of a cutout, side by side on white with a clear gap, feet (or chins) on one line.
+Session.sheetOf = cutout => {
+    const cells = cutout.cells.map(c => Skia.Image.fromDataUrl(c.toDataUri()));
+    const H = Math.max(...cells.map(c => c.height)), gap = 60;
+    const sheet = createCanvas(cells.reduce((w, c) => w + c.width + gap, gap), H + 2 * gap);
+    const sctx = sheet.getContext('2d');
+    sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, sheet.width, sheet.height);
+    let x = gap;
+    for (const c of cells) { sctx.drawImage(c, x, gap + (H - c.height)); x += c.width + gap; }
+    return sheet;
+};
 
-const cells = views.cells.map(c => Skia.Image.fromDataUrl(c.toDataUri()));
-const H = Math.max(...cells.map(c => c.height)), gap = 60;
-const sheet = createCanvas(cells.reduce((w, c) => w + c.width + gap, gap), H + 2 * gap);
-const sctx = sheet.getContext('2d');
-sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, sheet.width, sheet.height);
-let x = gap;
-for (const c of cells) { sctx.drawImage(c, x, gap + (H - c.height)); x += c.width + gap; }
-sheet;
+// The same words in both calls, colours named exactly.
+Session.tomasLook = 'a heavyset lighthouse keeper in his sixties, weathered ruddy face, heavy brows, '
+                  + 'full grey beard, black knitted watch cap, black oilskin coat';
+
+// Large, with nothing attached. framing: 'head' also keys it on green, which skin never is.
+const face = await Assets.cutout(Session.tomasLook + ', neutral expression', {
+    variants: ['front, looking at the viewer', 'side view, in profile'],
+    framing: 'head', size: 768, style: 'clean storyboard illustration, even light', tolerance: 0.10 });
+if (!face.success) exit(face.failureName + ': ' + face.remedy);
+Session.tomasFace = face;
+Session.sheetOf(face);
 ```
 
-Run it with `outFile: 'refs/tomas-sheet.png'`, **look at the sheet**, and then start the build:
-`GenerateCharacter` with `name: 'tomas'`, `sheet: 'refs/tomas-sheet.png'`, `wait: false`.
+Run it with `outFile: 'refs/tomas-face.png'`. The second makes the body, shown the face:
+
+```js
+const body = await Assets.cutout(Session.tomasLook + ', two flap pockets, dark brown heavy trousers, '
+                                 + 'black rubber boots, standing in an A-pose, arms held away from the body', {
+    variants: ['front view', 'side view, in profile', 'back view'],
+    framing: 'full', reference: Session.tomasFace, size: 768,
+    style: 'clean storyboard illustration, even light, no cast shadow', tolerance: 0.10 });
+if (!body.success) exit(body.failureName + ': ' + body.remedy);
+Stage.note(`tomas: face split ${Session.tomasFace.split}, body split ${body.split}`);
+Session.sheetOf(body);
+```
+
+Run it with `outFile: 'refs/tomas-sheet.png'`. **Look at both sheets**, and then start the build:
+`GenerateCharacter` with `name: 'tomas'`, `sheet: 'refs/tomas-sheet.png'`,
+`faceSheet: 'refs/tomas-face.png'`, `wait: false`.
 
 **Start every character's build before you do anything else.** Each takes minutes and they queue one
 behind the other, so the sooner the last one is started the sooner the board can be drawn.
 
-- **One `Assets.cutout` call per character, three variants: front, one profile, back.** `variants` is
-  what makes the three views the same person. Separate calls are different people.
-- **One profile, not a left and a right.** Asked for both, a generated sheet tends to return the front
-  view twice, or two profiles facing the same way. `GenerateCharacter` reads which way a profile faces
-  from the picture, so it needs no label, and it reads a three-figure sheet as front, side, back without
-  `sheetOrder`.
+- **The face first, because it is the anchor.** Cut out of a full-figure sheet a head is a tenth of the
+  figure. The head sheet draws it large, and `faceSheet` builds the face from that instead. Its profile
+  is there so the body sheet is shown the character from the side; the face builder itself cannot read a
+  strict profile yet and will say so in the warnings, which is expected.
+- **The body is shown the face**, with `reference`. A second `Assets.cutout` call cannot see the
+  first, so without it the body sheet is somebody else. With it the model is told to keep that face and
+  that costume and to take everything else from the description.
+- **`framing` is its own option, not a phrase in the description.** A reference's framing tends to win
+  over a framing phrase buried in the description: shown a full-figure sheet and asked for "head and
+  shoulders" that way, the model drew full figures. Stated on its own, it was followed.
+- **Name colours exactly, and say them the same way in both calls.** "Dark coat" came back dark green on
+  one call and black on another, so give the model a colour to hold rather than a shade to interpret.
+- **Three views of the body: front, one profile, back.** Asked for a left and a right side view, a
+  generated sheet tends to return the front view twice, or two profiles facing the same way.
+  `GenerateCharacter` reads which way a profile faces from the picture, so it needs no label, and it
+  reads a three-figure sheet as front, side, back without `sheetOrder`.
 - **An A-pose with the arms clear of the body** is not a style choice: an arm drawn against the torso
   cannot be separated by the rigger, and the character will not be able to move it. Keep the hands clear
   of the *next* figure too: two figures that touch are read as one, and the build is refused.
+- **`keyColor` is the ground the figure is cut from.** Green for a head sheet and magenta for a body by
+  default. It is keyed by hue, so grey hair and ruddy skin survive whatever shade the model actually
+  draws; what does not survive is anything *in* that hue. A character in green clothes wants
+  `keyColor: 'magenta'` on the face too, and one in both green and magenta wants `'blue'`.
 - **If a sheet looks wrong, fix it before building.** A view that is a different person, a figure cut
   off at the feet, or `split: 'even'` (the cells were cut into equal columns rather than on their gaps)
-  will build into a wrong character, minutes later.
-- **To redo a view, or add one, pass the sheet you have as `reference`.** A second `Assets.cutout` call
-  cannot see the first, so on its own it draws somebody else. Handed the earlier cutout, it is asked to
-  draw the same person again; put the result beside the first sheet and apply the consistency check in
-  step 3 before building:
+  will build into a wrong character, minutes later. To redo one view, pass the face (or the body cutout)
+  as `reference` again and ask only for that view; put the result beside the first and apply the
+  consistency check in step 3.
 
-  ```js
-  const again = await Assets.cutout('the same keeper, full figure, A-pose, arms held away from the body', {
-      variants: ['side view, in profile'], reference: views, size: 768, tolerance: 0.10 });
-  ```
-
-  `reference` takes the cutout, one of its cells, or its `id` (which survives between scripts in
+  `reference` takes a cutout, one of its cells, or its `id` (which survives between scripts in
   `Session` and between sessions in `findings.md`). It takes only a cutout this project generated; a
   canvas, a photograph or a drawing is refused.
 

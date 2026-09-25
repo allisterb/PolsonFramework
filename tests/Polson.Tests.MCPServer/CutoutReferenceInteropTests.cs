@@ -60,6 +60,24 @@ public class CutoutReferenceInteropTests : TestsRuntime, IDisposable
         Assert.Equal("true|true|1", Logged(result));
     }
 
+    /// <summary><c>framing</c> and <c>keyColor</c> bind from a script, and the ground asked for is reported.</summary>
+    /// <remarks>An unbound <c>framing: 'head'</c> would key on magenta; an unbound bad colour would succeed.</remarks>
+    [Fact]
+    public async Task TestFramingAndKeyColorBind()
+    {
+        UseFakeGenerator();
+
+        var result = await Run("""
+            const h = await Assets.cutout('a keeper', { framing: 'head' });
+            const b = await Assets.cutout('a keeper', { keyColor: 'blue' });
+            const r = await Assets.cutout('a keeper', { keyColor: 'purple' });
+            log(h.keyColor + '|' + b.keyColor + '|' + r.success + '|' + r.failureName);
+            """);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("green|blue|false|InvalidRequest", Logged(result));
+    }
+
     /// <summary>A canvas is refused by name, before anything is generated.</summary>
     [Fact]
     public async Task TestACanvasIsRefusedAsAReference()

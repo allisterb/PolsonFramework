@@ -80,6 +80,48 @@ public class CutoutTests : TestsRuntime
     }
     #endregion
 
+    #region Difference Key Tests
+    /// <summary>On a drifted green ground a grey beard stays, where a distance key takes it.</summary>
+    /// <remarks>
+    /// The measured case: asked for <c>#00FF00</c>, a live head sheet came back about <c>#74B060</c>, and
+    /// at tolerance 0.10 the distance key took the grey beard. Grey leans toward no hue, so the lean key
+    /// cannot.
+    /// </remarks>
+    [Fact]
+    public void DifferenceKey_KeepsGreyOnADriftedGreen()
+    {
+        var ground = new SKColor(0x74, 0xB0, 0x60);
+        using var plate = Swatches(ground, new SKColor(140, 140, 135), new SKColor(200, 130, 110));
+
+        using var distance = PlateAnalysis.ChromaKey(plate, ground, 0.10);
+        using var keyed = PlateAnalysis.DifferenceKey(plate, ground, "green", 0.10)!;
+
+        Assert.True(distance.GetPixel(60, 20).Alpha < 255, "the distance key should reproduce the defect");
+        Assert.Equal(0, keyed.GetPixel(5, 5).Alpha);
+        Assert.Equal(255, keyed.GetPixel(60, 20).Alpha);
+        Assert.Equal(255, keyed.GetPixel(100, 20).Alpha);
+    }
+
+    /// <summary>On a drifted magenta ground ruddy skin stays, where a distance key thins it.</summary>
+    [Fact]
+    public void DifferenceKey_KeepsRuddySkinOnADriftedMagenta()
+    {
+        var ground = new SKColor(0xD3, 0x40, 0x90);
+        using var plate = Swatches(ground, new SKColor(205, 120, 110), new SKColor(140, 140, 135));
+
+        using var keyed = PlateAnalysis.DifferenceKey(plate, ground, "magenta", 0.10)!;
+
+        Assert.Equal(0, keyed.GetPixel(5, 5).Alpha);
+        Assert.Equal(255, keyed.GetPixel(60, 20).Alpha);
+        Assert.Equal(255, keyed.GetPixel(100, 20).Alpha);
+    }
+
+    /// <summary>A ground that is not the hue asked for is not keyed on it.</summary>
+    [Fact]
+    public void DifferenceKey_DeclinesAGroundWithoutTheHue() =>
+        Assert.Null(PlateAnalysis.DifferenceKey(Sheet(40, 40, []), new SKColor(128, 128, 128), "green"));
+    #endregion
+
     #region Enclosed Transparency Tests
     /// <summary>A cleanly keyed subject has no enclosed gaps.</summary>
     [Fact]
@@ -243,6 +285,19 @@ public class CutoutTests : TestsRuntime
 
     #region Helpers
     static SKColor Magenta => new(0xFF, 0x00, 0xFF);
+
+    /// <summary>A ground carrying two flat swatches, at columns 40-80 and 90-130.</summary>
+    static SKBitmap Swatches(SKColor ground, SKColor first, SKColor second)
+    {
+        var bitmap = new SKBitmap(140, 40, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(ground);
+        using var a = new SKPaint { Color = first };
+        using var b = new SKPaint { Color = second };
+        canvas.DrawRect(SKRect.Create(40, 10, 40, 20), a);
+        canvas.DrawRect(SKRect.Create(90, 10, 40, 20), b);
+        return bitmap;
+    }
 
     /// <summary>A magenta ground carrying mid-grey blocks in the given column ranges.</summary>
     static SKBitmap Sheet(

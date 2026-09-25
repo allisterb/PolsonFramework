@@ -103,6 +103,10 @@ public sealed record BackdropOptions
     /// PNG bytes of the already-drawn blocking. Black is foreground silhouette, grey is sky to fill.
     /// Present means the returned plate is bound to this blocking and is not reusable across revisions.
     /// </summary>
+    /// <remarks>
+    /// Refused unless it is one: anything but black on a single flat neutral is a picture, and a
+    /// picture here would reach the model as a subject. See <see cref="PlateAnalysis.BlockingProblem"/>.
+    /// </remarks>
     public byte[]? ConditionOn { get; init; }
 
     public string Format { get; init; } = "webp";
@@ -542,6 +546,10 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
     /// <summary>The colour actually keyed out, as <c>#RRGGBB</c>.</summary>
     public string BackgroundColor { get; init; } = string.Empty;
 
+    /// <summary>The ground the model was asked to draw: <c>green</c>, <c>magenta</c> or <c>blue</c>.</summary>
+    /// <remarks>What was asked for; <see cref="BackgroundColor"/> is what came back and was removed.</remarks>
+    public string KeyColor { get; init; } = string.Empty;
+
     /// <summary>The ids of the sheets passed as <see cref="CutoutOptions.Reference"/>. Empty when none was.</summary>
     public IReadOnlyList<string> References { get; init; } = [];
 
@@ -567,6 +575,7 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
         json["height"] = Height;
         json["split"] = Split;
         json["backgroundColor"] = BackgroundColor;
+        json["keyColor"] = KeyColor;
         json["references"] = References.ToList();
         json["cells"] = Cells.Select(c => c.ToJSON()).ToList();
         return json;
@@ -633,6 +642,33 @@ public sealed record CutoutOptions
     /// it again only if a fringe of ground stands around the subject, which is at least visible.
     /// </remarks>
     public double Tolerance { get; init; } = 0.18;
+
+    /// <summary>
+    /// How much of the subject each cell shows, stated to the model on its own: <c>'head'</c>,
+    /// <c>'full'</c>, or a phrase of your own. Unset, the description alone decides.
+    /// </summary>
+    /// <remarks>
+    /// Its own sentence because a framing buried in the description loses to a reference: shown a
+    /// full-figure sheet and asked for "head and shoulders" inside the description, the model drew full
+    /// figures (2026-09-24). Stated separately, as <i>AI Cinematic Filmmaking: Pre-Production</i> ch. 8
+    /// writes every prompt, it was followed. <c>'head'</c> also changes the default
+    /// <see cref="KeyColor"/> to green.
+    /// </remarks>
+    public string? Framing { get; init; }
+
+    /// <summary>
+    /// The flat ground the model is asked to draw and the keyer then removes: <c>'green'</c>,
+    /// <c>'magenta'</c> or <c>'blue'</c>. Unset, green for <c>framing: 'head'</c> and magenta otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>Pick the one the subject does not contain.</b> The ground is keyed by hue
+    /// (<see cref="PlateAnalysis.DifferenceKey"/>), so skin and grey survive whatever shade the model
+    /// draws, and what is lost is only what leans toward the ground's own hue. A figure in green clothes or
+    /// foliage wants magenta; one in both wants blue. A head sheet defaults to green because skin is most of
+    /// a head and never leans green. Unlike <see cref="Background"/>, this steers the model as well as the
+    /// keyer.
+    /// </remarks>
+    public string? KeyColor { get; init; }
 
     /// <summary>
     /// An earlier cutout of the same subject, shown to the model so this one draws the same subject.

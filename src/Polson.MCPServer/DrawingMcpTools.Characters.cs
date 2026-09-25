@@ -75,11 +75,17 @@ public partial class DrawingMcpTools
         "Character.list() from a script, or call with the name alone to be told the job that owns it.\n\n" +
         "When it finishes, look at the preview it writes (characters/<name>/preview.png: front, three-quarter, " +
         "profile) before drawing with it, and read `warnings`: a joint that could not be named, or a face built without " +
-        "a profile, is said there and nowhere else.")]
+        "a profile, is said there and nowhere else.\n\n" +
+        "GIVE IT THE FACE LARGE, TOO, if you can: `faceSheet` is a project path to a head sheet, a front then one or two " +
+        "profiles, head and shoulders, which it splits the same way. The face is then built from the large front head " +
+        "rather than from one cropped out of the full figure. Make it FIRST, " +
+        "with Assets.cutout(desc, { variants: ['front, looking at the viewer', 'side view, in profile'], framing: 'head' }), " +
+        "and pass that cutout as `reference` to the body turnaround so both show the same person.")]
     public Task<JsonObject> GenerateCharacter(
         [Description("A name for the character: letters, digits, '-' and '_'. It is the folder characters/<name>/ and what Character.load takes. Required when starting.")] string? name = null,
         [Description("Project path to a turnaround sheet: the character's views side by side on one image. Use this or the separate views.")] string? sheet = null,
         [Description("The views on the sheet, left to right, comma-separated, from front, back, side, left, right. Must include 'front'. Omitted, it is read from how many figures the sheet holds: three are 'front,side,back', four are 'front,back,left,right'.")] string? sheetOrder = null,
+        [Description("Project path to a head sheet: the character's face, head and shoulders, front first and then one or two profiles, side by side. Optional; with it the face is built from these instead of from the full figures.")] string? faceSheet = null,
         [Description("Project path to the front view — the whole figure, facing the viewer. Required when starting without a sheet.")] string? front = null,
         [Description("Project path to the back view.")] string? back = null,
         [Description("Project path to the character's left side view (its left, whichever way it faces on the page).")] string? left = null,
@@ -152,7 +158,7 @@ public partial class DrawingMcpTools
                         "Use 'side' for a single profile whose side does not matter, or 'left' and 'right' for two. Not both.");
 
                 var views = new Dictionary<string, string>();
-                foreach (var (key, path) in new[] { ("sheet", sheet), ("front", front), ("back", back), ("left", left), ("right", right), ("side", side) })
+                foreach (var (key, path) in new[] { ("sheet", sheet), ("faceSheet", faceSheet), ("front", front), ("back", back), ("left", left), ("right", right), ("side", side) })
                 {
                     if (string.IsNullOrWhiteSpace(path)) continue;
                     var full = ProjectPath.Resolve(ProjectRoot, path, key, "Read");
@@ -260,7 +266,7 @@ public partial class DrawingMcpTools
                 SKBitmap Decode(string key, string path) => SKBitmap.Decode(path)
                     ?? throw new StageFailure($"The {key} could not be decoded as an image.", "Pass a PNG, JPEG or WebP.");
                 if (!views.TryGetValue("sheet", out var sheetPath))
-                    return Task.FromResult(views.ToDictionary(kv => kv.Key, kv => Decode(kv.Key + " view", kv.Value)));
+                    return Task.FromResult(views.Where(kv => kv.Key != "faceSheet").ToDictionary(kv => kv.Key, kv => Decode(kv.Key + " view", kv.Value)));
 
                 using var sheetImage = Decode("sheet", sheetPath);
                 var figures = CharacterBuilder.SplitSheet(sheetImage, order?.Length ?? 0, out var why);
@@ -280,6 +286,27 @@ public partial class DrawingMcpTools
             {
                 using var png = image.Encode(SKEncodedImageFormat.Png, 100);
                 File.WriteAllBytes(Path.Combine(staging, $"view-{key}.png"), png.ToArray());
+            }
+
+            // The head sheet, when there is one: a front first, then its profiles.
+            List<SKBitmap>? heads = null;
+            if (views.TryGetValue("faceSheet", out var headPath))
+            {
+                using var headImage = SKBitmap.Decode(headPath)
+                    ?? throw new StageFailure("The face sheet could not be decoded as an image.", "Pass a PNG, JPEG or WebP.");
+                heads = CharacterBuilder.SplitSheet(headImage, 0, out var headWhy);
+                var problem = heads.Count is 0 or > 3
+                    ? $"it holds {heads.Count} separate figure(s){(headWhy is null ? "" : $": {headWhy}")}"
+                    : CharacterBuilder.Touching(heads);
+                if (problem is not null)
+                    throw new StageFailure($"The face sheet could not be read: {problem}.",
+                        "A face sheet is a front view first, then one or two profiles, head and shoulders, with a clear gap between them.");
+                Note($"The face sheet held {heads.Count} head(s): a front{(heads.Count > 1 ? $" and {heads.Count - 1} profile(s)" : "")}.");
+                for (var i = 0; i < heads.Count; i++)
+                {
+                    using var png = heads[i].Encode(SKEncodedImageFormat.Png, 100);
+                    File.WriteAllBytes(Path.Combine(staging, $"view-head-{i}.png"), png.ToArray());
+                }
             }
 
             // ── Body: reconstruct ──────────────────────────────────────────────────────────────────
@@ -336,8 +363,10 @@ public partial class DrawingMcpTools
                 try
                 {
                     var notes = new List<string>();
-                    var face = CharacterBuilder.BuildFace(images["front"],
-                        [.. new[] { "left", "right", "side" }.Where(images.ContainsKey).Select(k => (k, images[k]))], notes);
+                    var face = heads is not null
+                        ? CharacterBuilder.BuildFaceFromHeads(heads[0], [.. heads.Skip(1).Select((h, i) => ($"face sheet profile {i + 1}", h))], notes)
+                        : CharacterBuilder.BuildFace(images["front"],
+                            [.. new[] { "left", "right", "side" }.Where(images.ContainsKey).Select(k => (k, images[k]))], notes);
                     notes.ForEach(Note);
                     CharacterBuilder.SaveFace(face, staging);
                     var anchors = body.FaceSheet().Anchors;

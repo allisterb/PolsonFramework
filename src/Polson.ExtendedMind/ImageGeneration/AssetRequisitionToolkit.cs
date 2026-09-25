@@ -201,6 +201,29 @@ public partial class AssetRequisitionToolkit : Runtime
         var model = opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel;
         var conditioning = opts.ConditionOn is null ? null : new[] { opts.ConditionOn };
 
+        // The one image sent to a model that the studio did not generate, so it is held to being
+        // what it claims: a silhouette, which carries no likeness. See PlateAnalysis.BlockingProblem.
+        if (opts.ConditionOn is not null)
+        {
+            using var sent = SKBitmap.Decode(opts.ConditionOn);
+            var problem = sent is null ? "it could not be decoded as an image" : PlateAnalysis.BlockingProblem(sent);
+            if (problem is not null)
+            {
+                var reason = "conditionOn is refused: " + problem + ". It must be a blocking - the scene's "
+                    + "foreground as flat black silhouettes on one flat grey - because a picture sent here reaches "
+                    + "the model as something to build around, which is how a photograph or a likeness would get "
+                    + "past the checks Photo applies. Fill the silhouettes #000000 on a #808080 ground, with no "
+                    + "shading, and send that.";
+
+                RequisitionScope.Record(new RequisitionRecord(
+                    "backdrop", descriptor, Success: false, Failure: nameof(ImageGenerationFailure.InvalidRequest),
+                    Reason: reason, Model: null, FromCache: false, Refused: true));
+                RecordBudgetState();
+
+                return new BackdropPlate { Success = false, Failure = ImageGenerationFailure.InvalidRequest, Error = reason };
+            }
+        }
+
         var generated = await Acquire(prompt, model, AspectFor(opts.Width, opts.Height), conditioning, "backdrop", descriptor);
         if (!generated.Success)
         {
@@ -455,6 +478,17 @@ public partial class AssetRequisitionToolkit : Runtime
             return new CutoutAsset { Success = false, Failure = ImageGenerationFailure.InvalidRequest, Error = referenceError };
         }
 
+        if (KeyGround(opts) is null)
+        {
+            var reason = $"keyColor '{opts.KeyColor}' is not one of {string.Join(", ", KeyGrounds.Keys)}.";
+            RequisitionScope.Record(new RequisitionRecord(
+                "cutout", descriptor, Success: false, Failure: nameof(ImageGenerationFailure.InvalidRequest),
+                Reason: reason, Model: null, FromCache: false, Refused: true));
+            RecordBudgetState();
+
+            return new CutoutAsset { Success = false, Failure = ImageGenerationFailure.InvalidRequest, Error = reason };
+        }
+
         var variants = (opts.Variants ?? []).Where(v => !string.IsNullOrWhiteSpace(v)).Take(6).ToList();
         var prompt = CutoutPrompt(descriptor, opts, variants, references.Count > 0);
         var aspect = variants.Count > 2 ? "16:9" : variants.Count == 2 ? "4:3" : "1:1";
@@ -477,8 +511,13 @@ public partial class AssetRequisitionToolkit : Runtime
             };
         }
 
+        // A named ground is keyed by hue, which the model's drift toward grey or pink cannot fool; an
+        // explicit background colour could be anything, so it keeps the distance key it was written for.
         var background = ParseHex(opts.Background) ?? PlateAnalysis.SampleBackground(master);
-        using var keyed = PlateAnalysis.ChromaKey(master, background, opts.Tolerance);
+        using var keyed = (opts.Background is null
+                              ? PlateAnalysis.DifferenceKey(master, background, KeyGround(opts)!.Value.Name, opts.Tolerance)
+                              : null)
+                          ?? PlateAnalysis.ChromaKey(master, background, opts.Tolerance);
 
         var (cells, split) = SplitSheet(keyed, variants, opts.Size, generated.Hash);
 
@@ -487,6 +526,7 @@ public partial class AssetRequisitionToolkit : Runtime
             Success = true,
             Id = generated.Hash,
             References = referenceIds,
+            KeyColor = KeyGround(opts)!.Value.Name,
             Bytes = PlateAnalysis.Encode(keyed, "png", 100),
             Width = keyed.Width,
             Height = keyed.Height,
@@ -569,30 +609,64 @@ public partial class AssetRequisitionToolkit : Runtime
     /// </remarks>
     static string CutoutPrompt(string descriptor, CutoutOptions opts, List<string> variants, bool referenced = false)
     {
-        const string Ground =
-            "Flat, perfectly uniform pure magenta (#FF00FF) background filling everything around the "
+        var (name, hex) = KeyGround(opts) ?? ("magenta", "#FF00FF");
+        var ground =
+            $"Flat, perfectly uniform pure {name} ({hex}) background filling everything around the "
             + "subject. No cast shadow, no ground plane, no horizon, no vignette, no text, no labels, "
             + "no numbers, no frame, no border, no panel divisions.";
 
-        // Said first, because it governs everything after it: the description is now a reminder of
-        // who the subject is rather than a brief to design one from.
+        // Said first, because it governs everything after it. It names what to KEEP rather than asking
+        // for nothing to change: "nothing about its design changed" was read as the whole drawing, and a
+        // live run came back a near-copy of its reference, framing included. "Maintain that face and that
+        // costume" is the wording AI Cinematic Filmmaking ch. 8 gives for this model, and with it a
+        // referenced pose came back genuinely new and still the same person.
         var reference = referenced
-            ? "The attached image shows this exact subject. Draw the SAME subject: the same face, build, "
-                + "hair, clothing, colours and proportions, with nothing about its design changed. Take only the "
-                + "subject from it, not its layout, framing or background. "
+            ? "The attached image shows this character. Maintain that face and that costume exactly: the same "
+                + "features, hair, build, clothing and colours. The pose, expression, angle and framing come from "
+                + "this description, not from the attached image. "
             : string.Empty;
+
+        var framing = FramingSentence(opts.Framing);
 
         if (variants.Count <= 1)
         {
             return $"{reference}A single {opts.Style} of {descriptor}, the whole subject within the frame with a "
-                + $"clear margin on every side, centred, seen straight on. {Ground}";
+                + $"clear margin on every side, centred, seen straight on. {framing}{ground}";
         }
 
         var listed = string.Join("; ", variants.Select((v, i) => $"{i + 1}. {v}"));
         return $"{reference}A reference sheet of {variants.Count} {opts.Style}s of {descriptor}, arranged in ONE "
             + "horizontal row, evenly spaced, with a clear band of background between each and the "
             + "next so that none of them touch or overlap. It is the SAME subject in every one, "
-            + "identical in every respect except as listed, left to right: " + listed + ". " + Ground;
+            + "identical in every respect except as listed, left to right: " + listed + ". " + framing + ground;
+    }
+
+    /// <summary>The framing as its own sentence: a preset expanded, a phrase of the caller's kept as written.</summary>
+    static string FramingSentence(string? framing) => framing?.Trim().ToLowerInvariant() switch
+    {
+        null or "" => string.Empty,
+        "head" => "Framing, for every one: close-up portrait, head and shoulders only, cropped at the upper chest, "
+            + "the face large in the frame. ",
+        "full" => "Framing, for every one: full body, the whole figure in frame from head to feet. ",
+        _ => $"Framing, for every one: {framing!.Trim().TrimEnd('.')}. ",
+    };
+
+    /// <summary>The keyable grounds a cutout may be drawn on.</summary>
+    static readonly Dictionary<string, string> KeyGrounds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["green"] = "#00FF00",
+        ["magenta"] = "#FF00FF",
+        ["blue"] = "#0000FF",
+    };
+
+    /// <summary>The ground a cutout asks for, or null when <see cref="CutoutOptions.KeyColor"/> names none.</summary>
+    /// <remarks>Green by default for a head sheet, because skin is most of a head and skin is never green.</remarks>
+    static (string Name, string Hex)? KeyGround(CutoutOptions opts)
+    {
+        var name = string.IsNullOrWhiteSpace(opts.KeyColor)
+            ? string.Equals(opts.Framing?.Trim(), "head", StringComparison.OrdinalIgnoreCase) ? "green" : "magenta"
+            : opts.KeyColor.Trim().ToLowerInvariant();
+        return KeyGrounds.TryGetValue(name, out var hex) ? (name, hex) : null;
     }
 
     /// <summary>The sheet ids a <see cref="CutoutOptions.Reference"/> names, or why it names none usable.</summary>

@@ -256,7 +256,7 @@ public static class FaceDetector
         }
     }
 
-    static string Trim(string s) =>
+    internal static string Trim(string s) =>
         s.Length <= 400 ? s.Trim() : string.Concat(s.AsSpan(0, 400).Trim(), "…");
 
     static void Look()
@@ -270,7 +270,7 @@ public static class FaceDetector
         _rModel = Pick(_model, Candidates("models", "face_landmarker.task"));
     }
 
-    static string? Pick(string? overridden, IEnumerable<string> candidates)
+    internal static string? Pick(string? overridden, IEnumerable<string> candidates)
     {
         if (!string.IsNullOrWhiteSpace(overridden))
             return File.Exists(overridden) ? overridden : null;
@@ -284,7 +284,7 @@ public static class FaceDetector
     //: Walks up from the assembly, as the tracer does for `bin/`. A test runs from its own output
     //: directory and the CLI from `bin/cli`, so neither can assume the repository root is the
     //: working directory.
-    static IEnumerable<string> Candidates(string folder, string tail)
+    internal static IEnumerable<string> Candidates(string folder, string tail)
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
             yield return Path.Combine(dir.FullName, folder, tail.Replace('/', Path.DirectorySeparatorChar));

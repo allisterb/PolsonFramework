@@ -268,8 +268,14 @@ Session.cast = cutout.cells.map(c => ({ name: c.name, uri: c.toDataUri(), aspect
 
 One generation is one context, so the subject is the same subject **by construction**. This is the
 arranged route's counterpart to what `Drawing.createParametricHead(...)` does for the constructed one
-— and like it, **it does not work retroactively**. Plan the whole set before the first call: a
-seventh expression asked for later is a seventh man.
+— and like it, **plan the whole set before the first call**. A seventh expression asked for later
+from the description alone is a seventh man.
+
+**The way back is `reference`.** Pass the first cutout, one of its cells, or its `id`, and the next call
+is shown that sheet and asked to draw the same subject. It is the model holding a likeness it can see
+rather than one it has to invent, which is a real improvement and still not the same generation, so
+compare the two sheets by eye before building on the second. Only a cutout this project generated can be
+passed; see `polson://sdk/core/Assets`.
 
 Six is the cap, and the reason is arithmetic rather than policy: the sheet is one generation of fixed
 width, so every variant makes every cell narrower. Four across is roughly a storyboard face.

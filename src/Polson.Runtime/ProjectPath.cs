@@ -39,6 +39,10 @@ public static class ProjectPath
 
         if (string.IsNullOrEmpty(projectRoot)) return full;
 
+        // Normalised the same way `full` was, so a root written with forward slashes or a trailing
+        // separator is compared like for like rather than refusing every path inside it.
+        projectRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectRoot));
+
         // Case-insensitive only where the filesystem is: on Linux "/a" and "/A" are different
         // directories, and ignoring case there would accept an escape as if it were contained.
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;

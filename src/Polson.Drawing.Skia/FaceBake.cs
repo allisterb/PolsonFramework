@@ -175,7 +175,7 @@ internal static class FaceBake
         // enough: a crossbow slung behind the head faces forward and sits inside the face's outline
         // from the front, so it was baked with skin — hidden at 0° and revealed the moment the head
         // turned, as a pale wedge behind it. A small depth buffer over the face keeps the frontmost.
-        var front = FrontDepth(mesh, s, candidates);
+        var front = FrontDepth(mesh.Reference, mesh.Indices, s.Hull, s.FrontSign);
         foreach (var i in candidates)
         {
             SKPoint3 a = v[idx[i]], b = v[idx[i + 1]], c = v[idx[i + 2]];
@@ -223,27 +223,38 @@ internal static class FaceBake
             var near = Near[(y * N) + x];
             return float.IsNegativeInfinity(near) || d >= near - Epsilon;
         }
+
+        /// <summary>
+        /// The nearest surface's depth at a front-frame point (<c>x · front</c>, <c>y</c>), in front-frame
+        /// depth (<c>z · front</c>); NaN outside the buffer or where no surface covers it.
+        /// </summary>
+        internal float At(float u, float v)
+        {
+            int x = (int)((u - U0) / Cell), y = (int)((v - V0) / Cell);
+            if (x < 0 || y < 0 || x >= N || y >= N) return float.NaN;
+            var near = Near[(y * N) + x];
+            return float.IsNegativeInfinity(near) ? float.NaN : near;
+        }
     }
 
     /// <summary>
-    /// Rasterises every triangle over the face into a coarse depth buffer — all of them, not only the
-    /// candidates, so a surface that is edge-on to the viewer still hides what is behind it.
+    /// Rasterises every triangle over a region into a coarse depth buffer, seen from the front — all
+    /// of them, so a surface that is edge-on to the viewer still hides what is behind it.
     /// </summary>
-    internal static DepthBuffer FrontDepth(FaceMesh mesh, Setup s, List<int> candidates)
+    /// <param name="hull">The region, in the front frame: <c>(x · front, y)</c>.</param>
+    internal static DepthBuffer FrontDepth(SKPoint3[] v, ushort[] idx, SKPoint[] hull, int frontSign)
     {
         const int N = 160;
-        float u0 = s.Hull.Min(p => p.X), u1 = s.Hull.Max(p => p.X);
-        float v0 = s.Hull.Min(p => p.Y), v1 = s.Hull.Max(p => p.Y);
+        float u0 = hull.Min(p => p.X), u1 = hull.Max(p => p.X);
+        float v0 = hull.Min(p => p.Y), v1 = hull.Max(p => p.Y);
         var cell = MathF.Max(u1 - u0, v1 - v0) / N;
         var near = Enumerable.Repeat(float.NegativeInfinity, N * N).ToArray();
-        var v = mesh.Reference;
-        var idx = mesh.Indices;
 
         for (var i = 0; i < idx.Length; i += 3)
         {
             SKPoint3 a = v[idx[i]], b = v[idx[i + 1]], c = v[idx[i + 2]];
-            float au = a.X * s.FrontSign, bu = b.X * s.FrontSign, cu = c.X * s.FrontSign;
-            float ad = a.Z * s.FrontSign, bd = b.Z * s.FrontSign, cd = c.Z * s.FrontSign;
+            float au = a.X * frontSign, bu = b.X * frontSign, cu = c.X * frontSign;
+            float ad = a.Z * frontSign, bd = b.Z * frontSign, cd = c.Z * frontSign;
             int x0 = Math.Max(0, (int)((MathF.Min(au, MathF.Min(bu, cu)) - u0) / cell));
             int x1 = Math.Min(N - 1, (int)((MathF.Max(au, MathF.Max(bu, cu)) - u0) / cell));
             int y0 = Math.Max(0, (int)((MathF.Min(a.Y, MathF.Min(b.Y, c.Y)) - v0) / cell));
@@ -269,7 +280,7 @@ internal static class FaceBake
 
         return new DepthBuffer
         {
-            U0 = u0, V0 = v0, Cell = cell, N = N, FrontSign = s.FrontSign, Near = near,
+            U0 = u0, V0 = v0, Cell = cell, N = N, FrontSign = frontSign, Near = near,
             Epsilon = (u1 - u0) * 0.03f
         };
     }
@@ -321,6 +332,12 @@ internal static class FaceBake
             throw new ArgumentException(
                 $"Mesh '{mesh.Source}' has no texture atlas to bake into. A face is baked into the atlas a "
                 + ".glb or .obj carries with its own texture; a mesh textured by fitTexture(...) has none.");
+
+        // Baking returns a mesh without the transplant, so the face mesh would silently vanish.
+        if (mesh.Attachment is not null)
+            throw new ArgumentException(
+                "This mesh wears a transplanted face, which a baked face would replace rather than draw on. "
+                + "Bake onto the character as loaded, or draw the face mesh's expressions with Mesh.draw's 'expression'.");
     }
 
     static Setup Build(FaceMesh mesh, IDictionary? anchors)
@@ -481,7 +498,7 @@ internal static class FaceBake
     }
 
     /// <summary>An orthographic front view of the mesh's bind geometry, textured, far triangles first.</summary>
-    static SKBitmap Render(FaceMesh mesh, int w, int h, Func<SKPoint3, SKPoint> toPx, int front, SKColor? background = null)
+    internal static SKBitmap Render(FaceMesh mesh, int w, int h, Func<SKPoint3, SKPoint> toPx, int front, SKColor? background = null)
     {
         var bmp = new SKBitmap(new SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul));
         using var canvas = new SKCanvas(bmp);

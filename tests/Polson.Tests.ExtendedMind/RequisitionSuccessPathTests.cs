@@ -184,9 +184,182 @@ public class RequisitionSuccessPathTests : TestsRuntime
         Assert.Equal(1, scope.Budget.Spent);
         Assert.Equal(1, scope.Budget.CacheHits);
     }
+
+    /// <summary>A retried cutout with a new pose and fewer variants is generated, not served the old sheet.</summary>
+    /// <remarks>
+    /// Found on the lastlight run, 2026-09-24. Each retry came back as a cache hit, so a request for
+    /// three views was served the four-figure sheet split into three cells, and the budget did not
+    /// move. The near-match compared whole prompts, which are mostly fixed wording, and dropped short
+    /// words such as the variant count.
+    /// </remarks>
+    [Fact]
+    public async Task TestARetriedCutoutIsNotServedTheEarlierSheet()
+    {
+        var budget = new AssetBudget(3);
+        var generator = new FakeImageGenerator(CutoutSheet());
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), budget, "Framer");
+        const string subject = "a heavyset keeper in his sixties, grey beard, oilskin coat, full figure standing in an A-pose, ";
+
+        var first = await toolkit.Cutout(subject + "arms held well away from the body", new CutoutOptions
+        {
+            Variants = ["front view", "back view", "left side view", "right side view"],
+        });
+        var retry = await toolkit.Cutout(subject + "both arms angled down and out at 45 degrees", new CutoutOptions
+        {
+            Variants = ["front view", "back view", "left side view"],
+        });
+
+        Assert.True(first.Success, first.Error);
+        Assert.True(retry.Success, retry.Error);
+        Assert.Equal(2, generator.Calls);
+        Assert.Equal(2, budget.Spent);
+        Assert.Equal(0, budget.CacheHits);
+    }
+
+    /// <summary>A reference sends the sheet the studio generated, and says so in the prompt.</summary>
+    /// <remarks>
+    /// The bytes sent are read from the cache by id, not off the object passed: a cutout whose bytes had
+    /// been swapped for a photograph still sends only what the studio generated under that id.
+    /// </remarks>
+    [Fact]
+    public async Task TestAReferenceSendsTheGeneratedSheet()
+    {
+        var budget = new AssetBudget(3);
+        var sheet = CutoutSheet();
+        var generator = new FakeImageGenerator(sheet);
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), budget, "Framer");
+
+        var first = await toolkit.Cutout("a heavyset keeper, full figure", new CutoutOptions { Variants = ["front view", "back view"] });
+        var tampered = first with { Bytes = [1, 2, 3] };
+        var again = await toolkit.Cutout("a heavyset keeper, full figure", new CutoutOptions
+        {
+            Variants = ["side view, in profile"],
+            Reference = tampered,
+        });
+
+        Assert.True(again.Success, again.Error);
+        Assert.Equal(2, generator.Calls);
+        Assert.Empty(generator.Shown[0]);
+        Assert.Equal(sheet, Assert.Single(generator.Shown[1]));
+        Assert.Contains("attached image", generator.Prompts[1]);
+        Assert.DoesNotContain("attached image", generator.Prompts[0]);
+        Assert.Equal([first.Id], again.References);
+        Assert.NotEqual(first.Id, again.Id);
+        Assert.Equal(2, budget.Spent);
+    }
+
+    /// <summary>A cell, an id and an array all name the same sheet, which is sent once.</summary>
+    [Fact]
+    public async Task TestACellAnIdAndAnArrayAllResolveToTheSheet()
+    {
+        var generator = new FakeImageGenerator(CutoutSheet());
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), new AssetBudget(5), "Framer");
+        var first = await toolkit.Cutout("a heavyset keeper, full figure", new CutoutOptions { Variants = ["front view", "back view"] });
+
+        Assert.All(first.Cells, c => Assert.Equal(first.Id, c.SheetId));
+
+        foreach (var reference in new object[] { first.Cells[1], first.Id, new object[] { first, first.Cells[0] } })
+        {
+            var (ids, error) = AssetRequisitionToolkit.ReferenceIdsOf(reference);
+            Assert.Null(error);
+            Assert.Equal([first.Id], ids);
+        }
+    }
+
+    /// <summary>Anything but a cutout this project generated is refused before anything is spent.</summary>
+    /// <remarks>
+    /// A reference is the route by which an image reaches the model as the subject to copy, so a
+    /// photograph or a canvas passed here would carry a likeness past every check Photo applies.
+    /// </remarks>
+    [Fact]
+    public async Task TestAReferenceThatIsNotAGeneratedCutoutIsRefused()
+    {
+        var budget = new AssetBudget(3);
+        var generator = new FakeImageGenerator(CutoutSheet());
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), budget, "Framer");
+
+        foreach (var reference in new object[] { "NOTAGENERATEDSHEET", new byte[] { 1, 2, 3 }, new CutoutAsset { Success = false } })
+        {
+            var refused = await toolkit.Cutout("a heavyset keeper, full figure", new CutoutOptions { Reference = reference });
+
+            Assert.False(refused.Success);
+            Assert.Equal(ImageGenerationFailure.InvalidRequest, refused.Failure);
+        }
+
+        Assert.Equal(0, generator.Calls);
+        Assert.Equal(0, budget.Spent);
+    }
+
+    /// <summary>More than three sheets is refused rather than truncated.</summary>
+    [Fact]
+    public void TestMoreThanThreeReferencesAreRefused()
+    {
+        var (ids, error) = AssetRequisitionToolkit.ReferenceIdsOf(new object[] { "A", "B", "C", "D" });
+
+        Assert.Empty(ids);
+        Assert.NotNull(error);
+    }
+
+    /// <summary>A material reworded with the same words is still one material, and bills once.</summary>
+    [Fact]
+    public async Task TestARewordedMaterialIsServedFromCache()
+    {
+        var budget = new AssetBudget(3);
+        var generator = new FakeImageGenerator(TilingMaster(256));
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), budget, "Framer");
+        var options = new MaterialOptions { Size = 128 };
+
+        await toolkit.Material("weathered oak planking with dark caulked seams", options);
+        var again = await toolkit.Material("Weathered oak planking, dark caulked seams.", options);
+
+        Assert.True(again.Success, again.Error);
+        Assert.Equal(1, generator.Calls);
+        Assert.Equal(1, budget.CacheHits);
+    }
+
+    /// <summary>Two materials differing by one short word are two materials.</summary>
+    /// <remarks>
+    /// The tokeniser dropped every word of three letters or fewer, so <c>oak</c> and <c>elm</c> both
+    /// vanished and the second request was served the first swatch.
+    /// </remarks>
+    [Fact]
+    public async Task TestMaterialsDifferingByAShortWordAreBothGenerated()
+    {
+        var generator = new FakeImageGenerator(TilingMaster(256));
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), new AssetBudget(3), "Framer");
+        var options = new MaterialOptions { Size = 128 };
+
+        await toolkit.Material("weathered oak planking", options);
+        await toolkit.Material("weathered elm planking", options);
+
+        Assert.Equal(2, generator.Calls);
+    }
     #endregion
 
     #region Helpers
+    /// <summary>A magenta sheet carrying four grey figures with clear gaps between them.</summary>
+    static byte[] CutoutSheet()
+    {
+        using var bitmap = new SKBitmap(400, 200);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(new SKColor(0xFF, 0x00, 0xFF));
+            using var paint = new SKPaint { Color = new SKColor(128, 128, 128) };
+            for (var i = 0; i < 4; i++)
+            {
+                canvas.DrawRect(SKRect.Create(20 + i * 100, 30, 60, 140), paint);
+            }
+        }
+
+        return Encode(bitmap);
+    }
+
     /// <summary>A master that already wraps: both channels are periodic within the frame.</summary>
     static byte[] TilingMaster(int size)
     {
@@ -249,6 +422,9 @@ public class RequisitionSuccessPathTests : TestsRuntime
         /// <summary>The prompts that reached the transport, in order.</summary>
         public IReadOnlyList<string> Prompts => prompts;
 
+        /// <summary>The images each call was shown, in order; empty for a call shown none.</summary>
+        public IReadOnlyList<IReadOnlyList<byte[]>> Shown => shown;
+
         public Task<ImageGenerationResult> GenerateImage(
             string prompt,
             string? model = null,
@@ -257,7 +433,7 @@ public class RequisitionSuccessPathTests : TestsRuntime
             CancellationToken ct = default)
         {
             Interlocked.Increment(ref calls);
-            lock (prompts) { prompts.Add(prompt); }
+            lock (prompts) { prompts.Add(prompt); shown.Add(conditionOn ?? []); }
 
             var useModel = model ?? FakeModel;
             ImageGenerator.TryReadPngSize(png, out var width, out var height);
@@ -283,6 +459,7 @@ public class RequisitionSuccessPathTests : TestsRuntime
 
         readonly byte[] png;
         readonly List<string> prompts = [];
+        readonly List<IReadOnlyList<byte[]>> shown = [];
         int calls;
     }
     #endregion

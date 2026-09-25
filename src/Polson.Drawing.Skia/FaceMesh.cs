@@ -404,7 +404,7 @@ public class FaceMesh
     /// <summary>A copy, so a character can be kept and a variant drawn from it.</summary>
     public FaceMesh Clone() =>
         new((SKPoint3[])Vertices.Clone(), (SKPoint[])Uvs.Clone(), (ushort[])Indices.Clone(), HasUvs, Source)
-        { Texture = Texture, Fitted = Fitted, Reference = Reference, Rig = Rig };
+        { Texture = Texture, Fitted = Fitted, Reference = Reference, Rig = Rig, Attachment = Attachment };
 
     /// <summary>Whether this mesh carries a skeleton, so <see cref="Pose"/> will do anything.</summary>
     /// <remarks>
@@ -422,6 +422,19 @@ public class FaceMesh
     /// spans the exporters. <see cref="Pose"/> refuses an unknown name and suggests the nearest.
     /// </remarks>
     public string[] Joints => Rig?.JointNames ?? [];
+
+    /// <summary>
+    /// Body-part names for this rig's bones — <c>head</c>, <c>neck</c>, <c>leftUpperArm</c>,
+    /// <c>leftForearm</c>, <c>leftHand</c>, <c>leftThigh</c>, <c>leftShin</c>, <c>leftFoot</c> and the
+    /// right-hand ones, <c>hips</c>, <c>spine</c>, <c>chest</c> — mapped to its own bone names.
+    /// </summary>
+    /// <remarks>
+    /// Set for a character from <c>Character.load(...)</c>, where the generator found them by
+    /// detecting the body; empty for a file loaded on its own. <see cref="Pose"/> accepts either
+    /// spelling. <b>Left and right are the character's own</b>, not the page's.
+    /// </remarks>
+    public Dictionary<string, object?> JointMap =>
+        Rig?.Aliases.ToDictionary(kv => kv.Key, kv => (object?)kv.Value) ?? [];
 
     /// <summary>
     /// Rotates joints and returns the deformed mesh: <c>{ 'LeftArm': { zDeg: -40 } }</c>.
@@ -451,6 +464,22 @@ public class FaceMesh
                 $"Mesh '{Source}' was not read from a glTF, so it has no skeleton. Only .glb and " +
                 ".gltf carry joints; an OBJ cannot express one.");
 
+        if (Attachment is { } face)
+        {
+            // The body is posed from its own bind, the face follows the head rigidly, and the combined
+            // index list and atlas are this mesh's — the rig only knows the file's.
+            var body = Rig.Pose(JsInterop.AsDict(pose), face.BodyBind).Vertices;
+            var follow = face.Follow(body);
+            var verts = new SKPoint3[Vertices.Length];
+            Array.Copy(body, verts, face.BodyCount);
+            follow.Derive(body, verts);
+            for (var i = 0; i < face.Face.VertexCount; i++)
+                verts[face.FaceStart + i] = follow.Place(face.Face.Vertices[i], i);
+
+            return new FaceMesh(verts, Uvs, Indices, HasUvs, Source)
+            { Texture = Texture, Rig = Rig, Reference = Reference, Attachment = follow };
+        }
+
         var posed = Rig.Pose(JsInterop.AsDict(pose), Reference);
 
         // **A pose rebuilds the mesh from the rig, and the rig only knows the file's own texture.**
@@ -478,6 +507,32 @@ public class FaceMesh
     /// </remarks>
     public FaceSheet FaceSheet(object? options = null) =>
         new(FaceBake.For(this, JsInterop.AsDict(options)));
+
+    /// <summary>
+    /// This character wearing a face mesh — from <c>Face.fromViews(...)</c> or
+    /// <c>Face.detect(image).mesh(image)</c> — in place of its own face.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Where <see cref="WithFace"/> paints a face, this gives the head one with shape</b>: a nose
+    /// that stands out in profile and a jaw that drops. The face is lined up by the eyes and mouth,
+    /// seated on the character's surface, and the character's own face triangles under it are hidden.
+    /// It then rides the head through <see cref="Pose"/>, and takes <c>expression</c> and <c>shape</c>
+    /// on <c>Mesh.draw</c>, which act on the face alone.
+    /// </para>
+    /// <para>
+    /// Options: the three anchors when there is no face backend, as for <see cref="FaceSheet"/>;
+    /// <c>matchSkin</c> (default true) tone-matches the face's skin to the character's; <c>depth</c>
+    /// moves the face forward (positive) or back as a share of its own height; and <c>blend</c> how many rings in from its rim the face is eased onto the character's surface (default 5).
+    /// </para>
+    /// </remarks>
+    public FaceMesh WithFaceMesh(FaceMesh face, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(face);
+        var opt = JsInterop.AsDict(options);
+        MeshToolkit.RefuseUnknown(opt, FaceTransplant.Options, "withFaceMesh option");
+        return FaceTransplant.Attach(this, face, opt);
+    }
 
     /// <summary>Bakes a face sheet into this mesh's atlas and returns the mesh wearing it.</summary>
     /// <remarks>
@@ -567,6 +622,9 @@ public class FaceMesh
     internal MeshRig? Rig { get; init; }
 
     internal bool Fitted { get; init; }
+
+    /// <summary>A transplanted face this mesh carries, from <see cref="WithFaceMesh"/>, or null.</summary>
+    internal FaceAttachment? Attachment { get; init; }
 
     /// <summary>
     /// The named deformations, and the honest note about where they come from.
@@ -782,6 +840,12 @@ public class FaceMesh
     {
         var v = Vertices[i];
         if (shape.Count == 0 && expression.Count == 0) return v;
+
+        // **A transplanted face deforms in its own frame, then rides the head** — displacing after the
+        // head had turned would push a brow along the turned axis. The body takes no units: they are
+        // written for a face, and on a whole figure their bands would land on the chest.
+        if (Attachment is { } face)
+            return i < face.FaceStart ? v : face.Place(face.Face.Displace(i - face.FaceStart, shape, expression, side), i - face.FaceStart);
 
         var r = Reference[i];
         var f = Box;

@@ -466,6 +466,10 @@ public sealed record CutoutCell : IDataUriSource
     /// <summary>The variant this cell was asked for, or <c>"subject"</c> when only one was.</summary>
     public string Name { get; init; } = string.Empty;
 
+    /// <summary>The <see cref="RequisitionResult.Id"/> of the sheet this cell was cut from.</summary>
+    /// <remarks>What lets a cell be passed as <see cref="CutoutOptions.Reference"/>: it resolves to its sheet.</remarks>
+    public string SheetId { get; init; } = string.Empty;
+
     public byte[] Bytes { get; init; } = [];
 
     public int Width { get; init; }
@@ -502,6 +506,7 @@ public sealed record CutoutCell : IDataUriSource
     public Dictionary<string, object?> ToJSON(string? key = null) => new()
     {
         ["name"] = Name,
+        ["sheetId"] = SheetId,
         ["byteLength"] = Bytes.Length,
         ["width"] = Width,
         ["height"] = Height,
@@ -537,6 +542,9 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
     /// <summary>The colour actually keyed out, as <c>#RRGGBB</c>.</summary>
     public string BackgroundColor { get; init; } = string.Empty;
 
+    /// <summary>The ids of the sheets passed as <see cref="CutoutOptions.Reference"/>. Empty when none was.</summary>
+    public IReadOnlyList<string> References { get; init; } = [];
+
     /// <summary>The cell for a variant, or null. Case-insensitive.</summary>
     /// <remarks>
     /// Null rather than a throw, because a panel loop asks this about every character it might show
@@ -559,6 +567,7 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
         json["height"] = Height;
         json["split"] = Split;
         json["backgroundColor"] = BackgroundColor;
+        json["references"] = References.ToList();
         json["cells"] = Cells.Select(c => c.ToJSON()).ToList();
         return json;
     }
@@ -624,6 +633,28 @@ public sealed record CutoutOptions
     /// it again only if a fringe of ground stands around the subject, which is at least visible.
     /// </remarks>
     public double Tolerance { get; init; } = 0.18;
+
+    /// <summary>
+    /// An earlier cutout of the same subject, shown to the model so this one draws the same subject.
+    /// </summary>
+    /// <remarks>
+    /// <b>The way to add to a character after its first call.</b> <see cref="Variants"/> makes one
+    /// generation consistent, but a second call cannot see the first, so without this a later
+    /// expression, a closer head sheet or a missed view is a different person. With it, the model is
+    /// handed the earlier sheet and asked to change nothing but what the variants list.
+    /// <para>
+    /// Takes a <see cref="CutoutAsset"/>, one of its <see cref="CutoutCell"/>s, its
+    /// <see cref="RequisitionResult.Id"/>, or an array of up to three of those. A cell stands for the
+    /// whole sheet it was cut from, which is what is sent.
+    /// </para>
+    /// <para>
+    /// <b>Only an image this studio generated can be a reference</b>, resolved by id through the
+    /// project's asset cache rather than read off the object passed. Anything else is refused before
+    /// the network is touched: a photograph or a drawing handed in here would carry a likeness past
+    /// the checks <c>Photo</c> applies, and a canvas could hold either.
+    /// </para>
+    /// </remarks>
+    public object? Reference { get; init; }
 
     public string? Model { get; init; }
 }

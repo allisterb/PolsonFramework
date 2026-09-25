@@ -264,7 +264,8 @@ angle.**
   its turn is an approximation that its own documentation limits to about 40°.
 - The **arranged** route — a requisitioned `Assets.cutout` — gives you a picture you could not draw,
   and then cannot change it. Generation is not deterministic across calls, so **a seventh expression
-  is a new man**. You must plan every pose before the first call.
+  is a new man** unless the first sheet is passed back as `reference`, and even then the model is
+  copying a likeness rather than holding one. Plan every pose before the first call.
 
 This route takes **one** frontal image and gives it a surface. After that the face turns, reshapes and
 takes an expression, and it is the same face every time **because there is only ever one of them.**
@@ -748,5 +749,64 @@ greyscale figure. Draw your own on the sheet when the character wants a face tho
 > nothing is left. **The model sets that limit, not the bake**: its own painted face fails at the
 > same angles, because a generated face is close to a flat plane with no nose standing out of it, and
 > a profile is read from a silhouette that texture cannot give. For a true profile, draw that panel's
-> head by construction (Manual 23). And a baked face changes the picture, never the shape — a dropped
-> jaw moves no silhouette, and a scream that needs the chin to fall is beyond this route.
+> head by construction (Manual 23), or transplant a face with shape (§7h). And a baked face changes
+> the picture, never the shape — a dropped jaw moves no silhouette, and a scream that needs the chin
+> to fall is beyond this route.
+
+### 7h. A face with shape, transplanted
+
+> **Implemented by**: `mesh.withFaceMesh(...)`, with a face from `Face.fromViews(...)` or
+> `Face.detect(image).mesh(image)`.
+
+§7g paints over the generator's face; this **replaces it**. A face built from the character's own
+turnaround — depth from the side views, texture from every view — is lined up on the head by the
+eyes and mouth, eased onto the head's surface at its rim, and the generator's face is cut out from
+under it. The result poses like any other mesh: the face rides the head, a raised hand covers it,
+and `Mesh.draw`'s `expression` units move it. **So the profile panel §7g had to give up comes back**
+— at 90° the nose and lips stand out in silhouette, because they are geometry now.
+
+Use §7g when the shots stay at three-quarters or nearer and the toolkit's comic features suit the
+character; it is cheaper and keeps the generator's head exactly. Use this when a shot needs the
+profile, or when the face has to be *this artist's* face rather than a toolkit's.
+
+> [!IMPORTANT]
+> **The seam is where the work is, and three measured failures shaped it.** A turnaround's face
+> wraps back round the cheeks while a generated face is nearly flat, so the drawn cheeks sat behind
+> the head's and showed through as slivers when it turned — the rim is eased onto the head's surface
+> to stop that. The drawn brow and temples sat behind the hairline, which then covered them as a dark
+> crescent — so the face is lifted wherever it would sit behind the head (`flush`). And the head's
+> big hairline triangles straddled the face's forehead as dark wedges — so they are clipped to the
+> outline rather than kept or dropped whole, a little inside it so no crack opens at a turned view.
+>
+> **What cannot be fixed here is the drawing itself.** Hair the artist drew at the temples comes
+> with the face, and a face drawn on white paper arrives white until it is tone-matched to the
+> character's skin, which `withFaceMesh` does by default. Crop the views tightly, from one sheet at
+> one scale, and the transplant has less to reconcile.
+
+### 7i. A character, from its turnaround
+
+> **Implemented by**: the `GenerateCharacter` tool, then `Character.load(...)`, `Character.list()`,
+> `Character.info(...)`, and on the result `mesh.jointMap` beside §7f's `mesh.pose(...)`.
+
+§7f posed a character somebody had already rigged, and §7h put a face on it. This is the whole
+route from pictures: **a turnaround sheet in, a posable character with a face out**, in a minute or
+so of machine time. The body is reconstructed from the views, rigged, and has its bones named by
+detecting the body in a render of it — so `head`, `leftForearm` and `rightThigh` mean the same thing
+on every character, where a rigger's own names (`bone_5`, `bone_27`) mean nothing. The face is built
+from the views' heads and transplanted as §7h describes.
+
+**Make the views in one call** — `Assets.cutout` with front, back, left and right `variants` — and
+lay the cells side by side on one canvas with a clear gap between them: that is the sheet. Four
+separate generations give four different people. **Stand the figure in an A-pose, arms clear of the
+body**: an arm drawn against the torso cannot be separated by any rigger.
+
+> [!IMPORTANT]
+> **Look at `preview.png` and read `Character.info(name).warnings` before you draw with it.** The
+> build is automatic, and each stage can fall short without failing: a joint left unnamed, a face
+> built without a profile, a head placed by the front view's scale because the body was not found in
+> a side view. None of those stops the build; all of them change what the character can do.
+>
+> **Poses are rotations about each bone's own axes**, which the rigger chose. On a humanoid the head
+> turns on `yDeg` and nods on `xDeg`, and an A-pose upper arm drops on `zDeg` with opposite signs on
+> the two sides. Change one axis at a time and look — a pose that surprises you is usually the right
+> bone about the wrong axis, not the wrong bone.

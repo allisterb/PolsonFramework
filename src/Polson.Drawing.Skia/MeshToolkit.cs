@@ -360,10 +360,18 @@ public class MeshToolkit
             var count = mesh.Indices.Length / 3;
             var depth = new float[count];
             var order = new int[count];
+
+            // **A transplanted face lies on the character's surface at its rim, so the two are coplanar
+            // there** and a painter's sort by centroid picks between them at random — the character's
+            // own face shows through in slivers. The face's triangles, which come last, are sorted a
+            // little nearer the viewer: enough to settle the seam, not enough to put the face in front
+            // of a hand or a fringe that is genuinely in front of it.
+            var faceFrom = mesh.Attachment is { } a ? count - a.Face.TriangleCount : count;
+            var bias = 3f * (mesh.Attachment?.SortBias ?? 0f);
             for (var t = 0; t < count; t++)
             {
                 order[t] = t;
-                var z = 0f;
+                var z = t >= faceFrom ? bias : 0f;
                 for (var k = 0; k < 3; k++)
                     z += Place(mesh, mesh.Indices[(t * 3) + k]).Z;
                 depth[t] = z;

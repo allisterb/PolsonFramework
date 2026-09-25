@@ -146,6 +146,11 @@ public class ManualCoverageTests : TestsRuntime
         // trimmed `Assets.cutout` cell is always exactly that. An agent that cannot find that
         // paragraph loses an afternoon to a portrait which is, visibly, perfectly good.
         ["Face"] = 100,
+
+        // Characters, added 2026-09-24 into Manual 26 section 7i beside the face transplant it
+        // builds on. Three calls and the tool that makes what they read, so a full floor costs
+        // nothing and an agent that cannot find `Character.load` cannot use the route at all.
+        ["Character"] = 100,
     };
 
     /// <summary>The whole surface, so a new area cannot be added without anyone noticing.</summary>

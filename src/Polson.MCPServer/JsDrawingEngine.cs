@@ -379,6 +379,10 @@ public partial class JsDrawingEngine : Runtime
             // the ordinary case rather than a fault.
             engine.SetValue("Face", new FaceApi());
 
+            // Characters the GenerateCharacter tool has finished: read-only, like Research, because
+            // building one takes minutes and no script can wait for it.
+            engine.SetValue("Character", new CharacterToolkit(ProjectRoot));
+
             // SPIKE: frame capture and animated encoding. Holds bitmaps for the life of the
             // execution, so it is disposed with the engine rather than left to the collector.
             motionToolkit = new MotionToolkit(ProjectRoot);

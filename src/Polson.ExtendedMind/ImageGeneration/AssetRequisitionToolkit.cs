@@ -1,6 +1,7 @@
 namespace Polson.ExtendedMind.ImageGeneration;
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -426,12 +427,40 @@ public partial class AssetRequisitionToolkit : Runtime
             };
         }
 
+        // A reference is resolved through the cache, never read off the object passed: what makes it
+        // safe is that the cache only ever holds what this studio generated.
+        var (referenceIds, referenceError) = ReferenceIdsOf(opts.Reference);
+        List<byte[]> references = [];
+        foreach (var id in referenceIds)
+        {
+            if (await cache.Get(id) is { ImageBytes: { Length: > 0 } bytes })
+            {
+                references.Add(bytes);
+                continue;
+            }
+
+            referenceError ??= $"reference '{id}' is not an image this project generated. A reference must be a "
+                + "cutout requisitioned in this project, one of its cells, or its id. A photograph, a drawing or a "
+                + "canvas cannot be passed, because a reference is how a likeness would enter without the checks "
+                + "Photo applies.";
+        }
+
+        if (referenceError is not null)
+        {
+            RequisitionScope.Record(new RequisitionRecord(
+                "cutout", descriptor, Success: false, Failure: nameof(ImageGenerationFailure.InvalidRequest),
+                Reason: referenceError, Model: null, FromCache: false, Refused: true));
+            RecordBudgetState();
+
+            return new CutoutAsset { Success = false, Failure = ImageGenerationFailure.InvalidRequest, Error = referenceError };
+        }
+
         var variants = (opts.Variants ?? []).Where(v => !string.IsNullOrWhiteSpace(v)).Take(6).ToList();
-        var prompt = CutoutPrompt(descriptor, opts, variants);
+        var prompt = CutoutPrompt(descriptor, opts, variants, references.Count > 0);
         var aspect = variants.Count > 2 ? "16:9" : variants.Count == 2 ? "4:3" : "1:1";
 
         var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel,
-            aspect, null, "cutout", descriptor);
+            aspect, references.Count > 0 ? references : null, "cutout", descriptor);
         if (!generated.Success)
         {
             return new CutoutAsset { Success = false, Failure = generated.Failure, Error = generated.Error };
@@ -451,12 +480,13 @@ public partial class AssetRequisitionToolkit : Runtime
         var background = ParseHex(opts.Background) ?? PlateAnalysis.SampleBackground(master);
         using var keyed = PlateAnalysis.ChromaKey(master, background, opts.Tolerance);
 
-        var (cells, split) = SplitSheet(keyed, variants, opts.Size);
+        var (cells, split) = SplitSheet(keyed, variants, opts.Size, generated.Hash);
 
         return new CutoutAsset
         {
             Success = true,
             Id = generated.Hash,
+            References = referenceIds,
             Bytes = PlateAnalysis.Encode(keyed, "png", 100),
             Width = keyed.Width,
             Height = keyed.Height,
@@ -474,11 +504,11 @@ public partial class AssetRequisitionToolkit : Runtime
     /// is told which happened - a mis-split renders perfectly, so it cannot be left to be noticed.
     /// </remarks>
     static (List<CutoutCell> Cells, string Split) SplitSheet(
-        SKBitmap keyed, List<string> variants, int size)
+        SKBitmap keyed, List<string> variants, int size, string sheetId)
     {
         if (variants.Count <= 1)
         {
-            return ([CellOf(keyed, 0, keyed.Width - 1, variants.FirstOrDefault() ?? "subject", size)], "single");
+            return ([CellOf(keyed, 0, keyed.Width - 1, variants.FirstOrDefault() ?? "subject", size, sheetId)], "single");
         }
 
         var runs = PlateAnalysis.SegmentsByGaps(PlateAnalysis.AlphaColumnProfile(keyed));
@@ -491,11 +521,11 @@ public partial class AssetRequisitionToolkit : Runtime
                 .Select(i => ((int)Math.Round(i * step), (int)Math.Round(((i + 1) * step) - 1)))];
         }
 
-        return ([.. runs.Select((r, i) => CellOf(keyed, r.Start, r.End, variants[i], size))], split);
+        return ([.. runs.Select((r, i) => CellOf(keyed, r.Start, r.End, variants[i], size, sheetId))], split);
     }
 
     /// <summary>One column range of the sheet, trimmed to its own extent and scaled to fit.</summary>
-    static CutoutCell CellOf(SKBitmap keyed, int from, int to, string name, int size)
+    static CutoutCell CellOf(SKBitmap keyed, int from, int to, string name, int size, string sheetId)
     {
         var width = Math.Max(1, to - from + 1);
         using var slice = new SKBitmap(width, keyed.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
@@ -518,6 +548,7 @@ public partial class AssetRequisitionToolkit : Runtime
         return new CutoutCell
         {
             Name = name,
+            SheetId = sheetId,
             Bytes = PlateAnalysis.Encode(sized, "png", 100),
             Width = sized.Width,
             Height = sized.Height,
@@ -536,24 +567,84 @@ public partial class AssetRequisitionToolkit : Runtime
     /// is what the phrase means to a model trained on real ones. And <i>identical in every respect
     /// except</i> is the sentence the whole consistency argument rests on.
     /// </remarks>
-    static string CutoutPrompt(string descriptor, CutoutOptions opts, List<string> variants)
+    static string CutoutPrompt(string descriptor, CutoutOptions opts, List<string> variants, bool referenced = false)
     {
         const string Ground =
             "Flat, perfectly uniform pure magenta (#FF00FF) background filling everything around the "
             + "subject. No cast shadow, no ground plane, no horizon, no vignette, no text, no labels, "
             + "no numbers, no frame, no border, no panel divisions.";
 
+        // Said first, because it governs everything after it: the description is now a reminder of
+        // who the subject is rather than a brief to design one from.
+        var reference = referenced
+            ? "The attached image shows this exact subject. Draw the SAME subject: the same face, build, "
+                + "hair, clothing, colours and proportions, with nothing about its design changed. Take only the "
+                + "subject from it, not its layout, framing or background. "
+            : string.Empty;
+
         if (variants.Count <= 1)
         {
-            return $"A single {opts.Style} of {descriptor}, the whole subject within the frame with a "
+            return $"{reference}A single {opts.Style} of {descriptor}, the whole subject within the frame with a "
                 + $"clear margin on every side, centred, seen straight on. {Ground}";
         }
 
         var listed = string.Join("; ", variants.Select((v, i) => $"{i + 1}. {v}"));
-        return $"A reference sheet of {variants.Count} {opts.Style}s of {descriptor}, arranged in ONE "
+        return $"{reference}A reference sheet of {variants.Count} {opts.Style}s of {descriptor}, arranged in ONE "
             + "horizontal row, evenly spaced, with a clear band of background between each and the "
             + "next so that none of them touch or overlap. It is the SAME subject in every one, "
             + "identical in every respect except as listed, left to right: " + listed + ". " + Ground;
+    }
+
+    /// <summary>The sheet ids a <see cref="CutoutOptions.Reference"/> names, or why it names none usable.</summary>
+    /// <remarks>
+    /// Ids only: the bytes are fetched from the cache by the caller, so an object whose bytes were
+    /// swapped for a photograph still resolves to what the studio generated under that id.
+    /// </remarks>
+    internal static (List<string> Ids, string? Error) ReferenceIdsOf(object? reference)
+    {
+        const int MaxReferences = 3;
+        if (reference is null)
+        {
+            return ([], null);
+        }
+
+        IEnumerable<object?> items = reference is string or CutoutAsset or CutoutCell || reference is not IEnumerable many
+            ? [reference]
+            : many.Cast<object?>();
+
+        List<string> ids = [];
+        foreach (var item in items)
+        {
+            var id = item switch
+            {
+                CutoutAsset { Success: true } sheet => sheet.Id,
+                CutoutAsset => null,
+                CutoutCell cell => cell.SheetId,
+                string text => text.Trim(),
+                _ => null,
+            };
+
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return ([], item switch
+                {
+                    CutoutAsset => "reference is a cutout that failed, so it has no image to show the model.",
+                    null => "reference contains nothing. Pass a cutout, one of its cells, or its id.",
+                    _ => $"reference is a {item.GetType().Name}, and only a cutout, one of its cells, or its id can "
+                        + "be a reference: a reference must be an image this project generated, so that a "
+                        + "photograph or a drawing cannot carry a likeness past the checks Photo applies.",
+                });
+            }
+
+            if (!ids.Contains(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids.Count > MaxReferences
+            ? ([], $"reference names {ids.Count} sheets and at most {MaxReferences} can be shown to the model. Pass the one that shows the subject best.")
+            : (ids, null);
     }
 
     /// <summary>The word in a style that claims the ground, or null.</summary>
@@ -590,7 +681,7 @@ public partial class AssetRequisitionToolkit : Runtime
         // one and carries its Charged flag with it, so asking the result whether it cost anything
         // gets the answer for the generation it came from rather than for this call.
         var hitsBefore = Budget.CacheHits;
-        var result = await AcquireCore(prompt, model, aspect, conditionOn);
+        var result = await AcquireCore(prompt, model, aspect, conditionOn, kind, descriptor);
 
         RequisitionScope.Record(new RequisitionRecord(
             kind, descriptor, result.Success,
@@ -613,7 +704,17 @@ public partial class AssetRequisitionToolkit : Runtime
     void RecordBudgetState() => RequisitionScope.RecordBudget(
         new BudgetSnapshot(Budget.Total, Budget.Spent, Budget.Remaining, Budget.CacheHits, Budget.TokensSpent));
 
-    async Task<ImageGenerationResult> AcquireCore(string prompt, string model, string? aspect, IReadOnlyList<byte[]>? conditionOn)
+    /// <remarks>
+    /// <b>Only a material may be served by a near match</b>, and only by one of the same model. The
+    /// fuzzy fallback compared the whole elaborated prompt against every stored prompt and so hit
+    /// requests of every kind, until 2026-09-24. A cutout prompt is mostly fixed wording and the
+    /// tokeniser dropped short words such as <c>3</c> and <c>4</c>, so a retry with a new pose and one
+    /// fewer variant was served the first sheet split into the wrong number of cells, and reported as
+    /// a cache hit. A matte of another shape, or a backdrop drawn to another blocking, fails the same
+    /// way. A material is the one kind where two wordings are the same request.
+    /// </remarks>
+    async Task<ImageGenerationResult> AcquireCore(string prompt, string model, string? aspect,
+        IReadOnlyList<byte[]>? conditionOn, string kind, string descriptor)
     {
         if (this.generator is null)
         {
@@ -624,7 +725,8 @@ public partial class AssetRequisitionToolkit : Runtime
 
         var hash = ImageGenerator.HashOf(model, prompt, aspect, conditionOn);
 
-        var cached = await cache.Get(hash) ?? await cache.FindSimilar(prompt);
+        var cached = await cache.Get(hash)
+            ?? (kind == "material" ? await cache.FindSimilar(kind, model, descriptor) : null);
         if (cached is not null)
         {
             Budget.CacheHits++;
@@ -645,7 +747,7 @@ public partial class AssetRequisitionToolkit : Runtime
         {
             Budget.Spent++;
             Budget.TokensSpent += result.TotalTokens ?? 0;
-            await cache.Put(result);
+            await cache.Put(result, kind, descriptor);
         }
 
         return result;
@@ -1017,13 +1119,19 @@ public interface IRequisitionCache
 {
     Task<ImageGenerationResult?> Get(string hash);
 
-    Task Put(ImageGenerationResult image);
+    /// <summary>Stores a master. <paramref name="kind"/> and <paramref name="descriptor"/> make it findable by <see cref="FindSimilar"/>.</summary>
+    Task Put(ImageGenerationResult image, string? kind = null, string? descriptor = null);
 
     /// <summary>Near-duplicate lookup: distinct wordings of one material need should not bill twice.</summary>
     /// <remarks>
     /// A hash catches identical prompts and nothing else. "weathered oak planks" and "old wooden
     /// boards" are different strings and the same material. Closing that gap needs judgement or an
     /// embedding, which is the concrete reason an Asset Manager role earns its keep.
+    /// <para>
+    /// Matches only a record of the same <paramref name="kind"/> and <paramref name="model"/>, and
+    /// compares the caller's descriptors rather than the elaborated prompts, whose fixed wording would
+    /// otherwise dominate the overlap.
+    /// </para>
     /// </remarks>
-    Task<ImageGenerationResult?> FindSimilar(string descriptor, double threshold = 0.9);
+    Task<ImageGenerationResult?> FindSimilar(string kind, string model, string descriptor, double threshold = 0.9);
 }

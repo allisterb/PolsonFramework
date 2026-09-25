@@ -7,8 +7,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommandLine;
 using Microsoft.Extensions.Configuration;
+using Polson.ExtendedMind.CharacterGeneration;
 using Polson.ExtendedMind.DocumentProcessing;
 using Polson.ExtendedMind.ImageGeneration;
+using Polson.ExtendedMind.ObjectGeneration;
 using Polson.ExtendedMind.ParallelSearch;
 using Polson.ExtendedMind.Photos;
 using Polson.Drawing.Skia;
@@ -420,6 +422,28 @@ internal class Program : Runtime
                  + "See src/vision/requirements.in.", FaceDetector.Missing);
     }
 
+    /// <summary>Points the <c>GenerateCharacter</c> tool at its two services, and says which are there.</summary>
+    /// <remarks>
+    /// Two settings because the halves run on different machines as often as not: reconstruction is
+    /// the TRELLIS container at <c>Trellis:BaseUrl</c>, rigging the resident rig server at
+    /// <c>Characters:RigUrl</c> (<c>src/rig_server</c>). Either missing leaves the tool present and
+    /// answering that it is not configured, which is what an agent should be told, rather than absent.
+    /// </remarks>
+    static void ConfigureCharacterGeneration()
+    {
+        if (Setting("Trellis:BaseUrl") is { Length: > 0 } trellis)
+            DrawingMcpTools.CharacterReconstructor = new TrellisClient(trellis, Setting("ApiKeys:NvidiaNIM"));
+        if (Setting("Characters:RigUrl") is { Length: > 0 } rig)
+            DrawingMcpTools.CharacterRigger = new RigClient(rig);
+
+        if (DrawingMcpTools.CharacterReconstructor is not null && DrawingMcpTools.CharacterRigger is not null)
+            Info("Character generation enabled (reconstruct {0}, rig {1}).", Setting("Trellis:BaseUrl"), Setting("Characters:RigUrl"));
+        else
+            Warn("Character generation unavailable: set {0}. GenerateCharacter will say so when asked.",
+                string.Join(" and ", new[] { DrawingMcpTools.CharacterReconstructor is null ? "Trellis:BaseUrl" : null,
+                                             DrawingMcpTools.CharacterRigger is null ? "Characters:RigUrl" : null }.OfType<string>()));
+    }
+
     static async Task HandleServerArgs(ServerOptions opts)
     {
         if (opts.Timeout.HasValue && opts.Timeout.Value > 0)
@@ -433,6 +457,7 @@ internal class Program : Runtime
 
         ConfigureTracing();
         ConfigureFaceDetection();
+        ConfigureCharacterGeneration();
 
         var projectDir = !string.IsNullOrWhiteSpace(opts.ProjectDir)
             ? Path.GetFullPath(opts.ProjectDir)

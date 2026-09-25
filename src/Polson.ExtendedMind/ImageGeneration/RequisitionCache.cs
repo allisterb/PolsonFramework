@@ -79,7 +79,7 @@ public class RequisitionCache : Runtime, IRequisitionCache
         }
     }
 
-    public async Task Put(ImageGenerationResult image)
+    public async Task Put(ImageGenerationResult image, string? kind = null, string? descriptor = null)
     {
         ArgumentNullException.ThrowIfNull(image);
 
@@ -97,6 +97,8 @@ public class RequisitionCache : Runtime, IRequisitionCache
             {
                 Model = image.Model,
                 Prompt = image.Prompt,
+                Kind = kind ?? string.Empty,
+                Descriptor = descriptor ?? string.Empty,
                 GeneratedUtc = image.GeneratedUtc,
                 Width = image.Width,
                 Height = image.Height,
@@ -110,15 +112,19 @@ public class RequisitionCache : Runtime, IRequisitionCache
     }
 
     /// <summary>
-    /// Near-duplicate lookup by token overlap over stored prompts.
+    /// Near-duplicate lookup by token overlap over stored descriptors of one kind and model.
     /// </summary>
     /// <remarks>
     /// A deliberately weak stand-in. Token overlap catches rewordings that share vocabulary
     /// ("weathered oak planks" against "weathered oak planking") and misses synonymy entirely
     /// ("old wooden boards"). Closing that gap needs an embedding or a judgement call, which is the
     /// concrete job an Asset Manager role does that no type constraint can.
+    /// <para>
+    /// A record written before <c>kind</c> and <c>descriptor</c> were stored carries neither, so it
+    /// can only be found by its exact hash. That is a missed saving, never a wrong image.
+    /// </para>
     /// </remarks>
-    public async Task<ImageGenerationResult?> FindSimilar(string descriptor, double threshold = 0.9)
+    public async Task<ImageGenerationResult?> FindSimilar(string kind, string model, string descriptor, double threshold = 0.9)
     {
         var wanted = Tokenise(descriptor);
         if (wanted.Count == 0)
@@ -131,12 +137,12 @@ public class RequisitionCache : Runtime, IRequisitionCache
             try
             {
                 var record = ReadRecord(await File.ReadAllTextAsync(meta));
-                if (record is null)
+                if (record is null || record.Kind != kind || record.Model != model)
                 {
                     continue;
                 }
 
-                var have = Tokenise(record.Prompt);
+                var have = Tokenise(record.Descriptor);
                 if (have.Count == 0)
                 {
                     continue;
@@ -163,7 +169,7 @@ public class RequisitionCache : Runtime, IRequisitionCache
     /// <remarks>
     /// <c>JsonSerializer</c>'s reflection path is disabled outright in trimmed and AOT-published
     /// hosts, where it throws rather than degrading — and a cache that silently stores no metadata
-    /// misses every subsequent lookup and quietly re-bills for every asset. Five fields do not
+    /// misses every subsequent lookup and quietly re-bills for every asset. Seven fields do not
     /// justify that failure mode.
     /// </remarks>
     static string WriteRecord(CacheRecord record)
@@ -174,6 +180,8 @@ public class RequisitionCache : Runtime, IRequisitionCache
             writer.WriteStartObject();
             writer.WriteString("model", record.Model);
             writer.WriteString("prompt", record.Prompt);
+            writer.WriteString("kind", record.Kind);
+            writer.WriteString("descriptor", record.Descriptor);
             writer.WriteString("generatedUtc", record.GeneratedUtc.ToString("O"));
             writer.WriteNumber("width", record.Width);
             writer.WriteNumber("height", record.Height);
@@ -196,6 +204,8 @@ public class RequisitionCache : Runtime, IRequisitionCache
         {
             Model = root.TryGetProperty("model", out var m) ? m.GetString() ?? string.Empty : string.Empty,
             Prompt = root.TryGetProperty("prompt", out var p) ? p.GetString() ?? string.Empty : string.Empty,
+            Kind = root.TryGetProperty("kind", out var k) ? k.GetString() ?? string.Empty : string.Empty,
+            Descriptor = root.TryGetProperty("descriptor", out var d) ? d.GetString() ?? string.Empty : string.Empty,
             GeneratedUtc = root.TryGetProperty("generatedUtc", out var g) && g.TryGetDateTime(out var when)
                 ? when
                 : DateTime.MinValue,
@@ -207,13 +217,21 @@ public class RequisitionCache : Runtime, IRequisitionCache
     (string Image, string Meta) PathsFor(string hash) =>
         (Path.Combine(directory, hash + ".png"), Path.Combine(directory, hash + ".json"));
 
+    /// <summary>The words of a descriptor, less the ones that carry no meaning.</summary>
+    /// <remarks>
+    /// Drops a short stopword list rather than every word of three letters or fewer, which also threw
+    /// away <c>oak</c>, <c>elm</c>, <c>red</c> and every number, so "weathered oak" and "weathered elm"
+    /// were one material.
+    /// </remarks>
     static HashSet<string> Tokenise(string text) =>
-        [.. text.ToLowerInvariant()
-                .Split([' ', ',', '.', ';', ':', '\n', '\r', '\t', '-'], StringSplitOptions.RemoveEmptyEntries)
-                .Where(t => t.Length > 3)];
+        [.. new string([.. text.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : ' ')])
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Where(t => !StopWords.Contains(t))];
     #endregion
 
     #region Fields
+    static readonly HashSet<string> StopWords = ["a", "an", "the", "of", "and", "or", "with", "in", "on", "at", "to", "for", "by"];
+
     readonly string directory;
     #endregion
 
@@ -223,6 +241,8 @@ public class RequisitionCache : Runtime, IRequisitionCache
     {
         public string Model { get; set; } = string.Empty;
         public string Prompt { get; set; } = string.Empty;
+        public string Kind { get; set; } = string.Empty;
+        public string Descriptor { get; set; } = string.Empty;
         public DateTime GeneratedUtc { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }

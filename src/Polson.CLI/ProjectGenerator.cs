@@ -583,6 +583,10 @@ internal static class ProjectGenerator
         // that carry a face then take passes that flat shapes never needed. Still well short of
         // `comic`, because nothing here is constructed or inked.
         ["storyboard"] = 30,
+        // Forty-five against `storyboard`'s thirty, and the difference is the builds: each character
+        // is a turnaround requisition plus a GenerateCharacter build measured at a minute or more,
+        // queued one behind another, before the first panel can be drawn with it.
+        ["storyboard_cast"] = 45,
         // Twenty-five because the composition is minutes and the requisitions are seconds each, in
         // their own scripts: the clock has to cover two or three round trips to a metered service
         // plus the passes that follow seeing what came back. Longer than `storyboard_quick`, whose
@@ -1321,6 +1325,9 @@ internal static class ProjectGenerator
         // offering the head manual would advertise the road it is being asked not to take. The
         // instructions name it by URI for the one panel that genuinely needs it.
         ["storyboard"] = ["20", "21", "09", "16"],
+        // Staging and continuity, plus 26 because sections 7f-7i are the character route itself:
+        // posing, the face, and building one from its turnaround.
+        ["storyboard_cast"] = ["20", "21", "09", "26"],
         ["comic_studio"] = ["09", "20", "21", "23"],
         // Composition, requisition, staging. 21 is deliberately absent: it is screen continuity
         // across panels, and a cover is one frame — offering it would advertise a sequence this

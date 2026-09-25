@@ -55,7 +55,17 @@ public static class SdkDocs
         new("Chart", ["Chart", "chart"], "Chart (Whole Charts as Constructions)"),
         new("Assets", ["Assets", "ExtendedMind"], "Assets (Cloud Asset Requisition)"),
         new("Photo", ["Photo", "photo", "portrait", "likeness"], "Photo (Reference Photographs)"),
-        new("Motion", ["Motion", "motion", "Timeline"], "Motion (Frame Capture & Animated Encoding)")
+        new("Motion", ["Motion", "motion", "Timeline"], "Motion (Frame Capture & Animated Encoding)"),
+
+        // Absent from this list until 2026-09-24 while their sections existed in the reference, so
+        // `polson://sdk/core/Mesh` could not be read on its own and the index an agent consults to
+        // find out what exists did not mention them. Found while wiring characters, whose whole
+        // route runs through Face, Mesh and Character.
+        new("Documents", ["Documents", "document", "pdf"], "Documents (Reading What the Director Supplied)"),
+        new("Research", ["Research", "research", "citation"], "Research (Sourced Data & Provenance)"),
+        new("Face", ["Face", "face", "landmarks"], "Face (Landmarks From an Image)"),
+        new("Mesh", ["Mesh", "mesh", "pose", "rig"], "Mesh (A Face as a Textured Surface)"),
+        new("Character", ["Character", "character", "turnaround"], "Character (Posable Characters From Their Views)")
     ];
     #endregion
 

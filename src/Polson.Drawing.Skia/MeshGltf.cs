@@ -129,6 +129,8 @@ internal sealed class MeshRig
         // posed" when the truth is "this mesh does not label its bones" — so every node also gets a
         // positional handle, and a caller passes back whatever `mesh.joints` handed it either way.
         var handles = new List<string>();
+        var handleOfFile = new Dictionary<int, string>();
+        var fileOfHandle = new Dictionary<string, Node>(StringComparer.Ordinal);
         nodes = [];
         for (var i = 0; i < logical.Count; i++)
         {
@@ -146,9 +148,30 @@ internal sealed class MeshRig
 
             nodes[handle] = logical[i];
             handles.Add(handle);
+            handleOfFile[file.LogicalIndex] = handle;
+            fileOfHandle[handle] = file;
         }
 
         JointNames = [.. handles];
+
+        // **Where each bone sits in the bind pose, from its inverse bind matrix** — the one place a
+        // glTF states a joint's position in the same space as the skinned vertices. Used to put
+        // names on an unnamed rig by matching bones to detected body landmarks.
+        var bindOf = new Dictionary<int, SKPoint3>();
+        foreach (var skin in model.LogicalSkins)
+            for (var j = 0; j < skin.JointsCount; j++)
+            {
+                var (joint, inverseBind) = skin.GetJoint(j);
+                if (Matrix4x4.Invert(inverseBind, out var world))
+                    bindOf[joint.LogicalIndex] = new SKPoint3(world.M41, world.M42, world.M43);
+            }
+
+        foreach (var (handle, file) in fileOfHandle)
+        {
+            if (bindOf.TryGetValue(file.LogicalIndex, out var at)) JointBind[handle] = at;
+            if (file.VisualParent is { } parent && handleOfFile.TryGetValue(parent.LogicalIndex, out var ph))
+                JointParent[handle] = ph;
+        }
         Skinned = model.LogicalSkins.Count > 0;
     }
     #endregion
@@ -159,6 +182,19 @@ internal sealed class MeshRig
     /// there is one, and <c>node:{i}</c> where there is not. Empty when the file carries no skin.
     /// </summary>
     internal string[] JointNames { get; }
+
+    /// <summary>Each bone's position in the bind pose, by handle.</summary>
+    internal Dictionary<string, SKPoint3> JointBind { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Each bone's parent bone, by handle; roots are absent.</summary>
+    internal Dictionary<string, string> JointParent { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Body-part names for this rig's bones — <c>head</c>, <c>leftForearm</c> — set by the character
+    /// generator after detecting the body, so a pose can be written in words that transfer between
+    /// characters. Empty for a file loaded on its own.
+    /// </summary>
+    internal Dictionary<string, string> Aliases { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Whether the file declares a skin, so rotating a joint deforms geometry.</summary>
     /// <remarks>
@@ -266,7 +302,9 @@ internal sealed class MeshRig
             foreach (var key in pose.Keys)
             {
                 var name = Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty;
-                if (!nodes.TryGetValue(name, out var node)) throw Unknown(name);
+                if (!nodes.TryGetValue(name, out var node)
+                    && !(Aliases.TryGetValue(name, out var aliased) && nodes.TryGetValue(aliased, out node)))
+                    throw Unknown(name);
 
                 // Row-vector convention, so `delta * local` rotates the joint about its OWN axes
                 // and the bind transform then carries the result into the parent's space. The other
@@ -375,9 +413,16 @@ internal sealed class MeshRig
                         (name.Length > 2 && name.Contains(k, StringComparison.OrdinalIgnoreCase)))
             .Take(8).ToArray();
 
+        var named = Aliases.Keys
+            .Where(k => k.Contains(name, StringComparison.OrdinalIgnoreCase) || name.Contains(k, StringComparison.OrdinalIgnoreCase))
+            .Take(8).ToArray();
+        near = [.. named, .. near];
+
         var hint = near.Length > 0
             ? $" Did you mean {string.Join(", ", near.Select(n => $"'{n}'"))}?"
-            : $" Read mesh.joints for the {JointNames.Length} this file declares.";
+            : Aliases.Count > 0
+                ? $" Its body parts are {string.Join(", ", Aliases.Keys)}; read mesh.jointMap."
+                : $" Read mesh.joints for the {JointNames.Length} this file declares.";
 
         return new ArgumentException($"glTF '{source}' has no node named '{name}'.{hint}");
     }

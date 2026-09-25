@@ -7,6 +7,12 @@
     "Budget": 120,
     "CacheDir": ""
   },
+  "Trellis": {
+    "BaseUrl": "http://localhost:8000"
+  },
+  "Characters": {
+    "RigUrl": "http://localhost:8001"
+  },
   "Server": {
     "DefaultTimeoutSeconds": 30
   }

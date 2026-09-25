@@ -3265,6 +3265,7 @@ canvas;
 
 - `mesh.posable` → `boolean` — Whether the file declares a **skin**, so rotating a joint deforms geometry. **Ask before committing to a route that needs it**, exactly as you would `Skia.tracer.available`: an OBJ never has one, and neither does an unrigged glTF — which is what the single-image generators produce.
 - `mesh.joints` → `string[]` — A handle for every **bone the file's skin declares**, parents before children. Scene nodes that are not bones — the root, the armature object, the mesh's own node, which Blender's exporter writes as `world`, `Armature` and `geometry_0` — are left out. Empty when there is no rig.
+- `mesh.jointMap` → `object` — **Body-part names for the bones** — `head`, `neck`, `hips`, `spine`, `chest`, and `left`/`right` + `UpperArm`, `Forearm`, `Hand`, `Thigh`, `Shin`, `Foot` — mapped to the rig's own. Set on a character from `Character.load(...)`, where they were found by detecting the body; empty for a file loaded on its own. `pose` takes either spelling.
 - `mesh.pose(rotations)` → `FaceMesh` — Rotates joints and returns the deformed mesh.
 
 An illustration rather than a runnable program, because **posing needs a rigged asset and the toolkit ships none** — for the licence reasons stated above, and because a skinned glTF cannot be built inline the way the OBJ examples on this page are:
@@ -3391,6 +3392,47 @@ const smirk = julie.withFace(sheet);
 > **Only the surface nearest the viewer takes the face.** Anything behind the head that faces forward — a slung crossbow, a raised collar — keeps its own texture, and is not painted with skin that would show the moment the head turned.
 >
 > **Posing keeps the baked face.** `pose()` rebuilds the mesh from the rig, which only knows the file's own texture; until 2026-09-24 that meant a baked face vanished the moment the character moved, with the original face rendering in its place.
+>
+> **For a face that holds in profile, transplant one instead** — `mesh.withFaceMesh(...)`, below.
+
+## A face with shape on a generated character — `withFaceMesh`
+
+Where `withFace` paints a face, this **gives the head one with geometry**: a `Face.fromViews(...)` or `Face.detect(image).mesh(image)` face is put on the character in place of its own, so the nose stands out at 90° and `jawOpen` really opens the jaw.
+
+```js
+const julie = Mesh.load('models/julie.glb');
+const sheet = Skia.Image.load('refs/julie_turnaround.jpg');
+const face = Face.fromViews({
+    front: sheet.extractSubset(190, 70, 220, 220),
+    left:  sheet.extractSubset(1270, 70, 220, 220),
+    right: sheet.extractSubset(1590, 70, 220, 220)
+});
+const worn = julie.withFaceMesh(face);           // once per character; keep it
+
+// Per panel: pose the body as always. The face rides the head and takes expression units.
+Mesh.draw(ctx, worn.pose({ bone_5: { yDeg: 35 } }), { x, y, scale,
+          expression: { browDown: 1, browKnit: 0.9, eyeSquint: 0.55, mouthFrown: 0.85 } });
+```
+
+- `mesh.withFaceMesh(face, options?)` → `FaceMesh` — The character wearing `face`. Options: `{ eyeLeft, eyeRight, mouth }` (model-space anchors, needed only without the face backend, as for `faceSheet`), `matchSkin` (default `true`), `flush` (default `true`), `depth`, `blend`, `overlap`.
+
+What it does, in order:
+
+1. **Lines the face up** by an exact affine map from its eyes and mouth onto the character's, found as `faceSheet()` finds them. Its depth is scaled to match and seated so the eyes and mouth sit on the character's surface; `depth` moves it forward (positive) or back as a share of its own height.
+2. **Eases its rim onto the character's surface** over `blend` rings of vertices (default 5), so the seam is continuous. A turnaround's face wraps back round the cheeks where a generated one is flat — measured on Julie, 0.05 model units apart — and without this her own cheek showed through in slivers when she turned.
+3. **Lifts anything that would sit behind her surface onto it** (`flush`). Measured on Julie, 63 of 147 vertices across the brow and forehead sat behind her surface by up to 9% of the face's height, and her hairline occluded them as a dark crescent when she turned. It costs some drawn relief at the temples and none of the nose, lips or brow; `flush: false` keeps the relief and the crescents.
+4. **Cuts the character's own face out** along the face's outline, drawn in by `overlap` (default 5%) so a band of her surface runs under the rim and fills any crack at a turned view. Straddling triangles are clipped rather than kept or dropped whole; only the surface nearest the viewer is cut, so the back of the head is untouched.
+5. **Puts both textures in one atlas** — the character's beside the face's, the face tone-matched so its skin lands on hers (`matchSkin`). A turnaround's skin is usually white paper, and without this the face is a white mask on a grey head.
+
+> [!IMPORTANT]
+> **It is one mesh, so one depth sort decides occlusion.** A hand raised in front of the face covers it; the hair behind does not. Drawing the face as a second `Mesh.draw` would put it over the hand. The face's triangles are sorted slightly nearer the viewer — 5% of the face's height — which settles the seam where the two surfaces meet and leaves anything genuinely in front of the face in front.
+>
+> **The face follows the head, not a named bone.** Each pose fits the head's rigid motion from the character's own face vertices the transplant covers, so no bone name is needed and any rig works. `expression` and `shape` on `Mesh.draw` act on the transplanted face alone, in its own frame before it is turned — so a brow lowers along the face, not along the view.
+>
+> **The character's face must be findable**, as for `faceSheet`: with the backend it is detected; without it, pass the anchors. `withFace` and `faceSheet` are refused on a transplanted mesh, since a bake would replace the face mesh rather than draw on it. Transplanting twice is refused too — start from the character as loaded.
+
+> [!TIP]
+> **Measured on Julie:** building the face takes about 9 s; the transplant about 3.3 s the first time, almost all of it finding her face, and 0.4 s after that; a pose about 30 ms. The face is sound from the front through 90°, where the nose and lips stand out in silhouette. What still shows is the turnaround's own drawing — hair strokes the artist drew at the temples come with the face, and its chin carries its own tone. The fix for either is in the crops, not here.
 
 ## Deforming: `shape` and `expression`
 
@@ -3471,6 +3513,67 @@ Both are passed to `Mesh.draw`, both take `-1 … 0 … +1`, both clamp, and an 
 
 > [!TIP]
 > **Wireframe first.** `wireframe: true` draws the triangles as lines in non-repro blue and is how you check a fit before spending a texture on it — the same role `drawLoomisWireframe` plays for the constructed head. A mesh with no texture draws as a wireframe whatever you pass, rather than silently drawing nothing.
+
+---
+
+# Character (Posable Characters From Their Views)
+
+A character built from pictures of it — a **textured 3D body you can pose and turn**, with its **joints named by body part** and **a face with shape** already in place. The same names work on every character, so a pose written for one transfers to the next.
+
+Building one takes minutes, so it is done by the **`GenerateCharacter` tool**, outside the sandbox, exactly as research is; a script only loads what is finished. The pipeline behind it, in order:
+
+1. **Reconstruct** a textured body from the views.
+2. **Rig** it: a skeleton and skin weights.
+3. **Name the joints** by detecting the body in a front render and giving each bone the name of the body part it sits on.
+4. **Build the face** from the views' heads, and transplant it onto the body (`mesh.withFaceMesh`).
+5. Write `characters/<name>/`, including **`preview.png`** — front, three-quarter and profile. **Look at it before drawing with the character.**
+
+```js
+const mara = Character.load('mara');              // posable, face in place, joints named
+log(Object.keys(mara.jointMap).join(', '));       // head, neck, leftUpperArm, leftForearm, …
+
+const turned = mara.pose({ head: { yDeg: 30 }, leftUpperArm: { zDeg: 40 }, rightUpperArm: { zDeg: -40 } });
+Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
+                         expression: { browDown: 1, mouthFrown: 0.8 } });
+```
+
+- `Character.list()` → `string[]` — The finished characters in this project.
+- `Character.load(name)` → `FaceMesh` — The character, ready to pose and draw. Loaded once per session and reused, so calling it in every script costs nothing after the first.
+- `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `rig` and **`warnings`**.
+
+> [!IMPORTANT]
+> **Views decide everything, so make them for this.** One character, one style, one scale, the whole figure in frame, standing in an **A-pose** with the arms clear of the body — a rigger cannot separate an arm drawn against the torso, and nothing can find a head that was cropped off. `front` is required; `back` and a profile each improve the body, and the profile gives the face its shape.
+>
+> **Make the views in one generation, and hand them over as one sheet.** Separate generations of "the same" character are different characters, so the three views come from one `Assets.cutout` call; drawing its cells side by side on one canvas makes a turnaround sheet, which `GenerateCharacter` splits itself and reads as front, side, back:
+>
+> ```javascript
+> const views = await Assets.cutout('a heavyset lighthouse keeper in his sixties, grey beard, oilskin coat, full figure standing in an A-pose', {
+>     variants: ['front view', 'side view, in profile', 'back view'], size: 768 });
+> if (!views.success) exit(views.failureName + ': ' + views.remedy);
+>
+> const cells = views.cells.map(c => Skia.Image.fromDataUrl(c.toDataUri()));
+> const H = Math.max(...cells.map(c => c.height)), gap = 60;
+> const sheet = createCanvas(cells.reduce((w, c) => w + c.width + gap, gap), H + 2 * gap);
+> const sctx = sheet.getContext('2d');
+> sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, sheet.width, sheet.height);
+> let x = gap;
+> for (const c of cells) { sctx.drawImage(c, x, gap + (H - c.height)); x += c.width + gap; }   // feet on one line
+> sheet;   // run with outFile: 'refs/tomas-sheet.png', then GenerateCharacter({ name: 'tomas', sheet: 'refs/tomas-sheet.png' })
+> ```
+>
+> **Ask for one profile, not a left and a right.** Asked for both, a generated sheet tends to return the front view twice, or two profiles facing the same way. One is enough: which way a profile faces is read from the picture, so it needs no label. `GenerateCharacter` reads three figures as front, side, back and four as front, back, left, right; `sheetOrder` names any other layout.
+>
+> **To redo one view, pass the sheet you have as `reference`** rather than generating again from the description, which draws somebody else. See *Adding to a subject later* under `polson://sdk/core/Assets`.
+>
+> A sheet drawn by hand or by another tool works the same way, captions and all: the figures are found by the gaps between them. Leave a clear gap; figures touching are read as one.
+
+> [!IMPORTANT]
+> **Left and right are the character's own**, not the page's: `leftForearm` is the arm the character would call its left, whichever way it faces on the page. Rotations are degrees about **the bone's own axes**, and those come from the rigger, not from a convention: on a rigged humanoid a bone's `y` runs along the bone, so on the head `yDeg` turns it and `xDeg` nods it, and on an upper arm hanging out in an A-pose `zDeg` lowers or raises it — with **opposite signs on the two sides**, because the bones mirror. When a pose does not do what you expected, change one axis at a time and look.
+>
+> **Read `Character.info(name).warnings` before relying on a character.** A joint that could not be named, a profile the face was built without, or a view whose head had to be placed by the front view's scale is said there and nowhere else. A name missing from `jointMap` is refused by `pose`, with the ones that exist.
+
+> [!TIP]
+> **The body turns; its silhouette is only as good as the reconstruction.** Hands come back as mittens (the reconstruction's voxel grid is coarser than a finger), cloth deforms with the body rather than draping, and a bend held far past the A-pose pinches. For a panel that needs articulate hands or flowing cloth, draw those by construction over the posed body.
 
 ---
 
@@ -3557,7 +3660,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 - `Assets.material(descriptor: string, options?: object)` → `Promise<MaterialAsset>` — A flat, seamlessly tiling swatch. Safest and most reusable: independent of geometry, so it survives any amount of redrawing. `options`: `{ size?: number (32–1024, default 512), tileable?: boolean (default true), format?: 'webp'|'png'|'jpeg', quality?: number, model?: string }`.
 - `Assets.backdrop(descriptor: string, options?: object)` → `Promise<BackdropPlate>` — A background plate composited beneath the scene. `options`: `{ width?: number, height?: number, keepQuiet?: 'lowerThird'|'upperThird'|'leftHalf'|'rightHalf'|'center'|'none', noHorizon?: boolean, noForeground?: boolean, conditionOn?: byte[], format?: string, quality?: number, model?: string }`.
 - `Assets.matte(descriptor: string, options?: object)` → `Promise<MatteAsset>` — A greyscale mask, height field, or displacement source for use as a shader input — **and, with `hardEdge`, a stencil.** `options`: `{ size?: number, invert?: boolean, hardEdge?: boolean, threshold?: number, model?: string }`.
-- `Assets.cutout(descriptor: string, options?: object)` → `Promise<CutoutAsset>` — Pictorial elements with a **real alpha channel**, cut from a flat keyed ground — and, with `variants`, several views of one subject from **one generation**. `options`: `{ variants?: string[] (max 6), size?: number (default 512), style?: string, background?: string, tolerance?: number (default 0.18), model?: string }`.
+- `Assets.cutout(descriptor: string, options?: object)` → `Promise<CutoutAsset>` — Pictorial elements with a **real alpha channel**, cut from a flat keyed ground — and, with `variants`, several views of one subject from **one generation**. `options`: `{ variants?: string[] (max 6), size?: number (default 512), style?: string, background?: string, tolerance?: number (default 0.18), reference?: CutoutAsset | CutoutCell | string | Array (max 3), model?: string }`.
 
 > [!TIP]
 > **This is the one requisition that will answer a *form*, and that is deliberate.** `material()` refuses "a rearing horse" because a material has no silhouette; a matte is nothing *but* a silhouette, so the classifier does not run here. It is therefore the route to the bold graphic form a header or a section marker wants — and it stays on the right side of the line, because what comes back is a shape rather than a picture. Colour, scale, placement and composition all stay with your code.
@@ -3610,8 +3713,9 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 >
 > That is the arranged route's answer to what `Drawing.createParametricHead(...)` does for the
 > constructed one: there, a few numbers kept in a `const` make panel 1 and panel 40 the same person.
-> Here, asking once makes them the same person. **Neither works retroactively** — plan the whole set
-> of poses before the first call, because a seventh expression is a new man.
+> Here, asking once makes them the same person. **Plan the whole set of poses before the first call
+> anyway**: a seventh expression asked for from the description alone is a new man. Passing the first
+> sheet as `reference` (below) asks the model to keep him, and is the way back when the plan missed one.
 >
 > ```javascript
 > const cutout = await Assets.cutout('a weathered ranch hand in his fifties, head and shoulders', {
@@ -3624,6 +3728,42 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > for (const cell of cutout.cells) log(`${cell.name}: ${cell.width}x${cell.height}`);
 > Session.cast = cutout.cells.map(c => ({ name: c.name, uri: c.toDataUri() }));
 > ```
+
+### Adding to a subject later — `reference`
+
+> [!IMPORTANT]
+> **A later call can be shown the earlier one.** Pass the earlier cutout as `reference` and the model is
+> handed that sheet and told to change nothing about the subject but what `variants` lists. How closely it
+> holds the likeness is the model's doing rather than a guarantee, so **look at the result beside the
+> first sheet** before building on it. This is what makes the plan-everything-first rule above survivable: a missed pose, a
+> closer head sheet, or one view that came back wrong can be redone without losing the person.
+>
+> ```javascript
+> const cast = await Assets.cutout('a weathered ranch hand in his fifties, head and shoulders', {
+>     variants: ['calm, looking left', 'alarmed, eyes wide'], size: 420, tolerance: 0.10 });
+> Session.hand = cast.id;                            // an id outlives the script; the object does not need to
+>
+> // later, in another script
+> const more = await Assets.cutout('the same ranch hand, head and shoulders', {
+>     variants: ['laughing', 'asleep'], reference: Session.hand, size: 420, tolerance: 0.10 });
+> log(more.references.join(', '));                   // the sheet it was shown
+> ```
+>
+> `reference` takes the cutout, one of its **cells**, its **`id`**, or an array of up to three of those. A
+> cell stands for the whole sheet it was cut from, which is what is sent, so to redo one view you can pass
+> the cell you are replacing. **Keep the descriptor**: the reference shows the model who the subject is,
+> and the words still say what to draw.
+
+> [!CAUTION]
+> **Only a cutout this project generated can be a reference.** It is looked up by id in the project's
+> asset cache, never read off the object you pass, and a canvas, a bitmap, a photograph or an id the cache
+> does not hold is **refused before the network is touched**. A reference is the one route by which an
+> image would reach the model as the subject to copy, so it must not be a way for a real person's likeness
+> to arrive without the checks `Photo` applies. A sheet you repaired on a canvas cannot be passed either;
+> pass the cutout it came from.
+>
+> A referenced cutout is a new generation with its own `id`, charged like any other, and cached on the
+> reference as well as the words, so a different reference is never served the earlier result.
 
 > [!IMPORTANT]
 > **Check `split` before trusting the cells.** The sheet is divided on the gaps the background
@@ -3699,11 +3839,13 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 - `cutout.toDataUri()` → `string` — The sheet, as PNG. Usually you want a cell instead.
 - `cutout.split` → `string` — `'single'`, `'gaps'`, or `'even'`. See above.
 - `cutout.backgroundColor` → `string` — The colour actually keyed out, as `#RRGGBB`.
-- `cutout.id` · `cutout.provenance`
+- `cutout.references` → `string[]` — The ids of the sheets passed as `reference`. Empty when none was.
+- `cutout.id` · `cutout.provenance` — `id` is what a later call passes as `reference`.
 
 ## `CutoutCell`
 
 - `cell.name` → `string` — The variant it was asked for, or `'subject'` when only one was.
+- `cell.sheetId` → `string` — The `id` of the sheet it was cut from. Why a cell can be a `reference`.
 - `cell.bytes` → `byte[]`, `cell.width` / `cell.height` → `number`
 - `cell.toDataUri()` → `string` — **PNG, because alpha is the whole point and JPEG has none.** Feed it
   to `Skia.Image.fromDataUrl(...)`, or pass the cell straight to `paper.image(...)`.

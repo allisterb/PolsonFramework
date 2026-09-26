@@ -211,7 +211,7 @@ public static class PoseRetarget
     /// </remarks>
     static Vector3? HipMove(MeshRig rig, Dictionary<string, Node> source, Clip clip, float seconds, Quaternion align)
     {
-        if (!rig.Aliases.TryGetValue("hips", out var hips) || rig.JointParent.ContainsKey(hips)
+        if (!rig.Aliases.TryGetValue("hips", out var hips) || !rig.CanMove(hips)
             || !rig.FileNodes.TryGetValue(hips, out var tHips)) return null;
         if (!rig.Aliases.TryGetValue("leftFoot", out var lf) || !rig.Aliases.TryGetValue("rightFoot", out var rf)
             || !rig.FileNodes.TryGetValue(lf, out var tLeft) || !rig.FileNodes.TryGetValue(rf, out var tRight)) return null;

@@ -834,3 +834,13 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 > figure stays one size across panels however it is posed — a crouch is shorter, not rescaled to fill.
 > Measured on a standing figure the feet land on the point and the height is exact at any turn; a crouch
 > can dip its toes a few percent of its height under the line, because the toes point down past the ankle.
+>
+> **A stock body can be reshaped with `mesh.proportion`**, so one rigged body serves characters of
+> different builds as a pose guide: shorter legs, a bigger head, thinner limbs, each a factor on that
+> part, and the result poses like any rig. `Character.proportions` reports a built character's shares
+> of its own height, and `like` copies them — but only between rigs that place their joints alike.
+> Measured on Kit, the rigger put her shoulder joints 26% wider than the shoulders in her drawing.
+> **A reshaped guide does not change the character's build**: the image model draws a character's
+> proportions from its sheet. Kit came out the same shape over the adult stock guide and over one
+> reshaped to her, both matching her sheet, and her pose followed the reshaped one only slightly more
+> closely. Reshape when the build is far from the stock body's; set her size with `Character.place`.

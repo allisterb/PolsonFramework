@@ -586,6 +586,25 @@ public class FaceMesh
             : null;
         return WithFace(sheet, bake);
     }
+
+    /// <summary>
+    /// This body reshaped to new proportions: <c>stock.proportion({ like: Character.load('kit') })</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The new shape becomes the bind pose</b>, so the result poses, retargets, reaches and places like
+    /// any other rig. <c>like</c> takes another character's proportions — segment lengths, shoulder and hip
+    /// width, head size, all as shares of standing height. Factors on this body's own sizes override it or
+    /// stand alone: <c>torso</c>, <c>neck</c>, <c>head</c>, <c>upperArm</c>, <c>forearm</c>, <c>thigh</c>,
+    /// <c>shin</c>, <c>shoulders</c>, <c>hips</c>, <c>hands</c>, <c>feet</c>, <c>girth</c>.
+    /// </para>
+    /// <para>
+    /// Needs the body parts named on the rig (<see cref="JointMap"/>). Height stays set by
+    /// <c>Character.place</c>; this changes the shape. A limb thinned hard pinches at its joints, as
+    /// skinning does, which a pose guide does not mind.
+    /// </para>
+    /// </remarks>
+    public FaceMesh Proportion(object? spec) => CharacterProportion.Apply(this, JsInterop.AsDict(spec));
     #endregion
 
     #region Internal

@@ -164,6 +164,18 @@ public class CharacterToolkit
     /// </remarks>
     public Dictionary<string, object?> Place(object character, object frame, object? options = null) =>
         CharacterIk.Place(Character(character, "place"), frame, options);
+
+    /// <summary>
+    /// A character's proportions, each a share of its standing height: <c>torso</c>, <c>neck</c>,
+    /// <c>head</c>, <c>upperArm</c>, <c>forearm</c>, <c>thigh</c>, <c>shin</c>, <c>shoulders</c>, <c>hips</c>.
+    /// </summary>
+    /// <remarks>
+    /// Measured between the named joints, and the head from its joint to the top of the mesh, so hair and a
+    /// hat count. What <c>mesh.proportion({ like })</c> copies.
+    /// </remarks>
+    public Dictionary<string, object?> Proportions(object character) =>
+        CharacterProportion.Measure(Character(character, "proportions"))
+            .ToDictionary(kv => kv.Key, kv => (object?)Math.Round(kv.Value, 4));
     #endregion
 
     #region Private

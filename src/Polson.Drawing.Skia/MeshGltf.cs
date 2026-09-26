@@ -111,6 +111,7 @@ internal sealed class MeshRig
     {
         this.model = model;
         this.source = source;
+        sceneIndex = scene.LogicalIndex;
 
         decoded = model.LogicalMeshes.Decode();
         instance = SceneTemplate.Create(scene).CreateInstance();
@@ -338,6 +339,142 @@ internal sealed class MeshRig
             return Snapshot(bind);
         }
     }
+
+    /// <summary>
+    /// A new rig whose bind pose is this one reshaped: each bone moved to <paramref name="joints"/>, and each
+    /// vertex carried by its weighted bones through <paramref name="carry"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The reshaped pose becomes the bind pose, not a pose on top of it.</b> The file is copied and its
+    /// bone transforms, inverse bind matrices and vertex positions are rewritten, so everything that reads a
+    /// rig — posing, retargeting, reach, placement — sees an ordinary rig of the new shape and needs no
+    /// change. Bones keep their rotations; only where they sit moves.
+    /// </para>
+    /// <para>
+    /// <paramref name="carry"/> takes a bone handle and a bind-space point and returns where that point goes
+    /// if it moves with that bone. The lowest vertex is kept where it was, so the feet stay on the floor.
+    /// Normals are not rewritten; nothing here shades from them.
+    /// </para>
+    /// </remarks>
+    internal MeshRig Rebind(IReadOnlyDictionary<string, Vector3> joints, Func<string, Vector3, Vector3> carry)
+    {
+        var copy = model.DeepClone();
+        var handleOf = FileNodes.ToDictionary(kv => kv.Value.LogicalIndex, kv => kv.Key);
+
+        var bindOf = new Dictionary<string, Matrix4x4>(StringComparer.Ordinal);
+        foreach (var skin in model.LogicalSkins)
+            for (var j = 0; j < skin.JointsCount; j++)
+            {
+                var (joint, inverseBind) = skin.GetJoint(j);
+                if (handleOf.TryGetValue(joint.LogicalIndex, out var h) && !bindOf.ContainsKey(h)
+                    && Matrix4x4.Invert(inverseBind, out var world))
+                    bindOf[h] = world;
+            }
+
+        // Vertices first, into scratch, so the floor shift is known before anything is written.
+        var pending = new List<(Accessor Positions, Vector3[] Moved)>();
+        var seen = new HashSet<int>();
+        float oldMin = float.MaxValue, newMin = float.MaxValue;
+        foreach (var node in copy.LogicalNodes)
+        {
+            if (node.Mesh is null || node.Skin is null) continue;
+            var handles = Enumerable.Range(0, node.Skin.JointsCount)
+                .Select(j => handleOf.GetValueOrDefault(node.Skin.GetJoint(j).Joint.LogicalIndex)).ToArray();
+
+            foreach (var prim in node.Mesh.Primitives)
+            {
+                var positions = prim.GetVertexAccessor("POSITION");
+                if (positions is null || !seen.Add(positions.LogicalIndex)) continue;
+                var ids = prim.GetVertexAccessor("JOINTS_0")?.AsVector4Array();
+                var weights = prim.GetVertexAccessor("WEIGHTS_0")?.AsVector4Array();
+                var from = positions.AsVector3Array();
+                var moved = new Vector3[from.Count];
+
+                for (var i = 0; i < from.Count; i++)
+                {
+                    var v = from[i];
+                    oldMin = MathF.Min(oldMin, v.Y);
+                    if (ids is null || weights is null) { moved[i] = v; newMin = MathF.Min(newMin, v.Y); continue; }
+
+                    Vector4 id = ids[i], w = weights[i];
+                    Vector3 sum = default;
+                    var total = 0f;
+                    for (var k = 0; k < 4; k++)
+                    {
+                        var wk = w[k];
+                        if (wk <= 0f || handles[(int)id[k]] is not { } h) continue;
+                        sum += wk * carry(h, v);
+                        total += wk;
+                    }
+                    moved[i] = total > 0f ? sum / total : v;
+                    newMin = MathF.Min(newMin, moved[i].Y);
+                }
+                pending.Add((positions, moved));
+            }
+        }
+
+        // **Into a new buffer, never over the old one.** A deep copy may still share the source's buffer
+        // bytes, and writing through the old accessor then reshapes the body this was copied from — which
+        // compounded the second time the same body was proportioned.
+        var lift = new Vector3(0f, oldMin - newMin, 0f);
+        var replaced = new Dictionary<int, Accessor>();
+        foreach (var (positions, moved) in pending)
+        {
+            var bytes = new byte[moved.Length * 12];
+            var into = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, Vector3>(bytes.AsSpan());
+            for (var i = 0; i < moved.Length; i++) into[i] = moved[i] + lift;
+
+            var accessor = copy.CreateAccessor();
+            accessor.SetData(copy.UseBufferView(bytes, 0, null, 0, BufferMode.ARRAY_BUFFER), 0, moved.Length,
+                             DimensionType.VEC3, EncodingType.FLOAT, false);
+            accessor.UpdateBounds();
+            replaced[positions.LogicalIndex] = accessor;
+        }
+        foreach (var prim in copy.LogicalMeshes.SelectMany(m => m.Primitives))
+            if (prim.GetVertexAccessor("POSITION") is { } old && replaced.TryGetValue(old.LogicalIndex, out var fresh))
+                prim.SetVertexAccessor("POSITION", fresh);
+
+        // Bones, parents first: the new bind world keeps each bone's rotation and scale and takes the new
+        // position; the scene transform then follows by the same bind-to-scene relation the file had.
+        var bindNew = new Dictionary<string, Matrix4x4>(StringComparer.Ordinal);
+        var sceneNew = new Dictionary<string, Matrix4x4>(StringComparer.Ordinal);
+        foreach (var h in JointNames)
+        {
+            var file = FileNodes[h];
+            var bind = bindOf.TryGetValue(h, out var b) ? b : file.WorldMatrix;
+            if (!Matrix4x4.Invert(bind, out var toBone)) toBone = Matrix4x4.Identity;
+            var bindToScene = toBone * file.WorldMatrix;
+
+            var moved = bind;
+            moved.Translation = (joints.TryGetValue(h, out var at) ? at : bind.Translation) + lift;
+            bindNew[h] = moved;
+            sceneNew[h] = moved * bindToScene;
+
+            var parent = JointParent.TryGetValue(h, out var ph) ? sceneNew[ph]
+                : copy.LogicalNodes[file.LogicalIndex].VisualParent?.WorldMatrix ?? Matrix4x4.Identity;
+            if (!Matrix4x4.Invert(parent, out var toParent)) toParent = Matrix4x4.Identity;
+            copy.LogicalNodes[file.LogicalIndex].LocalMatrix = sceneNew[h] * toParent;
+        }
+
+        foreach (var skin in copy.LogicalSkins)
+        {
+            var bound = new List<(Node, Matrix4x4)>();
+            for (var j = 0; j < skin.JointsCount; j++)
+            {
+                var (joint, inverseBind) = skin.GetJoint(j);
+                if (handleOf.TryGetValue(joint.LogicalIndex, out var h) && Matrix4x4.Invert(bindNew[h], out var inv))
+                    inverseBind = inv;
+                bound.Add((joint, inverseBind));
+            }
+            skin.BindJoints(bound);
+        }
+
+        var scene = copy.LogicalScenes[sceneIndex];
+        var rig = new MeshRig(copy, scene, source) { FrontSign = FrontSign };
+        foreach (var (part, bone) in Aliases) rig.Aliases[part] = bone;
+        return rig;
+    }
     #endregion
 
     #region Methods (private)
@@ -388,13 +525,15 @@ internal sealed class MeshRig
 
     /// <summary>A root bone's local transform shifted by a model-space offset.</summary>
     /// <remarks>
-    /// <b>Only a root bone may move.</b> Every other bone's position is its parent's business, and
-    /// moving one pulls it off the end of the bone before it — an arm that detaches at the shoulder.
-    /// The hips are the root on a humanoid rig, which is the case this exists for: a crouch lowers them.
+    /// <b>Only a root bone may move</b> — the topmost bone, or one with no named body part above it.
+    /// Every other bone's position is its parent's business, and moving one pulls it off the end of the
+    /// bone before it — an arm that detaches at the shoulder. The hips are the root on a humanoid rig,
+    /// which is the case this exists for: a crouch lowers them. Some rigs hang the pelvis under an
+    /// unnamed <c>root</c> bone at the floor, and that counts as the root being the hips.
     /// </remarks>
     internal Matrix4x4 Moved(Matrix4x4 local, string handle, string name, Vector3 by)
     {
-        if (JointParent.ContainsKey(handle))
+        if (!CanMove(handle))
             throw new ArgumentException(
                 $"Joint '{name}' cannot move: only the skeleton's root can, which on a character is the hips. " +
                 "Move a hand or a foot with Character.reach.");
@@ -402,6 +541,15 @@ internal sealed class MeshRig
         if (!Matrix4x4.Invert(parent, out var inverse)) inverse = Matrix4x4.Identity;
         local.Translation += Vector3.TransformNormal(by, inverse);
         return local;
+    }
+
+    /// <summary>Whether a bone may move: no bone above it, or none above it carrying a body-part name.</summary>
+    internal bool CanMove(string handle)
+    {
+        var named = Aliases.Values.ToHashSet(StringComparer.Ordinal);
+        for (var at = JointParent.GetValueOrDefault(handle); at is not null; at = JointParent.GetValueOrDefault(at))
+            if (named.Contains(at)) return false;
+        return true;
     }
 
     /// <summary>The file node each runtime node was built from, or null where none matches.</summary>
@@ -487,6 +635,7 @@ internal sealed class MeshRig
     readonly Dictionary<string, NodeInstance> nodes;
     readonly HashSet<string> sceneNodes = new(StringComparer.Ordinal);
     readonly string source;
+    readonly int sceneIndex;
     SKBitmap? texture;
     #endregion
 }

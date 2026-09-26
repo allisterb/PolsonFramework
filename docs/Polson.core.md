@@ -3349,6 +3349,7 @@ canvas;
 - `mesh.joints` → `string[]` — A handle for every **bone the file's skin declares**, parents before children. Scene nodes that are not bones — the root, the armature object, the mesh's own node, which Blender's exporter writes as `world`, `Armature` and `geometry_0` — are left out. Empty when there is no rig.
 - `mesh.jointMap` → `object` — **Body-part names for the bones** — `head`, `neck`, `hips`, `spine`, `chest`, and `left`/`right` + `UpperArm`, `Forearm`, `Hand`, `Thigh`, `Shin`, `Foot` — mapped to the rig's own. Set on a character from `Character.load(...)`, where they were found by detecting the body; empty for a file loaded on its own. `pose` takes either spelling.
 - `mesh.pose(rotations)` → `FaceMesh` — Rotates joints and returns the deformed mesh.
+- `mesh.proportion(spec)` → `FaceMesh` — **The same body reshaped**, with the new shape as its rest pose, so it poses, retargets, reaches and places like any rig. `spec` takes factors on this body's own sizes — `torso`, `neck`, `head`, `upperArm`, `forearm`, `thigh`, `shin`, `shoulders`, `hips`, `hands`, `feet`, `girth` (0.25 to 4) — and `like`, another character whose proportions to copy. Needs `mesh.jointMap`. See *Reshaping a body* under Character.
 
 An illustration rather than a runnable program, because **posing needs a rigged asset and the toolkit ships none** — for the licence reasons stated above, and because a skinned glTF cannot be built inline the way the OBJ examples on this page are:
 
@@ -3376,7 +3377,7 @@ Mesh.draw(ctx, waving, { x: 400, y: 300, scale: 160, yawDeg: 20 });
 >
 > Rotations are **degrees about the joint's own axes**, applied yaw (Y), then pitch (X), then roll (Z). Any of the three may be left out. A key that is not one of `xDeg`, `yDeg`, `zDeg` is **refused by name**.
 >
-> **The skeleton's root can also move**: `hips: { xDeg: 10, move: { x: 0, y: -0.2, z: 0 } }` shifts it by that much in the character's own space, and the whole body with it. It is how a crouch gets its feet back on the floor, and `Character.retarget` fills it in. Only the root — the hips on a character — may move; any other bone is refused, since moving it would pull it off the end of the bone before it. Move a hand or a foot with `Character.reach`.
+> **The skeleton's root can also move**: `hips: { xDeg: 10, move: { x: 0, y: -0.2, z: 0 } }` shifts it by that much in the character's own space, and the whole body with it. It is how a crouch gets its feet back on the floor, and `Character.retarget` fills it in. Only the root — the hips on a character, even where they hang under an unnamed `root` bone — may move; any other bone is refused, since moving it would pull it off the end of the bone before it. Move a hand or a foot with `Character.reach`.
 >
 > **A posed mesh keeps the bind geometry as its reference**, so `shape` and `expression` bands still key on where a feature anatomically is rather than on where a pose has swung it — the same discipline `fitOutline` is held to.
 
@@ -3629,6 +3630,7 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 - `Character.reach(character, pose, goals, draw?)` → `{ pose, reached, miss }` — **Puts hands and feet where the panel needs them, and points the head**, on top of `pose`. `goals` takes `leftHand`, `rightHand`, `leftFoot`, `rightFoot` as `{ at: { x, y, z } }` or `{ page: { x, y } }`, with an optional `bend`, and `head` as `{ lookAt: … }`. `draw` is the options you pass to `Mesh.draw`, needed for a page point.
 - `Character.place(character, frame, { at?, anchor?, height?, yawDeg?, pitchDeg? })` → `object` — **The `Mesh.draw` options that stand a character in a frame**: feet at `at` (fractions of the frame, default `{ x: 0.5, y: 0.95 }`), standing `height` of the frame tall (default `0.8`). Sized from the character standing, so a crouch comes out shorter; the feet go where its floor is, under its hips. **For a close shot, anchor a body part instead**: `{ anchor: 'head', at: { x: 0.4, y: 0.35 }, height: 3 }` puts the head there and lets the panel crop the rest.
 - `Character.where(character, pose, part, draw?)` → `{ x, y, z }` or `{ x, y, depth }` — Where a body part's joint is under a pose: in the character's own space, or on the page given the draw options.
+- `Character.proportions(character)` → `object` — **Its proportions, as shares of standing height**: `torso`, `neck`, `head`, `upperArm`, `forearm`, `thigh`, `shin`, `shoulders`, `hips`. Measured between the named joints; the head from its joint to the top of the mesh, so hair and a hat count.
 
 > [!IMPORTANT]
 > **Views decide everything, so make them for this.** One character, one style, one scale, the whole figure in frame, standing in an **A-pose** with the arms clear of the body — a rigger cannot separate an arm drawn against the torso, and nothing can find a head that was cropped off. `front` is required; `back` and a profile each improve the body, and the profile gives the face its shape.
@@ -3674,6 +3676,18 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 > **Read `Character.info(name).warnings` before relying on a character.** A joint that could not be named, a profile the face was built without, or a view whose head had to be placed by the front view's scale is said there and nowhere else. A name missing from `jointMap` is refused by `pose`, with the ones that exist.
 
 > [!TIP]
+> [!TIP]
+> **Reshaping a body.** `mesh.proportion(...)` moves the bones and carries the skin with them, then keeps the result as the rest pose:
+>
+> ```js
+> const child = body.proportion({ head: 1.18, torso: 1.06, thigh: 0.86, shin: 0.82, upperArm: 0.74, forearm: 0.87, girth: 0.9 });
+> const guide = child.pose(Character.retarget(child, 'Crouch_Idle', { at: 0.5 }));
+> ```
+>
+> - **A factor scales that part of this body**: `thigh: 0.8` makes the thigh 0.8 as long, `head: 1.2` makes the head 1.2 times the size about its own joint. `shoulders` and `hips` set width only, `girth` thins or thickens the limbs and trunk, and the feet stay on the floor.
+> - **`like` copies another character's proportions**, as shares of its head-to-ankle chain. It compares where the two rigs put their joints, so it is only as good as the joints agree, and riggers disagree. Measured on Kit, UniRig put the shoulder joints 26% wider apart than MediaPipe's shoulders on the same drawing, so `like` would give a stock body broad shoulders and short upper arms. Between two characters built the same way it is sound; across riggers, prefer factors measured from the drawings themselves.
+> - **The image model takes a character's body proportions from its sheet, not from the guide.** Kit drawn over the stock adult guide and over one reshaped to her proportions came out the same shape, and both matched her sheet (legs 0.39 of her height, head and neck 0.22). The reshaped guide followed slightly more closely (mean pose error 0.25/0.18/0.10 torso lengths against 0.26/0.21/0.12, one image each), which is within the scatter. Reshape a guide when the character's build is far from the stock body's; set how tall it stands with `Character.place`.
+
 > **Take a pose from a performer before you build one from angles.** A pose written joint by joint comes out stiff: nothing in it says where the weight is, how the shoulders answer the hips, or what the free arm does. A recorded clip carries all of that, because a person performed it.
 >
 > ```js

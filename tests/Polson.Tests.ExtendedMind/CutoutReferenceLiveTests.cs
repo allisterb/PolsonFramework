@@ -131,6 +131,104 @@ public class CutoutReferenceLiveTests : TestsRuntime
         Assert.True(crouch.Success, crouch.Error);
     }
 
+    /// <summary>
+    /// The hybrid: a 3D render gives the pose, camera and contact; the character sheet gives the look.
+    /// </summary>
+    /// <remarks>
+    /// Live and billed: one generation per <c>guide-*.png</c> in <c>POLSON_LIVE_OUT</c>. Calls the generator
+    /// directly with two images, because the route an agent would use for this does not exist yet — this
+    /// is the probe that decides whether it should. <c>POLSON_LIVE_SHEET</c> is the character sheet.
+    /// </remarks>
+    [Fact]
+    public async Task Generate_Live_APoseGuideIsRedrawnAsTheCharacter()
+    {
+        if (string.IsNullOrWhiteSpace(this.apiKey)) return;
+        if (Environment.GetEnvironmentVariable("POLSON_LIVE_IMAGE_TESTS") != "1") return;
+        var dir = Environment.GetEnvironmentVariable("POLSON_LIVE_OUT");
+        var sheetPath = Environment.GetEnvironmentVariable("POLSON_LIVE_SHEET");
+        if (dir is null || sheetPath is null) { output.WriteLine("NOT RUN: set POLSON_LIVE_OUT and POLSON_LIVE_SHEET"); return; }
+
+        using var generator = new ImageGenerator(this.apiKey!);
+        var sheet = File.ReadAllBytes(sheetPath);
+        const string Prompt =
+            "Image 1 is a pose guide: a rough 3D model render of a character, with a brown bar that is a ship's rail. "
+            + "Image 2 is the character reference sheet for that same character, shown front, side and back. "
+            + "Redraw image 1 as a finished clean storyboard illustration of the character in image 2, in the drawing style of image 2. "
+            + "From image 1 take exactly: the pose of every limb, the direction the head faces, the camera angle, the framing, "
+            + "the figure's size and position in the frame, and any contact such as a hand resting on the rail. "
+            + "From image 2 take: the face, beard, hat, clothing, colours and costume details, which must match the sheet exactly, "
+            + "including the full length of the coat. Keep the rail if there is one. Plain white background, no other objects.";
+
+        foreach (var guidePath in Directory.GetFiles(dir, "guide-*.png").Order())
+        {
+            var name = Path.GetFileNameWithoutExtension(guidePath)["guide-".Length..];
+            var started = DateTime.UtcNow;
+            var result = await generator.GenerateImage(Prompt, aspectRatio: "3:4", conditionOn: [File.ReadAllBytes(guidePath), sheet]);
+            output.WriteLine($"{name}: {(DateTime.UtcNow - started).TotalSeconds:0.0} s, success {result.Success} {result.Failure} {result.Error}");
+            if (result.Success) File.WriteAllBytes(Path.Combine(dir, $"hybrid-{name}.png"), result.ImageBytes!);
+        }
+    }
+
+    /// <summary>
+    /// The hybrid with a clay guide on a keyed ground: pose from the guide, every part of the look from the sheet.
+    /// </summary>
+    /// <remarks>
+    /// Live and billed: one generation per <c>clay-*.png</c> guide in <c>POLSON_LIVE_OUT</c>, drawn by
+    /// <c>ClayGuideProbeTests</c>. Each result is keyed with the cutout route's own hue keyer and saved
+    /// beside it, with how much of the frame the ground took and how much the key left, so a result that
+    /// drew a floor or drifted off magenta says so.
+    /// </remarks>
+    [Fact]
+    public async Task Generate_Live_AClayGuideIsDrawnAsTheCharacter()
+    {
+        if (string.IsNullOrWhiteSpace(this.apiKey)) return;
+        if (Environment.GetEnvironmentVariable("POLSON_LIVE_IMAGE_TESTS") != "1") return;
+        var dir = Environment.GetEnvironmentVariable("POLSON_LIVE_OUT");
+        var sheetPath = Environment.GetEnvironmentVariable("POLSON_LIVE_SHEET");
+        if (dir is null || sheetPath is null) { output.WriteLine("NOT RUN: set POLSON_LIVE_OUT and POLSON_LIVE_SHEET"); return; }
+
+        using var generator = new ImageGenerator(this.apiKey!);
+        var sheet = File.ReadAllBytes(sheetPath);
+        // POLSON_LIVE_GUIDE_KIND describes the guide, so one prompt serves a clay render and a 2D mannequin.
+        var kind = Environment.GetEnvironmentVariable("POLSON_LIVE_GUIDE_KIND") ?? "a plain grey clay 3D model";
+        var Prompt =
+            $"Image 1 is a pose guide: {kind} standing on a flat magenta background. The grey is not "
+            + "a colour of anything; it says nothing about the character's appearance. A brown bar, if present, is a wooden rail. "
+            + "Image 2 is the character reference sheet, shown front, side and back. "
+            + "Draw the character from image 2 in exactly the pose of image 1, as a clean storyboard illustration in the drawing "
+            + "style of image 2. From image 1 take only: the pose of every limb, the direction the head faces, the camera angle, "
+            + "the framing, the figure's size and position in the frame, and any contact such as a hand resting on the rail. "
+            + "Take everything about how the character looks from image 2: the face, hair, age, build and height, the clothing "
+            + "and its length, footwear, colours and costume details. The guide's body is generic: copy its pose, never its "
+            + "proportions. Keep the background flat pure magenta #FF00FF exactly as in image 1: "
+            + "no floor, no deck, no shadow, no other objects. Keep the rail if there is one.";
+
+        foreach (var guidePath in Directory.GetFiles(dir, "guide-*.png").Order())
+        {
+            var name = Path.GetFileNameWithoutExtension(guidePath)["guide-".Length..];
+            var started = DateTime.UtcNow;
+            var result = await generator.GenerateImage(Prompt, aspectRatio: "3:4", conditionOn: [File.ReadAllBytes(guidePath), sheet]);
+            var seconds = (DateTime.UtcNow - started).TotalSeconds;
+            if (!result.Success) { output.WriteLine($"{name}: {seconds:0.0} s, FAILED {result.Failure} {result.Error}"); continue; }
+            File.WriteAllBytes(Path.Combine(dir, $"clay-{name}.png"), result.ImageBytes!);
+
+            using var drawn = SkiaSharp.SKBitmap.Decode(result.ImageBytes!);
+            var ground = PlateAnalysis.SampleBackground(drawn);
+            using var keyed = PlateAnalysis.DifferenceKey(drawn, ground, "magenta");
+            var kept = 0L;
+            if (keyed is not null)
+            {
+                for (var y = 0; y < keyed.Height; y++)
+                    for (var x = 0; x < keyed.Width; x++)
+                        if (keyed.GetPixel(x, y).Alpha > 128) kept++;
+                using var png = keyed.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+                File.WriteAllBytes(Path.Combine(dir, $"clay-{name}-keyed.png"), png.ToArray());
+            }
+            output.WriteLine($"{name}: {seconds:0.0} s, ground {ground}, keyed {(keyed is null ? "no" : "yes")}, "
+                + $"subject {100.0 * kept / (drawn.Width * drawn.Height):0.0}% of the frame");
+        }
+    }
+
     void Save(string dir, string name, CutoutAsset cutout)
     {
         if (!cutout.Success)

@@ -354,6 +354,14 @@ public class MeshToolkit
             return new SKPoint3((x * Cr) - (y * Sr), (x * Sr) + (y * Cr), z);   // roll, about Z
         }
 
+        /// <summary>The inverse of <see cref="Rotate"/>: roll, pitch and yaw undone in reverse order.</summary>
+        internal SKPoint3 Unrotate(SKPoint3 v)
+        {
+            float x = (v.X * Cr) + (v.Y * Sr), y = (-v.X * Sr) + (v.Y * Cr), z = v.Z;   // roll
+            float y2 = (y * Cp) + (z * Sp), z2 = (-y * Sp) + (z * Cp);                  // pitch
+            return new SKPoint3((x * Cy) - (z2 * Sy), y2, (x * Sy) + (z2 * Cy));        // yaw
+        }
+
         /// <summary>Triangle indices ordered furthest first.</summary>
         internal int[] DepthOrder(FaceMesh mesh)
         {

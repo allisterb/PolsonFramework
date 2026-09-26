@@ -295,6 +295,9 @@ internal sealed class MeshRig
     /// <summary>Where a bone sits as last evaluated — after the most recent pose — in model space.</summary>
     internal System.Numerics.Vector3 EvaluatedAt(string handle) => nodes[handle].ModelMatrix.Translation;
 
+    /// <summary>A bone's model-space transform as last evaluated, for measuring which way it faces.</summary>
+    internal Matrix4x4 EvaluatedMatrix(string handle) => nodes[handle].ModelMatrix;
+
     /// <summary>Resets to bind, applies the rotations, and captures the result.</summary>
     internal FaceMesh Pose(IDictionary? pose, SKPoint3[] bind)
     {
@@ -304,27 +307,33 @@ internal sealed class MeshRig
                 "turned with yawDeg/pitchDeg/rollDeg on Mesh.draw(...). A generator that outputs an " +
                 "unrigged mesh — Stable Fast 3D, CharacterGen — needs a rigging step before this.");
 
-        // Reset first, every time, so poses never accumulate and the mesh a pose was taken from is
-        // never disturbed. That is what lets `mesh.pose(...)` read as a pure function of its
-        // argument, which every other call that changes a mesh here already is.
-        instance.Armature.SetPoseTransforms();
+        // **One pose at a time per rig.** The rig is evaluated by mutating it, and `Character.load`
+        // hands every session the same cached mesh, so two sessions posing one character at once
+        // would each read back a mix of both poses. Found by two test classes doing exactly that.
+        lock (instance)
+        {
+            // Reset first, every time, so poses never accumulate and the mesh a pose was taken from is
+            // never disturbed. That is what lets `mesh.pose(...)` read as a pure function of its
+            // argument, which every other call that changes a mesh here already is.
+            instance.Armature.SetPoseTransforms();
 
-        if (pose is not null)
-            foreach (var key in pose.Keys)
-            {
-                var name = Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty;
-                if (!nodes.TryGetValue(name, out var node)
-                    && !(Aliases.TryGetValue(name, out var aliased) && nodes.TryGetValue(aliased, out node)))
-                    throw Unknown(name);
+            if (pose is not null)
+                foreach (var key in pose.Keys)
+                {
+                    var name = Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty;
+                    if (!nodes.TryGetValue(name, out var node)
+                        && !(Aliases.TryGetValue(name, out var aliased) && nodes.TryGetValue(aliased, out node)))
+                        throw Unknown(name);
 
-                // Row-vector convention, so `delta * local` rotates the joint about its OWN axes
-                // and the bind transform then carries the result into the parent's space. The other
-                // order rotates about the PARENT's axes, which looks plausible on a root node and
-                // is wrong on every elbow below it.
-                node.LocalMatrix = Rotation(JsInterop.AsDict(pose[key]), name) * node.LocalMatrix;
-            }
+                    // Row-vector convention, so `delta * local` rotates the joint about its OWN axes
+                    // and the bind transform then carries the result into the parent's space. The other
+                    // order rotates about the PARENT's axes, which looks plausible on a root node and
+                    // is wrong on every elbow below it.
+                    node.LocalMatrix = Rotation(JsInterop.AsDict(pose[key]), name) * node.LocalMatrix;
+                }
 
-        return Snapshot(bind);
+            return Snapshot(bind);
+        }
     }
     #endregion
 

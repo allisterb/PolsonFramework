@@ -176,7 +176,9 @@ Mesh.draw(ctx, posed, { x: feet.x, y: feet.y + b.y * scale, scale, yawDeg: -30,
   `pose(...)`. `Character.clips()` lists the 162: idles with a lantern, a torch, at a rail, on the
   phone, arms folded; greeting, climbing, crouching and more. The hips turn but do not move, so a
   crouch can lift a foot off the floor, and a clip's hand lands where your character's arm reaches,
-  not on your prop. See `polson://sdk/core/Character`.
+  not on your prop. **Put the hand on the prop with `Character.reach`**: give it the page point and
+  the draw options, and it bends the arm to it and turns the head to look where you say, reporting
+  `reached: false` when the prop is too far. See `polson://sdk/core/Character`.
 - **`yawDeg` turns the whole character** to face where the panel needs; `pose` moves its parts.
 - **Rotations are about each bone's own axes.** The head turns on `yDeg` and nods on `xDeg`; an A-pose
   upper arm drops on `zDeg`, **with opposite signs on the two sides: positive lowers the left arm,

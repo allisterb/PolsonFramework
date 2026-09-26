@@ -821,3 +821,9 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 > character built in any rest pose takes it; its clips are the author's own, CC0. **The hips turn and do
 > not travel**, so a crouch lifts a foot off the floor, and a clip's hand lands where your character's
 > arm reaches, not on your prop.
+>
+> **Contacts are the second step, and `Character.reach` makes them.** It moves a hand or foot to a goal
+> — a point on the page, or in the character's own space — by the exact two-bone solution for the arm
+> or leg, and turns the head to look at something, leaving the rest of the pose as the performer had
+> it. It says when a goal is out of reach instead of stretching the arm, and `Character.where` answers
+> the reverse question, where a hand is, so a prop can be drawn into it.

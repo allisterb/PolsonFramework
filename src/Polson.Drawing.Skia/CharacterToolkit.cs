@@ -131,9 +131,34 @@ public class CharacterToolkit
 
         return PoseRetarget.Retarget(rig, found, time ?? (at ?? 0f) * found.Seconds);
     }
+    /// <summary>
+    /// Moves hands and feet to goals and points the head, on top of a pose:
+    /// <c>Character.reach(tomas, pose, { rightHand: { page: { x, y } } }, drawOptions)</c>.
+    /// </summary>
+    /// <remarks>
+    /// Returns <c>{ pose, reached, miss }</c>: the new pose, whether each goal was reached, and how far
+    /// short each fell in model units. A goal out of reach leaves the limb at full stretch toward it
+    /// rather than tearing it, and says so in <c>reached</c>.
+    /// </remarks>
+    public Dictionary<string, object?> Reach(object character, object? pose, object goals, object? draw = null) =>
+        CharacterIk.Reach(Character(character, "reach"), pose, goals, draw);
+
+    /// <summary>
+    /// Where a body part's joint is under a pose: <c>{ x, y, z }</c> in model space, or <c>{ x, y, depth }</c>
+    /// on the page when given the options you pass to <c>Mesh.draw</c>.
+    /// </summary>
+    public Dictionary<string, object?> Where(object character, object? pose, string part, object? draw = null) =>
+        CharacterIk.Where(Character(character, "where"), pose, part, draw);
     #endregion
 
     #region Private
+    FaceMesh Character(object character, string call) => character switch
+    {
+        FaceMesh m => m,
+        string name => Load(name),
+        _ => throw new ArgumentException($"Character.{call} needs a character from Character.load(name), or its name.", nameof(character))
+    };
+
     /// <summary>The closest few names, by edit distance, for a clip that was not found.</summary>
     static IEnumerable<string> Nearest(string wanted, IEnumerable<string> names) =>
         names.OrderBy(n => Distance(wanted.ToLowerInvariant(), n.ToLowerInvariant())).Take(4);

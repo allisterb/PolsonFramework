@@ -18,6 +18,7 @@ using Xunit.Abstractions;
 /// leg bone points where the source bone points. A retarget that is wrong by a rest-pose offset
 /// renders a plausible figure, so looking is not enough.
 /// </remarks>
+[Collection(TomasRig.Name)]
 public class RetargetTests : TestsRuntime
 {
     const string Project = @"C:\Projects\PolsonRuns\lastlight3";
@@ -110,4 +111,14 @@ public class RetargetTests : TestsRuntime
         var bare = new MeshToolkit(Path.Combine(Project, "characters", "tomas")).Load("rigged.glb");
         Assert.Contains("Character.load", Assert.Throws<ArgumentException>(() => kit.Retarget(bare, "Idle_Rail_Call")).Message);
     }
+}
+
+/// <summary>
+/// The tests that pose lastlight3's Tomas, run one class at a time: <c>Character.load</c> caches one
+/// mesh per character, and reading a bone back after <c>pose</c> reads that shared rig.
+/// </summary>
+[CollectionDefinition(Name)]
+public class TomasRig
+{
+    public const string Name = "Tomas rig";
 }

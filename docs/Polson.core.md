@@ -3624,6 +3624,8 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 - `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `rig` and **`warnings`**.
 - `Character.clips()` → `{ name, seconds, file }[]` — The recorded clips a pose can be taken from.
 - `Character.retarget(character, clip, { at?, time? })` → `object` — **A whole-body pose from one frame of a recorded clip**, keyed by body part, ready for `pose(...)`. `character` is a mesh from `Character.load`, or a name. `at` is a fraction of the clip, `time` is seconds; neither means the first frame.
+- `Character.reach(character, pose, goals, draw?)` → `{ pose, reached, miss }` — **Puts hands and feet where the panel needs them, and points the head**, on top of `pose`. `goals` takes `leftHand`, `rightHand`, `leftFoot`, `rightFoot` as `{ at: { x, y, z } }` or `{ page: { x, y } }`, with an optional `bend`, and `head` as `{ lookAt: … }`. `draw` is the options you pass to `Mesh.draw`, needed for a page point.
+- `Character.where(character, pose, part, draw?)` → `{ x, y, z }` or `{ x, y, depth }` — Where a body part's joint is under a pose: in the character's own space, or on the page given the draw options.
 
 > [!IMPORTANT]
 > **Views decide everything, so make them for this.** One character, one style, one scale, the whole figure in frame, standing in an **A-pose** with the arms clear of the body — a rigger cannot separate an arm drawn against the torso, and nothing can find a head that was cropped off. `front` is required; `back` and a profile each improve the body, and the profile gives the face its shape.
@@ -3685,6 +3687,28 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 > - **The hips turn but do not move.** A crouch or a climb bends the knees without lowering the pelvis, so a foot can leave the floor. Sitting and kneeling clips suffer most.
 > - **Contact is not kept.** A clip's hand on a rail is on *its* rail; on your character the hand lands where that arm, at that length, reaches. Put the prop where the hand is, or adjust the arm.
 > - **Hands take the clip's wrist turn, not its fingers.** A built character's hands are mittens anyway.
+
+> [!TIP]
+> **Then fix the contacts with `Character.reach`.** A clip's hand is on *its* rail; `reach` moves the hand to yours, bending the arm the least it can and leaving the rest of the pose alone, so the performer's lean and weight survive.
+>
+> ```js
+> const tomas = Character.load('tomas');
+> const draw = { x: 420, y: 640, scale: 300, yawDeg: 35 };          // what you will pass to Mesh.draw
+> let pose = Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 });
+> const r = Character.reach(tomas, pose, {
+>     leftHand: { page: { x: 300, y: 470 } },                         // on the rail you drew
+>     head: { lookAt: { x: 700, y: 380 } }                            // at the ship, on the page
+> }, draw);
+> if (!r.reached.leftHand) Stage.note(`rail is ${r.miss.leftHand.toFixed(3)} out of reach; move it or the figure`);
+> Mesh.draw(ctx, tomas.pose(r.pose), draw);
+> ```
+>
+> - **A page point is taken at the depth the joint already has**, so the hand moves across the picture and not toward the camera. Use `at` for a point in the character's own space when depth matters.
+> - **The goal is the wrist**, not the fingertips: aim a little short of where the palm should rest.
+> - **Out of reach is reported, not hidden.** The arm straightens toward the goal, `reached` says `false` and `miss` says by how much. Move the prop or the figure; a stretched arm is not the fix.
+> - **`bend` picks which way the elbow or knee points**: `back`, `forward`, `out`, `in`, `up`, `down`, or a direction. Left out, it bends the way the pose already bends.
+> - **A look turns the head at most 80°**; past that `reached.head` is `false` and the body should turn instead, with `yawDeg`.
+> - **`Character.where` is the other direction**: where a hand is, so a prop can be drawn in it — `Character.where(tomas, r.pose, 'rightHand', draw)`.
 
 > [!TIP]
 > **The body turns; its silhouette is only as good as the reconstruction.** Hands come back as mittens (the reconstruction's voxel grid is coarser than a finger), cloth deforms with the body rather than draping, and a bend held far past the A-pose pinches. For a panel that needs articulate hands or flowing cloth, draw those by construction over the posed body.

@@ -1,4 +1,4 @@
-namespace Polson.Tests.Drawing;
+﻿namespace Polson.Tests.Drawing;
 
 using System;
 using System.Collections.Generic;
@@ -36,6 +36,30 @@ public class CharacterBuilderLiveTests : TestsRuntime
         var crop = new SKBitmap(x1 - x0, sheet.Height - 90);
         sheet.ExtractSubset(crop, new SKRectI(x0, 90, x1, sheet.Height));
         return crop;
+    }
+
+    /// <summary>
+    /// No two body parts are named as one bone, on any rig. Point <c>POLSON_RIGGED_GLB</c> at one.
+    /// </summary>
+    /// <remarks>
+    /// The Warden on lastlight3 had both thighs and the hips named as the root bone: a floor-length
+    /// coat hid her legs, the detected hips sat near the middle, and the namer searched every ancestor
+    /// of the knee rather than stopping where the skeleton branches.
+    /// </remarks>
+    [Fact]
+    public void NoTwoPartsAreNamedAsOneBone()
+    {
+        var glb = Environment.GetEnvironmentVariable("POLSON_RIGGED_GLB");
+        if (glb is null || !File.Exists(glb) || !PoseDetector.Available) { output.WriteLine("NOT RUN: set POLSON_RIGGED_GLB"); return; }
+        var mesh = new MeshToolkit(Path.GetDirectoryName(glb)!).Load(Path.GetFileName(glb));
+        var labels = CharacterBuilder.LabelJoints(mesh);
+        foreach (var (name, handle) in labels.Map.OrderBy(kv => kv.Key))
+            output.WriteLine($"  {name,-14} {handle,-8} {labels.Error[name]:P1}");
+        foreach (var w in labels.Warnings) output.WriteLine("  WARN " + w);
+
+        var shared = labels.Map.GroupBy(kv => kv.Value).Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key}: {string.Join(", ", g.Select(kv => kv.Key))}").ToList();
+        Assert.True(shared.Count == 0, string.Join("; ", shared));
     }
 
     [Fact]

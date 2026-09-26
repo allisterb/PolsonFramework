@@ -65,9 +65,97 @@ public class CharacterToolkit
         using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, CharacterBuilder.Manifest)));
         return (Dictionary<string, object?>)ToClr(doc.RootElement)!;
     }
+    /// <summary>The clips <see cref="Retarget"/> can take a pose from: <c>{ name, seconds, file }</c> each.</summary>
+    /// <remarks>
+    /// From the project's <c>poses/</c> folder first, then the pose library. Where two files carry a
+    /// clip of the same name, the first found wins.
+    /// </remarks>
+    public object?[] Clips() =>
+        [.. PoseRetarget.Clips(projectRoot).Select(c => (object?)new Dictionary<string, object?>
+        {
+            ["name"] = c.Name,
+            ["seconds"] = Math.Round((double)c.Seconds, 3),
+            ["file"] = Path.GetFileName(c.File)
+        })];
+
+    /// <summary>
+    /// A pose for <paramref name="character"/> taken from one frame of a recorded clip:
+    /// <c>tomas.pose(Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 }))</c>.
+    /// </summary>
+    /// <remarks>
+    /// Keyed by body part, so it passes straight to <c>pose(...)</c> and one entry can be replaced
+    /// before it does. <c>at</c> is a fraction of the clip, <c>time</c> is seconds; neither means the
+    /// first frame. <paramref name="character"/> is a mesh from <c>Character.load</c>, or a name.
+    /// </remarks>
+    public Dictionary<string, object?> Retarget(object character, string clip, object? options = null)
+    {
+        var mesh = character switch
+        {
+            FaceMesh m => m,
+            string name => Load(name),
+            _ => throw new ArgumentException("Character.retarget needs a character from Character.load(name), or its name.", nameof(character))
+        };
+        if (mesh.Rig is not { } rig)
+            throw new ArgumentException("Character.retarget needs a rigged character; this mesh carries no skeleton.", nameof(character));
+        ArgumentException.ThrowIfNullOrWhiteSpace(clip);
+
+        var clips = PoseRetarget.Clips(projectRoot);
+        if (clips.Count == 0)
+            throw new InvalidOperationException(
+                $"No pose clips are available. Put .glb clips in the project's {PoseRetarget.ProjectFolder}/ folder, " +
+                "or point Poses:Library at a folder of them.");
+        var found = clips.FirstOrDefault(c => c.Name == clip)
+            ?? throw new ArgumentException($"No clip '{clip}'. Nearest: {string.Join(", ", Nearest(clip, clips.Select(c => c.Name)))}. " +
+                                           "Character.clips() lists them all.", nameof(clip));
+
+        var opt = JsInterop.AsDict(options);
+        float? at = null, time = null;
+        if (opt != null)
+            foreach (var key in opt.Keys)
+            {
+                var k = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+                var v = Convert.ToSingle(opt[key!], System.Globalization.CultureInfo.InvariantCulture);
+                switch (k)
+                {
+                    case "at": at = v; break;
+                    case "time": time = v; break;
+                    default: throw new ArgumentException($"Character.retarget has no option '{k}'. It takes at (0 to 1) or time (seconds).");
+                }
+            }
+        if (at.HasValue && time.HasValue)
+            throw new ArgumentException("Character.retarget takes at or time, not both: they are two ways of naming one moment.");
+        if (at is < 0f or > 1f || (at.HasValue && !float.IsFinite(at.Value)))
+            throw new ArgumentException($"'at' is a fraction of the clip, 0 to 1; got {at}.");
+        if (time is { } tt && (!float.IsFinite(tt) || tt < 0f || tt > found.Seconds))
+            throw new ArgumentException($"'time' is in seconds within the clip, 0 to {found.Seconds:0.###}; got {tt}.");
+
+        return PoseRetarget.Retarget(rig, found, time ?? (at ?? 0f) * found.Seconds);
+    }
     #endregion
 
     #region Private
+    /// <summary>The closest few names, by edit distance, for a clip that was not found.</summary>
+    static IEnumerable<string> Nearest(string wanted, IEnumerable<string> names) =>
+        names.OrderBy(n => Distance(wanted.ToLowerInvariant(), n.ToLowerInvariant())).Take(4);
+
+    static int Distance(string a, string b)
+    {
+        var d = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) d[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            var prev = d[0];
+            d[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var keep = d[j];
+                d[j] = Math.Min(Math.Min(d[j] + 1, d[j - 1] + 1), prev + (a[i - 1] == b[j - 1] ? 0 : 1));
+                prev = keep;
+            }
+        }
+        return d[b.Length];
+    }
+
     string Dir(string name, out string display)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

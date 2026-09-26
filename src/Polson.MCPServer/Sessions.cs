@@ -34,8 +34,14 @@ public sealed class SessionContext
     /// the two must not be confused — an idle sweep touches the second and would silently reset a
     /// run's clock through the first.
     /// </para>
+    /// <para>
+    /// <b>Not the moment the session object happens to be built.</b> Sessions are created lazily, on
+    /// the first script, so a construction-time anchor measured from the first execution — and a run
+    /// that spent five minutes reading the brief and the manuals read <c>1.9</c> when it had used
+    /// five. <see cref="SessionRegistry.RunStartedUtc"/> supplies the real start where there is one.
+    /// </para>
     /// </remarks>
-    public DateTimeOffset StartedUtc { get; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset StartedUtc { get; init; } = DateTimeOffset.UtcNow;
 
     /// <summary>
     /// Per-session scratch storage exposed to the JS engine as the global Session object.
@@ -134,6 +140,15 @@ public sealed class SessionRegistry : IDisposable
 
     #region Properties
     public int Count => sessions.Count;
+
+    /// <summary>When the run this server was started for began, if it serves exactly one.</summary>
+    /// <remarks>
+    /// Set by the stdio server, which a host starts with its session, so its start is the run's start.
+    /// It anchors the <c>default</c> session's clock, which every stdio script shares. Under ADK one
+    /// server serves every run of a project, so after the first run this counts from the server's
+    /// start; ADK's own <c>budget_status</c> is the clock there.
+    /// </remarks>
+    public DateTimeOffset? RunStartedUtc { get; init; }
     #endregion
 
     #region Methods
@@ -145,7 +160,11 @@ public sealed class SessionRegistry : IDisposable
             if (sessions.Count >= maxSessions)
                 throw new InvalidOperationException($"Maximum concurrent session limit ({maxSessions}) reached.");
 
-            return new Lazy<SessionContext>(() => new SessionContext { SessionId = key });
+            return new Lazy<SessionContext>(() => new SessionContext
+            {
+                SessionId = key,
+                StartedUtc = key == "default" && RunStartedUtc is { } started ? started : DateTimeOffset.UtcNow
+            });
         });
 
         var ctx = lazy.Value;

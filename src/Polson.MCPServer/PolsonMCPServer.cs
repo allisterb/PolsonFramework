@@ -25,7 +25,8 @@ public class PolsonMCPServer : Runtime
     {
         var builder = Host.CreateEmptyApplicationBuilder(null);
 
-        var registry = new SessionRegistry();
+        // A host starts this server with its session, so now is when the run began.
+        var registry = new SessionRegistry { RunStartedUtc = DateTimeOffset.UtcNow };
         builder.Services.AddSingleton(registry);
         builder.Services.AddHostedService<IdleSessionSweeper>();
 

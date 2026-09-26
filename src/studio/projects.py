@@ -54,7 +54,10 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
     # second registration point and adding a template is not finishing the job.
     "storyboard_quick": (),
     "storyboard": (),
+    "storyboard_cast": (),
     "cover": (),
+    # The constructed route through a single scene, from Stanchfield's gesture method. No types.
+    "sketch_scene": (),
     "harness": ("image", "infographic", "logo"),
 }
 

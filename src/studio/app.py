@@ -139,6 +139,7 @@ DELIVERABLES: tuple[tuple[str, str], ...] = (
     ("critique_log.md", "the studio's critique of its own passes"),
     ("materials.md", "the materials requisitioned, and what each was for"),
     ("turns.md", "the turn-by-turn record the drawing workflow keeps"),
+    ("sketch.md", "the scene in verbs, and every check the sketch was held to"),
 )
 
 #: The same list as a set, for the membership test the route makes.

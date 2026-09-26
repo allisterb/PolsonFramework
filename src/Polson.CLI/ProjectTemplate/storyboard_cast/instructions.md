@@ -134,7 +134,7 @@ const set = Scene.createSet(Layout.rect(0, 0, 100, 60), {
 ```
 
 Put **every fixed thing** in here. A shot is a crop and a scale of this space, so nothing in it can
-drift between panels. Then plan one shot per panel — `Scene.createShot(set, panel, { shot, focusOn })`
+drift between panels. Then plan one shot per panel — `Scene.createShot(set, panelRect, { shot, focusOn })`
 — with a progression of distances, not eight of the same; `polson://manual/20` §2 says what each rung
 is for, and `shot.backgroundDetail` says how much background that distance wants.
 
@@ -169,13 +169,20 @@ Mesh.draw(ctx, posed, { x: feet.x, y: feet.y + b.y * scale, scale, yawDeg: -30,
                         expression: { browDown: 0.8, mouthFrown: 0.6 } });
 ```
 
-- **Every character arrives standing in the A-pose it was built in**, arms out, and a board of those
-  reads as a line-up. Work out the arms-down pose for each character once, keep it in a `const`, and
-  start every panel from it.
+- **Every character arrives standing in the pose it was built in**, arms out, and a board of those
+  reads as a line-up. **Start a panel from a performed pose instead:**
+  `Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 })` gives a whole-body pose from one frame of
+  a recorded clip, keyed by body part, so you can change the head or one arm before passing it to
+  `pose(...)`. `Character.clips()` lists the 162: idles with a lantern, a torch, at a rail, on the
+  phone, arms folded; greeting, climbing, crouching and more. The hips turn but do not move, so a
+  crouch can lift a foot off the floor, and a clip's hand lands where your character's arm reaches,
+  not on your prop. See `polson://sdk/core/Character`.
 - **`yawDeg` turns the whole character** to face where the panel needs; `pose` moves its parts.
 - **Rotations are about each bone's own axes.** The head turns on `yDeg` and nods on `xDeg`; an A-pose
-  upper arm drops on `zDeg`, **with opposite signs on the two sides**. Change one axis at a time and
-  look.
+  upper arm drops on `zDeg`, **with opposite signs on the two sides: positive lowers the left arm,
+  negative lowers the right**, as in the example above. Measured on three UniRig builds; the other
+  sign raises both arms over the head, so a whole board reads as a surrender. Change one axis at a
+  time and look.
 - **Expressions act on the face**: `browDown`, `browInnerUp`, `eyeSquint`, `eyeWide`, `jawOpen`,
   `mouthSmile`, `mouthFrown` and the rest, `-1` to `1`. See `polson://sdk/core/Mesh`.
 - **Draw back to front.** `Mesh.draw` sorts within one character; two characters drawn in one panel

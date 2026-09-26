@@ -224,7 +224,7 @@ Declares which stage of work you are in, so every script, render and note that f
 - `Stage.begin(name: string)` → `string` — Declares the stage and returns the name as recorded. Beginning a **different** stage closes the previous one first, so two never overlap. Re-declaring the stage you are already in is an announcement, not a transition: it records a continuation and leaves the stage running, so you can safely restate it at the top of each script. Case is ignored when comparing, and the originally recorded spelling is kept.
 - `Stage.end()` — Ends the current stage. Harmless when none is open.
 - `Stage.current` → `string?` — The stage in effect, or **`null`** if none, so `if (!Stage.current)` is the check to write. Outside a project — an ad-hoc engine with no run session — this always reads `null`, even directly after `Stage.begin(...)`, because the stage lives on the session.
-- `Stage.elapsedMinutes` → `number?` — Minutes since this run began, or **`null`** outside a session. This is how you pace a deadline.
+- `Stage.elapsedMinutes` → `number?` — Minutes since this run began, or **`null`** outside a session. This is how you pace a deadline. It counts from when the host started the studio's server, which is the start of the session, not from your first script. **Under ADK one server serves every run of a project**, so after the first run it overstates; `budget_status` is the clock there.
 
 > [!IMPORTANT]
 > **`Date.now()` and `mina.time()` both answer "now", not "since when".** Stamping your own start — `Session.startedAt ??= Date.now()` — measures from whenever you first ran a script, which is not when the run began: twelve minutes spent reading the brief and the manuals before the first execution are recorded as zero. It understates silently and hands back a number that looks right.
@@ -300,6 +300,17 @@ Per-session scratchpad dictionary that persists across multiple script execution
 > A `Map` keeps its entries and loses its identity — `.get` and `.has` are gone, and a plain object
 > is still truthy and still has properties, so nothing announces it. **Store a `Map` as
 > `Object.fromEntries(m)` and rebuild it on the other side**, or keep a plain object throughout.
+>
+> **A stored function is the one value that is not translated**, because it is code: it stays with the
+> script that defined it. Two things follow.
+>
+> - **It runs on the calling script's clock.** Until 2026-09-26 it ran on the *defining* script's, so
+>   every call made more than 30 seconds after that script began threw `The operation has timed out.`
+>   with nothing naming the function. A live run lost fourteen minutes to it and blamed the network.
+> - **Inside it, `Session` is the defining script's scratchpad**, not the caller's: a key set by a
+>   later script is invisible to it, and a key it writes is lost. **Pass what it needs as arguments**
+>   and return what it makes — `Session.sheetOf = cutout => …` is right; one that reads `Session.x`
+>   inside is not.
 
 > [!TIP]
 > **It holds bitmaps and canvases, not just data — and that is the cheapest way to hand work between stages.** Writing a stage to disk and loading it back in the next call costs an encode (~150 ms at 1600 × 1200) and a decode, for a picture only the machine will read. Stashing the bitmap costs neither:
@@ -3611,6 +3622,8 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 - `Character.list()` → `string[]` — The finished characters in this project.
 - `Character.load(name)` → `FaceMesh` — The character, ready to pose and draw. Loaded once per session and reused, so calling it in every script costs nothing after the first.
 - `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `rig` and **`warnings`**.
+- `Character.clips()` → `{ name, seconds, file }[]` — The recorded clips a pose can be taken from.
+- `Character.retarget(character, clip, { at?, time? })` → `object` — **A whole-body pose from one frame of a recorded clip**, keyed by body part, ready for `pose(...)`. `character` is a mesh from `Character.load`, or a name. `at` is a fraction of the clip, `time` is seconds; neither means the first frame.
 
 > [!IMPORTANT]
 > **Views decide everything, so make them for this.** One character, one style, one scale, the whole figure in frame, standing in an **A-pose** with the arms clear of the body — a rigger cannot separate an arm drawn against the torso, and nothing can find a head that was cropped off. `front` is required; `back` and a profile each improve the body, and the profile gives the face its shape.
@@ -3651,9 +3664,27 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 > A sheet drawn by hand or by another tool works the same way, captions and all: the figures are found by the gaps between them. Leave a clear gap; figures touching are read as one.
 
 > [!IMPORTANT]
-> **Left and right are the character's own**, not the page's: `leftForearm` is the arm the character would call its left, whichever way it faces on the page. Rotations are degrees about **the bone's own axes**, and those come from the rigger, not from a convention: on a rigged humanoid a bone's `y` runs along the bone, so on the head `yDeg` turns it and `xDeg` nods it, and on an upper arm hanging out in an A-pose `zDeg` lowers or raises it — with **opposite signs on the two sides**, because the bones mirror. When a pose does not do what you expected, change one axis at a time and look.
+> **Left and right are the character's own**, not the page's: `leftForearm` is the arm the character would call its left, whichever way it faces on the page. Rotations are degrees about **the bone's own axes**, and those come from the rigger, not from a convention: on a rigged humanoid a bone's `y` runs along the bone, so on the head `yDeg` turns it and `xDeg` nods it, and on an upper arm hanging out in an A-pose `zDeg` lowers or raises it — with **opposite signs on the two sides**, because the bones mirror. **Positive lowers the left arm and negative the right**, measured on three UniRig builds; the other sign raises both over the head. When a pose does not do what you expected, change one axis at a time and look.
 >
 > **Read `Character.info(name).warnings` before relying on a character.** A joint that could not be named, a profile the face was built without, or a view whose head had to be placed by the front view's scale is said there and nowhere else. A name missing from `jointMap` is refused by `pose`, with the ones that exist.
+
+> [!TIP]
+> **Take a pose from a performer before you build one from angles.** A pose written joint by joint comes out stiff: nothing in it says where the weight is, how the shoulders answer the hips, or what the free arm does. A recorded clip carries all of that, because a person performed it.
+>
+> ```js
+> const tomas = Character.load('tomas');
+> const pose = Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 });   // leaning on a rail, calling out
+> pose.head = { yDeg: 25 };                                                // then change what the panel needs
+> Mesh.draw(ctx, tomas.pose(pose), { x, y, scale, yawDeg: 35 });
+> ```
+>
+> `Character.clips()` lists what there is. The library is Mesh2Motion's own human clips (CC0): idles with a lantern, a torch or a shield, at a rail, talking on a phone, arms folded; greeting, climbing a ladder, crouching, chopping wood, opening a chest, and the rest — 162 of them. A project's own `poses/` folder of `.glb` clips on the same skeleton is read first.
+>
+> **Every limb ends up pointing where the performer's did** — measured, within a tenth of a degree — whatever rest pose the character was built in. Three things it does not do:
+>
+> - **The hips turn but do not move.** A crouch or a climb bends the knees without lowering the pelvis, so a foot can leave the floor. Sitting and kneeling clips suffer most.
+> - **Contact is not kept.** A clip's hand on a rail is on *its* rail; on your character the hand lands where that arm, at that length, reaches. Put the prop where the hand is, or adjust the arm.
+> - **Hands take the clip's wrist turn, not its fingers.** A built character's hands are mittens anyway.
 
 > [!TIP]
 > **The body turns; its silhouette is only as good as the reconstruction.** Hands come back as mittens (the reconstruction's voxel grid is coarser than a finger), cloth deforms with the body rather than draping, and a bend held far past the A-pose pinches. For a panel that needs articulate hands or flowing cloth, draw those by construction over the posed body.

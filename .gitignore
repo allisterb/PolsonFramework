@@ -474,6 +474,16 @@ docs/internal/
 #     https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite
 #   curl -o models/selfie_multiclass_256x256.tflite \
 #     https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite
+#
+# The pose library for Character.retarget: Mesh2Motion's own human clips, CC0 (Scott Petrovic).
+# Only these two -- the app also ships CMU mocap from a third party and a mocap file that states no
+# source, whose terms are not the author's to give (see reference/README.md).
+#
+#   mkdir -p models/poses
+#   curl -Lo models/poses/human-base-animations.glb \
+#     https://github.com/Mesh2Motion/mesh2motion-app/raw/main/static/animations/human-base-animations.glb
+#   curl -Lo models/poses/human-addon-animations.glb \
+#     https://github.com/Mesh2Motion/mesh2motion-app/raw/main/static/animations/human-addon-animations.glb
 models/
 assets/
 src/UniRig-main

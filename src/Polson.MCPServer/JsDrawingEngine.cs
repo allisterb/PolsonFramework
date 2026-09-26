@@ -193,6 +193,7 @@ public partial class JsDrawingEngine : Runtime
         // out of time still wrote to the scratchpad, and discarding that would make an error lose
         // work the run had already done.
         Dictionary<string, JsValue>? liveSession = null;
+        Engine? sessionEngine = null;
 
         // One pixel view per ImageData, for this engine only: an ImageData kept in Session outlives
         // the engine that first wrapped it, and a view belongs to the realm that made it.
@@ -356,6 +357,7 @@ public partial class JsDrawingEngine : Runtime
             // durable CLR store, so a value the script mutates after storing it is still the value
             // that gets kept - see SessionBridge for what that fixes and why.
             liveSession = SessionBridge.Open(engine, session?.Storage ?? new Dictionary<string, object?>());
+            sessionEngine = engine;
             engine.SetValue("Session", liveSession);
 
             engine.SetValue("Stage", new StageApi(session, Events, executionId));
@@ -846,7 +848,7 @@ public partial class JsDrawingEngine : Runtime
 
         // The scratchpad crosses back here, after every catch, because this is the last moment the
         // engine that owns those values is alive.
-        if (session is not null) SessionBridge.Settle(liveSession, session.Storage);
+        if (session is not null) SessionBridge.Settle(sessionEngine, liveSession, session.Storage);
 
         result.ImageSize = result.ImageBytes?.Length ?? 0;
         result.EncodeTimeMs = encodeSw.ElapsedMilliseconds;
@@ -1054,6 +1056,15 @@ public partial class JsDrawingEngine : Runtime
         if (ex is TypeInitializationException && ex.InnerException is { } reason)
         {
             return $"{message} The reason is: {reason.Message}";
+        }
+
+        // Jint's own time limit throws a bare TimeoutException, whose message names nothing: on a live
+        // run it read as the network, and fourteen minutes went on the wrong hypothesis.
+        if (ex is TimeoutException || ex.InnerException is TimeoutException)
+        {
+            return $"{message} This is the script's {ScriptTimeoutSeconds}-second limit, not a network " +
+                "timeout: the script was stopped and nothing it drew was kept. Awaiting a requisition " +
+                "counts toward it, so requisition in one script and draw in the next.";
         }
 
         if (!message.Contains("maximum number of statements", StringComparison.OrdinalIgnoreCase))

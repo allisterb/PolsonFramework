@@ -136,6 +136,13 @@ public static class CharacterBuilder
         // arm is then its own ancestor nearest the shoulder. A 2D nearest-bone search alone would take
         // whatever bone sits near the shoulder — a strap, a quiver, a slung weapon — where walking up
         // from the elbow can only land on the arm that elbow belongs to.
+        //
+        // **And the walk stops where the skeleton branches**, because a limb's bones end there. It
+        // used to climb all the way to the root, so when a floor-length coat hid the legs and the hip
+        // was detected nearer the middle, both thighs and the hips were named as the root bone — three
+        // names on one bone, and legs that could not be posed apart. The thigh was one step away.
+        IEnumerable<string> Chain(string h) =>
+            Ancestors(h, self: false).TakeWhile(a => !children.TryGetValue(a, out var c) || c.Count <= 1);
         var all = joints.Keys.ToList();
         foreach (var side in new[] { "left", "right" })
         {
@@ -151,7 +158,7 @@ public static class CharacterBuilder
                 var pTip = Lm(side + tip);
                 var jMid = Nearest(pMid, all);
                 var jTip = jMid is null ? null : Nearest(pTip, Descendants(jMid).DefaultIfEmpty(jMid));
-                var jRoot = jMid is null ? null : Nearest(pRoot, Ancestors(jMid, self: false).DefaultIfEmpty(jMid));
+                var jRoot = jMid is null ? null : Nearest(pRoot, Chain(jMid).DefaultIfEmpty(jMid));
                 Name(side + rootName, jRoot, pRoot);
                 Name(side + midName, jMid, pMid);
                 Name(side + tipName, jTip, pTip);
@@ -579,6 +586,7 @@ public static class CharacterBuilder
         if (body.Rig is { } rig && manifest["joints"] is JsonObject map)
             foreach (var (name, handle) in map)
                 if (handle?.GetValue<string>() is { } h) rig.Aliases[name] = h;
+        if (body.Rig is { } faced && manifest["facing"]?.GetValue<string>() == "-Z") faced.FrontSign = -1;
 
         if (!File.Exists(Path.Combine(dir, FaceObj)) || manifest["face"]?["anchors"] is not JsonObject anchors)
             return body;

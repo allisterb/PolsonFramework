@@ -391,6 +391,24 @@ internal class Program : Runtime
                  + "(Debian: apt-get install potrace) or set Tools:Potrace.");
     }
 
+    /// <summary>Points <c>Character.retarget(...)</c> at a pose library, and says what it found.</summary>
+    /// <remarks>
+    /// <c>Poses:Library</c> overrides discovery, which looks for a <c>models/poses/</c> folder above the
+    /// assembly. A project's own <c>poses/</c> folder is read first either way.
+    /// </remarks>
+    static void ConfigurePoses()
+    {
+        if (Setting("Poses:Library") is { Length: > 0 } configured)
+            PoseRetarget.LibraryOverride = configured;
+
+        var folders = PoseRetarget.Folders(null);
+        if (folders.Count > 0)
+            Info("Pose library: {0}.", string.Join(", ", folders));
+        else
+            Info("No pose library found; Character.retarget reads only a project's poses/ folder. "
+                 + "Set Poses:Library, or put clips in models/poses/.");
+    }
+
     /// <summary>Points <c>Face.detect(...)</c> at a backend, and says whether it found one.</summary>
     /// <remarks>
     /// <para>
@@ -456,6 +474,7 @@ internal class Program : Runtime
         }
 
         ConfigureTracing();
+        ConfigurePoses();
         ConfigureFaceDetection();
         ConfigureCharacterGeneration();
 

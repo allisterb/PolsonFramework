@@ -1,4 +1,4 @@
-namespace Polson.Drawing.Skia;
+﻿namespace Polson.Drawing.Skia;
 
 using System;
 using System.Collections.Generic;
@@ -998,18 +998,25 @@ public class CanvasRenderingContext2D
     #endregion
 
     #region Image & Cross-Engine SVG Drawing
+    /// <remarks>
+    /// Takes anything that carries its own pixels — a requisitioned cell, material or photograph — as
+    /// well as a bitmap or canvas, and refuses anything else by name. It used to return silently on an
+    /// unknown type, and a live run drew three blank character sheets that way and nearly handed them
+    /// to a four-minute build: the call "worked", took 0 ms and left the canvas white.
+    /// </remarks>
     public void DrawImage(object imageObj, float arg1, float arg2, float? arg3 = null, float? arg4 = null,
         float? arg5 = null, float? arg6 = null, float? arg7 = null, float? arg8 = null)
     {
-        var bmp = ExtractBitmap(imageObj);
-        if (bmp == null)
+        if (imageObj is SnapPaper paper)
         {
-            if (imageObj is SnapPaper paper)
-            {
-                DrawSvg(paper, arg1, arg2, arg3, arg4);
-            }
+            DrawSvg(paper, arg1, arg2, arg3, arg4);
             return;
         }
+
+        using var decoded = ExtractBitmap(imageObj) is null && imageObj is IDataUriSource source ? Decode(source) : null;
+        var bmp = ExtractBitmap(imageObj) ?? decoded ?? throw new ArgumentException(
+            $"drawImage cannot draw a {imageObj?.GetType().Name ?? "null"}. It takes a bitmap, a canvas, a paper, "
+            + "or a requisitioned cell, material or photograph.", nameof(imageObj));
 
         var sampling = new SKSamplingOptions(SKFilterMode.Linear);
         using var paint = _currentState.CreateImagePaint();
@@ -1137,6 +1144,18 @@ public class CanvasRenderingContext2D
 
     public ImageData CreateImageData(ImageData other) =>
         new(other.Width, other.Height);
+
+    /// <summary>Decodes an asset's own pixels, or throws naming it when there are none.</summary>
+    private static SKBitmap Decode(IDataUriSource source)
+    {
+        var uri = source.ToDataUri();
+        var comma = uri.IndexOf(',');
+        if (comma < 0) throw new ArgumentException($"drawImage: this {source.GetType().Name} carries no image.");
+        SKBitmap? bmp = null;
+        try { bmp = SKBitmap.Decode(Convert.FromBase64String(uri[(comma + 1)..])); }
+        catch (Exception ex) when (ex is ArgumentException or FormatException) { }   // Skia throws rather than returning null
+        return bmp ?? throw new ArgumentException($"drawImage: this {source.GetType().Name}'s image could not be decoded.");
+    }
 
     private static SKBitmap? ExtractBitmap(object obj) => obj switch
     {

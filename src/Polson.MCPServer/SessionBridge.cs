@@ -1,10 +1,13 @@
-namespace Polson.MCPServer;
+﻿namespace Polson.MCPServer;
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 using Jint;
 using Jint.Native;
+using Jint.Native.Function;
+using Jint.Runtime.Interop;
 
 /// <summary>
 /// Carries the <c>Session</c> scratchpad across the boundary between a script and the run.
@@ -40,9 +43,27 @@ using Jint.Native;
 /// what was avoidable was doing it three statements too early. <c>SessionMarshallingTests</c> pins
 /// both halves.
 /// </para>
+/// <para>
+/// <b>A function is the one value that cannot be translated</b>, because it is code bound to the engine
+/// that compiled it: its closure, its globals and its constraints all live there. So it is kept with
+/// that engine, and each call from a later script first resets the home engine's constraints. Without
+/// the reset a stored function runs on the clock of the script that <i>defined</i> it, and every call
+/// made more than one script-timeout after that throws <c>The operation has timed out.</c> — which a
+/// live run spent fourteen minutes attributing to the network. <c>SessionFunctionClockTests</c> pins it.
+/// </para>
 /// </remarks>
 internal static class SessionBridge
 {
+    #region Types
+    /// <summary>A function kept in the scratchpad, with the engine it belongs to.</summary>
+    internal sealed record StoredFunction(Engine Home, Function Code);
+    #endregion
+
+    #region Fields
+    /// <summary>The wrapper each <see cref="StoredFunction"/> was given, so settling it again keeps the original.</summary>
+    static readonly ConditionalWeakTable<JsValue, StoredFunction> wrappers = new();
+    #endregion
+
     #region Methods
     /// <summary>The scratchpad as the engine should see it: live values, rehydrated.</summary>
     /// <remarks>
@@ -58,7 +79,7 @@ internal static class SessionBridge
         {
             // One unreadable entry must not cost the whole scratchpad: a script that stored
             // something exotic last time should lose that key, not every key.
-            try { live[key] = JsValue.FromObject(engine, value); }
+            try { live[key] = value is StoredFunction stored ? Wrap(engine, stored) : JsValue.FromObject(engine, value); }
             catch (Exception ex) { Runtime.Warn("Session key '{0}' could not be restored: {1}", key, ex.Message); }
         }
 
@@ -70,16 +91,41 @@ internal static class SessionBridge
     /// Replaces rather than merges, so a <c>delete Session.x</c> during the run is carried through
     /// instead of leaving the old value standing — the live map is the whole truth by this point.
     /// </remarks>
-    public static void Settle(Dictionary<string, JsValue>? live, IDictionary<string, object?> settled)
+    public static void Settle(Engine? engine, Dictionary<string, JsValue>? live, IDictionary<string, object?> settled)
     {
         if (live is null) return;
 
         settled.Clear();
         foreach (var (key, value) in live)
         {
-            try { settled[key] = value.ToObject(); }
+            try
+            {
+                settled[key] = wrappers.TryGetValue(value, out var kept) ? kept
+                    : value is Function code && engine is not null ? new StoredFunction(engine, code)
+                    : value.ToObject();
+            }
             catch (Exception ex) { Runtime.Warn("Session key '{0}' could not be kept: {1}", key, ex.Message); }
         }
+    }
+
+    /// <summary>A stored function as the calling engine sees it.</summary>
+    /// <remarks>
+    /// Arguments cross as CLR values and are rebuilt in the home engine, and the result comes back the
+    /// same way — which is what the delegate this replaces did, so an SDK object passes through as
+    /// itself. The reset gives each call the home engine's full limits; the caller's own limit is
+    /// checked again when control returns, so a call that never returns is still stopped.
+    /// </remarks>
+    static JsValue Wrap(Engine engine, StoredFunction stored)
+    {
+        var wrapper = new ClrFunction(engine, "stored", (_, args) =>
+        {
+            stored.Home.Constraints.Reset();
+            var homeArgs = new JsValue[args.Length];
+            for (var i = 0; i < args.Length; i++) homeArgs[i] = JsValue.FromObject(stored.Home, args[i].ToObject());
+            return JsValue.FromObject(engine, stored.Code.Call(JsValue.Undefined, homeArgs).ToObject());
+        });
+        wrappers.AddOrUpdate(wrapper, stored);
+        return wrapper;
     }
     #endregion
 }

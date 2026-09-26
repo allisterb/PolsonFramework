@@ -226,10 +226,20 @@ public class LayoutToolkit
     /// <c>ctx.measureWrappedText(...)</c> and a hand-written literal without any of them knowing
     /// about each other.
     /// </remarks>
+    /// <summary>What a value was, for an error that has to say what it received.</summary>
+    static string Describe(object? value) => value switch
+    {
+        null => "nothing",
+        string s => $"the string '{s}'",
+        double or float or int or long => $"the number {Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)}",
+        _ => $"a {value.GetType().Name}"
+    };
+
     internal static RectValue AsRect(object rect)
     {
         var dict = JsInterop.AsDict(rect)
-            ?? throw new ArgumentException("Layout expects a { x, y, width, height } rectangle.");
+            ?? throw new ArgumentException($"Layout expects a {{ x, y, width, height }} rectangle; got {Describe(rect)}."
+                + (rect is double or float or int or long ? " Pass the rectangle itself — a panel from Layout.grid(...), say — not its index." : ""));
 
         return new RectValue(Field(dict, "x"), Field(dict, "y"), Field(dict, "width"), Field(dict, "height"));
     }

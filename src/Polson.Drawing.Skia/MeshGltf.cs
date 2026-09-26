@@ -153,6 +153,7 @@ internal sealed class MeshRig
         }
 
         JointNames = [.. handles];
+        FileNodes = fileOfHandle;
 
         // **Where each bone sits in the bind pose, from its inverse bind matrix** — the one place a
         // glTF states a joint's position in the same space as the skinned vertices. Used to put
@@ -185,6 +186,13 @@ internal sealed class MeshRig
 
     /// <summary>Each bone's position in the bind pose, by handle.</summary>
     internal Dictionary<string, SKPoint3> JointBind { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The file node behind each bone, by handle: its rest transforms, for retargeting.</summary>
+    internal IReadOnlyDictionary<string, Node> FileNodes { get; }
+
+    /// <summary>+1 when the model faces +Z, as glTF intends; -1 when it was built facing −Z.</summary>
+    /// <remarks>Set from a character's manifest; a file loaded on its own is taken at glTF's word.</remarks>
+    internal int FrontSign { get; set; } = 1;
 
     /// <summary>Each bone's parent bone, by handle; roots are absent.</summary>
     internal Dictionary<string, string> JointParent { get; } = new(StringComparer.Ordinal);
@@ -283,6 +291,9 @@ internal sealed class MeshRig
             Reference = bind ?? placed
         };
     }
+
+    /// <summary>Where a bone sits as last evaluated — after the most recent pose — in model space.</summary>
+    internal System.Numerics.Vector3 EvaluatedAt(string handle) => nodes[handle].ModelMatrix.Translation;
 
     /// <summary>Resets to bind, applies the rotations, and captures the result.</summary>
     internal FaceMesh Pose(IDictionary? pose, SKPoint3[] bind)

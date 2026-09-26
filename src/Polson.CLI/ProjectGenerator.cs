@@ -592,6 +592,10 @@ internal static class ProjectGenerator
         // plus the passes that follow seeing what came back. Longer than `storyboard_quick`, whose
         // whole point is that it buys nothing, and far shorter than `painting`, which constructs.
         ["cover"] = 25,
+        // Thirty against `drawing`'s forty-five: one scene, constructed from mannequins and taken no
+        // further than a rough, with no turns to wait on a director between. Seven stages, each one
+        // script and one check, and the figures are built by calls rather than by hand.
+        ["sketch_scene"] = 30,
         ["infographic"] = 30,
         // Same allowance as `infographic`: the vector discipline changes what is built, not how long
         // it takes. Two Apollo vector runs finished inside it, the longer at 18.6 minutes.
@@ -1334,6 +1338,10 @@ internal static class ProjectGenerator
         // workflow cannot compose. 16 is here rather than in any other workflow because this is the
         // only one where buying material is the intended route rather than a last resort.
         ["cover"] = ["09", "16", "20"],
+        // Gesture is the method and the line of action is its first step; composition carries the
+        // mood family, staging the camera if the brief implies one. 23 is absent: at sketch size the
+        // head's tilt and the look carry the expression, and the instructions name it by URI.
+        ["sketch_scene"] = ["28", "24", "09", "20"],
         ["painting"] = ["09", "07"],
         ["vector_infographic"] = ["09", "13"],
         ["infographic"] = ["09", "13"],

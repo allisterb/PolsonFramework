@@ -808,5 +808,16 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 >
 > **Poses are rotations about each bone's own axes**, which the rigger chose. On a humanoid the head
 > turns on `yDeg` and nods on `xDeg`, and an A-pose upper arm drops on `zDeg` with opposite signs on
-> the two sides. Change one axis at a time and look — a pose that surprises you is usually the right
+> the two sides: **positive lowers the left arm, negative the right**, measured on three UniRig builds
+> (lastlight3, 2026-09-26). The other sign raises both arms over the head. Change one axis at a time and look — a pose that surprises you is usually the right
 > bone about the wrong axis, not the wrong bone.
+>
+> **A performed pose is the better start than angles.** `Character.retarget(character, clip, { at })`
+> takes one frame of a recorded humanoid clip and returns it as a pose keyed by body part, which goes
+> straight to `pose(...)` after you change whatever the panel needs; `Character.clips()` lists the
+> library. Written joint by joint, a pose comes out stiff, because nothing in the angles says where
+> the weight is or how the shoulders answer the hips — a performer's frame carries both. The method is
+> Mesh2Motion's chain retargeting (Scott Petrovic, MIT), with each limb aimed along its own bone so a
+> character built in any rest pose takes it; its clips are the author's own, CC0. **The hips turn and do
+> not travel**, so a crouch lifts a foot off the floor, and a clip's hand lands where your character's
+> arm reaches, not on your prop.

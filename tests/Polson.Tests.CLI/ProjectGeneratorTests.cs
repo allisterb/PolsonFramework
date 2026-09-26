@@ -1500,6 +1500,7 @@ public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
     [InlineData("painting")]
     [InlineData("comic")]
     [InlineData("drawing")]
+    [InlineData("sketch_scene")]
     public void TestAPictureWorkflowSaysWhereTheFinishedPictureGoes(string workflow)
     {
         Assert.True(ProjectGenerator.Create(Options($"out-{workflow}", o => o.Workflow = workflow)));

@@ -313,9 +313,22 @@ Parametric 8-head proportional full-body anatomical joint model returned by `Dra
     "leftArm": { "type": "object", "properties": { "shoulder": { "type": "object" }, "elbow": { "type": "object" }, "wrist": { "type": "object" }, "hand": { "type": "object" } } },
     "rightArm": { "type": "object", "properties": { "shoulder": { "type": "object" }, "elbow": { "type": "object" }, "wrist": { "type": "object" }, "hand": { "type": "object" } } },
     "leftLeg": { "type": "object", "properties": { "hip": { "type": "object" }, "knee": { "type": "object" }, "ankle": { "type": "object" }, "foot": { "type": "object" } } },
-    "rightLeg": { "type": "object", "properties": { "hip": { "type": "object" }, "knee": { "type": "object" }, "ankle": { "type": "object" }, "foot": { "type": "object" } } }
+    "rightLeg": { "type": "object", "properties": { "hip": { "type": "object" }, "knee": { "type": "object" }, "ankle": { "type": "object" }, "foot": { "type": "object" } } },
+    "lineOfAction": {
+      "type": "object",
+      "description": "The torso's centre line, reported for every figure whether or not pose.lineOfAction bent it.",
+      "properties": {
+        "shape": { "type": ["string", "null"], "enum": ["C", "S", null], "description": "The shape asked for, or null when none was." },
+        "turnDeg": { "type": "number", "description": "Degrees the line was asked to turn end to end, counting both bends." },
+        "waistDeg": { "type": "number", "description": "The bend at the waist, hinged at the navel." },
+        "neckDeg": { "type": "number", "description": "The bend at the neck. Opposite in sign to waistDeg for an S." },
+        "swing": { "type": "number", "description": "How far the centre line bows off its chord, in head units." },
+        "points": { "type": "array", "items": { "type": "object" }, "description": "Pelvis, navel, ribcage, neck, head and crown, bottom to top." },
+        "d": { "type": "string", "description": "A smooth curve through the points, as SVG path data." }
+      }
+    }
   },
-  "required": ["headUnit", "totalHeight", "head", "neck", "sternum", "clavicles", "ribcage", "navel", "pelvis", "crotch", "leftArm", "rightArm", "leftLeg", "rightLeg"]
+  "required": ["headUnit", "totalHeight", "head", "neck", "sternum", "clavicles", "ribcage", "navel", "pelvis", "crotch", "leftArm", "rightArm", "leftLeg", "rightLeg", "lineOfAction"]
 }
 ```
 

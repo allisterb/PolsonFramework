@@ -553,6 +553,13 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
     /// <summary>The ids of the sheets passed as <see cref="CutoutOptions.Reference"/>. Empty when none was.</summary>
     public IReadOnlyList<string> References { get; init; } = [];
 
+    /// <summary>What looks wrong with this sheet, in words. Empty is the expected result.</summary>
+    /// <remarks>
+    /// Today: a cell that is nearly all opaque, because its ground was not keyed out. <see cref="Success"/>
+    /// stays true, since the generation worked and the other cells may be fine.
+    /// </remarks>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
     /// <summary>The cell for a variant, or null. Case-insensitive.</summary>
     /// <remarks>
     /// Null rather than a throw, because a panel loop asks this about every character it might show
@@ -576,8 +583,9 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
         json["split"] = Split;
         json["backgroundColor"] = BackgroundColor;
         json["keyColor"] = KeyColor;
-        json["references"] = References.ToList();
-        json["cells"] = Cells.Select(c => c.ToJSON()).ToList();
+        json["references"] = References.ToArray();
+        json["warnings"] = Warnings.ToArray();
+        json["cells"] = Cells.Select(c => c.ToJSON()).ToArray();
         return json;
     }
 }

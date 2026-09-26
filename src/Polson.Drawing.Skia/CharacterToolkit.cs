@@ -87,10 +87,15 @@ public class CharacterToolkit
         return dir;
     }
 
+    /// <remarks>
+    /// Arrays become CLR arrays, not lists: the engine hands a script an array as a real JS array, and a
+    /// list as a wrapper that <c>JSON.stringify</c> cannot serialise, so <c>JSON.stringify(info.warnings)</c>
+    /// killed the script it was in (lastlight2, 2026-09-25).
+    /// </remarks>
     static object? ToClr(JsonElement e) => e.ValueKind switch
     {
         JsonValueKind.Object => e.EnumerateObject().ToDictionary(p => p.Name, p => ToClr(p.Value)),
-        JsonValueKind.Array => e.EnumerateArray().Select(ToClr).ToList(),
+        JsonValueKind.Array => e.EnumerateArray().Select(ToClr).ToArray(),
         JsonValueKind.String => e.GetString(),
         JsonValueKind.Number => e.GetDouble(),
         JsonValueKind.True => true,

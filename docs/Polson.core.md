@@ -74,7 +74,7 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
   >
   > Every inlined render is recorded as a `script.bytesInlined` event carrying the byte and character counts, so a run that spent its context this way says so afterwards.
 
-  - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. **Both are relative to the project directory, and a path resolving outside it is refused** — an absolute path or a `..` traversal fails with a message naming the project root rather than writing somewhere unexpected. Missing intermediate directories are created for you. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion).
+  - **Direct-to-Disk Rendering (`outFile`, `outSvg`):** Agents can pass `outFile` (e.g. `'artifacts/stage1.webp'`) to write the rendered image directly to disk, and `outSvg` (e.g. `'artifacts/stage1.svg'`) for vector markup. **Both are relative to the project directory, and a path resolving outside it is refused** — an absolute path or a `..` traversal fails with a message naming the project root rather than writing somewhere unexpected. Missing intermediate directories are created for you. When `outFile` is supplied, `result.ImageFilePath` contains the saved path and `result.ImageBytes` is omitted by default to eliminate token bloat in LLM contexts (use `includeBytes: true` to force inclusion). **If the script produced no image, a call with `outFile` fails** and says so, rather than succeeding with no file: a script renders what it returns, or else the last canvas or paper it created, and in a script that uses `await` the last line is only the result when written with `return`.
     > [!IMPORTANT]
     > **`outSvg` needs a vector document to write.** It saves the markup of the `SnapPaper` the script built, so a script that built none has nothing to save. A script that draws entirely on a raster canvas has no markup to save, so `outSvg` writes **no file** and the run still reports success — the response carries a `[WARN] outSvg … wrote nothing` line, but by then the stage is drawn. **If the brief asks for an SVG, build the scene on `Snap(width, height)` from the first script.** Read `polson://manual/14` before choosing the surface.
 
@@ -102,6 +102,8 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
 - **Logging & Output:** Output via `console.log(...)`, `log(...)`, `error(...)`, or `table(...)`.
   > [!IMPORTANT]
   > **`JSON.stringify` on an SDK result is safe, and gives you the documented names.** A result carrying an image — `PhotoAsset`, `MaterialAsset`, `BackdropPlate`, `MatteAsset`, `ImageData` — serialises its pixels as a **`byteLength`** rather than transcribing them, and every key comes back in the camelCase spelling this reference uses, so `JSON.parse(JSON.stringify(photo)).aspectRatio` is the number you expect. The real buffer is untouched: `photo.bytes` and `imageData.data` are unchanged.
+  >
+  > **Lists and vector elements serialise too.** A list the SDK hands back — `gradient.stops()`, `cutout.cells`, `paper.selectAll(...)` — comes out as a JSON array, and a `SnapElement` (a paper, a gradient, a shape) as its markup: `{ type, id, attributes, text, children }`, never its `parent` or `paper`. Until 2026-09-25 either one stopped the script, past any `try/catch`.
   >
   > **This was not true before 2026-09-08 and the failure was expensive.** Stringifying walked the object behind the API, so it emitted the raw bytes as a decimal array under PascalCase keys — one 960px photograph measured **523,295 characters**, about six times the file's own size, and a 1600 × 1200 `ImageData` would have produced roughly **30 MB of text**.
   >
@@ -176,7 +178,7 @@ const draw = has(ctx, 'drawMannequinWireframe') ? 'drawMannequinWireframe'
 > [!TIP]
 > `typeof ctx.foo === 'function'` works too and is often more natural. Prefer `has` when you want the *documented* surface rather than whatever reflection finds — `has(ctx, 'getType')` is `false` where `typeof` would say `function` — and when you are about to pair it with `suggest`. **`'foo' in ctx` cannot answer this**: on an SDK object every name reports as present, for the reason set out under the execution model.
 
-It answers for the **documented surface**, so `has(ctx, 'getType')` is `false` even though the CLR method is there. On `Session` it answers for keys, since that is what a scratchpad has. On a list it answers `true` for anything, because array methods are attached rather than declared and a false *no* would be worse than an honest *maybe* — just call it, and a real absence still says so.
+It answers for the **documented surface**, so `has(ctx, 'getType')` is `false` even though the CLR method is there. On `Session` it answers for keys, since that is what a scratchpad has. On a list it answers for the list's own members, an index, `length`, and the `Array.prototype` methods, which are attached rather than declared — so `has(stops, 'filter')` is `true` and `has(stops, 'nonexistent')` is `false`.
 
 ### `suggest(object: any, name: string)` → `string`
 What to write instead. Same advice a failed access gives, without having to fail:
@@ -628,6 +630,13 @@ and the results chain: `a.union(b).subtract(c)`.
 > [!NOTE]
 > The result is normalised, so it draws the same under either fill rule and you never have to know
 > which one a boolean operation happened to produce.
+- `path.area` → `number` — The area it fills, in square pixels. Holes are subtracted.
+- `path.isEmpty` → `boolean` — Whether it fills nothing. The answer to *do these overlap?* is `!a.intersect(b).isEmpty`.
+- `path.contains(x: number, y: number)` → `boolean` — Whether the point is inside the fill.
+
+> [!TIP]
+> **Ask the geometry, not a render.** Before these, *how much of this arm is clear of the torso* meant filling both on a scratch canvas and reading its palette back. Now it is `arm.subtract(torso).area / arm.area`, exact and one line.
+
 - `path.dispose()` — Releases the native path.
 
 ## `CanvasRenderingContext2D`
@@ -785,7 +794,7 @@ Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with
 > lost two scripts guessing `ctx.drawMannequinWireframe` and `ctx.drawLoomisWireframe`, so it is worth
 > checking the list above rather than assuming a shortcut exists.
 
-`ctx.drawHand` · `ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
+`ctx.drawHand` · `ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawGestureContour` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
 
 Parameters and semantics are documented under `polson://sdk/core/Drawing` and `polson://sdk/core/Logo`. Use whichever reads better; the shortcut form suits long chains on one context.
 
@@ -1608,15 +1617,35 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.createVolumetricSphereShader(options?: { lightColor?: string, baseColor?: string, shadowColor?: string })` → `SKShader` — SkSL procedural 3D sphere lighting shader.
 
 ## Full-Body Anatomy, Mannequins & Expressions
-- `Drawing.createMannequinFigure(originX: number, originY: number, totalHeight?: number, options?: { shoulderTiltDeg?: number, pelvicTiltDeg?: number, spineOffset?: number, shoulderSpanHeads?: number })` → `object` — Computes full 8-head proportional skeletal joint nodes (Head, Clavicles, Sternum, Ribcage, Spine, Pelvis, Hips, Knees, Ankles, Feet, Shoulders, Elbows, Wrists, Hands).
+- `Drawing.createMannequinFigure(originX: number, originY: number, totalHeight?: number, options?: { shoulderTiltDeg?: number, pelvicTiltDeg?: number, spineOffset?: number, shoulderSpanHeads?: number, pose?: object })` → `object` — Computes full 8-head proportional skeletal joint nodes (Head, Clavicles, Sternum, Ribcage, Spine, Pelvis, Hips, Knees, Ankles, Feet, Shoulders, Elbows, Wrists, Hands). `pose` takes `spineDeg`, `neckDeg`, `lineOfAction`, and `leftArm`/`rightArm` (`shoulderDeg`, `elbowDeg`) and `leftLeg`/`rightLeg` (`hipDeg`, `kneeDeg`); see `polson://manual/24` and `polson://manual/08`.
 > [!TIP]
 > **`shoulderSpanHeads` is in head units and defaults to `1.8`, which is narrower than any published canon** — it is a shoulder-*joint* span. The figure canons measure different things and all are usable: Loomis gives `2.33` for the figure at its widest and about `2.0` for the shoulder "cape"; Faragasso, after Reilly, gives `2.67` across. Pick one to suit the build you are drawing. See `polson://manual/08` §1.
 
 The figure also reports what the pose did to it, which is what a later pass reads instead of keeping the pose object around:
 
 - `figure.bounds` → `Rect` — the extent of every mass, as `{ x, y, width, height, x2, y2, cx, cy }`. Closed-form, so it costs no paths and is safe in a loop.
-- `figure.head.angleDeg` → `number` — how far the head turned, `spineDeg + neckDeg`.
-- `figure.ribcage.tiltDeg` → `number` — `shoulderTiltDeg + spineDeg`. `figure.pelvis.tiltDeg` is the pelvic tilt alone, because the pelvis is the pivot the spine leans over.
+- `figure.head.angleDeg` → `number` — how far the head turned: `spineDeg + neckDeg`, plus both bends of a line of action.
+- `figure.ribcage.tiltDeg` → `number` — `shoulderTiltDeg + spineDeg`, plus the waist bend of a line of action. `figure.pelvis.tiltDeg` is the pelvic tilt alone, because the pelvis is the pivot the spine leans over.
+- `figure.lineOfAction` → `{ shape, turnDeg, waistDeg, neckDeg, swing, points, d }` — the torso's centre line, on **every** figure, bent or not. `swing` is how far it bows off its own chord in head units; `d` is SVG path data, so `ctx.stroke(new CanvasPath(figure.lineOfAction.d))` draws it.
+
+### The line of action — `pose.lineOfAction`
+
+`pose.lineOfAction: { shape?: 'C' | 'S', turnDeg: number }` bends the torso into a curve. `turnDeg` is how many degrees the line turns end to end, counting both bends, positive toward screen right as `spineDeg` is; `shape` defaults to `'C'`.
+
+```javascript
+const recoil = Drawing.createMannequinFigure(200, 40, 380, { pose: {
+    lineOfAction: { shape: 'C', turnDeg: 40 },
+    leftArm: { shoulderDeg: 128, elbowDeg: -48 }, rightArm: { shoulderDeg: 42, elbowDeg: -56 } } });
+Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
+    'swing ' + recoil.lineOfAction.swing.toFixed(2) + ' H');
+```
+
+> [!IMPORTANT]
+> **`spineDeg` leans; `lineOfAction` curves, and they are different things.** `spineDeg` rotates everything above the pelvis as one rigid piece, which moves the centre line without bending it: a figure at `spineDeg: 30` measures exactly the same `swing` as a standing one, 0.06 H. A C of the same thirty degrees measures 0.25 H. The two compose, so lean with one and curve with the other.
+>
+> The bend happens where a torso bends. Head, ribcage and pelvis are solids that keep their shape; the **waist** (hinged at the navel) and the **neck** are where the curve goes, which is Walt Stanchfield's solid-flexible construction (*Drawn to Life*, ch. 25). A **C** bends both the same way and the head ends turned by the whole amount; an **S** bends the neck back against the waist, so the head comes back near upright. The split between the two bends comes from the chain's own segment lengths rather than from a chosen constant, and `waistDeg`/`neckDeg` report what it was.
+>
+> **The torso only.** The legs are still posed with `hipDeg` and `kneeDeg`, so a line of action running through the whole figure — down the supporting leg — is the torso's curve continued by hand. An unknown shape, an unknown key, or more than 120 degrees of turning (where the waist and neck fold the figure through itself) is refused by name.
 
 > [!IMPORTANT]
 > **A posed figure's extent is not its height, and this is the commonest way a figure runs off a panel.** A thrown arm reaches far wider than the canon ever does: the same pose measured 345 × 1013 standing and **938 × 954** in a lunge. Size to `bounds`, never to `totalHeight`.
@@ -1650,6 +1679,42 @@ The figure also reports what the pose did to it, which is what a later pass read
 
 - `Drawing.drawMannequinWireframe(ctx: CanvasRenderingContext2D, figureObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders non-repro blue gesture and joint circle hinges.
 - `Drawing.drawMannequinSolid(ctx: CanvasRenderingContext2D, figureObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders shaded volumetric 3D masses (cranial sphere, ribcage egg, pelvic basin, limb cylinders, and box hands/feet).
+- `Drawing.createGestureContour(figureObj: object, options?: { padding?: number })` → `{ stretch: CanvasPath, squash: CanvasPath, parts, padding }` — The figure **lined the way a gesture drawer lines it: straight on the stretch side, curved on the squash side.** `parts` has `leftArm`, `rightArm`, `leftLeg` and `rightLeg`, each `{ stretch, squash, bendDeg, straight }`, and `torso`, `{ stretchSide, leftLength, rightLength, shortfall }`. Open paths: stroke them, do not fill them.
+- `Drawing.drawGestureContour(ctx: CanvasRenderingContext2D, figureObj: object, options?: { padding?: number, strokeColor?: string, strokeWidth?: number, stretchWidth?: number, squashWidth?: number })` → the same — Strokes both and returns what it drew.
+
+> [!TIP]
+> **Why it exists: a capsule has the same line on both sides of a bent elbow, and a drawn arm does not.** Walt Stanchfield's rule is that a straight line stands for a stretch and a bent one for a squash (*Drawn to Life*, ch. 13, 19, 24) — so the outside of a bend is two straight lines meeting in an angle at the joint, and the inside is one curve folding into it. `createFigureGeometry` gives the right **mass** and this gives the right **line** over it:
+>
+> ```js
+> ctx.fillStyle = '#e4ddcc';
+> ctx.fill(Drawing.createFigureGeometry(fig).silhouette);        // the mass, faint
+> const lines = ctx.drawGestureContour(fig, { stretchWidth: 2.6, squashWidth: 1.6 });
+> log('stretch side: ' + lines.parts.torso.stretchSide);
+> ```
+>
+> **Nothing here is a chosen constant.** The inside of each bend is the joint's own bisector; the squash curve passes through the joint's inner edge at the geometry's radius, so the line sits on the mass; and the torso's stretch is simply its **longer** side, shoulder to hip, with the other side folded inward in proportion to how much shorter it is. A limb bent less than 8° has no inside and is stretched on both sides; a torso whose sides are within 3% has `stretchSide: null`.
+>
+> **The default standing figure is not level — it stands in contrapposto**, shoulders at −6° and pelvis at +6°, so its torso reports a stretch side too. That is the pose, not an error: a hip-shot stance *is* a stretch and a squash. Pass `shoulderTiltDeg: 0, pelvicTiltDeg: 0` for a figure with none.
+>
+> **Line weight is yours.** `stretchWidth` and `squashWidth` default to one `strokeWidth`, because the source distinguishes the sides by the *shape* of the line rather than its weight. Hands, feet and the head are left to their own drawers. `padding` moves every line out with the mass, which is how a sleeve or a trouser leg is lined — the same padding `createFigureGeometry` takes.
+- `Drawing.findTangents(shapes: object | CanvasPath[], options?: { gap?: number, near?: number, angleDeg?: number, minRun?: number, step?: number })` → `{ tangents, count, touching, aligned, pairs, step }` — **Shapes that touch, and shapes that line up.** `shapes` is an object of named `CanvasPath`s, an array of them, or a `createFigureGeometry(...)` result, whose `groups` are used. Every pair is tested. Each tangent is `{ kind: 'touch' | 'align', a, b, at, distance, mark }`, plus `overlapping` and `depth` on a touch, and `from`, `to`, `length`, `angleDeg` and `flush` on an alignment. `mark` is a `CanvasPath` to stroke.
+
+> [!TIP]
+> **Stanchfield's two tangents, as measurements** (*Drawn to Life* vol. 1 ch. 16, 30; vol. 2 ch. 57). A **touch** is two outlines closer than `gap` without overlapping, or overlapping by a sliver thinner than `gap`. A decisive overlap is thicker and is not reported, which is why an arm entering its shoulder needs no exemption. An **alignment** is a stretch of the smaller shape's outline at least `minRun` long, within `near` of the larger's outline and parallel to it within `angleDeg`. `flush: true` means it lies over the larger shape's hidden edge, so the silhouette carries on as if it were not there.
+>
+> ```js
+> const found = Drawing.findTangents(Drawing.createFigureGeometry(fig));
+> Stage.check('no tangents', found.count === 0, found.tangents.map(t => `${t.kind} ${t.a}/${t.b}`).join(', '));
+> ctx.strokeStyle = '#c2553d'; ctx.lineWidth = 4;
+> for (const t of found.tangents) ctx.stroke(t.mark);
+> ```
+>
+> **The lengths default to fractions of the smaller shape's size** (the square root of its area): `gap` 0.08, `near` 0.35, `minRun` 0.35. So the same pose gives the same answer at any scale, and every tangent reports the values it was judged by. Pass pixels to override. `angleDeg` defaults to 15.
+>
+> **The default mannequin already has two.** Standing, its hands hang flat against its thighs, and the finder reports both. Arms hanging straight down line up with the sides of the torso. Held out, they line up with nothing.
+>
+> It judges only the shapes you give it, and only by their edges. A line ending where another begins, three lines meeting at a point, and a face stacked straight over the body (an alignment of centre lines, not edges) are not found.
+
 - `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders clavicle handlebars, pectorals, deltoids, sternocleidomastoid cords, and the rectus abdominis as **eight** sections whose rows rise toward a peak above a flat row at the navel. The active side is read off the figure's own `shoulderTiltDeg` and compressed, per Hampton's squash/stretch rule — see `polson://manual/08` §3a.
 
 ### Hands
@@ -3572,7 +3637,7 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 > sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, sheet.width, sheet.height);
 > let x = gap;
 > for (const c of cells) { sctx.drawImage(c, x, gap + (H - c.height)); x += c.width + gap; }   // feet on one line
-> sheet;   // outFile: 'refs/tomas-sheet.png', then GenerateCharacter({ name: 'tomas', sheet: 'refs/tomas-sheet.png', faceSheet: 'refs/tomas-face.png' })
+> return sheet;   // `return`, because the script awaits. outFile: 'refs/tomas-sheet.png', then GenerateCharacter({ name: 'tomas', sheet: 'refs/tomas-sheet.png', faceSheet: 'refs/tomas-face.png' })
 > ```
 >
 > **Why the face comes first.** Cut out of a full-figure sheet a head is a tenth of the figure. `faceSheet` builds the face from the large front head instead; without one it is built from heads cropped out of the body sheet, as before. The order is the one *AI Cinematic Filmmaking: Pre-Production* ch. 8 gives: the face is the anchor, and everything after it is generated with the face attached.
@@ -3776,6 +3841,10 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > the cell you are replacing. **Keep the descriptor**: the reference shows the model who the subject is,
 > and the words still say what to draw.
 >
+> **The reference is shown on the ground this call asks for**, not the one it was drawn on. A body sheet
+> keyed on magenta, shown a head sheet drawn on green, came back with one view on a green panel the key
+> could not reach; the model copies the ground along with the subject.
+>
 > **An earlier wording asked the model to change nothing about the subject, and it copied everything**:
 > shown a full-figure sheet and asked for head and shoulders, it drew the same full figures, the profile
 > almost line for line. Naming what to keep is what lets the rest change.
@@ -3889,6 +3958,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 - `cutout.split` → `string` — `'single'`, `'gaps'`, or `'even'`. See above.
 - `cutout.backgroundColor` → `string` — The colour actually keyed out, as `#RRGGBB`.
 - `cutout.references` → `string[]` — The ids of the sheets passed as `reference`. Empty when none was.
+- `cutout.warnings` → `string[]` — What looks wrong with the sheet, in words. **Empty is the expected result.** Today it names a cell whose ground was not keyed out — opaque, and one flat colour in every corner, usually a view the model drew on a panel of its own. `success` stays true, because the other cells may be fine; do not build on the named cell.
 - `cutout.keyColor` → `string` — The ground the model was asked to draw: `'green'`, `'magenta'` or `'blue'`. `backgroundColor` is what actually came back.
 - `cutout.id` · `cutout.provenance` — `id` is what a later call passes as `reference`.
 
@@ -3909,7 +3979,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 
 - `Assets.budget` → `AssetBudget` — Remaining allowance. **Check this before requisitioning.**
 - `Assets.classify(descriptor: string)` → `RequisitionVerdict` — `{ className, class, reason, triggers, allowed }`. `className` is the readable verdict — `'Substance'`, `'Form'` or `'Ambiguous'`; `class` is the same value as a number, so prefer `className`. The form-versus-substance pre-check, free and offline. `material()` applies it automatically; call it yourself to test a descriptor before spending.
-- `Assets.library` → `MaterialAsset[]` — Every material requisitioned this session, by any agent. Reuse from here rather than requisitioning a near-duplicate. It is array-*like*, not a JS `Array`: `.length` and `library[i]` work, but `forEach` passes `undefined` as the index and the `Array.prototype` methods are absent. Use a `for` loop, or `Array.from(Assets.library)` to get a real array.
+- `Assets.library` → `MaterialAsset[]` — Every material requisitioned this session, by any agent. Reuse from here rather than requisitioning a near-duplicate. It is array-*like*, not a JS `Array` — `Array.isArray` says `false` — but `.length`, `library[i]` and the `Array.prototype` methods all work as on an array, `forEach` and `map` included. `Array.from(Assets.library)` makes a real copy when you need one.
 
 ## Every Result Reports Its Own Failure
 

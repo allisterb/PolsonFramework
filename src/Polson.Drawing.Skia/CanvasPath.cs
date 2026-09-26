@@ -1,4 +1,4 @@
-namespace Polson.Drawing.Skia;
+﻿namespace Polson.Drawing.Skia;
 
 using System;
 using System.Collections;
@@ -40,6 +40,13 @@ public class CanvasPath : IDisposable
 
     #region Properties
     public SKPath Path { get; }
+
+    /// <summary>The area the path fills, in square pixels, after resolving self-intersections.</summary>
+    public float Area => AreaOf(Path);
+
+    /// <summary>Whether the path fills nothing: no contours, or only contours without area.</summary>
+    /// <remarks>What an <c>intersect</c> is asked for when the question is "do these touch?".</remarks>
+    public bool IsEmpty => Path.IsEmpty || Area < 0.01f;
     #endregion
 
     #region Methods
@@ -254,6 +261,63 @@ public class CanvasPath : IDisposable
 
         combined.Dispose();
         return new CanvasPath(normalised);
+    }
+
+    /// <summary>Whether the point lies inside the filled path, under the path's fill rule.</summary>
+    public bool Contains(float x, float y) => Path.Contains(x, y);
+
+    /// <summary>Filled area of a path: the shoelace area of each flattened contour, holes subtracted.</summary>
+    /// <remarks>
+    /// The path is simplified first, which leaves non-overlapping contours, so a contour is a hole
+    /// exactly when an odd number of the others enclose it — winding direction is not relied on, since
+    /// Skia does not promise one. Sampled at half a pixel: the error is a fraction of a square pixel.
+    /// </remarks>
+    internal static float AreaOf(SKPath path)
+    {
+        using var simple = new SKPath();
+        var source = path.Simplify(simple) ? simple : path;
+        using var measure = new SKPathMeasure(source, true);
+        var contours = new List<SKPoint[]>();
+
+        do
+        {
+            var length = measure.Length;
+            if (length <= 0f) continue;
+            var n = Math.Clamp((int)(length / 0.5f), 16, 20000);
+            var points = new SKPoint[n];
+            for (var i = 0; i < n; i++)
+                points[i] = measure.GetPosition(length * i / n, out var q) ? q : (i > 0 ? points[i - 1] : default);
+            contours.Add(points);
+        }
+        while (measure.NextContour());
+
+        double total = 0;
+        for (var c = 0; c < contours.Count; c++)
+        {
+            var depth = 0;
+            for (var o = 0; o < contours.Count; o++)
+                if (o != c && Encloses(contours[o], contours[c][0])) depth++;
+            total += (depth % 2 == 0 ? 1 : -1) * Math.Abs(Shoelace(contours[c]));
+        }
+        return (float)Math.Max(0, total);
+    }
+
+    static double Shoelace(SKPoint[] p)
+    {
+        double sum = 0;
+        for (int i = 0, j = p.Length - 1; i < p.Length; j = i++)
+            sum += (double)p[j].X * p[i].Y - (double)p[i].X * p[j].Y;
+        return sum * 0.5;
+    }
+
+    static bool Encloses(SKPoint[] polygon, SKPoint p)
+    {
+        var inside = false;
+        for (int i = 0, j = polygon.Length - 1; i < polygon.Length; j = i++)
+            if ((polygon[i].Y > p.Y) != (polygon[j].Y > p.Y) &&
+                p.X < (polygon[j].X - polygon[i].X) * (p.Y - polygon[i].Y) / (polygon[j].Y - polygon[i].Y) + polygon[i].X)
+                inside = !inside;
+        return inside;
     }
 
     public void Dispose()

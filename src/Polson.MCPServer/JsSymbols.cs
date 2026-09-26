@@ -216,6 +216,7 @@ public static class JsSurface
             ["cutout.toJSON"] = "JSON.stringify protocol hook; see the execution model",
             ["cell.toJSON"] = "JSON.stringify protocol hook; see the execution model",
             ["imageData.toJSON"] = "JSON.stringify protocol hook; see the execution model",
+            ["element.toJSON"] = "JSON.stringify protocol hook; see the execution model",
 
             // Aliases of a documented member; documenting both spellings invites drift.
             ["paper.toDataURL"] = "alias of paper.toDataUri",

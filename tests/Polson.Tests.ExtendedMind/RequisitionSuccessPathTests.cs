@@ -242,7 +242,11 @@ public class RequisitionSuccessPathTests : TestsRuntime
         Assert.True(again.Success, again.Error);
         Assert.Equal(2, generator.Calls);
         Assert.Empty(generator.Shown[0]);
-        Assert.Equal(sheet, Assert.Single(generator.Shown[1]));
+        // What was sent is the cached sheet laid on this call's ground: its figure, never the swapped bytes.
+        using var sent = SKBitmap.Decode(Assert.Single(generator.Shown[1]));
+        Assert.NotNull(sent);
+        Assert.Equal(new SKColor(0xFF, 0x00, 0xFF), sent.GetPixel(2, 2));
+        Assert.Equal(new SKColor(128, 128, 128), sent.GetPixel(50, 100));
         Assert.Contains("attached image", generator.Prompts[1]);
         Assert.DoesNotContain("attached image", generator.Prompts[0]);
         Assert.Equal([first.Id], again.References);
@@ -426,6 +430,41 @@ public class RequisitionSuccessPathTests : TestsRuntime
         Assert.DoesNotContain("nothing about its design", generator.Prompts[1]);
     }
 
+    /// <summary>A reference drawn on green is shown to a magenta call on magenta.</summary>
+    /// <remarks>
+    /// Shown a green head sheet, a magenta body call drew one view on a green panel the magenta key could
+    /// not reach (lastlight2, 2026-09-25). The model copies the ground as well as the subject.
+    /// </remarks>
+    [Fact]
+    public async Task TestAReferenceIsShownOnThisCallsGround()
+    {
+        var generator = new FakeImageGenerator(CutoutSheet(new SKColor(0x74, 0xB0, 0x60)));
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), new AssetBudget(3), "Framer");
+
+        var face = await toolkit.Cutout("a keeper", new CutoutOptions { Variants = ["front", "profile"], Framing = "head" });
+        await toolkit.Cutout("a keeper", new CutoutOptions { Variants = ["front", "side", "back"], Framing = "full", Reference = face });
+
+        using var sent = SKBitmap.Decode(Assert.Single(generator.Shown[1]));
+        Assert.Equal("green", face.KeyColor);
+        Assert.Equal(new SKColor(0xFF, 0x00, 0xFF), sent.GetPixel(2, 2));
+        Assert.Equal(new SKColor(128, 128, 128), sent.GetPixel(50, 100));
+    }
+
+    /// <summary>A cell whose ground was not keyed out is reported, and the sheet still succeeds.</summary>
+    [Fact]
+    public async Task TestAnUnkeyedCellIsReported()
+    {
+        var generator = new FakeImageGenerator(CardSheet());
+        var toolkit = new AssetRequisitionToolkit(
+            generator, new RequisitionCache(ImageGeneratorTests.TempCacheDir()), new AssetBudget(3), "Framer");
+
+        var sheet = await toolkit.Cutout("a girl in a raincoat", new CutoutOptions { Variants = ["front", "side", "back"] });
+
+        Assert.True(sheet.Success, sheet.Error);
+        Assert.Contains("'side'", Assert.Single(sheet.Warnings));
+    }
+
     /// <summary>A material reworded with the same words is still one material, and bills once.</summary>
     [Fact]
     public async Task TestARewordedMaterialIsServedFromCache()
@@ -478,13 +517,32 @@ public class RequisitionSuccessPathTests : TestsRuntime
         return bitmap;
     }
 
-    /// <summary>A magenta sheet carrying four grey figures with clear gaps between them.</summary>
-    static byte[] CutoutSheet()
+    /// <summary>Three grey figures on magenta, the middle one drawn on a green panel of its own.</summary>
+    static byte[] CardSheet()
     {
         using var bitmap = new SKBitmap(400, 200);
         using (var canvas = new SKCanvas(bitmap))
         {
             canvas.Clear(new SKColor(0xFF, 0x00, 0xFF));
+            // Figures are ellipses, because a trimmed rectangle is all opaque and no figure is a rectangle.
+            using var grey = new SKPaint { Color = new SKColor(128, 128, 128), IsAntialias = true };
+            using var panel = new SKPaint { Color = new SKColor(0x80, 0xC0, 0x70) };
+            canvas.DrawOval(new SKRect(20, 30, 80, 170), grey);
+            canvas.DrawRect(SKRect.Create(150, 20, 100, 160), panel);
+            canvas.DrawOval(new SKRect(170, 30, 230, 170), grey);
+            canvas.DrawOval(new SKRect(320, 30, 380, 170), grey);
+        }
+
+        return Encode(bitmap);
+    }
+
+    /// <summary>A sheet carrying four grey figures with clear gaps between them, on magenta unless told otherwise.</summary>
+    static byte[] CutoutSheet(SKColor? ground = null)
+    {
+        using var bitmap = new SKBitmap(400, 200);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(ground ?? new SKColor(0xFF, 0x00, 0xFF));
             using var paint = new SKPaint { Color = new SKColor(128, 128, 128) };
             for (var i = 0; i < 4; i++)
             {

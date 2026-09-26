@@ -41,6 +41,15 @@ public partial class JsDrawingEngine : Runtime
     /// <i>engine</i> reads unprompted — anything a script would plausibly type belongs in the API or
     /// in an error message.
     /// </remarks>
+    /// <summary>The canvases and papers of the execution now running.</summary>
+    /// <remarks>
+    /// Ambient rather than captured, because a function kept in <c>Session</c> carries the
+    /// <c>createCanvas</c> of the script that defined it. Captured lists filed its canvas under that
+    /// earlier script, so a later script calling the helper rendered nothing and still reported success,
+    /// and <c>outFile</c> wrote no file (lastlight2, 2026-09-25).
+    /// </remarks>
+    private static readonly AsyncLocal<(List<SkiaCanvas> Canvases, List<SnapPaper> Papers)?> CurrentDrawing = new();
+
     private static readonly HashSet<string> InteropProtocolMembers = new(StringComparer.Ordinal)
     {
         "then",
@@ -171,6 +180,7 @@ public partial class JsDrawingEngine : Runtime
 
         var papers = new List<SnapPaper>();
         var canvases = new List<SkiaCanvas>();
+        CurrentDrawing.Value = (canvases, papers);
         MotionToolkit? motionToolkit = null;
         var exitRequested = false;
         string? exitMessage = null;
@@ -256,6 +266,34 @@ public partial class JsDrawingEngine : Runtime
                     // silently hijack awaiting, which is not a trade worth any convenience.
                     if (member is "then") return JsValue.Undefined;
 
+                    // A list is answered here, not by MemberIndex.Has, which says yes to every name on
+                    // a list because it cannot tell a declared member from one Array.prototype
+                    // attaches. That yes sent every read to reflection, and a name found nowhere threw
+                    // the unresolved-member exception - which is not a JS error, so `try/catch` could
+                    // not stop it, and JSON.stringify, asking each value for `toJSON`, killed any
+                    // script that stringified a value holding a list. Now a list reads like any other
+                    // SDK object: its own members and Array.prototype's resolve, anything else is
+                    // undefined.
+                    if (IsList(target))
+                    {
+                        // Where a .NET collection method shares a name with Array.prototype - forEach,
+                        // indexOf, find, sort, reverse - the JS meaning wins. Left to reflection,
+                        // `list.forEach((x, i) => ...)` reached List<T>.ForEach, which passes the item
+                        // alone, so every index was undefined: the documented quirk on Assets.library.
+                        var prototype = (ObjectInstance)e.Intrinsics.Array.Get("prototype");
+                        if (target!.GetType().Namespace?.StartsWith("System", StringComparison.Ordinal) == true
+                            && member is not ("length" or "constructor")
+                            && prototype.HasProperty(member))
+                        {
+                            return prototype.Get(member);
+                        }
+
+                        if (Resolves(e, target, member)) return null;
+
+                        ProbeScope.RecordOutcome(ProbeScope.Kinds.Absent, $"{target!.GetType().Name}.{member}");
+                        return JsValue.Undefined;
+                    }
+
                     // Everything else that really exists answers for itself — **including
                     // `toJSON`**, which is a hook a type is *meant* to be able to implement.
                     // Returning undefined for it unconditionally, as this did, meant a `ToJSON()`
@@ -287,7 +325,7 @@ public partial class JsDrawingEngine : Runtime
             // ordinary idiom for this — `typeof ctx.foo`, `'foo' in ctx`, `Object.hasOwn`,
             // `Reflect.has` — throws instead of answering. See `MemberIndex` for why that is kept.
             engine.SetValue("has", new Func<object?, string?, bool>(
-                (target, member) => member is not null && MemberIndex.Has(target, member)));
+                (target, member) => member is not null && Resolves(engine, target, member)));
 
             // ...and why not, when it is not. `has` answers whether a name exists; on its own that
             // leaves a script knowing it guessed wrong and not what to write instead — which is the
@@ -300,7 +338,7 @@ public partial class JsDrawingEngine : Runtime
                     return "suggest(object, 'name') needs an object and a member name.";
                 }
 
-                if (MemberIndex.Has(target, member))
+                if (Resolves(engine, target, member))
                 {
                     // Worth saying plainly. A caller reaching for advice about a name that is already
                     // correct is looking in the wrong place for its bug, and silence would let it go
@@ -458,7 +496,7 @@ public partial class JsDrawingEngine : Runtime
                 var w = args.Length > 0 && !args[0].IsUndefined() ? Convert.ToInt32(args[0].ToObject()) : defaultWidth;
                 var h = args.Length > 1 && !args[1].IsUndefined() ? Convert.ToInt32(args[1].ToObject()) : defaultHeight;
                 var canvas = new SkiaCanvas(w, h);
-                canvases.Add(canvas);
+                (CurrentDrawing.Value?.Canvases ?? canvases).Add(canvas);
                 return canvas;
             };
 
@@ -483,7 +521,7 @@ public partial class JsDrawingEngine : Runtime
                 var w = args.Length > 0 && !args[0].IsUndefined() ? args[0].ToObject() : null;
                 var h = args.Length > 1 && !args[1].IsUndefined() ? args[1].ToObject() : null;
                 var paper = Snap.Create(w ?? defaultWidth, h ?? defaultHeight);
-                papers.Add(paper);
+                (CurrentDrawing.Value?.Papers ?? papers).Add(paper);
                 return JsValue.FromObject(engine, paper);
             });
 
@@ -586,7 +624,7 @@ public partial class JsDrawingEngine : Runtime
             {
                 var svg = args.Length > 0 ? args[0].ToString() : string.Empty;
                 var paper = Snap.Parse(svg);
-                papers.Add(paper);
+                (CurrentDrawing.Value?.Papers ?? papers).Add(paper);
                 return JsValue.FromObject(engine, paper);
             }));
 
@@ -614,7 +652,7 @@ public partial class JsDrawingEngine : Runtime
                 }
 
                 var paper = Snap.Parse(File.ReadAllText(full));
-                papers.Add(paper);
+                (CurrentDrawing.Value?.Papers ?? papers).Add(paper);
                 return JsValue.FromObject(engine, paper);
             }));
 
@@ -851,6 +889,7 @@ public partial class JsDrawingEngine : Runtime
         if (!m.Success) return message;
 
         var member = m.Groups["member"].Value;
+
         var type = AppDomain.CurrentDomain.GetAssemblies()
             .Select(a => a.GetType(m.Groups["type"].Value, throwOnError: false, ignoreCase: false))
             .FirstOrDefault(t => t is not null);
@@ -942,6 +981,27 @@ public partial class JsDrawingEngine : Runtime
          typed.StartsWith(candidate, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>A typo, rather than a different call: extended, truncated, or one edit away.</summary>
+    /// <summary>Whether a script's read of <paramref name="member"/> on <paramref name="target"/> finds something.</summary>
+    /// <remarks>
+    /// On a list that is its own declared members, an index or <c>length</c>, or anything
+    /// <c>Array.prototype</c> carries, because the engine attaches that prototype to a list. Anywhere
+    /// else it is <see cref="MemberIndex.Has"/>. One answer for the accessor, <c>has</c> and
+    /// <c>suggest</c>, so the three cannot disagree about the same name.
+    /// </remarks>
+    private static bool Resolves(Engine engine, object? target, string member) =>
+        IsList(target)
+            ? MemberIndex.Declares(target!, member)
+              || IsIndexOrLength(member)
+              || ((ObjectInstance)engine.Intrinsics.Array.Get("prototype")).HasProperty(member)
+            : MemberIndex.Has(target, member);
+
+    /// <summary>A collection the engine wraps as a list: enumerable, and neither a string nor a dictionary.</summary>
+    private static bool IsList(object? target) => target is IEnumerable and not string and not IDictionary;
+
+    /// <summary>An index or <c>length</c>: the reads a list answers itself, whatever its type declares.</summary>
+    private static bool IsIndexOrLength(string member) =>
+        member == "length" || (member.Length > 0 && member.All(char.IsAsciiDigit));
+
     private static bool IsNearMiss(string candidate, string typed)
     {
         if (SharesAffix(candidate, typed)) return true;

@@ -75,8 +75,8 @@ public class PolsonManuals
         index.AppendLine("""
             These manuals are the **bridge between the studio's reference library and the drawing SDK**. Each one
             distils a source text — Loomis for construction and light, Janson for inking and for staging a
-            page, Glebas for depth and screen continuity, Lee & Buscema for the comic idiom, Hampton,
-            Faragasso and Norling, Bokhua and Tubik for logo work — into formulas, construction
+            page, Glebas for depth and screen continuity, Lee & Buscema for the comic idiom, Stanchfield
+            for gesture, Hampton, Faragasso and Norling, Bokhua and Tubik for logo work — into formulas, construction
             procedures, and the **named SDK calls that implement them**. Every manual names its own
             sources in its header; that list is the authority, and this sentence is only a summary of it.
 

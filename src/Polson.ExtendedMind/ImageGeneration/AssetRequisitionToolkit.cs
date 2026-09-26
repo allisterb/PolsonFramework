@@ -458,7 +458,7 @@ public partial class AssetRequisitionToolkit : Runtime
         {
             if (await cache.Get(id) is { ImageBytes: { Length: > 0 } bytes })
             {
-                references.Add(bytes);
+                references.Add(OnGround(bytes, (KeyGround(opts) ?? ("magenta", "#FF00FF")).Hex));
                 continue;
             }
 
@@ -521,11 +521,21 @@ public partial class AssetRequisitionToolkit : Runtime
 
         var (cells, split) = SplitSheet(keyed, variants, opts.Size, generated.Hash);
 
+        // A cell that is nearly all opaque was drawn on a panel the key did not reach. Reported rather
+        // than guessed at: it looks like a finished cell and builds into a wrong character, minutes later.
+        var warnings = cells
+            .Where(c => c.Coverage > 0.95 && OnAPanel(c))
+            .Select(c => $"cell '{c.Name}' is {c.Coverage:P0} opaque: its ground was not keyed out, most likely because "
+                + "the model drew that view on a panel of another colour. Look at it before using it, and regenerate "
+                + "that view rather than building on it.")
+            .ToList();
+
         return new CutoutAsset
         {
             Success = true,
             Id = generated.Hash,
             References = referenceIds,
+            Warnings = warnings,
             KeyColor = KeyGround(opts)!.Value.Name,
             Bytes = PlateAnalysis.Encode(keyed, "png", 100),
             Width = keyed.Width,
@@ -667,6 +677,65 @@ public partial class AssetRequisitionToolkit : Runtime
             ? string.Equals(opts.Framing?.Trim(), "head", StringComparison.OrdinalIgnoreCase) ? "green" : "magenta"
             : opts.KeyColor.Trim().ToLowerInvariant();
         return KeyGrounds.TryGetValue(name, out var hex) ? (name, hex) : null;
+    }
+
+    /// <summary>Whether a cell sits on a panel: opaque, and of one colour, at all four corners.</summary>
+    /// <remarks>
+    /// Coverage alone is not enough, because a cell is trimmed to its subject and a boxy subject seen
+    /// square on is nearly all opaque too. A panel is also one flat colour in every corner, which a subject
+    /// filling its own box rarely is.
+    /// </remarks>
+    static bool OnAPanel(CutoutCell cell)
+    {
+        using var bitmap = SKBitmap.Decode(cell.Bytes);
+        if (bitmap is null || bitmap.Width < 4 || bitmap.Height < 4)
+        {
+            return false;
+        }
+
+        var corners = new[]
+        {
+            bitmap.GetPixel(1, 1), bitmap.GetPixel(bitmap.Width - 2, 1),
+            bitmap.GetPixel(1, bitmap.Height - 2), bitmap.GetPixel(bitmap.Width - 2, bitmap.Height - 2),
+        };
+        var first = corners[0];
+        return corners.All(c => c.Alpha > 200
+            && Math.Abs(c.Red - first.Red) + Math.Abs(c.Green - first.Green) + Math.Abs(c.Blue - first.Blue) < 30);
+    }
+
+    /// <summary>A reference sheet shown on the ground this call asks for, rather than the one it was drawn on.</summary>
+    /// <remarks>
+    /// The model copies more than the subject from a reference. A body sheet keyed on magenta and shown
+    /// a head sheet drawn on green came back with one view on a green panel, which the magenta key could
+    /// not touch (lastlight2, 2026-09-25). So the reference is keyed by its own ground's hue and laid on
+    /// the pure colour this call will ask for. A sheet whose ground leans toward no hue is sent as it is.
+    /// </remarks>
+    static byte[] OnGround(byte[] master, string hex)
+    {
+        using var sheet = SKBitmap.Decode(master);
+        if (sheet is null)
+        {
+            return master;
+        }
+
+        var measured = PlateAnalysis.SampleBackground(sheet);
+        var hue = KeyGrounds.Keys
+            .Select(name => (name, keyed: PlateAnalysis.DifferenceKey(sheet, measured, name)))
+            .FirstOrDefault(k => k.keyed is not null);
+        if (hue.keyed is null)
+        {
+            return master;
+        }
+
+        using var keyed = hue.keyed;
+        using var laid = new SKBitmap(sheet.Width, sheet.Height);
+        using (var canvas = new SKCanvas(laid))
+        {
+            canvas.Clear(SKColor.Parse(hex));
+            canvas.DrawBitmap(keyed, 0, 0);
+        }
+
+        return PlateAnalysis.Encode(laid, "png", 100);
     }
 
     /// <summary>The sheet ids a <see cref="CutoutOptions.Reference"/> names, or why it names none usable.</summary>

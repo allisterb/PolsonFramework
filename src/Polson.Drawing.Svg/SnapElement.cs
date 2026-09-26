@@ -597,6 +597,39 @@ public class SnapElement
         };
     }
 
+    /// <summary>
+    /// What <c>JSON.stringify(element)</c> serialises: the element as its markup describes it - tag, id,
+    /// attributes, text and children - and never its parent or paper.
+    /// </summary>
+    /// <remarks>
+    /// Without it the serialiser walked the object itself, and an element's <c>parent</c> and
+    /// <c>paper</c> reach every other element, so stringifying a gradient or its stops failed with
+    /// "Cyclic reference detected". Attribute values are written as the strings they would be in the
+    /// markup, because the parsed values can hold references back into the document.
+    /// </remarks>
+    public Dictionary<string, object?> ToJSON(string? key = null)
+    {
+        // Read back from the element's own markup, which is the form they are documented in and the
+        // only public route to all of them: the parsed attribute collection is not exposed.
+        var markup = new XmlDocument();
+        markup.LoadXml(ToString());
+        var attributes = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (XmlAttribute attribute in markup.DocumentElement!.Attributes)
+        {
+            if (attribute.Name is "xmlns" or "id" || attribute.Prefix == "xmlns") continue;
+            attributes[attribute.Name] = attribute.Value;
+        }
+
+        return new()
+        {
+            ["type"] = Type,
+            ["id"] = string.IsNullOrEmpty(Id) ? null : Id,
+            ["attributes"] = attributes,
+            ["text"] = string.IsNullOrEmpty(Node.Content) ? null : Node.Content,
+            ["children"] = Children.Select(c => (object?)c.ToJSON()).ToArray(),
+        };
+    }
+
     public override string ToString()
     {
         var doc = new XmlDocument();

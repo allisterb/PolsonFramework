@@ -66,7 +66,7 @@ const face = await Assets.cutout(Session.tomasLook + ', neutral expression', {
     framing: 'head', size: 768, style: 'clean storyboard illustration, even light', tolerance: 0.10 });
 if (!face.success) exit(face.failureName + ': ' + face.remedy);
 Session.tomasFace = face;
-Session.sheetOf(face);
+return Session.sheetOf(face);   // `return`: a script that awaits renders only what it returns
 ```
 
 Run it with `outFile: 'refs/tomas-face.png'`. The second makes the body, shown the face:
@@ -79,7 +79,7 @@ const body = await Assets.cutout(Session.tomasLook + ', two flap pockets, dark b
     style: 'clean storyboard illustration, even light, no cast shadow', tolerance: 0.10 });
 if (!body.success) exit(body.failureName + ': ' + body.remedy);
 Stage.note(`tomas: face split ${Session.tomasFace.split}, body split ${body.split}`);
-Session.sheetOf(body);
+return Session.sheetOf(body);
 ```
 
 Run it with `outFile: 'refs/tomas-sheet.png'`. **Look at both sheets**, and then start the build:
@@ -112,7 +112,8 @@ behind the other, so the sooner the last one is started the sooner the board can
   default. It is keyed by hue, so grey hair and ruddy skin survive whatever shade the model actually
   draws; what does not survive is anything *in* that hue. A character in green clothes wants
   `keyColor: 'magenta'` on the face too, and one in both green and magenta wants `'blue'`.
-- **If a sheet looks wrong, fix it before building.** A view that is a different person, a figure cut
+- **If a sheet looks wrong, fix it before building.** Read `cutout.warnings` first: a view the model
+  drew on a panel of its own, which the key could not remove, is named there. A view that is a different person, a figure cut
   off at the feet, or `split: 'even'` (the cells were cut into equal columns rather than on their gaps)
   will build into a wrong character, minutes later. To redo one view, pass the face (or the body cutout)
   as `reference` again and ask only for that view; put the result beside the first and apply the

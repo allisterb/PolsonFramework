@@ -74,6 +74,12 @@ internal static class MemberIndex
         return target is IEnumerable and not string;
     }
 
+    /// <summary>
+    /// Whether <paramref name="target"/>'s type itself declares <paramref name="member"/>, in either
+    /// spelling. Unlike <see cref="Has"/> it never answers yes for a collection on principle.
+    /// </summary>
+    internal static bool Declares(object target, string member) => NamesOf(target.GetType()).Contains(member);
+
     /// <summary>Every name a script could legitimately use on this type, in both spellings.</summary>
     /// <remarks>
     /// Jint resolves the JS camelCase spelling onto a PascalCase .NET member, so both are indexed:

@@ -340,9 +340,8 @@ the name and describe the figure.
 `Assets.library` holds every material requisitioned this session, by any agent. **Look here before requisitioning a near-duplicate** — "weathered oak" and "weathered oak planking" are two charges for one surface.
 
 ```js
-// It is array-LIKE, not an Array: length and [i] work, but forEach passes undefined
-// as the index and the Array.prototype methods are absent.
-const have = Array.from(Assets.library);
+// Array-like rather than an Array, but the array methods work on it directly.
+const have = Assets.library;
 log('already requisitioned: ' + have.map(m => m.provenance.prompt).join(' | '));
 ```
 

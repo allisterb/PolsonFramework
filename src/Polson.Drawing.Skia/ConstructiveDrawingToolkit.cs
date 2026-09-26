@@ -2756,6 +2756,65 @@ public class ConstructiveDrawingToolkit
         var tip = AlongSegment(end, SegmentLength(defaultEnd, defaultTip), rootDeg + bendDeg + tipOffset);
         return (mid, end, tip);
     }
+
+    /// <summary>
+    /// Reads <c>pose.lineOfAction</c>, refusing anything it cannot honour by name.
+    /// </summary>
+    /// <remarks>
+    /// Past 120 degrees of turning the two bends fold the torso through itself, which renders as a
+    /// figure and reads as a defect, so it is refused rather than drawn.
+    /// </remarks>
+    static (string Shape, float Amount)? ReadLineOfAction(IDictionary? pose)
+    {
+        if (pose == null || !pose.Contains("lineOfAction") || pose["lineOfAction"] == null) return null;
+        var line = JsInterop.AsDict(pose["lineOfAction"])
+            ?? throw new ArgumentException("pose.lineOfAction takes an object, such as { shape: 'C', turnDeg: 24 }.");
+
+        foreach (var key in line.Keys)
+            if (key?.ToString() is not ("shape" or "turnDeg"))
+                throw new ArgumentException(
+                    $"pose.lineOfAction has no option '{key}'. It takes shape ('C' or 'S') and turnDeg (degrees the line turns, end to end).");
+
+        var shape = (line.Contains("shape") ? line["shape"]?.ToString() : null)?.Trim().ToUpperInvariant() ?? "C";
+        if (shape is not ("C" or "S"))
+            throw new ArgumentException(
+                $"pose.lineOfAction.shape '{line["shape"]}' is not a shape this can bend. Use 'C' (one curve, both bends the same way) or 'S' (the neck bends against the waist).");
+
+        var amount = Num(line, "turnDeg", 0f);
+        if (!float.IsFinite(amount))
+            throw new ArgumentException("pose.lineOfAction.turnDeg must be a finite number of degrees.");
+        if (MathF.Abs(amount) > 120f)
+            throw new ArgumentException(
+                $"pose.lineOfAction.turnDeg {amount} is more turning than a torso has: past 120 degrees the waist and neck fold the figure through itself. Pose the legs for the rest of the curve.");
+
+        return (shape, amount);
+    }
+
+    /// <summary>A smooth curve through the points, as SVG path data: Catmull-Rom as cubic Béziers.</summary>
+    static string SmoothPathData(IReadOnlyList<Point2D> pts)
+    {
+        static string F(float v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        var sb = new System.Text.StringBuilder($"M{F(pts[0].X)},{F(pts[0].Y)}");
+        for (var i = 0; i < pts.Count - 1; i++)
+        {
+            Point2D p0 = pts[Math.Max(i - 1, 0)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.Min(i + 2, pts.Count - 1)];
+            sb.Append(CultureInfo.InvariantCulture,
+                $" C{F(p1.X + (p2.X - p0.X) / 6f)},{F(p1.Y + (p2.Y - p0.Y) / 6f)} {F(p2.X - (p3.X - p1.X) / 6f)},{F(p2.Y - (p3.Y - p1.Y) / 6f)} {F(p2.X)},{F(p2.Y)}");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Largest distance of the interior points off the chord between the first and last.</summary>
+    static float Swing(IReadOnlyList<Point2D> pts)
+    {
+        Point2D a = pts[0], b = pts[^1];
+        float dx = b.X - a.X, dy = b.Y - a.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+        if (len < 0.001f) return 0f;
+        var most = 0f;
+        for (var i = 1; i < pts.Count - 1; i++)
+            most = MathF.Max(most, MathF.Abs(dx * (a.Y - pts[i].Y) - (a.X - pts[i].X) * dy) / len);
+        return most;
+    }
     #endregion
 
     public Dictionary<string, object?> CreateMannequinFigure(float originX, float originY, float totalHeight = 560f, object? options = null)
@@ -2868,6 +2927,45 @@ public class ConstructiveDrawingToolkit
             headCenter = RotateAbout(headCenter, neckCenter, neckDeg);
         }
 
+        // The line of action bends the torso where a torso bends. `spineDeg` rotates everything above
+        // the pelvis as one rigid piece, which moves the centre line without curving it (Manual 24 §4
+        // measured it flat across five poses). Stanchfield's construction is solid-flexible: head,
+        // ribcage and pelvis are solids that keep their shape, and the neck and waist between them are
+        // where the bending happens (Drawn to Life, ch. 25-26). So the curve is two bends, one at each
+        // flexible part — the waist hinged at the navel, the neck at the neck — and a C bends both the
+        // same way while an S bends the neck back against the waist.
+        //
+        // The split is not a constant. A polyline approximating one even curve turns at each vertex in
+        // proportion to the segments either side of it, so each bend's share comes from the chain's own
+        // lengths: pelvis-navel and navel-neck for the waist, navel-neck and neck-head for the neck.
+        var line = ReadLineOfAction(pose);
+        float waistDeg = 0f, neckBendDeg = 0f;
+        if (line is { Amount: not 0f } bend)
+        {
+            var below = SegmentLength(pelvisCenter, navel);
+            var middle = SegmentLength(navel, neckCenter);
+            var above = SegmentLength(neckCenter, headCenter);
+            var waistShare = (below + middle) / (below + 2f * middle + above);
+            waistDeg = bend.Amount * waistShare;
+            neckBendDeg = bend.Amount * (1f - waistShare) * (bend.Shape == "S" ? -1f : 1f);
+
+            var waist = navel;
+            headCenter = RotateAbout(headCenter, waist, waistDeg);
+            neckCenter = RotateAbout(neckCenter, waist, waistDeg);
+            sternalNotch = RotateAbout(sternalNotch, waist, waistDeg);
+            ribcageCenter = RotateAbout(ribcageCenter, waist, waistDeg);
+            leftShoulder = RotateAbout(leftShoulder, waist, waistDeg);
+            rightShoulder = RotateAbout(rightShoulder, waist, waistDeg);
+            leftElbow = RotateAbout(leftElbow, waist, waistDeg);
+            leftWrist = RotateAbout(leftWrist, waist, waistDeg);
+            leftHand = RotateAbout(leftHand, waist, waistDeg);
+            rightElbow = RotateAbout(rightElbow, waist, waistDeg);
+            rightWrist = RotateAbout(rightWrist, waist, waistDeg);
+            rightHand = RotateAbout(rightHand, waist, waistDeg);
+
+            headCenter = RotateAbout(headCenter, neckCenter, neckBendDeg);
+        }
+
         (leftElbow, leftWrist, leftHand) = PoseLimb(leftArmPose, "shoulderDeg", "elbowDeg",
             leftShoulder, leftElbow, leftWrist, leftHand);
         (rightElbow, rightWrist, rightHand) = PoseLimb(rightArmPose, "shoulderDeg", "elbowDeg",
@@ -2880,8 +2978,13 @@ public class ConstructiveDrawingToolkit
         // The lean is an orientation, not just a displacement. The masses used to carry only their
         // static tilt while `spineDeg` moved their centres, so a figure leaning 18 degrees kept a
         // perfectly upright head and an untilted ribcage. The pelvis is the pivot and so is unmoved.
-        var ribcageTiltDeg = shoulderTiltDeg + spineDeg;
-        var headAngleDeg = spineDeg + neckDeg;
+        var ribcageTiltDeg = shoulderTiltDeg + spineDeg + waistDeg;
+        var headAngleDeg = spineDeg + neckDeg + waistDeg + neckBendDeg;
+
+        // The centre line read back out of the figure, whether or not one was asked for, so any pose
+        // can be measured: pelvis, navel, ribcage, neck, head and crown, which is the torso's axis.
+        var crown = RotateAbout(new Point2D(headCenter.X, headCenter.Y - H * 0.50f), headCenter, headAngleDeg);
+        var axis = new[] { pelvisCenter, navel, ribcageCenter, neckCenter, headCenter, crown };
 
         var figure = new Dictionary<string, object?>
         {
@@ -2901,7 +3004,18 @@ public class ConstructiveDrawingToolkit
             ["leftArm"] = new Dictionary<string, object?> { ["shoulder"] = ToDict(leftShoulder), ["elbow"] = ToDict(leftElbow), ["wrist"] = ToDict(leftWrist), ["hand"] = ToDict(leftHand) },
             ["rightArm"] = new Dictionary<string, object?> { ["shoulder"] = ToDict(rightShoulder), ["elbow"] = ToDict(rightElbow), ["wrist"] = ToDict(rightWrist), ["hand"] = ToDict(rightHand) },
             ["leftLeg"] = new Dictionary<string, object?> { ["hip"] = ToDict(leftHip), ["knee"] = ToDict(leftKnee), ["ankle"] = ToDict(leftAnkle), ["foot"] = ToDict(leftFoot) },
-            ["rightLeg"] = new Dictionary<string, object?> { ["hip"] = ToDict(rightHip), ["knee"] = ToDict(rightKnee), ["ankle"] = ToDict(rightAnkle), ["foot"] = ToDict(rightFoot) }
+            ["rightLeg"] = new Dictionary<string, object?> { ["hip"] = ToDict(rightHip), ["knee"] = ToDict(rightKnee), ["ankle"] = ToDict(rightAnkle), ["foot"] = ToDict(rightFoot) },
+            ["lineOfAction"] = new Dictionary<string, object?>
+            {
+                ["shape"] = line?.Shape,
+                ["turnDeg"] = line?.Amount ?? 0f,
+                ["waistDeg"] = waistDeg,
+                ["neckDeg"] = neckBendDeg,
+                // In head units, so a threshold chosen on a small draft means the same on a final.
+                ["swing"] = Swing(axis) / H,
+                ["points"] = axis.Select(p => (object?)ToDict(p)).ToList(),
+                ["d"] = SmoothPathData(axis)
+            }
         };
 
         // Cheap enough to be unconditional — closed-form over the same masses the geometry uses, no
@@ -2975,9 +3089,19 @@ public class ConstructiveDrawingToolkit
         var bones = new List<(string, string, Point2D, Point2D, float, float)>
         {
             ("neck", "torso", neck, sternum, H * 0.18f, H * 0.34f),
-            ("spine", "torso", sternum, pelCenter, H * 0.55f, H * 0.58f),
             ("shoulders", "torso", ExtractPoint(clav?["left"]), ExtractPoint(clav?["right"]), H * 0.29f, H * 0.29f)
         };
+
+        // A waist bent by a line of action is two pieces meeting at the navel, or the capsule would cut
+        // straight across the inside of the curve. Only then: an unbent figure keeps its one capsule,
+        // so every figure drawn before lineOfAction existed keeps its silhouette to the pixel.
+        if (Num(JsInterop.AsDict(fig["lineOfAction"]), "waistDeg", 0f) != 0f)
+        {
+            var navel = ExtractPoint(fig["navel"]);
+            bones.Insert(1, ("spine", "torso", sternum, navel, H * 0.55f, H * 0.575f));
+            bones.Insert(2, ("spine", "torso", navel, pelCenter, H * 0.575f, H * 0.58f));
+        }
+        else bones.Insert(1, ("spine", "torso", sternum, pelCenter, H * 0.55f, H * 0.58f));
 
         void Limb(IDictionary? d, string side, string group, string j0, string j1, string j2, string j3,
                   string n0, string n1, string n2, float r0, float r1, float r2, float r3)
@@ -3090,7 +3214,8 @@ public class ConstructiveDrawingToolkit
 
         void Record(string name, string group, CanvasPath path)
         {
-            parts[name] = path;
+            // A bent spine arrives as two bones; they are still one part.
+            parts[name] = parts.TryGetValue(name, out var had) && had is CanvasPath earlier ? earlier.Union(path) : path;
             groups[group] = groups.TryGetValue(group, out var acc) ? acc.Union(path) : path;
         }
 
@@ -3118,6 +3243,570 @@ public class ConstructiveDrawingToolkit
             // `drawMannequinSolid` paints in and nothing more. A pose where an arm passes behind the
             // torso still needs the caller to say so.
             ["order"] = new List<object?> { "leftLeg", "rightLeg", "torso", "leftArm", "rightArm", "head" }
+        };
+    }
+    #endregion
+
+    #region Gesture Contour
+    /// <summary>Below this bend a limb has no inside, so both of its sides are stretched.</summary>
+    const float StraightLimbDeg = 8f;
+
+    /// <summary>
+    /// The figure's contour as a gesture drawer lines it: straight on the stretch side, curved on the
+    /// squash side — Stanchfield's "a straight line is the symbol for a stretch, a bent line for a
+    /// squash" (<i>Drawn to Life</i>, ch. 13, 19, 24).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="CreateFigureGeometry"/> builds each limb as a symmetric capsule, which is the right
+    /// mass and the wrong line: it has the same contour on both sides of a bent elbow. Here the inside
+    /// of each bend is found from the bisector of the joint — no constant decides it — and the
+    /// outside gets two straight lines meeting in an angle at the joint, the inside one curve through
+    /// the joint's inner edge.
+    /// </para>
+    /// <para>
+    /// The torso is judged by length, not by angle: shoulder to hip on each side, and the longer side is
+    /// the stretch. The squash side folds inward by an amount proportional to how much shorter it is,
+    /// so the drawing says as much as the pose does and no more. Sides within 3% of each other are
+    /// both drawn straight and <c>stretchSide</c> is null — a standing torso has no stretch to show.
+    /// </para>
+    /// <para>
+    /// Lines only, and open: the paths are strokes, not fills. Hands, feet and the head are left to
+    /// their own drawers. Radii are the ones the geometry uses, so the lines sit on the silhouette;
+    /// <c>padding</c> moves them out with it, which is how a sleeve is lined.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateGestureContour(object figureObj, object? options = null)
+    {
+        if (JsInterop.AsDict(figureObj) is not IDictionary fig)
+            throw new ArgumentException("createGestureContour needs a figure from Drawing.createMannequinFigure(...).", nameof(figureObj));
+
+        var opt = JsInterop.AsDict(options);
+        if (opt != null)
+            foreach (var key in opt.Keys)
+                if (key?.ToString() is not "padding")
+                    throw new ArgumentException($"createGestureContour has no option '{key}'. It takes padding (pixels added to every radius).");
+
+        var H = Num(fig, "headUnit", 70f);
+        var pad = Num(opt, "padding", 0f);
+        var stretch = new CanvasPath();
+        var squash = new CanvasPath();
+        var parts = new Dictionary<string, object?>();
+
+        void Limb(string name, string j0, string j1, string j2, float r0, float r1, float r2)
+        {
+            if (JsInterop.AsDict(fig[name]) is not IDictionary d) return;
+            var line = LimbContour(ExtractPoint(d[j0]), ExtractPoint(d[j1]), ExtractPoint(d[j2]),
+                r0 * H + pad, r1 * H + pad, r2 * H + pad);
+            stretch.AddPath(line.Stretch);
+            squash.AddPath(line.Squash);
+            parts[name] = new Dictionary<string, object?>
+            {
+                ["stretch"] = line.Stretch,
+                ["squash"] = line.Squash,
+                ["bendDeg"] = line.BendDeg,
+                ["straight"] = line.BendDeg < StraightLimbDeg
+            };
+        }
+
+        Limb("leftArm", "shoulder", "elbow", "wrist", 0.22f, 0.16f, 0.12f);
+        Limb("rightArm", "shoulder", "elbow", "wrist", 0.22f, 0.16f, 0.12f);
+        Limb("leftLeg", "hip", "knee", "ankle", 0.28f, 0.20f, 0.14f);
+        Limb("rightLeg", "hip", "knee", "ankle", 0.28f, 0.20f, 0.14f);
+
+        var torso = TorsoContour(fig, H, pad);
+        stretch.AddPath(torso.Stretch);
+        squash.AddPath(torso.Squash);
+        parts["torso"] = torso.Record;
+
+        return new Dictionary<string, object?>
+        {
+            ["stretch"] = stretch,
+            ["squash"] = squash,
+            ["parts"] = parts,
+            ["padding"] = pad
+        };
+    }
+
+    /// <summary>Strokes <see cref="CreateGestureContour"/>'s lines and returns what it drew.</summary>
+    /// <remarks>
+    /// <c>stretchWidth</c> and <c>squashWidth</c> default to one <c>strokeWidth</c>: Stanchfield
+    /// distinguishes the two sides by the <i>shape</i> of the line, not its weight, so a weight
+    /// difference is left to the caller rather than asserted here.
+    /// </remarks>
+    public Dictionary<string, object?> DrawGestureContour(CanvasRenderingContext2D ctx, object figureObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        var opt = JsInterop.AsDict(options);
+        Dictionary<string, object?>? geometryOptions = null;
+        if (opt != null && opt.Contains("padding")) geometryOptions = new() { ["padding"] = opt["padding"] };
+        var contour = CreateGestureContour(figureObj, geometryOptions);
+
+        var color = opt?["strokeColor"]?.ToString() ?? "#1a1a18";
+        var width = Num(opt, "strokeWidth", 2f);
+
+        ctx.Save();
+        ctx.StrokeStyle = color;
+        ctx.LineCap = "round";
+        ctx.LineJoin = "round";
+        ctx.LineWidth = Num(opt, "stretchWidth", width);
+        ctx.Stroke((CanvasPath)contour["stretch"]!);
+        ctx.LineWidth = Num(opt, "squashWidth", width);
+        ctx.Stroke((CanvasPath)contour["squash"]!);
+        ctx.Restore();
+        return contour;
+    }
+
+    /// <summary>One three-joint limb: two straight lines outside the bend, one curve inside it.</summary>
+    static (CanvasPath Stretch, CanvasPath Squash, float BendDeg) LimbContour(
+        Point2D a, Point2D b, Point2D c, float ra, float rb, float rc)
+    {
+        var stretch = new CanvasPath();
+        var squash = new CanvasPath();
+        float ux = a.X - b.X, uy = a.Y - b.Y, vx = c.X - b.X, vy = c.Y - b.Y;
+        float lu = MathF.Sqrt(ux * ux + uy * uy), lv = MathF.Sqrt(vx * vx + vy * vy);
+        if (lu < 0.001f || lv < 0.001f) return (stretch, squash, 0f);
+
+        // The interior angle at the joint; the bend is how far that falls short of a straight line.
+        var cos = Math.Clamp((ux * vx + uy * vy) / (lu * lv), -1f, 1f);
+        var bendDeg = 180f - MathF.Acos(cos) * 180f / MathF.PI;
+
+        // Unit normals of each segment, both turned to point into the bend.
+        (float X, float Y) Normal(float dx, float dy, float len) => (-dy / len, dx / len);
+        var n1 = Normal(-ux, -uy, lu);
+        var n2 = Normal(vx, vy, lv);
+        float bx = ux / lu + vx / lv, by = uy / lu + vy / lv;
+        var bl = MathF.Sqrt(bx * bx + by * by);
+
+        if (bendDeg < StraightLimbDeg || bl < 0.001f)
+        {
+            // No inside: both sides are stretched. Each is a straight taper along the segment's normal.
+            foreach (var s in new[] { 1f, -1f })
+            {
+                stretch.MoveTo(a.X + n1.Item1 * ra * s, a.Y + n1.Item2 * ra * s);
+                stretch.LineTo(b.X + (n1.Item1 + n2.Item1) * 0.5f * rb * s, b.Y + (n1.Item2 + n2.Item2) * 0.5f * rb * s);
+                stretch.LineTo(c.X + n2.Item1 * rc * s, c.Y + n2.Item2 * rc * s);
+            }
+            return (stretch, squash, bendDeg);
+        }
+
+        bx /= bl; by /= bl;
+        if (n1.Item1 * bx + n1.Item2 * by < 0f) n1 = (-n1.Item1, -n1.Item2);
+        if (n2.Item1 * bx + n2.Item2 * by < 0f) n2 = (-n2.Item1, -n2.Item2);
+
+        // Stretch: outside the bend, straight into an angle at the joint.
+        stretch.MoveTo(a.X - n1.Item1 * ra, a.Y - n1.Item2 * ra);
+        stretch.LineTo(b.X - bx * rb, b.Y - by * rb);
+        stretch.LineTo(c.X - n2.Item1 * rc, c.Y - n2.Item2 * rc);
+
+        // Squash: inside, one curve passing through the joint's inner edge.
+        Point2D p0 = new(a.X + n1.Item1 * ra, a.Y + n1.Item2 * ra), p2 = new(c.X + n2.Item1 * rc, c.Y + n2.Item2 * rc);
+        Point2D mid = new(b.X + bx * rb, b.Y + by * rb);
+        squash.MoveTo(p0.X, p0.Y);
+        squash.QuadraticCurveTo(2f * mid.X - (p0.X + p2.X) * 0.5f, 2f * mid.Y - (p0.Y + p2.Y) * 0.5f, p2.X, p2.Y);
+        return (stretch, squash, bendDeg);
+    }
+
+    /// <summary>The torso's two sides, the longer drawn straight and the shorter folded inward.</summary>
+    static (CanvasPath Stretch, CanvasPath Squash, Dictionary<string, object?> Record) TorsoContour(IDictionary fig, float H, float pad)
+    {
+        var clav = JsInterop.AsDict(fig["clavicles"]);
+        var pelvis = JsInterop.AsDict(fig["pelvis"]);
+        var sternum = ExtractPoint(fig["sternum"]);
+        var pelCenter = ExtractPoint(pelvis?["center"]);
+        var ls = ExtractPoint(clav?["left"]);
+        var rs = ExtractPoint(clav?["right"]);
+        var lh = ExtractPoint(pelvis?["leftHip"]);
+        var rh = ExtractPoint(pelvis?["rightHip"]);
+
+        static Point2D Out(Point2D from, Point2D to, float by)
+        {
+            float dx = to.X - from.X, dy = to.Y - from.Y, l = MathF.Max(0.001f, MathF.Sqrt(dx * dx + dy * dy));
+            return new Point2D(to.X + dx / l * by, to.Y + dy / l * by);
+        }
+
+        // Out from the body's centre along the shoulder and hip lines, by the radii the geometry uses.
+        var lTop = Out(sternum, ls, H * 0.29f + pad);
+        var rTop = Out(sternum, rs, H * 0.29f + pad);
+        var lBottom = Out(pelCenter, lh, H * 0.2f + pad);
+        var rBottom = Out(pelCenter, rh, H * 0.2f + pad);
+
+        var leftLen = SegmentLength(lTop, lBottom);
+        var rightLen = SegmentLength(rTop, rBottom);
+        var longer = MathF.Max(leftLen, rightLen);
+        var shortfall = longer > 0f ? MathF.Abs(leftLen - rightLen) / longer : 0f;
+        string? stretchSide = shortfall < 0.03f ? null : rightLen > leftLen ? "right" : "left";
+
+        var stretch = new CanvasPath();
+        var squash = new CanvasPath();
+        var axis = new Point2D((sternum.X + pelCenter.X) * 0.5f, (sternum.Y + pelCenter.Y) * 0.5f);
+
+        void Side(Point2D top, Point2D bottom, bool folded)
+        {
+            if (!folded)
+            {
+                stretch.MoveTo(top.X, top.Y);
+                stretch.LineTo(bottom.X, bottom.Y);
+                return;
+            }
+
+            // Folded toward the body's axis, as deep as the side is short — capped, so an extreme
+            // bend reads as a fold rather than as the waist collapsing through the other side.
+            Point2D mid = new((top.X + bottom.X) * 0.5f, (top.Y + bottom.Y) * 0.5f);
+            float dx = axis.X - mid.X, dy = axis.Y - mid.Y, l = MathF.Max(0.001f, MathF.Sqrt(dx * dx + dy * dy));
+            var depth = MathF.Min(H * 0.35f, H * shortfall);
+            Point2D fold = new(mid.X + dx / l * depth, mid.Y + dy / l * depth);
+            squash.MoveTo(top.X, top.Y);
+            squash.QuadraticCurveTo(2f * fold.X - (top.X + bottom.X) * 0.5f, 2f * fold.Y - (top.Y + bottom.Y) * 0.5f, bottom.X, bottom.Y);
+        }
+
+        Side(lTop, lBottom, stretchSide == "right");
+        Side(rTop, rBottom, stretchSide == "left");
+
+        return (stretch, squash, new Dictionary<string, object?>
+        {
+            ["stretchSide"] = stretchSide,
+            ["leftLength"] = leftLen,
+            ["rightLength"] = rightLen,
+            ["shortfall"] = shortfall
+        });
+    }
+    #endregion
+
+    #region Tangents
+    static readonly string[] TangentOptions = ["gap", "near", "angleDeg", "minRun", "step"];
+
+    /// <summary>
+    /// Finds the two kinds of tangent Stanchfield corrects: shapes that <b>touch</b> — outlines kissing,
+    /// or overlapping by only a sliver — and shapes that <b>align</b>, running side by side along parallel
+    /// edges (<i>Drawn to Life</i> vol. 1 ch. 16, 30; vol. 2 ch. 57).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>shapes</c> is an object of named <c>CanvasPath</c>s, an array of them, or a result of
+    /// <c>createFigureGeometry</c>, whose <c>groups</c> are then used. Every pair is tested.
+    /// </para>
+    /// <para>
+    /// A touch is judged by one number, <c>gap</c>: outlines closer than it without overlapping, or an
+    /// overlap thinner than it. A decisive overlap — an arm entering the shoulder, one circle behind
+    /// another — is thicker than that and is not reported, which is why shapes joined by construction
+    /// need no exemption. An alignment is a run of the smaller shape's outline, outside the larger,
+    /// within <c>near</c> of the larger's outline and parallel to it within <c>angleDeg</c>, at least
+    /// <c>minRun</c> long.
+    /// </para>
+    /// <para>
+    /// Lengths default to fractions of the smaller shape's size (the square root of its area), so the
+    /// same pose gives the same answer at any scale; each tangent reports the values it was judged by.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> FindTangents(object shapesObj, object? options = null)
+    {
+        var shapes = ReadShapes(shapesObj);
+        var opt = JsInterop.AsDict(options);
+        if (opt != null)
+            foreach (var key in opt.Keys)
+                if (Array.IndexOf(TangentOptions, key?.ToString()) < 0)
+                    throw new ArgumentException($"findTangents has no option '{key}'. It takes {string.Join(", ", TangentOptions)}.");
+
+        var areas = new float[shapes.Count];
+        var smallest = float.MaxValue;
+        for (var i = 0; i < shapes.Count; i++)
+        {
+            areas[i] = CanvasPath.AreaOf(shapes[i].Path.Path);
+            if (areas[i] > 0f) smallest = MathF.Min(smallest, areas[i]);
+        }
+
+        var step = opt != null && opt.Contains("step") ? MathF.Max(0.25f, Num(opt, "step", 1f))
+            : smallest == float.MaxValue ? 1f : Math.Clamp(MathF.Sqrt(smallest) / 40f, 0.5f, 3f);
+        var samples = new List<OutlineSample>?[shapes.Count];
+        List<OutlineSample> SamplesOf(int i) => samples[i] ??= SampleOutline(shapes[i].Path.Path, step);
+
+        var touching = new List<object?>();
+        var aligned = new List<object?>();
+        var pairs = 0;
+
+        for (var i = 0; i < shapes.Count; i++)
+            for (var j = i + 1; j < shapes.Count; j++)
+            {
+                if (areas[i] <= 0f || areas[j] <= 0f) continue;
+                var (a, b) = areas[i] <= areas[j] ? (i, j) : (j, i);
+                var size = MathF.Sqrt(areas[a]);
+                var gap = Num(opt, "gap", size * 0.08f);
+                var near = Num(opt, "near", size * 0.35f);
+                var minRun = Num(opt, "minRun", size * 0.35f);
+                var maxAngle = Num(opt, "angleDeg", 15f);
+
+                var ba = shapes[a].Path.Path.Bounds;
+                var bb = shapes[b].Path.Path.Bounds;
+                var reach = MathF.Max(gap, near);
+                if (ba.Left > bb.Right + reach || bb.Left > ba.Right + reach || ba.Top > bb.Bottom + reach || bb.Top > ba.Bottom + reach)
+                    continue;
+                pairs++;
+
+                var sa = SamplesOf(a);
+                var sb = SamplesOf(b);
+                if (sa.Count == 0 || sb.Count == 0) continue;
+
+                // Nearest point of B's outline for every sample of A's.
+                var nearest = new int[sa.Count];
+                var dist = new float[sa.Count];
+                var best = 0;
+                for (var k = 0; k < sa.Count; k++)
+                {
+                    var d2 = float.MaxValue;
+                    for (var m = 0; m < sb.Count; m++)
+                    {
+                        float dx = sb[m].X - sa[k].X, dy = sb[m].Y - sa[k].Y, q = dx * dx + dy * dy;
+                        if (q < d2) { d2 = q; nearest[k] = m; }
+                    }
+                    dist[k] = MathF.Sqrt(d2);
+                    if (dist[k] < dist[best]) best = k;
+                }
+
+                var names = (shapes[a].Name, shapes[b].Name);
+                var run = Alignment(sa, sb, nearest, dist, shapes[a].Path.Path, shapes[b].Path.Path, near, gap, maxAngle, step);
+                var isAligned = run != null && run.Length >= minRun;
+                if (isAligned) aligned.Add(AlignmentRecord(sa, run!, names, near, minRun, maxAngle));
+
+                // Two edges running side by side are closest somewhere along the run; that point is the
+                // alignment, not a second tangent. A kiss elsewhere, or a sliver of overlap, still counts.
+                var touch = Touch(shapes[a].Path, shapes[b].Path, areas[a], sa[best], sb[nearest[best]], dist[best], gap);
+                if (touch != null && !(isAligned && touch["overlapping"] is false && OnRun(sa, run!, sa[best], near)))
+                {
+                    touch["a"] = names.Item1;
+                    touch["b"] = names.Item2;
+                    touching.Add(touch);
+                }
+            }
+
+        var all = new List<object?>(touching);
+        all.AddRange(aligned);
+        return new Dictionary<string, object?>
+        {
+            ["tangents"] = all,
+            ["count"] = all.Count,
+            ["touching"] = touching.Count,
+            ["aligned"] = aligned.Count,
+            ["pairs"] = pairs,
+            ["step"] = step
+        };
+    }
+
+    record struct OutlineSample(float X, float Y, float Tx, float Ty, int Contour);
+
+    sealed record AlignedRun(int ContourStart, int ContourCount, int Offset, int Count, float Length, float MeanDistance, float MeanAngle, bool Flush)
+    {
+        public int Index(int k) => ContourStart + (Offset + k) % ContourCount;
+    }
+
+    /// <summary>The shapes to test, in the order they were given.</summary>
+    static List<(string Name, CanvasPath Path)> ReadShapes(object shapesObj)
+    {
+        const string usage = "findTangents needs an object of named CanvasPaths, an array of them, or a createFigureGeometry(...) result.";
+        var list = new List<(string, CanvasPath)>();
+
+        void Add(string name, object? value)
+        {
+            if (value is not CanvasPath path)
+                throw new ArgumentException($"findTangents: '{name}' is not a CanvasPath. {usage}");
+            list.Add((name, path));
+        }
+
+        switch (shapesObj)
+        {
+            case IDictionary<string, object?> generic:
+                if (generic.TryGetValue("groups", out var g1) && g1 is not CanvasPath) return ReadShapes(g1!);
+                foreach (var kv in generic) Add(kv.Key, kv.Value);
+                break;
+            case IDictionary dict:
+                if (dict.Contains("groups") && dict["groups"] is not CanvasPath) return ReadShapes(dict["groups"]!);
+                foreach (DictionaryEntry kv in dict) Add(kv.Key.ToString()!, kv.Value);
+                break;
+            case IEnumerable items and not string:
+                var n = 0;
+                foreach (var item in items) Add((n++).ToString(CultureInfo.InvariantCulture), item);
+                break;
+            default:
+                throw new ArgumentException(usage, nameof(shapesObj));
+        }
+
+        if (list.Count < 2) throw new ArgumentException($"findTangents needs at least two shapes; it was given {list.Count}.");
+        return list;
+    }
+
+    /// <summary>Evenly spaced points on every contour, each with its unit tangent.</summary>
+    static List<OutlineSample> SampleOutline(SKPath path, float step)
+    {
+        var result = new List<OutlineSample>();
+        using var simple = new SKPath();
+        var source = path.Simplify(simple) ? simple : path;
+        using var measure = new SKPathMeasure(source, true);
+        var contour = 0;
+        do
+        {
+            var length = measure.Length;
+            if (length <= 0f) continue;
+            var n = Math.Max(8, (int)MathF.Ceiling(length / step));
+            for (var i = 0; i < n; i++)
+                if (measure.GetPositionAndTangent(length * i / n, out var p, out var t))
+                {
+                    var l = MathF.Max(1e-6f, MathF.Sqrt(t.X * t.X + t.Y * t.Y));
+                    result.Add(new OutlineSample(p.X, p.Y, t.X / l, t.Y / l, contour));
+                }
+            contour++;
+        }
+        while (measure.NextContour());
+        return result;
+    }
+
+    /// <summary>A kiss or a graze between two shapes, or null when they are clear or overlap decisively.</summary>
+    static Dictionary<string, object?>? Touch(CanvasPath a, CanvasPath b, float areaA, OutlineSample pa, OutlineSample pb, float distance, float gap)
+    {
+        using var overlap = a.Intersect(b);
+        var overlapArea = CanvasPath.AreaOf(overlap.Path);
+        Point2D at;
+        float depth;
+
+        if (overlapArea <= MathF.Max(0.5f, areaA * 1e-4f))
+        {
+            if (distance > gap) return null;
+            at = new Point2D((pa.X + pb.X) * 0.5f, (pa.Y + pb.Y) * 0.5f);
+            depth = 0f;
+        }
+        else
+        {
+            // Contained entirely is not a tangent; neither is an overlap thicker than the gap.
+            if (overlapArea >= areaA * 0.98f) return null;
+            using var rim = new SKPathMeasure(overlap.Path, true);
+            var perimeter = 0f;
+            do perimeter += rim.Length; while (rim.NextContour());
+            depth = perimeter > 0f ? 2f * overlapArea / perimeter : 0f;   // mean thickness of the sliver
+            if (depth > gap) return null;
+            var r = overlap.Path.Bounds;
+            at = new Point2D(r.MidX, r.MidY);
+            distance = 0f;
+        }
+
+        var mark = new CanvasPath();
+        mark.Arc(at.X, at.Y, MathF.Max(gap, 4f), 0f, MathF.PI * 2f);
+        return new Dictionary<string, object?>
+        {
+            ["kind"] = "touch",
+            ["overlapping"] = depth > 0f,
+            ["at"] = ToDict(at),
+            ["distance"] = distance,
+            ["depth"] = depth,
+            ["gap"] = gap,
+            ["mark"] = mark
+        };
+    }
+
+    /// <summary>The longest run of A's outline lying outside B, near B's outline and parallel to it.</summary>
+    static AlignedRun? Alignment(List<OutlineSample> sa, List<OutlineSample> sb, int[] nearest, float[] dist,
+        SKPath a, SKPath b, float near, float gap, float maxAngle, float step)
+    {
+        var cosLimit = MathF.Cos(maxAngle * MathF.PI / 180f);
+        var ok = new bool[sa.Count];
+        var hidden = new bool[sa.Count];
+        for (var k = 0; k < sa.Count; k++)
+        {
+            var s = sa[k];
+            var t = sb[nearest[k]];
+            // An edge that faces B runs beside it, within `near`. An edge whose way across to B passes
+            // back through A is lying over B's hidden edge: that is the flush case — the silhouette
+            // carries on as if A were not there — and only counts within `gap`, or the far side of any
+            // thin shape overlapping B would count as running along it.
+            hidden[k] = a.Contains((s.X + t.X) * 0.5f, (s.Y + t.Y) * 0.5f);
+            ok[k] = dist[k] <= (hidden[k] ? gap : near) && MathF.Abs(s.Tx * t.Tx + s.Ty * t.Ty) >= cosLimit && !b.Contains(s.X, s.Y);
+        }
+
+        AlignedRun? best = null;
+        var start = 0;
+        while (start < sa.Count)
+        {
+            // One contour at a time, and circular within it, so a run across the seam is one run.
+            var end = start;
+            while (end < sa.Count && sa[end].Contour == sa[start].Contour) end++;
+            var n = end - start;
+            var allOk = true;
+            for (var k = start; k < end; k++) allOk &= ok[k];
+
+            if (allOk) best = Longer(best, Run(start, n, 0, n));
+            else
+                for (var k = 0; k < n; k++)
+                {
+                    if (!ok[start + k] || ok[start + (k - 1 + n) % n]) continue;   // begin at each run's first sample
+                    var len = 0;
+                    while (len < n && ok[start + (k + len) % n]) len++;
+                    best = Longer(best, Run(start, n, k, len));
+                }
+            start = end;
+        }
+        return best;
+
+        AlignedRun Run(int contourStart, int contourCount, int offset, int count)
+        {
+            float sumD = 0f, sumA = 0f, length = step;
+            var flush = 0;
+            for (var k = 0; k < count; k++)
+            {
+                var idx = contourStart + (offset + k) % contourCount;
+                var s = sa[idx];
+                var t = sb[nearest[idx]];
+                sumD += dist[idx];
+                if (hidden[idx]) flush++;
+                sumA += MathF.Acos(Math.Clamp(MathF.Abs(s.Tx * t.Tx + s.Ty * t.Ty), 0f, 1f)) * 180f / MathF.PI;
+                if (k == 0) continue;
+                var p = sa[contourStart + (offset + k - 1) % contourCount];
+                length += MathF.Sqrt((s.X - p.X) * (s.X - p.X) + (s.Y - p.Y) * (s.Y - p.Y));
+            }
+            return new AlignedRun(contourStart, contourCount, offset, count, length, sumD / count, sumA / count, flush * 2 > count);
+        }
+
+        static AlignedRun? Longer(AlignedRun? a, AlignedRun b) => a == null || b.Length > a.Length ? b : a;
+    }
+
+    /// <summary>Whether a point lies along an aligned run, within <paramref name="near"/> of it.</summary>
+    static bool OnRun(List<OutlineSample> sa, AlignedRun run, OutlineSample p, float near)
+    {
+        for (var k = 0; k < run.Count; k++)
+        {
+            var s = sa[run.Index(k)];
+            if ((s.X - p.X) * (s.X - p.X) + (s.Y - p.Y) * (s.Y - p.Y) <= near * near) return true;
+        }
+        return false;
+    }
+
+    static Dictionary<string, object?> AlignmentRecord(List<OutlineSample> sa, AlignedRun run, (string A, string B) names,
+        float near, float minRun, float maxAngle)
+    {
+        OutlineSample At(int k) => sa[run.Index(k)];
+        var mark = new CanvasPath();
+        for (var k = 0; k < run.Count; k++)
+        {
+            var s = At(k);
+            if (k == 0) mark.MoveTo(s.X, s.Y); else mark.LineTo(s.X, s.Y);
+        }
+
+        var first = At(0);
+        var last = At(run.Count - 1);
+        var mid = At(run.Count / 2);
+        return new Dictionary<string, object?>
+        {
+            ["kind"] = "align",
+            ["flush"] = run.Flush,
+            ["a"] = names.A,
+            ["b"] = names.B,
+            ["at"] = ToDict(new Point2D(mid.X, mid.Y)),
+            ["from"] = ToDict(new Point2D(first.X, first.Y)),
+            ["to"] = ToDict(new Point2D(last.X, last.Y)),
+            ["length"] = run.Length,
+            ["distance"] = run.MeanDistance,
+            ["angleDeg"] = run.MeanAngle,
+            ["near"] = near,
+            ["minRun"] = minRun,
+            ["maxAngleDeg"] = maxAngle,
+            ["mark"] = mark
         };
     }
     #endregion

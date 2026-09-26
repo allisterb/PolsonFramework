@@ -1224,6 +1224,10 @@ public class CanvasRenderingContext2D
         return [];
     }
 
+    /// <summary>The figure lined straight on the stretch side and curved on the squash side.</summary>
+    public Dictionary<string, object?> DrawGestureContour(object figure, object? options = null) =>
+        _toolkit.DrawGestureContour(this, figure, options);
+
     public void DrawTorsoMusculature(object figure, object? options = null) =>
         _toolkit.DrawTorsoMusculature(this, figure, options);
 

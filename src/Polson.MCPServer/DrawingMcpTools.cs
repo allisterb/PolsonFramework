@@ -656,6 +656,22 @@ public partial class DrawingMcpTools
             var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q, executionId, render ?? true), cancellationToken);
             var result = await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
 
+            // outFile names a file the caller will open next. A script that rendered nothing used to
+            // report success and write nothing, so the file simply was not there and nothing said why.
+            if (!string.IsNullOrWhiteSpace(outFile) && result.Success && result.ImageBytes is not { Length: > 0 })
+            {
+                result.Success = false;
+                result.Error = $"outFile '{outFile}' was given but the script produced no image, so no file was written. "
+                    + "A script renders what it returns - a canvas, a paper, a bitmap - or else the last canvas or paper "
+                    + "it created. In a script that uses await, the last line is only the result when written with "
+                    + "`return`: end it with `return canvas;`.";
+                Events.Append("render.missing", session.Stage, executionId, new Dictionary<string, object?>
+                {
+                    ["script"] = scriptPath,
+                    ["outFile"] = outFile,
+                });
+            }
+
             if (!string.IsNullOrWhiteSpace(outFile) && result.ImageBytes != null && result.ImageBytes.Length > 0)
             {
                 var fullOutPath = ResolveOutputPath(outFile, nameof(outFile));

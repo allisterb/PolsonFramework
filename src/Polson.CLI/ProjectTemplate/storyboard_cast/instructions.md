@@ -155,28 +155,32 @@ Call `GenerateCharacter` with each `jobId` until it completes. Then, for each ch
 
 ### 4. Place and pose the actors
 
-A character's body is about one model unit tall with its feet at `bounds.y`. To stand it in the set,
-convert a height in set units into a scale, and put its feet on a set point:
+**Stand a character in a panel with `Character.place`**: say where its feet go in the panel and how
+tall it stands, as fractions of the panel, and it returns the options for `Mesh.draw`:
 
 ```js
 const tomas = Character.load('tomas');
-const b = tomas.bounds;
-const heightInSet = 18;                                   // how tall a person is in your set's units
-const scale = shot.scale * heightInSet / b.height;
-const feet = shot.point(34, 46);                          // where the feet stand, in set units
-const posed = tomas.pose({ head: { yDeg: 20 }, leftUpperArm: { zDeg: 40 }, rightUpperArm: { zDeg: -40 } });
-Mesh.draw(ctx, posed, { x: feet.x, y: feet.y + b.y * scale, scale, yawDeg: -30,
-                        expression: { browDown: 0.8, mouthFrown: 0.6 } });
+const draw = Character.place(tomas, panel, { at: { x: 0.35, y: 0.92 }, height: 0.75, yawDeg: -30 });
+const pose = Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 });
+Mesh.draw(ctx, tomas.pose(pose), { ...draw, expression: { browDown: 0.8, mouthFrown: 0.6 } });
 ```
+
+`height` is the character **standing**, whatever the pose, so a crouch comes out shorter rather than
+enlarged. Keep it the same for one character across panels shot at the same distance, and raise it for
+a closer shot; above 1 the panel crops the figure, so clip to the panel. **For a close shot, anchor the
+head** — `{ anchor: 'head', at: { x: 0.4, y: 0.35 }, height: 3 }` puts the face there — or the feet
+land where you said and the panel shows boots. `panel` is any
+`{ x, y, width, height }`, such as `shot.panel` or a cell from `Layout.grid`. Pass the same `draw` to
+`Character.reach` when a hand has to meet something you drew.
 
 - **Every character arrives standing in the pose it was built in**, arms out, and a board of those
   reads as a line-up. **Start a panel from a performed pose instead:**
   `Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 })` gives a whole-body pose from one frame of
   a recorded clip, keyed by body part, so you can change the head or one arm before passing it to
   `pose(...)`. `Character.clips()` lists the 162: idles with a lantern, a torch, at a rail, on the
-  phone, arms folded; greeting, climbing, crouching and more. The hips turn but do not move, so a
-  crouch can lift a foot off the floor, and a clip's hand lands where your character's arm reaches,
-  not on your prop. **Put the hand on the prop with `Character.reach`**: give it the page point and
+  phone, arms folded; greeting, climbing, crouching, kneeling, sitting and more. The hips move with
+  the clip, so a crouch keeps the feet on the floor, but a clip's hand lands where your character's arm
+  reaches, not on your prop. **Put the hand on the prop with `Character.reach`**: give it the page point and
   the draw options, and it bends the arm to it and turns the head to look where you say, reporting
   `reached: false` when the prop is too far. See `polson://sdk/core/Character`.
 - **`yawDeg` turns the whole character** to face where the panel needs; `pose` moves its parts.

@@ -174,6 +174,78 @@ public class ReachTests : TestsRuntime
         Assert.True(angle < 1f);
     }
 
+    static IDictionary Drawn(FaceMesh mesh, Dictionary<string, object?> draw)
+    {
+        var canvas = new SkiaCanvas(800, 800);
+        return (IDictionary)new MeshToolkit().Draw(canvas.GetContext("2d"), mesh, draw)["bounds"]!;
+    }
+
+    static float F(object? v) => Convert.ToSingle(v);
+
+    /// <summary>Feet on the floor point, the asked height, and the hips over the point, at any turn.</summary>
+    [Fact]
+    public void TestPlaceStandsTheCharacterWhereAsked()
+    {
+        if (Setup() is not var (kit, tomas, _, _)) return;
+        var frame = new Dictionary<string, object?> { ["x"] = 100, ["y"] = 50, ["width"] = 400, ["height"] = 600 };
+        foreach (var yaw in new[] { 0f, 40f, -70f })
+        {
+            var draw = kit.Place(tomas, frame, new Dictionary<string, object?>
+            {
+                ["at"] = new Dictionary<string, object?> { ["x"] = 0.3, ["y"] = 0.9 }, ["height"] = 0.7, ["yawDeg"] = yaw
+            });
+            var b = Drawn(tomas.Pose(null), draw);
+            var hips = kit.Where(tomas, null, "hips", draw);
+            output.WriteLine($"yaw {yaw}: feet at {F(b["y2"]):0.0} (want 590), height {F(b["height"]):0.0} (want 420), hips x {F(hips["x"]):0.0} (want 220)");
+            Assert.InRange(F(b["y2"]), 587f, 593f);
+            if (yaw == 0f) Assert.InRange(F(b["height"]), 416f, 424f);
+            Assert.InRange(F(hips["x"]), 219.5f, 220.5f);
+        }
+    }
+
+    /// <summary>A crouch placed the same way stays on the floor and comes out shorter, not enlarged.</summary>
+    [Fact]
+    public void TestAPlacedCrouchKeepsItsFloorAndItsScale()
+    {
+        if (Setup() is not var (kit, tomas, _, _)) return;
+        var frame = new Dictionary<string, object?> { ["x"] = 0, ["y"] = 0, ["width"] = 600, ["height"] = 600 };
+        var draw = kit.Place(tomas, frame, new Dictionary<string, object?> { ["height"] = 0.8, ["yawDeg"] = 30 });
+        var standing = Drawn(tomas.Pose(null), draw);
+        var crouch = Drawn(tomas.Pose(kit.Retarget(tomas, "Crouch_Idle", new Dictionary<string, object?> { ["at"] = 0.5 })), draw);
+        output.WriteLine($"standing {F(standing["height"]):0} tall, feet {F(standing["y2"]):0}; crouch {F(crouch["height"]):0} tall, feet {F(crouch["y2"]):0}");
+        // The toes of a crouch point down past the ankle, so the lowest point can dip a little under
+        // the floor the hips were scaled to; measured at 3.75% of the standing height.
+        var slack = 0.05f * F(standing["height"]);
+        Assert.InRange(F(crouch["y2"]), F(standing["y2"]) - slack, F(standing["y2"]) + slack);
+        Assert.True(F(crouch["height"]) < 0.8f * F(standing["height"]));
+    }
+
+    /// <summary>A close shot anchors the head, so the face is where the panel wants it.</summary>
+    [Fact]
+    public void TestPlaceCanAnchorTheHead()
+    {
+        if (Setup() is not var (kit, tomas, _, _)) return;
+        var frame = new Dictionary<string, object?> { ["x"] = 0, ["y"] = 0, ["width"] = 400, ["height"] = 300 };
+        var draw = kit.Place(tomas, frame, new Dictionary<string, object?>
+        {
+            ["anchor"] = "head", ["at"] = new Dictionary<string, object?> { ["x"] = 0.4, ["y"] = 0.35 }, ["height"] = 3, ["yawDeg"] = 25
+        });
+        var head = kit.Where(tomas, null, "head", draw);
+        Assert.InRange(F(head["x"]), 159.5f, 160.5f);
+        Assert.InRange(F(head["y"]), 104.5f, 105.5f);
+    }
+
+    [Fact]
+    public void TestBadPlacementsAreRefused()
+    {
+        if (Setup() is not var (kit, tomas, _, _)) return;
+        var frame = new Dictionary<string, object?> { ["x"] = 0, ["y"] = 0, ["width"] = 100, ["height"] = 100 };
+        Assert.Contains("scale", Assert.Throws<ArgumentException>(() => kit.Place(tomas, frame, new Dictionary<string, object?> { ["scale"] = 3 })).Message);
+        Assert.Contains("nose", Assert.Throws<ArgumentException>(() => kit.Place(tomas, frame, new Dictionary<string, object?> { ["anchor"] = "nose" })).Message);
+        Assert.Throws<ArgumentException>(() => kit.Place(tomas, frame, new Dictionary<string, object?> { ["height"] = 0 }));
+        Assert.Contains("the number 2", Assert.Throws<ArgumentException>(() => kit.Place(tomas, 2)).Message);
+    }
+
     [Fact]
     public void TestBadGoalsAreRefusedByName()
     {

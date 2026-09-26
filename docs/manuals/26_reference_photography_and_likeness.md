@@ -818,12 +818,19 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 > library. Written joint by joint, a pose comes out stiff, because nothing in the angles says where
 > the weight is or how the shoulders answer the hips — a performer's frame carries both. The method is
 > Mesh2Motion's chain retargeting (Scott Petrovic, MIT), with each limb aimed along its own bone so a
-> character built in any rest pose takes it; its clips are the author's own, CC0. **The hips turn and do
-> not travel**, so a crouch lifts a foot off the floor, and a clip's hand lands where your character's
-> arm reaches, not on your prop.
+> character built in any rest pose takes it; its clips are the author's own, CC0. **The hips move with
+> the clip in place**, scaled to the character's legs, so a crouch or a kneel keeps the feet on the
+> floor while a clip that crosses the floor leaves the character on its mark. A clip's hand lands where
+> your character's arm reaches, not on your prop.
 >
 > **Contacts are the second step, and `Character.reach` makes them.** It moves a hand or foot to a goal
 > — a point on the page, or in the character's own space — by the exact two-bone solution for the arm
 > or leg, and turns the head to look at something, leaving the rest of the pose as the performer had
 > it. It says when a goal is out of reach instead of stretching the arm, and `Character.where` answers
 > the reverse question, where a hand is, so a prop can be drawn into it.
+>
+> **Stand the character in the panel with `Character.place`**: feet at a point in the panel and a
+> standing height, both as fractions of the panel. It sizes from the character standing, so the same
+> figure stays one size across panels however it is posed — a crouch is shorter, not rescaled to fill.
+> Measured on a standing figure the feet land on the point and the height is exact at any turn; a crouch
+> can dip its toes a few percent of its height under the line, because the toes point down past the ankle.

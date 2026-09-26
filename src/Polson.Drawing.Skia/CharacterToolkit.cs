@@ -85,7 +85,8 @@ public class CharacterToolkit
     /// <remarks>
     /// Keyed by body part, so it passes straight to <c>pose(...)</c> and one entry can be replaced
     /// before it does. <c>at</c> is a fraction of the clip, <c>time</c> is seconds; neither means the
-    /// first frame. <paramref name="character"/> is a mesh from <c>Character.load</c>, or a name.
+    /// first frame. The hips move in place with the clip — a crouch lowers them — unless
+    /// <c>moveHips</c> is false. <paramref name="character"/> is a mesh from <c>Character.load</c>, or a name.
     /// </remarks>
     public Dictionary<string, object?> Retarget(object character, string clip, object? options = null)
     {
@@ -110,16 +111,18 @@ public class CharacterToolkit
 
         var opt = JsInterop.AsDict(options);
         float? at = null, time = null;
+        var moveHips = true;
         if (opt != null)
             foreach (var key in opt.Keys)
             {
                 var k = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+                if (k == "moveHips") { moveHips = Convert.ToBoolean(opt[key!], System.Globalization.CultureInfo.InvariantCulture); continue; }
                 var v = Convert.ToSingle(opt[key!], System.Globalization.CultureInfo.InvariantCulture);
                 switch (k)
                 {
                     case "at": at = v; break;
                     case "time": time = v; break;
-                    default: throw new ArgumentException($"Character.retarget has no option '{k}'. It takes at (0 to 1) or time (seconds).");
+                    default: throw new ArgumentException($"Character.retarget has no option '{k}'. It takes at (0 to 1) or time (seconds), and moveHips.");
                 }
             }
         if (at.HasValue && time.HasValue)
@@ -129,7 +132,7 @@ public class CharacterToolkit
         if (time is { } tt && (!float.IsFinite(tt) || tt < 0f || tt > found.Seconds))
             throw new ArgumentException($"'time' is in seconds within the clip, 0 to {found.Seconds:0.###}; got {tt}.");
 
-        return PoseRetarget.Retarget(rig, found, time ?? (at ?? 0f) * found.Seconds);
+        return PoseRetarget.Retarget(rig, found, time ?? (at ?? 0f) * found.Seconds, moveHips);
     }
     /// <summary>
     /// Moves hands and feet to goals and points the head, on top of a pose:
@@ -149,6 +152,18 @@ public class CharacterToolkit
     /// </summary>
     public Dictionary<string, object?> Where(object character, object? pose, string part, object? draw = null) =>
         CharacterIk.Where(Character(character, "where"), pose, part, draw);
+    /// <summary>
+    /// The options that stand a character in a frame, for <c>Mesh.draw</c> and <c>Character.reach</c>:
+    /// <c>Mesh.draw(ctx, tomas.pose(p), Character.place(tomas, panel, { at: { x: 0.3, y: 0.92 }, height: 0.7 }))</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>frame</c> is any <c>{ x, y, width, height }</c>, such as a panel from <c>Layout.grid</c>.
+    /// <c>at</c> is where the feet stand, as fractions of the frame, and <c>height</c> how tall the
+    /// character stands, as a share of the frame's height — standing, whatever the pose, so a crouch
+    /// comes out shorter rather than enlarged.
+    /// </remarks>
+    public Dictionary<string, object?> Place(object character, object frame, object? options = null) =>
+        CharacterIk.Place(Character(character, "place"), frame, options);
     #endregion
 
     #region Private

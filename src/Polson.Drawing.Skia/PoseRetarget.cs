@@ -26,8 +26,9 @@ using SharpGLTF.Schema2;
 /// child, which is the same thing in any rest pose.
 /// </para>
 /// <para>
-/// Trunk, head, hands and feet take the source's change of world rotation from its rest. Hips are
-/// rotated and never moved: a crouching clip bends the knees without lowering the pelvis.
+/// Trunk, head, hands and feet take the source's change of world rotation from its rest. The hips also
+/// move, in place and scaled to the character's legs, so a crouch lowers the pelvis and the feet stay
+/// down; see <see cref="HipMove"/>.
 /// </para>
 /// </remarks>
 public static class PoseRetarget
@@ -107,7 +108,7 @@ public static class PoseRetarget
     }
 
     /// <summary>The pose, keyed by body part, that puts <paramref name="rig"/> where the clip is at <paramref name="seconds"/>.</summary>
-    internal static Dictionary<string, object?> Retarget(MeshRig rig, Clip clip, float seconds)
+    internal static Dictionary<string, object?> Retarget(MeshRig rig, Clip clip, float seconds, bool moveHips = true)
     {
         if (rig.Aliases.Count == 0)
             throw new ArgumentException(
@@ -179,7 +180,53 @@ public static class PoseRetarget
             };
         }
 
+        if (moveHips && HipMove(rig, source, clip, seconds, align) is { } move
+            && pose.TryGetValue("hips", out var hipsEntry) && hipsEntry is Dictionary<string, object?> hipsPose)
+            hipsPose["move"] = new Dictionary<string, object?>
+            {
+                ["x"] = Math.Round(move.X, 5),
+                ["y"] = Math.Round(move.Y, 5),
+                ["z"] = Math.Round(move.Z, 5)
+            };
+
         return pose;
+    }
+
+    /// <summary>
+    /// How far the clip's pelvis has moved from its rest, in place, scaled to this character's legs;
+    /// null where the hips cannot move.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>In place, not travelling.</b> A clip that crosses the floor carries that travel on the node
+    /// above the pelvis — Mesh2Motion's <c>root</c> slides 2.96 back in a knockback and climbs 1.57 in
+    /// a ladder climb — and the pelvis carries the rest: a crouch drops it from 0.92 to 0.47. So the
+    /// pelvis is read relative to its parent and put back on the parent's rest, which keeps the crouch
+    /// and the weight shift and leaves the character standing where it was placed.
+    /// </para>
+    /// <para>
+    /// <b>Scaled by leg length</b>, hips above ankles, target over source, after Mesh2Motion's scaled
+    /// translation: a crouch drops a short-legged character less far, so its feet stay down.
+    /// </para>
+    /// </remarks>
+    static Vector3? HipMove(MeshRig rig, Dictionary<string, Node> source, Clip clip, float seconds, Quaternion align)
+    {
+        if (!rig.Aliases.TryGetValue("hips", out var hips) || rig.JointParent.ContainsKey(hips)
+            || !rig.FileNodes.TryGetValue(hips, out var tHips)) return null;
+        if (!rig.Aliases.TryGetValue("leftFoot", out var lf) || !rig.Aliases.TryGetValue("rightFoot", out var rf)
+            || !rig.FileNodes.TryGetValue(lf, out var tLeft) || !rig.FileNodes.TryGetValue(rf, out var tRight)) return null;
+
+        var pelvis = source["pelvis"];
+        var anchor = pelvis.VisualParent;
+        var anim = pelvis.GetWorldMatrix(clip.Animation, seconds);
+        if (anchor is not null && Matrix4x4.Invert(anchor.GetWorldMatrix(clip.Animation, seconds), out var inv))
+            anim = anim * inv * anchor.WorldMatrix;
+
+        var srcLegs = pelvis.WorldMatrix.Translation.Y - ((source["foot_l"].WorldMatrix.Translation.Y + source["foot_r"].WorldMatrix.Translation.Y) / 2f);
+        var tarLegs = tHips.WorldMatrix.Translation.Y - ((tLeft.WorldMatrix.Translation.Y + tRight.WorldMatrix.Translation.Y) / 2f);
+        if (srcLegs <= 1e-6f || tarLegs <= 1e-6f) return null;
+
+        return Vector3.Transform(anim.Translation - pelvis.WorldMatrix.Translation, align) * (tarLegs / srcLegs);
     }
 
     /// <summary>

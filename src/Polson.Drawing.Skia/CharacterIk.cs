@@ -52,7 +52,7 @@ internal static class CharacterIk
     internal static Dictionary<string, object?> Reach(FaceMesh mesh, object? poseObj, object goalsObj, object? drawObj)
     {
         var rig = Rigged(mesh, "reach");
-        var deltas = ReadPose(rig, poseObj, "reach");
+        var deltas = ReadPose(rig, poseObj, "reach", out var moves);
         var draw = drawObj is null ? null : MeshToolkit.Pose.From(JsInterop.AsDict(drawObj), mesh);
         var goals = JsInterop.AsDict(goalsObj)
             ?? throw new ArgumentException("Character.reach needs goals, such as { rightHand: { at: { x, y, z } } }.");
@@ -68,7 +68,7 @@ internal static class CharacterIk
             var name = Convert.ToString(key, CultureInfo.InvariantCulture) ?? "";
             var goal = JsInterop.AsDict(goals[key!])
                 ?? throw new ArgumentException($"The goal for '{name}' is not an object.");
-            var world = Forward(rig, deltas);
+            var world = Forward(rig, deltas, moves);
 
             if (name == "head")
             {
@@ -119,7 +119,7 @@ internal static class CharacterIk
     internal static Dictionary<string, object?> Where(FaceMesh mesh, object? poseObj, string part, object? drawObj)
     {
         var rig = Rigged(mesh, "where");
-        var world = Forward(rig, ReadPose(rig, poseObj, "where"));
+        var world = Forward(rig, ReadPose(rig, poseObj, "where", out var moves), moves);
         var at = world[Handle(rig, part)].Translation;
         if (drawObj is null)
             return new() { ["x"] = at.X, ["y"] = at.Y, ["z"] = at.Z };
@@ -127,6 +127,82 @@ internal static class CharacterIk
         var draw = MeshToolkit.Pose.From(JsInterop.AsDict(drawObj), mesh);
         var r = draw.Rotate(new SkiaSharp.SKPoint3(at.X * draw.StretchX, at.Y * draw.StretchY, at.Z * draw.StretchZ));
         return new() { ["x"] = draw.X + (r.X * draw.Scale), ["y"] = draw.Y - (r.Y * draw.Scale), ["depth"] = r.Z };
+    }
+    /// <summary>
+    /// The <c>Mesh.draw</c> options that stand a character in a frame: feet at <c>at</c> — or the
+    /// <c>anchor</c> body part there instead — standing <c>height</c> of the frame tall; see
+    /// <c>Character.place</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Sized from the character standing, not from the pose.</b> A crouch is shorter than a stance,
+    /// and sizing it to fill the height would make one character two sizes in two panels. The feet are
+    /// where the character's floor is — the bottom of its bind pose, under its hips — which is where a
+    /// retargeted pose keeps them, since the hips move with the clip.
+    /// </remarks>
+    internal static Dictionary<string, object?> Place(FaceMesh mesh, object frameObj, object? optObj)
+    {
+        var f = LayoutToolkit.AsRect(frameObj);
+        var opt = JsInterop.AsDict(optObj);
+        float atX = 0.5f, atY = 0.95f, height = 0.8f, yaw = 0f, pitch = 0f;
+        string? anchor = null;
+        var atGiven = false;
+        if (opt != null)
+            foreach (var key in opt.Keys)
+            {
+                var k = Convert.ToString(key, CultureInfo.InvariantCulture);
+                switch (k)
+                {
+                    case "at":
+                        var at = JsInterop.AsDict(opt[key!]) ?? throw new ArgumentException("Character.place: at is a point in the frame, { x, y }, as fractions of it.");
+                        if (at.Contains("x")) atX = Convert.ToSingle(at["x"], CultureInfo.InvariantCulture);
+                        if (at.Contains("y")) atY = Convert.ToSingle(at["y"], CultureInfo.InvariantCulture);
+                        atGiven = true;
+                        break;
+                    case "anchor":
+                        anchor = Convert.ToString(opt[key!], CultureInfo.InvariantCulture);
+                        if (anchor == "feet") anchor = null;
+                        break;
+                    case "height": height = Convert.ToSingle(opt[key!], CultureInfo.InvariantCulture); break;
+                    case "yawDeg": yaw = Convert.ToSingle(opt[key!], CultureInfo.InvariantCulture); break;
+                    case "pitchDeg": pitch = Convert.ToSingle(opt[key!], CultureInfo.InvariantCulture); break;
+                    default: throw new ArgumentException($"Character.place has no option '{k}'. It takes at, anchor, height, yawDeg and pitchDeg.");
+                }
+            }
+        if (!(height > 0f) || !float.IsFinite(height))
+            throw new ArgumentException($"Character.place: height is a share of the frame's height and must be above 0; got {height}.");
+        if (f.Width <= 0f || f.Height <= 0f)
+            throw new ArgumentException("Character.place needs a frame with a width and a height.");
+
+        var bind = mesh.Reference;
+        float minY = float.MaxValue, maxY = float.MinValue, cx = 0f, cz = 0f;
+        foreach (var v in bind)
+        {
+            minY = MathF.Min(minY, v.Y);
+            maxY = MathF.Max(maxY, v.Y);
+            cx += v.X;
+            cz += v.Z;
+        }
+        cx /= bind.Length;
+        cz /= bind.Length;
+        if (mesh.Rig is { } rig && rig.Aliases.TryGetValue("hips", out var hips) && rig.FileNodes.TryGetValue(hips, out var node))
+            (cx, cz) = (node.WorldMatrix.Translation.X, node.WorldMatrix.Translation.Z);
+
+        var point = new SkiaSharp.SKPoint3(cx, minY, cz);
+        if (anchor is not null)
+        {
+            if (mesh.Rig is not { } r2 || r2.Aliases.Count == 0)
+                throw new ArgumentException($"Character.place: anchor '{anchor}' needs a character's body-part names; load it with Character.load(name).");
+            var at = r2.FileNodes[Handle(r2, anchor)].WorldMatrix.Translation;
+            point = new SkiaSharp.SKPoint3(at.X, at.Y, at.Z);
+            if (!atGiven) (atX, atY) = (0.5f, 0.3f);
+        }
+
+        var scale = height * f.Height / (maxY - minY);
+        var options = new Dictionary<string, object?> { ["yawDeg"] = yaw, ["pitchDeg"] = pitch, ["scale"] = scale };
+        var r = MeshToolkit.Pose.From(options, mesh).Rotate(point);
+        options["x"] = f.X + (atX * f.Width) - (r.X * scale);
+        options["y"] = f.Y + (atY * f.Height) + (r.Y * scale);
+        return options;
     }
     #endregion
 
@@ -152,19 +228,19 @@ internal static class CharacterIk
                 throw new ArgumentException($"The goal for '{name}' has no option '{k}'. It takes {string.Join(", ", allowed)}.");
     }
 
-    /// <summary>The pose's rotations, by bone handle, whichever spelling each key used.</summary>
-    static Dictionary<string, Quaternion> ReadPose(MeshRig rig, object? poseObj, string call)
+    /// <summary>The pose's rotations and hip moves, by bone handle, whichever spelling each key used.</summary>
+    static Dictionary<string, Quaternion> ReadPose(MeshRig rig, object? poseObj, string call, out Dictionary<string, Vector3> moves)
     {
         var deltas = new Dictionary<string, Quaternion>(StringComparer.Ordinal);
+        moves = new Dictionary<string, Vector3>(StringComparer.Ordinal);
         if (JsInterop.AsDict(poseObj) is not { } pose) return deltas;
         foreach (var key in pose.Keys)
         {
             var name = Convert.ToString(key, CultureInfo.InvariantCulture) ?? "";
             var handle = Handle(rig, name);
-            if (JsInterop.AsDict(pose[key!]) is not { } spec)
-                throw new ArgumentException($"Character.{call}: the pose for '{name}' is not an object.");
-            float Deg(string k) => spec.Contains(k) ? Convert.ToSingle(spec[k], CultureInfo.InvariantCulture) * MathF.PI / 180f : 0f;
-            deltas[handle] = Quaternion.CreateFromYawPitchRoll(Deg("yDeg"), Deg("xDeg"), Deg("zDeg"));
+            var (rotation, move) = MeshRig.ReadJoint(JsInterop.AsDict(pose[key!]), name);
+            deltas[handle] = rotation;
+            if (move is { } m) moves[handle] = m;
         }
         return deltas;
     }
@@ -201,13 +277,14 @@ internal static class CharacterIk
 
     /// <summary>Every bone's model-space transform under the given rotations: forward kinematics.</summary>
     /// <remarks>The same composition <c>mesh.pose</c> applies, so a position read here is where the drawn joint is.</remarks>
-    static Dictionary<string, Matrix4x4> Forward(MeshRig rig, Dictionary<string, Quaternion> deltas)
+    static Dictionary<string, Matrix4x4> Forward(MeshRig rig, Dictionary<string, Quaternion> deltas, Dictionary<string, Vector3> moves)
     {
         var world = new Dictionary<string, Matrix4x4>(StringComparer.Ordinal);
         foreach (var handle in rig.JointNames)
         {
             if (!rig.FileNodes.TryGetValue(handle, out var node)) continue;
             var local = deltas.TryGetValue(handle, out var q) ? Matrix4x4.CreateFromQuaternion(q) * node.LocalMatrix : node.LocalMatrix;
+            if (moves.TryGetValue(handle, out var by)) local = rig.Moved(local, handle, handle, by);
             var parent = rig.JointParent.TryGetValue(handle, out var p) && world.TryGetValue(p, out var pw)
                 ? pw : node.VisualParent?.WorldMatrix ?? Matrix4x4.Identity;
             world[handle] = local * parent;

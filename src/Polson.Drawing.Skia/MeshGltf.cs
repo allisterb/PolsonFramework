@@ -321,15 +321,18 @@ internal sealed class MeshRig
                 foreach (var key in pose.Keys)
                 {
                     var name = Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty;
+                    var handle = name;
                     if (!nodes.TryGetValue(name, out var node)
-                        && !(Aliases.TryGetValue(name, out var aliased) && nodes.TryGetValue(aliased, out node)))
+                        && !(Aliases.TryGetValue(name, out handle!) && nodes.TryGetValue(handle, out node)))
                         throw Unknown(name);
 
                     // Row-vector convention, so `delta * local` rotates the joint about its OWN axes
                     // and the bind transform then carries the result into the parent's space. The other
                     // order rotates about the PARENT's axes, which looks plausible on a root node and
                     // is wrong on every elbow below it.
-                    node.LocalMatrix = Rotation(JsInterop.AsDict(pose[key]), name) * node.LocalMatrix;
+                    var (rotation, move) = ReadJoint(JsInterop.AsDict(pose[key]), name);
+                    node.LocalMatrix = Matrix4x4.CreateFromQuaternion(rotation) * node.LocalMatrix;
+                    if (move is { } by) node.LocalMatrix = Moved(node.LocalMatrix, handle, name, by);
                 }
 
             return Snapshot(bind);
@@ -338,13 +341,14 @@ internal sealed class MeshRig
     #endregion
 
     #region Methods (private)
-    /// <summary>One joint's rotation, from <c>{ xDeg, yDeg, zDeg }</c>.</summary>
+    /// <summary>One joint's pose: <c>{ xDeg, yDeg, zDeg }</c>, and on a root bone <c>move: { x, y, z }</c>.</summary>
     /// <remarks>
-    /// Composed through <c>CreateFromYawPitchRoll</c> rather than by multiplying three matrices by
-    /// hand, so the order is the framework's documented one — yaw about Y, then pitch about X, then
-    /// roll about Z — rather than a convention invented here and liable to be written down wrongly.
+    /// The rotation is composed through <c>CreateFromYawPitchRoll</c> rather than by multiplying three
+    /// matrices by hand, so the order is the framework's documented one — yaw about Y, then pitch about
+    /// X, then roll about Z — rather than a convention invented here and liable to be written down
+    /// wrongly. Shared with <c>Character.reach</c>, so the two can never read a pose differently.
     /// </remarks>
-    static Matrix4x4 Rotation(IDictionary? spec, string joint)
+    internal static (Quaternion Rotation, Vector3? Move) ReadJoint(IDictionary? spec, string joint)
     {
         if (spec is null)
             throw new ArgumentException(
@@ -352,9 +356,19 @@ internal sealed class MeshRig
                 "{ xDeg, yDeg, zDeg } — any of the three may be left out.");
 
         float x = 0f, y = 0f, z = 0f;
+        Vector3? move = null;
         foreach (var key in spec.Keys)
         {
             var name = Convert.ToString(key, CultureInfo.InvariantCulture) ?? string.Empty;
+            if (name == "move")
+            {
+                var m = JsInterop.AsDict(spec[name])
+                    ?? throw new ArgumentException($"Joint '{joint}': move is a point, {{ x, y, z }}.");
+                float F(string k) => m.Contains(k) ? Convert.ToSingle(m[k], CultureInfo.InvariantCulture) : 0f;
+                move = new Vector3(F("x"), F("y"), F("z"));
+                continue;
+            }
+
             var value = Convert.ToSingle(spec[name], CultureInfo.InvariantCulture);
             switch (name)
             {
@@ -364,12 +378,30 @@ internal sealed class MeshRig
                 default:
                     throw new ArgumentException(
                         $"Joint '{joint}' was given '{name}', which is not a rotation. " +
-                        "Accepted: xDeg, yDeg, zDeg.");
+                        "Accepted: xDeg, yDeg, zDeg, and move on the hips.");
             }
         }
 
         const float rad = MathF.PI / 180f;
-        return Matrix4x4.CreateFromYawPitchRoll(y * rad, x * rad, z * rad);
+        return (Quaternion.CreateFromYawPitchRoll(y * rad, x * rad, z * rad), move);
+    }
+
+    /// <summary>A root bone's local transform shifted by a model-space offset.</summary>
+    /// <remarks>
+    /// <b>Only a root bone may move.</b> Every other bone's position is its parent's business, and
+    /// moving one pulls it off the end of the bone before it — an arm that detaches at the shoulder.
+    /// The hips are the root on a humanoid rig, which is the case this exists for: a crouch lowers them.
+    /// </remarks>
+    internal Matrix4x4 Moved(Matrix4x4 local, string handle, string name, Vector3 by)
+    {
+        if (JointParent.ContainsKey(handle))
+            throw new ArgumentException(
+                $"Joint '{name}' cannot move: only the skeleton's root can, which on a character is the hips. " +
+                "Move a hand or a foot with Character.reach.");
+        var parent = FileNodes.TryGetValue(handle, out var file) ? file.VisualParent?.WorldMatrix ?? Matrix4x4.Identity : Matrix4x4.Identity;
+        if (!Matrix4x4.Invert(parent, out var inverse)) inverse = Matrix4x4.Identity;
+        local.Translation += Vector3.TransformNormal(by, inverse);
+        return local;
     }
 
     /// <summary>The file node each runtime node was built from, or null where none matches.</summary>

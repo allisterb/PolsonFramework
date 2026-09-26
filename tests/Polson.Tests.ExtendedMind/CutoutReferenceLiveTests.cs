@@ -96,6 +96,41 @@ public class CutoutReferenceLiveTests : TestsRuntime
         Assert.Equal("green", heads.KeyColor);
     }
 
+    /// <summary>
+    /// A built character shown to the model and asked for a new pose: image editing through <c>reference</c>.
+    /// </summary>
+    /// <remarks>
+    /// Live and billed: one generation. Point <c>POLSON_LIVE_OUT</c> at a folder whose <c>cache/</c> holds a
+    /// copy of a project's <c>.polson/assets</c>, and <c>POLSON_LIVE_REFERENCE</c> at the id of a body sheet in
+    /// it (lastlight3's Tomas: <c>8D67D3D7BDFF34847CA1E1307DDE00AD</c>). The question is whether the model
+    /// keeps the character while changing the pose, which only looking can answer.
+    /// </remarks>
+    [Fact]
+    public async Task Cutout_Live_ABuiltCharacterIsAskedForANewPose()
+    {
+        if (string.IsNullOrWhiteSpace(this.apiKey)) return;
+        if (Environment.GetEnvironmentVariable("POLSON_LIVE_IMAGE_TESTS") != "1") return;
+        var dir = Environment.GetEnvironmentVariable("POLSON_LIVE_OUT");
+        var reference = Environment.GetEnvironmentVariable("POLSON_LIVE_REFERENCE");
+        if (dir is null || reference is null) { output.WriteLine("NOT RUN: set POLSON_LIVE_OUT and POLSON_LIVE_REFERENCE"); return; }
+
+        using var generator = new ImageGenerator(this.apiKey!);
+        var budget = new AssetBudget(1);
+        var toolkit = new AssetRequisitionToolkit(generator, new RequisitionCache(Path.Combine(dir, "cache")), budget, "live");
+        var started = DateTime.UtcNow;
+        var crouch = await toolkit.Cutout(
+            "the heavyset lighthouse keeper in his sixties from the reference, weathered ruddy face, heavy brows, full grey beard, "
+            + "black knitted watch cap, black oilskin coat, crouching down low on his heels, knees bent, one hand resting on a knee",
+            new CutoutOptions
+            {
+                Variants = ["three-quarter front view", "side view, in profile"], Framing = "full",
+                Size = 768, Style = "clean storyboard illustration, even light", Tolerance = 0.10, Reference = reference,
+            });
+        output.WriteLine($"{(DateTime.UtcNow - started).TotalSeconds:0.0} s; spent {budget.Spent}, tokens {budget.TokensSpent}");
+        Save(dir, "crouch", crouch);
+        Assert.True(crouch.Success, crouch.Error);
+    }
+
     void Save(string dir, string name, CutoutAsset cutout)
     {
         if (!cutout.Success)

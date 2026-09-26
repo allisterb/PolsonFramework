@@ -3376,6 +3376,8 @@ Mesh.draw(ctx, waving, { x: 400, y: 300, scale: 160, yawDeg: 20 });
 >
 > Rotations are **degrees about the joint's own axes**, applied yaw (Y), then pitch (X), then roll (Z). Any of the three may be left out. A key that is not one of `xDeg`, `yDeg`, `zDeg` is **refused by name**.
 >
+> **The skeleton's root can also move**: `hips: { xDeg: 10, move: { x: 0, y: -0.2, z: 0 } }` shifts it by that much in the character's own space, and the whole body with it. It is how a crouch gets its feet back on the floor, and `Character.retarget` fills it in. Only the root — the hips on a character — may move; any other bone is refused, since moving it would pull it off the end of the bone before it. Move a hand or a foot with `Character.reach`.
+>
 > **A posed mesh keeps the bind geometry as its reference**, so `shape` and `expression` bands still key on where a feature anatomically is rather than on where a pose has swung it — the same discipline `fitOutline` is held to.
 
 > [!IMPORTANT]
@@ -3625,6 +3627,7 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 - `Character.clips()` → `{ name, seconds, file }[]` — The recorded clips a pose can be taken from.
 - `Character.retarget(character, clip, { at?, time? })` → `object` — **A whole-body pose from one frame of a recorded clip**, keyed by body part, ready for `pose(...)`. `character` is a mesh from `Character.load`, or a name. `at` is a fraction of the clip, `time` is seconds; neither means the first frame.
 - `Character.reach(character, pose, goals, draw?)` → `{ pose, reached, miss }` — **Puts hands and feet where the panel needs them, and points the head**, on top of `pose`. `goals` takes `leftHand`, `rightHand`, `leftFoot`, `rightFoot` as `{ at: { x, y, z } }` or `{ page: { x, y } }`, with an optional `bend`, and `head` as `{ lookAt: … }`. `draw` is the options you pass to `Mesh.draw`, needed for a page point.
+- `Character.place(character, frame, { at?, anchor?, height?, yawDeg?, pitchDeg? })` → `object` — **The `Mesh.draw` options that stand a character in a frame**: feet at `at` (fractions of the frame, default `{ x: 0.5, y: 0.95 }`), standing `height` of the frame tall (default `0.8`). Sized from the character standing, so a crouch comes out shorter; the feet go where its floor is, under its hips. **For a close shot, anchor a body part instead**: `{ anchor: 'head', at: { x: 0.4, y: 0.35 }, height: 3 }` puts the head there and lets the panel crop the rest.
 - `Character.where(character, pose, part, draw?)` → `{ x, y, z }` or `{ x, y, depth }` — Where a body part's joint is under a pose: in the character's own space, or on the page given the draw options.
 
 > [!IMPORTANT]
@@ -3682,9 +3685,8 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 >
 > `Character.clips()` lists what there is. The library is Mesh2Motion's own human clips (CC0): idles with a lantern, a torch or a shield, at a rail, talking on a phone, arms folded; greeting, climbing a ladder, crouching, chopping wood, opening a chest, and the rest — 162 of them. A project's own `poses/` folder of `.glb` clips on the same skeleton is read first.
 >
-> **Every limb ends up pointing where the performer's did** — measured, within a tenth of a degree — whatever rest pose the character was built in. Three things it does not do:
+> **Every limb ends up pointing where the performer's did** — measured, within a tenth of a degree — whatever rest pose the character was built in. **The hips move with the clip, in place and scaled to the character's legs**, so a crouch, a kneel or a fall keeps the feet on the floor: measured on a crouch, the hips drop 0.24 and the feet move 0.01. A clip that crosses the floor — a knockback, a climb — does not carry the character off its mark; only the crouching and the weight shift come through. `moveHips: false` keeps the hips where the character was built. Two things it does not do:
 >
-> - **The hips turn but do not move.** A crouch or a climb bends the knees without lowering the pelvis, so a foot can leave the floor. Sitting and kneeling clips suffer most.
 > - **Contact is not kept.** A clip's hand on a rail is on *its* rail; on your character the hand lands where that arm, at that length, reaches. Put the prop where the hand is, or adjust the arm.
 > - **Hands take the clip's wrist turn, not its fingers.** A built character's hands are mittens anyway.
 
@@ -3693,7 +3695,7 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 >
 > ```js
 > const tomas = Character.load('tomas');
-> const draw = { x: 420, y: 640, scale: 300, yawDeg: 35 };          // what you will pass to Mesh.draw
+> const draw = Character.place(tomas, panel, { at: { x: 0.4, y: 0.92 }, height: 0.8, yawDeg: 35 });
 > let pose = Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 });
 > const r = Character.reach(tomas, pose, {
 >     leftHand: { page: { x: 300, y: 470 } },                         // on the rail you drew

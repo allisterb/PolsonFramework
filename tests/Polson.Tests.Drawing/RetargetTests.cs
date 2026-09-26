@@ -94,6 +94,75 @@ public class RetargetTests : TestsRuntime
         Assert.Contains(kit.Clips().Cast<IDictionary<string, object?>>(), c => (string)c["name"]! == "Idle_Rail_Call");
     }
 
+    static float FeetY(MeshRig rig) =>
+        (rig.EvaluatedAt(rig.Aliases["leftFoot"]).Y + rig.EvaluatedAt(rig.Aliases["rightFoot"]).Y) / 2f;
+
+    /// <summary>A crouch lowers the hips, so the feet stay on the floor; without it they lift.</summary>
+    [Fact]
+    public void TestACrouchLowersTheHipsAndKeepsTheFeetDown()
+    {
+        if (Kit() is not { } kit) { output.WriteLine("NOT RUN: pose library or character absent"); return; }
+        var tomas = kit.Load("tomas");
+        var rig = tomas.Rig!;
+        tomas.Pose(null);
+        var restFeet = FeetY(rig);
+        var restHips = rig.EvaluatedAt(rig.Aliases["hips"]).Y;
+
+        tomas.Pose(kit.Retarget(tomas, "Crouch_Idle", new Dictionary<string, object?> { ["at"] = 0.5 }));
+        var drop = restHips - rig.EvaluatedAt(rig.Aliases["hips"]).Y;
+        var feet = FeetY(rig) - restFeet;
+
+        tomas.Pose(kit.Retarget(tomas, "Crouch_Idle", new Dictionary<string, object?> { ["at"] = 0.5, ["moveHips"] = false }));
+        var fixedFeet = FeetY(rig) - restFeet;
+        output.WriteLine($"hips drop {drop:0.000}; feet move {feet:0.000} with the hips moving, {fixedFeet:0.000} without");
+
+        Assert.True(drop > 0.1f, "a crouch should lower the hips");
+        Assert.True(MathF.Abs(feet) < 0.2f * drop, "the feet should stay near the floor");
+        Assert.True(fixedFeet > 0.5f * drop, "without the hips moving, the feet should lift");
+    }
+
+    /// <summary>A clip that crosses the floor does not carry the character off its mark.</summary>
+    [Fact]
+    public void TestTravelIsLeftOut()
+    {
+        if (Kit() is not { } kit) { output.WriteLine("NOT RUN: pose library or character absent"); return; }
+        var pose = kit.Retarget("tomas", "Hit_Knockback_RM", new Dictionary<string, object?> { ["at"] = 1 });
+        var move = (IDictionary<string, object?>)((IDictionary<string, object?>)pose["hips"]!)["move"]!;
+        var sideways = MathF.Sqrt(MathF.Pow(Convert.ToSingle(move["x"]), 2) + MathF.Pow(Convert.ToSingle(move["z"]), 2));
+        output.WriteLine($"knockback hips move {Convert.ToSingle(move["x"]):0.000}, {Convert.ToSingle(move["y"]):0.000}, {Convert.ToSingle(move["z"]):0.000}");
+        Assert.True(sideways < 0.5f, $"the hips travelled {sideways:0.00} across the floor");
+    }
+
+    /// <summary><c>move</c> shifts the hips by exactly that much, and <c>where</c> agrees.</summary>
+    [Fact]
+    public void TestMoveShiftsTheHipsExactly()
+    {
+        if (Kit() is not { } kit) { output.WriteLine("NOT RUN: pose library or character absent"); return; }
+        var tomas = kit.Load("tomas");
+        var rig = tomas.Rig!;
+        tomas.Pose(null);
+        var rest = rig.EvaluatedAt(rig.Aliases["hips"]);
+
+        var pose = new Dictionary<string, object?>
+        {
+            ["hips"] = new Dictionary<string, object?> { ["xDeg"] = 10, ["move"] = new Dictionary<string, object?> { ["x"] = 0.02, ["y"] = -0.1, ["z"] = 0.03 } }
+        };
+        tomas.Pose(pose);
+        Assert.True(Vector3.Distance(rig.EvaluatedAt(rig.Aliases["hips"]), rest + new Vector3(0.02f, -0.1f, 0.03f)) < 1e-5f);
+        foreach (var part in new[] { "hips", "rightHand", "leftFoot" })
+        {
+            var w = kit.Where(tomas, pose, part);
+            var v = new Vector3(Convert.ToSingle(w["x"]), Convert.ToSingle(w["y"]), Convert.ToSingle(w["z"]));
+            Assert.True(Vector3.Distance(v, rig.EvaluatedAt(rig.Aliases[part])) < 1e-4f, part);
+        }
+
+        var e = Assert.Throws<ArgumentException>(() => tomas.Pose(new Dictionary<string, object?>
+        {
+            ["rightHand"] = new Dictionary<string, object?> { ["move"] = new Dictionary<string, object?> { ["y"] = 0.1 } }
+        }));
+        Assert.Contains("Character.reach", e.Message);
+    }
+
     [Fact]
     public void TestBadRequestsAreRefusedByName()
     {

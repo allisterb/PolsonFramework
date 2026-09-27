@@ -58,6 +58,30 @@ public class CharacterToolkit
         return mesh;
     }
 
+    /// <summary>
+    /// A stock body, rigged and with its body parts named: <c>Character.stock('female')</c>. No build needed.
+    /// </summary>
+    /// <remarks>
+    /// Mesh2Motion's human models, on the skeleton the pose clips were recorded on, from <c>models/stock/</c> or the
+    /// project's <c>stock/</c> folder. It poses, retargets, reaches, places and reshapes like a built character. One
+    /// without a texture draws as a wireframe. <c>Character.stocks()</c> lists them with their licences.
+    /// </remarks>
+    public FaceMesh Stock(string name = "male") => CharacterStock.Load(projectRoot, name);
+
+    /// <summary>The stock bodies here: <c>{ name, licence, author, file }</c>, with <c>licence</c> null where it is not known.</summary>
+    /// <remarks>
+    /// Licences are per model, as Mesh2Motion states them: most are CC0; <c>sophia</c> is CC-BY-SA and <c>jay</c>,
+    /// <c>sintel</c> and <c>bunny</c> are CC-BY, so a drawing made over them credits the author.
+    /// </remarks>
+    public object?[] Stocks() =>
+        [.. CharacterStock.List(projectRoot).Select(s => (object?)new Dictionary<string, object?>
+        {
+            ["name"] = s.Name,
+            ["licence"] = s.Terms?.Licence,
+            ["author"] = s.Terms?.Author,
+            ["file"] = Path.GetFileName(s.File)
+        })];
+
     /// <summary>What was recorded when the character was built: its files, joint names, and any warnings.</summary>
     public Dictionary<string, object?> Info(string name)
     {
@@ -79,25 +103,58 @@ public class CharacterToolkit
         })];
 
     /// <summary>
-    /// A pose for <paramref name="character"/> taken from one frame of a recorded clip:
-    /// <c>tomas.pose(Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 }))</c>.
+    /// A pose for <paramref name="character"/> taken from a recorded clip or from a body found in a picture:
+    /// <c>tomas.pose(Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 }))</c>, or
+    /// <c>Character.retarget(tomas, Character.detect(photo))</c>.
     /// </summary>
     /// <remarks>
-    /// Keyed by body part, so it passes straight to <c>pose(...)</c> and one entry can be replaced
-    /// before it does. <c>at</c> is a fraction of the clip, <c>time</c> is seconds; neither means the
-    /// first frame. The hips move in place with the clip — a crouch lowers them — unless
-    /// <c>moveHips</c> is false. <paramref name="character"/> is a mesh from <c>Character.load</c>, or a name.
+    /// <para>
+    /// Keyed by body part, so it passes straight to <c>pose(...)</c> and one entry can be replaced before it
+    /// does. <paramref name="character"/> is a mesh from <c>Character.load</c>, or a name.
+    /// </para>
+    /// <para>
+    /// <b>From a clip:</b> <c>at</c> is a fraction of the clip, <c>time</c> is seconds; neither means the first
+    /// frame. The hips move in place with the clip — a crouch lowers them — unless <c>moveHips</c> is false.
+    /// </para>
+    /// <para>
+    /// <b>From a detection:</b> the body's 3D landmarks set the trunk, head and limbs, including what points at
+    /// or away from the camera. The picture's angle is kept, so drawing at <c>yawDeg: 0</c> shows the pose as
+    /// photographed; <c>faceFront: true</c> turns it to face the character's front instead. The hips drop until
+    /// the lower foot is on the floor, and a second foot level with it in the picture is planted too, unless
+    /// <c>moveHips</c> is false. A planted foot is laid flat, because the detector reads flat feet as pointing
+    /// down; <c>flatFeet: false</c> keeps its reading, for a figure on its toes.
+    /// </para>
     /// </remarks>
-    public Dictionary<string, object?> Retarget(object character, string clip, object? options = null)
+    public Dictionary<string, object?> Retarget(object character, object source, object? options = null)
     {
-        var mesh = character switch
-        {
-            FaceMesh m => m,
-            string name => Load(name),
-            _ => throw new ArgumentException("Character.retarget needs a character from Character.load(name), or its name.", nameof(character))
-        };
+        var mesh = Character(character, "retarget");
         if (mesh.Rig is not { } rig)
             throw new ArgumentException("Character.retarget needs a rigged character; this mesh carries no skeleton.", nameof(character));
+        var opt = JsInterop.AsDict(options);
+
+        if (source is BodyDetection body)
+        {
+            bool faceFront = false, moveHips = true, flatFeet = true;
+            if (opt != null)
+                foreach (var key in opt.Keys)
+                {
+                    var k = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+                    var on = Convert.ToBoolean(opt[key!], System.Globalization.CultureInfo.InvariantCulture);
+                    switch (k)
+                    {
+                        case "faceFront": faceFront = on; break;
+                        case "moveHips": moveHips = on; break;
+                        case "flatFeet": flatFeet = on; break;
+                        default: throw new ArgumentException($"Character.retarget from a detection has no option '{k}'. It takes faceFront, moveHips and flatFeet.");
+                    }
+                }
+            return LandmarkRetarget.Retarget(mesh, body, faceFront, moveHips, flatFeet);
+        }
+
+        if (source is not string clip)
+            throw new ArgumentException(
+                $"Character.retarget takes a clip name (Character.clips()) or a body from Character.detect(image), and got {source?.GetType().Name ?? "nothing"}.",
+                nameof(source));
         ArgumentException.ThrowIfNullOrWhiteSpace(clip);
 
         var clips = PoseRetarget.Clips(projectRoot);
@@ -107,16 +164,15 @@ public class CharacterToolkit
                 "or point Poses:Library at a folder of them.");
         var found = clips.FirstOrDefault(c => c.Name == clip)
             ?? throw new ArgumentException($"No clip '{clip}'. Nearest: {string.Join(", ", Nearest(clip, clips.Select(c => c.Name)))}. " +
-                                           "Character.clips() lists them all.", nameof(clip));
+                                           "Character.clips() lists them all.", nameof(source));
 
-        var opt = JsInterop.AsDict(options);
         float? at = null, time = null;
-        var moveHips = true;
+        var moveHipsClip = true;
         if (opt != null)
             foreach (var key in opt.Keys)
             {
                 var k = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
-                if (k == "moveHips") { moveHips = Convert.ToBoolean(opt[key!], System.Globalization.CultureInfo.InvariantCulture); continue; }
+                if (k == "moveHips") { moveHipsClip = Convert.ToBoolean(opt[key!], System.Globalization.CultureInfo.InvariantCulture); continue; }
                 var v = Convert.ToSingle(opt[key!], System.Globalization.CultureInfo.InvariantCulture);
                 switch (k)
                 {
@@ -132,8 +188,32 @@ public class CharacterToolkit
         if (time is { } tt && (!float.IsFinite(tt) || tt < 0f || tt > found.Seconds))
             throw new ArgumentException($"'time' is in seconds within the clip, 0 to {found.Seconds:0.###}; got {tt}.");
 
-        return PoseRetarget.Retarget(rig, found, time ?? (at ?? 0f) * found.Seconds, moveHips);
+        return PoseRetarget.Retarget(rig, found, time ?? (at ?? 0f) * found.Seconds, moveHipsClip);
     }
+
+    /// <summary>
+    /// Finds a body in a picture — a photograph, a sheet, a drawing — for <c>Character.retarget</c> to pose a
+    /// character from: <c>const body = Character.detect(photo); if (body.found) …</c>.
+    /// </summary>
+    /// <remarks>
+    /// Needs the optional MediaPipe backend, as <c>Face.detect</c> does; <c>Character.canDetect</c> says whether it
+    /// is here. Not finding a body is a result — read <c>found</c> — and only a missing backend throws.
+    /// </remarks>
+    public BodyDetection Detect(object image, int timeoutMs = 60000)
+    {
+        var bitmap = image switch
+        {
+            SkiaBitmapWrapper b => b,
+            SkiaCanvas c => c.Bitmap,
+            null => throw new ArgumentNullException(nameof(image)),
+            _ => throw new ArgumentException($"Character.detect takes a bitmap or a canvas, and got {image.GetType().Name}.", nameof(image))
+        };
+        return BodyDetector.Detect(bitmap, timeoutMs);
+    }
+
+    /// <summary>Whether <see cref="Detect"/> will work here.</summary>
+    public bool CanDetect => BodyDetector.Available;
+
     /// <summary>
     /// Moves hands and feet to goals and points the head, on top of a pose:
     /// <c>Character.reach(tomas, pose, { rightHand: { page: { x, y } } }, drawOptions)</c>.

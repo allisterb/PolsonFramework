@@ -560,6 +560,17 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
     /// </remarks>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
+    /// <summary>
+    /// From <c>Assets.redraw</c> only: how much the drawn figure's outline overlaps the guide's, 0 to 1
+    /// (intersection over union). Null for a cutout.
+    /// </summary>
+    /// <remarks>
+    /// It measures outlines, so costume lowers it: live redraws of Kit, in a bulky coat and drawn a little smaller than
+    /// the guide, scored 0.48 to 0.66 while following their guides' poses. Compare redraws of one character with each other
+    /// rather than with a fixed bar; under 0.4 the figure has left the guide, and a warning says so.
+    /// </remarks>
+    public double? GuideAgreement { get; init; }
+
     /// <summary>The cell for a variant, or null. Case-insensitive.</summary>
     /// <remarks>
     /// Null rather than a throw, because a panel loop asks this about every character it might show
@@ -586,6 +597,7 @@ public sealed record CutoutAsset : RequisitionResult, IDataUriSource
         json["references"] = References.ToArray();
         json["warnings"] = Warnings.ToArray();
         json["cells"] = Cells.Select(c => c.ToJSON()).ToArray();
+        if (GuideAgreement is { } agreement) json["guideAgreement"] = agreement;
         return json;
     }
 }
@@ -699,6 +711,35 @@ public sealed record CutoutOptions
     /// </para>
     /// </remarks>
     public object? Reference { get; init; }
+
+    public string? Model { get; init; }
+}
+
+/// <summary>Options for <c>Assets.redraw(guide, ...)</c>: a character drawn in the pose of a clay guide.</summary>
+/// <remarks>
+/// <b>Where the pose is ours and the look is the model's.</b> The guide carries the pose, the camera, the framing and
+/// the figure's place in the frame, all set by code: a stock body posed from a clip or a picture, placed in the panel.
+/// The reference carries the character: face, costume, build, colours. The model is asked to take exactly that much
+/// from each, which is the division measured to work. Shown a textured render it touched the render up; shown grey clay
+/// it drew the character from its sheet.
+/// </remarks>
+public sealed record RedrawOptions
+{
+    /// <summary>The character's sheet: a cutout this project generated, one of its cells, its id, or up to three.</summary>
+    /// <remarks>Required, and resolved through the project's cache exactly as <see cref="CutoutOptions.Reference"/> is.</remarks>
+    public object? Reference { get; init; }
+
+    /// <summary>
+    /// What is happening, in a sentence: <c>'calling out across the water'</c>. Optional; the pose is the guide's either
+    /// way, and this is for what a pose cannot say, such as the expression or what the hands hold.
+    /// </summary>
+    public string? Describe { get; init; }
+
+    /// <summary>How it is drawn. The default keeps the reference's own style.</summary>
+    public string Style { get; init; } = "a clean storyboard illustration in the drawing style of the reference";
+
+    /// <summary>How close to the ground a pixel must be to be keyed out, 0 to 1. Low by default, because a face is in it.</summary>
+    public double Tolerance { get; init; } = 0.10;
 
     public string? Model { get; init; }
 }

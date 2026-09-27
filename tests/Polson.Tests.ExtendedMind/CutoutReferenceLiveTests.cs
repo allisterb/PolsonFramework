@@ -229,6 +229,37 @@ public class CutoutReferenceLiveTests : TestsRuntime
         }
     }
 
+    /// <summary>
+    /// <c>Assets.redraw</c> end to end: each <c>guide-*.png</c> in <c>POLSON_LIVE_OUT</c> redrawn as the character whose
+    /// sheet is <c>POLSON_LIVE_REFERENCE</c>, from a <c>cache/</c> copy of a project's assets.
+    /// </summary>
+    /// <remarks>Live and billed: one generation per guide. Writes <c>redraw-*.png</c>, keyed on the guide's own frame.</remarks>
+    [Fact]
+    public async Task Redraw_Live_ClayGuidesBecomeTheCharacter()
+    {
+        if (string.IsNullOrWhiteSpace(this.apiKey)) return;
+        if (Environment.GetEnvironmentVariable("POLSON_LIVE_IMAGE_TESTS") != "1") return;
+        var dir = Environment.GetEnvironmentVariable("POLSON_LIVE_OUT");
+        var reference = Environment.GetEnvironmentVariable("POLSON_LIVE_REFERENCE");
+        if (dir is null || reference is null) { output.WriteLine("NOT RUN: set POLSON_LIVE_OUT and POLSON_LIVE_REFERENCE"); return; }
+
+        using var generator = new ImageGenerator(this.apiKey!);
+        var budget = new AssetBudget(6);
+        var toolkit = new AssetRequisitionToolkit(generator, new RequisitionCache(Path.Combine(dir, "cache")), budget, "live");
+        foreach (var guidePath in Directory.GetFiles(dir, "guide-*.png").Order())
+        {
+            var name = Path.GetFileNameWithoutExtension(guidePath)["guide-".Length..];
+            var started = DateTime.UtcNow;
+            var result = await toolkit.Redraw(File.ReadAllBytes(guidePath), new RedrawOptions { Reference = reference });
+            var seconds = (DateTime.UtcNow - started).TotalSeconds;
+            if (!result.Success) { output.WriteLine($"{name}: {seconds:0.0} s, {result.FailureName}: {result.Error}"); continue; }
+            File.WriteAllBytes(Path.Combine(dir, $"redraw-{name}.png"), result.Bytes);
+            output.WriteLine($"{name}: {seconds:0.0} s, {result.Width}x{result.Height}, agreement {result.GuideAgreement:0.00}, "
+                + $"key {result.KeyColor}, warnings: {string.Join(" | ", result.Warnings)}");
+        }
+        output.WriteLine($"spent {budget.Spent}, tokens {budget.TokensSpent}");
+    }
+
     void Save(string dir, string name, CutoutAsset cutout)
     {
         if (!cutout.Success)

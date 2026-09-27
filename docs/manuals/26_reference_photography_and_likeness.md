@@ -835,6 +835,17 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 > Measured on a standing figure the feet land on the point and the height is exact at any turn; a crouch
 > can dip its toes a few percent of its height under the line, because the toes point down past the ankle.
 >
+> **A pose can also come from a picture.** Where `Character.canDetect` is true, `Character.detect` finds a
+> body's landmarks in a photograph or a drawing — `body.names` lists them, `body.world` gives each in 3D
+> and `body.hasWorld` says whether that came back — and `Character.retarget(character, body)` poses any
+> character from them, keeping the picture's angle and planting the feet. `body.unsure` names the joints
+> the detector guessed. Across the picture the reading is close; toward the camera it is not, so choose
+> pictures where the pose runs across the frame and look at the result from the side before using it.
+>
+> **A stock body needs no build.** `Character.stock('male')` or `('female')` is a rigged figure with its
+> parts already named, so everything above works on it the moment it is loaded; `Character.stocks()` lists
+> what is here with each model's licence. Most are CC0; four are CC-BY or CC-BY-SA, and those are credited.
+>
 > **A stock body can be reshaped with `mesh.proportion`**, so one rigged body serves characters of
 > different builds as a pose guide: shorter legs, a bigger head, thinner limbs, each a factor on that
 > part, and the result poses like any rig. `Character.proportions` reports a built character's shares

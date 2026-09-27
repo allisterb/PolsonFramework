@@ -331,6 +331,17 @@ likeness is a fabricated portrait carrying none of `Photo`'s identity, licence o
 checks — and it renders perfectly whether or not it resembles anybody. Use `Photo.of(...)`, or drop
 the name and describe the figure.
 
+### Redrawing a character in a pose
+
+**`Assets.redraw(guide, { reference })` is how a character gets a pose the code chose.** Asking a cutout for a
+pose in words gets the model's idea of it; a redraw gets the pose from a clay figure the code posed and placed:
+a stock body from `Character.stock`, posed by `Character.retarget` from a clip or a picture, drawn with
+`Mesh.draw`'s `clay` mode on flat magenta, placed with `Character.place`. The sheet from an earlier cutout says
+who the character is. What comes back is keyed and on the guide's own frame, so it goes back where the guide was.
+
+Read `guideAgreement` and `warnings` as you read a cutout's coverage: the result renders well whether or not it
+followed the guide. A costumed character overlaps its clay guide by about half to two thirds; well under that, look.
+
 ---
 
 ## 9. Provenance and Reuse

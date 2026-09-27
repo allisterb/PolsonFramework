@@ -26,3 +26,16 @@ public interface IDataUriSource
     /// <summary>The content as <c>data:&lt;mime&gt;;base64,…</c>, or an empty string if there is none.</summary>
     string ToDataUri();
 }
+
+/// <summary>Something that can hand over its pixels losslessly, as PNG.</summary>
+/// <remarks>
+/// A data URI from a canvas is WebP by default, which is right for a render and wrong for an image a caller will
+/// measure: lossy compression smears flat colour into gradients. <c>Assets.redraw</c> checks a guide for flat clay
+/// facets, and a WebP guide read as 34% flat, which is a photograph's signature. Implemented explicitly, so it stays
+/// off the script surface.
+/// </remarks>
+public interface ILosslessImageSource
+{
+    /// <summary>The pixels as PNG.</summary>
+    byte[] ToLosslessBytes();
+}

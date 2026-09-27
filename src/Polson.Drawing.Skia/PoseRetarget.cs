@@ -253,19 +253,19 @@ public static class PoseRetarget
         return model;
     }
 
-    static Quaternion Rot(Matrix4x4 m)
+    internal static Quaternion Rot(Matrix4x4 m)
     {
         Matrix4x4.Decompose(m, out _, out var q, out _);
         return Quaternion.Normalize(q);
     }
 
-    static Vector3 Flat(Vector3 v, Vector3 axis)
+    internal static Vector3 Flat(Vector3 v, Vector3 axis)
     {
         var f = v - (Vector3.Dot(v, axis) * axis);
         return f.LengthSquared() < 1e-8f ? Vector3.Zero : Vector3.Normalize(f);
     }
 
-    static Quaternion FromTo(Vector3 a, Vector3 b)
+    internal static Quaternion FromTo(Vector3 a, Vector3 b)
     {
         a = Vector3.Normalize(a);
         b = Vector3.Normalize(b);

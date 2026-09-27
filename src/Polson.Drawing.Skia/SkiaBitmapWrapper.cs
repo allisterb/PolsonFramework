@@ -13,7 +13,7 @@ using SkiaSharp;
 /// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
 /// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
 /// </remarks>
-public class SkiaBitmapWrapper : IDisposable, IDataUriSource
+public class SkiaBitmapWrapper : IDisposable, IDataUriSource, ILosslessImageSource
 {
     #region Constructors
     public SkiaBitmapWrapper(int width, int height)
@@ -184,6 +184,9 @@ public class SkiaBitmapWrapper : IDisposable, IDataUriSource
     /// surface, so it adds no member for the reference and the manifest to account for.
     /// </summary>
     string IDataUriSource.ToDataUri() => ToDataUri();
+
+    /// <summary>The pixels as PNG, for a caller that measures them. See <see cref="ILosslessImageSource"/>.</summary>
+    byte[] ILosslessImageSource.ToLosslessBytes() => ToImageBytes("png", 100);
 
     public string ToDataURL(string format = "webp", int quality = 85) =>
         ToDataUri(format, quality);

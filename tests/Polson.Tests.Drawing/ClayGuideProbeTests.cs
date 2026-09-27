@@ -28,7 +28,7 @@ using Xunit.Abstractions;
 public class ClayGuideProbeTests : TestsRuntime
 {
     const string Project = @"C:\Projects\PolsonRuns\lastlight3";
-    const int W = 768, H = 1024;
+    internal const int W = 768, H = 1024;
 
     readonly ITestOutputHelper output;
 
@@ -101,38 +101,20 @@ public class ClayGuideProbeTests : TestsRuntime
         Save(dir, "greeting", Clay(tomas.Pose(Clip("Greeting", 0.4)), Place(-60f), null));
     }
 
-    static SKBitmap Clay(FaceMesh mesh, Dictionary<string, object?> draw, float? railY)
+    /// <summary>The mesh as grey clay on flat magenta, drawn by <c>Mesh.draw</c>'s own clay mode, with an optional rail.</summary>
+    internal static SKBitmap Clay(FaceMesh mesh, Dictionary<string, object?> draw, float? railY)
     {
-        var bitmap = new SKBitmap(W, H);
-        using var canvas = new SKCanvas(bitmap);
-        canvas.Clear(new SKColor(0xFF, 0x00, 0xFF));
+        var canvas = new SkiaCanvas(W, H);
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = "#ff00ff";
+        ctx.FillRect(0, 0, W, H);
         if (railY is { } y)
-            using (var wood = new SKPaint { Color = new SKColor(0x7A, 0x5A, 0x3A), IsAntialias = true })
-                canvas.DrawRect(0, y, W, 18, wood);
-
-        var pose = MeshToolkit.Pose.From(draw, mesh);
-        var placed = Enumerable.Range(0, mesh.Vertices.Length).Select(i => pose.Place(mesh, i)).ToArray();
-        var light = Normalize(new SKPoint3(-0.45f, 0.6f, 0.65f));
-        using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.StrokeAndFill, StrokeWidth = 0.6f };
-        using var path = new SKPath();
-
-        foreach (var t in pose.DepthOrder(mesh))
         {
-            SKPoint3 a = placed[mesh.Indices[t * 3]], b = placed[mesh.Indices[(t * 3) + 1]], c = placed[mesh.Indices[(t * 3) + 2]];
-            var n = Normalize(Cross(Sub(b, a), Sub(c, a)));
-            if (n.Z < 0) n = new SKPoint3(-n.X, -n.Y, -n.Z);      // painter's order hides the back; shade the face we see
-            var lum = 0.35f + (0.6f * MathF.Max(0f, (n.X * light.X) + (n.Y * light.Y) + (n.Z * light.Z)));
-            var g = (byte)Math.Clamp((int)(lum * 235f), 0, 255);
-            paint.Color = new SKColor(g, g, g);
-
-            path.Reset();
-            path.MoveTo(pose.X + (a.X * pose.Scale), pose.Y - (a.Y * pose.Scale));
-            path.LineTo(pose.X + (b.X * pose.Scale), pose.Y - (b.Y * pose.Scale));
-            path.LineTo(pose.X + (c.X * pose.Scale), pose.Y - (c.Y * pose.Scale));
-            path.Close();
-            canvas.DrawPath(path, paint);
+            ctx.FillStyle = "#7a5a3a";
+            ctx.FillRect(0, y, W, 18);
         }
-        return bitmap;
+        new MeshToolkit().Draw(ctx, mesh, new Dictionary<string, object?>(draw) { ["clay"] = true });
+        return canvas.Bitmap.Bitmap.Copy();
     }
 
     void Save(string dir, string name, SKBitmap bitmap)
@@ -140,15 +122,5 @@ public class ClayGuideProbeTests : TestsRuntime
         using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
         File.WriteAllBytes(Path.Combine(dir, $"guide-{name}.png"), data.ToArray());
         output.WriteLine($"wrote guide-{name}.png");
-    }
-
-    static SKPoint3 Sub(SKPoint3 a, SKPoint3 b) => new(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
-
-    static SKPoint3 Cross(SKPoint3 a, SKPoint3 b) => new((a.Y * b.Z) - (a.Z * b.Y), (a.Z * b.X) - (a.X * b.Z), (a.X * b.Y) - (a.Y * b.X));
-
-    static SKPoint3 Normalize(SKPoint3 v)
-    {
-        var l = MathF.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
-        return l < 1e-12f ? v : new SKPoint3(v.X / l, v.Y / l, v.Z / l);
     }
 }

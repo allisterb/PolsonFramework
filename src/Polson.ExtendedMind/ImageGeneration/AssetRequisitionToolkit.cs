@@ -547,6 +547,187 @@ public partial class AssetRequisitionToolkit : Runtime
         };
     }
 
+    /// <summary>
+    /// A character drawn in the pose of a clay guide: <c>Assets.redraw(guide, { reference: sheet })</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The guide sets everything code can set</b> (pose, camera, framing, size and place in the frame) and the
+    /// reference sets how the character looks. The result is keyed to transparency and returned at the guide's own size
+    /// with the figure where the guide put it, so it is drawn back over the panel the guide was made for; its one cell
+    /// is the figure trimmed, as a cutout's is.
+    /// </para>
+    /// <para>
+    /// <b>The guide must be clay</b> (<c>Mesh.draw</c> with <c>clay</c>) on a flat magenta, green or blue ground, and is
+    /// checked before the network is touched: it is the one image here the studio did not generate, so it is where a
+    /// photograph would get in. See <see cref="PlateAnalysis.GuideProblem"/>.
+    /// </para>
+    /// </remarks>
+    public async Task<CutoutAsset> Redraw(object guide, RedrawOptions? options = null)
+    {
+        var opts = options ?? new RedrawOptions();
+        var descriptor = string.IsNullOrWhiteSpace(opts.Describe) ? "redraw" : opts.Describe!;
+
+        CutoutAsset Refuse(ImageGenerationFailure failure, string reason)
+        {
+            RequisitionScope.Record(new RequisitionRecord(
+                "redraw", descriptor, Success: false, Failure: failure.ToString(), Reason: reason, Model: null, FromCache: false, Refused: true));
+            RecordBudgetState();
+            return new CutoutAsset { Success = false, Failure = failure, Error = reason };
+        }
+
+        var guideBytes = GuideBytes(guide);
+        if (guideBytes is null)
+            return Refuse(ImageGenerationFailure.InvalidRequest,
+                $"redraw takes a canvas or bitmap holding a clay guide, and got {guide?.GetType().Name ?? "nothing"}.");
+        // Lossy compression smears the flat facets the guide check looks for, and would blur what the model is shown.
+        if (Lossy(guideBytes) is { } format)
+            return Refuse(ImageGenerationFailure.InvalidRequest,
+                $"the guide arrived as {format}, which is lossy and blurs the flat facets a clay guide is recognised by. Pass the "
+                + "canvas itself, or canvas.toImageBytes('png').");
+        using var guideImage = SKBitmap.Decode(guideBytes);
+        if (guideImage is null) return Refuse(ImageGenerationFailure.InvalidRequest, "the guide could not be decoded as an image.");
+        if (PlateAnalysis.GuideProblem(guideImage, out var groundName) is { } problem)
+            return Refuse(ImageGenerationFailure.InvalidRequest,
+                "the guide is refused: " + problem + ". It must be a clay render, Mesh.draw(ctx, figure, { ...draw, clay: true }) "
+                + "on a flat magenta ground, because it is the one image here the studio did not generate, and a photograph "
+                + "passed in its place would bring a likeness past the checks Photo applies.");
+
+        // A name alone is enough here, where a cutout also needs a face word: a redraw always draws a whole character,
+        // face included, and a name in the moment could steer it toward the person rather than the reference.
+        if (!string.IsNullOrWhiteSpace(opts.Describe) && PersonalName().Match(opts.Describe) is { Success: true } who)
+            return Refuse(ImageGenerationFailure.RefusedLikeness,
+                $"'{who.Value}' reads as a name, and redraw draws a character's face: a name here could steer the model to a "
+                + "real person and away from the reference. Describe the moment without proper names; the reference says who it is.");
+        if (NamedGround(opts.Style) is { } word)
+            return Refuse(ImageGenerationFailure.InvalidRequest,
+                "redraw style names a " + word + ", and the ground is the guide's: it is kept flat so the result can be keyed.");
+
+        var (referenceIds, referenceError) = ReferenceIdsOf(opts.Reference);
+        if (referenceError is null && referenceIds.Count == 0)
+            referenceError = "redraw needs a reference: the character's sheet from Assets.cutout, one of its cells, or its id. "
+                + "The guide says only where the figure is; the reference says who it is.";
+        var hex = KeyGrounds[groundName!];
+        List<byte[]> references = [];
+        foreach (var id in referenceIds)
+        {
+            if (referenceError is not null) break;
+            if (await cache.Get(id) is { ImageBytes: { Length: > 0 } bytes }) references.Add(OnGround(bytes, hex));
+            else referenceError = $"reference '{id}' is not an image this project generated. A reference must be a cutout "
+                + "requisitioned in this project, one of its cells, or its id.";
+        }
+        if (referenceError is not null) return Refuse(ImageGenerationFailure.InvalidRequest, referenceError);
+
+        var prompt = RedrawPrompt(opts, groundName!, hex, references.Count);
+        var generated = await Acquire(prompt, opts.Model ?? generator?.Model ?? ImageGenerator.DefaultModel,
+            AspectFor(guideImage.Width, guideImage.Height), [guideBytes, .. references], "redraw", descriptor);
+        if (!generated.Success) return new CutoutAsset { Success = false, Failure = generated.Failure, Error = generated.Error };
+
+        using var master = SKBitmap.Decode(generated.ImageBytes);
+        if (master is null)
+            return new CutoutAsset { Success = false, Failure = ImageGenerationFailure.NoImageReturned, Error = "Redraw decoded to nothing." };
+
+        // Keyed on the ground's hue, then laid back over the guide's own frame so the figure lands where the guide put it.
+        var background = PlateAnalysis.SampleBackground(master);
+        using var keyedAtModel = PlateAnalysis.DifferenceKey(master, background, groundName!, opts.Tolerance)
+            ?? PlateAnalysis.ChromaKey(master, background, opts.Tolerance);
+        using var keyed = PlateAnalysis.Resize(keyedAtModel, guideImage.Width, guideImage.Height);
+
+        var agreement = Agreement(guideImage, keyed);
+        var coverage = PlateAnalysis.AlphaCoverage(keyed);
+        List<string> warnings = [];
+        if (coverage > 0.9)
+            warnings.Add($"the result is {coverage:P0} opaque: its ground was not keyed out, most likely because the model drew a "
+                + "scene behind the figure. Look at it before using it.");
+        // Measured: 0.48 to 0.66 on redraws that followed their guides, costume included. Below this the figure has left it.
+        if (agreement < 0.4)
+            warnings.Add($"the drawn figure overlaps the guide's outline by only {agreement:P0}: it has strayed from the pose, "
+                + "framing or size it was given. Look at it beside the guide.");
+
+        return new CutoutAsset
+        {
+            Success = true,
+            Id = generated.Hash,
+            References = referenceIds,
+            Warnings = warnings,
+            KeyColor = groundName!,
+            Bytes = PlateAnalysis.Encode(keyed, "png", 100),
+            Width = keyed.Width,
+            Height = keyed.Height,
+            Cells = [CellOf(keyed, 0, keyed.Width - 1, "redraw", Math.Max(keyed.Width, keyed.Height), generated.Hash)],
+            Split = "single",
+            BackgroundColor = $"#{background.Red:X2}{background.Green:X2}{background.Blue:X2}",
+            GuideAgreement = Math.Round(agreement, 3),
+            Provenance = ProvenanceOf(generated, BlockingHashOf(guideBytes)),
+        };
+    }
+
+    /// <summary>The guide's pixels as encoded bytes: from a canvas or bitmap, a data URI, or bytes as they are.</summary>
+    static byte[]? GuideBytes(object? guide) => guide switch
+    {
+        byte[] bytes => bytes,
+        ILosslessImageSource lossless => lossless.ToLosslessBytes(),
+        IDataUriSource source => FromDataUri(source.ToDataUri()),
+        string uri => FromDataUri(uri),
+        _ => null
+    };
+
+    /// <summary>"WebP" or "JPEG" when the bytes are in a lossy format, by their signature; otherwise null.</summary>
+    static string? Lossy(byte[] b) =>
+        b.Length > 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P' ? "WebP"
+        : b.Length > 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF ? "JPEG"
+        : null;
+
+    static byte[]? FromDataUri(string uri)
+    {
+        var comma = uri.IndexOf(',');
+        if (!uri.StartsWith("data:", StringComparison.Ordinal) || comma < 0 || !uri[..comma].EndsWith(";base64", StringComparison.Ordinal))
+            return null;
+        try { return Convert.FromBase64String(uri[(comma + 1)..]); }
+        catch (FormatException) { return null; }
+    }
+
+    /// <summary>Intersection over union of the guide's figure and the drawn one.</summary>
+    static double Agreement(SKBitmap guide, SKBitmap keyed)
+    {
+        var g = guide.GetPixel(2, 2);
+        long both = 0, either = 0;
+        var step = Math.Max(1, Math.Max(guide.Width, guide.Height) / 400);
+        for (var y = 0; y < guide.Height; y += step)
+            for (var x = 0; x < guide.Width; x += step)
+            {
+                var c = guide.GetPixel(x, y);
+                var inGuide = Math.Abs(c.Red - g.Red) + Math.Abs(c.Green - g.Green) + Math.Abs(c.Blue - g.Blue) >= 40;
+                var inDrawn = keyed.GetPixel(x, y).Alpha > 128;
+                if (inGuide && inDrawn) both++;
+                if (inGuide || inDrawn) either++;
+            }
+        return either == 0 ? 0 : both / (double)either;
+    }
+
+    /// <summary>The redraw prompt: what to take from the guide, what from the reference, and the ground to keep.</summary>
+    /// <remarks>
+    /// The wording is the live test's, which drew Tomas and Kit from stock-body guides with their identity kept and the
+    /// pose followed. <i>Copy its pose, never its proportions</i> is load-bearing: without it a generic guide lends the
+    /// character its build.
+    /// </remarks>
+    static string RedrawPrompt(RedrawOptions opts, string ground, string hex, int referenceCount)
+    {
+        var sheets = referenceCount == 1 ? "Image 2 is the character reference sheet"
+            : $"Images 2 to {referenceCount + 1} are reference sheets of the character";
+        var moment = string.IsNullOrWhiteSpace(opts.Describe) ? string.Empty : $"The moment: {opts.Describe!.Trim().TrimEnd('.')}. ";
+        return $"Image 1 is a pose guide: a plain grey artist's mannequin, a generic 3D body that is not the character, on a "
+            + $"flat {ground} background. The grey is not a colour of anything; it says nothing about the character's appearance. "
+            + "Any other flat-coloured shape in it is a prop. "
+            + $"{sheets}. Draw the character in exactly the pose of image 1, as {opts.Style}. "
+            + "From image 1 take only: the pose of every limb, the direction the head faces, the camera angle, the framing, the "
+            + "figure's size and position in the frame, and any contact such as a hand resting on a prop. "
+            + "From the reference take everything about how the character looks: the face, hair, age, build and height, the "
+            + "clothing and its length, footwear, colours and costume details. The guide's body is generic: copy its pose, never "
+            + $"its proportions. {moment}Keep the background flat pure {ground} ({hex}) exactly as in image 1: no floor, no "
+            + "shadow, no other objects. Keep any props from image 1 where they are.";
+    }
+
     /// <summary>Divides a keyed sheet into one cell per variant, reporting how it managed it.</summary>
     /// <remarks>
     /// Gaps first, because a model does not lay a row out on a grid and equal columns cut through

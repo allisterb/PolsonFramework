@@ -162,6 +162,7 @@ public static class JsSurface
         // Characters built by the GenerateCharacter tool. Loading one returns an ordinary mesh, so
         // everything past `Character.load` is the Mesh area's.
         new("Character", typeof(CharacterToolkit), "Character", false),
+        new("body", typeof(BodyDetection), "Character", true),
 
         // SPIKE: frame capture and animated encoding. Declared here so the manifest stays honest
         // about what a script can reach, not because the surface is settled.

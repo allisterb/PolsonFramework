@@ -409,6 +409,16 @@ internal class Program : Runtime
                  + "Set Poses:Library, or put clips in models/poses/.");
     }
 
+    /// <summary>Stock bodies for <c>Character.stock</c>: <c>Characters:Stock</c>, or <c>models/stock/</c>.</summary>
+    static void ConfigureStock()
+    {
+        if (Setting("Characters:Stock") is { Length: > 0 } configured)
+            CharacterStock.LibraryOverride = configured;
+        var bodies = CharacterStock.Names(null);
+        if (bodies.Length > 0) Info("Stock bodies: {0}.", string.Join(", ", bodies));
+        else Info("No stock bodies found; Character.stock reads only a project's stock/ folder. Fetch them into models/stock/.");
+    }
+
     /// <summary>Points <c>Face.detect(...)</c> at a backend, and says whether it found one.</summary>
     /// <remarks>
     /// <para>
@@ -438,6 +448,20 @@ internal class Program : Runtime
             Warn("Face detection unavailable: missing {0}. Face.detect() will refuse, and a mesh "
                  + "textured from a photograph needs its three landmarks supplied by hand. "
                  + "See src/vision/requirements.in.", FaceDetector.Missing);
+    }
+
+    /// <summary>Body detection for <c>Character.detect</c>: the face venv's interpreter, with the pose script and model.</summary>
+    static void ConfigureBodyDetection()
+    {
+        if (Setting("Tools:PoseScript") is { Length: > 0 } script)
+            BodyDetector.ScriptOverride = script;
+        if (Setting("Tools:PoseModel") is { Length: > 0 } model)
+            BodyDetector.ModelOverride = model;
+
+        if (BodyDetector.Available)
+            Info("Body detection enabled ({0}).", BodyDetector.Model);
+        else
+            Warn("Body detection unavailable: missing {0}. Character.detect() will refuse.", BodyDetector.Missing);
     }
 
     /// <summary>Points the <c>GenerateCharacter</c> tool at its two services, and says which are there.</summary>
@@ -475,7 +499,9 @@ internal class Program : Runtime
 
         ConfigureTracing();
         ConfigurePoses();
+        ConfigureStock();
         ConfigureFaceDetection();
+        ConfigureBodyDetection();
         ConfigureCharacterGeneration();
 
         var projectDir = !string.IsNullOrWhiteSpace(opts.ProjectDir)

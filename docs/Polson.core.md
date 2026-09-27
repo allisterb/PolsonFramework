@@ -3256,7 +3256,7 @@ canvas;
 >
 > Posing a loaded skeleton is `mesh.pose(...)` — see below.
 - `Mesh.fromObj(objText: string)` → `FaceMesh` — The same, from OBJ text a script already holds. **OBJ only** — there is no `fromGltf`, because a glTF's buffers and images are binary and a script holds a string.
-- `Mesh.draw(ctx: CanvasRenderingContext2D, mesh: FaceMesh, options?: object)` → `{ bounds, triangles, textured }` — Draws the mesh, deformed, posed and depth-sorted. `options`: `{ x, y, scale, stretch, yawDeg, pitchDeg, rollDeg, texture, wireframe, inkColor, lineWidth, shape, expression, side }`. An unrecognised option is refused by name.
+- `Mesh.draw(ctx: CanvasRenderingContext2D, mesh: FaceMesh, options?: object)` → `{ bounds, triangles, textured }` — Draws the mesh, deformed, posed and depth-sorted. `options`: `{ x, y, scale, stretch, yawDeg, pitchDeg, rollDeg, texture, wireframe, inkColor, lineWidth, shape, expression, side, clay }`. An unrecognised option is refused by name.
 
 > [!TIP]
 > **Negative `pitchDeg` looks up**: the crown rotates away and the chin toward the viewer. This is a real rotation about the model's own X axis, so there is none of the constructed head's 40° limit.
@@ -3597,6 +3597,19 @@ Both are passed to `Mesh.draw`, both take `-1 … 0 … +1`, both clamp, and an 
 > **The bands are measured against the geometry as loaded, never as deformed**, which is what makes them survive `fitOutline`. That call moves vertices — pushing the boundary out to a drawing's silhouette and carrying the interior with it — so a band keyed on where a vertex *now* sits would slide off the feature it was named for. Which vertex is a brow vertex is a fact about the anatomy, not about where the brow has been pushed.
 
 > [!TIP]
+> **`clay: true` draws the surface as grey clay**, each facet shaded flat by how it faces a light from the upper left and front; pass a colour instead (`clay: '#c8b49a'`) to tint it. Texture is ignored and `wireframe` with it is refused. This is the **pose guide** for the image model: shown a textured render, the model touched it up; shown the same pose as clay on a flat ground, it drew the character from the character's own sheet.
+>
+> ```js
+> ctx.fillStyle = '#ff00ff';                       // a ground the cutout keyer can take out
+> ctx.fillRect(0, 0, W, H);
+> const guide = Character.stock('female');
+> const draw = Character.place(guide, panel, { yawDeg: 35 });
+> Mesh.draw(ctx, guide.pose(Character.retarget(guide, 'Crouch_Idle', { at: 0.5 })), { ...draw, clay: true });
+> ```
+>
+> The light is fixed to the view, so a figure reads the same whichever way it is turned. About 130 ms for a 14,000-triangle body.
+
+> [!TIP]
 > **Wireframe first.** `wireframe: true` draws the triangles as lines in non-repro blue and is how you check a fit before spending a texture on it — the same role `drawLoomisWireframe` plays for the constructed head. A mesh with no texture draws as a wireframe whatever you pass, rather than silently drawing nothing.
 
 ---
@@ -3624,9 +3637,25 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 
 - `Character.list()` → `string[]` — The finished characters in this project.
 - `Character.load(name)` → `FaceMesh` — The character, ready to pose and draw. Loaded once per session and reused, so calling it in every script costs nothing after the first.
+- `Character.stock(name?)` → `FaceMesh` — **A stock body, rigged, with its body parts already named** — no `GenerateCharacter` build needed. `name` defaults to `'male'`. Mesh2Motion's human models, all on the skeleton the pose clips were recorded on, from `models/stock/` or the project's own `stock/` folder; loaded once and reused. It poses, retargets, reaches, places and reshapes (`mesh.proportion`) exactly as a built character does. `male` draws in its flat colour palette and `female`, which has no texture, as a wireframe; pass `clay: true` to `Mesh.draw` for grey clay.
+- `Character.stocks()` → `object[]` — The stock bodies here, `{ name, licence, author, file }`. **Licences are per model**: `male` and `female` are Quaternius, CC0, as are most others; `sophia` is CC-BY-SA 4.0 and `jay`, `sintel` and `bunny` are CC-BY, so a drawing made over one of those credits its author. A body Mesh2Motion does not list reports `licence: null`, which means unknown, not free.
 - `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `rig` and **`warnings`**.
 - `Character.clips()` → `{ name, seconds, file }[]` — The recorded clips a pose can be taken from.
-- `Character.retarget(character, clip, { at?, time? })` → `object` — **A whole-body pose from one frame of a recorded clip**, keyed by body part, ready for `pose(...)`. `character` is a mesh from `Character.load`, or a name. `at` is a fraction of the clip, `time` is seconds; neither means the first frame.
+- `Character.retarget(character, source, options?)` → `object` — **A whole-body pose**, keyed by body part, ready for `pose(...)`. `character` is a mesh from `Character.load`, or a name. `source` is either:
+  - **a clip name**, with `{ at?, time?, moveHips? }`: `at` is a fraction of the clip, `time` is seconds; neither means the first frame.
+  - **a body from `Character.detect(image)`**, with `{ faceFront?, moveHips?, flatFeet? }`: the pose in the picture. See *A pose from a picture* below.
+- `Character.detect(image)` → `body` — **Finds a body in a bitmap or canvas**: a photograph, a sheet, a drawing. Needs the optional MediaPipe backend; `Character.canDetect` says whether it is here. Not finding one is a result, so read `body.found` first.
+- `Character.canDetect` → `boolean` — Whether `detect` will work here.
+
+The `body` a detection returns:
+
+- `body.found` → `boolean` · `body.reason` → `string?` — whether a body was found, and why not.
+- `body.width` · `body.height` → `number` — the picture's own size. `body.pad` → `number` — the padding the detection needed.
+- `body.names` → `string[]` — the 33 landmark names, MediaPipe's: `nose`, `leftShoulder`, `rightHeel`, `leftFootIndex`…
+- `body.at(name)` → `{ x, y, visibility }` — one landmark in the picture's pixels, or null.
+- `body.world(name)` → `{ x, y, z }` — the same in 3D: metres from the middle of the hips, x to the picture's right, y down, z away from the camera. Null where there is none.
+- `body.hasWorld` → `boolean` — whether the 3D set came back, which `retarget` needs.
+- `body.unsure` → `string[]` — the landmarks the detector was unsure of (visibility under 0.5).
 - `Character.reach(character, pose, goals, draw?)` → `{ pose, reached, miss }` — **Puts hands and feet where the panel needs them, and points the head**, on top of `pose`. `goals` takes `leftHand`, `rightHand`, `leftFoot`, `rightFoot` as `{ at: { x, y, z } }` or `{ page: { x, y } }`, with an optional `bend`, and `head` as `{ lookAt: … }`. `draw` is the options you pass to `Mesh.draw`, needed for a page point.
 - `Character.place(character, frame, { at?, anchor?, height?, yawDeg?, pitchDeg? })` → `object` — **The `Mesh.draw` options that stand a character in a frame**: feet at `at` (fractions of the frame, default `{ x: 0.5, y: 0.95 }`), standing `height` of the frame tall (default `0.8`). Sized from the character standing, so a crouch comes out shorter; the feet go where its floor is, under its hips. **For a close shot, anchor a body part instead**: `{ anchor: 'head', at: { x: 0.4, y: 0.35 }, height: 3 }` puts the head there and lets the panel crop the rest.
 - `Character.where(character, pose, part, draw?)` → `{ x, y, z }` or `{ x, y, depth }` — Where a body part's joint is under a pose: in the character's own space, or on the page given the draw options.
@@ -3677,6 +3706,17 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 
 > [!TIP]
 > [!TIP]
+> **A figure without a build.** `Character.stock()` gives a posable body in one call, so a pose guide, a crowd figure or a stand-in needs no reconstruction and no GPU:
+>
+> ```js
+> const guide = Character.stock('female');
+> const pose = Character.retarget(guide, 'Crouch_Idle', { at: 0.5 });
+> Mesh.draw(ctx, guide.pose(pose), Character.place(guide, panel, { height: 0.7, yawDeg: 30 }));
+> ```
+>
+> Measured with the image model on Kit: her sheet plus a clay guide drawn from the stock body kept the character's face, costume and proportions, and followed the guide's pose (mean joint error 0.10 to 0.26 torso lengths). Reshape it with `proportion` when the character's build is far from the stock one, and pose it from a picture with `Character.detect`.
+
+> [!TIP]
 > **Reshaping a body.** `mesh.proportion(...)` moves the bones and carries the skin with them, then keeps the result as the rest pose:
 >
 > ```js
@@ -3687,6 +3727,23 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 > - **A factor scales that part of this body**: `thigh: 0.8` makes the thigh 0.8 as long, `head: 1.2` makes the head 1.2 times the size about its own joint. `shoulders` and `hips` set width only, `girth` thins or thickens the limbs and trunk, and the feet stay on the floor.
 > - **`like` copies another character's proportions**, as shares of its head-to-ankle chain. It compares where the two rigs put their joints, so it is only as good as the joints agree, and riggers disagree. Measured on Kit, UniRig put the shoulder joints 26% wider apart than MediaPipe's shoulders on the same drawing, so `like` would give a stock body broad shoulders and short upper arms. Between two characters built the same way it is sound; across riggers, prefer factors measured from the drawings themselves.
 > - **The image model takes a character's body proportions from its sheet, not from the guide.** Kit drawn over the stock adult guide and over one reshaped to her proportions came out the same shape, and both matched her sheet (legs 0.39 of her height, head and neck 0.22). The reshaped guide followed slightly more closely (mean pose error 0.25/0.18/0.10 torso lengths against 0.26/0.21/0.12, one image each), which is within the scatter. Reshape a guide when the character's build is far from the stock body's; set how tall it stands with `Character.place`.
+
+> [!TIP]
+> **A pose from a picture.** `Character.detect(image)` reads a body's 33 landmarks twice: in the picture's pixels, and in 3D, in metres. `Character.retarget` turns the 3D set into a pose for any character, so a pose can come from a reference photograph or a drawing and not only from the recorded clips:
+>
+> ```js
+> const body = Character.detect(Skia.Image.load('refs/crouch.png'));
+> if (!body.found) exit(body.reason);
+> if (body.unsure.length) Stage.note('guessed: ' + body.unsure.join(', '));
+> const pose = Character.retarget(tomas, body);
+> Mesh.draw(ctx, tomas.pose(pose), Character.place(tomas, panel, { yawDeg: 0 }));   // as the picture saw it
+> ```
+>
+> - **The picture's angle is kept**: drawing at `yawDeg: 0` shows the pose as photographed, and turning it shows the same pose from elsewhere. `faceFront: true` turns it to face the character's front instead.
+> - **The feet go on the floor**: the hips drop until the lower foot is down, and when the picture's ankles are level both are planted, with the feet laid flat. The detector reads flat feet as pointing 6 to 50 degrees down whether or not a floor is drawn, so `flatFeet: false` is only for a figure on its toes.
+> - **Across the picture it is accurate; along the camera's line it is not.** Measured on renders with a known pose, a lean across the picture reads within 3 degrees, the same lean toward the camera at a third of its size, and an upright figure as leaning 1 to 25 degrees toward the camera depending on the picture. Limbs come back within 13 to 28 degrees on average of the truth facing the camera and 20 to 37 at 40 degrees of turn, against 36 to 62 for a body left at rest. So pick pictures where the pose runs across the frame, and look at the result from the side before drawing with it.
+> - **`body.unsure` lists what the detector guessed** (visibility under 0.5), usually a limb hidden behind the body. The guess is still used: on a round trip it was nearer the truth than leaving the limb at rest.
+> - **What it reads**: trunk from hips and shoulders, the head from the nose and ears, each limb from its joints and rolled by its bend, the hands from the index and little-finger points, the feet from heel to toe. It does not read the fingers or the spine's curve.
 
 > **Take a pose from a performer before you build one from angles.** A pose written joint by joint comes out stiff: nothing in it says where the weight is, how the shoulders answer the hips, or what the free arm does. A recorded clip carries all of that, because a person performed it.
 >
@@ -3816,6 +3873,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
   - **`conditionOn` must be a blocking**: PNG bytes of the scene's foreground as flat black silhouettes on one flat grey ground, e.g. `#000000` on `#808080`. Anything with shading, colour or a range of greys is **refused before the network is touched**, because an image sent here reaches the model as something to build around — the one route by which a photograph or a likeness could arrive without the checks `Photo` applies. A silhouette carries no likeness, which is why it is allowed. Antialiased edges are fine.
 - `Assets.matte(descriptor: string, options?: object)` → `Promise<MatteAsset>` — A greyscale mask, height field, or displacement source for use as a shader input — **and, with `hardEdge`, a stencil.** `options`: `{ size?: number, invert?: boolean, hardEdge?: boolean, threshold?: number, model?: string }`.
 - `Assets.cutout(descriptor: string, options?: object)` → `Promise<CutoutAsset>` — Pictorial elements with a **real alpha channel**, cut from a flat keyed ground — and, with `variants`, several views of one subject from **one generation**. `options`: `{ variants?: string[] (max 6), size?: number (default 512), style?: string, background?: string, tolerance?: number (default 0.18), reference?: CutoutAsset | CutoutCell | string | Array (max 3), framing?: 'head' | 'full' | string, keyColor?: 'green' | 'magenta' | 'blue', model?: string }`.
+- `Assets.redraw(guide: canvas | bitmap, options: object)` → `Promise<CutoutAsset>` — **A character drawn in the pose of a clay guide**: the guide sets the pose, camera, framing and place in the frame; the reference sheet sets how the character looks. `options`: `{ reference (required): CutoutAsset | CutoutCell | string | Array (max 3), describe?: string, style?: string, tolerance?: number (default 0.10), model?: string }`. See *Redrawing a character in a pose* below.
 
 > [!TIP]
 > **This is the one requisition that will answer a *form*, and that is deliberate.** `material()` refuses "a rearing horse" because a material has no silhouette; a matte is nothing *but* a silhouette, so the classifier does not run here. It is therefore the route to the bold graphic form a header or a section marker wants — and it stays on the right side of the line, because what comes back is a shape rather than a picture. Colour, scale, placement and composition all stay with your code.
@@ -3919,6 +3977,34 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 > **An earlier wording asked the model to change nothing about the subject, and it copied everything**:
 > shown a full-figure sheet and asked for head and shoulders, it drew the same full figures, the profile
 > almost line for line. Naming what to keep is what lets the rest change.
+
+### Redrawing a character in a pose — `Assets.redraw`
+
+The whole route from a script: a stock body posed by code, drawn as clay, then drawn as the character.
+
+```javascript
+// Script 1 — the guide. Clay on flat magenta, placed exactly where the character should stand in the panel.
+const canvas = createCanvas(768, 1024);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#ff00ff';
+ctx.fillRect(0, 0, 768, 1024);
+const body = Character.stock('female');
+const draw = Character.place(body, Layout.rect(0, 0, 768, 1024), { yawDeg: 35 });
+Mesh.draw(ctx, body.pose(Character.retarget(body, 'Crouch_Idle', { at: 0.5 })), { ...draw, clay: true });
+
+const kit = await Assets.redraw(canvas, { reference: Session.kitSheet, describe: 'crouching to look at a crab' });
+if (!kit.success) exit(kit.failureName + ': ' + kit.error);
+if (kit.warnings.length) Stage.note(kit.warnings.join(' '));
+Session.kitCrouch = kit.toDataUri();      // the guide's own frame, figure where the guide put it
+```
+
+- **The result is on the guide's frame**: the same size, keyed to transparency, with the figure where the guide stood. Draw it back over the panel at the same place. `cells[0]` is the figure trimmed, as a cutout's cells are.
+- **The reference is required**: the character's sheet from `Assets.cutout`, resolved through the project's cache as a cutout's reference is. The guide says only where the figure is; the sheet says who it is.
+- **The guide must be clay** from `Mesh.draw`'s `clay` mode, on flat magenta, green or blue, and is checked before anything is spent. It is the one image here the studio did not generate, so it is where a photograph would get in. A flat ground, a figure of one shaded tone with no ink-dark pixels, and flat facets pass; photographs and drawings, colour or grey, do not, and the refusal says which test failed. **Pass the canvas itself**: its data URI is WebP, which blurs the facets and is refused as lossy.
+- **Props survive**: another flat-coloured shape in the guide, such as a rail, is kept where it is.
+- **`guideAgreement`** is how much the drawn outline overlaps the guide's, 0 to 1. It measures outlines, so costume lowers it: live redraws of Kit in her coat scored 0.48 to 0.66 while following their poses. Under 0.4, a warning says the figure has left its guide.
+- **`describe` is for what a pose cannot say**: the expression, what the hands hold. A proper name in it is refused, since a redraw draws a face.
+- Measured: about 14 s a redraw, one generation each, cached on the guide, the reference and the words.
 
 ### Framing and the key colour — `framing`, `keyColor`
 
@@ -4032,6 +4118,7 @@ Requisitions **raw material** from a cloud image model: flat tiling textures, ba
 - `cutout.warnings` → `string[]` — What looks wrong with the sheet, in words. **Empty is the expected result.** Today it names a cell whose ground was not keyed out — opaque, and one flat colour in every corner, usually a view the model drew on a panel of its own. `success` stays true, because the other cells may be fine; do not build on the named cell.
 - `cutout.keyColor` → `string` — The ground the model was asked to draw: `'green'`, `'magenta'` or `'blue'`. `backgroundColor` is what actually came back.
 - `cutout.id` · `cutout.provenance` — `id` is what a later call passes as `reference`.
+- `cutout.guideAgreement` → `number?` — From `Assets.redraw` only: how much the drawn figure's outline overlaps the guide's, 0 to 1. Null for a cutout.
 
 ## `CutoutCell`
 

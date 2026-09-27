@@ -226,6 +226,90 @@ public static class PlateAnalysis
     }
 
     /// <summary>
+    /// Why an image is not a clay pose guide, or null when it is one; <paramref name="ground"/> names the key colour it
+    /// is drawn on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The guide is the one image <c>Assets.redraw</c> sends that the studio did not generate</b>, so, like a blocking,
+    /// it is the route by which a photograph of a real person could reach the model as something to draw from. A clay
+    /// render carries a pose and no likeness, and it has a signature a picture of anything else does not: a flat ground
+    /// in all four corners, a figure that is one tone scaled between about a third and full brightness, no ink-dark
+    /// pixels, and large flat facets.
+    /// </para>
+    /// <para>
+    /// Measured before the thresholds were set: clay guides from <c>Mesh.draw</c> scored 87 to 98% on-tone, no ink and 49
+    /// to 59% flat. Colour and greyscale drawings failed on ink (18 to 37%), and photographs, colour or grey, on flatness
+    /// (at most 34%) and mostly on the ground too. A flat-coloured prop, such as a rail, fits inside what is left over.
+    /// </para>
+    /// </remarks>
+    public static string? GuideProblem(SKBitmap guide, out string? ground)
+    {
+        ArgumentNullException.ThrowIfNull(guide);
+        ground = null;
+        int w = guide.Width, h = guide.Height;
+        if (w < 32 || h < 32) return $"it is {w}x{h}, too small to be a pose guide";
+
+        var corners = new[] { guide.GetPixel(2, 2), guide.GetPixel(w - 3, 2), guide.GetPixel(2, h - 3), guide.GetPixel(w - 3, h - 3) };
+        var c0 = corners[0];
+        if (corners.Any(c => Math.Abs(c.Red - c0.Red) + Math.Abs(c.Green - c0.Green) + Math.Abs(c.Blue - c0.Blue) > 30))
+            return "its corners are not one flat colour; draw the guide on a flat magenta, green or blue ground";
+
+        ground = c0 switch
+        {
+            { Red: > 180, Green: < 90, Blue: > 180 } => "magenta",
+            { Red: < 90, Green: > 180, Blue: < 90 } => "green",
+            { Red: < 90, Green: < 90, Blue: > 180 } => "blue",
+            _ => null
+        };
+        if (ground is null)
+            return $"its ground is #{c0.Red:X2}{c0.Green:X2}{c0.Blue:X2}; draw it on flat magenta (#FF00FF), green or blue, "
+                + "the ground the model is asked to keep and the result is keyed on";
+
+        static bool Ground(SKColor c, SKColor g) => Math.Abs(c.Red - g.Red) + Math.Abs(c.Green - g.Green) + Math.Abs(c.Blue - g.Blue) < 40;
+
+        // The figure, sampled; the tone is its brightest facets.
+        var step = Math.Max(1, Math.Max(w, h) / 360);
+        List<SKColor> figure = [];
+        for (var y = 0; y < h; y += step)
+            for (var x = 0; x < w; x += step)
+                if (guide.GetPixel(x, y) is var c && !Ground(c, c0)) figure.Add(c);
+        if (figure.Count < 200) return "there is almost nothing on it but ground";
+
+        static int Sum(SKColor c) => c.Red + c.Green + c.Blue;
+        var tone = figure.OrderBy(Sum).ElementAt((int)(figure.Count * 0.97));
+        var toneSum = Math.Max(1, Sum(tone));
+        int onTone = 0, ink = 0;
+        foreach (var c in figure)
+        {
+            var k = Sum(c) / (double)toneSum;
+            if (k < 0.3) { ink++; continue; }
+            var s = Math.Max(1, Sum(c));
+            var hue = Math.Abs((c.Red / (double)s) - (tone.Red / (double)toneSum))
+                    + Math.Abs((c.Green / (double)s) - (tone.Green / (double)toneSum))
+                    + Math.Abs((c.Blue / (double)s) - (tone.Blue / (double)toneSum));
+            if (hue < 0.04 && k <= 1.03) onTone++;
+        }
+
+        // Flat facets: neighbours of exactly one colour, along full rows.
+        long pairs = 0, same = 0;
+        for (var y = 0; y < h; y += step)
+            for (var x = 0; x + 1 < w; x++)
+            {
+                var a = guide.GetPixel(x, y);
+                if (Ground(a, c0)) continue;
+                pairs++;
+                if (guide.GetPixel(x + 1, y) == a) same++;
+            }
+
+        double toned = onTone / (double)figure.Count, inked = ink / (double)figure.Count, flat = pairs == 0 ? 0 : same / (double)pairs;
+        if (inked > 0.02) return $"{inked:P0} of its figure is near black, which is ink or shadow; a clay guide has none";
+        if (toned < 0.80) return $"only {toned:P0} of its figure is one shaded tone; a clay guide is one colour, lit";
+        if (flat < 0.40) return $"only {flat:P0} of it is flat, as a photograph is; a clay guide is flat facets";
+        return null;
+    }
+
+    /// <summary>
     /// Intersection-over-union of the plate's near-black region with the blocking's silhouette.
     /// </summary>
     public static double MaskAgreement(SKBitmap plate, SKBitmap blocking, int sample = 280)

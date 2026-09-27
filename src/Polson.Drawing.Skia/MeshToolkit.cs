@@ -108,7 +108,12 @@ public class MeshToolkit
         // indistinguishable from a drawing decision. The same fallback an untextured mesh gets.
         if (texture is not null && !mesh.Fitted && !mesh.HasUvs) texture = null;
 
-        if (wireframe || texture is null)
+        var clay = ReadClay(opt);
+        if (clay is not null && wireframe)
+            throw new ArgumentException("drawMesh takes clay or wireframe, not both: one fills the surface and the other draws only its edges.");
+
+        if (clay is { } tone) DrawClay(ctx, mesh, pose, placed, tone);
+        else if (wireframe || texture is null)
         {
             var ink = opt?["inkColor"]?.ToString() ?? "#1f6f8b";
             ctx.StrokeStyle = ink;
@@ -163,15 +168,78 @@ public class MeshToolkit
         {
             ["bounds"] = Rect(x0, y0, x1, y1),
             ["triangles"] = mesh.TriangleCount,
-            ["textured"] = !wireframe && texture is not null
+            ["textured"] = clay is null && !wireframe && texture is not null,
+            ["clay"] = clay is not null
         };
+    }
+
+    /// <summary>
+    /// <c>clay</c>: <c>true</c> for grey, or a colour to tint it; false or absent for none.
+    /// </summary>
+    static SKColor? ReadClay(IDictionary? opt)
+    {
+        var value = opt?["clay"];
+        return value switch
+        {
+            null or false => null,
+            true => ClayGrey,
+            string colour when !string.IsNullOrWhiteSpace(colour) => SkiaColorParser.Parse(colour),
+            _ => throw new ArgumentException($"clay is true, or a colour such as '#c8b8a0'; got {value}.")
+        };
+    }
+
+    /// <summary>
+    /// The surface in one colour, each triangle shaded flat by how it faces a light from the upper left and front.
+    /// </summary>
+    /// <remarks>
+    /// <b>What a pose guide wants.</b> Shown a textured render and a character sheet, the image model touched up
+    /// the render; shown the same pose as grey clay, it drew the character from the sheet, because the guide then
+    /// carries only the pose, the camera and the framing. Flat facets rather than smooth shading keep every plane of
+    /// the figure legible at any size. The light is fixed to the view, so a figure reads the same whichever way it
+    /// is turned.
+    /// </remarks>
+    static void DrawClay(CanvasRenderingContext2D ctx, FaceMesh mesh, Pose pose, SKPoint[] placed, SKColor tone)
+    {
+        var turned = new SKPoint3[mesh.Vertices.Length];
+        for (var i = 0; i < turned.Length; i++) turned[i] = pose.Place(mesh, i);
+
+        const float lx = -0.45f, ly = 0.6f, lz = 0.65f;
+        var ll = MathF.Sqrt((lx * lx) + (ly * ly) + (lz * lz));
+
+        using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.StrokeAndFill, StrokeWidth = 0.6f };
+        using var path = new SKPath();
+        var canvas = ctx.Canvas.SkCanvas;
+        foreach (var t in pose.DepthOrder(mesh))
+        {
+            int a = mesh.Indices[t * 3], b = mesh.Indices[(t * 3) + 1], c = mesh.Indices[(t * 3) + 2];
+            SKPoint3 pa = turned[a], pb = turned[b], pc = turned[c];
+            float ux = pb.X - pa.X, uy = pb.Y - pa.Y, uz = pb.Z - pa.Z;
+            float vx = pc.X - pa.X, vy = pc.Y - pa.Y, vz = pc.Z - pa.Z;
+            float nx = (uy * vz) - (uz * vy), ny = (uz * vx) - (ux * vz), nz = (ux * vy) - (uy * vx);
+            var nl = MathF.Sqrt((nx * nx) + (ny * ny) + (nz * nz));
+            if (nl < 1e-12f) continue;
+            if (nz < 0f) { nx = -nx; ny = -ny; nz = -nz; }   // the painter's sort hides the back; shade the face we see
+
+            var lum = 0.35f + (0.6f * MathF.Max(0f, ((nx * lx) + (ny * ly) + (nz * lz)) / (nl * ll)));
+            paint.Color = new SKColor((byte)(tone.Red * lum), (byte)(tone.Green * lum), (byte)(tone.Blue * lum), tone.Alpha);
+
+            path.Reset();
+            path.MoveTo(placed[a]);
+            path.LineTo(placed[b]);
+            path.LineTo(placed[c]);
+            path.Close();
+            canvas.DrawPath(path, paint);
+        }
     }
     #endregion
 
     #region Fields
     internal static readonly string[] DrawOptions =
         ["x", "y", "scale", "stretch", "yawDeg", "pitchDeg", "rollDeg", "texture", "wireframe",
-         "inkColor", "lineWidth", "shape", "expression", "side"];
+         "inkColor", "lineWidth", "shape", "expression", "side", "clay"];
+
+    /// <summary>The clay's base colour: a light grey that shades down to a mid grey where the surface turns away.</summary>
+    static readonly SKColor ClayGrey = new(235, 235, 235);
 
     private readonly string? projectRoot;
     #endregion

@@ -9,7 +9,7 @@ using SkiaSharp;
 /// camelCase spelling onto them, so a script calling <c>x.doThing()</c> reaches <c>DoThing()</c>.
 /// The camelCase form is the one documented in <c>docs/Polson.core.md</c> and the studio manuals.
 /// </remarks>
-public class ImageData : IDataUriSource
+public class ImageData : IDataUriSource, ILosslessImageSource
 {
     #region Constructors
     public ImageData(int width, int height)
@@ -103,6 +103,9 @@ public class ImageData : IDataUriSource
     /// <summary>Explicit: the optional-parameter overload above does not satisfy the interface, and
     /// explicit keeps it off the reflected public surface. See <see cref="IDataUriSource"/>.</summary>
     string IDataUriSource.ToDataUri() => ToDataUri();
+
+    /// <summary>The pixels as PNG, for a caller that measures them. See <see cref="ILosslessImageSource"/>.</summary>
+    byte[] ILosslessImageSource.ToLosslessBytes() => ToImageBytes("png", 100);
 
     public string ToDataURL(string format = "webp", int quality = 85) =>
         ToDataUri(format, quality);

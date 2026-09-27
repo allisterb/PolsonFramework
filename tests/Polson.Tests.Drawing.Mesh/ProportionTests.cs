@@ -22,8 +22,7 @@ public class ProportionTests : TestsRuntime
 {
     const string Project = @"C:\Projects\PolsonRuns\lastlight3";
 
-    static readonly string Stock = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-        @"..\..\..\..\..\reference\projects\mesh2motion-app-main\static\models-variation\human\male.glb"));
+    static readonly string Stock = Path.Combine(AppContext.BaseDirectory, "Library", "stock", "male.glb");
 
     readonly ITestOutputHelper output;
 

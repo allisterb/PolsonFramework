@@ -68,7 +68,7 @@ public static class PoseRetarget
     #endregion
 
     #region Properties
-    /// <summary>A pose library folder from <c>Poses:Library</c>, overriding discovery.</summary>
+    /// <summary>A pose library folder from <c>Poses:Library</c>, searched in place of <c>models/poses/</c>.</summary>
     public static string? LibraryOverride { get; set; }
 
     /// <summary>The folder under the project whose clips come first.</summary>
@@ -92,20 +92,12 @@ public static class PoseRetarget
         return clips;
     }
 
-    /// <summary>Where clips are looked for, in order: the project's <c>poses/</c>, then the library.</summary>
-    public static List<string> Folders(string? projectRoot)
-    {
-        var folders = new List<string>();
-        if (!string.IsNullOrEmpty(projectRoot) && Directory.Exists(Path.Combine(projectRoot, ProjectFolder)))
-            folders.Add(Path.Combine(projectRoot, ProjectFolder));
-        if (!string.IsNullOrWhiteSpace(LibraryOverride))
-        {
-            if (Directory.Exists(LibraryOverride)) folders.Add(LibraryOverride);
-        }
-        else if (FaceDetector.Candidates("models", "poses").FirstOrDefault(Directory.Exists) is { } found)
-            folders.Add(found);
-        return folders;
-    }
+    /// <summary>
+    /// Where clips are looked for, first name wins: the project's <c>poses/</c>, then <c>Poses:Library</c> or else
+    /// <c>models/poses/</c>, then the fetched library (Mesh2Motion's CC0 human clips).
+    /// </summary>
+    public static List<string> Folders(string? projectRoot) =>
+        CharacterStock.Search(projectRoot, ProjectFolder, LibraryOverride, "poses");
 
     /// <summary>The pose, keyed by body part, that puts <paramref name="rig"/> where the clip is at <paramref name="seconds"/>.</summary>
     internal static Dictionary<string, object?> Retarget(MeshRig rig, Clip clip, float seconds, bool moveHips = true)

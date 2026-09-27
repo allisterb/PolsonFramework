@@ -148,6 +148,14 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
 # comparison, casing outside ASCII, and number and date formatting. Correct text is worth more
 # than the megabytes.
 #
+# **`libgl1` and `libglib2.0-0t64` are for the vision backend**, and nothing in its own lock says so.
+# `import mediapipe` imports OpenCV (`mediapipe.tasks.python.vision` pulls in `drawing_utils`, which
+# imports `cv2`), and the non-headless `opencv-contrib-python` wheel the lock pins links `libGL.so.1` and
+# glib. Without them `Face.detect` fails at the import rather than at the build — the smoke test in the
+# vision step below is what turns that into a build failure. `t64` is trixie's name after the 64-bit
+# time_t transition; bookworm's was `libglib2.0-0`, so a base-image change back would need this edited.
+# (PortAudio is not needed: mediapipe imports `sounddevice` inside a try and tolerates its absence.)
+#
 # `libicu-dev` rather than a versioned `libicuNN`: the name is stable across Debian releases,
 # so a base-image bump cannot silently break the build. It costs headers we do not need — the
 # honest price of not pinning a version that would go stale.
@@ -225,6 +233,8 @@ RUN apt-get update \
         libfontconfig1 \
         fontconfig \
         potrace \
+        libgl1 \
+        libglib2.0-0t64 \
         fonts-recommended \
         fonts-dejavu-core \
         fonts-liberation2 \
@@ -280,6 +290,11 @@ COPY src/adk_agent/ ./adk_agent/
 # copy here would import locally and 404 in the container.
 COPY src/studio/ ./studio/
 COPY src/orchestrator/ ./orchestrator/
+
+# The two detector scripts and the vision lock. The engine finds them by walking up from
+# `/app/bin/cli`, exactly as it finds `src/vision/` from `bin/cli` in a checkout, so they sit at
+# `/app/src/vision/` to mirror the repository.
+COPY src/vision/ ./src/vision/
 COPY docker-entrypoint.sh /usr/local/bin/polson-entrypoint
 RUN chmod +x /usr/local/bin/polson-entrypoint
 
@@ -303,6 +318,32 @@ RUN adduser --disabled-password --gecos "" polson \
     && echo "adk console assets: $ADK_BROWSER" \
     && chown -R polson:polson "$ADK_BROWSER"
 USER polson
+
+# ---------------------------------------------------------------------------------------------
+# Downloaded assets: stock bodies and pose clips, MediaPipe weights, and the vision venv
+# ---------------------------------------------------------------------------------------------
+# `tools/fetch-assets.py` is the same script a developer runs, so the container and a checkout are set
+# up one way: every file at a pinned URL (GitHub at a fixed Mesh2Motion commit, Google's versioned model
+# storage), refused unless its SHA-256 matches, and the venv installed from `src/vision/requirements.lock.txt`
+# with `--require-hashes`. It ends by running both detectors on a blank image through the same
+# stdin/stdout contract the engine uses, so a missing system library fails **the build**, naming itself,
+# rather than the first `Face.detect` a visitor makes.
+#
+# The `.glb` files are gitignored, so `--source .` never uploads them and the engine stage published only
+# `Library/README.md`; they are fetched straight into `/app/bin/cli/Library`, which is where the engine
+# looks (beside its own assembly).
+#
+# **After `USER polson`, deliberately.** Run as root before the `chown -R /app` above, the ~400 MB venv
+# would be rewritten by that chown into a second layer and ship twice. Written by `polson` instead, it
+# is owned correctly the first time. `PIP_NO_CACHE_DIR` keeps pip's wheel cache out of the layer.
+#
+# **What it costs:** about 350 MB of venv (OpenCV alone is ~140 MB, a declared mediapipe dependency we
+# call two functions of) and 34 MB of weights. `--build-arg POLSON_VISION=0` skips both and keeps the
+# 13 MB library; `Face.detect` and `Character.detect` then refuse, saying what is missing.
+ARG POLSON_VISION=1
+COPY tools/fetch-assets.py /tmp/fetch-assets.py
+RUN if [ "$POLSON_VISION" = "1" ]; then parts=library,models,venv; else parts=library; fi \
+    && PIP_NO_CACHE_DIR=1 python /tmp/fetch-assets.py --root /app --library /app/bin/cli/Library --only "$parts"
 
 ENV POLSON_CLI_DLL=/app/bin/cli/Polson.CLI.dll \
     POLSON_PROJECTS_DIR=/app/projects \

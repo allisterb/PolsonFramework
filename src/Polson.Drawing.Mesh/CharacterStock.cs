@@ -17,8 +17,9 @@ using System.Linq;
 /// </para>
 /// <para>
 /// <b>Where they come from.</b> Mesh2Motion's human variations (Scott Petrovic's app, which ships them), each a
-/// separate artist's model re-rigged onto one skeleton. They are not in the repository: fetch the ones wanted into
-/// <c>models/stock/</c> (the command is in <c>.gitignore</c>), or put a project's own in its <c>stock/</c> folder.
+/// separate artist's model re-rigged onto one skeleton. <c>male</c> and <c>female</c> (Quaternius, CC0) are fetched
+/// into this project's <c>Library/stock/</c> by <c>tools/fetch-assets.py</c> and copied next to the assembly. Others go in <c>models/stock/</c>, the
+/// folder <c>Characters:Stock</c> names, or a project's own <c>stock/</c> folder.
 /// </para>
 /// <para>
 /// <b>Licences are per model, not per collection.</b> <see cref="Known"/> carries what Mesh2Motion's own source
@@ -82,7 +83,7 @@ public static class CharacterStock
     #endregion
 
     #region Properties
-    /// <summary>A stock folder from <c>Characters:Stock</c>, overriding discovery.</summary>
+    /// <summary>A stock folder from <c>Characters:Stock</c>, searched in place of <c>models/stock/</c>.</summary>
     public static string? LibraryOverride { get; set; }
 
     /// <summary>The folder under the project whose stock bodies come first.</summary>
@@ -90,18 +91,30 @@ public static class CharacterStock
     #endregion
 
     #region Methods
-    /// <summary>Where stock bodies are looked for, in order: the project's <c>stock/</c>, then the library.</summary>
-    internal static List<string> Folders(string? projectRoot)
+    /// <summary>
+    /// Where stock bodies are looked for, first name wins: the project's <c>stock/</c>, then <c>Characters:Stock</c>
+    /// or else <c>models/stock/</c>, then the shipped library.
+    /// </summary>
+    internal static List<string> Folders(string? projectRoot) => Search(projectRoot, ProjectFolder, LibraryOverride, "stock");
+
+    /// <summary>The shipped library folder of that kind next to the assembly (<c>stock</c> or <c>poses</c>), or null.</summary>
+    internal static string? Shipped(string kind) =>
+        Path.Combine(AppContext.BaseDirectory, "Library", kind) is var dir && Directory.Exists(dir) ? dir : null;
+
+    /// <summary>The search order shared by stock bodies and pose clips.</summary>
+    /// <remarks>The shipped library comes last so a copy anywhere else, of the same name, is the one used.</remarks>
+    internal static List<string> Search(string? projectRoot, string projectFolder, string? configured, string kind)
     {
         var folders = new List<string>();
-        if (!string.IsNullOrEmpty(projectRoot) && Directory.Exists(Path.Combine(projectRoot, ProjectFolder)))
-            folders.Add(Path.Combine(projectRoot, ProjectFolder));
-        if (!string.IsNullOrWhiteSpace(LibraryOverride))
+        if (!string.IsNullOrEmpty(projectRoot) && Directory.Exists(Path.Combine(projectRoot, projectFolder)))
+            folders.Add(Path.Combine(projectRoot, projectFolder));
+        if (!string.IsNullOrWhiteSpace(configured))
         {
-            if (Directory.Exists(LibraryOverride)) folders.Add(LibraryOverride);
+            if (Directory.Exists(configured)) folders.Add(configured);
         }
-        else if (FaceDetector.Candidates("models", "stock").FirstOrDefault(Directory.Exists) is { } found)
+        else if (FaceDetector.Candidates("models", kind).FirstOrDefault(Directory.Exists) is { } found)
             folders.Add(found);
+        if (Shipped(kind) is { } shipped && !folders.Contains(shipped, StringComparer.OrdinalIgnoreCase)) folders.Add(shipped);
         return folders;
     }
 
@@ -129,8 +142,8 @@ public static class CharacterStock
         var all = List(projectRoot);
         if (all.Count == 0)
             throw new InvalidOperationException(
-                $"No stock bodies are here. Fetch them into models/stock/ (the commands are in .gitignore), put .glb files " +
-                $"on Mesh2Motion's human skeleton in the project's {ProjectFolder}/ folder, or set Characters:Stock.");
+                $"No stock bodies are here, and none were fetched into {Path.Combine(AppContext.BaseDirectory, "Library", "stock")}. " +
+                $"Run tools/fetch-assets.py and rebuild, put .glb files on Mesh2Motion's human skeleton in the project's {ProjectFolder}/ folder, or set Characters:Stock.");
         var found = all.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
         if (found.File is null)
             throw new ArgumentException($"No stock body '{name}'. Here: {string.Join(", ", all.Select(s => s.Name))}.", nameof(name));

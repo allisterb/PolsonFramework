@@ -394,8 +394,8 @@ internal class Program : Runtime
 
     /// <summary>Points <c>Character.retarget(...)</c> at a pose library, and says what it found.</summary>
     /// <remarks>
-    /// <c>Poses:Library</c> overrides discovery, which looks for a <c>models/poses/</c> folder above the
-    /// assembly. A project's own <c>poses/</c> folder is read first either way.
+    /// Mesh2Motion's CC0 human clips sit next to the assembly in <c>Library/poses/</c>, fetched by <c>tools/fetch-assets.py</c>. <c>Poses:Library</c>, or else a
+    /// <c>models/poses/</c> folder above the assembly, adds clips ahead of them; a project's own <c>poses/</c> comes first.
     /// </remarks>
     static void ConfigurePoses()
     {
@@ -406,18 +406,18 @@ internal class Program : Runtime
         if (folders.Count > 0)
             Info("Pose library: {0}.", string.Join(", ", folders));
         else
-            Info("No pose library found; Character.retarget reads only a project's poses/ folder. "
-                 + "Set Poses:Library, or put clips in models/poses/.");
+            Warn("No pose library found; Character.retarget reads only a project's poses/ folder. "
+                 + "Run tools/fetch-assets.py and rebuild, or set Poses:Library.");
     }
 
-    /// <summary>Stock bodies for <c>Character.stock</c>: <c>Characters:Stock</c>, or <c>models/stock/</c>.</summary>
+    /// <summary>Stock bodies for <c>Character.stock</c>: the fetched <c>Library/stock/</c>, plus <c>Characters:Stock</c> or <c>models/stock/</c>.</summary>
     static void ConfigureStock()
     {
         if (Setting("Characters:Stock") is { Length: > 0 } configured)
             CharacterStock.LibraryOverride = configured;
         var bodies = CharacterStock.Names(null);
         if (bodies.Length > 0) Info("Stock bodies: {0}.", string.Join(", ", bodies));
-        else Info("No stock bodies found; Character.stock reads only a project's stock/ folder. Fetch them into models/stock/.");
+        else Warn("No stock bodies found; Character.stock reads only a project's stock/ folder. Run tools/fetch-assets.py and rebuild.");
     }
 
     /// <summary>Points <c>Face.detect(...)</c> at a backend, and says whether it found one.</summary>

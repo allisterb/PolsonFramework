@@ -13,8 +13,8 @@ using Xunit.Abstractions;
 /// <c>Character.retarget</c> — a character posed from one frame of a recorded clip.
 /// </summary>
 /// <remarks>
-/// The live tests run where the pose library (<c>models/poses/</c>) and lastlight3's Tomas are on
-/// disk, and say NOT RUN otherwise. The check that matters is geometric: after posing, every arm and
+/// The pose library ships with the build; the live tests also need lastlight3's characters on disk,
+/// and say NOT RUN without them. The check that matters is geometric: after posing, every arm and
 /// leg bone points where the source bone points. A retarget that is wrong by a rest-pose offset
 /// renders a plausible figure, so looking is not enough.
 /// </remarks>

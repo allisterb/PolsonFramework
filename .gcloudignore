@@ -61,4 +61,7 @@ tests/
 **/appsettings.json
 python/
 python-adk/
+# Ignored only by the .gitignore venv writes inside itself, which the include above does not read. The
+# image builds its own from the lock (tools/fetch-assets.py); a developer's is ~350 MB of Windows wheels.
+python-mediapipe/
 **/__pycache__/

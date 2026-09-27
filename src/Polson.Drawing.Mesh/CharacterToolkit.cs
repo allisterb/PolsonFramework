@@ -62,8 +62,8 @@ public class CharacterToolkit
     /// A stock body, rigged and with its body parts named: <c>Character.stock('female')</c>. No build needed.
     /// </summary>
     /// <remarks>
-    /// Mesh2Motion's human models, on the skeleton the pose clips were recorded on, from <c>models/stock/</c> or the
-    /// project's <c>stock/</c> folder. It poses, retargets, reaches, places and reshapes like a built character. One
+    /// Mesh2Motion's human models, on the skeleton the pose clips were recorded on: <c>male</c> and <c>female</c> come
+    /// with the studio (fetched by <c>tools/fetch-assets.py</c>), and a project's <c>stock/</c> folder or <c>models/stock/</c> can add others. It poses, retargets, reaches, places and reshapes like a built character. One
     /// without a texture draws as a wireframe. <c>Character.stocks()</c> lists them with their licences.
     /// </remarks>
     public FaceMesh Stock(string name = "male") => CharacterStock.Load(projectRoot, name);

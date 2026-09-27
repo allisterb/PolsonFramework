@@ -453,52 +453,16 @@ src/adk_agent/artifact_versions/
 # backed up separately, deliberately outside the repository - see docs/ for what IS published.
 docs/internal/
 
-# Fetched model weights for the optional vision backend. Apache 2.0 (each of the three models
-# in the bundle carries its own model card saying so), but not ours to redistribute casually and
-# not something a git history wants: 3.6 MB of binary per copy, versioned by URL rather than by
-# us. Fetched on demand, exactly as bin/ holds potrace without committing it.
+# Downloaded assets, fetched by tools/fetch-assets.py at pinned URLs and verified by SHA-256 rather than
+# committed: MediaPipe's landmarker weights into models/ (Apache 2.0, per each model's card), the vision venv,
+# and Mesh2Motion's CC0 stock bodies and pose clips into the Mesh project's Library/ (its README.md, which is
+# committed, carries their credits). The script is the one place the URLs and hashes live.
 #
-#   curl -o models/face_landmarker.task \
-#     https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+#   py -3.13 tools/fetch-assets.py
 #
-#   curl -o models/pose_landmarker_full.task \
-#     https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task
-#
-# Heavy (30.7 MB), which Character.detect prefers when present: closer on turned figures and
-# on how upright a standing figure is. In PowerShell use Invoke-WebRequest -OutFile, not curl -L.
-#
-#   curl -L -o models/pose_landmarker_heavy.task \
-#     https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task
-#
-# Image segmentation (spike, src/vision/segment.py). Two models answering different
-# questions: deeplab_v3 gives a whole-figure `person` matte and works on drawn art;
-# selfie_multiclass gives hair/skin/clothes sub-regions and is OUT OF DOMAIN on a
-# full-body drawing -- measured 2026-09-22, it collapses the figure to `clothes` and
-# finds no hair or skin at all. Fetch both only if you mean to re-measure that.
-#
-#   curl -o models/deeplab_v3.tflite \
-#     https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite
-#   curl -o models/selfie_multiclass_256x256.tflite \
-#     https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite
-#
-# The pose library for Character.retarget: Mesh2Motion's own human clips, CC0 (Scott Petrovic).
-# Only these two -- the app also ships CMU mocap from a third party and a mocap file that states no
-# source, whose terms are not the author's to give (see reference/README.md).
-#
-#   mkdir -p models/poses
-#   curl -Lo models/poses/human-base-animations.glb \
-#     https://github.com/Mesh2Motion/mesh2motion-app/raw/main/static/animations/human-base-animations.glb
-#   curl -Lo models/poses/human-addon-animations.glb \
-#     https://github.com/Mesh2Motion/mesh2motion-app/raw/main/static/animations/human-addon-animations.glb
-#
-# Stock bodies for Character.stock(name): Mesh2Motion's human variations, all on the clips' skeleton.
-# Licences are per model (Character.stocks() reports them): male and female are Quaternius, CC0.
-#
-#   mkdir -p models/stock
-#   curl -Lo models/stock/male.glb \
-#     https://github.com/Mesh2Motion/mesh2motion-app/raw/main/static/models-variation/human/male.glb
-#   curl -Lo models/stock/female.glb \
-#     https://github.com/Mesh2Motion/mesh2motion-app/raw/main/static/models-variation/human/female.glb
+# models/stock/ and models/poses/ remain for extra bodies and clips of your own, found ahead of the shipped
+# ones; Mesh2Motion's other human variations carry CC-BY or CC-BY-SA terms (Character.stocks() reports them).
+src/Polson.Drawing.Mesh/Library/**/*.glb
 models/
 assets/
 src/UniRig-main

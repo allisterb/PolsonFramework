@@ -9,7 +9,11 @@ using Xunit;
 using Xunit.Abstractions;
 
 /// <summary><c>Character.stock(name)</c> — a rigged stock body with its parts named, no build needed.</summary>
-/// <remarks>Runs where stock bodies have been fetched into <c>models/stock/</c>, and says NOT RUN otherwise.</remarks>
+/// <remarks>
+/// The male and female bodies and the CC0 clips are fetched into the Mesh project's <c>Library/</c> by
+/// <c>tools/fetch-assets.py</c>, and these fail rather than skip without them: a checkout that has not been set up
+/// should say so, not report a pass.
+/// </remarks>
 [Collection(TomasRig.Name)]
 public class CharacterStockTests : TestsRuntime
 {
@@ -19,12 +23,21 @@ public class CharacterStockTests : TestsRuntime
 
     public CharacterStockTests(ITestOutputHelper output) => this.output = output;
 
-    static bool Fetched() => CharacterStock.Names(null).Contains("male") && CharacterStock.Names(null).Contains("female");
+    [Fact]
+    public void TestTheLibraryWasFetchedAndCopied()
+    {
+        const string setup = "the stock bodies and clips are not next to the test assembly: run tools/fetch-assets.py and rebuild";
+        Assert.True(CharacterStock.Shipped("stock") is not null && CharacterStock.Shipped("poses") is not null
+                    && Directory.GetFiles(CharacterStock.Shipped("stock")!, "*.glb").Length > 0, setup);
+        Assert.Contains(CharacterStock.Shipped("stock"), CharacterStock.Folders(null));
+        Assert.Contains(CharacterStock.Shipped("poses"), PoseRetarget.Folders(null));
+        Assert.Subset(new HashSet<string> { "male", "female" }, CharacterStock.Names(null).ToHashSet());
+        Assert.Contains(PoseRetarget.Clips(null), c => c.Name == "Crouch_Idle");
+    }
 
     [Fact]
     public void TestStocksListTheirLicences()
     {
-        if (!Fetched()) { output.WriteLine("NOT RUN: male and female not in models/stock/"); return; }
         var stocks = new CharacterToolkit(null).Stocks().Cast<Dictionary<string, object?>>().ToList();
         var male = stocks.Single(s => (string)s["name"]! == "male");
         Assert.Equal("CC0", male["licence"]);
@@ -37,8 +50,6 @@ public class CharacterStockTests : TestsRuntime
     [InlineData("female")]
     public void TestAStockBodyPosesAndPlaces(string name)
     {
-        if (!Fetched() || !PoseRetarget.Clips(null).Any(c => c.Name == "Crouch_Idle"))
-        { output.WriteLine("NOT RUN: stock bodies or pose library not on disk"); return; }
         var kit = new CharacterToolkit(null);
         var body = kit.Stock(name);
 
@@ -60,7 +71,6 @@ public class CharacterStockTests : TestsRuntime
     [Fact]
     public void TestAnUnknownNameIsRefusedWithTheNames()
     {
-        if (!Fetched()) { output.WriteLine("NOT RUN: stock bodies not in models/stock/"); return; }
         var ex = Assert.Throws<ArgumentException>(() => new CharacterToolkit(null).Stock("mael"));
         Assert.Contains("male", ex.Message);
     }
@@ -70,7 +80,7 @@ public class CharacterStockTests : TestsRuntime
     public void TestAProjectStockComesFirstAndMustBeOnTheSkeleton()
     {
         var rigged = Path.Combine(Lastlight, "characters", "tomas", "rigged.glb");
-        if (!Fetched() || !File.Exists(rigged)) { output.WriteLine("NOT RUN: stock bodies or lastlight3 not on disk"); return; }
+        if (!File.Exists(rigged)) { output.WriteLine("NOT RUN: lastlight3 not on disk"); return; }
 
         var project = Path.Combine(Path.GetTempPath(), "polson-stock-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(project, "stock"));

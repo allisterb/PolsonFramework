@@ -712,13 +712,22 @@
           "System.CodeDom": "7.0.0"
         }
       },
+      "polson.drawing.mesh": {
+        "type": "Project",
+        "dependencies": {
+          "Polson.Drawing.Skia": "[0.1.0, )",
+          "Polson.Runtime": "[0.1.0, )",
+          "SharpGLTF.Core": "[1.0.7, )",
+          "SharpGLTF.Runtime": "[1.0.7, )",
+          "SkiaSharp": "[4.148.0, )",
+          "SkiaSharp.NativeAssets.Linux": "[4.148.0, )"
+        }
+      },
       "polson.drawing.skia": {
         "type": "Project",
         "dependencies": {
           "Polson.Drawing.Svg": "[0.1.0, )",
           "Polson.Runtime": "[0.1.0, )",
-          "SharpGLTF.Core": "[1.0.7, )",
-          "SharpGLTF.Runtime": "[1.0.7, )",
           "SkiaSharp": "[4.148.0, )",
           "SkiaSharp.NativeAssets.Linux": "[4.148.0, )"
         }

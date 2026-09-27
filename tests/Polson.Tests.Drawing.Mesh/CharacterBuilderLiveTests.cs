@@ -1,4 +1,4 @@
-﻿namespace Polson.Tests.Drawing;
+﻿namespace Polson.Tests.Drawing.Mesh;
 
 using System;
 using System.Collections.Generic;
@@ -27,7 +27,7 @@ public class CharacterBuilderLiveTests : TestsRuntime
     static string? Dir()
     {
         var d = Environment.GetEnvironmentVariable("POLSON_CHARACTER_DIR");
-        return d is not null && File.Exists(Path.Combine(d, "char_rigged.glb")) && PoseDetector.Available && FaceDetector.Available
+        return d is not null && File.Exists(Path.Combine(d, "char_rigged.glb")) && BodyDetector.Available && FaceDetector.Available
             ? d : null;
     }
 
@@ -50,7 +50,7 @@ public class CharacterBuilderLiveTests : TestsRuntime
     public void NoTwoPartsAreNamedAsOneBone()
     {
         var glb = Environment.GetEnvironmentVariable("POLSON_RIGGED_GLB");
-        if (glb is null || !File.Exists(glb) || !PoseDetector.Available) { output.WriteLine("NOT RUN: set POLSON_RIGGED_GLB"); return; }
+        if (glb is null || !File.Exists(glb) || !BodyDetector.Available) { output.WriteLine("NOT RUN: set POLSON_RIGGED_GLB"); return; }
         var mesh = new MeshToolkit(Path.GetDirectoryName(glb)!).Load(Path.GetFileName(glb));
         var labels = CharacterBuilder.LabelJoints(mesh);
         foreach (var (name, handle) in labels.Map.OrderBy(kv => kv.Key))

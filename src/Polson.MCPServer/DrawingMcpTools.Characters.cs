@@ -14,6 +14,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using SkiaSharp;
 
+using Polson.Drawing.Mesh;
 using Polson.Drawing.Skia;
 using Polson.ExtendedMind.CharacterGeneration;
 using Polson.ExtendedMind.ObjectGeneration;

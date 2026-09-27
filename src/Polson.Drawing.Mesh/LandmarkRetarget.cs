@@ -1,4 +1,4 @@
-namespace Polson.Drawing.Skia;
+namespace Polson.Drawing.Mesh;
 
 using System;
 using System.Collections.Generic;

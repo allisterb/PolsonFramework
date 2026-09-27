@@ -1,4 +1,4 @@
-namespace Polson.Tests.Drawing;
+namespace Polson.Tests.Drawing.Mesh;
 
 using System;
 using System.Globalization;

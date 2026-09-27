@@ -1,4 +1,4 @@
-namespace Polson.Drawing.Skia;
+namespace Polson.Drawing.Mesh;
 
 using System;
 using System.Collections.Generic;
@@ -22,6 +22,10 @@ using SkiaSharp;
 /// <b>Why pose and not only face.</b> Pose returns its landmarks twice: in the image's pixels, and as metric
 /// 3D points centred on the hips. The 3D set is what lets a pose be read off a picture with its depth — an arm
 /// pointing at the camera, a body turned three-quarters — rather than flattened onto the page.
+/// </para>
+/// <para>
+/// <b>The one pose detector.</b> <c>Character.detect</c> reads a pose off a picture with it, and the character
+/// generator names a rig's joints and finds each view's head with it, so both use the same model.
 /// </para>
 /// <para>
 /// <b>Licence.</b> mediapipe is Apache 2.0, and so is the pose landmarker, per its model card; as with the face
@@ -80,12 +84,19 @@ public static class BodyDetector
     public static BodyDetection Detect(SkiaBitmapWrapper bitmap, int timeoutMs = 60000)
     {
         ArgumentNullException.ThrowIfNull(bitmap);
+        return Detect(bitmap.Bitmap, timeoutMs);
+    }
+
+    /// <summary>Detects one body in a raw bitmap, or reports that there was none.</summary>
+    public static BodyDetection Detect(SKBitmap bitmap, int timeoutMs = 60000)
+    {
+        ArgumentNullException.ThrowIfNull(bitmap);
         if (!Available)
             throw new InvalidOperationException(
                 $"Body detection needs {Missing}. Create the venv and install src/vision/requirements.lock.txt, " +
                 "fetch the pose model into models/, or set 'Tools:PoseScript' and 'Tools:PoseModel' in appsettings.json.");
 
-        using var data = bitmap.Bitmap.Encode(SKEncodedImageFormat.Png, 100)
+        using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100)
             ?? throw new InvalidOperationException("The bitmap could not be encoded for detection.");
 
         var info = new ProcessStartInfo(FaceDetector.Python!)
@@ -185,6 +196,13 @@ public sealed class BodyDetection
         World3.TryGetValue(name, out var p)
             ? new Dictionary<string, object?> { ["x"] = p.X, ["y"] = p.Y, ["z"] = p.Z }
             : null;
+
+    /// <summary>A landmark in the image's pixels, if the model is at least this sure it is in view.</summary>
+    internal SKPoint? Point(string name, float minVisibility = 0f) =>
+        Image.TryGetValue(name, out var p) && p.V >= minVisibility ? new SKPoint(p.X, p.Y) : null;
+
+    /// <summary>The model's visibility for a landmark, or 0 for a name there is not.</summary>
+    internal float Visibility(string name) => Image.TryGetValue(name, out var p) ? p.V : 0f;
 
     /// <summary>A one-line summary, for a log or a stage note.</summary>
     public override string ToString() => Found

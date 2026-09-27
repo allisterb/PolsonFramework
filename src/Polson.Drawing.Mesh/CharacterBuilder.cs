@@ -1,4 +1,4 @@
-namespace Polson.Drawing.Skia;
+namespace Polson.Drawing.Mesh;
 
 using System;
 using System.Collections.Generic;
@@ -56,7 +56,7 @@ public static class CharacterBuilder
         ArgumentNullException.ThrowIfNull(rigged);
         var rig = rigged.Rig ?? throw new ArgumentException("This mesh carries no skeleton to label.");
         if (rig.JointBind.Count == 0) throw new ArgumentException("The skeleton states no bind positions, so its bones cannot be located.");
-        if (!PoseDetector.Available) throw new InvalidOperationException($"Labelling joints needs pose detection: {PoseDetector.Missing}.");
+        if (!BodyDetector.Available) throw new InvalidOperationException($"Labelling joints needs body detection: {BodyDetector.Missing}.");
 
         var v = rigged.Reference;
         float x0 = v.Min(p => p.X), x1 = v.Max(p => p.X), y0 = v.Min(p => p.Y), y1 = v.Max(p => p.Y);
@@ -67,14 +67,14 @@ public static class CharacterBuilder
 
         // Both facings: glTF says +Z is front, a generator is not obliged to listen, and a back view
         // detects as a body too — so the one whose face landmarks the model is surer of wins.
-        (PoseDetection Pose, int Front, SKBitmap Image)? best = null;
+        (BodyDetection Pose, int Front, SKBitmap Image)? best = null;
         float bestScore = -1f;
         foreach (var front in new[] { 1, -1 })
         {
             var image = FaceBake.Render(rigged, W, H,
                 p => new SKPoint((W / 2f) + (((p.X * front) - (cx * front)) * s), (H / 2f) - ((p.Y - cy) * s)),
                 front, SKColors.White);
-            var pose = PoseDetector.Detect(image);
+            var pose = BodyDetector.Detect(image);
             var score = pose.Found ? FaceScore(pose) + LimbScore(pose) : -1f;
             if (score > bestScore) { best?.Image.Dispose(); best = (pose, front, image); bestScore = score; }
             else image.Dispose();
@@ -92,8 +92,8 @@ public static class CharacterBuilder
         labels.Render = chosen.Image;
         var pose0 = chosen.Pose;
         var f = chosen.Front;
-        SKPoint Model(PoseLandmark p) => new((cx * f) + ((p.X - (W / 2f)) / s), cy - ((p.Y - (H / 2f)) / s));
-        SKPoint? Lm(string name) => pose0.At(name, 0.3f) is { } p ? Model(p) : null;
+        SKPoint Model(SKPoint p) => new((cx * f) + ((p.X - (W / 2f)) / s), cy - ((p.Y - (H / 2f)) / s));
+        SKPoint? Lm(string name) => pose0.Point(name, 0.3f) is { } p ? Model(p) : null;
 
         var joints = rig.JointBind.ToDictionary(kv => kv.Key, kv => new SKPoint(kv.Value.X * f, kv.Value.Y));
         var children = new Dictionary<string, List<string>>(StringComparer.Ordinal);
@@ -223,13 +223,13 @@ public static class CharacterBuilder
     public static HeadBox? FindHead(SKBitmap view, HeadBox? like, out string? why)
     {
         why = null;
-        var pose = PoseDetector.Detect(view);
+        var pose = BodyDetector.Detect(view);
         if (pose.Found)
         {
             var face = new[] { "nose", "leftEye", "rightEye", "leftEar", "rightEar" }
-                .Select(n => pose.At(n, 0.2f)).Where(p => p is not null).Select(p => p!.Value.Point).ToList();
+                .Select(n => pose.Point(n, 0.2f)).Where(p => p is not null).Select(p => p!.Value).ToList();
             var shoulders = new[] { "leftShoulder", "rightShoulder" }
-                .Select(n => pose.At(n, 0.2f)).Where(p => p is not null).Select(p => p!.Value.Point).ToList();
+                .Select(n => pose.Point(n, 0.2f)).Where(p => p is not null).Select(p => p!.Value).ToList();
             if (face.Count > 0 && shoulders.Count > 0)
             {
                 var centre = new SKPoint(face.Average(p => p.X), face.Average(p => p.Y));
@@ -604,12 +604,12 @@ public static class CharacterBuilder
     #endregion
 
     #region Private
-    static float FaceScore(PoseDetection p) =>
-        new[] { "nose", "leftEye", "rightEye" }.Average(n => p.At(n)?.Visibility ?? 0f);
+    static float FaceScore(BodyDetection p) =>
+        new[] { "nose", "leftEye", "rightEye" }.Average(n => p.Visibility(n));
 
-    static float LimbScore(PoseDetection p) =>
+    static float LimbScore(BodyDetection p) =>
         new[] { "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftHip", "rightHip", "leftKnee", "rightKnee" }
-            .Average(n => p.At(n)?.Visibility ?? 0f);
+            .Average(n => p.Visibility(n));
 
     static SKPoint? Mid(SKPoint? a, SKPoint? b) =>
         a is { } p && b is { } q ? new SKPoint((p.X + q.X) / 2f, (p.Y + q.Y) / 2f) : a ?? b;

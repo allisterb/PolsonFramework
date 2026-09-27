@@ -19,6 +19,8 @@ using Xunit.Abstractions;
 /// images, and <c>POLSON_RIG_URL</c> for a rig service — which may be <c>unirig_server.py --echo
 /// --echo-file</c> answering with a rigged file of the same character, so everything after rigging
 /// runs for real on a machine with no rigging GPU. Without them it passes having said so.
+/// <c>POLSON_CHARACTER_SHEET</c> names another sheet in that folder, <c>POLSON_CHARACTER_NAME</c> the character, and
+/// <c>POLSON_CHARACTER_PROJECT</c> a project folder to build into and keep, rather than a temporary one.
 /// </remarks>
 public class CharacterGenerationLiveTests : TestsRuntime
 {
@@ -32,22 +34,26 @@ public class CharacterGenerationLiveTests : TestsRuntime
         var src = Environment.GetEnvironmentVariable("POLSON_CHARACTER_DIR");
         var trellis = Environment.GetEnvironmentVariable("POLSON_TRELLIS_URL");
         var rig = Environment.GetEnvironmentVariable("POLSON_RIG_URL");
-        if (src is null || trellis is null || rig is null || !File.Exists(Path.Combine(src, "turnaround.jpg")))
+        var sheetFile = Environment.GetEnvironmentVariable("POLSON_CHARACTER_SHEET") ?? "turnaround.jpg";
+        var name = Environment.GetEnvironmentVariable("POLSON_CHARACTER_NAME") ?? "julie";
+        if (src is null || trellis is null || rig is null || !File.Exists(Path.Combine(src, sheetFile)))
         {
             output.WriteLine("NOT RUN: set POLSON_CHARACTER_DIR, POLSON_TRELLIS_URL and POLSON_RIG_URL");
             return;
         }
 
         // The sheet as the director supplied it, captions and all: splitting it is part of what is tested.
-        var project = Path.Combine(Path.GetTempPath(), "polson-character-" + Guid.NewGuid().ToString("N")[..8]);
+        var project = Environment.GetEnvironmentVariable("POLSON_CHARACTER_PROJECT")
+            ?? Path.Combine(Path.GetTempPath(), "polson-character-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(Path.Combine(project, "refs"));
-        File.Copy(Path.Combine(src, "turnaround.jpg"), Path.Combine(project, "refs", "julie-sheet.jpg"));
+        var sheetPath = $"refs/{name}-sheet{Path.GetExtension(sheetFile)}";
+        File.Copy(Path.Combine(src, sheetFile), Path.Combine(project, sheetPath), overwrite: true);
 
         DrawingMcpTools.CharacterReconstructor = new TrellisClient(trellis);
         DrawingMcpTools.CharacterRigger = new RigClient(rig);
         var tools = new DrawingMcpTools(null, null, null, project);
 
-        var reply = await tools.GenerateCharacter(name: "julie", sheet: "refs/julie-sheet.jpg");
+        var reply = await tools.GenerateCharacter(name: name, sheet: sheetPath);
         while (reply["status"]?.GetValue<string>() == "running")
         {
             output.WriteLine($"  {reply["stage"]} after {reply["elapsedSeconds"]}s");
@@ -58,7 +64,7 @@ public class CharacterGenerationLiveTests : TestsRuntime
         output.WriteLine($"project: {project}");
 
         var script = """
-            const julie = Character.load('julie');
+            const julie = Character.load('NAME');
             log(Character.list().join(','));
             log(JSON.stringify(julie.jointMap));
             const c = createCanvas(1200, 560);
@@ -69,7 +75,7 @@ public class CharacterGenerationLiveTests : TestsRuntime
                 expression: i === 2 ? { browDown: 1, mouthFrown: 0.8 } : {} }));
             c;
             """;
-        var result = await tools.ExecuteScript(script, outFile: "artifacts/character.png", format: "png");
+        var result = await tools.ExecuteScript(script.Replace("NAME", name), outFile: "artifacts/character.png", format: "png");
         output.WriteLine(string.Join("\n", result.Logs ?? []));
         Assert.True(result.Success, result.Error);
     }

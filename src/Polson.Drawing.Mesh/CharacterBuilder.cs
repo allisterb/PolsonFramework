@@ -604,10 +604,10 @@ public static class CharacterBuilder
     #endregion
 
     #region Private
-    static float FaceScore(BodyDetection p) =>
+    internal static float FaceScore(BodyDetection p) =>
         new[] { "nose", "leftEye", "rightEye" }.Average(n => p.Visibility(n));
 
-    static float LimbScore(BodyDetection p) =>
+    internal static float LimbScore(BodyDetection p) =>
         new[] { "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftHip", "rightHip", "leftKnee", "rightKnee" }
             .Average(n => p.Visibility(n));
 

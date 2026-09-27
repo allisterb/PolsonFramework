@@ -260,6 +260,56 @@ public class CutoutReferenceLiveTests : TestsRuntime
         output.WriteLine($"spent {budget.Spent}, tokens {budget.TokensSpent}");
     }
 
+    /// <summary>
+    /// A body sheet for a character dressed to rig cleanly: a jacket ending at the waist and slim trousers, so nothing
+    /// hangs between the legs, laid out as <c>GenerateCharacter</c> reads it.
+    /// </summary>
+    /// <remarks>
+    /// Live and billed: one generation. The lastlight3 characters all wore coats, and reconstructed coats rig badly:
+    /// each is one thick surface the legs are modelled inside, and no weighting made one hang. This is the control.
+    /// Writes <c>short-jacket.png</c> to <c>POLSON_LIVE_OUT</c>: the cells on white, feet on one line.
+    /// </remarks>
+    [Fact]
+    public async Task Cutout_Live_AShortJacketTurnaround()
+    {
+        if (string.IsNullOrWhiteSpace(this.apiKey)) return;
+        if (Environment.GetEnvironmentVariable("POLSON_LIVE_IMAGE_TESTS") != "1") return;   // opt-in: this one bills
+        var dir = Environment.GetEnvironmentVariable("POLSON_LIVE_OUT");
+        if (dir is null) { output.WriteLine("NOT RUN: set POLSON_LIVE_OUT"); return; }
+        Directory.CreateDirectory(dir);
+
+        using var generator = new ImageGenerator(this.apiKey!);
+        var budget = new AssetBudget(1);
+        var toolkit = new AssetRequisitionToolkit(generator, new RequisitionCache(Path.Combine(dir, "cache")), budget, "live");
+        var sheet = await toolkit.Cutout(
+            "a young woman bicycle courier in her twenties, short dark hair cut above the collar, a fitted zip-up jacket that "
+            + "ends at the waist, slim cargo trousers tucked into ankle boots, a small bag on a strap across the chest, "
+            + "full figure standing in an A-pose, arms held away from the body, legs slightly apart",
+            new CutoutOptions
+            {
+                Variants = ["front view", "side view, in profile", "back view"], Framing = "full", Size = 768,
+                Style = "clean storyboard illustration, even light, no cast shadow", Tolerance = 0.10,
+            });
+        Save(dir, "short-jacket", sheet);
+        Assert.True(sheet.Success, sheet.Error);
+
+        // The cells on white, feet on one line, as the SDK docs lay a sheet out for GenerateCharacter.
+        var cells = sheet.Cells.Select(c => SkiaSharp.SKBitmap.Decode(c.Bytes)).ToList();
+        const int Gap = 60;
+        var h = cells.Max(c => c.Height);
+        using var page = new SkiaSharp.SKBitmap(cells.Sum(c => c.Width + Gap) + Gap, h + (2 * Gap));
+        using (var canvas = new SkiaSharp.SKCanvas(page))
+        {
+            canvas.Clear(SkiaSharp.SKColors.White);
+            var x = Gap;
+            foreach (var c in cells) { canvas.DrawBitmap(c, x, Gap + (h - c.Height)); x += c.Width + Gap; }
+        }
+        foreach (var c in cells) c.Dispose();
+        using var data = page.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        File.WriteAllBytes(Path.Combine(dir, "short-jacket.png"), data.ToArray());
+        output.WriteLine($"sheet {page.Width}x{page.Height}, spent {budget.Spent}; {dir}");
+    }
+
     void Save(string dir, string name, CutoutAsset cutout)
     {
         if (!cutout.Success)

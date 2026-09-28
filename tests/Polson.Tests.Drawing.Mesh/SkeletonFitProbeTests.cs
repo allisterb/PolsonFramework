@@ -166,18 +166,20 @@ public class SkeletonFitProbeTests : TestsRuntime
     /// The body rigged with the template (diffusion 12) is a collider; the garment is cloth pinned along its top.
     /// </summary>
     /// <remarks>
-    /// Runs only with <c>POLSON_CLOTH_OUT</c> and <c>POLSON_CLOTH_SCRIPT</c> (the Blender script, which is not in the
-    /// repository) set. <c>POLSON_CLOTH_NAME</c>, <c>POLSON_CLOTH_CLIP</c>, <c>POLSON_CLOTH_AT</c> and
-    /// <c>POLSON_CLOTH_SETTINGS</c> (a JSON object passed to the script) vary it.
+    /// Runs only with <c>POLSON_CLOTH_OUT</c> set, and runs <c>src/blender/cloth_drape.py</c> unless
+    /// <c>POLSON_CLOTH_SCRIPT</c> names another. <c>POLSON_CLOTH_NAME</c>, <c>POLSON_CLOTH_CLIP</c>, <c>POLSON_CLOTH_AT</c>
+    /// and <c>POLSON_CLOTH_SETTINGS</c> (a JSON object passed to the script) vary it. <c>POLSON_CLOTH_MASK</c> names a
+    /// <c>src/vision/project_labels.py</c> result, whose <c>garment</c> label replaces the garment found round the legs.
     /// </remarks>
     [Fact]
     public void DrapeTheCoatWithBlenderCloth()
     {
         var dir = Environment.GetEnvironmentVariable("POLSON_CLOTH_OUT");
-        var script = Environment.GetEnvironmentVariable("POLSON_CLOTH_SCRIPT");
-        var blender = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "bin", "blender-5.2.2-windows-x64", "blender.exe"));
+        var repo = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var script = Environment.GetEnvironmentVariable("POLSON_CLOTH_SCRIPT") ?? Path.Combine(repo, "src", "blender", "cloth_drape.py");
+        var blender = Path.Combine(repo, "bin", "blender-5.2.2-windows-x64", "blender.exe");
         if (string.IsNullOrEmpty(dir) || !File.Exists(script) || !File.Exists(blender) || !Directory.Exists(Project) || !File.Exists(TemplatePath))
-        { output.WriteLine("NOT RUN: set POLSON_CLOTH_OUT and POLSON_CLOTH_SCRIPT, with Blender, lastlight3 and the rig template on disk"); return; }
+        { output.WriteLine("NOT RUN: set POLSON_CLOTH_OUT, with Blender, lastlight3 and the rig template on disk"); return; }
         Directory.CreateDirectory(dir);
         var name = Environment.GetEnvironmentVariable("POLSON_CLOTH_NAME") ?? "warden";
         var clip = Environment.GetEnvironmentVariable("POLSON_CLOTH_CLIP") ?? "Sitting_Idle";
@@ -200,7 +202,10 @@ public class SkeletonFitProbeTests : TestsRuntime
         if (Environment.GetEnvironmentVariable("POLSON_CLOTH_MASK") is { Length: > 0 } maskPath)
         {
             using var mj = JsonDocument.Parse(File.ReadAllText(maskPath));
-            mask = [.. mj.RootElement.GetProperty("mask").EnumerateArray().Select(e => e.GetBoolean())];
+            var names = mj.RootElement.GetProperty("names").EnumerateArray().Select(e => e.GetString()).ToList();
+            var garmentLabel = names.IndexOf("garment");
+            Assert.True(garmentLabel > 0, $"{maskPath} has no 'garment' label; its labels are {string.Join(", ", names)}");
+            mask = [.. mj.RootElement.GetProperty("labels").EnumerateArray().Select(e => e.GetInt32() == garmentLabel)];
             Assert.Equal(positions.Length, mask.Length);
             output.WriteLine($"{name}: projected garment mask, {mask.Count(m => m)} vertices; round the legs: {garment.Count}");
         }

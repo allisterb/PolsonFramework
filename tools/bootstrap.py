@@ -11,8 +11,8 @@ they are binary, large, or someone else's to publish:
 
     py -3.13 tools/bootstrap.py                  everything, then a smoke test
     py -3.13 tools/bootstrap.py --only library   just the .glb files
-    py -3.13 tools/bootstrap.py --extras         also the Full pose model, and the segmentation and cloth
-                                                 segmentation spikes' models (another 205 MB)
+    py -3.13 tools/bootstrap.py --extras         also the Full pose model, and the segmentation spikes' models:
+                                                 MediaPipe's two, U²-Net cloth and SAM 2.1 (another 390 MB)
     py -3.13 tools/bootstrap.py --check          verify what is here and smoke-test it; no network
 
 **Pinned and hashed, not fetched from a branch or a `latest` path**, for the reason fetch-fonts.py gives:
@@ -58,6 +58,9 @@ MEDIAPIPE = "https://storage.googleapis.com/mediapipe-models/"
 CLOTH_SEG = "0038d2be122dd427af96c7610b3c18ac4da7744e"
 HUGGINGFACE = f"https://huggingface.co/spaces/wildoctopus/cloth-segmentation/resolve/{CLOTH_SEG}/"
 
+#: Meta's SAM 2.1 release. The `092824` in the path is the release; a new release is a new path.
+SAM2 = "https://dl.fbaipublicfiles.com/segment_anything_2/092824/"
+
 #: `(group, url, destination relative to its folder, sha256, bytes)`.
 LIBRARY = [
     ("library", GITHUB + "models-variation/human/male.glb", "stock/male.glb",
@@ -97,11 +100,16 @@ EXTRAS = [
      "selfie_multiclass_256x256.tflite", "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0", 16371837),
     ("models", HUGGINGFACE + "model/cloth_segm.pth", "cloth_segm.pth",
      "f71fad2bc11789a996acc507d1a5a1602ae0edefc2b9aba1cd198be5cc9c1a44", 176625341),
+    # SAM 2.1 hiera-small, for src/vision/sam2_segment.py. Apache 2.0, stated for the checkpoints in SAM 2's README.
+    # The hash was taken from a copy whose multipart ETag reproduces the server's exactly (705c3784...-22, 8 MiB
+    # parts) at the same length. The code it loads into is vendored in src/vision/third_party/sam2.
+    ("models", SAM2 + "sam2.1_hiera_small.pt", "sam2.1_hiera_small.pt",
+     "6d1aa6f30de5c92224f8172114de081d104bbd23dd9dc5c58996f0cad5dc4d38", 184416285),
 ]
 
-#: A glTF binary starts `glTF`; a MediaPipe `.task` and a PyTorch `.pth` are zips (`PK`); a `.tflite` is a
-#: FlatBuffer carrying `TFL3` at 4.
-MAGIC = {".glb": (0, b"glTF"), ".task": (0, b"PK"), ".pth": (0, b"PK"), ".tflite": (4, b"TFL3")}
+#: A glTF binary starts `glTF`; a MediaPipe `.task` and a PyTorch `.pth` or `.pt` are zips (`PK`); a `.tflite` is
+#: a FlatBuffer carrying `TFL3` at 4.
+MAGIC = {".glb": (0, b"glTF"), ".task": (0, b"PK"), ".pth": (0, b"PK"), ".pt": (0, b"PK"), ".tflite": (4, b"TFL3")}
 
 
 def sha256(path: Path) -> str:
@@ -182,7 +190,7 @@ def blank_png(width: int = 64, height: int = 64) -> bytes:
 
 
 def smoke(venv: Path, vision: Path, models: Path) -> None:
-    """Runs both detectors on a blank image exactly as the studio does: PNG in over stdin, JSON out."""
+    """Runs the detectors, and the segmenters whose checkpoints are here, on a blank image: PNG in, JSON out."""
     python = venv_python(venv)
     if not python.exists():
         raise SystemExit(f"FATAL: no interpreter at {python}. Run without --check, or with --only venv.")
@@ -199,6 +207,23 @@ def smoke(venv: Path, vision: Path, models: Path) -> None:
             err = result.stderr.decode(errors="replace").strip().splitlines()[-5:]
             raise SystemExit(f"FATAL: {script} did not run (exit {result.returncode}).\n       " + "\n       ".join(err))
         print(f"  {script} with {model.name}: ran, found {answer['found']} on a blank image, as it should")
+
+    # The torch segmenters, when their checkpoints were fetched (--extras). SAM 2 is given a box, so it answers.
+    for script, model, extra in (("cloth_segment.py", models / "cloth_segm.pth", []),
+                                 ("sam2_segment.py", models / "sam2.1_hiera_small.pt",
+                                  ["--prompts", '[{"name": "box", "box": [8, 8, 56, 56]}]'])):
+        if not model.exists():
+            continue
+        result = subprocess.run([str(python), str(vision / script), str(model), *extra], input=blank_png(),
+                                capture_output=True, timeout=600)
+        try:
+            answer = json.loads(result.stdout)
+        except ValueError:
+            answer = None
+        if result.returncode != 0 or not isinstance(answer, dict) or "labelMap" not in answer:
+            err = result.stderr.decode(errors="replace").strip().splitlines()[-5:]
+            raise SystemExit(f"FATAL: {script} did not run (exit {result.returncode}).\n       " + "\n       ".join(err))
+        print(f"  {script} with {model.name}: ran on {answer['device']}, found {answer['found']} on a blank image")
 
 
 def main() -> int:

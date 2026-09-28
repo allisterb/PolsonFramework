@@ -21,7 +21,8 @@ The result, one entry per prompt in order:
      "labelMap": "<base64 PNG, one byte per pixel: 0 none, i for prompt i>"}
 
 In `labelMap` a later prompt overwrites an earlier one where they overlap, so list the smaller things last
-(the crossbow after the coat). `found` is false only when every mask is empty. An error goes to stderr and
+(the crossbow after the coat). With `--all`, each prompt also carries `candidates`: every mask SAM offered, with
+its score and share, so a caller can choose by something other than the score. `found` is false only when every mask is empty. An error goes to stderr and
 exits non-zero.
 
 The model is SAM 2's own code, `third_party/sam2/`, unedited; see `third_party/README.md`. It imports hydra,
@@ -167,6 +168,7 @@ def main():
     ap.add_argument('--prompts', required=True, help='JSON list of prompts')
     ap.add_argument('--config', default=None, help='a SAM 2.1 config name; read from the checkpoint name otherwise')
     ap.add_argument('--overlay-dir', default=None, help='also write each mask over the image here')
+    ap.add_argument('--all', action='store_true', help='also return every candidate mask SAM offered per prompt')
     args = ap.parse_args()
 
     prompts = json.loads(args.prompts)
@@ -208,6 +210,13 @@ def main():
         results.append({'name': name, 'score': round(float(scores[best]), 4),
                         'scores': [round(float(s), 4) for s in scores],
                         'share': round(float(mask.mean()), 5), 'mask': png_base64((mask * 255).astype(np.uint8))})
+        if args.all:
+            # SAM's candidates for clicks are nested (a part, a bigger part, the whole), and the top-scoring one is not
+            # always the one wanted: on a seamed garment a pocket can outscore the garment. `garment_prompts.py choose`
+            # picks among them.
+            results[-1]['candidates'] = [{'score': round(float(s), 4), 'share': round(float((m > 0).mean()), 5),
+                                          'mask': png_base64(((m > 0) * 255).astype(np.uint8))}
+                                         for m, s in zip(masks, scores)]
         if args.overlay_dir:
             os.makedirs(args.overlay_dir, exist_ok=True)
             out = rgb.astype(np.float32).copy()

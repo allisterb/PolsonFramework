@@ -310,6 +310,52 @@ public class CutoutReferenceLiveTests : TestsRuntime
         output.WriteLine($"sheet {page.Width}x{page.Height}, spent {budget.Spent}; {dir}");
     }
 
+    /// <summary>
+    /// Body sheets for a spread of garments, to test finding garments from pose-prompted segmentation beyond coats.
+    /// </summary>
+    /// <remarks>
+    /// Live and billed: one generation per character, eight in all, skipping any whose cells are already in
+    /// <c>POLSON_LIVE_OUT</c>. Each was chosen to probe one case: a hem the shin stop would cut, two garments, a
+    /// sleeveless drape, a sleeveless vest, a control with nothing hanging, wide sleeves, a bib garment, and a plain
+    /// hoodie. Writes <c>&lt;name&gt;-cell0..2.png</c> (front, side, back) per character.
+    /// </remarks>
+    [Fact]
+    public async Task Cutout_Live_AGarmentSet()
+    {
+        if (string.IsNullOrWhiteSpace(this.apiKey)) return;
+        if (Environment.GetEnvironmentVariable("POLSON_LIVE_IMAGE_TESTS") != "1") return;   // opt-in: this one bills
+        var dir = Environment.GetEnvironmentVariable("POLSON_LIVE_OUT");
+        if (dir is null) { output.WriteLine("NOT RUN: set POLSON_LIVE_OUT"); return; }
+        Directory.CreateDirectory(dir);
+
+        const string Pose = ", full figure standing in an A-pose, arms held away from the body, legs slightly apart";
+        (string Name, string Description)[] set =
+        [
+            ("gown", "a woman in her thirties in a long-sleeved floor-length evening dress that covers her feet, hair in a low bun"),
+            ("skirt", "a woman in her twenties in a chunky knit sweater tucked into a pleated knee-length skirt, tights and loafers"),
+            ("cloak", "a traveller in a long hooded cloak with no sleeves, open at the front, over a belted tunic, trousers and boots, hood down"),
+            ("vest", "a man in his thirties in a sleeveless quilted puffer vest over a long-sleeved t-shirt, jeans and trainers"),
+            ("shorts", "a teenage boy in a short-sleeved t-shirt and knee-length shorts, bare arms and legs, trainers"),
+            ("robe", "an old monk in a floor-length hooded robe with wide sleeves and a rope belt, sandals, hood down"),
+            ("overalls", "a mechanic in denim bib overalls over a short-sleeved shirt, work boots"),
+            ("hoodie", "a young woman in a loose pullover hoodie and straight jeans, hood down, sneakers"),
+        ];
+        using var generator = new ImageGenerator(this.apiKey!);
+        var budget = new AssetBudget(set.Length);
+        var toolkit = new AssetRequisitionToolkit(generator, new RequisitionCache(Path.Combine(dir, "cache")), budget, "live");
+        foreach (var (name, description) in set)
+        {
+            if (File.Exists(Path.Combine(dir, $"{name}-cell2.png"))) { output.WriteLine($"{name}: already here"); continue; }
+            var sheet = await toolkit.Cutout(description + Pose, new CutoutOptions
+            {
+                Variants = ["front view", "side view, in profile", "back view"], Framing = "full", Size = 768,
+                Style = "clean storyboard illustration, even light, no cast shadow", Tolerance = 0.10,
+            });
+            Save(dir, name, sheet);
+        }
+        output.WriteLine($"spent {budget.Spent}, tokens {budget.TokensSpent}; {dir}");
+    }
+
     void Save(string dir, string name, CutoutAsset cutout)
     {
         if (!cutout.Success)

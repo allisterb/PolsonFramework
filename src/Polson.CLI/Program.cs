@@ -394,7 +394,7 @@ internal class Program : Runtime
 
     /// <summary>Points <c>Character.retarget(...)</c> at a pose library, and says what it found.</summary>
     /// <remarks>
-    /// Mesh2Motion's CC0 human clips sit next to the assembly in <c>Library/poses/</c>, fetched by <c>tools/fetch-assets.py</c>. <c>Poses:Library</c>, or else a
+    /// Mesh2Motion's CC0 human clips sit next to the assembly in <c>Library/poses/</c>, fetched by <c>tools/bootstrap.py</c>. <c>Poses:Library</c>, or else a
     /// <c>models/poses/</c> folder above the assembly, adds clips ahead of them; a project's own <c>poses/</c> comes first.
     /// </remarks>
     static void ConfigurePoses()
@@ -407,7 +407,7 @@ internal class Program : Runtime
             Info("Pose library: {0}.", string.Join(", ", folders));
         else
             Warn("No pose library found; Character.retarget reads only a project's poses/ folder. "
-                 + "Run tools/fetch-assets.py and rebuild, or set Poses:Library.");
+                 + "Run tools/bootstrap.py and rebuild, or set Poses:Library.");
     }
 
     /// <summary>Stock bodies for <c>Character.stock</c>: the fetched <c>Library/stock/</c>, plus <c>Characters:Stock</c> or <c>models/stock/</c>.</summary>
@@ -417,7 +417,7 @@ internal class Program : Runtime
             CharacterStock.LibraryOverride = configured;
         var bodies = CharacterStock.Names(null);
         if (bodies.Length > 0) Info("Stock bodies: {0}.", string.Join(", ", bodies));
-        else Warn("No stock bodies found; Character.stock reads only a project's stock/ folder. Run tools/fetch-assets.py and rebuild.");
+        else Warn("No stock bodies found; Character.stock reads only a project's stock/ folder. Run tools/bootstrap.py and rebuild.");
     }
 
     /// <summary>Points <c>Face.detect(...)</c> at a backend, and says whether it found one.</summary>

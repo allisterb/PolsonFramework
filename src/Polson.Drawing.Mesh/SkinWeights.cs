@@ -73,7 +73,8 @@ internal static class SkinWeights
     /// empty marker with weight 0, as in the original, so <paramref name="bones"/>[0] must be the root.
     /// </summary>
     internal static (int[] Joints, float[] Weights) Solve(IReadOnlyList<Bone> bones, IReadOnlyList<Vector3> positions,
-        IReadOnlyList<(int A, int B, int C)> triangles, bool armPlane = true, float armPlaneOffset = 0f, int diffuse = 0, bool coat = false, List<string>? report = null)
+        IReadOnlyList<(int A, int B, int C)> triangles, bool armPlane = true, float armPlaneOffset = 0f, int diffuse = 0, bool coat = false, List<string>? report = null,
+        Action<int[], float[]>? garment = null)
     {
         var n = positions.Count;
         var joints = new int[n * 4];
@@ -82,7 +83,7 @@ internal static class SkinWeights
         var category = bones.Select(Classify).ToArray();
         var at = bones.Select(b => b.At).ToArray();
         var mid = bones.Select(b => b.FirstChild is { } c && index.TryGetValue(c, out var ci) ? Vector3.Lerp(b.At, at[ci], 0.5f) : b.At).ToArray();
-        var skipped = bones.Select(b => b.Name == "root" || IsLeaf(b)).ToArray();
+        var skipped = bones.Select(b => b.Name == "root" || IsLeaf(b) || b.Name.StartsWith("skirt_", StringComparison.Ordinal)).ToArray();
 
         // 1. Nearest midpoint. The pelvis takes nothing below the crotch, so a leg is never nearer the hips.
         var pelvis = bones.ToList().FindIndex(b => b.Name.Contains("pelvis", StringComparison.OrdinalIgnoreCase)
@@ -126,11 +127,8 @@ internal static class SkinWeights
 
         // 2a. Not in the original: a coat or skirt hanging between the legs, weighted across the gap rather than
         // snapped to the nearer thigh, before the diffusion so its edges blend into the body. See Coat.
-        if (coat && pelvis >= 0)
-        {
-            var hit = CastDown(mid[pelvis], positions, triangles);
-            Coat(bones, index, positions, triangles, joints, weights, hit ?? mid[pelvis].Y, pelvis, report);
-        }
+        if (garment is not null) garment(joints, weights);
+        else if (coat && pelvis >= 0) Coat(bones, index, positions, triangles, joints, weights, pelvis, report);
 
 
         // 2b. Not in the original: widen every seam by diffusing the weights over the surface. Measured on
@@ -196,9 +194,12 @@ internal static class SkinWeights
         return best;
     }
 
+    /// <summary>A garment found round the legs: which vertices, where it starts and ends, and how thick the legs are.</summary>
+    internal sealed record Garment(bool[] Mask, int Count, float Top, float Hem, float LegRadius, int Slices, int WithGarment);
+
     /// <summary>
-    /// Finds the garment hanging round the legs below the crotch and weights it across the gap: its position between
-    /// the two leg axes sets the split between the legs' bones, and the pelvis takes up to half, most at the middle.
+    /// Finds the garment hanging round the legs below the crotch: a coat or skirt, as the vertices of a surface round
+    /// a leg that is not the leg. Null when the skeleton has no legs to measure against.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -215,16 +216,20 @@ internal static class SkinWeights
     /// as a coat does: Kit's rubber boots are a layer round each leg too, and pulling a boot toward the other leg
     /// stretched it. Vertices the arm bones own are left alone, since a hand hanging at the hips is not coat.
     /// </para>
-    /// <para>
-    /// <b>Why the pelvis.</b> Snapped to the nearer thigh, a coat's middle splits when the legs part; shared between
-    /// both legs and the hips, a leg lifting pulls its side of the coat and the middle hangs.
-    /// </para>
     /// </remarks>
-    static void Coat(IReadOnlyList<Bone> bones, Dictionary<string, int> index, IReadOnlyList<Vector3> positions,
-        IReadOnlyList<(int A, int B, int C)> triangles, int[] joints, float[] weights, float crotchY, int pelvis, List<string>? report)
+    internal static Garment? FindGarment(IReadOnlyList<Bone> bones, IReadOnlyList<Vector3> positions,
+        IReadOnlyList<(int A, int B, int C)> triangles, int[] joints)
     {
+        var index = bones.Select((b, i) => (b.Name, i)).ToDictionary(x => x.Name, x => x.i, StringComparer.Ordinal);
+        var pelvis = bones.ToList().FindIndex(b => b.Name.Contains("pelvis", StringComparison.OrdinalIgnoreCase)
+                                                   || b.Name.Contains("hips", StringComparison.OrdinalIgnoreCase));
+        if (pelvis < 0) return null;
+        var pelvisMid = bones[pelvis].FirstChild is { } pc && index.TryGetValue(pc, out var pci)
+            ? Vector3.Lerp(bones[pelvis].At, bones[pci].At, 0.5f) : bones[pelvis].At;
+        var crotchY = CastDown(pelvisMid, positions, triangles) ?? pelvisMid.Y;
+
         string[] need = ["thigh_l", "calf_l", "foot_l", "thigh_r", "calf_r", "foot_r"];
-        if (need.Any(b => !index.ContainsKey(b))) return;
+        if (need.Any(b => !index.ContainsKey(b))) return null;
         Vector3 J(string b) => bones[index[b]].At;
 
         // A leg's axis at a height: along thigh to knee, then knee to ankle.
@@ -253,6 +258,7 @@ internal static class SkinWeights
         // the axis is the leg itself (or the boot); any larger one is a layer outside it.
         var garment = new bool[n];
         var leg = new bool[n];
+        var radii = new List<float>();
         var sliceCount = 0;
         var withGarment = 0;
         for (var y = top - (step / 2f); y > bottom; y -= step)
@@ -308,6 +314,7 @@ internal static class SkinWeights
                 if (around.Count == 0) continue;
                 var own = around.FirstOrDefault(x => Encloses(x.lp.Ids, axis), around[0]);
                 legLoops.Add(own.q);
+                radii.Add(own.lp.Ids.Average(q => Vector2.Distance(segments[q].A, axis)));
                 foreach (var x in around.Where(x => x.lp.Area > own.lp.Area)) outer.Add(x.q);
             }
             outer.ExceptWith(legLoops);
@@ -329,19 +336,54 @@ internal static class SkinWeights
                 }
             }
         }
-        if (sliceCount == 0) return;
+        if (sliceCount == 0) return null;
 
         string[] armWords = ["arm", "hand", "thumb", "index", "middle", "ring", "pinky"];
         var arm = new HashSet<int>(bones.Select((b, q) => (b, q))
             .Where(x => armWords.Any(w => x.b.Name.Contains(w, StringComparison.OrdinalIgnoreCase))).Select(x => x.q));
 
+        var mask = new bool[n];
         var count = 0;
-        float lowest = float.MaxValue;
+        var lowest = float.MaxValue;
         for (var i = 0; i < n; i++)
         {
             var p = positions[i];
             if (!garment[rep[i]] || leg[rep[i]] || arm.Contains(joints[i * 4])) continue;
-            if (Axis("_l", p.Y) is not { } l || Axis("_r", p.Y) is not { } r) continue;
+            if (Axis("_l", p.Y) is null || Axis("_r", p.Y) is null) continue;
+            mask[i] = true;
+            count++;
+            lowest = Math.Min(lowest, p.Y);
+        }
+        return new Garment(mask, count, top, count > 0 ? lowest : top, radii.Count > 0 ? radii.Average() : 0f, sliceCount, withGarment);
+    }
+
+    /// <summary>
+    /// Weights a garment found by <see cref="FindGarment"/> across the gap between the legs: its position between the
+    /// two leg axes sets the split between the legs' bones, and the pelvis takes up to half, most at the middle.
+    /// </summary>
+    /// <remarks>
+    /// Snapped to the nearer thigh, a coat's middle splits when the legs part; shared between both legs and the hips,
+    /// a leg lifting pulls its side of the coat and the middle hangs. Measured on lastlight3, this found each coat
+    /// and made almost no difference: bones that belong to the legs cannot make cloth hang. See <c>SkeletonFit.Skirt</c>.
+    /// </remarks>
+    static void Coat(IReadOnlyList<Bone> bones, Dictionary<string, int> index, IReadOnlyList<Vector3> positions,
+        IReadOnlyList<(int A, int B, int C)> triangles, int[] joints, float[] weights, int pelvis, List<string>? report)
+    {
+        if (FindGarment(bones, positions, triangles, joints) is not { } g) return;
+        Vector3 J(string b) => bones[index[b]].At;
+        Vector2 Axis(string sfx, float y)
+        {
+            Vector3 hip = J("thigh" + sfx), knee = J("calf" + sfx), ankle = J("foot" + sfx);
+            var (a, b) = y >= knee.Y ? (hip, knee) : (knee, ankle);
+            var t = MathF.Abs(a.Y - b.Y) < 1e-6f ? 0f : Math.Clamp((a.Y - y) / (a.Y - b.Y), 0f, 1f);
+            var p = Vector3.Lerp(a, b, t);
+            return new Vector2(p.X, p.Z);
+        }
+        for (var i = 0; i < positions.Count; i++)
+        {
+            if (!g.Mask[i]) continue;
+            var p = positions[i];
+            Vector2 l = Axis("_l", p.Y), r = Axis("_r", p.Y);
             var at = new Vector2(p.X, p.Z);
             var across = r - l;
             var s = Math.Clamp(Vector2.Dot(at - l, across) / across.LengthSquared(), 0f, 1f);
@@ -352,12 +394,12 @@ internal static class SkinWeights
             joints[o + 1] = legR; weights[o + 1] = s * (1f - k);
             joints[o + 2] = pelvis; weights[o + 2] = k;
             joints[o + 3] = 0; weights[o + 3] = 0f;
-            count++;
-            lowest = Math.Min(lowest, p.Y);
         }
-        report?.Add(count == 0 ? $"no garment round the legs in {sliceCount} slices"
-            : $"garment: {count} vertices round the legs, from the crotch at {(top - y0) / height:P0} down to {(lowest - y0) / height:P0} "
-              + $"of the height, in {withGarment} of {sliceCount} slices");
+        var y0 = positions.Min(q => q.Y);
+        var height = positions.Max(q => q.Y) - y0;
+        report?.Add(g.Count == 0 ? $"no garment round the legs in {g.Slices} slices"
+            : $"garment: {g.Count} vertices round the legs, from the crotch at {(g.Top - y0) / height:P0} down to {(g.Hem - y0) / height:P0} "
+              + $"of the height, in {g.WithGarment} of {g.Slices} slices");
     }
 
     static bool Crosses(Vector2 a, Vector2 b, Vector2 p)

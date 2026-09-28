@@ -27,7 +27,7 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.148.0" />
   </ItemGroup>
 
-  <!-- The stock bodies and pose clips (CC0; see Library/README.md), fetched into Library/ by tools/fetch-assets.py.
+  <!-- The stock bodies and pose clips (CC0; see Library/README.md), fetched into Library/ by tools/bootstrap.py.
        Copied next to the assembly, and from there into every project that references this one. A build before
        the fetch still succeeds, and Character.stock then says what is missing. -->
   <ItemGroup>

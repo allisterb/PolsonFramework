@@ -1,6 +1,6 @@
 # Library — stock bodies and pose clips
 
-**The `.glb` files are not committed.** `py -3.13 tools/fetch-assets.py` (or `--only library`) fetches them from
+**The `.glb` files are not committed.** `py -3.13 tools/bootstrap.py` (or `--only library`) fetches them from
 GitHub at a pinned Mesh2Motion commit and verifies each by SHA-256. From here the build copies them next to the
 `Polson.Drawing.Mesh` assembly, so `Character.stock(...)` and `Character.retarget(character, 'clip name')` work in
 any build or published container made after the fetch. A project's own `stock/` and `poses/`

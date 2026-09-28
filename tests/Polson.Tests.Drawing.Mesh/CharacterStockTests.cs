@@ -11,7 +11,7 @@ using Xunit.Abstractions;
 /// <summary><c>Character.stock(name)</c> — a rigged stock body with its parts named, no build needed.</summary>
 /// <remarks>
 /// The male and female bodies and the CC0 clips are fetched into the Mesh project's <c>Library/</c> by
-/// <c>tools/fetch-assets.py</c>, and these fail rather than skip without them: a checkout that has not been set up
+/// <c>tools/bootstrap.py</c>, and these fail rather than skip without them: a checkout that has not been set up
 /// should say so, not report a pass.
 /// </remarks>
 [Collection(TomasRig.Name)]
@@ -26,7 +26,7 @@ public class CharacterStockTests : TestsRuntime
     [Fact]
     public void TestTheLibraryWasFetchedAndCopied()
     {
-        const string setup = "the stock bodies and clips are not next to the test assembly: run tools/fetch-assets.py and rebuild";
+        const string setup = "the stock bodies and clips are not next to the test assembly: run tools/bootstrap.py and rebuild";
         Assert.True(CharacterStock.Shipped("stock") is not null && CharacterStock.Shipped("poses") is not null
                     && Directory.GetFiles(CharacterStock.Shipped("stock")!, "*.glb").Length > 0, setup);
         Assert.Contains(CharacterStock.Shipped("stock"), CharacterStock.Folders(null));

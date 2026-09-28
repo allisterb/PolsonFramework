@@ -1,6 +1,7 @@
-"""Fetches the studio's downloaded assets, pinned and verified by hash, and builds the vision venv.
+"""Sets up what a fresh checkout lacks: downloaded assets, pinned and verified by hash, and the vision venv.
 
-Three things a checkout does not carry, because they are binary, large, or someone else's to publish:
+Run it after cloning, and again after a pin or the lock changes. Three things a checkout does not carry, because
+they are binary, large, or someone else's to publish:
 
   library  Mesh2Motion's stock bodies and CC0 pose clips (13 MB), from GitHub at a pinned commit, into
            src/Polson.Drawing.Mesh/Library/, where the build copies them next to the assembly.
@@ -8,20 +9,24 @@ Three things a checkout does not carry, because they are binary, large, or someo
   venv     python-mediapipe/, the interpreter the face and body detectors run, installed from
            src/vision/requirements.lock.txt with --require-hashes. Needs Python 3.13, which the lock is for.
 
-    py -3.13 tools/fetch-assets.py                     everything, then a smoke test
-    py -3.13 tools/fetch-assets.py --only library      just the .glb files
-    py -3.13 tools/fetch-assets.py --extras            also the Full pose model and the segmentation spike's
-    py -3.13 tools/fetch-assets.py --check             verify what is here and smoke-test it; no network
+    py -3.13 tools/bootstrap.py                  everything, then a smoke test
+    py -3.13 tools/bootstrap.py --only library   just the .glb files
+    py -3.13 tools/bootstrap.py --extras         also the Full pose model, and the segmentation and cloth
+                                                 segmentation spikes' models (another 205 MB)
+    py -3.13 tools/bootstrap.py --check          verify what is here and smoke-test it; no network
 
 **Pinned and hashed, not fetched from a branch or a `latest` path**, for the reason fetch-fonts.py gives:
 these are untrusted binary data read by native parsers (MediaPipe's TFLite loader), so the control is to
 fetch exactly the bytes that were checked and refuse anything else. Every hash below was taken from a copy
 checked against its source on 2026-09-26: the .glb files by git blob hash at the pinned commit through
-GitHub's API, the models by the MD5 Google's storage reports. A file already present with the right hash is
+GitHub's API, the models by the MD5 Google's storage reports. The cloth checkpoint, added 2026-09-28, was
+checked against the SHA-256 Hugging Face's LFS store reports. A file already present with the right hash is
 not fetched again; one present with the wrong hash is refused unless --force, since it may be somebody's own.
 
 Licences: the .glb files are CC0 (see src/Polson.Drawing.Mesh/Library/README.md); the MediaPipe code and
 models are Apache 2.0, stated on each model's card rather than beside the weights (see reference/README.md).
+The cloth checkpoint is MIT from its authors, but was trained on a Kaggle competition dataset (iMaterialist
+Fashion 2019) whose terms were not read. It is an extra, for research use until they are.
 
 Standard library only, so it runs before anything else is installed, in the container build included.
 """
@@ -49,6 +54,10 @@ GITHUB = f"https://raw.githubusercontent.com/Mesh2Motion/mesh2motion-app/{MESH2M
 #: Google's MediaPipe model storage. The `/1/` in each path is the published version; a new one is a new path.
 MEDIAPIPE = "https://storage.googleapis.com/mediapipe-models/"
 
+#: wildoctopus's cloth-segmentation Space on Hugging Face, at a fixed commit rather than `main`.
+CLOTH_SEG = "0038d2be122dd427af96c7610b3c18ac4da7744e"
+HUGGINGFACE = f"https://huggingface.co/spaces/wildoctopus/cloth-segmentation/resolve/{CLOTH_SEG}/"
+
 #: `(group, url, destination relative to its folder, sha256, bytes)`.
 LIBRARY = [
     ("library", GITHUB + "models-variation/human/male.glb", "stock/male.glb",
@@ -72,6 +81,13 @@ MODELS = [
 
 #: Not needed by the studio: Full is only a fallback where Heavy is absent, and the two segmentation models belong
 #: to the src/vision/segment.py spike, which found selfie_multiclass out of domain on drawn figures.
+#:
+#: The cloth segmenter (U²-Net) is the garment-mask spike in docs/internal/character-rigging-modes.md §7. Its
+#: hash was checked against the SHA-256 Hugging Face's LFS store reports for the file at the pinned commit. The
+#: code and the original (levindabhi/cloth-segmentation) are MIT. It was trained on iMaterialist (Fashion) 2019, a
+#: Kaggle competition dataset whose terms were not read (see reference/README.md).
+#: It is a PyTorch pickle: load it with `weights_only=True`. Its pickle references only tensor-rebuilding
+#: functions and OrderedDict, checked with pickletools without loading it.
 EXTRAS = [
     ("models", MEDIAPIPE + "pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
      "pose_landmarker_full.task", "5134a3aad27a58b93da0088d431f366da362b44e3ccfbe3462b3827a839011b1", 9398198),
@@ -79,10 +95,13 @@ EXTRAS = [
      "ff36e24d40547fe9e645e2f4e8745d1876d6e38b332d39a82f0bf0f5d1d561b3", 2780176),
     ("models", MEDIAPIPE + "image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite",
      "selfie_multiclass_256x256.tflite", "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0", 16371837),
+    ("models", HUGGINGFACE + "model/cloth_segm.pth", "cloth_segm.pth",
+     "f71fad2bc11789a996acc507d1a5a1602ae0edefc2b9aba1cd198be5cc9c1a44", 176625341),
 ]
 
-#: A glTF binary starts `glTF`; a MediaPipe `.task` is a zip (`PK`); a `.tflite` is a FlatBuffer carrying `TFL3` at 4.
-MAGIC = {".glb": (0, b"glTF"), ".task": (0, b"PK"), ".tflite": (4, b"TFL3")}
+#: A glTF binary starts `glTF`; a MediaPipe `.task` and a PyTorch `.pth` are zips (`PK`); a `.tflite` is a
+#: FlatBuffer carrying `TFL3` at 4.
+MAGIC = {".glb": (0, b"glTF"), ".task": (0, b"PK"), ".pth": (0, b"PK"), ".tflite": (4, b"TFL3")}
 
 
 def sha256(path: Path) -> str:
@@ -144,7 +163,7 @@ def build_venv(venv: Path, lock: Path) -> None:
     if sys.version_info[:2] != (3, 13):
         raise SystemExit(
             f"FATAL: the vision lock is for Python 3.13 and this is {sys.version.split()[0]}.\n"
-            "       Run this script with 3.13 (Windows: py -3.13 tools/fetch-assets.py), or pass --only library,models.")
+            "       Run this script with 3.13 (Windows: py -3.13 tools/bootstrap.py), or pass --only library,models.")
     if not venv_python(venv).exists():
         print(f"  creating {venv}")
         subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)

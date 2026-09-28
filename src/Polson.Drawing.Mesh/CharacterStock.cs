@@ -18,7 +18,7 @@ using System.Linq;
 /// <para>
 /// <b>Where they come from.</b> Mesh2Motion's human variations (Scott Petrovic's app, which ships them), each a
 /// separate artist's model re-rigged onto one skeleton. <c>male</c> and <c>female</c> (Quaternius, CC0) are fetched
-/// into this project's <c>Library/stock/</c> by <c>tools/fetch-assets.py</c> and copied next to the assembly. Others go in <c>models/stock/</c>, the
+/// into this project's <c>Library/stock/</c> by <c>tools/bootstrap.py</c> and copied next to the assembly. Others go in <c>models/stock/</c>, the
 /// folder <c>Characters:Stock</c> names, or a project's own <c>stock/</c> folder.
 /// </para>
 /// <para>
@@ -143,7 +143,7 @@ public static class CharacterStock
         if (all.Count == 0)
             throw new InvalidOperationException(
                 $"No stock bodies are here, and none were fetched into {Path.Combine(AppContext.BaseDirectory, "Library", "stock")}. " +
-                $"Run tools/fetch-assets.py and rebuild, put .glb files on Mesh2Motion's human skeleton in the project's {ProjectFolder}/ folder, or set Characters:Stock.");
+                $"Run tools/bootstrap.py and rebuild, put .glb files on Mesh2Motion's human skeleton in the project's {ProjectFolder}/ folder, or set Characters:Stock.");
         var found = all.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
         if (found.File is null)
             throw new ArgumentException($"No stock body '{name}'. Here: {string.Join(", ", all.Select(s => s.Name))}.", nameof(name));

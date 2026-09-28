@@ -1,6 +1,6 @@
-# Optional vision backend — face landmarks and image segmentation.
+# Optional vision backend — face and body landmarks, image segmentation, and cloth segmentation.
 #
-# To SET UP, not to regenerate: `py -3.13 tools/fetch-assets.py` creates python-mediapipe/, installs the lock
+# To SET UP, not to regenerate: `py -3.13 tools/bootstrap.py` creates python-mediapipe/, installs the lock
 # below into it with --require-hashes, fetches the models, and smoke-tests both detectors. The commands that
 # follow are for regenerating the lock.
 #
@@ -13,6 +13,7 @@
 #     py -3.13 -m venv python-mediapipe
 #     python-mediapipe/Scripts/python.exe -m pip install pip-tools
 #     python-mediapipe/Scripts/python.exe -m piptools compile --generate-hashes \
+#         --extra-index-url https://download.pytorch.org/whl/cpu \
 #         --output-file=src/vision/requirements.lock.txt src/vision/requirements.in
 #     python-mediapipe/Scripts/python.exe -m pip install --require-hashes \
 #         -r src/vision/requirements.lock.txt
@@ -43,3 +44,24 @@
 # and regenerate the lock rather than working around it.
 
 mediapipe==1.0.1
+
+# Cloth segmentation (U²-Net; the checkpoint is `models/cloth_segm.pth`, fetched with `--extras`). PyTorch's
+# CPU builds, from PyTorch's own index, for two reasons.
+#
+# **Linux.** Plain `torch` from PyPI is a CUDA build there: torch 2.14 declares `cuda-toolkit` 13, cuDNN, NCCL,
+# NVSHMEM and triton, several gigabytes the container never uses. The `+cpu` build carries none of them. On
+# Windows PyPI's torch is already CPU-only; pinning `+cpu` on both platforms keeps one lock for both.
+#
+# **CUDA is per card, so it cannot be required.** Someone with a GPU installs the build for their card over
+# this one, with the command pytorch.org's selector gives. The segmenter uses the GPU when torch reports one.
+# The lock then no longer describes the venv, and the next `bootstrap.py` run puts the CPU build back.
+#
+# `--extra-index-url` above is what lets the resolver see the `+cpu` builds. Keep it in the generated lock's
+# header (do not pass `--no-emit-index-url`), since `bootstrap.py` installs from the lock alone. With
+# `--require-hashes`, a second index cannot substitute anything: every file must match a listed hash.
+#
+# **No `opencv-python`.** mediapipe already brings `opencv-contrib-python`, and both install into the same
+# `cv2` folder. With both installed, the last one wins and uninstalling either breaks the other. The segmenter
+# does not use OpenCV anyway.
+torch==2.14.0+cpu
+torchvision==0.29.0+cpu

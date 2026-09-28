@@ -322,7 +322,7 @@ USER polson
 # ---------------------------------------------------------------------------------------------
 # Downloaded assets: stock bodies and pose clips, MediaPipe weights, and the vision venv
 # ---------------------------------------------------------------------------------------------
-# `tools/fetch-assets.py` is the same script a developer runs, so the container and a checkout are set
+# `tools/bootstrap.py` is the same script a developer runs, so the container and a checkout are set
 # up one way: every file at a pinned URL (GitHub at a fixed Mesh2Motion commit, Google's versioned model
 # storage), refused unless its SHA-256 matches, and the venv installed from `src/vision/requirements.lock.txt`
 # with `--require-hashes`. It ends by running both detectors on a blank image through the same
@@ -341,9 +341,9 @@ USER polson
 # call two functions of) and 34 MB of weights. `--build-arg POLSON_VISION=0` skips both and keeps the
 # 13 MB library; `Face.detect` and `Character.detect` then refuse, saying what is missing.
 ARG POLSON_VISION=1
-COPY tools/fetch-assets.py /tmp/fetch-assets.py
+COPY tools/bootstrap.py /tmp/bootstrap.py
 RUN if [ "$POLSON_VISION" = "1" ]; then parts=library,models,venv; else parts=library; fi \
-    && PIP_NO_CACHE_DIR=1 python /tmp/fetch-assets.py --root /app --library /app/bin/cli/Library --only "$parts"
+    && PIP_NO_CACHE_DIR=1 python /tmp/bootstrap.py --root /app --library /app/bin/cli/Library --only "$parts"
 
 ENV POLSON_CLI_DLL=/app/bin/cli/Polson.CLI.dll \
     POLSON_PROJECTS_DIR=/app/projects \

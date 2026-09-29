@@ -465,6 +465,23 @@ internal class Program : Runtime
             Warn("Body detection unavailable: missing {0}. Character.detect() will refuse.", BodyDetector.Missing);
     }
 
+    /// <summary>Blender, for props and for <c>Character.drape</c>: discovered under <c>bin/</c> unless the settings say otherwise.</summary>
+    static void ConfigureBlender()
+    {
+        if (Setting("Tools:Blender") is { Length: > 0 } blender)
+            BlenderDriver.BlenderOverride = blender;
+        if (Setting("Tools:BlenderScript") is { Length: > 0 } script)
+            BlenderDriver.ScriptOverride = script;
+        if (Setting("Tools:BlenderClothScript") is { Length: > 0 } cloth)
+            BlenderDriver.ClothScriptOverride = cloth;
+
+        if (BlenderDriver.CanDrape)
+            Info("Cloth enabled ({0}).", BlenderDriver.Blender);
+        else
+            Warn("Cloth unavailable: no {0}. Character.drape() will refuse; Character.canDrape says so.",
+                 BlenderDriver.Blender is null ? "Blender under bin/ (or Tools:Blender)" : "src/blender/cloth_drape.py");
+    }
+
     /// <summary>The garment step of a character build: the body detector's interpreter and model, with SAM 2.</summary>
     static void ConfigureGarmentDetection()
     {
@@ -519,6 +536,7 @@ internal class Program : Runtime
         ConfigureFaceDetection();
         ConfigureBodyDetection();
         ConfigureGarmentDetection();
+        ConfigureBlender();
         ConfigureCharacterGeneration();
 
         var projectDir = !string.IsNullOrWhiteSpace(opts.ProjectDir)

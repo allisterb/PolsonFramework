@@ -855,3 +855,34 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 > proportions from its sheet. Kit came out the same shape over the adult stock guide and over one
 > reshaped to her, both matching her sheet, and her pose followed the reshaped one only slightly more
 > closely. Reshape when the build is far from the stock body's; set her size with `Character.place`.
+>
+> **A long coat or a skirt can hang as cloth with `Character.drape`.** Posed by its rig, a garment hanging
+> between the legs moves with the thighs as a rigid tube or slab, which reads wrongly when the figure sits,
+> crouches or strides. `Character.drape(character, pose)` simulates the part below the crotch as cloth
+> falling from rest into the pose, and returns `{ mesh, draped, note }`: draw `mesh` in place of
+> `character.pose(pose)`. Where `Character.canDrape` is false, Blender is not installed and it refuses.
+> The build decided what hangs (`Character.info(name).garments.hangs`), so a character in trousers comes
+> back undraped with a `note`, never an error. **Drape in its own short script**: the first drape of a pose
+> takes 5 to 25 seconds, against a 30-second script limit, and is then cached with the character, so the
+> drawing script that follows pays nothing. **Look before relying on it.** Measured on lastlight3's two
+> coats, the cloth moved a mean 2% and 7% of the figure's height, and at panel size the difference is
+> slight, because a reconstructed coat is fused to the legs where it touches them. It can also crumple
+> where the cloth is squeezed between the knees; `settings: { selfCollision: true, bending: 40, stretch: 80,
+> shear: 80 }` tidied that on Tomas at about twice the time.
+>
+> **When the garments look wrong, work down this list, and stop at the first step that reads right.**
+> Don't spend passes perfecting one garment. Each step costs more than the one before it, and a later
+> step does not depend on the earlier ones succeeding.
+>
+> 1. **Pose the built character and look at it** at the panel's own angle and size. Most poses and most
+>    garments read correctly as rigged, and a garment fault that doesn't show at panel size is not a fault.
+> 2. **If a long coat, skirt or robe reads wrongly**, which it usually will sitting, crouching or in a
+>    wide stride, `Character.drape` it in its own script and look again. For a character in trousers or a
+>    short jacket, skip this step: nothing hangs, and `drape` will say so.
+> 3. **If it still reads wrongly, stop tuning the mesh.** Either use the posed body as a clay guide for
+>    `Assets.redraw` (Manual 16), where the image model draws the garment from the character's sheet, so
+>    the guide only has to carry the pose and the rough silhouette, or draw that garment by construction
+>    over the posed body (Manual 22 for the folds).
+> 4. **With no built character**, because no GPU is available for the build or there is no time for one,
+>    use a stock body, reshaped with `mesh.proportion` where the build is far from the stock one, as the
+>    clay guide for step 3. Its garments come entirely from the sheet.

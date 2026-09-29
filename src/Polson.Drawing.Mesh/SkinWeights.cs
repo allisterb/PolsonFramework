@@ -171,7 +171,7 @@ internal static class SkinWeights
     }
 
     /// <summary>The height of the first surface straight below a point, or null.</summary>
-    static float? CastDown(Vector3 from, IReadOnlyList<Vector3> p, IReadOnlyList<(int A, int B, int C)> tris)
+    internal static float? CastDown(Vector3 from, IReadOnlyList<Vector3> p, IReadOnlyList<(int A, int B, int C)> tris)
     {
         float? best = null;
         foreach (var (a, b, c) in tris)

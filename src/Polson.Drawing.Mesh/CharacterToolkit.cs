@@ -256,6 +256,53 @@ public class CharacterToolkit
     public Dictionary<string, object?> Proportions(object character) =>
         CharacterProportion.Measure(Character(character, "proportions"))
             .ToDictionary(kv => kv.Key, kv => (object?)Math.Round(kv.Value, 4));
+
+    /// <summary>
+    /// A character posed with its hanging garment simulated as cloth:
+    /// <c>Mesh.draw(ctx, Character.drape(warden, pose).mesh, draw)</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="pose"/> is what <c>pose(...)</c> takes. Returns <c>{ mesh, draped, vertices, seconds, cached,
+    /// note }</c>: <c>mesh</c> is always drawable. When nothing hangs, or the character was built before garments
+    /// were found, it is the plain pose, <c>draped</c> is false and <c>note</c> says why.
+    /// </para>
+    /// <para>
+    /// Runs Blender, about 5 to 20 s the first time for a pose, then free: the result is cached with the character.
+    /// <c>Character.canDrape</c> says whether Blender is here. <paramref name="options"/> takes <c>settings</c>,
+    /// the cloth solver's (<c>mass</c>, <c>stretch</c>, <c>bending</c>, <c>pinStiffness</c> and others; see the SDK
+    /// reference), and an unknown one is refused.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> Drape(object character, object? pose, object? options = null)
+    {
+        var (mesh, name) = character switch
+        {
+            string n => (Load(n), n),
+            FaceMesh m => (m, Cache.FirstOrDefault(kv => ReferenceEquals(kv.Value.Mesh, m)).Key is { } key
+                ? Path.GetFileName(key)
+                : throw new ArgumentException("Character.drape needs the character itself, from Character.load(name), or its name; " +
+                                              "not a posed or reshaped mesh. Pass the pose as the second argument.", nameof(character))),
+            _ => throw new ArgumentException("Character.drape needs a character from Character.load(name), or its name.", nameof(character))
+        };
+        if (!BlenderDriver.CanDrape)
+            throw new InvalidOperationException("Character.drape needs Blender, and it is not installed here. Check Character.canDrape first.");
+
+        var opt = JsInterop.AsDict(options);
+        System.Collections.IDictionary? settings = null;
+        if (opt != null)
+            foreach (var key in opt.Keys)
+            {
+                var k = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+                if (k != "settings")
+                    throw new ArgumentException($"Character.drape has no option '{k}'. It takes settings.");
+                settings = JsInterop.AsDict(opt[key!]);
+            }
+        return ClothDrape.Drape(Dir(name, out _), name, mesh, pose, settings);
+    }
+
+    /// <summary>Whether <see cref="Drape"/> will work here: Blender and the cloth script are installed.</summary>
+    public bool CanDrape => BlenderDriver.CanDrape;
     #endregion
 
     #region Private

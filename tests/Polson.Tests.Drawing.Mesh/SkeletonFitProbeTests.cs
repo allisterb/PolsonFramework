@@ -177,8 +177,7 @@ public class SkeletonFitProbeTests : TestsRuntime
         var dir = Environment.GetEnvironmentVariable("POLSON_CLOTH_OUT");
         var repo = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
         var script = Environment.GetEnvironmentVariable("POLSON_CLOTH_SCRIPT") ?? Path.Combine(repo, "src", "blender", "cloth_drape.py");
-        var blender = Path.Combine(repo, "bin", "blender-5.2.2-windows-x64", "blender.exe");
-        if (string.IsNullOrEmpty(dir) || !File.Exists(script) || !File.Exists(blender) || !Directory.Exists(Project) || !File.Exists(TemplatePath))
+        if (string.IsNullOrEmpty(dir) || !File.Exists(script) || BlenderDriver.Blender is null || !Directory.Exists(Project) || !File.Exists(TemplatePath))
         { output.WriteLine("NOT RUN: set POLSON_CLOTH_OUT, with Blender, lastlight3 and the rig template on disk"); return; }
         Directory.CreateDirectory(dir);
         var name = Environment.GetEnvironmentVariable("POLSON_CLOTH_NAME") ?? "warden";
@@ -238,19 +237,10 @@ public class SkeletonFitProbeTests : TestsRuntime
         }));
         output.WriteLine($"{name}: garment {garment.Count} vertices, top {garment.Top:0.000}, hem {garment.Hem:0.000}; {clip} at {at}");
 
-        var info = new System.Diagnostics.ProcessStartInfo(blender) { RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in new[] { "--background", "--factory-startup", "--disable-autoexec", "--python-exit-code", "1", "--python", script!, "--", input, result }) info.ArgumentList.Add(arg);
-        File.Delete(result);   // a stale answer from an earlier run must not pass for this one
+        if (script != BlenderDriver.ClothScript) BlenderDriver.ClothScriptOverride = script;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        using (var p = System.Diagnostics.Process.Start(info)!)
-        {
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            var stderr = p.StandardError.ReadToEndAsync();
-            Assert.True(p.WaitForExit(600_000), "Blender did not finish in 10 minutes");
-            foreach (var line in (stdout.Result + stderr.Result).Split('\n').Where(l => l.StartsWith("cloth:") || l.Contains("Error") || l.Contains("Traceback")))
-                output.WriteLine("  " + line.TrimEnd());
-            Assert.Equal(0, p.ExitCode);
-        }
+        using (var run = BlenderDriver.Drape(File.ReadAllText(input), Path.Combine(dir, $"{name}-cloth-run")))
+            File.WriteAllText(result, run.RootElement.GetRawText());
         output.WriteLine($"  Blender ran in {sw.ElapsedMilliseconds} ms");
 
         using var doc = JsonDocument.Parse(File.ReadAllText(result));

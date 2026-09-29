@@ -3661,6 +3661,8 @@ The `body` a detection returns:
 - `Character.place(character, frame, { at?, anchor?, height?, yawDeg?, pitchDeg? })` → `object` — **The `Mesh.draw` options that stand a character in a frame**: feet at `at` (fractions of the frame, default `{ x: 0.5, y: 0.95 }`), standing `height` of the frame tall (default `0.8`). Sized from the character standing, so a crouch comes out shorter; the feet go where its floor is, under its hips. **For a close shot, anchor a body part instead**: `{ anchor: 'head', at: { x: 0.4, y: 0.35 }, height: 3 }` puts the head there and lets the panel crop the rest.
 - `Character.where(character, pose, part, draw?)` → `{ x, y, z }` or `{ x, y, depth }` — Where a body part's joint is under a pose: in the character's own space, or on the page given the draw options.
 - `Character.proportions(character)` → `object` — **Its proportions, as shares of standing height**: `torso`, `neck`, `head`, `upperArm`, `forearm`, `thigh`, `shin`, `shoulders`, `hips`. Measured between the named joints; the head from its joint to the top of the mesh, so hair and a hat count.
+- `Character.drape(character, pose, { settings? })` → `{ mesh, draped, vertices, seconds, cached, note }` — **The character in `pose`, with its hanging garment simulated as cloth** falling from rest into the pose, by Blender. `character` is the character from `Character.load`, or its name, not a posed mesh; `pose` is what `pose(...)` takes. Draw `mesh`. When nothing hangs, or the character was built before garments were found, `mesh` is the plain pose, `draped` is false and `note` says why. `settings` tunes the cloth: `mass`, `stretch`, `shear`, `bending`, `pinStiffness`, `pinBand`, `quality`, `stepsPerKey`, `settle`, `distance`, `thickness`, `friction`, `collisionQuality` (numbers) and `collide`, `selfCollision`, `culling`, `pinEdges` (booleans); an unknown one is refused.
+- `Character.canDrape` → `boolean` — Whether `drape` will work here: Blender is installed.
 
 > [!IMPORTANT]
 > **Views decide everything, so make them for this.** One character, one style, one scale, the whole figure in frame, standing in an **A-pose** with the arms clear of the body — a rigger cannot separate an arm drawn against the torso, and nothing can find a head that was cropped off. `front` is required; `back` and a profile each improve the body, and the profile gives the face its shape.
@@ -3786,6 +3788,21 @@ The `body` a detection returns:
 
 > [!TIP]
 > **The body turns; its silhouette is only as good as the reconstruction.** Hands come back as mittens (the reconstruction's voxel grid is coarser than a finger), cloth deforms with the body rather than draping, and a bend held far past the A-pose pinches. For a panel that needs articulate hands or flowing cloth, draw those by construction over the posed body.
+
+> [!IMPORTANT]
+> **`Character.drape` lets a long coat or a skirt hang instead of moving with the thighs.** What hangs was decided when the character was built: the garment labels below the crotch that are the outermost layer, between or round the legs. Trousers stay rigged, even under an open coat. The pinned band along the garment's top follows the pose, and the rest falls.
+>
+> ```js
+> const warden = Character.load('warden');
+> const sat = Character.retarget(warden, 'Sitting_Idle', { at: 0.5 });
+> const d = Character.drape(warden, sat);                  // its own script the first time: 5 to 25 s
+> if (!d.draped) Stage.note(d.note);
+> Mesh.draw(ctx, d.mesh, Character.place(warden, panel, { yawDeg: 30 }));
+> ```
+>
+> - **Drape in its own short script first.** A first drape of a pose takes 5 to 25 s against the 30 s script limit. It is cached with the character (`characters/<name>/drapes/`) on the pose and the settings, so the script that draws pays nothing.
+> - **Look at it.** On lastlight3's two coats the cloth moved a mean 2% (the warden) and 7% (Tomas) of the height, and at panel size the change is slight, because a reconstructed coat is fused to the legs where it touches them. Squeezed between the knees it can crumple; `settings: { selfCollision: true, bending: 40, stretch: 80, shear: 80 }` tidied that on Tomas, at about twice the time.
+> - **Expressions still work** on the draped mesh: the face is untouched.
 
 ---
 

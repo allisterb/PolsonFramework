@@ -645,6 +645,13 @@ public class FaceMesh
     /// <summary>A transplanted face this mesh carries, from <see cref="WithFaceMesh"/>, or null.</summary>
     internal FaceAttachment? Attachment { get; init; }
 
+    /// <summary>This mesh with its vertices moved, keeping everything else: texture, rig, reference and face.</summary>
+    internal FaceMesh WithVertices(SKPoint3[] vertices) =>
+        vertices.Length != Vertices.Length
+            ? throw new ArgumentException($"{vertices.Length} vertices for a mesh of {Vertices.Length}.", nameof(vertices))
+            : new FaceMesh(vertices, Uvs, Indices, HasUvs, Source)
+            { Texture = Texture, Rig = Rig, Reference = Reference, Fitted = Fitted, Attachment = Attachment };
+
     /// <summary>
     /// The named deformations, and the honest note about where they come from.
     /// </summary>

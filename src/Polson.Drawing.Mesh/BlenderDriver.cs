@@ -41,8 +41,8 @@ public static class BlenderDriver
     //: Set by the host from `Tools:Blender` and `Tools:BlenderScript` when they are configured. The
     //: engine reads no environment variables by design, so an override arrives through settings
     //: exactly as `Assets:Budget` does.
-    static string? _blender, _script;
-    static string? _rBlender, _rScript;
+    static string? _blender, _script, _cloth;
+    static string? _rBlender, _rScript, _rCloth;
     static bool _looked;
 
     //: Mirrors of the interpreter's own dispatch tables. They are duplicated rather than shared
@@ -76,11 +76,24 @@ public static class BlenderDriver
         set { _script = value; _looked = false; }
     }
 
+    /// <summary>An explicit path to the cloth script, or null to discover one.</summary>
+    public static string? ClothScriptOverride
+    {
+        get => _cloth;
+        set { _cloth = value; _looked = false; }
+    }
+
     /// <summary>The Blender that will be used, or null when none was found.</summary>
     public static string? Blender { get { Look(); return _rBlender; } }
 
     /// <summary>The interpreter that will be used, or null when none was found.</summary>
     public static string? Script { get { Look(); return _rScript; } }
+
+    /// <summary>The cloth script that will be used, or null when none was found.</summary>
+    public static string? ClothScript { get { Look(); return _rCloth; } }
+
+    /// <summary>Whether a garment can be draped here: Blender and <c>src/blender/cloth_drape.py</c>.</summary>
+    public static bool CanDrape => Blender is not null && ClothScript is not null;
 
     /// <summary>Whether a prop can be built at all here.</summary>
     public static bool Available => Blender is not null && Script is not null;
@@ -247,6 +260,68 @@ public static class BlenderDriver
         var build = PropBuild.Parse(File.ReadAllText(resultPath), outputDirectory);
         build.Diagnostics = diagnostics;
         return build;
+    }
+
+    /// <summary>
+    /// Runs the cloth operation (<c>cloth_drape.py</c>) on a drape request and returns its <c>result.json</c>, parsed.
+    /// </summary>
+    /// <remarks>
+    /// The request is data only — triangles, a mask, pose keys, a top and settings — and goes in over stdin; the
+    /// answer comes back through <c>result.json</c> in <paramref name="outputDirectory"/>, which is deleted first so
+    /// a stale answer cannot pass for this one. Blender runs with <c>--python-exit-code 1</c>, because without it a
+    /// script that raises exits 0. A run that fails is an exception here, unlike a prop build: the request is built
+    /// by the studio, not written by a caller, so a failure is a fault rather than an outcome to report.
+    /// </remarks>
+    public static JsonDocument Drape(string requestJson, string outputDirectory, int timeoutMs = 300000)
+    {
+        ArgumentNullException.ThrowIfNull(requestJson);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
+        if (!CanDrape)
+            throw new InvalidOperationException(
+                $"Draping needs {(Blender is null ? "blender.exe under bin/" : "src/blender/cloth_drape.py")}. " +
+                "Install Blender under bin/, or set 'Tools:Blender' in appsettings.json. Check Character.canDrape first.");
+
+        Directory.CreateDirectory(outputDirectory);
+        var resultPath = Path.Combine(outputDirectory, "result.json");
+        if (File.Exists(resultPath)) File.Delete(resultPath);
+
+        var info = new ProcessStartInfo(Blender!)
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (var arg in new[] { "--background", "--factory-startup", "--disable-autoexec", "--python-exit-code", "1",
+                                    "--python", ClothScript!, "--", outputDirectory })
+            info.ArgumentList.Add(arg);
+
+        using var process = Process.Start(info)
+            ?? throw new InvalidOperationException("The Blender process would not start.");
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        using (var stdin = process.StandardInput)
+            stdin.Write(requestJson);
+
+        if (!process.WaitForExit(timeoutMs))
+        {
+            try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            throw new TimeoutException($"The drape did not finish within {timeoutMs} ms.");
+        }
+        process.WaitForExit();
+
+        if (!File.Exists(resultPath))
+            throw new InvalidOperationException(
+                $"Blender exited {process.ExitCode} without writing result.json. {Trim(stderr.Result.Length > 0 ? stderr.Result : stdout.Result)}");
+        var doc = JsonDocument.Parse(File.ReadAllText(resultPath));
+        if (!doc.RootElement.TryGetProperty("ok", out var ok) || !ok.GetBoolean())
+        {
+            var error = doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() : "no reason given";
+            doc.Dispose();
+            throw new InvalidOperationException($"The drape failed: {error}");
+        }
+        return doc;
     }
 
     static PropValidation? Step(
@@ -447,6 +522,7 @@ public static class BlenderDriver
             OperatingSystem.IsWindows()
                 ? "blender-5.2.2-windows-x64/blender.exe" : "blender/blender"));
         _rScript = Pick(_script, Candidates("src", "blender/build_prop.py"));
+        _rCloth = Pick(_cloth, Candidates("src", "blender/cloth_drape.py"));
     }
 
     static string? Pick(string? overridden, IEnumerable<string> candidates)

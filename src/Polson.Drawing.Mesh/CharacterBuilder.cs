@@ -574,19 +574,30 @@ public static class CharacterBuilder
     /// </summary>
     /// <param name="dir">The character's folder, holding <c>character.json</c>.</param>
     /// <param name="display">The project-relative path, for messages.</param>
-    public static FaceMesh Assemble(string dir, string display)
+    /// <param name="rig"><c>unirig</c> or <c>solver</c>, or null for the character's default.</param>
+    public static FaceMesh Assemble(string dir, string display, string? rig = null)
     {
         var manifestPath = Path.Combine(dir, Manifest);
         if (!File.Exists(manifestPath))
             throw new FileNotFoundException($"No {Manifest} in '{display}', so it is not a finished character.", manifestPath);
         var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
 
-        var rigged = manifest["files"]?["rigged"]?.GetValue<string>() ?? RiggedGlb;
-        var body = MeshGltf.Load(Path.Combine(dir, rigged), $"{display}/{rigged}");
-        if (body.Rig is { } rig && manifest["joints"] is JsonObject map)
-            foreach (var (name, handle) in map)
-                if (handle?.GetValue<string>() is { } h) rig.Aliases[name] = h;
-        if (body.Rig is { } faced && manifest["facing"]?.GetValue<string>() == "-Z") faced.FrontSign = -1;
+        rig ??= DefaultRig(manifest);
+        var built = BuiltRigs(manifest);
+        if (!built.Contains(rig))
+            throw new ArgumentException(Rigs.Contains(rig)
+                ? $"'{display}' has no {rig} rig; it was built with {string.Join(" and ", built)}."
+                : $"'{rig}' is not a rig; the rigs are {string.Join(" and ", Rigs)}.", nameof(rig));
+
+        var file = RigFile(manifest, rig)!;
+        var body = MeshGltf.Load(Path.Combine(dir, file), $"{display}/{file}");
+        var (joints, facing) = rig == UniRig
+            ? (manifest["joints"] as JsonObject, manifest["facing"]?.GetValue<string>())
+            : (manifest["rig"]?[Solver]?["joints"] as JsonObject, manifest["rig"]?[Solver]?["facing"]?.GetValue<string>());
+        if (body.Rig is { } r && joints is not null)
+            foreach (var (name, handle) in joints)
+                if (handle?.GetValue<string>() is { } h) r.Aliases[name] = h;
+        if (body.Rig is { } faced && facing == "-Z") faced.FrontSign = -1;
 
         if (!File.Exists(Path.Combine(dir, FaceObj)) || manifest["face"]?["anchors"] is not JsonObject anchors)
             return body;
@@ -601,19 +612,45 @@ public static class CharacterBuilder
             };
         return body.WithFaceMesh(face, options);
     }
+
+    /// <summary>The rig a character loads with when none is asked for. A manifest from before the solver rig is UniRig's.</summary>
+    public static string DefaultRig(JsonObject manifest) => manifest["rig"]?["default"]?.GetValue<string>() ?? UniRig;
+
+    /// <summary>The rigs a character was built with, from its manifest.</summary>
+    public static string[] BuiltRigs(JsonObject manifest) => [.. Rigs.Where(r => RigFile(manifest, r) is not null)];
+
+    /// <summary>A rig's GLB in the character's folder, or null when that rig was not built.</summary>
+    public static string? RigFile(JsonObject manifest, string rig) => rig switch
+    {
+        UniRig when manifest["rig"]?["default"] is null => manifest["files"]?["rigged"]?.GetValue<string>() ?? RiggedGlb,
+        UniRig => manifest["files"]?["rigged"]?.GetValue<string>(),
+        Solver => manifest["files"]?["riggedSolver"]?.GetValue<string>(),
+        _ => null
+    };
+
+    /// <summary>A rig's garment labels in the character's folder, or null when there are none.</summary>
+    public static string? GarmentsFile(JsonObject manifest, string rig) =>
+        manifest["garments"]?["files"]?[rig]?.GetValue<string>()
+        ?? (rig == UniRig ? manifest["garments"]?["file"]?.GetValue<string>() : null);
+
     /// <summary>
-    /// Runs the garment step on a character's views and rigged body, writes <c>garments.png</c> and, when it
-    /// segmented, <c>garments.json</c> into <paramref name="dir"/>, and returns the block for the manifest.
+    /// Runs the garment step on a character's views and rigged bodies, writes <c>garments.png</c> and, when it
+    /// segmented, a labels file per rig into <paramref name="dir"/>, and returns the block for the manifest.
     /// </summary>
     /// <remarks>
-    /// <c>garments.json</c> is <c>{ names, labels }</c>, a label per vertex of the rigged mesh as loaded. A
-    /// transplanted face appends its vertices after the body's, so the same indices hold on the finished character.
+    /// Each labels file is <c>{ names, labels }</c>, a label per vertex of that rig's mesh as loaded. The views are
+    /// projected onto one body, the solver's when there is one since it carries a quarter of UniRig's vertices, and
+    /// the labels are carried to the other by position: both rigs are the same reconstructed surface. A transplanted
+    /// face appends its vertices after the body's, so the same indices hold on the finished character.
     /// </remarks>
-    public static JsonObject FindGarments(string dir, IReadOnlyDictionary<string, SKBitmap> views, FaceMesh body, List<string> notes)
+    public static JsonObject FindGarments(string dir, IReadOnlyDictionary<string, SKBitmap> views,
+                                          IReadOnlyDictionary<string, FaceMesh> bodies, List<string> notes)
     {
-        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(bodies);
         ArgumentNullException.ThrowIfNull(notes);
-        var found = GarmentDetector.Detect(views, body);
+        if (bodies.Count == 0) throw new ArgumentException("The garment step needs a rigged body.", nameof(bodies));
+        var first = bodies.ContainsKey(Solver) ? Solver : bodies.Keys.First();
+        var found = GarmentDetector.Detect(views, bodies[first]);
         var record = found.Record;
         if (found.Sheet.Length > 0)
         {
@@ -622,13 +659,19 @@ public static class CharacterBuilder
         }
         if (found.Segmented)
         {
-            var labels = new JsonObject
+            var files = new JsonObject();
+            foreach (var (rig, body) in bodies)
             {
-                ["names"] = new JsonArray([.. found.Names.Select(n => (JsonNode)n)]),
-                ["labels"] = new JsonArray([.. found.Labels.Select(l => (JsonNode)l)])
-            };
-            File.WriteAllText(Path.Combine(dir, GarmentsJson), labels.ToJsonString());
-            record["file"] = GarmentsJson;
+                var labels = rig == first ? found.Labels : CarryLabels(bodies[first], found.Labels, body);
+                var file = rig == UniRig ? GarmentsJson : $"garments-{rig}.json";
+                File.WriteAllText(Path.Combine(dir, file), new JsonObject
+                {
+                    ["names"] = new JsonArray([.. found.Names.Select(n => (JsonNode)n)]),
+                    ["labels"] = new JsonArray([.. labels.Select(l => (JsonNode)l)])
+                }.ToJsonString());
+                files[rig] = file;
+            }
+            record["files"] = files;
         }
 
         if (found.Hangs is null) notes.Add($"Whether anything hangs between the legs could not be read: {found.Reason}.");
@@ -648,11 +691,7 @@ public static class CharacterBuilder
     /// </summary>
     public static JsonObject AddGarments(string dir)
     {
-        var manifestPath = Path.Combine(dir, Manifest);
-        if (!File.Exists(manifestPath))
-            throw new FileNotFoundException($"No {Manifest} in '{dir}', so it is not a finished character.", manifestPath);
-        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
-
+        var (manifestPath, manifest) = ReadManifest(dir);
         var views = new Dictionary<string, SKBitmap>();
         try
         {
@@ -660,15 +699,12 @@ public static class CharacterBuilder
                 if (node?.GetValue<string>() is { } file && file.StartsWith("view-", StringComparison.Ordinal))
                     views[Path.GetFileNameWithoutExtension(file)["view-".Length..]] = SKBitmap.Decode(Path.Combine(dir, file))
                         ?? throw new InvalidOperationException($"{file} could not be decoded.");
-            var rigged = manifest["files"]?["rigged"]?.GetValue<string>() ?? RiggedGlb;
-            var body = MeshGltf.Load(Path.Combine(dir, rigged), rigged);
+            var bodies = BuiltRigs(manifest).ToDictionary(r => r, r => MeshGltf.Load(Path.Combine(dir, RigFile(manifest, r)!), r));
             var notes = new List<string>();
-            var record = FindGarments(dir, views, body, notes);
+            var record = FindGarments(dir, views, bodies, notes);
 
             manifest["garments"] = record;
-            var warnings = manifest["warnings"] as JsonArray ?? [];
-            foreach (var n in notes) warnings.Add((JsonNode)n);
-            manifest["warnings"] = warnings;
+            AddWarnings(manifest, notes);
             File.WriteAllText(manifestPath, manifest.ToJsonString(new() { WriteIndented = true }));
             return record;
         }
@@ -676,6 +712,115 @@ public static class CharacterBuilder
         {
             foreach (var v in views.Values) v.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Adds the solver rig to a character built with UniRig's alone, updating its manifest in place and leaving its
+    /// default rig as it was. Returns the manifest's <c>rig</c> block.
+    /// </summary>
+    /// <remarks>Its garment labels, when it has them, are carried across to the new rig by position.</remarks>
+    public static JsonObject AddSolverRig(string dir)
+    {
+        var (manifestPath, manifest) = ReadManifest(dir);
+        var notes = new List<string>();
+        var mesh = manifest["files"]?["mesh"]?.GetValue<string>() ?? MeshGlb;
+        var solved = SolverRig.Rig(Path.Combine(dir, mesh), notes);
+        File.WriteAllBytes(Path.Combine(dir, RiggedSolverGlb), solved.Glb);
+
+        var rig = UpgradeRig(manifest);
+        rig[Solver] = SolverRecord(solved);
+        manifest["files"]!["riggedSolver"] = RiggedSolverGlb;
+
+        if (manifest["garments"] is JsonObject garments && GarmentsFile(manifest, UniRig) is { } labelsFile)
+        {
+            var labels = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, labelsFile)))!;
+            var from = MeshGltf.Load(Path.Combine(dir, RigFile(manifest, UniRig)!), UniRig);
+            var to = MeshGltf.Load(Path.Combine(dir, RiggedSolverGlb), Solver);
+            var carried = CarryLabels(from, [.. labels["labels"]!.AsArray().Select(n => n!.GetValue<int>())], to);
+            var file = $"garments-{Solver}.json";
+            File.WriteAllText(Path.Combine(dir, file), new JsonObject
+            {
+                ["names"] = labels["names"]!.DeepClone(),
+                ["labels"] = new JsonArray([.. carried.Select(l => (JsonNode)l)])
+            }.ToJsonString());
+            var files = garments["files"] as JsonObject ?? new JsonObject { [UniRig] = labelsFile };
+            files[Solver] = file;
+            garments["files"] = files;
+        }
+
+        AddWarnings(manifest, notes);
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new() { WriteIndented = true }));
+        return rig;
+    }
+
+    /// <summary>What the manifest records about a solver rig.</summary>
+    public static JsonObject SolverRecord(SolverRigResult solved) => new()
+    {
+        ["joints"] = new JsonObject(solved.Joints.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))),
+        ["facing"] = solved.FrontSign >= 0 ? "+Z" : "-Z",
+        ["vertices"] = solved.Vertices,
+        ["ms"] = solved.Ms
+    };
+
+    /// <summary>
+    /// Each body vertex of <paramref name="to"/> labelled as the vertex of <paramref name="from"/> at its position, or
+    /// the nearest one. Both rigs are the same reconstructed surface, so every position matches in practice.
+    /// </summary>
+    internal static int[] CarryLabels(FaceMesh from, int[] labels, FaceMesh to)
+    {
+        var v = from.Vertices;
+        var m = Math.Min(labels.Length, v.Length);
+        var height = v.Max(p => p.Y) - v.Min(p => p.Y);
+        var q = 1e5 / height;
+        (long, long, long) Key(SKPoint3 p) => ((long)Math.Round(p.X * q), (long)Math.Round(p.Y * q), (long)Math.Round(p.Z * q));
+        var at = new Dictionary<(long, long, long), int>();
+        for (var i = 0; i < m; i++) at.TryAdd(Key(v[i]), labels[i]);
+
+        var n = to.Attachment?.BodyCount ?? to.VertexCount;
+        var outp = new int[n];
+        for (var i = 0; i < n; i++)
+        {
+            var p = to.Vertices[i];
+            if (at.TryGetValue(Key(p), out var l)) { outp[i] = l; continue; }
+            var best = float.MaxValue;
+            for (var j = 0; j < m; j++)
+            {
+                var d = ((v[j].X - p.X) * (v[j].X - p.X)) + ((v[j].Y - p.Y) * (v[j].Y - p.Y)) + ((v[j].Z - p.Z) * (v[j].Z - p.Z));
+                if (d < best) { best = d; outp[i] = labels[j]; }
+            }
+        }
+        return outp;
+    }
+
+    /// <summary>
+    /// The manifest's <c>rig</c> block in its current shape. One written before the solver rig held UniRig's service
+    /// record directly; that moves under <c>unirig</c>, and UniRig stays the default it always was.
+    /// </summary>
+    static JsonObject UpgradeRig(JsonObject manifest)
+    {
+        if (manifest["rig"] is JsonObject rig && rig["default"] is not null) return rig;
+        var old = manifest["rig"] as JsonObject;
+        manifest.Remove("rig");
+        var upgraded = new JsonObject { ["default"] = UniRig, ["chosen"] = UniRig };
+        if (old is not null) upgraded[UniRig] = old;
+        manifest["rig"] = upgraded;
+        manifest["files"]!["rigged"] ??= RiggedGlb;
+        return upgraded;
+    }
+
+    static (string Path, JsonObject Manifest) ReadManifest(string dir)
+    {
+        var manifestPath = Path.Combine(dir, Manifest);
+        if (!File.Exists(manifestPath))
+            throw new FileNotFoundException($"No {Manifest} in '{dir}', so it is not a finished character.", manifestPath);
+        return (manifestPath, JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject());
+    }
+
+    static void AddWarnings(JsonObject manifest, List<string> notes)
+    {
+        var warnings = manifest["warnings"] as JsonArray ?? [];
+        foreach (var n in notes) warnings.Add((JsonNode)n);
+        manifest["warnings"] = warnings;
     }
     #endregion
 
@@ -697,6 +842,12 @@ public static class CharacterBuilder
     public const string Manifest = "character.json";
     public const string MeshGlb = "mesh.glb";
     public const string RiggedGlb = "rigged.glb";
+    public const string RiggedSolverGlb = "rigged-solver.glb";
+    public const string UniRig = "unirig";
+    public const string Solver = "solver";
+
+    /// <summary>The rigs a character can have, UniRig's first: the default when both are built.</summary>
+    public static readonly string[] Rigs = [UniRig, Solver];
     public const string FaceObj = "face.obj";
     public const string FacePng = "face.png";
     public const string GarmentsJson = "garments.json";

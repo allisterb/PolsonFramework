@@ -79,6 +79,9 @@ public partial class DrawingMcpTools
         "a profile, is said there and nowhere else. It also checks whether anything hangs between the legs (a long coat, " +
         "a skirt): if so, it labels which of the body's vertices are garment, and garments.png shows the masks and the " +
         "labels so a bad reading is visible before anyone relies on it.\n\n" +
+        "IT RIGS TWO WAYS where it can: UniRig's rig (GPU machine) and the solver's (local, seconds). Both are kept because " +
+        "they fail differently; UniRig's is the default, and Character.load(name, { rig: 'solver' }) loads the other. " +
+        "Without the rig service it still builds, with the solver's alone. `rig` picks 'unirig' or 'solver' only.\n\n" +
         "GIVE IT THE FACE LARGE, TOO, if you can: `faceSheet` is a project path to a head sheet, a front then one or two " +
         "profiles, head and shoulders, which it splits the same way. The face is then built from the large front head " +
         "rather than from one cropped out of the full figure. Make it FIRST, " +
@@ -95,6 +98,7 @@ public partial class DrawingMcpTools
         [Description("Project path to the character's right side view.")] string? right = null,
         [Description("Project path to a profile view when you have one and no reason to say which side it shows. Not with `left` or `right`.")] string? side = null,
         [Description("Seed for the body reconstruction. The same views and seed give the same shape.")] int? seed = null,
+        [Description("Which rig to build: 'auto' (default) builds both where it can and loads with UniRig's, or the solver's when UniRig is not available; 'unirig' or 'solver' builds only that one. Character.load(name, { rig }) loads the other when both were built.")] string? rig = null,
         [Description("true to rebuild a character that already exists, replacing it. Default false, because a rebuild takes minutes.")] bool? replace = null,
         [Description("Seconds to hold the connection before handing back a jobId. Default 45.")] int? waitSeconds = null,
         [Description("false to start the build and return at once; collect it later with jobId. Default true.")] bool? wait = null,
@@ -136,12 +140,28 @@ public partial class DrawingMcpTools
                 if (!string.IsNullOrWhiteSpace(front) && !string.IsNullOrWhiteSpace(sheet))
                     return Refuse(response, "Both a sheet and separate views were given.",
                         "Pass one or the other: a sheet is split into views, so the two would disagree.");
-                if (CharacterReconstructor is not { } trellis || CharacterRigger is not { } rigger)
+                var rigChoice = string.IsNullOrWhiteSpace(rig) ? "auto" : rig.Trim().ToLowerInvariant();
+                if (rigChoice is not ("auto" or CharacterBuilder.UniRig or CharacterBuilder.Solver))
+                    return Refuse(response, $"'{rig}' is not a rig choice.", "Pass rig 'auto' (the default), 'unirig' or 'solver'.");
+
+                // Rigging: UniRig's needs the rig service, the solver's only the template and the body detector here.
+                var rigger = rigChoice == CharacterBuilder.Solver ? null : CharacterRigger;
+                var canSolve = rigChoice != CharacterBuilder.UniRig && SolverRig.Available;
+                if (CharacterReconstructor is not { } trellis || (rigger is null && !canSolve))
                     return Refuse(response,
                         "Character generation is not configured on this server: it needs "
-                        + (CharacterReconstructor is null ? "a reconstruction service (Trellis:BaseUrl)" : "")
-                        + (CharacterReconstructor is null && CharacterRigger is null ? " and " : "")
-                        + (CharacterRigger is null ? "a rig service (Characters:RigUrl)" : "") + ".",
+                        + string.Join(" and ", new[]
+                        {
+                            CharacterReconstructor is null ? "a reconstruction service (Trellis:BaseUrl)" : null,
+                            rigger is null && !canSolve
+                                ? rigChoice switch
+                                {
+                                    CharacterBuilder.UniRig => "a rig service (Characters:RigUrl)",
+                                    CharacterBuilder.Solver => $"the solver rig's {SolverRig.Missing}",
+                                    _ => $"a rig service (Characters:RigUrl) or the solver rig's {SolverRig.Missing}"
+                                }
+                                : null
+                        }.OfType<string>()) + ".",
                         "Tell the director. Meanwhile draw the character by construction: Drawing.createMannequinFigure and createHeadForFigure.");
 
                 var dir = ProjectPath.Resolve(ProjectRoot, $"{CharacterToolkit.Folder}/{name}", nameof(name), "Write");
@@ -174,9 +194,16 @@ public partial class DrawingMcpTools
                 if (!await trellis.IsReadyAsync(cancellationToken))
                     return Refuse(response, $"The reconstruction service at {trellis.InferUrl} is not ready.",
                         "Tell the director it needs starting. Do not retry in a loop.");
-                if (!await rigger.IsReadyAsync(cancellationToken))
-                    return Refuse(response, $"The rig service at {rigger.BaseUrl} is not ready (it may still be loading its models).",
-                        "Tell the director it needs starting, or wait a minute if it was just started.");
+                if (rigger is not null && !await rigger.IsReadyAsync(cancellationToken))
+                {
+                    if (!canSolve)
+                        return Refuse(response, $"The rig service at {rigger.BaseUrl} is not ready (it may still be loading its models).",
+                            rigChoice == CharacterBuilder.UniRig
+                                ? "Tell the director it needs starting, or wait a minute if it was just started; or build with rig 'solver'."
+                                : "Tell the director it needs starting, or wait a minute if it was just started.");
+                    response["note"] = $"The rig service at {rigger.BaseUrl} is not ready, so this build uses the solver rig alone.";
+                    rigger = null;
+                }
 
                 job = new CharacterJob { Id = "chr_" + Guid.NewGuid().ToString("N")[..12], Name = name };
                 CharacterJobs[job.Id] = job;
@@ -186,7 +213,7 @@ public partial class DrawingMcpTools
                     ["job"] = job.Id, ["name"] = name, ["views"] = string.Join(",", views.Keys),
                     ["expectSeconds"] = CharacterTypicalSeconds
                 });
-                job.Work = Task.Run(() => BuildCharacter(job, dir, views, order, seed ?? (int)TrellisClient.DefaultSeed, trellis, rigger, events));
+                job.Work = Task.Run(() => BuildCharacter(job, dir, views, order, seed ?? (int)TrellisClient.DefaultSeed, trellis, rigger, rigChoice, events));
             }
         }
 
@@ -242,7 +269,7 @@ public partial class DrawingMcpTools
     static readonly string[] ViewKeys = ["front", "back", "left", "right", "side"];
 
     static async Task BuildCharacter(CharacterJob job, string dir, Dictionary<string, string> views, string[]? order, int seed,
-                                     TrellisClient trellis, RigClient rigger, RunEventLog events)
+                                     TrellisClient trellis, RigClient? rigger, string rigChoice, RunEventLog events)
     {
         void Note(string note) { lock (job.Notes) job.Notes.Add(note); }
         async Task<T> Step<T>(string stage, Func<Task<T>> body)
@@ -337,25 +364,73 @@ public partial class DrawingMcpTools
                 return result.Bytes;
             });
 
-            // ── Body: rig ──────────────────────────────────────────────────────────────────────────
-            var rig = await Step("rig", async () =>
-            {
-                var result = await rigger.RigAsync(mesh);
-                if (!result.Success) throw new StageFailure($"Rigging failed: {result.Error}", result.Remedy);
-                File.WriteAllBytes(Path.Combine(staging, CharacterBuilder.RiggedGlb), result.Bytes);
-                if (result.WeightedJoints < result.Joints / 2)
-                    Note($"Only {result.WeightedJoints} of {result.Joints} joints carry weight; some bones will move nothing.");
-                return result;
-            });
+            // ── Body: rig, both ways where it can ──────────────────────────────────────────────────
+            // The solver rig runs locally in seconds; UniRig's needs the GPU machine. Both are kept, since they fail
+            // differently, and `rig` chooses which to build and which is the default.
+            SolverRigResult? solved = null;
+            if (rigChoice != CharacterBuilder.UniRig && SolverRig.Available)
+                solved = await Step("rig-solver", () =>
+                {
+                    var notes = new List<string>();
+                    try
+                    {
+                        var result = SolverRig.Rig(Path.Combine(staging, CharacterBuilder.MeshGlb), notes);
+                        File.WriteAllBytes(Path.Combine(staging, CharacterBuilder.RiggedSolverGlb), result.Glb);
+                        return Task.FromResult<SolverRigResult?>(result);
+                    }
+                    catch (InvalidOperationException ex) when (rigChoice != CharacterBuilder.Solver)
+                    {
+                        Note($"The solver rig could not be fitted, so the character has UniRig's alone: {ex.Message}");
+                        return Task.FromResult<SolverRigResult?>(null);
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        throw new StageFailure($"The solver rig could not be fitted: {ex.Message}",
+                            "Check the front view shows the whole figure clearly, arms clear of the body, or build with rig 'auto'.");
+                    }
+                    finally { notes.ForEach(Note); }
+                });
+            else if (rigChoice != CharacterBuilder.UniRig)
+                Note($"No solver rig here (missing {SolverRig.Missing}), so the character has UniRig's alone.");
 
-            // ── Joints: name them by body part ─────────────────────────────────────────────────────
-            var body = new MeshToolkit(staging).Load(CharacterBuilder.RiggedGlb);
-            var labels = await Step("joints", () => Task.FromResult(CharacterBuilder.LabelJoints(body)));
-            foreach (var w in labels.Warnings) Note(w);
-            if (labels.Render is { } render)
+            RigResult? rig = null;
+            if (rigChoice != CharacterBuilder.Solver && rigger is not null)
+                rig = await Step("rig", async () =>
+                {
+                    var result = await rigger.RigAsync(mesh);
+                    if (!result.Success)
+                    {
+                        if (rigChoice == CharacterBuilder.UniRig || solved is null)
+                            throw new StageFailure($"Rigging failed: {result.Error}", result.Remedy);
+                        Note($"UniRig's rigging failed, so the character has the solver rig alone: {result.Error}");
+                        return null;
+                    }
+                    File.WriteAllBytes(Path.Combine(staging, CharacterBuilder.RiggedGlb), result.Bytes);
+                    if (result.WeightedJoints < result.Joints / 2)
+                        Note($"Only {result.WeightedJoints} of {result.Joints} joints carry weight; some bones will move nothing.");
+                    return result;
+                });
+            if (rig is null && solved is null)
+                throw new StageFailure("Neither rig could be built.",
+                    $"The solver rig needs {SolverRig.Missing ?? "a front view it can fit"}; UniRig's needs the rig service. Tell the director.");
+            var defaultRig = rigChoice == CharacterBuilder.Solver || rig is null ? CharacterBuilder.Solver : CharacterBuilder.UniRig;
+
+            var bodies = new Dictionary<string, FaceMesh>();
+            if (rig is not null) bodies[CharacterBuilder.UniRig] = new MeshToolkit(staging).Load(CharacterBuilder.RiggedGlb);
+            if (solved is not null) bodies[CharacterBuilder.Solver] = new MeshToolkit(staging).Load(CharacterBuilder.RiggedSolverGlb);
+            var body = bodies[defaultRig];
+
+            // ── Joints: name UniRig's by body part; the solver's are the template's own ────────────
+            CharacterBuilder.JointLabels? labels = null;
+            if (bodies.TryGetValue(CharacterBuilder.UniRig, out var uniBody))
             {
-                using var png = render.Encode(SKEncodedImageFormat.Png, 90);
-                File.WriteAllBytes(Path.Combine(staging, "joints-render.png"), png.ToArray());
+                labels = await Step("joints", () => Task.FromResult(CharacterBuilder.LabelJoints(uniBody)));
+                foreach (var w in labels.Warnings) Note(w);
+                if (labels.Render is { } render)
+                {
+                    using var png = render.Encode(SKEncodedImageFormat.Png, 90);
+                    File.WriteAllBytes(Path.Combine(staging, "joints-render.png"), png.ToArray());
+                }
             }
 
             // ── Face: build from the views, find the body's own, record where it goes ─────────────
@@ -372,8 +447,9 @@ public partial class DrawingMcpTools
                             [.. new[] { "left", "right", "side" }.Where(images.ContainsKey).Select(k => (k, images[k]))], notes);
                     notes.ForEach(Note);
                     CharacterBuilder.SaveFace(face, staging);
+                    // Both rigs are the same surface in the same space, so one set of anchors serves both.
                     var anchors = body.FaceSheet().Anchors;
-                    body.WithFaceMesh(face, anchors);   // proves the transplant before the character is declared finished
+                    foreach (var b in bodies.Values) b.WithFaceMesh(face, anchors);   // proves the transplant before the character is declared finished
                     faceInfo = new JsonObject { ["source"] = face.Source, ["anchors"] = JsonNodeOf(anchors) };
                 }
                 catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -395,7 +471,7 @@ public partial class DrawingMcpTools
                 try
                 {
                     var notes = new List<string>();
-                    garments = CharacterBuilder.FindGarments(staging, images, body, notes);
+                    garments = CharacterBuilder.FindGarments(staging, images, bodies, notes);
                     notes.ForEach(Note);
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
@@ -411,19 +487,36 @@ public partial class DrawingMcpTools
                 ["name"] = job.Name,
                 ["built"] = DateTime.UtcNow.ToString("O"),
                 ["views"] = new JsonArray([.. images.Keys.Select(k => (JsonNode)$"view-{k}.png")]),
-                ["files"] = new JsonObject { ["mesh"] = CharacterBuilder.MeshGlb, ["rigged"] = CharacterBuilder.RiggedGlb, ["preview"] = "preview.png" },
-                ["joints"] = new JsonObject(labels.Map.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))),
-                ["jointError"] = new JsonObject(labels.Error.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)Math.Round(kv.Value, 3)))),
-                ["facing"] = labels.FrontSign >= 0 ? "+Z" : "-Z",
+                ["files"] = new JsonObject
+                {
+                    ["mesh"] = CharacterBuilder.MeshGlb,
+                    ["rigged"] = rig is null ? null : CharacterBuilder.RiggedGlb,
+                    ["riggedSolver"] = solved is null ? null : CharacterBuilder.RiggedSolverGlb,
+                    ["preview"] = "preview.png"
+                },
+                ["joints"] = labels is null ? null : new JsonObject(labels.Map.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))),
+                ["jointError"] = labels is null ? null : new JsonObject(labels.Error.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)Math.Round(kv.Value, 3)))),
+                ["facing"] = labels is null ? null : labels.FrontSign >= 0 ? "+Z" : "-Z",
                 ["face"] = faceInfo,
                 ["garments"] = garments,
                 ["rig"] = new JsonObject
                 {
-                    ["joints"] = rig.Joints, ["weightedJoints"] = rig.WeightedJoints, ["vertices"] = rig.Vertices,
-                    ["serviceMs"] = new JsonObject(rig.Timing.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value)))
+                    ["default"] = defaultRig,
+                    ["chosen"] = rigChoice,
+                    ["why"] = rigChoice != "auto" ? $"asked for {rigChoice}"
+                        : rig is null ? "UniRig's rig was not available, so the solver's is the default"
+                        : "UniRig's is the default when both are built; load the other with Character.load(name, { rig: 'solver' })",
+                    [CharacterBuilder.UniRig] = rig is null ? null : new JsonObject
+                    {
+                        ["joints"] = rig.Joints, ["weightedJoints"] = rig.WeightedJoints, ["vertices"] = rig.Vertices,
+                        ["serviceMs"] = new JsonObject(rig.Timing.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value)))
+                    },
+                    [CharacterBuilder.Solver] = solved is null ? null : CharacterBuilder.SolverRecord(solved)
                 },
                 ["seed"] = seed,
             };
+            foreach (var key in ((JsonObject)manifest["files"]!).Where(kv => kv.Value is null).Select(kv => kv.Key).ToList())
+                ((JsonObject)manifest["files"]!).Remove(key);
             lock (job.Notes) manifest["warnings"] = new JsonArray([.. job.Notes.Select(n => (JsonNode)n)]);
             File.WriteAllText(Path.Combine(staging, CharacterBuilder.Manifest), manifest.ToJsonString(new() { WriteIndented = true }));
 
@@ -441,7 +534,7 @@ public partial class DrawingMcpTools
             events.Append("character.completed", null, null, new Dictionary<string, object?>
             {
                 ["job"] = job.Id, ["name"] = job.Name, ["seconds"] = Math.Round(job.ElapsedSeconds),
-                ["joints"] = labels.Map.Count, ["face"] = faceInfo is not null,
+                ["rigs"] = string.Join(",", bodies.Keys), ["defaultRig"] = defaultRig, ["face"] = faceInfo is not null,
                 ["hangs"] = garments?["hangs"]?.GetValue<bool>(), ["warnings"] = job.Notes.Count
             });
         }

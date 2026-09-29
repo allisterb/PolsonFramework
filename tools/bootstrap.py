@@ -3,8 +3,8 @@
 Run it after cloning, and again after a pin or the lock changes. Three things a checkout does not carry, because
 they are binary, large, or someone else's to publish:
 
-  library  Mesh2Motion's stock bodies and CC0 pose clips (13 MB), from GitHub at a pinned commit, into
-           src/Polson.Drawing.Mesh/Library/, where the build copies them next to the assembly.
+  library  Mesh2Motion's stock bodies, CC0 pose clips and human rig template (13 MB), from GitHub at a pinned
+           commit, into src/Polson.Drawing.Mesh/Library/, where the build copies them next to the assembly.
   models   MediaPipe's face and pose landmarker weights (34 MB), from Google's model storage, into models/.
   venv     python-mediapipe/, the interpreter the face and body detectors run, installed from
            src/vision/requirements.lock.txt with --require-hashes. Needs Python 3.13, which the lock is for.
@@ -20,7 +20,8 @@ these are untrusted binary data read by native parsers (MediaPipe's TFLite loade
 fetch exactly the bytes that were checked and refuse anything else. Every hash below was taken from a copy
 checked against its source on 2026-09-26: the .glb files by git blob hash at the pinned commit through
 GitHub's API, the models by the MD5 Google's storage reports. The cloth checkpoint, added 2026-09-28, was
-checked against the SHA-256 Hugging Face's LFS store reports. A file already present with the right hash is
+checked against the SHA-256 Hugging Face's LFS store reports. The rig template, added 2026-09-29, was checked by
+git blob hash like the other .glb files. A file already present with the right hash is
 not fetched again; one present with the wrong hash is refused unless --force, since it may be somebody's own.
 
 Licences: the .glb files are CC0 (see src/Polson.Drawing.Mesh/Library/README.md); the MediaPipe code and
@@ -72,6 +73,9 @@ LIBRARY = [
      "406eb0a8dc4ab366e623b79b6e3005a4951392e1bda78ae39c1099d31147733c", 5656648),
     ("library", GITHUB + "animations/human-addon-animations.glb", "poses/human-addon-animations.glb",
      "a0d64d555e0d492026b72d58bf8e16c5e86779295f9093e376dcc001915c2c95", 5292804),
+    # The skeleton the solver rig fits into a reconstructed body (SolverRig): the one the clips were recorded on.
+    ("library", GITHUB + "rigs/rig-human.glb", "rigs/rig-human.glb",
+     "3f7ad51c9471458a920dbe373755c3a7223e3672bb572406fa7d2e65deb8f593", 21184),
 ]
 
 MODELS = [

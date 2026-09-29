@@ -34,8 +34,7 @@ public class SkeletonFitProbeTests : TestsRuntime
 
     static readonly string[] Names = (Environment.GetEnvironmentVariable("POLSON_RIGFIT_NAMES") ?? "tomas,kit,warden").Split(',');
 
-    static readonly string TemplatePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-        "..", "..", "..", "..", "..", "reference", "projects", "mesh2motion-app-main", "static", "rigs", "rig-human.glb"));
+    static readonly string TemplatePath = SolverRig.Template ?? "";
 
     readonly ITestOutputHelper output;
 
@@ -119,10 +118,8 @@ public class SkeletonFitProbeTests : TestsRuntime
             var fit = SkeletonFit.Fit(tk.Load("mesh.glb"), template);
             var report = new List<string>();
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var diffuse = int.TryParse(Environment.GetEnvironmentVariable("POLSON_RIGFIT_DIFFUSE"), out var dd) ? dd : 0;
-            var coat = Environment.GetEnvironmentVariable("POLSON_RIGFIT_COAT") == "1";
-            var withSkirt = Environment.GetEnvironmentVariable("POLSON_RIGFIT_SKIRT") == "1";
-            var (glb, skirt) = SkeletonFit.RigWithSkirt(Path.Combine(folder, "mesh.glb"), fit, template, withSkirt, armPlane: true, report, diffuse, coat);
+            var diffuse = int.TryParse(Environment.GetEnvironmentVariable("POLSON_RIGFIT_DIFFUSE"), out var dd) ? dd : 12;
+            var glb = SkeletonFit.Rig(Path.Combine(folder, "mesh.glb"), fit, template, armPlane: true, report, diffuse);
             File.WriteAllBytes(Path.Combine(dir, $"{name}-fit.glb"), glb);
             output.WriteLine($"\n{name}: rigged in {sw.ElapsedMilliseconds} ms ({glb.Length / 1e6:0.0} MB); {string.Join("; ", report)}");
             fit.Render?.Dispose();
@@ -130,14 +127,6 @@ public class SkeletonFitProbeTests : TestsRuntime
             var ours = new MeshToolkit(dir).Load($"{name}-fit.glb");
             Assert.True(ours.Posable);
             foreach (var (part, bone) in CharacterStock.Parts) ours.Rig!.Aliases[part] = bone;
-            if (skirt is not null) ours.Rig!.Driver = skirt.Drive;
-            if (skirt is not null)
-            {
-                // The rest pose must be left as it was: a driver that moves anything here moves it in every pose.
-                var still = ours.Pose(new Dictionary<string, object?>());
-                var drift = Enumerable.Range(0, ours.VertexCount).Max(i => Dist(still.Vertices[i], ours.Vertices[i]));
-                output.WriteLine($"  skirt at rest: largest vertex drift {drift / fit.Height:P2} of the height");
-            }
 
             var theirs = tk.Load("rigged.glb");
             using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "character.json")));
@@ -155,167 +144,10 @@ public class SkeletonFitProbeTests : TestsRuntime
                 output.WriteLine($"  {clip,-16} {am,14:P1} {ap,6:P0} {at2,6:P1}   {bm,12:P1} {bp,6:P0} {bt,6:P1}");
                 tiles.Add(Pair(a, b, clip));
             }
-            Save(Path.Combine(dir, $"{name}-poses-d{diffuse}{(coat ? "-coat" : "")}{(withSkirt ? "-skirt" : "")}.png"), tiles);
+            Save(Path.Combine(dir, $"{name}-poses-d{diffuse}.png"), tiles);
             foreach (var t in tiles) t.Dispose();
         }
         output.WriteLine($"\nposes and rigs in {dir}");
-    }
-
-    /// <summary>
-    /// Spike: the garment round the legs draped by Blender's cloth while the body moves from rest into a clip's pose.
-    /// The body rigged with the template (diffusion 12) is a collider; the garment is cloth pinned along its top.
-    /// </summary>
-    /// <remarks>
-    /// Runs only with <c>POLSON_CLOTH_OUT</c> set, and runs <c>src/blender/cloth_drape.py</c> unless
-    /// <c>POLSON_CLOTH_SCRIPT</c> names another. <c>POLSON_CLOTH_NAME</c>, <c>POLSON_CLOTH_CLIP</c>, <c>POLSON_CLOTH_AT</c>
-    /// and <c>POLSON_CLOTH_SETTINGS</c> (a JSON object passed to the script) vary it. <c>POLSON_CLOTH_MASK</c> names a
-    /// <c>src/vision/project_labels.py</c> result, whose <c>garment</c> label replaces the garment found round the legs.
-    /// </remarks>
-    [Fact]
-    public void DrapeTheCoatWithBlenderCloth()
-    {
-        var dir = Environment.GetEnvironmentVariable("POLSON_CLOTH_OUT");
-        var repo = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var script = Environment.GetEnvironmentVariable("POLSON_CLOTH_SCRIPT") ?? Path.Combine(repo, "src", "blender", "cloth_drape.py");
-        if (string.IsNullOrEmpty(dir) || !File.Exists(script) || BlenderDriver.Blender is null || !Directory.Exists(Project) || !File.Exists(TemplatePath))
-        { output.WriteLine("NOT RUN: set POLSON_CLOTH_OUT, with Blender, lastlight3 and the rig template on disk"); return; }
-        Directory.CreateDirectory(dir);
-        var name = Environment.GetEnvironmentVariable("POLSON_CLOTH_NAME") ?? "warden";
-        var clip = Environment.GetEnvironmentVariable("POLSON_CLOTH_CLIP") ?? "Sitting_Idle";
-        var at = double.TryParse(Environment.GetEnvironmentVariable("POLSON_CLOTH_AT"), System.Globalization.CultureInfo.InvariantCulture, out var a0) ? a0 : 0.5;
-        var settings = Environment.GetEnvironmentVariable("POLSON_CLOTH_SETTINGS") ?? "{}";
-        var tag = Environment.GetEnvironmentVariable("POLSON_CLOTH_TAG") ?? "";
-
-        var template = SkeletonFit.LoadTemplate(TemplatePath);
-        var folder = Path.Combine(Project, "characters", name);
-        var meshPath = Path.Combine(folder, "mesh.glb");
-        var fit = SkeletonFit.Fit(new MeshToolkit(folder).Load("mesh.glb"), template);
-        File.WriteAllBytes(Path.Combine(dir, $"{name}-cloth-rig.glb"), SkeletonFit.Rig(meshPath, fit, template, armPlane: true, null, diffuse: 12));
-        var (positions, _, garment) = SkeletonFit.FindGarment(meshPath, fit, template);
-        fit.Render?.Dispose();
-        Assert.True(garment is { Count: > 0 }, "no garment round the legs");
-
-        // A garment mask projected from the views' segmentation replaces the one found round the legs; the crotch
-        // found round the legs still sets where the pinned band ends. Only the part below it hangs free.
-        var mask = garment!.Mask;
-        if (Environment.GetEnvironmentVariable("POLSON_CLOTH_MASK") is { Length: > 0 } maskPath)
-        {
-            using var mj = JsonDocument.Parse(File.ReadAllText(maskPath));
-            var names = mj.RootElement.GetProperty("names").EnumerateArray().Select(e => e.GetString()).ToList();
-            var garmentLabel = names.IndexOf("garment");
-            Assert.True(garmentLabel > 0, $"{maskPath} has no 'garment' label; its labels are {string.Join(", ", names)}");
-            mask = [.. mj.RootElement.GetProperty("labels").EnumerateArray().Select(e => e.GetInt32() == garmentLabel)];
-            Assert.Equal(positions.Length, mask.Length);
-            output.WriteLine($"{name}: projected garment mask, {mask.Count(m => m)} vertices; round the legs: {garment.Count}");
-        }
-        var hanging = mask.Select((m, i) => m && positions[i].Y < garment.Top).ToArray();
-
-        var ours = new MeshToolkit(dir).Load($"{name}-cloth-rig.glb");
-        foreach (var (part, bone) in CharacterStock.Parts) ours.Rig!.Aliases[part] = bone;
-        Assert.Equal(positions.Length, ours.VertexCount);
-        var off = Enumerable.Range(0, positions.Length).Max(i => Dist(ours.Vertices[i], new SKPoint3(positions[i].X, positions[i].Y, positions[i].Z)));
-        Assert.True(off < 1e-3 * fit.Height, $"the loaded mesh and the garment's positions differ by {off}");
-
-        // Keys from rest to the pose: the retargeted angles and hip move scaled, so limbs swing rather than cut corners.
-        var kit = new CharacterToolkit(null);
-        var pose = kit.Retarget(ours, clip, new Dictionary<string, object?> { ["at"] = at });
-        var keys = new List<SKPoint3[]> { ours.Vertices };
-        foreach (var s in new[] { 0.2, 0.4, 0.6, 0.8 }) keys.Add(ours.Pose(Scaled(pose, s)).Vertices);
-        var posed = ours.Pose(pose);
-        keys.Add(posed.Vertices);
-
-        var input = Path.Combine(dir, $"{name}-cloth-in.json");
-        var result = Path.Combine(dir, $"{name}-cloth-out.json");
-        var idx = ours.Indices;
-        File.WriteAllText(input, JsonSerializer.Serialize(new
-        {
-            triangles = Enumerable.Range(0, idx.Length / 3).Select(t => new[] { (int)idx[t * 3], idx[(t * 3) + 1], idx[(t * 3) + 2] }),
-            mask,
-            top = garment.Top,
-            keys = keys.Select(k => k.Select(p => new[] { p.X, p.Y, p.Z })),
-            settings = JsonDocument.Parse(settings).RootElement
-        }));
-        output.WriteLine($"{name}: garment {garment.Count} vertices, top {garment.Top:0.000}, hem {garment.Hem:0.000}; {clip} at {at}");
-
-        if (script != BlenderDriver.ClothScript) BlenderDriver.ClothScriptOverride = script;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        using (var run = BlenderDriver.Drape(File.ReadAllText(input), Path.Combine(dir, $"{name}-cloth-run")))
-            File.WriteAllText(result, run.RootElement.GetRawText());
-        output.WriteLine($"  Blender ran in {sw.ElapsedMilliseconds} ms");
-
-        using var doc = JsonDocument.Parse(File.ReadAllText(result));
-        var draped = (SKPoint3[])posed.Vertices.Clone();
-        var ids = doc.RootElement.GetProperty("indices").EnumerateArray().Select(e => e.GetInt32()).ToArray();
-        var pts = doc.RootElement.GetProperty("positions").EnumerateArray().ToArray();
-        var moved = new List<double>();
-        for (var i = 0; i < ids.Length; i++)
-        {
-            var q = pts[i].EnumerateArray().Select(e => (float)e.GetDouble()).ToArray();
-            draped[ids[i]] = new SKPoint3(q[0], q[1], q[2]);
-            moved.Add(Dist(draped[ids[i]], posed.Vertices[ids[i]]) / fit.Height);
-        }
-        moved.Sort();
-        output.WriteLine($"  cloth against the rigged coat: mean {moved.Average():P1}, p95 {moved[(int)(0.95 * (moved.Count - 1))]:P1}, max {moved[^1]:P1} of the height");
-        var cloth = new FaceMesh(draped, posed.Uvs, posed.Indices, posed.HasUvs, posed.Source);
-        var (rm, rp) = GarmentStretch(ours, posed, hanging);
-        var (cm, cp) = GarmentStretch(ours, cloth, hanging);
-        output.WriteLine($"  hanging below the crotch: {hanging.Count(h => h)} vertices");
-        output.WriteLine($"  coat edge stretch: rigged mean {rm:P1} p95 {rp:P0}; cloth mean {cm:P1} p95 {cp:P0}");
-
-        var theirs = new MeshToolkit(folder).Load("rigged.glb");
-        using (var cj = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "character.json"))))
-            foreach (var p in cj.RootElement.GetProperty("joints").EnumerateObject()) theirs.Rig!.Aliases[p.Name] = p.Value.GetString()!;
-        var uni = theirs.Pose(kit.Retarget(theirs, clip, new Dictionary<string, object?> { ["at"] = at }));
-
-        var tiles = new[] { 30f, 90f, -30f }.Select(yaw => Row([(posed, "rigged"), (cloth, "rigged + Blender cloth"), (uni, "UniRig")], yaw, $"{clip} at {at}, yaw {yaw}")).ToList();
-        Save(Path.Combine(dir, $"{name}-cloth-{clip}{tag}.png"), tiles);
-        foreach (var t in tiles) t.Dispose();
-        output.WriteLine($"  drawings in {dir}");
-    }
-
-    /// <summary>Edge stretch over the garment's own edges: mean and 95th percentile of |posed/rest - 1|.</summary>
-    static (double Mean, double P95) GarmentStretch(FaceMesh rest, FaceMesh posed, bool[] mask)
-    {
-        var idx = rest.Indices;
-        var d = new List<double>();
-        for (var i = 0; i < idx.Length; i += 3)
-            foreach (var (u, v) in new[] { (idx[i], idx[i + 1]), (idx[i + 1], idx[i + 2]), (idx[i + 2], idx[i]) })
-            {
-                if (!mask[u] || !mask[v]) continue;
-                var r0 = Dist(rest.Vertices[u], rest.Vertices[v]);
-                if (r0 > 1e-6) d.Add(Math.Abs((Dist(posed.Vertices[u], posed.Vertices[v]) / r0) - 1));
-            }
-        d.Sort();
-        return (d.Average(), d[(int)(0.95 * (d.Count - 1))]);
-    }
-
-    /// <summary>A retargeted pose with every angle and the hip move scaled by <paramref name="s"/>.</summary>
-    static Dictionary<string, object?> Scaled(Dictionary<string, object?> pose, double s) =>
-        pose.ToDictionary(kv => kv.Key, kv => kv.Value switch
-        {
-            Dictionary<string, object?> inner => (object?)Scaled(inner, s),
-            float f => (object?)(float)(f * s),
-            double d => (object?)(d * s),
-            _ => kv.Value
-        }, StringComparer.Ordinal);
-
-    /// <summary>Meshes side by side as clay at one yaw, labelled.</summary>
-    static SKBitmap Row((FaceMesh Mesh, string Label)[] meshes, float yaw, string title)
-    {
-        const int W = 440, H = 620;
-        var canvas = new SkiaCanvas(W * meshes.Length, H);
-        var ctx = canvas.GetContext("2d");
-        ctx.FillStyle = "#f4f1ea";
-        ctx.FillRect(0, 0, W * meshes.Length, H);
-        var mt = new MeshToolkit();
-        ctx.Font = "16px sans-serif";
-        for (var i = 0; i < meshes.Length; i++)
-        {
-            mt.Draw(ctx, meshes[i].Mesh, new Dictionary<string, object?> { ["x"] = (W * i) + (W / 2), ["y"] = H / 2 + 10, ["scale"] = H * 0.78, ["yawDeg"] = yaw, ["clay"] = true });
-            ctx.FillStyle = "#333333";
-            ctx.FillText(i == 0 ? $"{title} — {meshes[i].Label}" : meshes[i].Label, (W * i) + 12, 22);
-        }
-        return canvas.Bitmap.Bitmap.Copy();
     }
 
     /// <summary>Edge stretch between rest and posed: mean and 95th percentile of |posed/rest - 1|, and the share torn (over 1.5x or under 2/3).</summary>

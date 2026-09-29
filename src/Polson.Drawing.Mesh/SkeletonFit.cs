@@ -8,7 +8,7 @@ using SharpGLTF.Schema2;
 using SkiaSharp;
 
 /// <summary>
-/// <b>Prototype.</b> Places Mesh2Motion's human rig template (<c>rig-human.glb</c>, the skeleton the pose clips were
+/// Places Mesh2Motion's human rig template (<c>rig-human.glb</c>, the skeleton the pose clips were
 /// recorded on) inside an unrigged body, from the body's detected landmarks and its own cross-sections.
 /// </summary>
 /// <remarks>
@@ -16,7 +16,7 @@ using SkiaSharp;
 /// <b>What it is for.</b> The character pipeline rigs a reconstructed body with UniRig, which needs a GPU server and
 /// invents a new skeleton per mesh with anonymous bones, so the builder then has to guess which bone is which limb
 /// and every clip is retargeted across two different skeletons. Fitting one known skeleton instead makes the names
-/// given and the clips native. Skinning is the other half and is not here yet.
+/// given and the clips native. <see cref="Rig"/> skins the body to it; <see cref="SolverRig"/> is the entry point.
 /// </para>
 /// <para>
 /// <b>How.</b> The body is rendered from the front and <see cref="BodyDetector"/> gives the joints across the picture:
@@ -268,63 +268,28 @@ internal static class SkeletonFit
     /// Weights are solved against the mesh as the file places it (its node's world transform applied), and each
     /// inverse bind carries that transform, since a skinned mesh's own node transform is ignored in glTF.
     /// </remarks>
-    internal static byte[] Rig(string meshPath, Result fit, Template t, bool armPlane = true, List<string>? report = null, int diffuse = 0, bool coat = false) =>
-        RigWithSkirt(meshPath, fit, t, skirt: false, armPlane, report, diffuse, coat).Glb;
-
-    /// <summary>
-    /// As <see cref="Rig"/>, and with <paramref name="skirt"/>, a coat or skirt found round the legs gets bones of its
-    /// own: <see cref="SkirtChains"/> chains hanging from the pelvis, its vertices weighted to them, and a
-    /// <see cref="Skirt"/> to drive them from the legs at every pose. Null when no garment was found.
-    /// </summary>
-    internal static (byte[] Glb, Skirt? Skirt) RigWithSkirt(string meshPath, Result fit, Template t, bool skirt, bool armPlane = true,
-        List<string>? report = null, int diffuse = 0, bool coat = false)
+    internal static byte[] Rig(string meshPath, Result fit, Template t, bool armPlane = true, List<string>? report = null, int diffuse = 0)
     {
         var model = ModelRoot.Load(meshPath);
         var scene = model.DefaultScene;
         var order = TopDown(t).ToList();
-        var at = new Dictionary<string, Vector3>(fit.Joints, StringComparer.Ordinal);
-        var turn = new Dictionary<string, Quaternion>(fit.Rotations, StringComparer.Ordinal);
-        var parent = new Dictionary<string, string>(t.Parent, StringComparer.Ordinal);
-        var children = t.Children.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.Ordinal);
-        SkinWeights.Bone BoneOf(string b) => new(b, parent.GetValueOrDefault(b), at[b], children[b].FirstOrDefault(), children[b].Count > 0);
-
-        var meshNodes = model.LogicalNodes.Where(nd => nd.Mesh is not null).ToList();
-        (Vector3[] Positions, List<(int A, int B, int C)> Tris) Read(Node node, MeshPrimitive prim)
-        {
-            var place = node.WorldMatrix;
-            return ([.. prim.GetVertexAccessor("POSITION").AsVector3Array().Select(v => Vector3.Transform(v, place))], [.. prim.GetTriangleIndices()]);
-        }
-
-        // The skirt, found on the first primitive with a first pass of the plain weights, then built as bones.
-        Skirt? drive = null;
-        SkinWeights.Garment? garment = null;
-        if (skirt && meshNodes.Count > 0)
-        {
-            var (positions, tris) = Read(meshNodes[0], meshNodes[0].Mesh.Primitives[0]);
-            var plain = order.Select(BoneOf).ToList();
-            var (first, _) = SkinWeights.Solve(plain, positions, tris, armPlane);
-            garment = SkinWeights.FindGarment(plain, positions, tris, first);
-            if (garment is { Count: > 0 } g && BuildSkirt(g, positions, fit, at, turn, parent, children, report) is { } built)
-            {
-                drive = built;
-                order.AddRange(built.Chains.SelectMany(c => c));
-            }
-            else report?.Add("skirt: no garment round the legs, so no skirt bones");
-        }
-
+        var at = fit.Joints;
+        var turn = fit.Rotations;
         Matrix4x4 World(string b) => Matrix4x4.CreateFromQuaternion(turn[b]) with { Translation = at[b] };
+
         var nodes = new Dictionary<string, Node>(StringComparer.Ordinal);
         foreach (var b in order)
         {
-            var node = parent.TryGetValue(b, out var p) ? nodes[p].CreateNode(b) : scene.CreateNode(b);
-            var parentWorld = parent.TryGetValue(b, out var pp) ? World(pp) : Matrix4x4.Identity;
+            var node = t.Parent.TryGetValue(b, out var p) ? nodes[p].CreateNode(b) : scene.CreateNode(b);
+            var parentWorld = t.Parent.TryGetValue(b, out var pp) ? World(pp) : Matrix4x4.Identity;
             Matrix4x4.Invert(parentWorld, out var toParent);
             node.LocalMatrix = World(b) * toParent;
             nodes[b] = node;
         }
-        var bones = order.Select(BoneOf).ToList();
+        var bones = order.Select(b => new SkinWeights.Bone(b, t.Parent.GetValueOrDefault(b), at[b], t.Children[b].FirstOrDefault(),
+                                                           t.Children[b].Count > 0)).ToList();
 
-        foreach (var meshNode in meshNodes)
+        foreach (var meshNode in model.LogicalNodes.Where(nd => nd.Mesh is not null).ToList())
         {
             var place = meshNode.WorldMatrix;
             var skin = model.CreateSkin();
@@ -336,10 +301,10 @@ internal static class SkeletonFit
 
             foreach (var prim in meshNode.Mesh.Primitives)
             {
-                var (positions, tris) = Read(meshNode, prim);
+                Vector3[] positions = [.. prim.GetVertexAccessor("POSITION").AsVector3Array().Select(v => Vector3.Transform(v, place))];
+                List<(int A, int B, int C)> tris = [.. prim.GetTriangleIndices()];
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                Action<int[], float[]>? toChains = drive is null ? null : (jj, ww) => drive.Weigh(bones, positions, tris, jj, ww, report);
-                var (joints, weights) = SkinWeights.Solve(bones, positions, tris, armPlane, diffuse: diffuse, coat: coat, report: report, garment: toChains);
+                var (joints, weights) = SkinWeights.Solve(bones, positions, tris, armPlane, diffuse: diffuse);
                 report?.Add($"{positions.Length} vertices, {tris.Count} triangles weighted in {sw.ElapsedMilliseconds} ms");
 
                 var jb = new byte[joints.Length * 2];
@@ -356,297 +321,13 @@ internal static class SkeletonFit
                 wa.SetData(model.UseBufferView(wb, 0, null, 0, BufferMode.ARRAY_BUFFER), 0, positions.Length,
                            DimensionType.VEC4, EncodingType.FLOAT, false);
                 prim.SetVertexAccessor("WEIGHTS_0", wa);
-
-                if (report is not null)
-                {
-                    var byBone = new int[order.Count];
-                    for (var i = 0; i < positions.Length; i++) byBone[joints[i * 4]]++;
-                    var blended = Enumerable.Range(0, positions.Length).Count(i => weights[(i * 4) + 1] > 0f);
-                    report.Add($"blended {blended} ({blended / (float)positions.Length:P0}); bones owning vertices: "
-                             + string.Join(", ", Enumerable.Range(0, order.Count).Where(b => byBone[b] > 0)
-                                 .OrderByDescending(b => byBone[b]).Take(12).Select(b => $"{order[b]} {byBone[b]}")));
-                }
             }
             meshNode.Skin = skin;
         }
 
         using var stream = new System.IO.MemoryStream();
         model.WriteGLB(stream);
-        return (stream.ToArray(), drive);
-    }
-
-    /// <summary>
-    /// The garment round the legs of a body's first primitive, found from a first pass of the plain weights, with
-    /// the positions and triangles it indexes (the node's world transform applied, as <see cref="Rig"/> reads them).
-    /// </summary>
-    internal static (Vector3[] Positions, List<(int A, int B, int C)> Triangles, SkinWeights.Garment? Garment) FindGarment(
-        string meshPath, Result fit, Template t, bool armPlane = true)
-    {
-        var model = ModelRoot.Load(meshPath);
-        var node = model.LogicalNodes.First(nd => nd.Mesh is not null);
-        var prim = node.Mesh.Primitives[0];
-        var place = node.WorldMatrix;
-        Vector3[] positions = [.. prim.GetVertexAccessor("POSITION").AsVector3Array().Select(v => Vector3.Transform(v, place))];
-        List<(int A, int B, int C)> tris = [.. prim.GetTriangleIndices()];
-        var parent = new Dictionary<string, string>(t.Parent, StringComparer.Ordinal);
-        var bones = TopDown(t).Select(b => new SkinWeights.Bone(b, parent.GetValueOrDefault(b), fit.Joints[b],
-            t.Children[b].FirstOrDefault(), t.Children[b].Count > 0)).ToList();
-        var (first, _) = SkinWeights.Solve(bones, positions, tris, armPlane);
-        return (positions, tris, SkinWeights.FindGarment(bones, positions, tris, first));
-    }
-
-    /// <summary>How many chains hang round the hips.</summary>
-    internal const int SkirtChains = 8;
-
-    /// <summary>
-    /// Builds the skirt: <see cref="SkirtChains"/> chains of two bones each, spaced round the hips from the pelvis's
-    /// centre, running down the garment's own surface from the crotch to the hem.
-    /// </summary>
-    static Skirt? BuildSkirt(SkinWeights.Garment g, Vector3[] positions, Result fit, Dictionary<string, Vector3> at,
-        Dictionary<string, Quaternion> turn, Dictionary<string, string> parent, Dictionary<string, List<string>> children, List<string>? report)
-    {
-        var centre = fit.Joints["pelvis"];
-        var y0 = positions.Min(p => p.Y);
-        var height = positions.Max(p => p.Y) - y0;
-        var cloth = Enumerable.Range(0, positions.Length).Where(i => g.Mask[i]).Select(i => positions[i]).ToList();
-        float Angle(Vector3 p) => (MathF.Atan2(p.X - centre.X, p.Z - centre.Z) + (2f * MathF.PI)) % (2f * MathF.PI);
-        float Gap(float a, float b) => MathF.Min(MathF.Abs(a - b), (2f * MathF.PI) - MathF.Abs(a - b));
-
-        var skirt = new Skirt { Gravity = 0.5f };
-        // From the top of the cloth actually found, which on an open coat can sit below the crotch line.
-        var clothTop = MathF.Min(g.Top, cloth.Max(p => p.Y));
-        float[] heights = [clothTop, (clothTop + g.Hem) / 2f, g.Hem];
-        var radius = new float?[SkirtChains, heights.Length];
-        for (var k = 0; k < SkirtChains; k++)
-            for (var h = 0; h < heights.Length; h++)
-            {
-                var theta = 2f * MathF.PI * k / SkirtChains;
-                foreach (var (band, spread) in new[] { (0.03f, 1f), (0.06f, 1.5f) })
-                {
-                    var near = cloth.Where(p => MathF.Abs(p.Y - heights[h]) < band * height && Gap(Angle(p), theta) < spread * MathF.PI / SkirtChains).ToList();
-                    if (near.Count == 0) continue;
-                    radius[k, h] = near.Average(p => MathF.Sqrt(((p.X - centre.X) * (p.X - centre.X)) + ((p.Z - centre.Z) * (p.Z - centre.Z))));
-                    break;
-                }
-            }
-
-        // A chain with no cloth at a height (Tomas's coat is open at the front) takes the nearest chains' radius there.
-        var filled = 0;
-        for (var h = 0; h < heights.Length; h++)
-        {
-            var known = Enumerable.Range(0, SkirtChains).Where(k => radius[k, h] is not null).ToList();
-            if (known.Count == 0) { report?.Add($"skirt: no cloth at {(heights[h] - y0) / height:P0} of the height"); return null; }
-            for (var k = 0; k < SkirtChains; k++)
-                if (radius[k, h] is null)
-                {
-                    int Steps(int other) => Math.Min((k - other + SkirtChains) % SkirtChains, (other - k + SkirtChains) % SkirtChains);
-                    var nearest = known.Min(Steps);
-                    radius[k, h] = known.Where(o => Steps(o) == nearest).Average(o => radius[o, h]!.Value);
-                    filled++;
-                }
-        }
-        if (filled > 0) report?.Add($"skirt: {filled} chain joints had no cloth nearby and took their neighbours' radius");
-
-        for (var k = 0; k < SkirtChains; k++)
-        {
-            var theta = 2f * MathF.PI * k / SkirtChains;
-            var dir = new Vector3(MathF.Sin(theta), 0f, MathF.Cos(theta));
-            var joints = new List<Vector3>();
-            for (var h = 0; h < heights.Length; h++)
-                joints.Add(new Vector3(centre.X + (dir.X * radius[k, h]!.Value * 0.9f), heights[h], centre.Z + (dir.Z * radius[k, h]!.Value * 0.9f)));
-
-            string[] names = [$"skirt_{k}_0", $"skirt_{k}_1", $"skirt_{k}_2"];
-            for (var j = 0; j < 3; j++)
-            {
-                at[names[j]] = joints[j];
-                var along = j < 2 ? joints[j + 1] - joints[j] : joints[j] - joints[j - 1];
-                turn[names[j]] = PoseRetarget.FromTo(Vector3.UnitY, Vector3.Normalize(along));
-                parent[names[j]] = j == 0 ? "pelvis" : names[j - 1];
-                children[names[j]] = j < 2 ? [names[j + 1]] : [];
-            }
-            skirt.Chains.Add(names);
-        }
-
-        // Legs as capsules, and how clear of each one each chain bone is at rest: a pose only has to keep a bone as
-        // clear as it was, up to the leg's radius, since a chain starts right beside the hip joint.
-        var r0 = MathF.Max(g.LegRadius, 0.02f * height);
-        foreach (var sfx in new[] { "_l", "_r" })
-        {
-            skirt.Legs.Add(("thigh" + sfx, "calf" + sfx, 1.1f * r0));
-            skirt.Legs.Add(("calf" + sfx, "foot" + sfx, 0.9f * r0));
-        }
-        skirt.Margin = 0.15f * r0;
-        var pelvisTurn = turn["pelvis"];
-        foreach (var chain in skirt.Chains)
-            for (var j = 0; j < 2; j++)
-            {
-                var (a, b) = (at[chain[j]], at[chain[j + 1]]);
-                skirt.Rest[chain[j]] = (Vector3.Transform(Vector3.Normalize(b - a), Quaternion.Inverse(pelvisTurn)), Vector3.Normalize(b - a), (b - a).Length());
-                for (var l = 0; l < skirt.Legs.Count; l++)
-                {
-                    var leg = skirt.Legs[l];
-                    var free = Skirt.Distance(a, b, at[leg.From], at[leg.To]);
-                    skirt.Clearance[(chain[j], l)] = MathF.Min(leg.Radius + skirt.Margin, 0.95f * free);
-                }
-            }
-        skirt.Centre = centre;
-        skirt.Top = clothTop;
-        skirt.Hem = g.Hem;
-        report?.Add($"skirt: {SkirtChains} chains from {(clothTop - y0) / height:P0} to {(g.Hem - y0) / height:P0} of the height, legs {r0 / height:P1} thick");
-        return skirt;
-    }
-
-    /// <summary>
-    /// <b>Prototype.</b> A coat or skirt's own bones, and how to drive them: each chain hangs between the pelvis's lean
-    /// and straight down, and swings outward just far enough to keep clear of a leg that would pass through it.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Why bones and not weights.</b> Weighted to the legs and pelvis, a coat can only be dragged by a leg or
-    /// stretched between two; neither is hanging. Games animate long coats this way, without cloth simulation:
-    /// bones of the garment's own, set every frame from the legs. Deterministic, so a pose gives the same coat every
-    /// time; and a coat made of two unjoined halves has one chain down its seam, so the halves move together.
-    /// </para>
-    /// <para>
-    /// It is stiff panels, not cloth: nothing sways, folds or bunches, and a pose extreme enough can still push a leg
-    /// through.
-    /// </para>
-    /// </remarks>
-    internal sealed class Skirt
-    {
-        public List<string[]> Chains { get; } = [];
-        public List<(string From, string To, float Radius)> Legs { get; } = [];
-        public Dictionary<string, (Vector3 InPelvis, Vector3 InWorld, float Length)> Rest { get; } = new(StringComparer.Ordinal);
-        public Dictionary<(string Bone, int Leg), float> Clearance { get; } = [];
-
-        /// <summary>0 turns each chain with the pelvis, 1 keeps it hanging as it hangs at rest, whatever the hips do.</summary>
-        public float Gravity { get; set; } = 0.5f;
-        public float Margin { get; set; }
-        public Vector3 Centre { get; set; }
-        public float Top { get; set; }
-        public float Hem { get; set; }
-        public string Pelvis { get; init; } = "pelvis";
-
-        /// <summary>Weights the garment's vertices to the chains: by angle round the hips, by height down the chain.</summary>
-        internal void Weigh(IReadOnlyList<SkinWeights.Bone> bones, IReadOnlyList<Vector3> positions,
-            IReadOnlyList<(int A, int B, int C)> triangles, int[] joints, float[] weights, List<string>? report)
-        {
-            if (SkinWeights.FindGarment(bones, positions, triangles, joints) is not { Count: > 0 } g) return;
-            var index = bones.Select((b, i) => (b.Name, i)).ToDictionary(x => x.Name, x => x.i, StringComparer.Ordinal);
-            var pelvis = index[Pelvis];
-            var n = Chains.Count;
-            for (var i = 0; i < positions.Count; i++)
-            {
-                if (!g.Mask[i]) continue;
-                var p = positions[i];
-                var phi = (MathF.Atan2(p.X - Centre.X, p.Z - Centre.Z) + (2f * MathF.PI)) % (2f * MathF.PI);
-                var f = phi / (2f * MathF.PI / n);
-                var k0 = (int)MathF.Floor(f) % n;
-                var a = f - MathF.Floor(f);
-                var k1 = (k0 + 1) % n;
-                var t = Math.Clamp((Top - p.Y) / MathF.Max(1e-6f, Top - Hem), 0f, 1f);
-                var b1 = Math.Clamp(((2f * t) - 0.75f) / 0.5f, 0f, 1f);
-                var ps = t < 0.15f ? 1f - (t / 0.15f) : 0f;
-                var mix = new List<(int Bone, float W)>
-                {
-                    (index[Chains[k0][0]], (1f - a) * (1f - ps) * (1f - b1)), (index[Chains[k0][1]], (1f - a) * (1f - ps) * b1),
-                    (index[Chains[k1][0]], a * (1f - ps) * (1f - b1)), (index[Chains[k1][1]], a * (1f - ps) * b1), (pelvis, ps),
-                };
-                var top = mix.Where(m => m.W > 0f).OrderByDescending(m => m.W).Take(4).ToList();
-                var sum = top.Sum(m => m.W);
-                var o = i * 4;
-                for (var q = 0; q < 4; q++)
-                {
-                    joints[o + q] = q < top.Count ? top[q].Bone : 0;
-                    weights[o + q] = q < top.Count ? top[q].W / sum : 0f;
-                }
-            }
-            report?.Add($"skirt: {g.Count} garment vertices weighted to the chains");
-        }
-
-        /// <summary>Sets every chain bone for the pose the rig is in. Installed as <c>MeshRig.Driver</c>.</summary>
-        internal void Drive(MeshRig rig)
-        {
-            var pelvis = rig.EvaluatedMatrix(Pelvis);
-            var lean = PoseRetarget.Rot(pelvis);
-            var hub = pelvis.Translation;
-            var legs = Legs.Select(l => (A: rig.EvaluatedAt(l.From), B: rig.EvaluatedAt(l.To))).ToList();
-            foreach (var chain in Chains)
-            {
-                // The upper bone's swing, carried into the lower one so a panel stays straight unless a leg bends it.
-                var carried = Quaternion.Identity;
-                for (var j = 0; j < 2; j++)
-                {
-                    var bone = chain[j];
-                    var start = rig.EvaluatedAt(bone);
-                    var (inPelvis, inWorld, length) = Rest[bone];
-                    var follow = j == 0 ? Vector3.Transform(inPelvis, lean) : Vector3.Transform(inWorld, carried);
-                    var d = Vector3.Normalize(Vector3.Lerp(follow, inWorld, Gravity));
-                    var outward = start - hub;
-                    outward.Y = 0f;
-                    outward = outward.LengthSquared() > 1e-10f ? Vector3.Normalize(outward) : Vector3.Transform(Vector3.UnitZ, lean);
-                    d = Clear(bone, start, d, length, outward, legs);
-                    Aim(rig, bone, chain[j + 1], d);
-                    carried = PoseRetarget.FromTo(inWorld, d);
-                }
-            }
-        }
-
-        /// <summary>The direction nearest <paramref name="d"/>, swung toward <paramref name="outward"/>, that keeps the bone clear of every leg.</summary>
-        Vector3 Clear(string bone, Vector3 start, Vector3 d, float length, Vector3 outward, List<(Vector3 A, Vector3 B)> legs)
-        {
-            var axis = Vector3.Cross(d, outward);
-            if (axis.LengthSquared() < 1e-10f) return d;
-            axis = Vector3.Normalize(axis);
-            var tried = d;
-            for (var deg = 0; deg <= 100; deg += 2)
-            {
-                tried = Vector3.Transform(d, Quaternion.CreateFromAxisAngle(axis, deg * MathF.PI / 180f));
-                var end = start + (tried * length);
-                var clear = true;
-                for (var l = 0; l < legs.Count && clear; l++)
-                    clear = Distance(start, end, legs[l].A, legs[l].B) >= Clearance[(bone, l)];
-                if (clear) return tried;
-            }
-            return tried;
-        }
-
-        /// <summary>Turns a bone about its own joint so it points along <paramref name="d"/>.</summary>
-        static void Aim(MeshRig rig, string bone, string child, Vector3 d)
-        {
-            var world = rig.EvaluatedMatrix(bone);
-            var at = world.Translation;
-            var now = Vector3.Normalize(rig.EvaluatedAt(child) - at);
-            var q = PoseRetarget.FromTo(now, d);
-            var turned = world * Matrix4x4.CreateTranslation(-at) * Matrix4x4.CreateFromQuaternion(q) * Matrix4x4.CreateTranslation(at);
-            Matrix4x4.Invert(rig.EvaluatedMatrix(rig.JointParent[bone]), out var toParent);
-            rig.SetLocal(bone, turned * toParent);
-        }
-
-        /// <summary>The least distance between two segments.</summary>
-        internal static float Distance(Vector3 p1, Vector3 q1, Vector3 p2, Vector3 q2)
-        {
-            Vector3 d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
-            float a = Vector3.Dot(d1, d1), e = Vector3.Dot(d2, d2), f = Vector3.Dot(d2, r);
-            float s, t;
-            if (a <= 1e-12f && e <= 1e-12f) return r.Length();
-            if (a <= 1e-12f) { s = 0f; t = Math.Clamp(f / e, 0f, 1f); }
-            else
-            {
-                var c = Vector3.Dot(d1, r);
-                if (e <= 1e-12f) { t = 0f; s = Math.Clamp(-c / a, 0f, 1f); }
-                else
-                {
-                    var b = Vector3.Dot(d1, d2);
-                    var denom = (a * e) - (b * b);
-                    s = denom > 1e-12f ? Math.Clamp(((b * f) - (c * e)) / denom, 0f, 1f) : 0f;
-                    t = ((b * s) + f) / e;
-                    if (t < 0f) { t = 0f; s = Math.Clamp(-c / a, 0f, 1f); }
-                    else if (t > 1f) { t = 1f; s = Math.Clamp((b - c) / a, 0f, 1f); }
-                }
-            }
-            return ((p1 + (d1 * s)) - (p2 + (d2 * t))).Length();
-        }
+        return stream.ToArray();
     }
     #endregion
 

@@ -795,6 +795,12 @@ detecting the body in a render of it — so `head`, `leftForearm` and `rightThig
 on every character, where a rigger's own names (`bone_5`, `bone_27`) mean nothing. The face is built
 from the views' heads and transplanted as §7h describes.
 
+**It is rigged two ways where it can**, and both are kept: UniRig's rig, made on the GPU machine, and the
+solver's, which fits the skeleton the pose clips were recorded on into the body and weights it locally in a
+few seconds. They fail differently — UniRig's long garments move as rigid slabs, the solver's seams stretch
+more — so `Character.load(name, { rig: 'solver' })` or `{ rig: 'unirig' }` loads the one that is not the
+default. UniRig's is the default when both are built; a build without the rig service has the solver's alone.
+
 **Make the views in one call** — `Assets.cutout` with front, back, left and right `variants` — and
 lay the cells side by side on one canvas with a clear gap between them: that is the sheet. Four
 separate generations give four different people. **Stand the figure in an A-pose, arms clear of the
@@ -876,13 +882,18 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 >
 > 1. **Pose the built character and look at it** at the panel's own angle and size. Most poses and most
 >    garments read correctly as rigged, and a garment fault that doesn't show at panel size is not a fault.
-> 2. **If a long coat, skirt or robe reads wrongly**, which it usually will sitting, crouching or in a
->    wide stride, `Character.drape` it in its own script and look again. For a character in trousers or a
->    short jacket, skip this step: nothing hangs, and `drape` will say so.
-> 3. **If it still reads wrongly, stop tuning the mesh.** Either use the posed body as a clay guide for
+> 2. **If a garment reads wrongly, load the other rig** — `Character.load(name, { rig: 'solver' })`, or
+>    `'unirig'` if the solver's is the default — pose it the same way and look again. It costs nothing but
+>    a load. Measured on lastlight3, the solver's rig let the warden's long coat fall over her lap sitting
+>    and hang straight walking, where UniRig's held it out as a slab.
+> 3. **If a long coat, skirt or robe still reads wrongly**, which it can sitting, crouching or in a wide
+>    stride, `Character.drape` it in its own script and look again, on UniRig's rig: draped, the solver
+>    rig's coats crumpled into spikes. For a character in trousers or a short jacket, skip this step:
+>    nothing hangs, and `drape` will say so.
+> 4. **If it still reads wrongly, stop tuning the mesh.** Either use the posed body as a clay guide for
 >    `Assets.redraw` (Manual 16), where the image model draws the garment from the character's sheet, so
 >    the guide only has to carry the pose and the rough silhouette, or draw that garment by construction
 >    over the posed body (Manual 22 for the folds).
-> 4. **With no built character**, because no GPU is available for the build or there is no time for one,
->    use a stock body, reshaped with `mesh.proportion` where the build is far from the stock one, as the
->    clay guide for step 3. Its garments come entirely from the sheet.
+> 5. **With no built character**, because there is no time for a build or no reconstruction service, use a
+>    stock body, reshaped with `mesh.proportion` where the build is far from the stock one, as the clay
+>    guide for step 4. Its garments come entirely from the sheet.

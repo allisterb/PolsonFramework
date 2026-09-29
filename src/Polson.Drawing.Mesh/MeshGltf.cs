@@ -299,15 +299,6 @@ internal sealed class MeshRig
     /// <summary>A bone's model-space transform as last evaluated, for measuring which way it faces.</summary>
     internal Matrix4x4 EvaluatedMatrix(string handle) => nodes[handle].ModelMatrix;
 
-    /// <summary>Sets a bone's transform relative to its parent, for a <see cref="Driver"/>.</summary>
-    internal void SetLocal(string handle, Matrix4x4 local) => nodes[handle].LocalMatrix = local;
-
-    /// <summary>
-    /// <b>Prototype.</b> Runs after a pose's rotations are applied and before the mesh is captured, to set bones the pose
-    /// does not name from the ones it does: skirt bones kept clear of the legs. Every pose runs it.
-    /// </summary>
-    internal Action<MeshRig>? Driver { get; set; }
-
     /// <summary>Resets to bind, applies the rotations, and captures the result.</summary>
     internal FaceMesh Pose(IDictionary? pose, SKPoint3[] bind)
     {
@@ -345,7 +336,6 @@ internal sealed class MeshRig
                     if (move is { } by) node.LocalMatrix = Moved(node.LocalMatrix, handle, name, by);
                 }
 
-            Driver?.Invoke(this);
             return Snapshot(bind);
         }
     }

@@ -89,7 +89,73 @@ public class GarmentStepTests(ITestOutputHelper output) : TestsRuntime
                 Assert.True(Enumerable.Range(0, body.VertexCount).All(i => character.Vertices[i] == body.Vertices[i]),
                     "the assembled character reorders the body's vertices, so the labels would land on the wrong ones");
             }
+
+            // The second rig, from the same unrigged body, and the labels carried across to it.
+            if (!SolverRig.Available) continue;
+            started = DateTime.UtcNow;
+            var rig = CharacterBuilder.AddSolverRig(dir);
+            output.WriteLine($"{name}: solver rig in {(DateTime.UtcNow - started).TotalSeconds:0.0}s {rig.ToJsonString()}");
+            manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, CharacterBuilder.Manifest)))!;
+            Assert.Equal(CharacterBuilder.UniRig, manifest["rig"]!["default"]!.GetValue<string>());
+            Assert.Equal([CharacterBuilder.UniRig, CharacterBuilder.Solver], CharacterBuilder.BuiltRigs(manifest.AsObject()));
+            var solver = MeshGltf.Load(Path.Combine(dir, CharacterBuilder.RiggedSolverGlb), name);
+            Assert.True(solver.Posable);
+            if (record["segmented"]!.GetValue<bool>())
+            {
+                var carried = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "garments-solver.json")))!["labels"]!.AsArray();
+                Assert.Equal(solver.VertexCount, carried.Count);
+            }
         }
+    }
+
+    [Fact]
+    public void ACharacterLoadsWithItsDefaultRigOrTheOneAskedFor()
+    {
+        // Two rigs of one body, as a build that made both leaves them: the stock female, which is on the template's skeleton.
+        var root = Path.Combine(Path.GetTempPath(), "polson-rigs-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(root, CharacterToolkit.Folder, "ada");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var stock = CharacterStock.List(null).First(s => s.Name == "female").File;
+            File.Copy(stock, Path.Combine(dir, CharacterBuilder.RiggedGlb));
+            File.Copy(stock, Path.Combine(dir, CharacterBuilder.RiggedSolverGlb));
+            var parts = new JsonObject(CharacterStock.Parts.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value)));
+            File.WriteAllText(Path.Combine(dir, CharacterBuilder.Manifest), new JsonObject
+            {
+                ["files"] = new JsonObject { ["rigged"] = CharacterBuilder.RiggedGlb, ["riggedSolver"] = CharacterBuilder.RiggedSolverGlb },
+                ["joints"] = parts.DeepClone(),
+                ["rig"] = new JsonObject { ["default"] = CharacterBuilder.Solver, ["solver"] = new JsonObject { ["joints"] = parts, ["facing"] = "+Z" } }
+            }.ToJsonString());
+
+            var kit = new CharacterToolkit(root);
+            var byDefault = kit.Load("ada");
+            var uni = kit.Load("ada", new Dictionary<string, object?> { ["rig"] = "unirig" });
+            Assert.EndsWith(CharacterBuilder.RiggedSolverGlb, byDefault.Source);
+            Assert.EndsWith(CharacterBuilder.RiggedGlb, uni.Source);
+            Assert.NotSame(byDefault, uni);
+            Assert.Same(byDefault, kit.Load("ada", new Dictionary<string, object?> { ["rig"] = "solver" }));
+            Assert.Equal(CharacterStock.Parts.Count, byDefault.JointMap.Count);
+
+            var bad = Assert.Throws<ArgumentException>(() => kit.Load("ada", new Dictionary<string, object?> { ["rig"] = "blender" }));
+            Assert.Contains("unirig and solver", bad.Message);
+            var unknown = Assert.Throws<ArgumentException>(() => kit.Load("ada", new Dictionary<string, object?> { ["rigs"] = "solver" }));
+            Assert.Contains("takes rig", unknown.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void AManifestFromBeforeTheSolverRigIsUniRigsAlone()
+    {
+        var manifest = JsonNode.Parse("""{ "files": { "rigged": "rigged.glb" }, "rig": { "joints": 52, "weightedJoints": 50 } }""")!.AsObject();
+
+        Assert.Equal(CharacterBuilder.UniRig, CharacterBuilder.DefaultRig(manifest));
+        Assert.Equal([CharacterBuilder.UniRig], CharacterBuilder.BuiltRigs(manifest));
+        Assert.Null(CharacterBuilder.RigFile(manifest, CharacterBuilder.Solver));
     }
 
     [Fact]
@@ -121,7 +187,7 @@ public class GarmentStepTests(ITestOutputHelper output) : TestsRuntime
 
     /// <summary>
     /// Probe: drapes the characters <see cref="AddTheGarmentStepToBuiltCharacters"/> left in <c>POLSON_GARMENT_OUT</c>,
-    /// in three clips, and draws each rigged against draped at panel size, textured and as clay.
+    /// with each rig it has, in three clips, and draws each rigged against draped at panel size, as clay.
     /// </summary>
     [Fact]
     public void DrapeBuiltCharacters()
@@ -134,41 +200,48 @@ public class GarmentStepTests(ITestOutputHelper output) : TestsRuntime
 
         foreach (var name in names)
         {
-            var character = kit.Load(name);
-            var drawn = new List<(FaceMesh Rigged, FaceMesh Draped, string Label)>();
+            var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, CharacterToolkit.Folder, name, CharacterBuilder.Manifest)))!.AsObject();
+            var rigs = CharacterBuilder.BuiltRigs(manifest);
+            var drawn = new List<(FaceMesh Mesh, string Label)[]>();
             foreach (var (clip, at) in clips)
             {
-                var pose = kit.Retarget(character, clip, new Dictionary<string, object?> { ["at"] = at });
-                var result = kit.Drape(character, pose);
-                output.WriteLine($"{name} {clip}: draped {result["draped"]}, {result["vertices"]} vertices, {result["seconds"]} s, " +
-                                 $"cached {result["cached"]}{(result["note"] is string note ? " - " + note : "")}");
-                if (result["draped"] is true)
+                var row = new List<(FaceMesh, string)>();
+                foreach (var rig in rigs)
                 {
-                    var again = kit.Drape(name, pose);
-                    Assert.True((bool)again["cached"]!, "the second drape of the same pose was not served from the cache");
+                    var character = kit.Load(name, new Dictionary<string, object?> { ["rig"] = rig });
+                    var pose = kit.Retarget(character, clip, new Dictionary<string, object?> { ["at"] = at });
+                    var result = kit.Drape(character, pose);
+                    output.WriteLine($"{name} {rig} {clip}: draped {result["draped"]}, {result["vertices"]} vertices, {result["seconds"]} s, " +
+                                     $"cached {result["cached"]}{(result["note"] is string note ? " - " + note : "")}");
+                    if (result["draped"] is true)
+                    {
+                        var again = kit.Drape(character, pose);
+                        Assert.True((bool)again["cached"]!, "the second drape of the same pose was not served from the cache");
+                    }
+                    row.Add((character.Pose(pose), $"{clip} {rig} rigged"));
+                    row.Add(((FaceMesh)result["mesh"]!, $"{rig} draped"));
                 }
-                drawn.Add((character.Pose(pose), (FaceMesh)result["mesh"]!, $"{clip} {at}"));
+                drawn.Add([.. row]);
             }
 
-            // Panel size: a figure about 300 px tall, as it would stand in a four-panel strip.
+            // Panel size: a figure about 300 px tall, as it would stand in a four-panel strip; clay, so shape is all that shows.
             const int W = 220, H = 340;
-            using var canvas = new SkiaCanvas(W * 4, H * drawn.Count);
+            var cols = drawn[0].Length;
+            using var canvas = new SkiaCanvas(W * cols, H * drawn.Count);
             var ctx = canvas.GetContext("2d");
             ctx.FillStyle = "#f2efe8";
-            ctx.FillRect(0, 0, W * 4, H * drawn.Count);
+            ctx.FillRect(0, 0, W * cols, H * drawn.Count);
             var mt = new MeshToolkit();
             ctx.Font = "12px sans-serif";
             for (var r = 0; r < drawn.Count; r++)
-                for (var c = 0; c < 4; c++)
+                for (var c = 0; c < cols; c++)
                 {
-                    var (rigged, draped, label) = drawn[r];
-                    mt.Draw(ctx, c % 2 == 0 ? rigged : draped, new Dictionary<string, object?>
+                    mt.Draw(ctx, drawn[r][c].Mesh, new Dictionary<string, object?>
                     {
-                        ["x"] = (W * c) + (W / 2f), ["y"] = (H * r) + (H / 2f) + 10, ["scale"] = H * 0.8, ["yawDeg"] = 30f,
-                        ["clay"] = c >= 2
+                        ["x"] = (W * c) + (W / 2f), ["y"] = (H * r) + (H / 2f) + 10, ["scale"] = H * 0.8, ["yawDeg"] = 30f, ["clay"] = true
                     });
                     ctx.FillStyle = "#333333";
-                    ctx.FillText($"{label} {(c % 2 == 0 ? "rigged" : "draped")}", (W * c) + 6, (H * r) + 14);
+                    ctx.FillText(drawn[r][c].Label, (W * c) + 6, (H * r) + 14);
                 }
             using var png = canvas.Bitmap.Bitmap.Encode(SKEncodedImageFormat.Png, 90);
             File.WriteAllBytes(Path.Combine(outDir, $"drape-{name}.png"), png.ToArray());

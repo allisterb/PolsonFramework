@@ -43,18 +43,37 @@ public class CharacterToolkit
     /// A character, ready to pose and draw: <c>Character.load('mara').pose({ head: { yDeg: 30 } })</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The mesh carries the rig, <c>mesh.jointMap</c> for its body-part names, and the face built from
     /// its turnaround already in place, so <c>Mesh.draw</c>'s <c>expression</c> acts on it. Loaded once
     /// per session and reused, so calling this in every script costs nothing after the first.
+    /// </para>
+    /// <para>
+    /// <c>{ rig: 'unirig' }</c> or <c>{ rig: 'solver' }</c> loads that rig of the character instead of its default,
+    /// where it was built with both: the same body skinned two ways, which fail differently. <c>Character.info(name).rig</c>
+    /// says which it has and which is the default.
+    /// </para>
     /// </remarks>
-    public FaceMesh Load(string name)
+    public FaceMesh Load(string name, object? options = null)
     {
         var dir = Dir(name, out var display);
-        var stamp = File.GetLastWriteTimeUtc(Path.Combine(dir, CharacterBuilder.Manifest));
-        if (Cache.TryGetValue(dir, out var hit) && hit.Stamp == stamp) return hit.Mesh;
+        string? rig = null;
+        if (JsInterop.AsDict(options) is { } opt)
+            foreach (var key in opt.Keys)
+            {
+                var k = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+                if (k != "rig") throw new ArgumentException($"Character.load has no option '{k}'. It takes rig.");
+                rig = Convert.ToString(opt[key!], System.Globalization.CultureInfo.InvariantCulture);
+            }
 
-        var mesh = CharacterBuilder.Assemble(dir, display);
-        Cache[dir] = (stamp, mesh);
+        var manifestPath = Path.Combine(dir, CharacterBuilder.Manifest);
+        var stamp = File.GetLastWriteTimeUtc(manifestPath);
+        rig ??= CharacterBuilder.DefaultRig(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject());
+        var key2 = dir + "|" + rig;
+        if (Cache.TryGetValue(key2, out var hit) && hit.Stamp == stamp) return hit.Mesh;
+
+        var mesh = CharacterBuilder.Assemble(dir, display, rig);
+        Cache[key2] = (stamp, mesh);
         return mesh;
     }
 
@@ -276,15 +295,18 @@ public class CharacterToolkit
     /// </remarks>
     public Dictionary<string, object?> Drape(object character, object? pose, object? options = null)
     {
-        var (mesh, name) = character switch
+        var mesh = character switch
         {
-            string n => (Load(n), n),
-            FaceMesh m => (m, Cache.FirstOrDefault(kv => ReferenceEquals(kv.Value.Mesh, m)).Key is { } key
-                ? Path.GetFileName(key)
-                : throw new ArgumentException("Character.drape needs the character itself, from Character.load(name), or its name; " +
-                                              "not a posed or reshaped mesh. Pass the pose as the second argument.", nameof(character))),
+            string n => Load(n),
+            FaceMesh m => m,
             _ => throw new ArgumentException("Character.drape needs a character from Character.load(name), or its name.", nameof(character))
         };
+        // The cache key is the folder and the rig, so it says which character this is and which rig's labels to use.
+        var cached = Cache.FirstOrDefault(kv => ReferenceEquals(kv.Value.Mesh, mesh)).Key
+            ?? throw new ArgumentException("Character.drape needs the character itself, from Character.load(name), or its name; " +
+                                           "not a posed or reshaped mesh. Pass the pose as the second argument.", nameof(character));
+        var name = Path.GetFileName(cached[..cached.LastIndexOf('|')]);
+        var rig = cached[(cached.LastIndexOf('|') + 1)..];
         if (!BlenderDriver.CanDrape)
             throw new InvalidOperationException("Character.drape needs Blender, and it is not installed here. Check Character.canDrape first.");
 
@@ -298,7 +320,7 @@ public class CharacterToolkit
                     throw new ArgumentException($"Character.drape has no option '{k}'. It takes settings.");
                 settings = JsInterop.AsDict(opt[key!]);
             }
-        return ClothDrape.Drape(Dir(name, out _), name, mesh, pose, settings);
+        return ClothDrape.Drape(Dir(name, out _), name, rig, mesh, pose, settings);
     }
 
     /// <summary>Whether <see cref="Drape"/> will work here: Blender and the cloth script are installed.</summary>

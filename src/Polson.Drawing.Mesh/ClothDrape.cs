@@ -40,8 +40,8 @@ using SkiaSharp;
 internal static class ClothDrape
 {
     #region Methods
-    /// <summary>Drapes <paramref name="character"/>, from its folder <paramref name="dir"/>, in <paramref name="pose"/>.</summary>
-    internal static Dictionary<string, object?> Drape(string dir, string name, FaceMesh character, object? pose, IDictionary? settings)
+    /// <summary>Drapes <paramref name="character"/>, <paramref name="rig"/> of the one in <paramref name="dir"/>, in <paramref name="pose"/>.</summary>
+    internal static Dictionary<string, object?> Drape(string dir, string name, string rig, FaceMesh character, object? pose, IDictionary? settings)
     {
         var posed = character.Pose(pose);
         Dictionary<string, object?> Unchanged(string note) => new()
@@ -49,7 +49,7 @@ internal static class ClothDrape
             ["mesh"] = posed, ["draped"] = false, ["vertices"] = 0, ["seconds"] = 0.0, ["cached"] = false, ["note"] = note
         };
 
-        var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, CharacterBuilder.Manifest)))!;
+        var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, CharacterBuilder.Manifest)))!.AsObject();
         if (manifest["garments"] is not JsonObject garments)
             return Unchanged($"'{name}' was built before the garment step, so it is not known what hangs. Rebuild it with " +
                              "GenerateCharacter, and the build will find its garments.");
@@ -57,9 +57,9 @@ internal static class ClothDrape
             return Unchanged(garments["hangs"] is null
                 ? $"Whether anything hangs on '{name}' could not be read when it was built: {garments["reason"]}."
                 : $"Nothing hangs between '{name}''s legs, so there is no cloth to drape; the pose is unchanged.");
-        var labelsPath = Path.Combine(dir, CharacterBuilder.GarmentsJson);
-        if (!File.Exists(labelsPath))
-            return Unchanged($"'{name}' has no garment labels ({CharacterBuilder.GarmentsJson}), so nothing can drape.");
+        if (CharacterBuilder.GarmentsFile(manifest, rig) is not { } labelsFile || !File.Exists(Path.Combine(dir, labelsFile)))
+            return Unchanged($"'{name}''s {rig} rig has no garment labels, so nothing can drape.");
+        var labelsPath = Path.Combine(dir, labelsFile);
 
         var labels = JsonNode.Parse(File.ReadAllText(labelsPath))!;
         var plan = Hanging(character,
@@ -69,7 +69,7 @@ internal static class ClothDrape
             return Unchanged($"No labelled garment on '{name}' hangs below the crotch across the legs: {plan.Why}");
 
         var settingsJson = Settings(settings);
-        var key = Key(pose, settingsJson, plan.Mask);
+        var key = Key(rig + "|" + Canonical(pose), settingsJson, plan.Mask);
         var cacheDir = Path.Combine(dir, "drapes");
         var cachePath = Path.Combine(cacheDir, key + ".json");
         var cached = File.Exists(cachePath);
@@ -301,12 +301,12 @@ internal static class ClothDrape
         return JsonSerializer.Serialize(o);
     }
 
-    /// <summary>The cache key: the pose and settings, canonically written, which vertices hang, and the cloth script's own hash.</summary>
-    static string Key(object? pose, string settingsJson, bool[] mask)
+    /// <summary>The cache key: the rig, the pose and settings canonically written, which vertices hang, and the cloth script's own hash.</summary>
+    static string Key(string rigAndPose, string settingsJson, bool[] mask)
     {
         var bits = new byte[(mask.Length + 7) / 8];
         for (var i = 0; i < mask.Length; i++) if (mask[i]) bits[i / 8] |= (byte)(1 << (i % 8));
-        var text = Canonical(pose) + "|" + settingsJson + "|" + ScriptHash() + "|" + Convert.ToHexStringLower(SHA256.HashData(bits));
+        var text = rigAndPose + "|" + settingsJson + "|" + ScriptHash() + "|" + Convert.ToHexStringLower(SHA256.HashData(bits));
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..20];
     }
 

@@ -501,8 +501,10 @@ internal class Program : Runtime
     /// <remarks>
     /// Two settings because the halves run on different machines as often as not: reconstruction is
     /// the TRELLIS container at <c>Trellis:BaseUrl</c>, rigging the resident rig server at
-    /// <c>Characters:RigUrl</c> (<c>src/rig_server</c>). Either missing leaves the tool present and
-    /// answering that it is not configured, which is what an agent should be told, rather than absent.
+    /// <c>Characters:RigUrl</c> (<c>src/rig_server</c>). Without the rig service a build still rigs, with the
+    /// solver rig alone, when its template (<c>Characters:RigTemplate</c>, or the library's) and the body
+    /// detector are here. With neither, the tool stays present and answers that it is not configured, which is
+    /// what an agent should be told, rather than absent.
     /// </remarks>
     static void ConfigureCharacterGeneration()
     {
@@ -511,12 +513,22 @@ internal class Program : Runtime
         if (Setting("Characters:RigUrl") is { Length: > 0 } rig)
             DrawingMcpTools.CharacterRigger = new RigClient(rig);
 
-        if (DrawingMcpTools.CharacterReconstructor is not null && DrawingMcpTools.CharacterRigger is not null)
-            Info("Character generation enabled (reconstruct {0}, rig {1}).", Setting("Trellis:BaseUrl"), Setting("Characters:RigUrl"));
+        if (Setting("Characters:RigTemplate") is { Length: > 0 } template)
+            SolverRig.TemplateOverride = template;
+
+        var rigs = string.Join(" and ", new[]
+        {
+            DrawingMcpTools.CharacterRigger is not null ? $"UniRig at {Setting("Characters:RigUrl")}" : null,
+            SolverRig.Available ? "the solver" : null
+        }.OfType<string>());
+        if (DrawingMcpTools.CharacterReconstructor is not null && rigs.Length > 0)
+            Info("Character generation enabled (reconstruct {0}; rig with {1}).", Setting("Trellis:BaseUrl"), rigs);
         else
-            Warn("Character generation unavailable: set {0}. GenerateCharacter will say so when asked.",
+            Warn("Character generation unavailable: needs {0}. GenerateCharacter will say so when asked.",
                 string.Join(" and ", new[] { DrawingMcpTools.CharacterReconstructor is null ? "Trellis:BaseUrl" : null,
-                                             DrawingMcpTools.CharacterRigger is null ? "Characters:RigUrl" : null }.OfType<string>()));
+                                             rigs.Length == 0 ? $"Characters:RigUrl or the solver rig's {SolverRig.Missing}" : null }.OfType<string>()));
+        if (DrawingMcpTools.CharacterRigger is null && SolverRig.Available)
+            Info("No rig service: characters will be built with the solver rig alone.");
     }
 
     static async Task HandleServerArgs(ServerOptions opts)

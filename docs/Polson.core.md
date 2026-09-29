@@ -3621,7 +3621,7 @@ A character built from pictures of it — a **textured 3D body you can pose and 
 Building one takes minutes, so it is done by the **`GenerateCharacter` tool**, outside the sandbox, exactly as research is; a script only loads what is finished. The pipeline behind it, in order:
 
 1. **Reconstruct** a textured body from the views.
-2. **Rig** it: a skeleton and skin weights.
+2. **Rig** it, two ways where it can: UniRig's skeleton and weights, on the GPU machine, and the solver's, Mesh2Motion's skeleton fitted into the body and weighted locally in a few seconds. Both are kept, since they fail differently; UniRig's is the default when both are built, and a build without the rig service still rigs, with the solver's alone.
 3. **Name the joints** by detecting the body in a front render and giving each bone the name of the body part it sits on.
 4. **Build the face** from the views' heads, and transplant it onto the body (`mesh.withFaceMesh`).
 5. **Check the garments**: whether anything hangs between the legs (a long coat, a skirt, a robe), read from the front and back silhouettes. If something does, each view's upper garment and whatever covers the thighs are segmented and projected onto the body, so every vertex is labelled `garment`, `lower` or `none`. **`garments.png`** shows the masks and the labels.
@@ -3637,7 +3637,7 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 ```
 
 - `Character.list()` → `string[]` — The finished characters in this project.
-- `Character.load(name)` → `FaceMesh` — The character, ready to pose and draw. Loaded once per session and reused, so calling it in every script costs nothing after the first.
+- `Character.load(name, { rig? })` → `FaceMesh` — The character, ready to pose and draw. Loaded once per session and reused, so calling it in every script costs nothing after the first. `rig` is `'unirig'` or `'solver'`, to load that rig of a character built with both instead of its default; `Character.info(name).rig` says which it has (`unirig`, `solver`) and which is the `default`. Asking for a rig the character does not have is refused, naming the ones it has.
 - `Character.stock(name?)` → `FaceMesh` — **A stock body, rigged, with its body parts already named** — no `GenerateCharacter` build needed. `name` defaults to `'male'`. Mesh2Motion's human models, all on the skeleton the pose clips were recorded on. `male` and `female` come with the studio; a project's own `stock/` folder can add others, and is searched first. Loaded once and reused. It poses, retargets, reaches, places and reshapes (`mesh.proportion`) exactly as a built character does. `male` draws in its flat colour palette and `female`, which has no texture, as a wireframe; pass `clay: true` to `Mesh.draw` for grey clay.
 - `Character.stocks()` → `object[]` — The stock bodies here, `{ name, licence, author, file }`. **Licences are per model**: `male` and `female` are Quaternius, CC0, as are most others; `sophia` is CC-BY-SA 4.0 and `jay`, `sintel` and `bunny` are CC-BY, so a drawing made over one of those credits its author. A body Mesh2Motion does not list reports `licence: null`, which means unknown, not free.
 - `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `garments`, `rig` and **`warnings`**. `garments.hangs` is `true` when something hangs between the legs and the character will need cloth, `false` when nothing does, and `null` when it could not be read; `garments.garment` has the upper garment's `sleeves` (`full`, `long`, `none`) and `hemBelow` (`hip`, `knee`, `ankle`).
@@ -3802,6 +3802,7 @@ The `body` a detection returns:
 >
 > - **Drape in its own short script first.** A first drape of a pose takes 5 to 25 s against the 30 s script limit. It is cached with the character (`characters/<name>/drapes/`) on the pose and the settings, so the script that draws pays nothing.
 > - **Look at it.** On lastlight3's two coats the cloth moved a mean 2% (the warden) and 7% (Tomas) of the height, and at panel size the change is slight, because a reconstructed coat is fused to the legs where it touches them. Squeezed between the knees it can crumple; `settings: { selfCollision: true, bending: 40, stretch: 80, shear: 80 }` tidied that on Tomas, at about twice the time.
+> - **Try the other rig before draping.** On the same characters the solver rig alone let the warden's coat fall over her lap sitting and hang straight walking, where UniRig's held it out as a slab; draped, the solver rig's coats crumpled into spikes. So `Character.load(name, { rig: 'solver' })` first, and drape UniRig's rig when neither reads right.
 > - **Expressions still work** on the draped mesh: the face is untouched.
 
 ---

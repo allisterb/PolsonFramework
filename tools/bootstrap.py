@@ -34,6 +34,7 @@ Standard library only, so it runs before anything else is installed, in the cont
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -224,6 +225,21 @@ def smoke(venv: Path, vision: Path, models: Path) -> None:
             err = result.stderr.decode(errors="replace").strip().splitlines()[-5:]
             raise SystemExit(f"FATAL: {script} did not run (exit {result.returncode}).\n       " + "\n       ".join(err))
         print(f"  {script} with {model.name}: ran on {answer['device']}, found {answer['found']} on a blank image")
+
+    # The garment step of a character build, which imports all of the above. Told to segment, it loads SAM 2 too.
+    sam = models / "sam2.1_hiera_small.pt"
+    if sam.exists():
+        request = json.dumps({"views": {"front": base64.b64encode(blank_png()).decode()}, "segment": "always"})
+        result = subprocess.run([str(python), str(vision / "garments.py"), str(pose), str(sam)], input=request.encode(),
+                                capture_output=True, timeout=600)
+        try:
+            answer = json.loads(result.stdout)
+        except ValueError:
+            answer = None
+        if result.returncode != 0 or not isinstance(answer, dict) or "hangs" not in answer:
+            err = result.stderr.decode(errors="replace").strip().splitlines()[-5:]
+            raise SystemExit(f"FATAL: garments.py did not run (exit {result.returncode}).\n       " + "\n       ".join(err))
+        print(f"  garments.py: ran, hangs {answer['hangs']} on a blank image ({answer.get('reason')})")
 
 
 def main() -> int:

@@ -601,6 +601,82 @@ public static class CharacterBuilder
             };
         return body.WithFaceMesh(face, options);
     }
+    /// <summary>
+    /// Runs the garment step on a character's views and rigged body, writes <c>garments.png</c> and, when it
+    /// segmented, <c>garments.json</c> into <paramref name="dir"/>, and returns the block for the manifest.
+    /// </summary>
+    /// <remarks>
+    /// <c>garments.json</c> is <c>{ names, labels }</c>, a label per vertex of the rigged mesh as loaded. A
+    /// transplanted face appends its vertices after the body's, so the same indices hold on the finished character.
+    /// </remarks>
+    public static JsonObject FindGarments(string dir, IReadOnlyDictionary<string, SKBitmap> views, FaceMesh body, List<string> notes)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(notes);
+        var found = GarmentDetector.Detect(views, body);
+        var record = found.Record;
+        if (found.Sheet.Length > 0)
+        {
+            File.WriteAllBytes(Path.Combine(dir, GarmentsPng), found.Sheet);
+            record["sheet"] = GarmentsPng;
+        }
+        if (found.Segmented)
+        {
+            var labels = new JsonObject
+            {
+                ["names"] = new JsonArray([.. found.Names.Select(n => (JsonNode)n)]),
+                ["labels"] = new JsonArray([.. found.Labels.Select(l => (JsonNode)l)])
+            };
+            File.WriteAllText(Path.Combine(dir, GarmentsJson), labels.ToJsonString());
+            record["file"] = GarmentsJson;
+        }
+
+        if (found.Hangs is null) notes.Add($"Whether anything hangs between the legs could not be read: {found.Reason}.");
+        foreach (var (view, node) in record["views"]?.AsObject() ?? [])
+            if (node?["pose"]?.GetValue<bool>() == false)
+                notes.Add($"No body was found in the {view} view, so the garment step could not use it.");
+        foreach (var node in record["projection"]?["views"]?.AsArray() ?? [])
+            if (node?["iou"]?.GetValue<double>() is < 0.7 and var iou)
+                notes.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"The mesh matched the {node["name"]} view's silhouette poorly (IoU {iou:0.00}), so the garment labels from it are less reliable."));
+        return record;
+    }
+
+    /// <summary>
+    /// Adds the garment step to a character that was built without it, updating its manifest in place. Returns the
+    /// block written to the manifest.
+    /// </summary>
+    public static JsonObject AddGarments(string dir)
+    {
+        var manifestPath = Path.Combine(dir, Manifest);
+        if (!File.Exists(manifestPath))
+            throw new FileNotFoundException($"No {Manifest} in '{dir}', so it is not a finished character.", manifestPath);
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+
+        var views = new Dictionary<string, SKBitmap>();
+        try
+        {
+            foreach (var node in manifest["views"]?.AsArray() ?? [])
+                if (node?.GetValue<string>() is { } file && file.StartsWith("view-", StringComparison.Ordinal))
+                    views[Path.GetFileNameWithoutExtension(file)["view-".Length..]] = SKBitmap.Decode(Path.Combine(dir, file))
+                        ?? throw new InvalidOperationException($"{file} could not be decoded.");
+            var rigged = manifest["files"]?["rigged"]?.GetValue<string>() ?? RiggedGlb;
+            var body = MeshGltf.Load(Path.Combine(dir, rigged), rigged);
+            var notes = new List<string>();
+            var record = FindGarments(dir, views, body, notes);
+
+            manifest["garments"] = record;
+            var warnings = manifest["warnings"] as JsonArray ?? [];
+            foreach (var n in notes) warnings.Add((JsonNode)n);
+            manifest["warnings"] = warnings;
+            File.WriteAllText(manifestPath, manifest.ToJsonString(new() { WriteIndented = true }));
+            return record;
+        }
+        finally
+        {
+            foreach (var v in views.Values) v.Dispose();
+        }
+    }
     #endregion
 
     #region Private
@@ -623,5 +699,7 @@ public static class CharacterBuilder
     public const string RiggedGlb = "rigged.glb";
     public const string FaceObj = "face.obj";
     public const string FacePng = "face.png";
+    public const string GarmentsJson = "garments.json";
+    public const string GarmentsPng = "garments.png";
     #endregion
 }

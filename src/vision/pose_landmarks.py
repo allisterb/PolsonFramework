@@ -74,7 +74,17 @@ def main():
         print("no image bytes on stdin", file=sys.stderr)
         return 2
 
-    src = Image.open(io.BytesIO(data))
+    opts = vision.PoseLandmarkerOptions(
+        base_options=mp_python.BaseOptions(model_asset_path=sys.argv[1]),
+        num_poses=1,
+    )
+    with vision.PoseLandmarker.create_from_options(opts) as det:
+        json.dump(landmarks(det, Image.open(io.BytesIO(data))), sys.stdout, separators=(",", ":"))
+    return 0
+
+
+def landmarks(det, src):
+    """One PIL image's pose, as the JSON this script prints: `found`, `width`, `height`, `pad`, `landmarks`..."""
     # As in the face probe: a cutout carries alpha and the model wants SRGB, so the ground is
     # flattened to a deterministic white rather than left to whatever the conversion decides.
     if src.mode in ("RGBA", "LA", "P"):
@@ -84,55 +94,39 @@ def main():
         src = flat
     rgb = np.asarray(src.convert("RGB"), dtype=np.uint8)
 
-    opts = vision.PoseLandmarkerOptions(
-        base_options=mp_python.BaseOptions(model_asset_path=sys.argv[1]),
-        num_poses=1,
-    )
-
-    with vision.PoseLandmarker.create_from_options(opts) as det:
-        r, pad, fw, fh = detect(det, rgb)
-
-        if r is None:
-            json.dump({
-                "found": False,
-                "width": rgb.shape[1], "height": rgb.shape[0],
-                "reason": "no body found at any padding",
-                "triedPads": list(PADS),
-            }, sys.stdout, separators=(",", ":"))
-            return 0
-
-        lm = r.pose_landmarks[0]
-        # Back into the ORIGINAL image's pixels, which is the space the caller addresses.
-        pts = {
-            NAMES[i]: {
-                "x": round(p.x * fw - pad, 2),
-                "y": round(p.y * fh - pad, 2),
-                # `visibility` is the model's own confidence that the joint is in frame and not
-                # occluded. A rig that ignores it will happily build an arm from a guess, so it is
-                # carried through and the mapping is expected to threshold on it.
-                "v": round(getattr(p, "visibility", 0.0) or 0.0, 3),
-            }
-            for i, p in enumerate(lm) if i < len(NAMES)
-        }
-
-        out = {
-            "found": True,
+    r, pad, fw, fh = detect(det, rgb)
+    if r is None:
+        return {
+            "found": False,
             "width": rgb.shape[1], "height": rgb.shape[0],
-            "pad": pad,
-            "landmarks": pts,
+            "reason": "no body found at any padding",
+            "triedPads": list(PADS),
         }
 
-        # The metric 3D set, hip-centred, in METRES rather than pixels. This is what face has no
-        # counterpart for. Kept separate from `landmarks` rather than merged, because the two are
-        # in different spaces and a single dict inviting `p.x` from either would be a trap.
-        if r.pose_world_landmarks:
-            out["worldLandmarks"] = {
-                NAMES[i]: {"x": round(p.x, 4), "y": round(p.y, 4), "z": round(p.z, 4)}
-                for i, p in enumerate(r.pose_world_landmarks[0]) if i < len(NAMES)
-            }
+    lm = r.pose_landmarks[0]
+    # Back into the ORIGINAL image's pixels, which is the space the caller addresses.
+    pts = {
+        NAMES[i]: {
+            "x": round(p.x * fw - pad, 2),
+            "y": round(p.y * fh - pad, 2),
+            # `visibility` is the model's own confidence that the joint is in frame and not
+            # occluded. A rig that ignores it will happily build an arm from a guess, so it is
+            # carried through and the mapping is expected to threshold on it.
+            "v": round(getattr(p, "visibility", 0.0) or 0.0, 3),
+        }
+        for i, p in enumerate(lm) if i < len(NAMES)
+    }
+    out = {"found": True, "width": rgb.shape[1], "height": rgb.shape[0], "pad": pad, "landmarks": pts}
 
-        json.dump(out, sys.stdout, separators=(",", ":"))
-        return 0
+    # The metric 3D set, hip-centred, in METRES rather than pixels. This is what face has no
+    # counterpart for. Kept separate from `landmarks` rather than merged, because the two are
+    # in different spaces and a single dict inviting `p.x` from either would be a trap.
+    if r.pose_world_landmarks:
+        out["worldLandmarks"] = {
+            NAMES[i]: {"x": round(p.x, 4), "y": round(p.y, 4), "z": round(p.z, 4)}
+            for i, p in enumerate(r.pose_world_landmarks[0]) if i < len(NAMES)
+        }
+    return out
 
 
 if __name__ == "__main__":

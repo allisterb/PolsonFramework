@@ -3624,7 +3624,8 @@ Building one takes minutes, so it is done by the **`GenerateCharacter` tool**, o
 2. **Rig** it: a skeleton and skin weights.
 3. **Name the joints** by detecting the body in a front render and giving each bone the name of the body part it sits on.
 4. **Build the face** from the views' heads, and transplant it onto the body (`mesh.withFaceMesh`).
-5. Write `characters/<name>/`, including **`preview.png`** — front, three-quarter and profile. **Look at it before drawing with the character.**
+5. **Check the garments**: whether anything hangs between the legs (a long coat, a skirt, a robe), read from the front and back silhouettes. If something does, each view's upper garment and whatever covers the thighs are segmented and projected onto the body, so every vertex is labelled `garment`, `lower` or `none`. **`garments.png`** shows the masks and the labels.
+6. Write `characters/<name>/`, including **`preview.png`** — front, three-quarter and profile. **Look at it before drawing with the character.**
 
 ```js
 const mara = Character.load('mara');              // posable, face in place, joints named
@@ -3639,7 +3640,7 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 - `Character.load(name)` → `FaceMesh` — The character, ready to pose and draw. Loaded once per session and reused, so calling it in every script costs nothing after the first.
 - `Character.stock(name?)` → `FaceMesh` — **A stock body, rigged, with its body parts already named** — no `GenerateCharacter` build needed. `name` defaults to `'male'`. Mesh2Motion's human models, all on the skeleton the pose clips were recorded on. `male` and `female` come with the studio; a project's own `stock/` folder can add others, and is searched first. Loaded once and reused. It poses, retargets, reaches, places and reshapes (`mesh.proportion`) exactly as a built character does. `male` draws in its flat colour palette and `female`, which has no texture, as a wireframe; pass `clay: true` to `Mesh.draw` for grey clay.
 - `Character.stocks()` → `object[]` — The stock bodies here, `{ name, licence, author, file }`. **Licences are per model**: `male` and `female` are Quaternius, CC0, as are most others; `sophia` is CC-BY-SA 4.0 and `jay`, `sintel` and `bunny` are CC-BY, so a drawing made over one of those credits its author. A body Mesh2Motion does not list reports `licence: null`, which means unknown, not free.
-- `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `rig` and **`warnings`**.
+- `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `garments`, `rig` and **`warnings`**. `garments.hangs` is `true` when something hangs between the legs and the character will need cloth, `false` when nothing does, and `null` when it could not be read; `garments.garment` has the upper garment's `sleeves` (`full`, `long`, `none`) and `hemBelow` (`hip`, `knee`, `ankle`).
 - `Character.clips()` → `{ name, seconds, file }[]` — The recorded clips a pose can be taken from.
 - `Character.retarget(character, source, options?)` → `object` — **A whole-body pose**, keyed by body part, ready for `pose(...)`. `character` is a mesh from `Character.load`, or a name. `source` is either:
   - **a clip name**, with `{ at?, time?, moveHips? }`: `at` is a fraction of the clip, `time` is seconds; neither means the first frame.

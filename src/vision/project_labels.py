@@ -1,7 +1,7 @@
 """Projects 2D label maps of a character's views onto its mesh. JSON on stdin, JSON on stdout.
 
 SPIKE. Same containment as the other vision scripts: data over pipes, nothing written unless a debug folder
-is asked for. No C# caller yet. Pure numpy and Pillow; no model.
+is asked for. Pure numpy and Pillow; no model. `garments.py` imports `project` from here.
 
     python project_labels.py [--debug-dir <dir>]  < request.json  > result.json
 
@@ -21,7 +21,8 @@ show. That is the usual thing for a sheet's single profile view.
 
 For each view it picks the horizontal axis (x, -x, z or -z) whose projected silhouette best matches the
 drawn figure, by IoU of splatted vertices, taking each axis at most once. It aligns by the figure's bounding
-box with one scale from its height, rasterises a depth buffer, and labels the vertices that view sees. Votes
+box with one scale from its height, rasterises a depth buffer, and labels the vertices that view sees. The IoU
+it reports is of that rasterised mesh against the figure, which a coarse mesh's splat would understate. Votes
 are summed across views per welded vertex. TRELLIS splits vertices along UV seams, so welding lets the labels
 cross them. Vertices no view sees take the label of the nearest labelled vertex, counted in edges.
 
@@ -99,18 +100,13 @@ def depth_buffer(T, px, py, depth, shape):
     return z
 
 
-def main():
-    ap = argparse.ArgumentParser(add_help=False)
-    ap.add_argument('--debug-dir', default=None, help='also write each view with every vertex coloured by its label')
-    args = ap.parse_args()
-    req = json.load(sys.stdin)
-
+def project(req, debug_dir=None):
+    """Labels every vertex of `req`'s mesh from its views; see the module docstring. Raises ValueError on bad input."""
     P = np.array(req['positions'], np.float64)
     T = np.array(req['triangles'], np.int64)
     n = len(P)
     if n == 0 or len(T) == 0 or not req.get('views'):
-        print('need positions, triangles and at least one view', file=sys.stderr)
-        return 2
+        raise ValueError('need positions, triangles and at least one view')
     height = P[:, 1].max() - P[:, 1].min()
 
     # Final label names, and a map from each input label index to its final index.
@@ -134,10 +130,10 @@ def main():
 
     views = []
     for v in req['views']:
-        img, lab = decode(v['image']), np.asarray(decode(v['labelMap'], 'L'))
+        img = v['image'] if isinstance(v['image'], Image.Image) else decode(v['image'])
+        lab = v['labelMap'] if isinstance(v['labelMap'], np.ndarray) else np.asarray(decode(v['labelMap'], 'L'))
         if img.size != (lab.shape[1], lab.shape[0]):
-            print(f'view {v.get("name")!r}: image {img.size} and label map {lab.shape[::-1]} differ in size', file=sys.stderr)
-            return 2
+            raise ValueError(f'view {v.get("name")!r}: image {img.size} and label map {lab.shape[::-1]} differ in size')
         weight = float(v.get('weight', 1.0))
         views.append((v.get('name', f'view{len(views)}'), img, lab, weight, None))
         if v.get('mirrored'):
@@ -149,8 +145,7 @@ def main():
     for name, img, lab, weight, mirror_of in views:
         sil = figure(img)
         if not sil.any():
-            print(f'view {name!r} has no figure: nothing darker than near-white', file=sys.stderr)
-            return 2
+            raise ValueError(f'view {name!r} has no figure: nothing darker than near-white')
         if mirror_of is not None:
             axis = OPPOSITE[chosen[mirror_of]]
         else:
@@ -158,11 +153,14 @@ def main():
             axis = max(scores, key=scores.get)
         right, toward = AXES[axis]
         px, py = place(P, right, sil)
-        iou = splat_iou(px, py, sil)
         used.add(axis)
         chosen[name] = axis
         depth = P @ toward
         z = depth_buffer(T, px, py, depth, sil.shape)
+        # Reported from the rasterised triangles, not the splat: a coarse mesh's splat leaves gaps, which would read as
+        # a poor fit (the warden's 18k-vertex mesh splatted to 0.61 against her front view).
+        covered = z > -np.inf
+        iou = float((covered & sil).sum() / max(1, (covered | sil).sum()))
         h, w = sil.shape
         xi, yi = np.clip(px.round().astype(int), 0, w - 1), np.clip(py.round().astype(int), 0, h - 1)
         visible = depth >= z[yi, xi] - 0.01 * height
@@ -193,24 +191,39 @@ def main():
     label[label < 0] = 0
     final = label[canon]
 
-    if args.debug_dir:
-        os.makedirs(args.debug_dir, exist_ok=True)
-        palette = np.array([[150, 150, 150], [230, 180, 20], [40, 160, 60], [40, 120, 230], [220, 50, 150],
-                            [120, 70, 200], [240, 120, 40]], np.uint8)
-        for name, img, lab, weight, mirror_of in views:
-            if mirror_of is not None:
-                continue
-            right, toward = AXES[chosen[name]]
-            px, py = place(P, right, figure(img))
-            out = np.asarray(img.convert('RGB')).copy() // 3 + 170
-            h, w = out.shape[:2]
-            for i in np.argsort(P @ toward):
-                x, y = int(round(px[i])), int(round(py[i]))
-                out[max(0, y - 1):min(h, y + 2), max(0, x - 1):min(w, x + 2)] = palette[final[i] % len(palette)]
-            Image.fromarray(out).save(os.path.join(args.debug_dir, f'labels-{name}.png'))
+    overlays = {}
+    palette = np.array([[150, 150, 150], [230, 180, 20], [40, 160, 60], [40, 120, 230], [220, 50, 150],
+                        [120, 70, 200], [240, 120, 40]], np.uint8)
+    for name, img, lab, weight, mirror_of in views:
+        if mirror_of is not None:
+            continue
+        right, toward = AXES[chosen[name]]
+        px, py = place(P, right, figure(img))
+        out = np.asarray(img.convert('RGB')).copy() // 3 + 170
+        h, w = out.shape[:2]
+        for i in np.argsort(P @ toward):
+            x, y = int(round(px[i])), int(round(py[i]))
+            out[max(0, y - 1):min(h, y + 2), max(0, x - 1):min(w, x + 2)] = palette[final[i] % len(palette)]
+        overlays[name] = Image.fromarray(out)
+        if debug_dir:
+            os.makedirs(debug_dir, exist_ok=True)
+            overlays[name].save(os.path.join(debug_dir, f'labels-{name}.png'))
 
-    json.dump({'names': names, 'labels': final.tolist(), 'views': report, 'unseen': unseen,
-               'counts': {nm: int((final == i).sum()) for i, nm in enumerate(names)}}, sys.stdout, separators=(',', ':'))
+    return {'names': names, 'labels': final.tolist(), 'views': report, 'unseen': unseen,
+            'counts': {nm: int((final == i).sum()) for i, nm in enumerate(names)}, 'overlays': overlays}
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument('--debug-dir', default=None, help='also write each view with every vertex coloured by its label')
+    args = ap.parse_args()
+    try:
+        result = project(json.load(sys.stdin), args.debug_dir)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
+    result.pop('overlays')
+    json.dump(result, sys.stdout, separators=(',', ':'))
     return 0
 
 

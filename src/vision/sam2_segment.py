@@ -162,6 +162,45 @@ def png_base64(array):
     return base64.b64encode(buf.getvalue()).decode('ascii')
 
 
+def run_prompts(predictor, prompts, rgb, want_all=False, overlay_dir=None):
+    """Segments each prompt against the image `predictor` holds. Returns (results, names, labelMap)."""
+    names = ['none']
+    label_map = np.zeros(rgb.shape[:2], np.uint8)
+    results = []
+    for i, p in enumerate(prompts, start=1):
+        name = str(p.get('name', f'prompt{i}'))
+        points = np.array(p['points'], np.float32) if p.get('points') else None
+        labels = np.array(p.get('labels', [1] * len(points)), np.int32) if points is not None else None
+        box = np.array(p['box'], np.float32) if p.get('box') else None
+        if points is None and box is None:
+            raise ValueError(f'prompt {name!r} has neither points nor a box')
+        with torch.inference_mode():
+            # One mask for a box, three to choose from for clicks, which are ambiguous about extent.
+            masks, scores, _ = predictor.predict(point_coords=points, point_labels=labels, box=box,
+                                                 multimask_output=box is None)
+        best = int(np.argmax(scores))
+        mask = masks[best] > 0
+        label_map[mask] = i
+        names.append(name)
+        results.append({'name': name, 'score': round(float(scores[best]), 4),
+                        'scores': [round(float(s), 4) for s in scores],
+                        'share': round(float(mask.mean()), 5), 'mask': png_base64((mask * 255).astype(np.uint8))})
+        if want_all:
+            # SAM's candidates for clicks are nested (a part, a bigger part, the whole), and the top-scoring one is not
+            # always the one wanted: on a seamed garment a pocket can outscore the garment. `garment_prompts.py choose`
+            # picks among them.
+            results[-1]['candidates'] = [{'score': round(float(s), 4), 'share': round(float((m > 0).mean()), 5),
+                                          'mask': png_base64(((m > 0) * 255).astype(np.uint8))}
+                                         for m, s in zip(masks, scores)]
+        if overlay_dir:
+            os.makedirs(overlay_dir, exist_ok=True)
+            out = rgb.astype(np.float32).copy()
+            out[mask] = 0.45 * out[mask] + 0.55 * np.array([230, 40, 160])
+            out[~mask] *= 0.55
+            Image.fromarray(out.astype(np.uint8)).save(os.path.join(overlay_dir, f'{name}.png'))
+    return results, names, label_map
+
+
 def main():
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument('checkpoint')
@@ -188,42 +227,11 @@ def main():
     with torch.inference_mode():
         predictor.set_image(rgb)
 
-    names = ['none']
-    label_map = np.zeros(rgb.shape[:2], np.uint8)
-    results = []
-    for i, p in enumerate(prompts, start=1):
-        name = str(p.get('name', f'prompt{i}'))
-        points = np.array(p['points'], np.float32) if p.get('points') else None
-        labels = np.array(p.get('labels', [1] * len(points)), np.int32) if points is not None else None
-        box = np.array(p['box'], np.float32) if p.get('box') else None
-        if points is None and box is None:
-            print(f'prompt {name!r} has neither points nor a box', file=sys.stderr)
-            return 2
-        with torch.inference_mode():
-            # One mask for a box, three to choose from for clicks, which are ambiguous about extent.
-            masks, scores, _ = predictor.predict(point_coords=points, point_labels=labels, box=box,
-                                                 multimask_output=box is None)
-        best = int(np.argmax(scores))
-        mask = masks[best] > 0
-        label_map[mask] = i
-        names.append(name)
-        results.append({'name': name, 'score': round(float(scores[best]), 4),
-                        'scores': [round(float(s), 4) for s in scores],
-                        'share': round(float(mask.mean()), 5), 'mask': png_base64((mask * 255).astype(np.uint8))})
-        if args.all:
-            # SAM's candidates for clicks are nested (a part, a bigger part, the whole), and the top-scoring one is not
-            # always the one wanted: on a seamed garment a pocket can outscore the garment. `garment_prompts.py choose`
-            # picks among them.
-            results[-1]['candidates'] = [{'score': round(float(s), 4), 'share': round(float((m > 0).mean()), 5),
-                                          'mask': png_base64(((m > 0) * 255).astype(np.uint8))}
-                                         for m, s in zip(masks, scores)]
-        if args.overlay_dir:
-            os.makedirs(args.overlay_dir, exist_ok=True)
-            out = rgb.astype(np.float32).copy()
-            out[mask] = 0.45 * out[mask] + 0.55 * np.array([230, 40, 160])
-            out[~mask] *= 0.55
-            Image.fromarray(out.astype(np.uint8)).save(os.path.join(args.overlay_dir, f'{name}.png'))
-
+    try:
+        results, names, label_map = run_prompts(predictor, prompts, rgb, args.all, args.overlay_dir)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
     json.dump({'found': any(r['share'] > 0 for r in results), 'width': image.width, 'height': image.height,
                'device': device, 'names': names, 'prompts': results, 'labelMap': png_base64(label_map)},
               sys.stdout, separators=(',', ':'))

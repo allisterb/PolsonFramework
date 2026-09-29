@@ -76,7 +76,9 @@ public partial class DrawingMcpTools
         "Character.list() from a script, or call with the name alone to be told the job that owns it.\n\n" +
         "When it finishes, look at the preview it writes (characters/<name>/preview.png: front, three-quarter, " +
         "profile) before drawing with it, and read `warnings`: a joint that could not be named, or a face built without " +
-        "a profile, is said there and nowhere else.\n\n" +
+        "a profile, is said there and nowhere else. It also checks whether anything hangs between the legs (a long coat, " +
+        "a skirt): if so, it labels which of the body's vertices are garment, and garments.png shows the masks and the " +
+        "labels so a bad reading is visible before anyone relies on it.\n\n" +
         "GIVE IT THE FACE LARGE, TOO, if you can: `faceSheet` is a project path to a head sheet, a front then one or two " +
         "profiles, head and shoulders, which it splits the same way. The face is then built from the large front head " +
         "rather than from one cropped out of the full figure. Make it FIRST, " +
@@ -381,6 +383,28 @@ public partial class DrawingMcpTools
                 return Task.FromResult(0);
             });
 
+            // ── Garments: does anything hang between the legs, and which vertices are garment ─────
+            JsonObject? garments = null;
+            await Step("garments", () =>
+            {
+                if (!GarmentDetector.Available)
+                {
+                    Note($"No garment step here (missing {GarmentDetector.Missing}), so it is not known whether the character needs cloth.");
+                    return Task.FromResult(0);
+                }
+                try
+                {
+                    var notes = new List<string>();
+                    garments = CharacterBuilder.FindGarments(staging, images, body, notes);
+                    notes.ForEach(Note);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+                {
+                    Note($"The garment step failed, so it is not known whether the character needs cloth: {ex.Message}");
+                }
+                return Task.FromResult(0);
+            });
+
             // ── Record, and move into place ────────────────────────────────────────────────────────
             var manifest = new JsonObject
             {
@@ -392,6 +416,7 @@ public partial class DrawingMcpTools
                 ["jointError"] = new JsonObject(labels.Error.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)Math.Round(kv.Value, 3)))),
                 ["facing"] = labels.FrontSign >= 0 ? "+Z" : "-Z",
                 ["face"] = faceInfo,
+                ["garments"] = garments,
                 ["rig"] = new JsonObject
                 {
                     ["joints"] = rig.Joints, ["weightedJoints"] = rig.WeightedJoints, ["vertices"] = rig.Vertices,
@@ -416,7 +441,8 @@ public partial class DrawingMcpTools
             events.Append("character.completed", null, null, new Dictionary<string, object?>
             {
                 ["job"] = job.Id, ["name"] = job.Name, ["seconds"] = Math.Round(job.ElapsedSeconds),
-                ["joints"] = labels.Map.Count, ["face"] = faceInfo is not null, ["warnings"] = job.Notes.Count
+                ["joints"] = labels.Map.Count, ["face"] = faceInfo is not null,
+                ["hangs"] = garments?["hangs"]?.GetValue<bool>(), ["warnings"] = job.Notes.Count
             });
         }
         catch (Exception ex)

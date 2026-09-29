@@ -465,6 +465,21 @@ internal class Program : Runtime
             Warn("Body detection unavailable: missing {0}. Character.detect() will refuse.", BodyDetector.Missing);
     }
 
+    /// <summary>The garment step of a character build: the body detector's interpreter and model, with SAM 2.</summary>
+    static void ConfigureGarmentDetection()
+    {
+        if (Setting("Tools:GarmentScript") is { Length: > 0 } script)
+            GarmentDetector.ScriptOverride = script;
+        if (Setting("Tools:SamModel") is { Length: > 0 } model)
+            GarmentDetector.ModelOverride = model;
+
+        if (GarmentDetector.Available)
+            Info("Garment step enabled ({0}).", GarmentDetector.Model);
+        else
+            Warn("Garment step unavailable: missing {0}. Characters will be built without knowing whether they need cloth.",
+                 GarmentDetector.Missing);
+    }
+
     /// <summary>Points the <c>GenerateCharacter</c> tool at its two services, and says which are there.</summary>
     /// <remarks>
     /// Two settings because the halves run on different machines as often as not: reconstruction is
@@ -503,6 +518,7 @@ internal class Program : Runtime
         ConfigureStock();
         ConfigureFaceDetection();
         ConfigureBodyDetection();
+        ConfigureGarmentDetection();
         ConfigureCharacterGeneration();
 
         var projectDir = !string.IsNullOrWhiteSpace(opts.ProjectDir)

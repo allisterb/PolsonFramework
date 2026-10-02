@@ -520,6 +520,21 @@ public partial class DrawingMcpTools
             lock (job.Notes) manifest["warnings"] = new JsonArray([.. job.Notes.Select(n => (JsonNode)n)]);
             File.WriteAllText(Path.Combine(staging, CharacterBuilder.Manifest), manifest.ToJsonString(new() { WriteIndented = true }));
 
+            // ── Scores: how each rig fails, over a fixed set of clips; recorded, not acted on ───────
+            await Step("scores", () =>
+            {
+                try
+                {
+                    CharacterBuilder.AddRigScores(staging);
+                    manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(staging, CharacterBuilder.Manifest)))!.AsObject();
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+                {
+                    Note($"The rigs could not be scored: {ex.Message}");
+                }
+                return Task.FromResult(0);
+            });
+
             await Step("preview", () =>
             {
                 WritePreview(staging, job.Name);

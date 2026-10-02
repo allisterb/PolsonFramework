@@ -589,16 +589,7 @@ public static class CharacterBuilder
                 ? $"'{display}' has no {rig} rig; it was built with {string.Join(" and ", built)}."
                 : $"'{rig}' is not a rig; the rigs are {string.Join(" and ", Rigs)}.", nameof(rig));
 
-        var file = RigFile(manifest, rig)!;
-        var body = MeshGltf.Load(Path.Combine(dir, file), $"{display}/{file}");
-        var (joints, facing) = rig == UniRig
-            ? (manifest["joints"] as JsonObject, manifest["facing"]?.GetValue<string>())
-            : (manifest["rig"]?[Solver]?["joints"] as JsonObject, manifest["rig"]?[Solver]?["facing"]?.GetValue<string>());
-        if (body.Rig is { } r && joints is not null)
-            foreach (var (name, handle) in joints)
-                if (handle?.GetValue<string>() is { } h) r.Aliases[name] = h;
-        if (body.Rig is { } faced && facing == "-Z") faced.FrontSign = -1;
-
+        var body = LoadBody(dir, display, manifest, rig);
         if (!File.Exists(Path.Combine(dir, FaceObj)) || manifest["face"]?["anchors"] is not JsonObject anchors)
             return body;
 
@@ -611,6 +602,22 @@ public static class CharacterBuilder
                 ["y"] = node["y"]!.GetValue<float>()
             };
         return body.WithFaceMesh(face, options);
+    }
+
+    /// <summary>One rig's body from a character's folder, with its body-part names and facing, and no face.</summary>
+    internal static FaceMesh LoadBody(string dir, string display, JsonObject manifest, string rig)
+    {
+        var file = RigFile(manifest, rig)
+            ?? throw new ArgumentException($"'{display}' has no {rig} rig; it was built with {string.Join(" and ", BuiltRigs(manifest))}.", nameof(rig));
+        var body = MeshGltf.Load(Path.Combine(dir, file), $"{display}/{file}");
+        var (joints, facing) = rig == UniRig
+            ? (manifest["joints"] as JsonObject, manifest["facing"]?.GetValue<string>())
+            : (manifest["rig"]?[Solver]?["joints"] as JsonObject, manifest["rig"]?[Solver]?["facing"]?.GetValue<string>());
+        if (body.Rig is { } r && joints is not null)
+            foreach (var (name, handle) in joints)
+                if (handle?.GetValue<string>() is { } h) r.Aliases[name] = h;
+        if (body.Rig is { } faced && facing == "-Z") faced.FrontSign = -1;
+        return body;
     }
 
     /// <summary>The rig a character loads with when none is asked for. A manifest from before the solver rig is UniRig's.</summary>
@@ -753,6 +760,64 @@ public static class CharacterBuilder
         return rig;
     }
 
+    /// <summary>
+    /// Scores each rig over the fixed clips (<see cref="RigScores"/>), writes <c>preview-rigs.png</c> when there are two
+    /// to compare, and returns the block for the manifest's <c>rig.scores</c>.
+    /// </summary>
+    /// <param name="garments">The manifest's <c>garments</c> block, whose labels say what hangs; null when there is none.</param>
+    /// <param name="projectRoot">Where the pose library is looked for first.</param>
+    public static JsonObject ScoreRigs(string dir, IReadOnlyDictionary<string, FaceMesh> bodies, JsonObject? garments,
+                                       string? projectRoot, List<string> notes)
+    {
+        ArgumentNullException.ThrowIfNull(bodies);
+        ArgumentNullException.ThrowIfNull(notes);
+        var record = new JsonObject
+        {
+            ["clips"] = new JsonArray([.. RigScores.Clips.Select(c => (JsonNode)$"{c.Clip} {c.At.ToString("0.##", CultureInfo.InvariantCulture)}")]),
+            ["note"] = "Recorded, not acted on: the default stays UniRig's until a score agrees with the director's calls on preview-rigs.png " +
+                       "(docs/internal/character-rigging-modes.md §5c). rigidGarment near 1 means the garment moved as a slab while the legs bent."
+        };
+        foreach (var (rig, body) in bodies)
+        {
+            HangPlan? plan = null;
+            if (garments?["hangs"]?.GetValue<bool>() == true
+                && (garments["files"]?[rig]?.GetValue<string>() ?? (rig == UniRig ? garments["file"]?.GetValue<string>() : null)) is { } file
+                && File.Exists(Path.Combine(dir, file)))
+            {
+                var labels = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, file)))!;
+                plan = ClothDrape.Hanging(body,
+                    [.. labels["labels"]!.AsArray().Select(n => n!.GetValue<int>())],
+                    [.. labels["names"]!.AsArray().Select(n => n!.GetValue<string>())]);
+            }
+            record[rig] = RigScores.Record(RigScores.Score(body, plan, projectRoot, notes));
+        }
+        if (bodies.Count > 1)
+        {
+            using var preview = RigScores.Preview(bodies, projectRoot);
+            using var png = preview.Encode(SKEncodedImageFormat.Png, 90);
+            File.WriteAllBytes(Path.Combine(dir, PreviewRigsPng), png.ToArray());
+            record["preview"] = PreviewRigsPng;
+        }
+        return record;
+    }
+
+    /// <summary>
+    /// Scores the rigs of a character that was built without scores, updating its manifest in place. Its project, for
+    /// the pose library, is the folder above <c>characters/</c>.
+    /// </summary>
+    public static JsonObject AddRigScores(string dir)
+    {
+        var (manifestPath, manifest) = ReadManifest(dir);
+        var bodies = BuiltRigs(manifest).ToDictionary(r => r, r => LoadBody(dir, Path.GetFileName(dir), manifest, r));
+        var notes = new List<string>();
+        var projectRoot = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)));
+        var scores = ScoreRigs(dir, bodies, manifest["garments"] as JsonObject, projectRoot, notes);
+        UpgradeRig(manifest)["scores"] = scores;
+        AddWarnings(manifest, notes);
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new() { WriteIndented = true }));
+        return scores;
+    }
+
     /// <summary>What the manifest records about a solver rig.</summary>
     public static JsonObject SolverRecord(SolverRigResult solved) => new()
     {
@@ -843,6 +908,7 @@ public static class CharacterBuilder
     public const string MeshGlb = "mesh.glb";
     public const string RiggedGlb = "rigged.glb";
     public const string RiggedSolverGlb = "rigged-solver.glb";
+    public const string PreviewRigsPng = "preview-rigs.png";
     public const string UniRig = "unirig";
     public const string Solver = "solver";
 

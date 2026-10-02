@@ -149,6 +149,28 @@ public class GarmentStepTests(ITestOutputHelper output) : TestsRuntime
     }
 
     [Fact]
+    public void TheRigidResidualIsNothingForARigidMoveAndSomethingForABend()
+    {
+        var rest = new List<SKPoint3>();
+        for (var i = 0; i < 20; i++)
+            for (var j = 0; j < 5; j++) rest.Add(new SKPoint3(j * 0.1f, i * 0.1f, (i * j) % 3 * 0.05f));
+        var all = Enumerable.Repeat(true, rest.Count).ToArray();
+
+        // Turned 40 degrees about a tilted axis and moved: one rigid piece.
+        var q = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.Normalize(new(1, 2, 0.5f)), 0.7f);
+        var moved = rest.Select(p =>
+        {
+            var v = System.Numerics.Vector3.Transform(new(p.X, p.Y, p.Z), q) + new System.Numerics.Vector3(0.3f, -0.2f, 1f);
+            return new SKPoint3(v.X, v.Y, v.Z);
+        }).ToArray();
+        Assert.True(RigScores.Residual([.. rest], moved, all) < 1e-4);
+
+        // Bent at its middle, as a leg bends at the knee: not one piece.
+        var bent = rest.Select(p => p.Y < 1f ? p : new SKPoint3(p.X, 1f, p.Z + (p.Y - 1f))).ToArray();
+        Assert.True(RigScores.Residual([.. rest], bent, all) > 0.05);
+    }
+
+    [Fact]
     public void AManifestFromBeforeTheSolverRigIsUniRigsAlone()
     {
         var manifest = JsonNode.Parse("""{ "files": { "rigged": "rigged.glb" }, "rig": { "joints": 52, "weightedJoints": 50 } }""")!.AsObject();
@@ -183,6 +205,32 @@ public class GarmentStepTests(ITestOutputHelper output) : TestsRuntime
         Assert.Equal(-5f, thigh["zDeg"]);
         var move = (Dictionary<string, object?>)((Dictionary<string, object?>)half["hips"]!)["move"]!;
         Assert.Equal(-0.1, (double)move["y"]!, 6);
+    }
+
+    /// <summary>
+    /// Probe: scores the rigs of the characters in <c>POLSON_GARMENT_OUT</c> (built there by
+    /// <see cref="AddTheGarmentStepToBuiltCharacters"/>), writing each one's <c>preview-rigs.png</c>.
+    /// </summary>
+    [Fact]
+    public void ScoreTheRigsOfBuiltCharacters()
+    {
+        var outDir = Environment.GetEnvironmentVariable("POLSON_GARMENT_OUT");
+        if (string.IsNullOrEmpty(outDir) || !Directory.Exists(Path.Combine(outDir, CharacterToolkit.Folder))) return;
+        foreach (var dir in Directory.GetDirectories(Path.Combine(outDir, CharacterToolkit.Folder)))
+        {
+            var started = DateTime.UtcNow;
+            var scores = CharacterBuilder.AddRigScores(dir);
+            output.WriteLine($"{Path.GetFileName(dir)}: {(DateTime.UtcNow - started).TotalSeconds:0.0}s");
+            foreach (var rig in CharacterBuilder.Rigs)
+                if (scores[rig] is JsonObject s)
+                {
+                    output.WriteLine($"  {rig}: stretch {s["stretch"]}, p95 {s["p95"]}, torn {s["torn"]}, rigidGarment {s["rigidGarment"]?.ToJsonString() ?? "-"}");
+                    foreach (var (clip, c) in s["clips"]!.AsObject())
+                        output.WriteLine($"    {clip,-18} stretch {c!["stretch"]}  p95 {c["p95"]}  torn {c["torn"]}  rigid {c["rigidGarment"]?.ToJsonString() ?? "-"}" +
+                                         $"  (garment {c["garmentResidual"]?.ToJsonString() ?? "-"}, legs {c["legResidual"]?.ToJsonString() ?? "-"})");
+                }
+            Assert.True(File.Exists(Path.Combine(dir, CharacterBuilder.PreviewRigsPng)) || CharacterBuilder.Rigs.Count(r => scores[r] is not null) < 2);
+        }
     }
 
     /// <summary>

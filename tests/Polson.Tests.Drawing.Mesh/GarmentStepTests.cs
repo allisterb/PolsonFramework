@@ -171,6 +171,17 @@ public class GarmentStepTests(ITestOutputHelper output) : TestsRuntime
     }
 
     [Fact]
+    public void ANewBuildDefaultsToTheSolverRigUnlessAskedOtherwise()
+    {
+        Assert.Equal(CharacterBuilder.Solver, CharacterBuilder.ChooseDefaultRig("auto", hasUniRig: true, hasSolver: true));
+        Assert.Equal(CharacterBuilder.UniRig, CharacterBuilder.ChooseDefaultRig("auto", hasUniRig: true, hasSolver: false));
+        Assert.Equal(CharacterBuilder.Solver, CharacterBuilder.ChooseDefaultRig("auto", hasUniRig: false, hasSolver: true));
+        Assert.Equal(CharacterBuilder.UniRig, CharacterBuilder.ChooseDefaultRig(CharacterBuilder.UniRig, hasUniRig: true, hasSolver: true));
+        Assert.Equal(CharacterBuilder.Solver, CharacterBuilder.ChooseDefaultRig(CharacterBuilder.Solver, hasUniRig: true, hasSolver: true));
+        Assert.Throws<InvalidOperationException>(() => CharacterBuilder.ChooseDefaultRig("auto", hasUniRig: false, hasSolver: false));
+    }
+
+    [Fact]
     public void AManifestFromBeforeTheSolverRigIsUniRigsAlone()
     {
         var manifest = JsonNode.Parse("""{ "files": { "rigged": "rigged.glb" }, "rig": { "joints": 52, "weightedJoints": 50 } }""")!.AsObject();

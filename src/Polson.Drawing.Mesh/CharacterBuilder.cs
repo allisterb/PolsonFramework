@@ -623,6 +623,18 @@ public static class CharacterBuilder
     /// <summary>The rig a character loads with when none is asked for. A manifest from before the solver rig is UniRig's.</summary>
     public static string DefaultRig(JsonObject manifest) => manifest["rig"]?["default"]?.GetValue<string>() ?? UniRig;
 
+    /// <summary>
+    /// The default rig for a new build: the one asked for, or under <c>auto</c> the solver's whenever it was built. Blind, the
+    /// director preferred the solver's rig 13 to 4 over 17 decisive pairs, and 6 of 8 in the crouch and sitting poses
+    /// (<c>docs/internal/character-rigging-modes.md</c> §5c).
+    /// </summary>
+    public static string ChooseDefaultRig(string choice, bool hasUniRig, bool hasSolver) => choice switch
+    {
+        UniRig when hasUniRig => UniRig,
+        Solver when hasSolver => Solver,
+        _ => hasSolver ? Solver : hasUniRig ? UniRig : throw new InvalidOperationException("Neither rig was built.")
+    };
+
     /// <summary>The rigs a character was built with, from its manifest.</summary>
     public static string[] BuiltRigs(JsonObject manifest) => [.. Rigs.Where(r => RigFile(manifest, r) is not null)];
 
@@ -774,8 +786,9 @@ public static class CharacterBuilder
         var record = new JsonObject
         {
             ["clips"] = new JsonArray([.. RigScores.Clips.Select(c => (JsonNode)$"{c.Clip} {c.At.ToString("0.##", CultureInfo.InvariantCulture)}")]),
-            ["note"] = "Recorded, not acted on: the default stays UniRig's until a score agrees with the director's calls on preview-rigs.png " +
-                       "(docs/internal/character-rigging-modes.md §5c). rigidGarment near 1 means the garment moved as a slab while the legs bent."
+            ["note"] = "Recorded, not acted on: the default rig is chosen by rule, not by these. Stretch disagreed with the director's blind calls " +
+                       "and rigidGarment agreed on 7 of 8 (docs/internal/character-rigging-modes.md §5c). rigidGarment near 1 means the garment " +
+                       "moved as a slab while the legs bent."
         };
         foreach (var (rig, body) in bodies)
         {

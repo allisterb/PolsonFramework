@@ -799,7 +799,10 @@ from the views' heads and transplanted as §7h describes.
 solver's, which fits the skeleton the pose clips were recorded on into the body and weights it locally in a
 few seconds. They fail differently — UniRig's long garments move as rigid slabs, the solver's seams stretch
 more — so `Character.load(name, { rig: 'solver' })` or `{ rig: 'unirig' }` loads the one that is not the
-default. UniRig's is the default when both are built; a build without the rig service has the solver's alone.
+default. **The solver's is the default when both are built**: shown both rigs blind across four characters and
+five poses, the director preferred it 13 times to UniRig's 4. A build without the rig service has the solver's
+alone, and a character built before 2026-10-02 keeps the default it was built with; `Character.info(name).rig.default`
+says which.
 
 **Make the views in one call** — `Assets.cutout` with front, back, left and right `variants` — and
 lay the cells side by side on one canvas with a clear gap between them: that is the sheet. Four
@@ -882,10 +885,11 @@ body**: an arm drawn against the torso cannot be separated by any rigger.
 >
 > 1. **Pose the built character and look at it** at the panel's own angle and size. Most poses and most
 >    garments read correctly as rigged, and a garment fault that doesn't show at panel size is not a fault.
-> 2. **If a garment reads wrongly, load the other rig** — `Character.load(name, { rig: 'solver' })`, or
->    `'unirig'` if the solver's is the default — pose it the same way and look again. It costs nothing but
->    a load. Measured on lastlight3, the solver's rig let the warden's long coat fall over her lap sitting
->    and hang straight walking, where UniRig's held it out as a slab.
+> 2. **If a garment reads wrongly, load the other rig** — `Character.load(name, { rig: 'unirig' })`, or
+>    `'solver'` for an older character whose default is UniRig's — pose it the same way and look again. It
+>    costs nothing but a load. The rigs fail differently: on lastlight3, UniRig's held the warden's long coat
+>    out as a slab where the solver's let it fall over her lap, but UniRig's read better on Rio crouching and
+>    Tomas sitting. `Character.info(name).rig.scores` gives a hint first: a `rigidGarment` near 1 is the slab.
 > 3. **If a long coat, skirt or robe still reads wrongly**, which it can sitting, crouching or in a wide
 >    stride, `Character.drape` it in its own script and look again, on UniRig's rig: draped, the solver
 >    rig's coats crumpled into spikes. For a character in trousers or a short jacket, skip this step:

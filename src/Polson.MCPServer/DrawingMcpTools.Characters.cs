@@ -80,7 +80,7 @@ public partial class DrawingMcpTools
         "a skirt): if so, it labels which of the body's vertices are garment, and garments.png shows the masks and the " +
         "labels so a bad reading is visible before anyone relies on it.\n\n" +
         "IT RIGS TWO WAYS where it can: UniRig's rig (GPU machine) and the solver's (local, seconds). Both are kept because " +
-        "they fail differently; UniRig's is the default, and Character.load(name, { rig: 'solver' }) loads the other. " +
+        "they fail differently; the solver's is the default, and Character.load(name, { rig: 'unirig' }) loads the other." +
         "Without the rig service it still builds, with the solver's alone. `rig` picks 'unirig' or 'solver' only.\n\n" +
         "GIVE IT THE FACE LARGE, TOO, if you can: `faceSheet` is a project path to a head sheet, a front then one or two " +
         "profiles, head and shoulders, which it splits the same way. The face is then built from the large front head " +
@@ -413,7 +413,7 @@ public partial class DrawingMcpTools
             if (rig is null && solved is null)
                 throw new StageFailure("Neither rig could be built.",
                     $"The solver rig needs {SolverRig.Missing ?? "a front view it can fit"}; UniRig's needs the rig service. Tell the director.");
-            var defaultRig = rigChoice == CharacterBuilder.Solver || rig is null ? CharacterBuilder.Solver : CharacterBuilder.UniRig;
+            var defaultRig = CharacterBuilder.ChooseDefaultRig(rigChoice, rig is not null, solved is not null);
 
             var bodies = new Dictionary<string, FaceMesh>();
             if (rig is not null) bodies[CharacterBuilder.UniRig] = new MeshToolkit(staging).Load(CharacterBuilder.RiggedGlb);
@@ -505,7 +505,8 @@ public partial class DrawingMcpTools
                     ["chosen"] = rigChoice,
                     ["why"] = rigChoice != "auto" ? $"asked for {rigChoice}"
                         : rig is null ? "UniRig's rig was not available, so the solver's is the default"
-                        : "UniRig's is the default when both are built; load the other with Character.load(name, { rig: 'solver' })",
+                        : solved is null ? "the solver rig was not available, so UniRig's is the default"
+                        : "the solver's is the default when both are built; load the other with Character.load(name, { rig: 'unirig' })",
                     [CharacterBuilder.UniRig] = rig is null ? null : new JsonObject
                     {
                         ["joints"] = rig.Joints, ["weightedJoints"] = rig.WeightedJoints, ["vertices"] = rig.Vertices,

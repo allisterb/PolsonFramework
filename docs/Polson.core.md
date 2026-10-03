@@ -103,6 +103,8 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
   > [!IMPORTANT]
   > **`JSON.stringify` on an SDK result is safe, and gives you the documented names.** A result carrying an image — `PhotoAsset`, `MaterialAsset`, `BackdropPlate`, `MatteAsset`, `ImageData` — serialises its pixels as a **`byteLength`** rather than transcribing them, and every key comes back in the camelCase spelling this reference uses, so `JSON.parse(JSON.stringify(photo)).aspectRatio` is the number you expect. The real buffer is untouched: `photo.bytes` and `imageData.data` are unchanged.
   >
+  > **A list the SDK returns works like an array** — indexing, `length`, `map`, `filter`, spread and `concat` — though `Array.isArray` says `false`, because it is a wrapped .NET list. `Array.from(list)` makes a real copy. Until 2026-10-02 `concat` appended such a list whole, as a single element, so `a.concat(b)` came back the wrong length and full of `undefined`.
+  >
   > **Lists and vector elements serialise too.** A list the SDK hands back — `gradient.stops()`, `cutout.cells`, `paper.selectAll(...)` — comes out as a JSON array, and a `SnapElement` (a paper, a gradient, a shape) as its markup: `{ type, id, attributes, text, children }`, never its `parent` or `paper`. Until 2026-09-25 either one stopped the script, past any `try/catch`.
   >
   > **This was not true before 2026-09-08 and the failure was expensive.** Stringifying walked the object behind the API, so it emitted the raw bytes as a decimal array under PascalCase keys — one 960px photograph measured **523,295 characters**, about six times the file's own size, and a 1600 × 1200 `ImageData` would have produced roughly **30 MB of text**.
@@ -239,7 +241,7 @@ Declares which stage of work you are in, so every script, render and note that f
 > It is the clock only. If your host offers a `budget_status` tool, that reports the same elapsed time *and* what remains of any input-token allowance — which is often the binding constraint, since input is the whole conversation resent every turn and climbs whether or not the work is progressing.
 - `Stage.note(message: string)` — Records a note under the current stage.
 - `Stage.expect(claim: string)` — Records what you expect the next render to show, **before** you make it.
-- `Stage.check(claim: string, passed: boolean, detail?: string)` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold.
+- `Stage.check(claim: string, passed: boolean, detail?: string)` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold. **The verdict also comes back in the `ExecuteScript` response**: each check is a `[CHECK] PASS` or `[CHECK] FAIL` line in the logs, where it was made, and `checks` sums them up as `{ passed, failed, failures: [{ claim, detail }] }`. There is no need to log a check yourself.
 
 > [!IMPORTANT]
 > **`detail` carries the measurement, not the claim restated.** Against the claim *"monotonic scaling"*, a detail of *"monotonic scaling preserved"* records a belief and dresses it as a test; `'measured ' + n` records something a reader can disagree with. If there is no number, colour, count or returned value to put there, you did not measure — and a claim you cannot measure belongs in a `Stage.note`, honestly, rather than in a `check`, decoratively.
@@ -705,7 +707,7 @@ and the results chain: `a.union(b).subtract(c)`.
 - `ctx.shadowColor` — Drop shadow color string.
 - `ctx.shadowBlur` — Gaussian blur sigma for shadows.
 - `ctx.shadowOffsetX` / `ctx.shadowOffsetY` — Horizontal and vertical shadow offset.
-- `ctx.filter` — Image filter (e.g. `Skia.ImageFilter.blur(5, 5)`).
+- `ctx.filter` — Image filter: a CSS filter string as in a browser (`'blur(4px)'`, `'grayscale(1) contrast(140%)'`, `'drop-shadow(2px 3px 4px rgba(0,0,0,.5))'`, `'none'`), or a filter from `Skia.ImageFilter` (e.g. `Skia.ImageFilter.blur(5, 5)`). The string takes `blur`, `brightness`, `contrast`, `drop-shadow`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate` and `sepia`, applied left to right; any other function is refused by name. Reading `ctx.filter` back gives the filter object, not the string.
 - `ctx.colorFilter` — Color filter (e.g. `Skia.ColorFilter.colorMatrix(...)`).
 - `ctx.pathEffect` — Path effect: what the stroke or fill is *made of* (e.g. `Skia.PathEffect.stamp(bristle, 4)` for a brush, `Skia.PathEffect.hatch(1, 6, 45)` for hatching, `Skia.PathEffect.corner(10)`, `Skia.PathEffect.dash([10, 5])`).
 - `ctx.maskFilter` — Mask filter applied to the shape's coverage (e.g. `Skia.MaskFilter.blur(6)` for a soft edge, `Skia.MaskFilter.blur(8, 'outer')` for a halo).
@@ -1629,6 +1631,23 @@ Also accessible via `Skia.Drawing`.
 
 ## Full-Body Anatomy, Mannequins & Expressions
 - `Drawing.createMannequinFigure(originX: number, originY: number, totalHeight?: number, options?: { shoulderTiltDeg?: number, pelvicTiltDeg?: number, spineOffset?: number, shoulderSpanHeads?: number, pose?: object })` → `object` — Computes full 8-head proportional skeletal joint nodes (Head, Clavicles, Sternum, Ribcage, Spine, Pelvis, Hips, Knees, Ankles, Feet, Shoulders, Elbows, Wrists, Hands). `pose` takes `spineDeg`, `neckDeg`, `lineOfAction`, and `leftArm`/`rightArm` (`shoulderDeg`, `elbowDeg`) and `leftLeg`/`rightLeg` (`hipDeg`, `kneeDeg`); see `polson://manual/24` and `polson://manual/08`.
+
+> [!IMPORTANT]
+> **The pose's keys, all of them, and what each angle measures.** Angles are degrees on the page: `0` points right, `90` down, negative up.
+>
+> | key | what it does |
+> | :--- | :--- |
+> | `spineDeg` | leans everything above the pelvis as one rigid piece; positive toward screen right |
+> | `neckDeg` | turns the head about the neck, on top of the lean. The only head control: there is no head turn out of the page |
+> | `lineOfAction` | `{ shape: 'C' \| 'S', turnDeg }`, bends the torso at the waist and the neck (below) |
+> | `leftArm` / `rightArm` | `shoulderDeg` aims the upper arm on the page; **`elbowDeg` swings the forearm from the line of the upper arm, signed, so `0` is a straight arm** and the two signs put the hand on opposite sides of it |
+> | `leftLeg` / `rightLeg` | `hipDeg` aims the thigh; **`kneeDeg` swings the shin from the line of the thigh, signed, `0` straight** |
+>
+> **`elbowDeg` is not a bend magnitude.** Read as one, `elbowDeg: 46` on an arm aimed up-left put the hand up and to the right, above the figure's own head: the run that found this spent four wrong hand placements on it. `shoulderDeg` alone fixes the elbow; `elbowDeg` alone then fixes the hand.
+>
+> **A key the figure does not read is refused by name**, at every level: `headTurnDeg`, `elbowDegg` and `SpineDeg` all throw, naming the keys that exist. Until 2026-10-02 they were accepted and did nothing, so the figure quietly was not the pose the script described.
+>
+> **`neckDeg` composes with a line of action and can cancel half of it.** A C's curve is carried by two bends, at the waist and at the neck, so a `neckDeg` the other way eats the neck's share: adding `neckDeg: -30` to turn a figure's head up a rope took its `swing` from 0.280 to 0.127. Raise `turnDeg` to get the curve back, and measure `lineOfAction.swing` after any neck change.
 > [!TIP]
 > **`shoulderSpanHeads` is in head units and defaults to `1.8`, which is narrower than any published canon** — it is a shoulder-*joint* span. The figure canons measure different things and all are usable: Loomis gives `2.33` for the figure at its widest and about `2.0` for the shoulder "cape"; Faragasso, after Reilly, gives `2.67` across. Pick one to suit the build you are drawing. See `polson://manual/08` §1.
 

@@ -92,6 +92,11 @@ const fig = Drawing.createMannequinFigure(x, y, 400, { pose: {
 log(fig.lineOfAction.swing.toFixed(2) + ' H of swing');
 ```
 
+`elbowDeg` swings the forearm from the line of the upper arm, signed, so `0` is a straight arm; it is not
+how far the elbow bends. **A head turned with `neckDeg` against the curve takes back the neck's half of
+it**: on the sketch1 run, `neckDeg: -30` dropped a C's swing from 0.280 to 0.127. Measure the swing again
+after any change to the neck.
+
 ### Keep the whole pose in view
 
 Divide the body into two or three units and draw them as one continuous thought, keeping the unit you

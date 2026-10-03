@@ -2891,10 +2891,17 @@ public class ConstructiveDrawingToolkit
         // out, so the segment lengths are the canon's and only the directions change — and a limb the
         // pose does not mention is left exactly where the standing figure put it.
         var pose = JsInterop.AsDict(opt != null && opt.Contains("pose") ? opt["pose"] : null);
+        RefuseUnknownPoseKeys(opt, "createMannequinFigure options", MannequinOptionKeys, null);
+        RefuseUnknownPoseKeys(pose, "pose", PoseKeys,
+            "Turn or tilt the head with neckDeg; bend the torso with lineOfAction.");
         var leftArmPose = JsInterop.AsDict(pose != null && pose.Contains("leftArm") ? pose["leftArm"] : null);
         var rightArmPose = JsInterop.AsDict(pose != null && pose.Contains("rightArm") ? pose["rightArm"] : null);
         var leftLegPose = JsInterop.AsDict(pose != null && pose.Contains("leftLeg") ? pose["leftLeg"] : null);
         var rightLegPose = JsInterop.AsDict(pose != null && pose.Contains("rightLeg") ? pose["rightLeg"] : null);
+        RefuseUnknownPoseKeys(leftArmPose, "pose.leftArm", ArmKeys, ElbowConvention);
+        RefuseUnknownPoseKeys(rightArmPose, "pose.rightArm", ArmKeys, ElbowConvention);
+        RefuseUnknownPoseKeys(leftLegPose, "pose.leftLeg", LegKeys, KneeConvention);
+        RefuseUnknownPoseKeys(rightLegPose, "pose.rightLeg", LegKeys, KneeConvention);
 
         // The spine leans the whole upper body over the pelvis — ribcage, shoulders, neck and head,
         // and the arms with them, because an arm hangs from a shoulder that has moved. Applied before
@@ -5492,6 +5499,31 @@ public class ConstructiveDrawingToolkit
         }
 
         return 0f;
+    }
+
+    static readonly string[] MannequinOptionKeys = ["shoulderTiltDeg", "pelvicTiltDeg", "spineOffset", "shoulderSpanHeads", "pose"];
+    static readonly string[] PoseKeys = ["spineDeg", "neckDeg", "lineOfAction", "leftArm", "rightArm", "leftLeg", "rightLeg"];
+    static readonly string[] ArmKeys = ["shoulderDeg", "elbowDeg"];
+    static readonly string[] LegKeys = ["hipDeg", "kneeDeg"];
+    const string ElbowConvention = "shoulderDeg aims the upper arm on the page (0 right, 90 down, negative up); elbowDeg swings the forearm from the line of the upper arm, signed, so 0 is a straight arm.";
+    const string KneeConvention = "hipDeg aims the thigh on the page (0 right, 90 down); kneeDeg swings the shin from the line of the thigh, signed, so 0 is a straight leg.";
+
+    /// <summary>
+    /// Refuses a pose key the figure does not read, by name. Exact case, because the keys are read exactly: a
+    /// misspelled or invented one (<c>headTurnDeg</c>, <c>elbowDegg</c>) was accepted and did nothing, so the
+    /// figure quietly was not the pose the script described.
+    /// </summary>
+    static void RefuseUnknownPoseKeys(IDictionary? dict, string where, string[] accepted, string? hint)
+    {
+        if (dict is null) return;
+        var unknown = dict.Keys.Cast<object?>().Select(k => k?.ToString()).Where(k => k is not null && !accepted.Contains(k, StringComparer.Ordinal)).ToList();
+        if (unknown.Count == 0) return;
+        var near = unknown.Select(u => accepted.FirstOrDefault(a => string.Equals(a, u, StringComparison.OrdinalIgnoreCase)))
+                          .Where(a => a is not null).ToList();
+        throw new ArgumentException(
+            $"{where} has no {(unknown.Count > 1 ? "keys" : "key")} {string.Join(", ", unknown.Select(u => $"'{u}'"))}. It takes {string.Join(", ", accepted)}."
+            + (near.Count > 0 ? $" Did you mean {string.Join(", ", near.Select(n => $"'{n}'"))}? Keys are case-sensitive." : "")
+            + (hint is null ? "" : " " + hint));
     }
 
     /// <summary>Refuses a misspelled parameter by name, rather than silently drawing the canon.</summary>

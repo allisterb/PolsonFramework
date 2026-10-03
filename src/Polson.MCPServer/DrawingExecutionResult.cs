@@ -92,7 +92,45 @@ public class DrawingExecutionResult
 
     public string? Error { get; set; }
 
+    /// <summary>
+    /// What this execution's <c>Stage.check</c> calls found: how many passed and failed, and each failing claim with
+    /// its detail. Null when the script made no checks.
+    /// </summary>
+    /// <remarks>
+    /// Each check is also logged as a <c>[CHECK]</c> line in order with the rest of the output. This is the summary
+    /// a caller reads first, so it carries only the failures: a passing check needs no follow-up.
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CheckSummary? Checks { get; set; }
+
     [JsonIgnore]
     public object? ReturnValue { get; set; }
     #endregion
+
+    #region Methods
+    /// <summary>Counts one <c>Stage.check</c> verdict into <see cref="Checks"/>.</summary>
+    public void RecordCheck(string claim, bool passed, string? detail)
+    {
+        var checks = Checks ??= new CheckSummary();
+        if (passed) checks.Passed++;
+        else
+        {
+            checks.Failed++;
+            checks.Failures.Add(new CheckFailure(claim, detail));
+        }
+    }
+    #endregion
 }
+
+/// <summary>An execution's checks: counts, and the ones that failed.</summary>
+public sealed class CheckSummary
+{
+    public int Passed { get; set; }
+
+    public int Failed { get; set; }
+
+    public List<CheckFailure> Failures { get; } = [];
+}
+
+/// <summary>A check that failed, with what was measured.</summary>
+public sealed record CheckFailure(string Claim, string? Detail);

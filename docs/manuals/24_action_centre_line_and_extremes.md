@@ -71,7 +71,9 @@ of movement gets into the drawing.
 
 `Drawing.createMannequinFigure(x, y, h, { pose: { ... } })` takes joint angles — `shoulderDeg`,
 `elbowDeg`, `hipDeg`, `kneeDeg` — plus two ways of moving the torso, and the difference between them
-is the whole of this chapter:
+is the whole of this chapter. The angles are on the page, `0` right and `90` down; **`elbowDeg` and
+`kneeDeg` swing the lower segment from the line of the upper one, signed, so `0` is a straight limb**.
+They are not bend magnitudes. A key the figure does not read is refused by name.
 
 - **`spineDeg` leans.** It rotates everything above the pelvis as one rigid piece. A rigid rotation
   moves a line without curving it, so a figure at `spineDeg: 30` has exactly the centre line of a

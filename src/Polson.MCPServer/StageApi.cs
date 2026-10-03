@@ -37,14 +37,17 @@ public sealed class StageApi
     private readonly SessionContext? session;
     private readonly RunEventLog? events;
     private readonly string? executionId;
+    private readonly DrawingExecutionResult? result;
     #endregion
 
     #region Constructors
-    public StageApi(SessionContext? session, RunEventLog? events, string? executionId)
+    /// <param name="result">Where this execution's checks are reported back to the caller, as they happen.</param>
+    public StageApi(SessionContext? session, RunEventLog? events, string? executionId, DrawingExecutionResult? result = null)
     {
         this.session = session;
         this.events = events;
         this.executionId = executionId;
+        this.result = result;
     }
     #endregion
 
@@ -199,6 +202,12 @@ public sealed class StageApi
         if (cleanDetail.Length > 0) fields["detail"] = cleanDetail;
 
         events?.Append("check", session?.Stage, executionId, fields);
+
+        // **The verdict goes back to the caller too.** It used to reach only the run record, so a failing check was
+        // invisible until the run was over - backwards for a workflow shaped draw, measure, correct. One run wrote
+        // nineteen checks and could see none of them for three stages, until it wrapped Stage.check in its own log.
+        result?.Logs.Add($"[CHECK] {(passed ? "PASS" : "FAIL")} {clean}" + (cleanDetail.Length > 0 ? $" - {cleanDetail}" : ""));
+        result?.RecordCheck(clean, passed, cleanDetail.Length > 0 ? cleanDetail : null);
         return passed;
     }
 

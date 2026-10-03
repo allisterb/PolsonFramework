@@ -211,10 +211,21 @@ public class CanvasRenderingContext2D
         set => _currentState.LetterSpacing = string.IsNullOrWhiteSpace(value) ? "0px" : value.Trim();
     }
 
-    public SKImageFilter? Filter
+    /// <summary>
+    /// Image filter: an <see cref="SKImageFilter"/> from <c>Skia.ImageFilter</c>, or a CSS filter string as in a browser
+    /// (<c>'blur(4px) grayscale(1)'</c>, <c>'none'</c>). Reads back the filter itself, not the string.
+    /// </summary>
+    public object? Filter
     {
         get => _currentState.ImageFilter;
-        set => _currentState.ImageFilter = value;
+        set => _currentState.ImageFilter = value switch
+        {
+            null => null,
+            SKImageFilter filter => filter,
+            string css => CssFilter.Parse(css),
+            _ => throw new ArgumentException(
+                $"ctx.filter takes a CSS filter string such as 'blur(4px)', or a filter from Skia.ImageFilter; got {value.GetType().Name}.")
+        };
     }
 
     public SKColorFilter? ColorFilter

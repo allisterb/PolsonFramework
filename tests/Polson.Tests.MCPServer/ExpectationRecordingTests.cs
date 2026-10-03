@@ -69,7 +69,7 @@ public class ExpectationRecordingTests : TestsRuntime, IDisposable
         var result = await Run("log('returned ' + Stage.check('a claim', false) + '/' + Stage.check('another', true));");
 
         Assert.True(result.Success, result.Error);
-        Assert.Contains("returned false/true", result.Logs[0]);
+        Assert.Contains(result.Logs, l => l.Contains("returned false/true"));
     }
 
     /// <summary>Detail is optional; its absence must not put an empty field in the record.</summary>

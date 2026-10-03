@@ -361,7 +361,7 @@ public partial class JsDrawingEngine : Runtime
             sessionEngine = engine;
             engine.SetValue("Session", liveSession);
 
-            engine.SetValue("Stage", new StageApi(session, Events, executionId));
+            engine.SetValue("Stage", new StageApi(session, Events, executionId, result));
 
             // Pure .NET Console object
             var jsConsole = new JsConsole(result.Logs);
@@ -517,6 +517,23 @@ public partial class JsDrawingEngine : Runtime
             // documented auto-render of the last canvas a script creates: a JS constructor that
             // returns an object yields that object, so this works with or without `new`.
             engine.Execute("function Canvas(width, height) { return createCanvas(width, height); }");
+
+            // A list the SDK returns is a wrapped .NET collection, not an Array, and `concat` spreads only
+            // what `Array.isArray` admits - so `found.tangents.concat(more)` appended each list whole, as
+            // one element, and the result read as a list of the right sort of length full of `undefined`.
+            // A run lost its most expensive stretch to it. Lists are made arrays before concat sees them,
+            // as the receiver and as arguments; spread and Array.from already worked.
+            var isList = new ClrFunction(engine, "isList", (_, a) => a.Length > 0 && a[0] is ObjectWrapper w && IsList(w.Target));
+            engine.Invoke(engine.Evaluate("""
+                (function (isList) {
+                    const original = Array.prototype.concat;
+                    const asArray = v => isList(v) ? Array.from(v) : v;
+                    Object.defineProperty(Array.prototype, 'concat', {
+                        value: function concat(...items) { return original.apply(asArray(this), items.map(asArray)); },
+                        writable: true, configurable: true, enumerable: false
+                    });
+                })
+                """), isList);
 
             // Pure .NET Snap function & namespace
             var snapFunc = new ClrFunction(engine, "Snap", (_, args) =>

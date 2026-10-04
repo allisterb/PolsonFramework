@@ -66,6 +66,27 @@ public class RigFromDrawingProbeTests(ITestOutputHelper output) : TestsRuntime
             if (!body.Found) { output.WriteLine($"{name}: no body ({body.Reason})"); continue; }
 
             var bones = Bones(body);
+
+            // An end bone (a hand, a foot, the head) runs on to where the drawing ends along it: a landmark sits
+            // at the knuckles or the nose, and a deformation drops what no bone reaches.
+            for (var k = 0; k < bones.Count; k++)
+            {
+                var b = bones[k];
+                if (bones.Any(c => c.Parent == b.Name)) continue;
+                var along = b.To - b.From;
+                var len = along.Length;
+                if (len < 1) continue;
+                var step = Scale(along, 1 / len);
+                var to = b.To;
+                for (var d = 1; d < 400; d++)
+                {
+                    var p = b.To + Scale(step, d);
+                    if (p.X < 0 || p.Y < 0 || p.X >= cell.Width || p.Y >= cell.Height || cell.GetPixel((int)p.X, (int)p.Y).Alpha < 128) break;
+                    to = p;
+                }
+
+                bones[k] = b with { To = to };
+            }
             output.WriteLine($"{name}: {cell.Width}x{cell.Height}, {keyed} background pixels keyed, detected in {detectMs} ms, {bones.Count} bones, unsure of: "
                 + (body.Unsure.Length == 0 ? "nothing" : string.Join(", ", body.Unsure)));
             // The half-width is the shorter side from the bone, at three points along it: the longer side of a
@@ -112,6 +133,25 @@ public class RigFromDrawingProbeTests(ITestOutputHelper output) : TestsRuntime
             motion.Clear();
             using (var rigged = comp.Render(1)) File.WriteAllBytes(Path.Combine(dir, $"{name}-rig.png"), Encode(rigged.SkBitmap));
             bare.SaveSvg(Path.Combine(dir, $"{name}.svg"));
+
+            // The same bones bending the whole drawing as one mesh, instead of moving cut pieces.
+            var deform = Deform(cell, bones, owner, out var deformMotion, out var reach);
+            File.WriteAllBytes(Path.Combine(dir, $"{name}-unreached.png"), Encode(Unreached!));
+            using (var deformRest = deform.Render(0))
+            {
+                var (share, worst) = Fidelity(deformRest.SkBitmap, cell);
+                output.WriteLine($"  deform: the bones reach {reach:P1} of the drawing; rest pose within 8 levels on {share:P2}, worst {worst}");
+            }
+
+            foreach (var t in new[] { 0.5, 1.0, 1.5 })
+            {
+                using var posed = deform.Render(t);
+                output.WriteLine($"  deform t={t}: holes {Holes(posed.SkBitmap)} px");
+            }
+
+            deform.Capture(new Hashtable { ["fps"] = 2d });
+            deformMotion.Sheet(Path.Combine(dir, $"{name}-deform-sheet.png"), new Hashtable { ["count"] = 5, ["cols"] = 5, ["scale"] = 0.45, ["fps"] = 2d });
+            deformMotion.Clear();
         }
     }
 
@@ -252,6 +292,96 @@ public class RigFromDrawingProbeTests(ITestOutputHelper output) : TestsRuntime
         static Hashtable Key(double t, double v) => new() { ["time"] = t, ["value"] = v, ["ease"] = "halt" };
     }
     #endregion
+
+    /// <summary>
+    /// The drawing whole, in a group with a skeleton deformation: each bone's width its measured half-width
+    /// (its reach), the same pose keyed on the same turns. Reports how much of the drawing the bones reach,
+    /// since anything outside every capsule is dropped.
+    /// </summary>
+    static MotionComposition Deform(SKBitmap cell, List<Bone> bones, int[] owner, out MotionToolkit motion, out double reach)
+    {
+        motion = new MotionToolkit();
+        var n = motion.Nodes;
+        var comp = motion.Composition(new Hashtable
+        {
+            ["width"] = (double)(cell.Width + 2 * Margin), ["height"] = (double)(cell.Height + Margin), ["fps"] = 12d, ["duration"] = 2d
+        });
+        comp.Fill(new Hashtable { ["color"] = "#e8e4dc" });
+
+        var poses = new Dictionary<string, double>
+        {
+            ["rightUpperArm"] = 55, ["rightForearm"] = 70, ["leftUpperArm"] = 55, ["leftForearm"] = 20,
+            ["head"] = 12, ["torso"] = -8, ["leftThigh"] = -14, ["leftShin"] = 18, ["rightThigh"] = 6
+        };
+
+        // Each bone's reach covers the pixels the partition gave it: their 99th-percentile distance from the bone,
+        // and at least its half-width. A landmark line runs along the top of a sleeve, so the half-width alone
+        // misses the underside.
+        var distances = bones.Select(_ => new List<double>()).ToArray();
+        for (var y = 0; y < cell.Height; y++)
+        {
+            for (var x = 0; x < cell.Width; x++)
+            {
+                var o = owner[y * cell.Width + x];
+                if (o >= 0) distances[o].Add(SegmentDistance(new SKPoint(x + 0.5f, y + 0.5f), bones[o].From, bones[o].To));
+            }
+        }
+
+        var reaches = bones.Select((b, i) =>
+        {
+            var d = distances[i].Order().ToArray();
+            var p99 = d.Length == 0 ? 0 : d[(int)(0.99 * (d.Length - 1))];
+            return (b.Name, Reach: Math.Max(b.Radius * 1.15, p99 + 2));
+        }).ToDictionary(x => x.Name, x => x.Reach);
+
+        var made = new Dictionary<string, MotionBone>();
+        foreach (var b in bones)
+        {
+            // The reach must cover the drawing across the bone: the measured half-width, a little more at the ends.
+            var options = new Hashtable
+            {
+                ["name"] = b.Name,
+                ["from"] = new[] { b.From.X + (double)Margin, b.From.Y + (double)Margin * 0.5 },
+                ["to"] = new[] { b.To.X + (double)Margin, b.To.Y + (double)Margin * 0.5 },
+                ["width"] = reaches[b.Name], ["tipwidth"] = reaches[b.Name],
+            };
+            if (b.Parent is not null) options["parent"] = made[b.Parent];
+            if (poses.GetValueOrDefault(b.Name) is var peak && peak != 0)
+                options["turn"] = n.Animated("angle", new object[] { Key(0, 0), Key(1, peak), Key(2, 0) });
+            made[b.Name] = comp.Bone(options);
+        }
+
+        var figure = comp.Group(new Hashtable { ["desc"] = "figure" });
+        figure.Image(new Hashtable
+        {
+            ["image"] = new SkiaBitmapWrapper(cell),
+            ["tl"] = new[] { (double)Margin, Margin * 0.5 },
+            ["br"] = new[] { (double)(Margin + cell.Width), Margin * 0.5 + cell.Height }
+        });
+        figure.SkeletonDeformation(new Hashtable { ["xSubdivisions"] = 48d, ["ySubdivisions"] = 48d });
+
+        // How much of the drawing lies inside some bone's capsule, and so survives; the rest marked in Unreached.
+        int inside = 0, total = 0;
+        Unreached = cell.Copy();
+        for (var y = 0; y < cell.Height; y++)
+        {
+            for (var x = 0; x < cell.Width; x++)
+            {
+                if (cell.GetPixel(x, y).Alpha < 128) continue;
+                total++;
+                var p = new SKPoint(x + 0.5f, y + 0.5f);
+                if (bones.Any(b => SegmentDistance(p, b.From, b.To) <= reaches[b.Name])) inside++;
+                else Unreached.SetPixel(x, y, new SKColor(230, 0, 160));
+            }
+        }
+
+        reach = inside / (double)total;
+        return comp;
+
+        static Hashtable Key(double t, double v) => new() { ["time"] = t, ["value"] = v, ["ease"] = "halt" };
+    }
+
+    static SKBitmap? Unreached;
 
     #region Measures
     /// <summary>The rest render against the cell placed where the rig put it; the skeleton overlay is excluded by comparing only where the cell is opaque.</summary>

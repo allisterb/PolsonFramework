@@ -224,25 +224,105 @@ public sealed class MotionBone
         };
     }
 
+    /// <summary>Synfig's <c>Bone::get_shape</c> at a time: origin, tip and the two radii.</summary>
+    internal MotionBoneShape Shape(double time) => MotionBoneShape.Of(Frame(time),
+        Length.Evaluate(time)[0] * Scalelx.Evaluate(time)[0], Width.Evaluate(time)[0], Tipwidth.Evaluate(time)[0]);
+
+    /// <summary>The shape at rest, which a skeleton deformation measures its weights against.</summary>
+    internal MotionBoneShape RestShape => MotionBoneShape.Of(RestFrame,
+        Length.Evaluate(0)[0] * RestScalelx, Width.Evaluate(0)[0], Tipwidth.Evaluate(0)[0]);
+
     /// <summary>
     /// Synfig's skeleton-layer shape for the bone at a time: a capsule from a circle of <c>width</c> at
     /// the origin to one of <c>tipwidth</c> at the tip. A fixed segment count keeps the vertex count the
     /// same at every time, so an SVG path can interpolate.
     /// </summary>
-    internal List<SKPoint> Capsule(double time, int? fixedSegments = null)
+    internal List<SKPoint> Capsule(double time, int? fixedSegments = null) => Shape(time).Capsule(fixedSegments);
+    #endregion
+}
+
+/// <summary>
+/// A bone's shape as Synfig measures it: the segment from origin to tip, a radius at each end. What the
+/// skeleton layer draws and what a skeleton deformation weighs grid points by.
+/// </summary>
+internal readonly record struct MotionBoneShape(double P0x, double P0y, double P1x, double P1y, double R0, double R1)
+{
+    #region Methods
+    public static MotionBoneShape Of(MotionAffine frame, double length, double width, double tipwidth)
     {
-        const double precision = 0.000000001;
-        var m = Frame(time);
-        var (ox, oy) = m.Apply(0, 0);
-        var (vx, vy) = m.ApplyVector(1, 0);
+        var (ox, oy) = frame.Apply(0, 0);
+        var (vx, vy) = frame.ApplyVector(1, 0);
         var norm = Math.Sqrt(vx * vx + vy * vy);
         (vx, vy) = norm > 0 ? (vx / norm, vy / norm) : (1, 0);
-        var length = Length.Evaluate(time)[0] * Scalelx.Evaluate(time)[0];
         if (length < 0) (length, vx, vy) = (-length, -vx, -vy);
+        return new(ox, oy, ox + vx * length, oy + vy * length, Math.Abs(width), Math.Abs(tipwidth));
+    }
 
-        var (p1x, p1y) = (ox + vx * length, oy + vy * length);
-        var r0 = Math.Abs(Width.Evaluate(time)[0]);
-        var r1 = Math.Abs(Tipwidth.Evaluate(time)[0]);
+    public MotionBoneShape Expanded(double by) => this with { R0 = R0 + by, R1 = R1 + by };
+
+    /// <summary>
+    /// Synfig's <c>Bone::distance_to_shape_center_percent</c>: 1 on the bone, falling to 0 at the capsule's
+    /// edge, the greatest of the two end circles and the tapered band between them.
+    /// </summary>
+    public double CenterPercent(double x, double y)
+    {
+        const double precision = 0.000000001;
+        var length = Math.Sqrt((P1x - P0x) * (P1x - P0x) + (P1y - P0y) * (P1y - P0y));
+        var p0 = R0 > precision ? 1 - Math.Sqrt((x - P0x) * (x - P0x) + (y - P0y) * (y - P0y)) / R0 : 0;
+        var p1 = R1 > precision ? 1 - Math.Sqrt((x - P1x) * (x - P1x) + (y - P1y) * (y - P1y)) / R1 : 0;
+        var line = 0d;
+        if (length + precision > Math.Abs(R1 - R0))
+        {
+            var cos0 = (R0 - R1) / length;
+            var cos1 = -cos0;
+            var sin0 = Math.Sqrt(1 + precision - cos0 * cos0);
+            var sin1 = sin0;
+            var ll = length - R0 * cos0 - R1 * cos1;
+            var (dx, dy) = ((P1x - P0x) / length, (P1y - P0y) / length);
+            var (qx, qy) = (P0x + dx * (R0 * cos0), P0y + dy * (R0 * cos0));
+            var rr0 = R0 * sin0;
+            var rr1 = R1 * sin1;
+            var along = ((x - qx) * dx + (y - qy) * dy) / ll;
+            if (along > 0 && along < 1)
+            {
+                var distance = Math.Abs((x - qx) * -dy + (y - qy) * dx);
+                var max = rr0 * (1 - along) + rr1 * along;
+                if (max > 0) line = 1 - distance / max;
+            }
+        }
+
+        return Math.Max(0, Math.Max(p0, Math.Max(p1, line)));
+    }
+
+    /// <summary>Synfig's <c>distance_to_line</c>: to the segment where the foot falls on it, else to the nearer end.</summary>
+    public double DistanceToLine(double x, double y)
+    {
+        const double epsilon = 1e-10;
+        var d0 = Math.Sqrt((x - P0x) * (x - P0x) + (y - P0y) * (y - P0y));
+        var d1 = Math.Sqrt((x - P1x) * (x - P1x) + (y - P1y) * (y - P1y));
+        var (lx, ly) = (P1x - P0x, P1y - P0y);
+        var length = Math.Sqrt(lx * lx + ly * ly);
+        var toLine = double.PositiveInfinity;
+        if (length > epsilon)
+        {
+            var distance = Math.Abs((x - P0x) * -ly + (y - P0y) * lx) / length;
+            var along = ((x - P0x) * lx + (y - P0y) * ly) / length;
+            if (along > 0 && along < length) toLine = distance;
+        }
+
+        return Math.Min(toLine, Math.Min(d0, d1));
+    }
+
+    /// <summary>The similarity that carries the segment's frame to unit length along x: Synfig's <c>into_bone</c> before inverting.</summary>
+    public MotionAffine Frame => new(P1x - P0x, P1y - P0y, P0y - P1y, P1x - P0x, P0x, P0y);
+
+    /// <summary>The capsule as a polygon; see <see cref="MotionBone.Capsule"/>.</summary>
+    public List<SKPoint> Capsule(int? fixedSegments = null)
+    {
+        const double precision = 0.000000001;
+        var (ox, oy, p1x, p1y, r0, r1) = (P0x, P0y, P1x, P1y, R0, R1);
+        var length = Math.Sqrt((p1x - ox) * (p1x - ox) + (p1y - oy) * (p1y - oy));
+        var (vx, vy) = length > 0 ? ((p1x - ox) / length, (p1y - oy) / length) : (1d, 0d);
         var direction = Math.Atan2(vy, vx);
         var angle0 = length - precision > Math.Abs(r1 - r0) ? Math.Acos((r0 - r1) / length) : (r0 > r1 ? 0 : Math.PI);
         var angle1 = Math.PI - angle0;

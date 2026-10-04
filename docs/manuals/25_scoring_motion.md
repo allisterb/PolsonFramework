@@ -262,6 +262,10 @@ is Synfig's, and the craft follows from it:
   spline point's `bone: [[upper, 1], [lower, 1]]`); a rigid piece takes one bone. Check the rig with
   `comp.skeleton()` over a contact sheet, and measure it with `bone.at(t)` — every bone is in `comp.bones` —
   rather than by eye. The skeleton is a guide: take it out before the deliverable.
+- **When the drawing must bend rather than hinge, deform it.** Cut pieces tear where one drawn shape crosses
+  a joint — a raglan sleeve, a coat hem over a stepping leg. Put the whole picture in a group with
+  `group.skeletonDeformation()` over it and the bones bend it as one sheet. Each bone's `width` is its reach:
+  set it to cover the artwork it carries, because anything no bone reaches is dropped.
 
 ```javascript
 const n = Motion.nodes;

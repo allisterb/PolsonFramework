@@ -137,7 +137,7 @@ public abstract class MotionLayerList
     {
         var o = new MotionOptions(options, "group",
             "origin", "offset", "angle", "skewAngle", "scale", "bone", "amount", "blend", "timeOffset", "timeDilation", "desc");
-        var group = new MotionGroup(o);
+        var group = new MotionGroup(o) { Root = Root };
         layers.Add(group.Layer);
         return group;
     }
@@ -169,9 +169,76 @@ public abstract class MotionLayerList
     public MotionLayerList Drawn(object? options) =>
         throw new ArgumentException("drawn(draw, options?) takes a function first: comp.drawn((ctx, v, t) => { ... }, { values }).");
 
+    /// <summary>
+    /// A bone deformation of everything below it in this stack:
+    /// <c>{ bones?, point1?, point2?, xSubdivisions?, ySubdivisions?, amount?, desc? }</c>. <c>bones</c>
+    /// defaults to all the composition's bones, the corners to their rest capsules' bounds, the grid to 32 × 32.
+    /// </summary>
+    /// <remarks>
+    /// Synfig's skeleton deformation layer. A bone's <c>width</c> and <c>tipwidth</c> are its reach: only what
+    /// lies inside the bones' rest capsules is kept and bent, so give each bone the width of the artwork it carries.
+    /// </remarks>
+    public MotionLayerList SkeletonDeformation(object? options = null)
+    {
+        var o = new MotionOptions(options, "skeletonDeformation",
+            "bones", "point1", "point2", "xSubdivisions", "ySubdivisions", "amount", "desc");
+        layers.Add(new MotionDeformationLayer(o, Root?.Bones ?? []));
+        return this;
+    }
+
+    /// <summary>The composition this stack belongs to, whose bones it can use.</summary>
+    internal MotionComposition? Root { get; private protected set; }
+
+    /// <summary>Every layer here and in the groups below.</summary>
+    internal IEnumerable<MotionLayer> AllLayers() =>
+        layers.SelectMany(l => l is MotionLayer.GroupLayer g ? g.Children.AllLayers().Prepend(l) : [l]);
+
     internal void RenderLayers(SkiaCanvas surface, double time)
     {
-        foreach (var layer in layers) layer.Render(surface, time);
+        if (!layers.Any(l => l is MotionDeformationLayer))
+        {
+            foreach (var layer in layers) layer.Render(surface, time);
+            return;
+        }
+
+        // A deformation bends what is below it in the stack, so the stack is drawn on a surface of its own,
+        // in device pixels under the same transform, and each deformation replaces that surface with its result.
+        var canvas = surface.SkCanvas;
+        var matrix = canvas.TotalMatrix;
+        var stack = Fresh(surface, matrix);
+        try
+        {
+            foreach (var layer in layers)
+            {
+                if (layer is not MotionDeformationLayer deformation)
+                {
+                    layer.Render(stack, time);
+                    continue;
+                }
+
+                var bent = deformation.Apply(stack, matrix, time);
+                stack.Dispose();
+                stack = bent;
+                stack.SkCanvas.SetMatrix(matrix);
+            }
+
+            canvas.Save();
+            canvas.ResetMatrix();
+            canvas.DrawBitmap(stack.SkBitmap, 0, 0);
+            canvas.Restore();
+        }
+        finally
+        {
+            stack.Dispose();
+        }
+
+        static SkiaCanvas Fresh(SkiaCanvas like, SKMatrix matrix)
+        {
+            var c = new SkiaCanvas(like.Width, like.Height, like.SkBitmap.ColorType);
+            c.SkCanvas.Clear(SKColors.Transparent);
+            c.SkCanvas.SetMatrix(matrix);
+            return c;
+        }
     }
 
     internal IEnumerable<XElement> LayersToSif(SifWriter sif) => layers.Select(l => l.ToSif(sif));
@@ -224,6 +291,7 @@ public sealed class MotionComposition : MotionLayerList
     {
         this.motion = motion;
         this.projectRoot = projectRoot;
+        Root = this;
 
         var o = new MotionOptions(options, "Motion.composition", "width", "height", "fps", "duration", "view");
         Width = (int)o.Number("width", 480);
@@ -516,8 +584,11 @@ internal abstract class MotionLayer
             Desc is null ? null : new XAttribute("desc", Desc),
             SifWriter.Param("z_depth", new XElement("real", new XAttribute("value", "0"))),
             sif.Param("amount", Amount),
-            SifWriter.Param("blend_method", new XElement("integer", new XAttribute("value", Blend.Synfig))),
+            SifWriter.Param("blend_method", new XElement("integer", new XAttribute("value", SifBlendMethod))),
             content);
+
+    /// <summary>The <c>blend_method</c> written: the layer's blend, unless the layer composites some other way.</summary>
+    protected virtual int SifBlendMethod => Blend.Synfig;
 
     protected double AmountAt(double time) => Math.Clamp(Amount.Evaluate(time)[0], 0, 1);
 
@@ -1647,6 +1718,17 @@ internal sealed class SifWriter
         foreach (var node in composition.AllNodes()) Count(node);
         for (var i = 0; i < composition.Bones.Count; i++) bones[composition.Bones[i]] = Guid(i + 1);
 
+        // A skeleton deformation pairs each bone with a fixed copy of it at rest; those copies, and their
+        // ancestors so that they hang from the same places, go into the bones section too.
+        var deformed = composition.AllLayers().OfType<MotionDeformationLayer>().SelectMany(d => d.Bones)
+            .SelectMany(b => Ancestry(b)).ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (var b in composition.Bones.Where(deformed.Contains)) restBones[b] = "B07D" + (restBones.Count + 1).ToString("X28");
+
+        static IEnumerable<MotionBone> Ancestry(MotionBone b)
+        {
+            for (var x = b; x is not null; x = x.Parent) yield return x;
+        }
+
         // Children before parents, because Synfig refuses a reference to a def it has not read yet.
         var ordered = new List<MotionNode>();
         var seen = new HashSet<MotionNode>(ReferenceEqualityComparer.Instance);
@@ -1676,6 +1758,7 @@ internal sealed class SifWriter
     private readonly MotionNode[] exportOrder;
     private readonly Dictionary<string, string> pictures = [];
     private readonly Dictionary<MotionBone, string> bones = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<MotionBone, string> restBones = new(ReferenceEqualityComparer.Instance);
     private readonly List<(string Name, byte[] Png)> files = [];
     #endregion
 
@@ -1689,6 +1772,11 @@ internal sealed class SifWriter
     public string Bone(MotionBone bone) => bones.TryGetValue(bone, out var guid)
         ? guid
         : throw new InvalidOperationException($"Bone '{bone.Name}' belongs to another composition, so this one cannot write it.");
+
+    /// <summary>The guid of a bone's fixed rest copy, which a skeleton deformation pairs it with.</summary>
+    public string RestBone(MotionBone bone) => restBones.TryGetValue(bone, out var guid)
+        ? guid
+        : throw new InvalidOperationException($"Bone '{bone.Name}' has no rest copy in this file.");
 
     // Synfig's guids are 32 hex digits. These only have to be distinct within the file.
     private static string Guid(int n) => "B07E" + n.ToString("X28");
@@ -1710,7 +1798,22 @@ internal sealed class SifWriter
                 Link("origin", b.Origin), Link("angle", b.Angle), Link("scalelx", b.Scalelx), Link("width", b.Width),
                 Link("scalex", b.Scalex), Link("tipwidth", b.Tipwidth),
                 new XElement("bone_depth", new XElement("real", new XAttribute("value", "0"))),
-                Link("length", b.Length))));
+                Link("length", b.Length))),
+            composition.Bones.Where(restBones.ContainsKey).Select(b => new XElement("bone",
+                new XAttribute("type", "bone_object"), new XAttribute("guid", restBones[b]),
+                new XElement("name", new XElement("string", b.Name + " (rest)")),
+                new XElement("parent", new XElement("bone_valuenode", new XAttribute("type", "bone_object"),
+                    new XAttribute("guid", b.Parent is null ? root : restBones[b.Parent]))),
+                Fixed("origin", MotionType.Vector, b.Origin.Evaluate(0)),
+                Fixed("angle", MotionType.Angle, [b.RestAngle]),
+                Fixed("scalelx", MotionType.Real, [b.RestScalelx]),
+                Fixed("width", MotionType.Real, b.Width.Evaluate(0)),
+                Fixed("scalex", MotionType.Real, b.Scalex.Evaluate(0)),
+                Fixed("tipwidth", MotionType.Real, b.Tipwidth.Evaluate(0)),
+                new XElement("bone_depth", new XElement("real", new XAttribute("value", "0"))),
+                Fixed("length", MotionType.Real, b.Length.Evaluate(0)))));
+
+        static XElement Fixed(string name, MotionType kind, double[] value) => new(name, Value(kind, value));
     }
 
     /// <summary>The file name an image layer's picture is written under, beside the <c>.sif</c>.</summary>

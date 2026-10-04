@@ -4982,6 +4982,43 @@ Or give **Synfig's own fields** — `{ name?, parent?, origin, angle, length?, s
 - **`comp.skeleton({ color?, amount?, blend?, desc? })`** draws every bone as a capsule from origin to tip. Synfig treats its skeleton as an editor guide and never renders it; here it renders, so a sheet can show the rig, and **leave it out of a deliverable**.
 - In `.sif` the bones are Synfig's own `<bones>` section, bound values are bone links and bone influences, and the file opens as a rigged project in Synfig Studio. In SVG, bone-driven motion is sampled at the frame rate: exact at frames, interpolated between.
 
+### Bending a whole drawing — `comp.skeletonDeformation(options?)`, or on any group
+
+Cut pieces tear wherever one drawn shape crosses a joint — a raglan sleeve, a long coat, a scarf. A **skeleton deformation** bends instead: everything below it in its stack is drawn through a grid that the bones pull, so the drawing stays whole and curves at the joints. One picture, no cutting.
+
+```javascript
+const n = Motion.nodes;
+const comp = Motion.composition({ width: 420, height: 300, fps: 12, duration: 2 });
+comp.fill({ color: '#f2efe8' });
+
+// Bones where the arm lies at rest. width and tipwidth are each bone's REACH: what it can bend.
+const bend = n.animated('angle', [
+    { time: 0, value: 0, ease: 'halt' }, { time: 1, value: 80, ease: 'halt' }, { time: 2, value: 0, ease: 'halt' }]);
+const upper = comp.bone({ from: [100, 150], to: [220, 150], width: 34, tipwidth: 34 });
+comp.bone({ parent: upper, from: [220, 150], to: [340, 150], width: 34, tipwidth: 30, turn: bend });
+
+// The drawing, as it is at rest, and the deformation over it in the same group.
+const arm = comp.group();
+arm.rectangle({ point1: [96, 132], point2: [224, 168], color: '#c9553d' });
+arm.rectangle({ point1: [216, 134], point2: [344, 166], color: '#e5a93c' });
+for (let x = 110; x < 340; x += 24) arm.rectangle({ point1: [x, 132], point2: [x + 6, 168], color: '#15151a' });
+arm.skeletonDeformation();
+
+comp.capture({ fps: 4 });
+Motion.sheet('artifacts/bend-sheet.png', { count: 5, cols: 5, scale: 0.4, fps: 4 });
+comp.render(1);
+```
+
+`{ bones?, point1?, point2?, xSubdivisions?, ySubdivisions?, amount?, desc? }`. `bones` defaults to every bone of the composition; `point1` and `point2` (the grid's corners) default to the bones' rest capsules, padded; the grid defaults to 32 × 32 cells. Finer bends more smoothly and costs more.
+
+> [!IMPORTANT]
+> **A bone's `width` and `tipwidth` are its reach, and what no bone reaches is dropped.** Only the drawing inside the union of the bones' rest capsules survives, exactly as in Synfig. Give each bone the width of the artwork it carries — the whole sleeve, not the line through it — and check with `comp.skeleton()` at rest that the capsules cover everything. An end bone (a hand, a foot, the head) usually wants to run on past the last joint to the drawing's edge.
+>
+> **It acts on what is below it in its own stack**, so put the drawing and the deformation in one group. It replaces that stack (Synfig's straight blend) at `amount` 1 and fades back to it at less; it takes no `blend`.
+
+- Each grid point is pulled by every bone it lies near, weighted by how deep it sits in the bone's capsule over its squared distance from it, and moves by the weighted average of the bones' rest-to-pose motions. A bone's `stretch` scales across it as well as along it.
+- **Not in SVG**: SVG has no mesh warp, so `toSvg` refuses a composition with one, by name. Capture frames instead. In `.sif` it is Synfig's `skeleton_deformation` layer, with a fixed rest copy of each bone written beside it, as Synfig pairs them.
+
 ### A layer the SDK draws — `comp.drawn(draw, options?)`
 
 The bridge between the model and everything else here: **the nodes say when, the toolkit says what.** `draw(ctx, v, t)` is called for each frame with a fresh context, `v` holding each of `options.values` at that frame, and `t` the layer's own time. `options` is `{ values?, amount?, desc? }`.

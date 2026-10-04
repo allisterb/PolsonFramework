@@ -219,3 +219,54 @@ Motion.save('artifacts/manual25-score.webp', { fps: 25 });
 tl.seek(tl.duration);      // leave the scene at its final state for the still render
 paper;
 ```
+
+## 9. When the Parameters Are the Score (spike)
+
+The score above drives an element's attributes from outside. `Motion.composition()` puts the motion
+*inside* the parameters: a circle's `origin` is not a point that a tween moves, it **is** a node — a
+list of keys, or a formula such as `offset + slope × t`, or a formula whose terms are keys. The model
+is Synfig's, and the craft follows from it:
+
+- **Key what you mean, compute what follows.** A drift is a `Motion.nodes.linear(...)`, a sway is a
+  `Motion.nodes.sine(...)`, a fall is keys. Keying a drift frame by frame is a hundred numbers saying
+  what one rate says.
+- **Choose the ease per key, not per piece.** `halt` is a stop, `constant` a hold, `clamped` passes
+  through without overshooting, `auto` may overshoot on purpose. The default is `clamped`, because an
+  unasked-for overshoot reads as a wobble.
+- **Link rather than copy.** One node passed to two options keeps them together through every later
+  change; two equal nodes drift apart the first time one is edited.
+- **Reuse with a group's clock.** A group's `timeOffset` and `timeDilation` play the same passage later
+  or faster without re-keying it — the follow-through that trails an action by a few frames.
+
+```javascript
+const n = Motion.nodes;
+const comp = Motion.composition({ width: 480, height: 270, fps: 24, duration: 2 });
+comp.fill({ color: '#f2efe8' });
+
+// The anticipation, the drop and the hold are keys; the drift is a rate.
+const y = n.animated('real', [
+    { time: 0,    value: 120, ease: 'halt' },
+    { time: 0.25, value: 100, ease: 'halt' },       // a small rise before the fall
+    { time: 0.8,  value: 230, ease: 'linear' },
+    { time: 2,    value: 230, ease: 'constant' }]);
+const ball = n.composite(n.linear('real', 140, 60), y);
+comp.circle({ origin: ball, radius: 16, color: '#1f6f8b' });
+
+// One colour node in two layers is a link: grade it once and both change.
+const ink = n.constant('color', '#15151a');
+comp.outline({ width: 3, color: ink, points: [{ point: [40, 250] }, { point: [440, 250] }] });
+
+// A second ball, the same passage played a quarter-second late: follow-through without new keys.
+const late = comp.group({ timeOffset: -0.25, offset: [0, 0] });
+late.circle({ origin: ball, radius: 9, color: ink });
+
+log(`${comp.layerCount} layers, ${comp.frameCount} frames; the ball is at ${JSON.stringify(ball.at(1))} at 1 s`);
+comp.capture({ fps: 6 });
+Motion.sheet('artifacts/manual25-graph-sheet.png', { count: 7, cols: 7, scale: 0.4, fps: 6 });   // the capture's fps, so the labels are true
+comp.saveSif('artifacts/manual25-graph.sif');     // the same graph, readable by Synfig
+log(`${comp.toSif().length} characters of .sif`);
+comp.render(1);
+```
+
+It still renders by seeking, so §4 holds unchanged: capture with `comp.capture(...)`, look at the sheet,
+not at a movie. See `polson://sdk/core/Motion` for the calls.

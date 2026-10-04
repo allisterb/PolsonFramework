@@ -4771,3 +4771,98 @@ paper;
 > **An easing may be stored on an object and called through it.** `{ ease: mina.elastic }` followed by `t.ease(0.5)` works, as does every other position — called directly, from a local, from an array element, and passed into a function that did not create it.
 >
 > This is worth stating because it used to **throw**: *"Object type Polson.Drawing.Svg.Mina does not match target type System.Dynamic.ExpandoObject"*, a message naming neither easings nor the line responsible. JavaScript binds `this` to the containing object, and the interop layer then took that object for the CLR receiver. Every easing is now a delegate, which carries its own target, so `this` never enters into it. The `ease: n => ease(n)` wrapper in the example above is therefore no longer necessary — it is left as written because capturing into a local is still the clearer way to apply a default.
+
+## The Model — `Motion.composition()` (spike)
+
+> [!WARNING]
+> **A spike, like the rest of this area.** It ports Synfig's animation *model* — every parameter a function of time, built from keys and formulas — and draws it with Skia. The calls below may change. Synfig's renderer is used only to check this one, and is not needed to use it.
+
+A **composition** is a stack of layers, bottom first. Every layer option is a plain value **or a node**, and a node is a value that changes with time: keyed by waypoints, computed by a formula, or both, since a formula's terms are nodes too. Nothing is stored per frame, so any frame renders directly, in any order — the same seek-not-play property the score above has, with the parameters themselves as the score.
+
+```javascript
+const n = Motion.nodes;
+const comp = Motion.composition({ width: 480, height: 270, fps: 24, duration: 2 });
+comp.fill({ color: '#f2efe8' });
+
+// Keys: an eased drop, then a hold.
+const drop = n.animated('real', [
+    { time: 0,   value: 40,  ease: 'halt' },
+    { time: 0.6, value: 220, ease: 'linear' },
+    { time: 2,   value: 220, ease: 'constant' }]);
+
+// A formula: drift right at 120 px/s from x = 60.
+comp.circle({ origin: n.composite(n.linear('real', 120, 60), drop), radius: 18, color: '#1f6f8b' });
+
+// A tapering stroke: width per point, so the line goes thick and thin.
+comp.outline({ width: 10, color: '#15151a', points: [
+    { point: [40, 240],  t1: [120, -90], width: 0.2 },
+    { point: [200, 220], t1: [120, 30],  width: 1.4 },
+    { point: [300, 250], t1: [60, 60],   width: 0.2 }] });
+
+// A group with its own transform and clock.
+const arm = comp.group({ origin: [400, 80], offset: [400, 80], angle: n.linear('angle', 90) });
+arm.region({ color: '#c9553d', points: [[400, 70], [460, 80], [400, 90]] });
+
+comp.capture({ fps: 6 });                       // into Motion's frame buffer
+Motion.sheet('artifacts/drop-sheet.png', { count: 7, cols: 7, scale: 0.5, fps: 6 });
+comp.render(1.0);                               // one frame, returned as a canvas
+```
+
+**Coordinates are pixels with y down**, the same space as every other call here, so a point from `Drawing.*` or `Character.where(...)` can be a key. **Times are seconds**, not the milliseconds `tl` uses, because the model is Synfig's. **Angles are degrees**, clockwise on screen.
+
+### `Motion.composition(options?)` → `comp`
+
+`{ width?, height?, fps?, duration?, view? }`, defaulting to 480 × 270, 24 fps, 2 seconds. `view` is `[left, top, right, bottom]` in the units layers use, pixels by default.
+
+- `comp.width` · `comp.height` · `comp.fps` · `comp.duration` · `comp.frameCount` — `frameCount` counts both ends, so 2 s at 24 fps is 49 frames.
+- `comp.layerCount` → `number` — layers in this stack (a group's are its own).
+- `comp.render(time)` → `SkiaCanvas` — the composition at `time` seconds, on a new transparent canvas.
+- `comp.draw(ctx, time)` — draws it onto an existing context, under the context's current transform, so an animated passage sits inside a drawing made with the rest of the SDK.
+- `comp.capture(options?)` → `number` — renders frames into `Motion`'s buffer for `Motion.sheet` and `Motion.save`. `{ fps?, from?, to? }`; a lower `fps` samples the same timeline more sparsely. **Pass the same `fps` to `Motion.sheet`**, which otherwise labels the frames at its own default of 25 and puts the wrong times under them.
+- `comp.toSif()` → `string` — the composition as Synfig's `.sif` XML. `comp.saveSif(path)` writes it into the project and returns the path.
+
+### Layers
+
+Each returns the stack it was added to, except `group`, which returns the group so layers can go in it. **An option a layer does not have is refused by name**, listing the ones it has.
+
+- `comp.fill({ color, amount?, desc? })` — a flat colour over the whole frame.
+- `comp.circle({ origin, radius, color, amount?, desc? })`.
+- `comp.region({ points, loop?, origin?, color, amount?, desc? })` — a filled spline, closed by default.
+- `comp.outline({ points, loop?, origin?, width?, color, sharpCusps?, roundTips?, amount?, desc? })` — a stroked spline, open by default. Each point's `width` multiplies the layer's `width`, and the stroke runs linearly between them along the curve, so a line can taper.
+- `comp.group({ origin?, offset?, angle?, skewAngle?, scale?, amount?, timeOffset?, timeDilation?, desc? })` → a group with the same layer methods. Its transform is applied about `origin` and then moved to `offset`; its children see time as `t × timeDilation + timeOffset`, which is how one passage is reused later or faster.
+
+**A spline point** is `{ point, t1?, t2?, width? }`, or a bare `[x, y]` for a corner. Tangents are Synfig's: the curve leaves a point toward `point + t2 / 3` and reaches the next toward `next − t1 / 3`. `t2` defaults to `t1`, which keeps the point smooth. Any of the four can be a node, so the shape itself animates.
+
+`amount` is opacity, 0 to 1.
+
+### Nodes — `Motion.nodes`
+
+- `Motion.nodes.constant(type, value)` — a value that does not change.
+- `Motion.nodes.animated(type, waypoints)` — `[{ time, value, ease?, before?, after?, tension?, continuity?, bias?, temporalTension? }]`.
+- `Motion.nodes.linear(type, slope, offset?)` — `offset + slope × t`. Real, angle or vector.
+- `Motion.nodes.sine(angle, amp?)` — `amp × sin(angle)`, the angle in degrees.
+- `Motion.nodes.composite(x, y)` — a point from two numbers or two real nodes.
+
+`type` is `'real'`, `'angle'`, `'vector'` or `'color'`. Values are numbers, `[x, y]` or `{ x, y }`, and CSS colour strings. **A node of the wrong type is refused**, naming the option and both types.
+
+Every node reads back:
+
+- `node.type` → `string`.
+- `node.at(time)` → the value at `time` seconds: a number, `{ x, y }`, or `#RRGGBBAA`.
+- `node.count` · `node.start` · `node.end` — on an animated node, its waypoint count and first and last times.
+
+**The eases are Synfig's**, and `ease` sets both sides of a waypoint where `before` and `after` set one:
+
+| `ease` | what the value does at the key |
+| :--- | :--- |
+| `'clamped'` (default) | passes through smoothly and **never overshoots** a neighbouring key |
+| `'halt'` (or `'ease'`) | stops: an ease in or out |
+| `'linear'` | straight to the neighbour, no easing |
+| `'constant'` | holds until the next key, then jumps |
+| `'auto'` | a TCB spline: smooth, and **can overshoot** — set `tension`, `continuity`, `bias` to shape it |
+
+> [!TIP]
+> **One node in two places is a link, not a copy.** Pass the same node to two options and both move together; change its keys and both change. Written out as `.sif`, a shared node goes into `<defs>` once and is referenced, so it stays linked in Synfig too.
+
+> [!NOTE]
+> **Checked against Synfig itself.** The same composition rendered by `synfig` 1.5.5 and by this differs only along antialiased edges (about 0.5% of pixels by more than 8 levels in 255), and a disc driven through every ease lands within 0.2 px of where Synfig puts it. Outline corners with `sharpCusps` are the least exact part: a sharp corner is joined as a mitre here.

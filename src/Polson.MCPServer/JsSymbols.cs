@@ -169,6 +169,12 @@ public static class JsSurface
         // about what a script can reach, not because the surface is settled.
         new("Motion", typeof(MotionToolkit), "Motion", false),
         new("tl", typeof(MotionTimeline), "Motion", true),
+
+        // SPIKE: Synfig's animation model, drawn by Skia. A composition and a group share the layer
+        // methods, so one receiver covers both; `node` is whatever a Motion.nodes factory returned.
+        new("Motion.nodes", typeof(MotionNodeFactory), "Motion", false),
+        new("comp", [typeof(MotionComposition), typeof(MotionLayerList), typeof(MotionGroup)], "Motion", true),
+        new("node", [typeof(MotionNode), typeof(MotionAnimated)], "Motion", true),
     ];
 
     /// <summary>

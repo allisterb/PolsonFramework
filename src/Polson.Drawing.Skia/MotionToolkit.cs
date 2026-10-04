@@ -74,6 +74,18 @@ public class MotionToolkit : IDisposable
         new(options?.Defaults?.Dur ?? 500d, options?.Defaults?.Easing);
 
     /// <summary>
+    /// SPIKE: an animation as a graph of layers and value nodes, Synfig's model drawn by Skia.
+    /// </summary>
+    /// <remarks>
+    /// <c>options</c> is <c>{ width?, height?, fps?, duration?, view? }</c>; duration in seconds, and
+    /// <c>view</c> the <c>[left, top, right, bottom]</c> its layers' units map onto, pixels by default.
+    /// </remarks>
+    public MotionComposition Composition(object? options = null) => new(options, this, projectRoot);
+
+    /// <summary>SPIKE: the value nodes a composition's parameters can be: constants, keys and formulas.</summary>
+    public MotionNodeFactory Nodes { get; } = new();
+
+    /// <summary>
     /// Rasterises the current state of a paper, canvas or bitmap and keeps it as the next frame.
     /// </summary>
     /// <remarks>

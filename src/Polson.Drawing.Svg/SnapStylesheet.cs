@@ -5,8 +5,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-using Polson.HtmlParser;
-
 /// <summary>
 /// Applies a CSS stylesheet to a paper, and keeps it in the document.
 /// </summary>
@@ -26,7 +24,7 @@ using Polson.HtmlParser;
 /// declarations produce both.
 /// </para>
 /// <para>
-/// The parsing is <c>Polson.HtmlParser</c>'s, not a second implementation. It reads <b>declared
+/// The parsing is <c>CssToolkit</c>'s, not a second implementation. It reads <b>declared
 /// rules rather than a computed cascade</b> — no inheritance, no specificity — which is exactly
 /// right here: an SVG built by a script is flat, class-per-element, and that is the shape a design
 /// language is written in anyway.

@@ -1,4 +1,4 @@
-namespace Polson.HtmlParser;
+namespace Polson.Drawing.Svg;
 
 using System;
 using System.Collections.Generic;

@@ -842,7 +842,8 @@
       "polson.drawing.svg": {
         "type": "Project",
         "dependencies": {
-          "Polson.HtmlParser": "[0.1.0, )",
+          "AngleSharp": "[1.7.2, )",
+          "AngleSharp.Css": "[1.0.2, )",
           "Polson.Runtime": "[0.1.0, )",
           "Svg.Custom": "[5.2.1, )",
           "Svg.Model": "[5.2.1, )",
@@ -860,13 +861,6 @@
           "SkiaSharp.NativeAssets.Linux": "[4.148.0, )"
         }
       },
-      "polson.htmlparser": {
-        "type": "Project",
-        "dependencies": {
-          "AngleSharp": "[1.7.2, )",
-          "AngleSharp.Css": "[1.0.2, )"
-        }
-      },
       "polson.mcpserver": {
         "type": "Project",
         "dependencies": {
@@ -878,7 +872,6 @@
           "Polson.Drawing.Skia": "[0.1.0, )",
           "Polson.Drawing.Svg": "[0.1.0, )",
           "Polson.ExtendedMind": "[0.1.0, )",
-          "Polson.HtmlParser": "[0.1.0, )",
           "Polson.Runtime": "[0.1.0, )"
         }
       },

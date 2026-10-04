@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyVersion>$(ProjectAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(ProjectAssemblyVersion)</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Polson.Drawing.Skia\Polson.Drawing.Skia.csproj" />
+    <ProjectReference Include="..\Polson.Drawing.Svg\Polson.Drawing.Svg.csproj" />
+    <ProjectReference Include="..\Polson.Runtime\Polson.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

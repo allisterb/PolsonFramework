@@ -131,8 +131,8 @@ public static class JsSurface
         new("LogoType", typeof(LogoTypeToolkit), "LogoType", false),
         new("Layout", typeof(LayoutToolkit), "Layout", false),
 
-        new("Css", typeof(Polson.HtmlParser.CssToolkit), "Css", false),
-        new("sheet", typeof(Polson.HtmlParser.StyleSheetView), "Css", true),
+        new("Css", typeof(Polson.Drawing.Svg.CssToolkit), "Css", false),
+        new("sheet", typeof(Polson.Drawing.Svg.StyleSheetView), "Css", true),
 
         new("Scale", typeof(ScaleToolkit), "Scale", false),
         new("scale", typeof(LinearScale), "Scale", true),

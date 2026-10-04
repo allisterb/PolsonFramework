@@ -403,7 +403,7 @@ public partial class JsDrawingEngine : Runtime
             engine.SetValue("Layout", layoutToolkit);
 
             // Stylesheets read as design languages: tokens and text styling, never layout.
-            var cssToolkit = new Polson.HtmlParser.CssToolkit();
+            var cssToolkit = new Polson.Drawing.Svg.CssToolkit();
             engine.SetValue("Css", cssToolkit);
 
             // Value-to-pixel mapping: the numeric spine of a chart. Draws nothing itself.

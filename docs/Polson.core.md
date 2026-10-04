@@ -4835,6 +4835,49 @@ Each returns the stack it was added to, except `group`, which returns the group 
 
 `amount` is opacity, 0 to 1.
 
+### A layer the SDK draws — `comp.drawn(draw, options?)`
+
+The bridge between the model and everything else here: **the nodes say when, the toolkit says what.** `draw(ctx, v, t)` is called for each frame with a fresh context, `v` holding each of `options.values` at that frame, and `t` the layer's own time. `options` is `{ values?, amount?, desc? }`.
+
+```javascript
+const n = Motion.nodes;
+const comp = Motion.composition({ width: 480, height: 300, fps: 12, duration: 1 });
+comp.fill({ color: '#f2efe8' });
+
+// A pull on a rope: the lean is keyed, the figure is constructed every frame.
+const lean = n.animated('real', [
+    { time: 0,   value: 4,  ease: 'halt' },
+    { time: 0.3, value: -8, ease: 'halt' },      // anticipation: the weight goes toward the rope first
+    { time: 1,   value: 34, ease: 'halt' }]);    // then back, hard
+comp.drawn((ctx, v, t) => {
+    const fig = Drawing.createMannequinFigure(300, 50, 220, { pose: {
+        spineDeg: v.lean * 0.4,
+        lineOfAction: { shape: 'C', turnDeg: v.lean },
+        leftArm:  { shoulderDeg: 172 - v.lean * 0.3, elbowDeg: -10 },
+        rightArm: { shoulderDeg: 178 - v.lean * 0.3, elbowDeg: -15 } } });
+    Drawing.drawMannequinSolid(ctx, fig);
+
+    // The rope runs from the hands to a fixed post, so its angle reports the pull.
+    const h = fig.leftArm.hand, k = fig.rightArm.hand;
+    ctx.strokeStyle = '#7a5c3a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(30, 170);
+    ctx.lineTo((h.x + k.x) / 2, (h.y + k.y) / 2);
+    ctx.stroke();
+}, { values: { lean }, desc: 'deckhand' });
+
+comp.capture({ fps: 4 });
+Motion.sheet('artifacts/pull-sheet.png', { count: 5, cols: 5, scale: 0.4, fps: 4 });
+comp.render(1);
+```
+
+- **`v` is what the nodes give, as the SDK reads it**: a number, `{ x, y }`, or `#RRGGBBAA`. A value's type comes from what it is — a node, a number, a point or a colour string — and anything else is refused by name.
+- **The context is in the layer's frame.** It is drawn through the composition's view and every enclosing group's transform and opacity, and `resetTransform()` returns to that frame rather than to the canvas. So a figure in a group turns, moves and fades with it, and a group's `timeOffset` delays it.
+- **Nothing leaks.** The canvas is saved before the call and restored after, so a transform, clip or state the function leaves behind never reaches the next layer.
+- **Write it as a function of `t`.** Frames are rendered in any order, so anything the function remembers between calls will be wrong on the next out-of-order frame. Read everything from `v` and `t`.
+- **It is not Synfig's**, so `comp.toSif()` refuses a composition that has one, naming the layer. Capture it as frames instead.
+
 ### Nodes — `Motion.nodes`
 
 - `Motion.nodes.constant(type, value)` — a value that does not change.

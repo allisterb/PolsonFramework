@@ -24,6 +24,13 @@ public class CanvasRenderingContext2D
         _currentState = new CanvasState();
         _currentPath = new CanvasPath();
     }
+
+    /// <summary>
+    /// A context whose <c>resetTransform()</c> returns to <paramref name="baseTransform"/> rather than
+    /// to the canvas's own pixels: how a layer drawn inside a transformed group keeps its frame.
+    /// </summary>
+    internal CanvasRenderingContext2D(SkiaCanvas canvas, SKMatrix baseTransform) : this(canvas) =>
+        _baseTransform = baseTransform;
     #endregion
 
     #region Properties
@@ -379,7 +386,8 @@ public class CanvasRenderingContext2D
 
     public void ResetTransform()
     {
-        Canvas.SkCanvas.ResetMatrix();
+        if (_baseTransform.IsIdentity) Canvas.SkCanvas.ResetMatrix();
+        else Canvas.SkCanvas.SetMatrix(_baseTransform);
     }
     #endregion
 
@@ -1321,6 +1329,7 @@ public class CanvasRenderingContext2D
     private readonly Stack<CanvasState> _states;
     private CanvasState _currentState;
     private readonly CanvasPath _currentPath;
+    private readonly SKMatrix _baseTransform = SKMatrix.Identity;
 
     /// <summary>
     /// Weight names accepted in a font shorthand. The CSS keywords, plus the names type foundries

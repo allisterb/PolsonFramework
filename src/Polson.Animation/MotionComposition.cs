@@ -89,9 +89,36 @@ public abstract class MotionLayerList
         return group;
     }
 
-    internal void RenderLayers(SKCanvas canvas, double time)
+    /// <summary>
+    /// A layer the SDK draws: <c>draw(ctx, v, t)</c> is called for every frame with a context in the
+    /// layer's frame, <c>v</c> holding each of <c>options.values</c> evaluated at <c>t</c>.
+    /// <c>options</c>: <c>{ values?, amount?, desc? }</c>.
+    /// </summary>
+    /// <remarks>
+    /// The bridge between the model and the drawing toolkits: nodes say when, the toolkit says what.
+    /// <c>t</c> is the layer's own time, so a group's <c>timeOffset</c> and <c>timeDilation</c> reach
+    /// it. The canvas is saved before the call and restored after, so nothing the function does to the
+    /// transform, clip or state reaches the next layer.
+    /// </remarks>
+    public MotionLayerList Drawn(Action<CanvasRenderingContext2D, object?, double>? draw, object? options = null)
     {
-        foreach (var layer in layers) layer.Render(canvas, time);
+        if (draw is null)
+            throw new ArgumentException("drawn(draw, options?) takes a function first: (ctx, v, t) => { ... }.");
+        var o = new MotionOptions(options, "drawn", "values", "amount", "desc");
+        layers.Add(new MotionLayer.DrawnLayer(o, draw));
+        return this;
+    }
+
+    /// <summary>
+    /// Catches <c>drawn({ ... })</c> with no function, which would otherwise fail with the binder's
+    /// generic "no public methods" message instead of saying what is missing.
+    /// </summary>
+    public MotionLayerList Drawn(object? options) =>
+        throw new ArgumentException("drawn(draw, options?) takes a function first: comp.drawn((ctx, v, t) => { ... }, { values }).");
+
+    internal void RenderLayers(SkiaCanvas surface, double time)
+    {
+        foreach (var layer in layers) layer.Render(surface, time);
     }
 
     internal IEnumerable<XElement> LayersToSif(SifWriter sif) => layers.Select(l => l.ToSif(sif));
@@ -186,7 +213,7 @@ public sealed class MotionComposition : MotionLayerList
         canvas.SkCanvas.Clear(SKColors.Transparent);
         canvas.SkCanvas.Save();
         canvas.SkCanvas.Concat(ViewMatrix());
-        RenderLayers(canvas.SkCanvas, time);
+        RenderLayers(canvas, time);
         canvas.SkCanvas.Restore();
         return canvas;
     }
@@ -201,7 +228,7 @@ public sealed class MotionComposition : MotionLayerList
         var c = ctx.Canvas.SkCanvas;
         c.Save();
         c.Concat(ViewMatrix());
-        RenderLayers(c, time);
+        RenderLayers(ctx.Canvas, time);
         c.Restore();
     }
 
@@ -274,7 +301,7 @@ internal abstract class MotionLayer
     #endregion
 
     #region Methods
-    public abstract void Render(SKCanvas canvas, double time);
+    public abstract void Render(SkiaCanvas surface, double time);
 
     public abstract XElement ToSif(SifWriter sif);
 
@@ -299,8 +326,9 @@ internal abstract class MotionLayer
     {
         private readonly MotionNode color = o.Node("color", MotionType.Color, "#000000");
 
-        public override void Render(SKCanvas canvas, double time)
+        public override void Render(SkiaCanvas surface, double time)
         {
+            var canvas = surface.SkCanvas;
             using var paint = Paint(color.Evaluate(time), AmountAt(time));
             canvas.DrawPaint(paint);
         }
@@ -316,8 +344,9 @@ internal abstract class MotionLayer
         private readonly MotionNode radius = o.Node("radius", MotionType.Real, 10d);
         private readonly MotionNode color = o.Node("color", MotionType.Color, "#000000");
 
-        public override void Render(SKCanvas canvas, double time)
+        public override void Render(SkiaCanvas surface, double time)
         {
+            var canvas = surface.SkCanvas;
             var p = origin.Evaluate(time);
             using var paint = Paint(color.Evaluate(time), AmountAt(time));
             canvas.DrawCircle((float)p[0], (float)p[1], (float)Math.Abs(radius.Evaluate(time)[0]), paint);
@@ -398,8 +427,9 @@ internal abstract class MotionLayer
 
     public sealed class RegionLayer(MotionOptions o) : Shape(o, "region", true)
     {
-        public override void Render(SKCanvas canvas, double time)
+        public override void Render(SkiaCanvas surface, double time)
         {
+            var canvas = surface.SkCanvas;
             using var path = Path(time, out _);
             using var paint = Paint(Color.Evaluate(time), AmountAt(time));
             canvas.DrawPath(path, paint);
@@ -431,8 +461,9 @@ internal abstract class MotionLayer
             SifWriter.Param("round_tip[1]", SifWriter.Bool(roundTips)),
             SifWriter.Param("homogeneous_width", SifWriter.Bool(true)));
 
-        public override void Render(SKCanvas canvas, double time)
+        public override void Render(SkiaCanvas surface, double time)
         {
+            var canvas = surface.SkCanvas;
             using var path = Path(time, out var states);
             if (states.Length == 0) return;
 
@@ -518,6 +549,70 @@ internal abstract class MotionLayer
         }
     }
 
+    public sealed class DrawnLayer : MotionLayer
+    {
+        public DrawnLayer(MotionOptions o, Action<CanvasRenderingContext2D, object?, double> draw) : base(o)
+        {
+            this.draw = draw;
+            values = ReadValues(o.Raw("values"));
+        }
+
+        private readonly Action<CanvasRenderingContext2D, object?, double> draw;
+        private readonly (string Name, MotionNode Node)[] values;
+
+        public override IEnumerable<MotionNode> Nodes() => values.Select(v => v.Node).Prepend(Amount);
+
+        public override void Render(SkiaCanvas surface, double time)
+        {
+            var amount = AmountAt(time);
+            if (amount <= 0) return;
+
+            var canvas = surface.SkCanvas;
+            var depth = canvas.Save();
+            if (amount < 1)
+            {
+                using var fade = new SKPaint { Color = new SKColor(255, 255, 255, (byte)Math.Round(amount * 255)) };
+                canvas.SaveLayer(fade);
+            }
+
+            try
+            {
+                var ctx = new CanvasRenderingContext2D(surface, canvas.TotalMatrix);
+                var v = values.ToDictionary(e => e.Name, e => (object?)MotionTypes.ToJs(e.Node.Kind, e.Node.Evaluate(time)));
+                draw(ctx, v, time);
+            }
+            finally
+            {
+                canvas.RestoreToCount(depth);
+            }
+        }
+
+        public override XElement ToSif(SifWriter sif) => throw new InvalidOperationException(
+            $"The drawn layer{(Desc is null ? "" : $" '{Desc}'")} cannot be written as .sif: Synfig cannot run a script. "
+            + "Write the composition without it, or capture it as frames.");
+
+        /// <summary>Each value's type is read from what it is: a node, a number, a point, or a colour.</summary>
+        private static (string, MotionNode)[] ReadValues(object? raw)
+        {
+            if (raw is null) return [];
+            var d = JsInterop.AsDict(raw) ?? throw new ArgumentException("drawn's values is an object: { name: value or node }.");
+            return [.. d.Keys.Cast<object>().Select(k => k.ToString()!).Select(name =>
+            {
+                var value = d[name];
+                var who = $"drawn's value '{name}'";
+                var kind = value switch
+                {
+                    MotionNode n => n.Kind,
+                    double or int or float or long => MotionType.Real,
+                    string => MotionType.Color,
+                    IList or IDictionary or IDictionary<string, object?> => MotionType.Vector,
+                    _ => throw new ArgumentException($"{who} is a number, a point, a colour or a node, not {value?.GetType().Name ?? "nothing"}.")
+                };
+                return (name, MotionNodeFactory.Node(value, kind, who));
+            })];
+        }
+    }
+
     public sealed class GroupLayer : MotionLayer
     {
         public GroupLayer(MotionOptions o, MotionGroup children) : base(o)
@@ -539,8 +634,9 @@ internal abstract class MotionLayer
         public override IEnumerable<MotionNode> Nodes() =>
             new[] { Amount, origin, offset, angle, skewAngle, scale }.Concat(children.Nodes());
 
-        public override void Render(SKCanvas canvas, double time)
+        public override void Render(SkiaCanvas surface, double time)
         {
+            var canvas = surface.SkCanvas;
             var amount = AmountAt(time);
             if (amount <= 0) return;
 
@@ -552,7 +648,7 @@ internal abstract class MotionLayer
                 canvas.SaveLayer(fade);
             }
 
-            children.RenderLayers(canvas, time * timeDilation + timeOffset);
+            children.RenderLayers(surface, time * timeDilation + timeOffset);
             if (amount < 1) canvas.Restore();
             canvas.Restore();
         }

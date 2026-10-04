@@ -52,6 +52,47 @@ public class MotionCompositionScriptTests : TestsRuntime
         Assert.Contains(expected, result.Error);
     }
 
+    [Fact]
+    public void ADrawnLayerPosesAFigureFromKeys()
+    {
+        var result = Execute("""
+            const n = Motion.nodes;
+            const comp = Motion.composition({ width: 320, height: 180, fps: 4, duration: 1 });
+            comp.fill({ color: '#f2efe8' });
+            const lean = n.animated('real', [{ time: 0, value: -20, ease: 'halt' }, { time: 1, value: 25, ease: 'halt' }]);
+            const seen = [];
+            comp.drawn((ctx, v, t) => {
+                seen.push(t);
+                const fig = Drawing.createMannequinFigure(160, 10, 160,
+                    { pose: { spineDeg: v.lean, rightArm: { shoulderDeg: v.arm, elbowDeg: -30 } } });
+                Drawing.drawMannequinSolid(ctx, fig);
+            }, { values: { lean, arm: n.linear('real', 60, 20) }, desc: 'figure' });
+
+            const d = comp.render(0).bitmap.diff(comp.render(1).bitmap);
+            log('moved ' + (d.similarity < 0.99) + ' calls ' + seen.join(','));
+            log('captured ' + comp.capture({ fps: 4 }));
+            """);
+
+        Assert.True(result.Success, result.Error);
+        var logs = string.Join("\n", result.Logs);
+        Assert.Contains("moved true calls 0,1", logs);
+        Assert.Contains("captured 5", logs);
+
+        // A host refusal ends the script rather than throwing into it, as every SDK refusal does.
+        var sif = Execute("const comp = Motion.composition(); comp.drawn((ctx, v, t) => {}, { desc: 'figure' }); comp.toSif();");
+        Assert.False(sif.Success);
+        Assert.Contains("'figure' cannot be written as .sif", sif.Error);
+    }
+
+    [Fact]
+    public void ADrawnLayerWithoutAFunctionFails()
+    {
+        var result = Execute("const comp = Motion.composition(); comp.drawn({ values: { a: 1 } });");
+
+        Assert.False(result.Success);
+        Assert.Contains("takes a function first", result.Error);
+    }
+
     private static DrawingExecutionResult Execute(string body) =>
         new JsDrawingEngine().Execute($"const c = createCanvas(320, 180); {body}", 320, 180, null, "png", 90);
 }

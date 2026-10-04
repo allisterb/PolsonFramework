@@ -237,6 +237,11 @@ is Synfig's, and the craft follows from it:
   change; two equal nodes drift apart the first time one is edited.
 - **Reuse with a group's clock.** A group's `timeOffset` and `timeDilation` play the same passage later
   or faster without re-keying it — the follow-through that trails an action by a few frames.
+- **Key the pose, construct the figure.** A layer made with `comp.drawn((ctx, v, t) => ..., { values })`
+  is drawn by the toolkit every frame, from values the nodes give. Key the line of action's `turnDeg`
+  and the arm angles, and `Drawing.createMannequinFigure` builds the body at each frame; Manual 28's
+  checks then run on any frame you render. Write the function from `v` and `t` alone: frames come in
+  any order, so nothing it remembers between calls can be trusted.
 
 ```javascript
 const n = Motion.nodes;

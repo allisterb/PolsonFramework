@@ -145,6 +145,58 @@ public class Sketch1ReportedBugTests : TestsRuntime
             "the check should sit in the logs where it was made");
     }
 
+    /// <summary>
+    /// A failure that is right about the drawing, kept on purpose, is its own state with its reason. sketch1 had two -
+    /// two fists on one rope, a forearm along the rope it grips - and could only record them as red checks.
+    /// </summary>
+    [Fact]
+    public void AnAcceptedFailureIsItsOwnState()
+    {
+        var result = Execute("""
+            const kept = Stage.check('no tangents inside the deckhand', false, 'touch leftArm/rightArm',
+                { accepted: 'two fists on one rope are meant to be close' });
+            const bare = Stage.check('a forearm clear of the rope', false, { accepted: 'the forearm lies along the rope it grips' });
+            const failed = Stage.check('rope still a steep diagonal', false, 'measured 5 deg');
+            log('returned ' + kept + '/' + bare + '/' + failed);
+            """);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Contains(result.Logs, l => l.Contains("returned true/true/false"));
+        Assert.Contains(result.Logs, l => l == "[CHECK] ACCEPTED no tangents inside the deckhand - touch leftArm/rightArm (kept: two fists on one rope are meant to be close)");
+        Assert.Contains(result.Logs, l => l == "[CHECK] ACCEPTED a forearm clear of the rope (kept: the forearm lies along the rope it grips)");
+
+        var checks = result.Checks!;
+        Assert.Equal(0, checks.Passed);
+        Assert.Equal(1, checks.Failed);
+        Assert.Equal(2, checks.AcceptedCount);
+        Assert.Equal("rope still a steep diagonal", Assert.Single(checks.Failures).Claim);
+        Assert.Equal("two fists on one rope are meant to be close", checks.Accepted[0].Reason);
+        Assert.Null(checks.Accepted[1].Detail);
+    }
+
+    /// <summary>A pass with a reason attached is just a pass; there is nothing to keep.</summary>
+    [Fact]
+    public void AcceptingAPassChangesNothing()
+    {
+        var result = Execute("Stage.check('clear', true, 'measured 0', { accepted: 'not needed' });");
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(1, result.Checks!.Passed);
+        Assert.Equal(0, result.Checks.AcceptedCount);
+    }
+
+    [Theory]
+    [InlineData("{ accepted: true }", "the reason")]
+    [InlineData("{ accepted: '' }", "the reason")]
+    [InlineData("{ waived: 'x' }", "waived")]
+    public void AnAcceptanceWithoutAReasonIsRefused(string options, string expected)
+    {
+        var result = Execute($"Stage.check('no tangents', false, 'touch', {options});");
+
+        Assert.False(result.Success);
+        Assert.Contains(expected, result.Error);
+    }
+
     [Fact]
     public void AScriptWithNoChecksHasNoSummary()
     {

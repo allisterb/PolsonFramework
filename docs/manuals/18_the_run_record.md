@@ -111,7 +111,7 @@ Write it for someone who cannot see your context — because that is exactly who
 
 ## 3a. `Stage.expect` and `Stage.check` — Being Able to Be Wrong
 
-> **Implemented by**: `Stage.expect(claim)`, `Stage.check(claim, passed, detail?)` → `boolean`.
+> **Implemented by**: `Stage.expect(claim)`, `Stage.check(claim, passed, detail?, { accepted? })` → `boolean`.
 
 A note says what you thought. A **check** says what you predicted and whether it held — and that is the one thing in the record that can be *wrong* rather than merely absent.
 
@@ -137,6 +137,7 @@ Two rules follow from that, and both have been broken in a live run:
 - **Every `expect` gets a `check`.** An unsettled expectation reads as verification and is not, which makes it worse than saying nothing. The run report warns when they do not balance.
 - **A failing check gets re-run after the fix.** The failure identifies the fault; the pass is the only evidence the correction landed. A stage where every check failed has diagnosed without demonstrating, and the report warns about that too.
 - **A failing check is settled before the work is delivered, and the fault is often in the check.** Read the number before dismissing it. A run recorded `Descent Propellant Mass Lie Factor => 1.2477` on four consecutive renders and shipped anyway, over a summary claiming success — and the bar was drawn correctly all along. The check had compared the drawn width of the whole *descent stage* against the mass of its *propellant* alone, betrayed by a variable named `drawnPropWidth` holding a stage width. **One minute of looking was the entire fix.** Either correct the artifact and re-check, or correct the check and say so in a note; leaving it red while the piece claims success makes the record contradict the artifact, and a reader cannot tell which to believe.
+- **When the check is right and the drawing is right too, accept it with the reason.** Some failures are correct detections of something the drawing wants: `findTangents` reporting two fists close together on one rope is right, and so is a drawing that keeps them there. `Stage.check(claim, false, detail, { accepted: 'two fists on one rope, hand over hand' })` records a third state, neither pass nor fail, with the reason beside the measurement; it returns `true`, the run report lists it under `claimsAccepted`, and it does not count as a failure left unfixed. The sketch1 run had two of these and could only leave them red, with the reasons in a note a reader had to go looking for. **This is not a way to quiet a check you would rather not fail**: if the drawing could be better, fix it.
 - **The `detail` carries the measurement, not the claim again.** A check whose detail restates its own claim has recorded a belief and dressed it as a test. Against *"monotonic scaling"*, the detail *"monotonic scaling preserved"* adds nothing a reader could disagree with; `'measured ' + n` does. If there is no number, colour, count or returned value to put there, you did not measure — and a claim you cannot measure belongs in a `Stage.note`, honestly, rather than in a `check`, decoratively.
 
 > [!IMPORTANT]

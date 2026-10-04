@@ -63,9 +63,11 @@ of scenes in a feature (ch. 121) — and a look has rules of its own:
 - **A prop is part of the story, not decoration.** It tells you what the pose is about and must be in
   the drawing, related to the hand and the eye (ch. 39, 134).
 
-**In the toolkit** the look is checkable geometry: sample the segment from `figure.head.center` to the
-target against the body's silhouette drawn on a probe canvas, and count the hits (§9's example does
-exactly this). Anything above zero means something is in the way of the story.
+**In the toolkit** the look is checkable geometry: `Drawing.checkLookPath(figure, target)` follows the
+line from the head to the target and reports what it runs through, part by part — the near shoulder, a
+raised arm, the other figure, the mast. Anything in `hits` is in the way of the story. Ignore what is
+part of the thing looked at, such as the hands on a rope the figure looks up, and pass the rest of the
+scene as `obstacles` (§9's example does this).
 
 ## 3. Solid and flexible: where a body bends
 
@@ -233,6 +235,14 @@ Once the gesture reads, and only then:
   parallel to the other's, and `flush: true` marks the case where it lies over the other's hidden edge
   and the silhouette carries on as if it were not there. Each tangent carries a `mark` to stroke. The
   default mannequin, standing, already has two: its hands hang flat against its thighs.
+
+  **Put the set in the same bag as the figures.** A horizon, a boom or a rail is a line, written
+  `{ x1, y1, x2, y2 }`, as points or as path data, and a figure's geometry goes in under its own name, so
+  `findTangents({ her: herGeo, him: hisGeo, horizon, boom })` tests every figure against every set line.
+  Against a line the finder adds a third kind, **end**: a line stopping on an outline or on another line.
+  The worst tangents in a staged scene are usually here, not between limbs — on the sketch1 run, the
+  horizon crossing the skipper's jaw, the boom ending on his pointing hand and the rail along her thighs
+  were all found by eye, because the finder was then given only the figures.
 - **The six depth cues in line** (ch. 30, after Bruce McIntyre): overlap; **surface plus size** — feet
   sitting on the ground plane, nearer ones lower and larger; **surface lines** — a sleeve cuff, a belt, a
   collar, the implied line through the eyes, each curving round its form and telling you which way it
@@ -264,6 +274,13 @@ It pairs with ch. 43: a character who is threatened can be staged inside dominan
 one who is on top of the situation can fill the frame as the dominant positive. Choose the family before
 the figures; it tells you what the set's lines, the line of action and the composition are for. See
 `polson://manual/09` for the armatures that carry it.
+
+**In the toolkit** `Drawing.classifyLines(lines)` reads the family back from what you drew. It sorts each
+line by direction, weighs the set by length, and names the mood it adds up to, out of the families a
+direction can show: horizontals, verticals, vertical against horizontal, conflicting diagonals, an
+unsupported diagonal, zigzag, wave and spiral. The rest of the table — flame shapes, spheres, the arch,
+the fountain, the cascade, the grief line — are shapes rather than directions, and you judge those by
+eye. On the sketch1 run, the set the agent built for *conflicting diagonals* reads back as exactly that.
 
 ## 9. The procedure, run
 
@@ -344,18 +361,14 @@ Stage.check('no tangents', tangents.count === 0,
 ctx.strokeStyle = RED; ctx.lineWidth = 4;
 for (const t of tangents.tangents) ctx.stroke(t.mark);
 
-// The look: the path from the eyes to the jar must be clear of the body, sampled along the line.
+// The look: the path from the eyes to the jar must be clear of the body. The reaching arm is part of
+// what is looked at, so it is ignored; the head and neck never count.
 const jar = { x: fig2.rightArm.hand.x + fig2.headUnit * 0.4, y: fig2.rightArm.hand.y - fig2.headUnit * 0.5 };
-const body = geo.groups.torso.union(geo.groups.leftArm).union(geo.groups.leftLeg).union(geo.groups.rightLeg);
-const eye = fig2.head.center;
-let blocked = 0;
-for (let i = 1; i <= 40; i++) {
-    const t = i / 40;
-    if (body.contains(eye.x + (jar.x - eye.x) * t, eye.y + (jar.y - eye.y) * t)) blocked++;
-}
-Stage.check('the look travels clear to the jar', blocked === 0, `${blocked} of 40 samples blocked`);
+const look = Drawing.checkLookPath(geo, jar, { from: fig2.head.center, ignore: ['rightArm'] });
+Stage.check('the look travels clear to the jar', !look.blocked,
+    look.blocked ? `blocked by ${look.firstHit.by}, ${(look.clear * 100).toFixed(0)}% clear` : 'clear');
 ctx.strokeStyle = RED; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
-ctx.beginPath(); ctx.moveTo(eye.x, eye.y); ctx.lineTo(jar.x, jar.y); ctx.stroke();
+ctx.stroke(look.mark);
 ctx.setLineDash([]);
 
 // Panel 3 - line: straight on the stretch side, curved on the squash side, over the masses.
@@ -389,10 +402,10 @@ of the picture: `path.area` for *how much*, `path.contains(x, y)` for *whether t
   a limb bent less than 8° is stretched on both sides; Stanchfield's relaxed-pose rule — bony side
   straight, fleshy side curved (ch. 13) — needs anatomy the mannequin does not carry. The face's
   stretches (ch. 25, 90) belong to `polson://manual/23`.
-- **Every tangent.** `findTangents` finds shapes that touch and edges that line up. It does not find
-  a line ending where another begins, more than two lines meeting at a point, or a face stacked
-  straight over the body — that last is an alignment of centre lines, not of edges. And it judges the
-  shapes you give it: the mannequin's groups, not a costume or a prop, unless you pass those too.
+- **Every tangent.** `findTangents` finds shapes and lines that touch, edges that line up, and lines
+  that end on an outline or on each other. It does not find more than two lines meeting at a point, or
+  a face stacked straight over the body — that last is an alignment of centre lines, not of edges. And
+  it judges what you give it: the mannequin's groups, not a costume or a prop, unless you pass those too.
 - **A line of action through the legs.** `lineOfAction` curves the torso; carrying the curve down the
   supporting leg is still posed joint by joint.
 - **Feeling the pose.** His deepest instruction — act it, feel which muscles pull and where the weight

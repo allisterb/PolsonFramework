@@ -101,7 +101,12 @@ CASES: list[tuple[str, dict, str | None]] = [
     # StageApi.cs
     ("a note", {"type": "note", "message": "cast bought in one call"}, "cast bought"),
     ("a stage beginning", {"type": "stage.begin", "stage": "Cast"}, "Cast"),
-    ("a check", {"type": "check", "claim": "accent under 15%", "passed": True}, None),
+    ("a check", {"type": "check", "claim": "accent under 15%", "passed": True}, "pass"),
+    ("a failed check", {"type": "check", "claim": "accent under 15%", "passed": False,
+                        "detail": "measured 0.21"}, "FAILED"),
+    ("an accepted check", {"type": "check", "claim": "no tangents", "passed": False,
+                           "accepted": True, "reason": "two fists on one rope"},
+     "kept because two fists on one rope"),
     # DrawingMcpTools.cs
     ("a render", {"type": "render", "script": "scripts/0001.js",
                   "artifact": "artifacts/board.webp", "format": "webp", "bytes": 51201},

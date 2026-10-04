@@ -148,13 +148,19 @@ internal static class RunReport
         // Claims the run made about its own work, and how they turned out. This is the only part of
         // the record that can be *wrong* rather than merely absent, which is what makes it worth
         // reading first: a run with no checks has not verified anything, however much it inspected.
+        // A failure accepted with a reason is neither met nor unmet: the run looked at it and kept it, and the
+        // reason travels with it so a reader does not have to go looking for the note that explains a red check.
         var checks = events.Where(e => Type(e) == "check").ToArray();
-        var checksFailed = checks.Count(e => e["passed"]?.GetValue<bool>() == false);
+        static bool Accepted(JsonNode e) => e["accepted"]?.GetValue<bool>() == true;
+        var unmet = checks.Where(e => e["passed"]?.GetValue<bool>() == false && !Accepted(e)).ToArray();
+        var checksFailed = unmet.Length;
 
-        var failedClaims = checks
-            .Where(e => e["passed"]?.GetValue<bool>() == false)
+        var failedClaims = unmet
             .Select(e => e["claim"]?.GetValue<string>() ?? "")
             .Where(s => s.Length > 0)
+            .ToArray();
+        var acceptedClaims = checks.Where(Accepted)
+            .Select(e => (JsonNode)new JsonObject { ["claim"] = e["claim"]?.GetValue<string>(), ["reason"] = e["reason"]?.GetValue<string>() })
             .ToArray();
 
         return new JsonObject
@@ -173,7 +179,9 @@ internal static class RunReport
             ["expectations"] = Count("expect"),
             ["checks"] = checks.Length,
             ["checksFailed"] = checksFailed,
+            ["checksAccepted"] = acceptedClaims.Length,
             ["claimsNotMet"] = new JsonArray([.. failedClaims.Select(c => (JsonNode)c!)]),
+            ["claimsAccepted"] = new JsonArray(acceptedClaims),
             ["requisitions"] = Count("asset.requisition"),
             ["requisitionsRefused"] = Count("asset.refused"),
             ["documentsRead"] = Count("document.read"),
@@ -523,7 +531,8 @@ internal static class RunReport
             // and should look like one at a glance.
             ("claims about the work", Num("expectations") == 0 && Num("checks") == 0
                 ? "none - the run asserted nothing about its own output"
-                : $"{Num("expectations")} stated, {Num("checks")} settled, {Num("checksFailed")} failed"),
+                : $"{Num("expectations")} stated, {Num("checks")} settled, {Num("checksFailed")} failed"
+                  + (Num("checksAccepted") > 0 ? $", {Num("checksAccepted")} failed and kept on purpose" : "")),
             ("artifacts read back", Read(report)),
             ("requisitions", Num("requisitions") == 0 && Num("requisitionsRefused") == 0
                 ? "none"

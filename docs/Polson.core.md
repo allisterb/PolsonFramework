@@ -103,7 +103,7 @@ Scripts execute within a secure, sandboxed [Jint](https://github.com/sebastianro
   > [!IMPORTANT]
   > **`JSON.stringify` on an SDK result is safe, and gives you the documented names.** A result carrying an image — `PhotoAsset`, `MaterialAsset`, `BackdropPlate`, `MatteAsset`, `ImageData` — serialises its pixels as a **`byteLength`** rather than transcribing them, and every key comes back in the camelCase spelling this reference uses, so `JSON.parse(JSON.stringify(photo)).aspectRatio` is the number you expect. The real buffer is untouched: `photo.bytes` and `imageData.data` are unchanged.
   >
-  > **A list the SDK returns works like an array** — indexing, `length`, `map`, `filter`, spread and `concat` — though `Array.isArray` says `false`, because it is a wrapped .NET list. `Array.from(list)` makes a real copy. Until 2026-10-02 `concat` appended such a list whole, as a single element, so `a.concat(b)` came back the wrong length and full of `undefined`.
+  > **A list the SDK returns works like an array** — indexing, `length`, `map`, `filter`, spread and `concat` — though `Array.isArray` says `false`, because it is the SDK's own list rather than a JavaScript `Array`. `Array.from(list)` makes a real copy. Until 2026-10-02 `concat` appended such a list whole, as a single element, so `a.concat(b)` came back the wrong length and full of `undefined`.
   >
   > **Lists and vector elements serialise too.** A list the SDK hands back — `gradient.stops()`, `cutout.cells`, `paper.selectAll(...)` — comes out as a JSON array, and a `SnapElement` (a paper, a gradient, a shape) as its markup: `{ type, id, attributes, text, children }`, never its `parent` or `paper`. Until 2026-09-25 either one stopped the script, past any `try/catch`.
   >
@@ -241,7 +241,20 @@ Declares which stage of work you are in, so every script, render and note that f
 > It is the clock only. If your host offers a `budget_status` tool, that reports the same elapsed time *and* what remains of any input-token allowance — which is often the binding constraint, since input is the whole conversation resent every turn and climbs whether or not the work is progressing.
 - `Stage.note(message: string)` — Records a note under the current stage.
 - `Stage.expect(claim: string)` — Records what you expect the next render to show, **before** you make it.
-- `Stage.check(claim: string, passed: boolean, detail?: string)` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold. **The verdict also comes back in the `ExecuteScript` response**: each check is a `[CHECK] PASS` or `[CHECK] FAIL` line in the logs, where it was made, and `checks` sums them up as `{ passed, failed, failures: [{ claim, detail }] }`. There is no need to log a check yourself.
+- `Stage.check(claim: string, passed: boolean, detail?: string, options?: { accepted?: string })` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold. **The verdict also comes back in the `ExecuteScript` response**: each check is a `[CHECK] PASS` or `[CHECK] FAIL` line in the logs, where it was made, and `checks` sums them up as `{ passed, failed, acceptedCount, failures: [{ claim, detail }], accepted: [{ claim, detail, reason }] }`. There is no need to log a check yourself.
+
+> [!TIP]
+> **A failure that is right about the drawing, kept on purpose, is a third state: pass `{ accepted: 'why' }`.** A check can be correct and the drawing still want what it found — `findTangents` reporting two fists close together on one rope, or a forearm lying along the rope it grips. Without this the record held a red check and the reason lived in a note somewhere else, so a reader saw a failure the run had already decided about.
+>
+> ```js
+> const t = Drawing.findTangents(herGeo);
+> Stage.check('no tangents inside the deckhand', t.count === 0, t.tangents.map(x => `${x.kind} ${x.a}/${x.b}`).join(', '),
+>     { accepted: 'both hands are closed on one rope, hand over hand; separating them would be a different action' });
+> ```
+>
+> An accepted check is logged as `[CHECK] ACCEPTED … (kept: reason)`, counted in `acceptedCount` rather than `failed`, reported by `polson report` under `claimsAccepted` with its reason, and **returns `true`**, since there is nothing left to fix. The options may stand in third place when there is no detail. **The reason must be a sentence** — `accepted: true` is refused — because the reason is the whole of what a reader needs. Accepting a check that passed changes nothing.
+>
+> **Accept sparingly, and only after looking.** It is for a measurement that is right and a drawing that is also right. A check you would rather not fail is a check to fix.
 
 > [!IMPORTANT]
 > **`detail` carries the measurement, not the claim restated.** Against the claim *"monotonic scaling"*, a detail of *"monotonic scaling preserved"* records a belief and dresses it as a test; `'measured ' + n` records something a reader can disagree with. If there is no number, colour, count or returned value to put there, you did not measure — and a claim you cannot measure belongs in a `Stage.note`, honestly, rather than in a `check`, decoratively.
@@ -1686,7 +1699,7 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > const fig = Drawing.createMannequinFigure(panel.x - e.x * s, panel.y - e.y * s, 1000 * s, { pose });
 > ```
 
-- `Drawing.createFigureGeometry(figureObj: object, options?: { padding?: number })` → `{ silhouette: CanvasPath, parts: object, groups: object, bounds: Rect, padding: number, order: string[] }` — The figure as **geometry** rather than as a drawing.
+- `Drawing.createFigureGeometry(figureObj: object, options?: { padding?: number })` → `{ silhouette: CanvasPath, parts: object, groups: object, partGroups: object, bounds: Rect, padding: number, order: string[] }` — The figure as **geometry** rather than as a drawing. `partGroups` maps each part to its group: `{ leftForearm: 'leftArm', neck: 'torso', … }`.
   - `silhouette` — every mass unioned into one contour. This is what you fill, clip to, stroke, or subtract from.
   - `parts` — a `CanvasPath` per mass: `neck`, `spine`, `shoulders`, `head`, `ribcage`, `pelvis`, and `leftUpperArm` / `leftForearm` / `leftHand` / `leftThigh` / `leftShin` / `leftFoot` and their `right` counterparts.
   - `groups` — the coarse six those masses belong to: `head`, `torso`, `leftArm`, `rightArm`, `leftLeg`, `rightLeg`. **These are what occlusion clips to.**
@@ -1727,7 +1740,30 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > **The default standing figure is not level — it stands in contrapposto**, shoulders at −6° and pelvis at +6°, so its torso reports a stretch side too. That is the pose, not an error: a hip-shot stance *is* a stretch and a squash. Pass `shoulderTiltDeg: 0, pelvicTiltDeg: 0` for a figure with none.
 >
 > **Line weight is yours.** `stretchWidth` and `squashWidth` default to one `strokeWidth`, because the source distinguishes the sides by the *shape* of the line rather than its weight. Hands, feet and the head are left to their own drawers. `padding` moves every line out with the mass, which is how a sleeve or a trouser leg is lined — the same padding `createFigureGeometry` takes.
-- `Drawing.findTangents(shapes: object | CanvasPath[], options?: { gap?: number, near?: number, angleDeg?: number, minRun?: number, step?: number })` → `{ tangents, count, touching, aligned, pairs, step }` — **Shapes that touch, and shapes that line up.** `shapes` is an object of named `CanvasPath`s, an array of them, or a `createFigureGeometry(...)` result, whose `groups` are used. Every pair is tested. Each tangent is `{ kind: 'touch' | 'align', a, b, at, distance, mark }`, plus `overlapping` and `depth` on a touch, and `from`, `to`, `length`, `angleDeg` and `flush` on an alignment. `mark` is a `CanvasPath` to stroke.
+- `Drawing.findTangents(shapes: object | CanvasPath[], options?: { gap?: number, near?: number, angleDeg?: number, minRun?: number, step?: number })` → `{ tangents, count, touching, aligned, ends, pairs, step }` — **Shapes and lines that touch, line up, or end on each other.** `shapes` is an object of named shapes and lines, an array of them, or a `createFigureGeometry(...)` result, whose `groups` are used. A geometry result *inside* the object adds its groups named after it — `her.leftArm` — so figures and the set go in one bag. Every pair is tested. Each tangent is `{ kind: 'touch' | 'align' | 'end', a, b, at, distance, mark }`, plus `overlapping` and `depth` on a touch, `from`, `to`, `length`, `angleDeg` and `flush` on an alignment, and `end` (`'start'` or `'end'`) and `inside` on an end. `mark` is a `CanvasPath` to stroke.
+  - **A shape** is a closed `CanvasPath`: anything from `createFigureGeometry`, an `ellipse`, a `rect`, a path ending in `closePath()`.
+  - **A line** is `{ x1, y1, x2, y2 }`, an array of points (`[{ x, y }, …]` or `[[x, y], …]`), SVG path data (`'M0 400 L1200 380'`), or a `CanvasPath` with no closed contour. A horizon, a boom, a rope, a rail.
+
+> [!TIP]
+> **Lines are where the worst staging tangents are, and they were the ones no measurement caught.** The sketch1 run found three by eye: a horizon crossing the skipper's jaw, the boom ending exactly on his pointing hand, and the deck rail running along her thighs. Against a line, a shape can be:
+>
+> - **touched** — the line grazes its outline, coming within `gap` without crossing deeper than `gap`. A horizon on a jaw.
+> - **ended on** — the line stops within `gap` of the outline, short of it or just past it (`inside`). A boom on a hand. A line stopping well inside a shape runs behind it and is not reported.
+> - **aligned with** — the line runs along the outline, close and parallel, for at least `minRun`. A rail along a thigh.
+>
+> Two lines can **end** on each other, at a corner or a T, or **align**. A line crossing a shape or another line decisively is ordinary overlap and is not reported, so a horizon passing behind a figure needs no exemption.
+>
+> ```js
+> const found = Drawing.findTangents({
+>     her: Drawing.createFigureGeometry(her), him: Drawing.createFigureGeometry(him),
+>     horizon: { x1: 0, y1: 300, x2: 1200, y2: 286 },
+>     boom: 'M640 120 L1010 240',
+>     rail: [{ x: 0, y: 560 }, { x: 1200, y: 420 }]
+> });
+> for (const t of found.tangents) log(`${t.kind} ${t.a}/${t.b} at ${t.at.x.toFixed(0)},${t.at.y.toFixed(0)}`);
+> ```
+>
+> **A line's defaults come from its length**: a quarter of it stands in for a shape's size, and against a shape the smaller of the two is used, so a 1200px horizon is judged at a head's scale where it meets a head. **A path with no closed contour is now a line**, so a polygon meant as a shape needs its `closePath()`.
 
 > [!TIP]
 > **Stanchfield's two tangents, as measurements** (*Drawn to Life* vol. 1 ch. 16, 30; vol. 2 ch. 57). A **touch** is two outlines closer than `gap` without overlapping, or overlapping by a sliver thinner than `gap`. A decisive overlap is thicker and is not reported, which is why an arm entering its shoulder needs no exemption. An **alignment** is a stretch of the smaller shape's outline at least `minRun` long, within `near` of the larger's outline and parallel to it within `angleDeg`. `flush: true` means it lies over the larger shape's hidden edge, so the silhouette carries on as if it were not there.
@@ -1743,8 +1779,41 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 >
 > **The default mannequin already has two.** Standing, its hands hang flat against its thighs, and the finder reports both. Arms hanging straight down line up with the sides of the torso. Held out, they line up with nothing.
 >
-> It judges only the shapes you give it, and only by their edges. A line ending where another begins, three lines meeting at a point, and a face stacked straight over the body (an alignment of centre lines, not edges) are not found.
+> It judges only the shapes and lines you give it, and only by their edges. Three lines meeting at a point, and a face stacked straight over the body (an alignment of centre lines, not edges), are not found.
 
+- `Drawing.classifyLines(lines: object | any[], options?: { tolerance?: number })` → `{ lines, shares, counts, mood, moods, notMeasured, tolerance }` — **Which of Stanchfield's line families a set of lines belongs to, and the mood it adds up to** (*Drawn to Life* vol. 1 ch. 42; `polson://manual/28` §8). `lines` takes the line forms `findTangents` does: named `{ x1, y1, x2, y2 }`, point arrays, path data such as `fig.lineOfAction.d`, or open `CanvasPath`s. Each comes back as `{ name, family, angleDeg, lean, length, turnDeg }`, where `family` is `horizontal`, `vertical`, `diagonal`, `zigzag`, `wave`, `spiral` or `curve`, `angleDeg` runs from −90 to 90 with positive rising to the right, and `lean` is `rising` or `falling` on a diagonal. `mood` is the strongest of `moods`, each `{ family, feeling, share }`.
+
+> [!TIP]
+> **Declare the mood, then read it back from what you drew.**
+>
+> ```js
+> const set = { horizon, gunwale, foredeck, mast, boom, rope };
+> const lines = Drawing.classifyLines(set);
+> Stage.check('the set reads as conflicting diagonals', lines.mood.family === 'conflicting diagonals',
+>     `${lines.mood.family}: diagonal ${(lines.shares.diagonal * 100).toFixed(0)}%, rising ${(lines.shares.rising * 100).toFixed(0)}%, falling ${(lines.shares.falling * 100).toFixed(0)}%`);
+> ```
+>
+> - **Straight lines** are sorted by angle: within `tolerance` (default 15°) of level is `horizontal`, within it of upright is `vertical`, anything between is a `diagonal`. **Curved lines** are a `wave` if they bend both ways, a `spiral` if they turn a full circle, a `zigzag` if their sharp corners turn back and forth, and otherwise a `curve`. A line with one sharp corner is split there into its pieces, named `hull.0`, `hull.1`: an L is a horizontal and a vertical.
+> - **Shares are by length**, so a long horizon outweighs a short tick. The moods: `horizontals` or `verticals` at half the length or more; `vertical against horizontal` when each is a quarter or more; `conflicting diagonals` when diagonals are half or more and the minority lean is at least a quarter of them; an `unsupported diagonal` when nearly all of them lean one way; `zigzag` and `wave` at three tenths; `spiral` at a fifth. **The thresholds are the studio's, not Stanchfield's**, which is why every share comes back.
+> - **Only the families a direction can show are measured.** Flame shapes, pointed shapes, spheres, the Gothic arch, a fountain, a cascade and the grief line are shapes; `notMeasured` lists them, and they are judged by eye. A closed shape is refused: pass its edges as lines.
+- `Drawing.checkLookPath(figure: object, target: Point, options?: { ignore?: string | string[], obstacles?: object, from?: Point, step?: number })` → `{ blocked, firstHit, hits, clear, from, to, length, ignored, samples, mark }` — **Whether a figure's look runs clear to what it looks at.** `figure` is a mannequin figure or its `createFigureGeometry(...)`. The line runs from the head's centre (or `from`) to `target`, and each stretch of it inside a part of the body, or inside an obstacle, is a hit: `{ by, group, from, to, at, length, mark }`, in order along the line. `clear` is the share of the line outside all of them; `mark` is the whole sightline, to stroke.
+
+> [!TIP]
+> **Stanchfield's rule for the commonest action in a story drawing: get the body out of the way of the look** (*Drawn to Life* vol. 1 ch. 39, 77, 93; `polson://manual/28` §2). Every run that followed it wrote this test by hand; this is that test.
+>
+> ```js
+> const look = Drawing.checkLookPath(deckhand, ropeTop, {
+>     ignore: ['leftArm', 'rightArm'],                     // her hands are on the rope she looks up
+>     obstacles: { him: Drawing.createFigureGeometry(skipper), wheel }
+> });
+> Stage.check('her look travels clear up the rope', !look.blocked,
+>     look.blocked ? `blocked by ${look.firstHit.by}` : `${(look.clear * 100).toFixed(0)}% clear`);
+> ```
+>
+> - **The figure is judged part by part**, so a hit names the part (`rightUpperArm`) and its group (`rightArm`). **The head and the neck never count**: the look starts in the head, and the neck joins it to the body, so a look down at the figure's own hands would otherwise always be blocked at the chin.
+> - **`ignore` takes part or group names**, for what belongs to the thing looked at: hands closed on a rope, an arm holding the letter being read. A name that is neither is refused, listing what there is.
+> - **`obstacles` is the rest of the scene**, in the forms `findTangents` takes; another figure's geometry goes in under its name, so its parts come back as `him.torso`. A line cannot block a look and is refused; give it a width with `ctx.strokeToPath(...)` if it should.
+> - **It is a page check**, not a 3D one. A look that crosses the figure's own body on the page can still be fine in depth — reading a book held in front of the chest, seen from the front — and that is what `ignore` is for.
 - `Drawing.drawTorsoMusculature(ctx: CanvasRenderingContext2D, figureObj: object, options?: { strokeColor?: string, strokeWidth?: number })` — Renders clavicle handlebars, pectorals, deltoids, sternocleidomastoid cords, and the rectus abdominis as **eight** sections whose rows rise toward a peak above a flat row at the navel. The active side is read off the figure's own `shoulderTiltDeg` and compressed, per Hampton's squash/stretch rule — see `polson://manual/08` §3a.
 
 ### Hands

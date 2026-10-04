@@ -108,11 +108,16 @@ public class DrawingExecutionResult
     #endregion
 
     #region Methods
-    /// <summary>Counts one <c>Stage.check</c> verdict into <see cref="Checks"/>.</summary>
-    public void RecordCheck(string claim, bool passed, string? detail)
+    /// <summary>Counts one <c>Stage.check</c> verdict into <see cref="Checks"/>. A failure with a reason was accepted.</summary>
+    public void RecordCheck(string claim, bool passed, string? detail, string? acceptedReason = null)
     {
         var checks = Checks ??= new CheckSummary();
         if (passed) checks.Passed++;
+        else if (acceptedReason is not null)
+        {
+            checks.AcceptedCount++;
+            checks.Accepted.Add(new AcceptedCheck(claim, detail, acceptedReason));
+        }
         else
         {
             checks.Failed++;
@@ -122,15 +127,24 @@ public class DrawingExecutionResult
     #endregion
 }
 
-/// <summary>An execution's checks: counts, and the ones that failed.</summary>
+/// <summary>An execution's checks: counts, the ones that failed, and the failures kept on purpose.</summary>
 public sealed class CheckSummary
 {
     public int Passed { get; set; }
 
     public int Failed { get; set; }
 
+    /// <summary>Failures accepted with a reason; neither passes nor failures.</summary>
+    [JsonPropertyName("acceptedCount")]
+    public int AcceptedCount { get; set; }
+
     public List<CheckFailure> Failures { get; } = [];
+
+    public List<AcceptedCheck> Accepted { get; } = [];
 }
 
 /// <summary>A check that failed, with what was measured.</summary>
 public sealed record CheckFailure(string Claim, string? Detail);
+
+/// <summary>A check that failed and was kept on purpose, with what was measured and why it stands.</summary>
+public sealed record AcceptedCheck(string Claim, string? Detail, string Reason);

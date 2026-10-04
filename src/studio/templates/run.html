@@ -1041,6 +1041,13 @@
       return parts.join(' — ');
     }
     if (kind === 'stream.lag' || kind === 'stream.truncated') return `${e.dropped} not shown`;
+    // A check is the one row that can be wrong, so its verdict leads. An accepted failure says so and
+    // carries its reason: without that a reader sees a failure the run had already decided to keep.
+    if (kind === 'check') {
+      const verdict = e.passed ? 'pass' : e.accepted ? 'failed, kept' : 'FAILED';
+      return [verdict, e.claim, e.detail, e.accepted && e.reason ? `kept because ${e.reason}` : null]
+        .filter(Boolean).join(' — ');
+    }
     // The row that has to earn its place: what follows it is minutes of nothing, and a reader who
     // does not know that is watching a run they think has died. The server already measured the
     // wait — `expectSeconds` — so the page says how long rather than implying it will be quick.

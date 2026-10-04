@@ -99,9 +99,11 @@ need, a `Drawing.createCompositionGrid(...)` armature if it helps (`polson://man
 what the verbs touch. A set drawn in detail at this stage is drawn before anyone knows where the
 figures stand.
 
-**Check:** measure the angles of the set lines you drew (you have their endpoints) and confirm the
-declared family is the majority. A scene declared *calm* whose lines are mostly diagonal has two
-moods, and the reader will get the other one.
+**Check:** pass the set lines you drew to `Drawing.classifyLines({ horizon, deck, mast, ... })` and
+confirm its `mood.family` is the family you declared. It sorts every line by direction, weighs them by
+length and names the ch. 42 mood they add up to; `shares` says by how much. A scene declared *calm*
+whose lines are mostly diagonal has two moods, and the reader will get the other one. Keep the line
+objects: the Silhouette stage passes the same ones to `findTangents`.
 
 ### 3. `Gesture` — line of action, then the solids at angles
 
@@ -139,12 +141,15 @@ Ask the geometry, not the picture:
 
 - **Does the action limb read?** `limb.subtract(torso).area / limb.area` for the arm or leg carrying
   the verb, from `geo.groups`. Above `0.8` reads.
-- **Is the look clear?** Sample the line from `fig.head.center` to what the figure looks at, and ask
-  `body.contains(x, y)` at each point, where `body` is the figure's groups unioned without the head
-  and without the arm reaching for the target. None should hit.
-- **Tangents.** `Drawing.findTangents(geo)` for each figure, and once more across the figures and the
-  props: `Drawing.findTangents({ her: geoA.silhouette, him: geoB.silhouette, rope })`. Stroke each
-  tangent's `mark` in red on a probe render so you can see where it is.
+- **Is the look clear?** `Drawing.checkLookPath(fig, target, { ignore: [...], obstacles: { ... } })`
+  follows the line from the head to what the figure looks at. Ignore the arm reaching for the target,
+  or both hands if they hold it; pass the other figure and the props as obstacles. `hits` should be
+  empty, and each one names what is in the way.
+- **Tangents.** One call over the whole scene: `Drawing.findTangents({ her: geoA, him: geoB, horizon,
+  boom, rope })`, figures as their geometry and the set as the same line objects the Mood stage
+  classified. Lines get a third kind, `end`: a boom stopping on a hand. The worst tangents in a staged
+  scene are usually between a figure and a set line, so do not leave the set out. Stroke each tangent's
+  `mark` in red on a probe render so you can see where it is.
 
 **Check:** no tangents, action limbs clear, look paths clear. When one fails, change the **pose**,
 not the drawing: turn the arm off the body, overlap the figures decisively or separate them, and run

@@ -184,6 +184,50 @@ public class RunReportTests : TestsRuntime, IDisposable
             c => c!.ToString().Contains("low-key dominance"));
     }
 
+    /// <summary>
+    /// A failure kept on purpose, with its reason, is neither a claim not met nor a sign the run diagnosed without
+    /// fixing: it was looked at and decided. The sketch1 run had two, and a reader saw two red checks.
+    /// </summary>
+    [Fact]
+    public void TestAnAcceptedFailureIsNotAClaimNotMet()
+    {
+        Script("0001.js");
+        Artifact("sketch.webp");
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"check","claim":"no tangents inside the deckhand","passed":false,"detail":"touch leftArm/rightArm","accepted":true,"reason":"two fists on one rope are meant to be close"}""",
+            """{"type":"check","claim":"her look travels clear up the rope","passed":true}""",
+            """{"type":"check","claim":"rope still a steep diagonal","passed":false,"detail":"5 deg"}""",
+            """{"type":"render","script":"scripts/0001.js","artifact":"artifacts/sketch.webp"}""");
+
+        var report = Report();
+
+        Assert.Equal(3, report["checks"]!.GetValue<int>());
+        Assert.Equal(1, report["checksFailed"]!.GetValue<int>());
+        Assert.Equal(1, report["checksAccepted"]!.GetValue<int>());
+        var notMet = (JsonArray)report["claimsNotMet"]!;
+        Assert.Single(notMet);
+        Assert.Contains("rope", notMet[0]!.ToString());
+        var accepted = (JsonObject)Assert.Single((JsonArray)report["claimsAccepted"]!)!;
+        Assert.Equal("two fists on one rope are meant to be close", accepted["reason"]!.GetValue<string>());
+    }
+
+    /// <summary>Every failure accepted is not a critique that only ever failed.</summary>
+    [Fact]
+    public void TestOnlyAcceptedFailuresAreNotAnUnfixedCritique()
+    {
+        Script("0001.js");
+        Artifact("sketch.webp");
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"check","claim":"no tangents","passed":false,"accepted":true,"reason":"the forearm lies along the rope it grips"}""",
+            """{"type":"render","script":"scripts/0001.js","artifact":"artifacts/sketch.webp"}""");
+
+        Assert.DoesNotContain(Warnings(Report()), w => w.Contains("none was re-run after a fix"));
+    }
+
     /// <summary>A critique that stated claims, settled them all, and ended on a pass says nothing.</summary>
     [Fact]
     public void TestASettledCritiqueWarnsAboutNothing()

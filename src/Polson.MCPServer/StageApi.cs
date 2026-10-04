@@ -182,33 +182,70 @@ public sealed class StageApi
     /// a stage full of renders and no claims can say at any length.
     /// </para>
     /// </remarks>
-    public bool Check(string claim, bool passed, string? detail = null)
+    /// <param name="detail">What was measured. An options object may stand here instead when there is no detail.</param>
+    /// <param name="options">
+    /// <c>{ accepted: 'reason' }</c>: a failing check that is right about the drawing, kept on purpose. It is recorded
+    /// as accepted with the reason, counted apart from passes and failures, and returns true, since there is nothing
+    /// left to fix.
+    /// </param>
+    public bool Check(string claim, bool passed, object? detail = null, object? options = null)
     {
         // No guard for swapped arguments here: Jint's overload resolution already refuses
         // `check(boolean, string)` before the call reaches this method, so a check that could not
         // fail never gets recorded. What was wrong was the *message* — see ArgumentHelp in
         // JsDrawingEngine, which now names the swap instead of advising a hunt for a typo. A guard
         // on this side would be dead code and would also refuse the legitimate claim "true".
+        if (detail is not null and not string && JsInterop.AsDict(detail) is not null && options is null)
+            (detail, options) = (null, detail);
+        var reason = AcceptedReason(options);
+
         var clean = Clean(claim, MaxNoteLength);
         if (clean.Length == 0) return passed;
 
+        // **A failure kept on purpose is its own state.** The finder that reports two fists on one rope is right;
+        // the drawing wants them there. Without a third state the record showed a red check and the reason lived in
+        // a note somewhere else, so a reader saw a failure the run had already decided about.
+        var accepted = !passed && reason is not null;
         var fields = new Dictionary<string, object?>
         {
             ["claim"] = clean,
             ["passed"] = passed
         };
 
-        var cleanDetail = Clean(detail, MaxNoteLength);
+        var cleanDetail = Clean(detail?.ToString(), MaxNoteLength);
         if (cleanDetail.Length > 0) fields["detail"] = cleanDetail;
+        var cleanReason = accepted ? Clean(reason, MaxNoteLength) : string.Empty;
+        if (accepted)
+        {
+            fields["accepted"] = true;
+            fields["reason"] = cleanReason;
+        }
 
         events?.Append("check", session?.Stage, executionId, fields);
 
         // **The verdict goes back to the caller too.** It used to reach only the run record, so a failing check was
         // invisible until the run was over - backwards for a workflow shaped draw, measure, correct. One run wrote
         // nineteen checks and could see none of them for three stages, until it wrapped Stage.check in its own log.
-        result?.Logs.Add($"[CHECK] {(passed ? "PASS" : "FAIL")} {clean}" + (cleanDetail.Length > 0 ? $" - {cleanDetail}" : ""));
-        result?.RecordCheck(clean, passed, cleanDetail.Length > 0 ? cleanDetail : null);
-        return passed;
+        var verdict = passed ? "PASS" : accepted ? "ACCEPTED" : "FAIL";
+        result?.Logs.Add($"[CHECK] {verdict} {clean}" + (cleanDetail.Length > 0 ? $" - {cleanDetail}" : "")
+                         + (accepted ? $" (kept: {cleanReason})" : ""));
+        result?.RecordCheck(clean, passed, cleanDetail.Length > 0 ? cleanDetail : null, accepted ? cleanReason : null);
+        return passed || accepted;
+    }
+
+    /// <summary>The reason in <c>{ accepted: 'reason' }</c>, or null. Anything else in the options is refused by name.</summary>
+    private static string? AcceptedReason(object? options)
+    {
+        if (options is null) return null;
+        var dict = JsInterop.AsDict(options)
+            ?? throw new ArgumentException("Stage.check's fourth argument is an options object, such as { accepted: 'why this failure is kept' }.");
+        foreach (var key in dict.Keys)
+            if (key?.ToString() != "accepted")
+                throw new ArgumentException($"Stage.check has no option '{key}'. It takes accepted: the reason a failing check is kept.");
+        if (!dict.Contains("accepted") || dict["accepted"] is null) return null;
+        return dict["accepted"] is string text && text.Trim().Length > 0
+            ? text
+            : throw new ArgumentException("Stage.check: accepted takes the reason, as a sentence, not true. The reason is what a reader of the record needs.");
     }
 
     /// <summary>Strips the characters that would corrupt a one-line JSON record, and caps the length.</summary>

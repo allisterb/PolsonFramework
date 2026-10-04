@@ -12,12 +12,17 @@ using SkiaSharp;
 public class SkiaCanvas : IDisposable, IDataUriSource, ILosslessImageSource
 {
     #region Constructors
-    public SkiaCanvas(int width = 800, int height = 600)
+    public SkiaCanvas(int width = 800, int height = 600) : this(width, height, SKColorType.Rgba8888)
+    {
+    }
+
+    /// <summary>A canvas of another pixel format: float, for arithmetic that must not clamp until the end.</summary>
+    internal SkiaCanvas(int width, int height, SKColorType colorType)
     {
         Width = Math.Max(1, width);
         Height = Math.Max(1, height);
 
-        var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+        var info = new SKImageInfo(Width, Height, colorType, SKAlphaType.Premul);
         SkBitmap = new SKBitmap(info);
         SkCanvas = new SKCanvas(SkBitmap);
         SkCanvas.Clear(SKColors.Transparent);

@@ -248,6 +248,12 @@ is Synfig's, and the craft follows from it:
   and the arm angles, and `Drawing.createMannequinFigure` builds the body at each frame; Manual 28's
   checks then run on any frame you render. Write the function from `v` and `t` alone: frames come in
   any order, so nothing it remembers between calls can be trusted.
+- **Cut a drawing into a puppet rather than redrawing it.** `comp.cutout(picture, outline, { origin, offset, angle })`
+  is one piece of a picture as a group that turns about its joint; put the child piece inside the parent's
+  group and it follows. One drawn sheet — a cutout cell, a character render — becomes a limb that swings,
+  with the same pixels in every frame. Overlap the pieces a little at each joint, as cut paper does, so a
+  bend never opens a gap. The cut is an eraser (`blend: 'alphaOver'`), and like every blend it reaches only
+  its own group, which is why a piece is always a group.
 
 ```javascript
 const n = Motion.nodes;

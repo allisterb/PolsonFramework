@@ -73,6 +73,9 @@ internal sealed class SvgAnimationWriter
     #region Fields
     private readonly MotionComposition composition;
     private readonly bool loop;
+    private readonly List<XElement> defs = [];
+    private string? black;
+    private int ids;
     #endregion
 
     #region Properties
@@ -103,10 +106,16 @@ internal sealed class SvgAnimationWriter
         if (Math.Abs(sx - 1) > 1e-12 || Math.Abs(sy - 1) > 1e-12 || v[0] != 0 || v[1] != 0)
             body.SetAttributeValue("transform", $"matrix({N(sx)} 0 0 {N(sy)} {N(-v[0] * sx)} {N(-v[1] * sy)})");
 
+        // The view is the composition's own: a blend reaches nothing under the SVG.
+        if (c.HasBlendedLayers) body.SetAttributeValue("style", "isolation:isolate");
+
         var root = new XElement(Svg + "svg",
             new XAttribute("width", c.Width), new XAttribute("height", c.Height),
             new XAttribute("viewBox", $"0 0 {c.Width} {c.Height}"),
-            new XComment($" Polson motion: {N(Duration)} s, {ExactTracks} exact track(s), {SampledTracks} sampled at {N(Times.Length > 1 ? 1 / (Times[1] - Times[0]) : 0)} fps "),
+            new XAttribute(XNamespace.Xmlns + "xlink", Xlink),
+            new XComment($" Polson motion: {N(Duration)} s, {ExactTracks} exact track(s), {SampledTracks} sampled at {N(Times.Length > 1 ? 1 / (Times[1] - Times[0]) : 0)} fps "
+                + (BlendedLayers == 0 ? "" : $"; {BlendedLayers} layer(s) blend by CSS mix-blend-mode, which agrees with Synfig only over an opaque backdrop ")),
+            defs.Count == 0 ? null : new XElement(Svg + "defs", defs),
             body);
 
         var settings = new XmlWriterSettings { Indent = true, Encoding = new UTF8Encoding(false), OmitXmlDeclaration = false };
@@ -117,7 +126,89 @@ internal sealed class SvgAnimationWriter
 
     public static readonly XNamespace Svg = "http://www.w3.org/2000/svg";
 
+    public static readonly XNamespace Xlink = "http://www.w3.org/1999/xlink";
+
+    /// <summary>
+    /// A square far larger than any view, as path data: put in front of a shape's own path with
+    /// <c>fill-rule="evenodd"</c>, it inverts the shape. Inside a group it must survive the group's transform.
+    /// </summary>
+    public const string Everything = "M-100000 -100000H100000V100000H-100000Z";
+
     public static string N(double v) => MotionSvgFormat.Number(v);
+
+    public static string N(double v, int decimals) => MotionSvgFormat.Number(v, decimals);
+
+    /// <summary>
+    /// Writes a stack of layers, honouring each one's blend: <c>behind</c> goes under what came before,
+    /// <c>alphaOver</c> masks it, and the separable methods become CSS <c>mix-blend-mode</c>, which agrees
+    /// with Synfig over an opaque backdrop. Anything else is refused by name.
+    /// </summary>
+    public IEnumerable<XElement> Stack(IEnumerable<(MotionBlend Blend, string? Desc, XElement Element)> layers)
+    {
+        var output = new List<XElement>();
+        foreach (var (blend, desc, element) in layers)
+        {
+            switch (blend.Name)
+            {
+                case "composite":
+                    output.Add(element);
+                    break;
+                case "behind":
+                    output.Insert(0, element);
+                    break;
+                case "alphaOver":
+                    var erased = Erase(output, element);
+                    output = [erased];
+                    break;
+                default:
+                    if (blend.Css is null)
+                        throw new InvalidOperationException(
+                            $"The layer{(desc is null ? "" : $" '{desc}'")} blends by '{blend.Name}', which SVG cannot say. "
+                            + "In SVG a layer can composite, go behind, erase (alphaOver), or use multiply, screen, overlay, "
+                            + "hardLight, brighten, darken or difference. Capture the composition as frames instead.");
+                    var style = element.Attribute("style")?.Value;
+                    element.SetAttributeValue("style", (style is null ? "" : style + ";") + $"mix-blend-mode:{blend.Css}");
+                    BlendedLayers++;
+                    output.Add(element);
+                    break;
+            }
+        }
+
+        return output;
+    }
+
+    /// <summary>How many layers were written with a CSS blend mode, which agrees with Synfig only over an opaque backdrop.</summary>
+    public int BlendedLayers { get; private set; }
+
+    /// <summary>
+    /// Wraps what is below in a mask that removes where the eraser is: a white field with the eraser drawn
+    /// black over it, keeping the eraser's own coverage and opacity.
+    /// </summary>
+    private XElement Erase(List<XElement> below, XElement eraser)
+    {
+        if (black is null)
+        {
+            black = Id("black");
+            defs.Add(new XElement(Svg + "filter", new XAttribute("id", black),
+                new XAttribute("x", "-100000"), new XAttribute("y", "-100000"),
+                new XAttribute("width", "200000"), new XAttribute("height", "200000"),
+                new XAttribute("filterUnits", "userSpaceOnUse"),
+                new XElement(Svg + "feColorMatrix", new XAttribute("type", "matrix"),
+                    new XAttribute("values", "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"))));
+        }
+
+        var id = Id("erase");
+        defs.Add(new XElement(Svg + "mask", new XAttribute("id", id),
+            new XAttribute("maskUnits", "userSpaceOnUse"), new XAttribute("maskContentUnits", "userSpaceOnUse"),
+            new XAttribute("x", "-100000"), new XAttribute("y", "-100000"),
+            new XAttribute("width", "200000"), new XAttribute("height", "200000"),
+            new XElement(Svg + "rect", new XAttribute("x", "-100000"), new XAttribute("y", "-100000"),
+                new XAttribute("width", "200000"), new XAttribute("height", "200000"), new XAttribute("fill", "#ffffff")),
+            new XElement(Svg + "g", new XAttribute("filter", $"url(#{black})"), eraser)));
+        return new XElement(Svg + "g", new XAttribute("mask", $"url(#{id})"), below);
+    }
+
+    private string Id(string prefix) => $"{prefix}{++ids}";
 
     /// <summary>One component of a node over the composition, exact where possible.</summary>
     public MotionTrack Track(MotionNode node, int component, MotionTimeMap map, Func<double, double>? shape = null)

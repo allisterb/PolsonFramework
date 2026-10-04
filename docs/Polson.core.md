@@ -4826,16 +4826,90 @@ comp.render(1.0);                               // one frame, returned as a canv
 
 Each returns the stack it was added to, except `group`, which returns the group so layers can go in it. **An option a layer does not have is refused by name**, listing the ones it has.
 
-- `comp.fill({ color, amount?, desc? })` — a flat colour over the whole frame.
-- `comp.circle({ origin, radius, color, amount?, desc? })`.
-- `comp.rectangle({ point1, point2, expand?, color, amount?, desc? })` — between two corners, in either order; `expand` grows it on every side. The bar of a bar chart.
-- `comp.region({ points, loop?, origin?, color, amount?, desc? })` — a filled spline, closed by default.
-- `comp.outline({ points, loop?, origin?, width?, color, sharpCusps?, roundTips?, amount?, desc? })` — a stroked spline, open by default. Each point's `width` multiplies the layer's `width`, and the stroke runs linearly between them along the curve, so a line can taper.
-- `comp.group({ origin?, offset?, angle?, skewAngle?, scale?, amount?, timeOffset?, timeDilation?, desc? })` → a group with the same layer methods. Its transform is applied about `origin` and then moved to `offset`; its children see time as `t × timeDilation + timeOffset`, which is how one passage is reused later or faster.
+- `comp.fill({ color, amount?, blend?, desc? })` — a flat colour over the whole frame.
+- `comp.circle({ origin, radius, color, invert?, amount?, blend?, desc? })`.
+- `comp.rectangle({ point1, point2, expand?, color, invert?, amount?, blend?, desc? })` — between two corners, in either order; `expand` grows it on every side. The bar of a bar chart.
+- `comp.region({ points, loop?, origin?, color, invert?, amount?, blend?, desc? })` — a filled spline, closed by default.
+- `comp.outline({ points, loop?, origin?, width?, color, sharpCusps?, roundTips?, amount?, blend?, desc? })` — a stroked spline, open by default. Each point's `width` multiplies the layer's `width`, and the stroke runs linearly between them along the curve, so a line can taper.
+- `comp.image({ image, tl?, br?, interpolation?, amount?, blend?, desc? })` — a picture, its top-left corner drawn at `tl` and its bottom-right at `br`, so keying either moves or stretches it and **swapping a pair of coordinates mirrors it**. Left out, the picture sits at its own size at the origin. `interpolation` is `'nearest'`, `'linear'` (default) or `'cubic'`.
+- `comp.cutout(image, points, options?)` → a group holding one piece of a picture; see *Cutout puppets* below.
+- `comp.group({ origin?, offset?, angle?, skewAngle?, scale?, amount?, blend?, timeOffset?, timeDilation?, desc? })` → a group with the same layer methods. Its transform is applied about `origin` and then moved to `offset`; its children see time as `t × timeDilation + timeOffset`, which is how one passage is reused later or faster.
 
 **A spline point** is `{ point, t1?, t2?, width? }`, or a bare `[x, y]` for a corner. Tangents are Synfig's: the curve leaves a point toward `point + t2 / 3` and reaches the next toward `next − t1 / 3`. `t2` defaults to `t1`, which keeps the point smooth. Any of the four can be a node, so the shape itself animates.
 
-`amount` is opacity, 0 to 1.
+`amount` is opacity, 0 to 1. **`invert`** fills everything but the shape, which is mostly useful as an eraser (below).
+
+> [!IMPORTANT]
+> **An image layer takes pixels, never a filename.** Pass a bitmap, a canvas, or anything that carries its own picture — an `Assets.cutout` cell, a photograph, a material. A path string is refused: `Skia.Image.load(path)` turns a file into a bitmap first. The picture is **copied when the layer is made**, so drawing on the source canvas afterwards does not change the animation.
+>
+> In `.sif` the picture has to be a file beside the document, so **`comp.toSif()` refuses a composition with an image**; `comp.saveSif(path)` writes each picture as `<name>-image<n>.png` next to the `.sif`, once per distinct picture. In SVG it is inlined as a data URI, as `paper.image` does, because an external href does not resolve in an SVG shown through `<img>`.
+
+### Blend methods — `blend`
+
+Every layer, groups included, takes `blend`: how it combines with **what is under it in the same stack**. These are Synfig's, ported formula by formula and checked against its renderer.
+
+| `blend` | what it does |
+| :--- | :--- |
+| `'composite'` (default) | painted over what is under it |
+| `'behind'` | painted **under** what came before it in the stack |
+| `'onto'` | painted over, but only where something already is |
+| `'alphaOver'` | **erases**: removes what is under it in proportion to its own coverage and `amount` |
+| `'multiply'` · `'screen'` · `'overlay'` · `'hardLight'` | the familiar separable modes, kept to where something already is |
+| `'brighten'` · `'darken'` | the lighter or darker of the two, per channel |
+| `'add'` · `'subtract'` · `'difference'` · `'divide'` | arithmetic on the colours |
+
+> [!IMPORTANT]
+> **Synfig's modes keep the backdrop's alpha, and that is where they differ from CSS modes of the same name.** A `multiply` layer over nothing draws nothing — there is nothing to multiply — where `mix-blend-mode: multiply` would paint the layer's own colour there. Over an opaque backdrop the two agree.
+>
+> **A blend reaches only its own stack.** A group's children blend with each other, never with what lies under the group, so an eraser inside a group erases only that group's content. Wrap a passage in a group to keep its blends to itself.
+>
+> `'straight'`, `'alpha'` and the YUV methods (`'color'`, `'hue'`, `'saturation'`, `'luminance'`) are refused by name: the first two clear everything outside the layer, which depends on how Synfig bounds its rendering, and the last four are not ported yet.
+
+### Cutout puppets — `comp.cutout(image, points, options?)`
+
+A piece of a picture, as a group you can pose: the picture, then an inverted `region` along `points` with `blend: 'alphaOver'`, which erases everything outside the outline. That is exactly what Synfig Studio's Cutout tool builds. `options` takes the picture's `tl`, `br` and `interpolation` and the group's `origin`, `offset`, `angle`, `skewAngle`, `scale`, `amount`, `blend`, `timeOffset`, `timeDilation` and `desc`.
+
+**Pieces of one picture become a puppet** when each joint is a group's `origin` and the child piece goes inside its parent's group:
+
+```javascript
+const n = Motion.nodes;
+
+// The artwork: an arm drawn in one piece. A cutout cell from Assets.cutout works the same way.
+const sheet = createCanvas(200, 80);
+const s = sheet.getContext('2d');
+s.fillStyle = '#c9553d';
+s.fillRect(10, 28, 92, 24);
+s.fillStyle = '#e5a93c';
+s.fillRect(98, 30, 80, 20);
+s.beginPath();
+s.arc(184, 40, 12, 0, Math.PI * 2);
+s.fill();
+
+const comp = Motion.composition({ width: 480, height: 270, fps: 12, duration: 2 });
+comp.fill({ color: '#f2efe8' });
+
+// The sheet at its own size, moved so its shoulder (10, 40) lands at (140, 120) and its elbow at (230, 120).
+const at = { tl: [130, 80], br: [330, 160] };
+const swing = n.animated('angle', [
+    { time: 0, value: -30, ease: 'halt' }, { time: 1, value: 40, ease: 'halt' }, { time: 2, value: -30, ease: 'halt' }]);
+const bend = n.animated('angle', [
+    { time: 0, value: 0, ease: 'halt' }, { time: 1, value: 70, ease: 'halt' }, { time: 2, value: 0, ease: 'halt' }]);
+
+// Outlines are in page units, where the sheet is placed. The pieces overlap a little at the joint, as cut paper does.
+const upper = comp.cutout(sheet, [[138, 104], [232, 104], [232, 136], [138, 136]],
+    { ...at, origin: [140, 120], offset: [140, 120], angle: swing, desc: 'upper arm' });
+upper.cutout(sheet, [[226, 106], [330, 106], [330, 134], [226, 134]],
+    { ...at, origin: [230, 120], offset: [230, 120], angle: bend, desc: 'forearm' });
+
+comp.capture({ fps: 4 });
+Motion.sheet('artifacts/arm-sheet.png', { count: 5, cols: 5, scale: 0.4, fps: 4 });
+comp.render(1);
+```
+
+- **The outline is in the composition's units**, where the picture is placed — not in the picture's own pixels. A piece placed at its own size at the origin takes its outline in pixels.
+- **The cut erases only what comes before it in its group.** Anything added to the piece's group afterwards — the forearm above, inside the upper arm's group — is drawn over the cut and survives it, which is what lets a child piece hang outside its parent's outline.
+- `origin` is the pivot and `offset` where the pivot lands, so `origin` and `offset` set to the same point turns the piece **about** that point. Nested, the child's pivot is in its parent's frame and follows it.
+- The pieces share the picture: `saveSif` writes it once however many pieces it is cut into.
 
 ### A layer the SDK draws — `comp.drawn(draw, options?)`
 
@@ -4943,8 +5017,10 @@ comp.render(2);                            // and a still of the last frame, to 
 - **A path keeps the same commands at every frame**, a cubic for every segment, so one frame's `d` interpolates into the next.
 - **A tapered outline** is written as a filled polygon with a fixed number of vertices; an even one is a stroke.
 - **A drawn layer is refused by name**, as `.sif` refuses it: SMIL cannot run a script. Capture it as frames instead.
+- **An image** is inlined as a PNG data URI under a translate and a scale, exact wherever one of its corners holds still.
+- **Blends**: `behind` is written by reordering, `alphaOver` (and so every cutout) as an SVG `<mask>`, and `multiply`, `screen`, `overlay`, `hardLight`, `brighten`, `darken` and `difference` as CSS `mix-blend-mode`, which agrees with Synfig's only over an opaque backdrop — the header comment counts those. `onto`, `add`, `subtract` and `divide` have no SVG form and are refused by name.
 
 > [!NOTE]
-> **Checked by rendering it back.** The exported file, rendered by Svg.Skia at a time, against the composition rendered here at the same time: the oracle scene differs in 0.01% of pixels at frame times and 0.05% halfway between them, and a keyed disc lands within 0.1 px of its value at times that are not frames.
+> **Checked by rendering it back.** The exported file, rendered by the studio's own SVG renderer at a time, against the composition rendered here at the same time: the oracle scene differs in 0.01% of pixels at frame times and 0.05% halfway between them, and a keyed disc lands within 0.1 px of its value at times that are not frames.
 
-> **Checked against Synfig itself.** The same composition rendered by `synfig` 1.5.5 and by this differs only along antialiased edges (about 0.5% of pixels by more than 8 levels in 255), and a disc driven through every ease lands within 0.2 px of where Synfig puts it. Outline corners with `sharpCusps` are the least exact part: a sharp corner is joined as a mitre here.
+> **Checked against Synfig itself.** The same composition rendered by `synfig` 1.5.5 and by this differs only along antialiased edges (about 0.5% of pixels by more than 8 levels in 255), and a disc driven through every ease lands within 0.2 px of where Synfig puts it. Outline corners with `sharpCusps` are the least exact part: a sharp corner is joined as a mitre here. All fourteen blend methods agree with Synfig's to within 0.2% of pixels. **A picture's edges sit half a pixel apart**: Synfig samples an image at each pixel's corner, where this renderer and a browser sample at its centre; placement agrees to under a pixel.

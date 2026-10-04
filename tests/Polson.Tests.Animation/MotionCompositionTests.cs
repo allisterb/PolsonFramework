@@ -270,7 +270,36 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
             new Dictionary<string, object?> { ["point"] = new[] { 460d, 70d } },
         })));
 
+        // A picture whose bottom-right corner is keyed, so it grows; and the same picture mirrored.
+        var picture = Picture();
+        comp.Image(Opts(("image", picture), ("tl", new[] { 150d, 20d }),
+            ("br", Animated("vector", (0, new[] { 210d, 60d }, "halt"), (2, new[] { 270d, 100d }, "halt")))));
+        comp.Image(Opts(("image", picture), ("tl", new[] { 150d, 190d }), ("br", new[] { 90d, 230d }), ("amount", 0.7)));
+
+        // A cutout piece: a triangle of the picture, swinging about its corner like a limb about a joint.
+        comp.Cutout(picture, new object[] { new[] { 0d, 0d }, new[] { 60d, 10d }, new[] { 20d, 40d } },
+            Opts(("origin", new[] { 0d, 0d }), ("offset", new[] { 160d, 120d }), ("angle", n.Linear("angle", 45, 0)), ("desc", "limb")));
+
         return comp;
+    }
+
+    /// <summary>A small picture with flat blocks, a soft edge and a transparent hole, so placement, alpha and mirroring all show.</summary>
+    internal static SkiaBitmapWrapper Picture()
+    {
+        var bitmap = new SKBitmap(new SKImageInfo(60, 40, SKColorType.Rgba8888, SKAlphaType.Premul));
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Transparent);
+        using var paint = new SKPaint { IsAntialias = false };
+        paint.Color = SKColor.Parse("#2a6f97");
+        canvas.DrawRect(0, 0, 40, 40, paint);
+        paint.Color = SKColor.Parse("#e76f51");
+        canvas.DrawRect(40, 0, 20, 25, paint);
+        paint.Color = SKColor.Parse("#f4a26180");
+        canvas.DrawRect(40, 25, 20, 15, paint);
+        paint.Color = SKColors.Transparent;
+        paint.BlendMode = SKBlendMode.Src;
+        canvas.DrawRect(12, 12, 14, 14, paint);
+        return new SkiaBitmapWrapper(bitmap);
     }
 
     private static Dictionary<string, object?> Point(object point, double[] tangent) =>
@@ -303,8 +332,7 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
         Directory.CreateDirectory(dir);
         try
         {
-            var sif = Path.Combine(dir, name + ".sif");
-            File.WriteAllText(sif, comp.ToSif());
+            var sif = comp.SaveSif(Path.Combine(dir, name + ".sif"));
 
             var start = new ProcessStartInfo(synfig)
             {

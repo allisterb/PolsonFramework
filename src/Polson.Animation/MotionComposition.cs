@@ -40,61 +40,102 @@ public abstract class MotionLayerList
     #endregion
 
     #region Methods
-    /// <summary>A flat fill over the whole frame: <c>{ color, amount?, desc? }</c>.</summary>
+    /// <summary>A flat fill over the whole frame: <c>{ color, amount?, blend?, desc? }</c>.</summary>
     public MotionLayerList Fill(object? options)
     {
-        var o = new MotionOptions(options, "fill", "color", "amount", "desc");
+        var o = new MotionOptions(options, "fill", "color", "amount", "blend", "desc");
         layers.Add(new MotionLayer.SolidColor(o));
         return this;
     }
 
-    /// <summary>A disc: <c>{ origin, radius, color, amount?, desc? }</c>.</summary>
+    /// <summary>A disc: <c>{ origin, radius, color, invert?, amount?, blend?, desc? }</c>.</summary>
     public MotionLayerList Circle(object? options)
     {
-        var o = new MotionOptions(options, "circle", "origin", "radius", "color", "amount", "desc");
+        var o = new MotionOptions(options, "circle", "origin", "radius", "color", "invert", "amount", "blend", "desc");
         layers.Add(new MotionLayer.CircleLayer(o));
         return this;
     }
 
     /// <summary>
-    /// A rectangle between two corners, in either order: <c>{ point1, point2, expand?, color, amount?, desc? }</c>.
-    /// <c>expand</c> grows it on every side. The bar of a bar chart: keyed corners stay exact in SVG.
+    /// A rectangle between two corners, in either order:
+    /// <c>{ point1, point2, expand?, color, invert?, amount?, blend?, desc? }</c>. <c>expand</c> grows it on
+    /// every side. The bar of a bar chart: keyed corners stay exact in SVG.
     /// </summary>
     public MotionLayerList Rectangle(object? options)
     {
-        var o = new MotionOptions(options, "rectangle", "point1", "point2", "expand", "color", "amount", "desc");
+        var o = new MotionOptions(options, "rectangle",
+            "point1", "point2", "expand", "color", "invert", "amount", "blend", "desc");
         layers.Add(new MotionLayer.RectangleLayer(o));
         return this;
     }
 
-    /// <summary>A filled spline: <c>{ points, loop?, origin?, color, amount?, desc? }</c>.</summary>
+    /// <summary>A filled spline: <c>{ points, loop?, origin?, color, invert?, amount?, blend?, desc? }</c>.</summary>
     public MotionLayerList Region(object? options)
     {
-        var o = new MotionOptions(options, "region", "points", "loop", "origin", "color", "amount", "desc");
+        var o = new MotionOptions(options, "region", "points", "loop", "origin", "color", "invert", "amount", "blend", "desc");
         layers.Add(new MotionLayer.RegionLayer(o));
         return this;
     }
 
     /// <summary>
     /// A stroked spline whose width can vary along it:
-    /// <c>{ points, loop?, origin?, width?, color, sharpCusps?, roundTips?, amount?, desc? }</c>.
+    /// <c>{ points, loop?, origin?, width?, color, sharpCusps?, roundTips?, amount?, blend?, desc? }</c>.
     /// </summary>
     public MotionLayerList Outline(object? options)
     {
         var o = new MotionOptions(options, "outline",
-            "points", "loop", "origin", "width", "color", "sharpCusps", "roundTips", "amount", "desc");
+            "points", "loop", "origin", "width", "color", "sharpCusps", "roundTips", "amount", "blend", "desc");
         layers.Add(new MotionLayer.OutlineLayer(o));
         return this;
     }
 
     /// <summary>
+    /// A picture placed between two corners: <c>{ image, tl?, br?, interpolation?, amount?, blend?, desc? }</c>.
+    /// <c>image</c> is a bitmap, a canvas, or anything carrying its own pixels (a cutout cell, a photograph);
+    /// it is copied when the layer is made, so drawing on the canvas afterwards does not change it.
+    /// <c>tl</c> and <c>br</c> default to the picture's own size at the origin; swapping them mirrors it.
+    /// </summary>
+    public MotionLayerList Image(object? options)
+    {
+        var o = new MotionOptions(options, "image", "image", "tl", "br", "interpolation", "amount", "blend", "desc");
+        layers.Add(new MotionLayer.ImageLayer(o));
+        return this;
+    }
+
+    /// <summary>
+    /// A piece cut out of a picture, as a group that can be posed: the picture, and an inverted region
+    /// that erases everything outside <paramref name="points"/>. <c>options</c> takes the image's
+    /// <c>tl</c>, <c>br</c> and <c>interpolation</c> and the group's <c>origin</c>, <c>offset</c>,
+    /// <c>angle</c>, <c>skewAngle</c>, <c>scale</c>, <c>amount</c>, <c>blend</c>, <c>timeOffset</c>,
+    /// <c>timeDilation</c> and <c>desc</c>.
+    /// </summary>
+    /// <remarks>
+    /// Synfig Studio's Cutout tool builds exactly this: an import layer under a region with
+    /// <c>invert</c> on and blend method alpha over (<c>state_lasso.cpp</c>). The outline is in the
+    /// composition's units, where the picture is placed — not in the picture's pixels — so a piece
+    /// placed at its own size at the origin takes its outline in pixels.
+    /// </remarks>
+    public MotionGroup Cutout(object? image, object? points, object? options = null)
+    {
+        var o = new MotionOptions(options, "cutout",
+            "tl", "br", "interpolation",
+            "origin", "offset", "angle", "skewAngle", "scale", "amount", "blend", "timeOffset", "timeDilation", "desc");
+        var group = Group(o.Subset("origin", "offset", "angle", "skewAngle", "scale", "amount", "blend", "timeOffset", "timeDilation", "desc"));
+        var picture = o.Subset("tl", "br", "interpolation");
+        picture["image"] = image;
+        group.Image(picture);
+        group.Region(new Hashtable { ["points"] = points, ["invert"] = true, ["blend"] = "alphaOver", ["desc"] = "cut" });
+        return group;
+    }
+
+    /// <summary>
     /// A group with its own transformation and clock, returned so layers can be added to it:
-    /// <c>{ origin?, offset?, angle?, skewAngle?, scale?, amount?, timeOffset?, timeDilation?, desc? }</c>.
+    /// <c>{ origin?, offset?, angle?, skewAngle?, scale?, amount?, blend?, timeOffset?, timeDilation?, desc? }</c>.
     /// </summary>
     public MotionGroup Group(object? options = null)
     {
         var o = new MotionOptions(options, "group",
-            "origin", "offset", "angle", "skewAngle", "scale", "amount", "timeOffset", "timeDilation", "desc");
+            "origin", "offset", "angle", "skewAngle", "scale", "amount", "blend", "timeOffset", "timeDilation", "desc");
         var group = new MotionGroup(o);
         layers.Add(group.Layer);
         return group;
@@ -115,7 +156,7 @@ public abstract class MotionLayerList
     {
         if (draw is null)
             throw new ArgumentException("drawn(draw, options?) takes a function first: (ctx, v, t) => { ... }.");
-        var o = new MotionOptions(options, "drawn", "values", "amount", "desc");
+        var o = new MotionOptions(options, "drawn", "values", "amount", "blend", "desc");
         layers.Add(new MotionLayer.DrawnLayer(o, draw));
         return this;
     }
@@ -135,9 +176,16 @@ public abstract class MotionLayerList
     internal IEnumerable<XElement> LayersToSif(SifWriter sif) => layers.Select(l => l.ToSif(sif));
 
     internal IEnumerable<XElement> LayersToSvg(SvgAnimationWriter svg, MotionTimeMap map) =>
-        [.. layers.Select(l => l.ToSvg(svg, map))];
+        [.. svg.Stack([.. layers.Select(l => (l.Blend, l.Desc, l.ToSvg(svg, map)))])];
 
     internal IEnumerable<MotionNode> Nodes() => layers.SelectMany(l => l.Nodes());
+
+    /// <summary>Whether a layer here blends other than by compositing, so the stack must be drawn on its own.</summary>
+    internal bool HasBlendedLayers => layers.Any(l => !l.Blend.IsComposite);
+
+    /// <summary>Whether any layer here or in a group below blends other than by compositing.</summary>
+    internal bool HasBlendedLayersDeep =>
+        HasBlendedLayers || layers.OfType<MotionLayer.GroupLayer>().Any(g => g.Children.HasBlendedLayersDeep);
     #endregion
 }
 
@@ -225,10 +273,22 @@ public sealed class MotionComposition : MotionLayerList
     {
         var canvas = new SkiaCanvas(Width, Height);
         canvas.SkCanvas.Clear(SKColors.Transparent);
-        canvas.SkCanvas.Save();
-        canvas.SkCanvas.Concat(ViewMatrix());
-        RenderLayers(canvas, time);
-        canvas.SkCanvas.Restore();
+        if (!HasBlendedLayersDeep)
+        {
+            canvas.SkCanvas.Save();
+            canvas.SkCanvas.Concat(ViewMatrix());
+            RenderLayers(canvas, time);
+            canvas.SkCanvas.Restore();
+            return canvas;
+        }
+
+        // Synfig's surfaces are float, so a subtract can go below zero and a divide above one and carry
+        // that into the next layer. Blend on a float surface and clamp once, at the end.
+        using var working = new SkiaCanvas(Width, Height, SKColorType.RgbaF16);
+        working.SkCanvas.Clear(SKColors.Transparent);
+        working.SkCanvas.Concat(ViewMatrix());
+        RenderLayers(working, time);
+        canvas.SkCanvas.DrawBitmap(working.SkBitmap, 0, 0);
         return canvas;
     }
 
@@ -242,7 +302,11 @@ public sealed class MotionComposition : MotionLayerList
         var c = ctx.Canvas.SkCanvas;
         c.Save();
         c.Concat(ViewMatrix());
+
+        // A blend reaches only the composition's own layers, never the drawing it is placed in.
+        if (HasBlendedLayers) c.SaveLayer();
         RenderLayers(ctx.Canvas, time);
+        if (HasBlendedLayers) c.Restore();
         c.Restore();
     }
 
@@ -297,16 +361,26 @@ public sealed class MotionComposition : MotionLayerList
         return full;
     }
 
-    /// <summary>The composition as Synfig's <c>.sif</c> XML.</summary>
-    public string ToSif() => new SifWriter(this).Write();
+    /// <summary>
+    /// The composition as Synfig's <c>.sif</c> XML. A composition with an image layer is refused: its
+    /// pictures have to be written beside the file, which <see cref="SaveSif"/> does.
+    /// </summary>
+    public string ToSif() => new SifWriter(this, null).Write();
 
-    /// <summary>Writes the <c>.sif</c> into the project and returns the path written.</summary>
+    /// <summary>
+    /// Writes the <c>.sif</c> into the project and returns the path written. Each image layer's picture is
+    /// written beside it as <c>&lt;name&gt;-image&lt;n&gt;.png</c>, where Synfig looks for it.
+    /// </summary>
     public string SaveSif(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         var full = ProjectPath.Resolve(projectRoot, filePath, nameof(filePath), "Write to");
-        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        File.WriteAllText(full, ToSif(), new UTF8Encoding(false));
+        var dir = Path.GetDirectoryName(full)!;
+        var writer = new SifWriter(this, Path.GetFileNameWithoutExtension(full));
+        var xml = writer.Write();
+        Directory.CreateDirectory(dir);
+        foreach (var (name, png) in writer.Pictures) File.WriteAllBytes(Path.Combine(dir, name), png);
+        File.WriteAllText(full, xml, new UTF8Encoding(false));
         return full;
     }
 
@@ -329,6 +403,7 @@ internal abstract class MotionLayer
     {
         Desc = o.Has("desc") ? o.Raw("desc")?.ToString() : null;
         Amount = o.Node("amount", MotionType.Real, 1d);
+        Blend = MotionBlend.Parse(o.Raw("blend"), o.Who);
     }
     #endregion
 
@@ -336,10 +411,35 @@ internal abstract class MotionLayer
     public string? Desc { get; }
 
     public MotionNode Amount { get; }
+
+    public MotionBlend Blend { get; }
     #endregion
 
     #region Methods
-    public abstract void Render(SkiaCanvas surface, double time);
+    /// <summary>
+    /// Draws the layer at a time. A composited layer is drawn straight onto the canvas at its
+    /// <c>amount</c>; any other blend draws it at full strength into a layer of its own and lets the
+    /// blender combine that with the backdrop, <c>amount</c> and all, as Synfig's formula does.
+    /// </summary>
+    public void Render(SkiaCanvas surface, double time)
+    {
+        var amount = AmountAt(time);
+        if (Blend.IsComposite)
+        {
+            if (amount > 0) Draw(surface, time, amount);
+            return;
+        }
+
+        var canvas = surface.SkCanvas;
+        using var blender = Blend.Blender(amount);
+        using var paint = new SKPaint { Blender = blender };
+        canvas.SaveLayer(paint);
+        Draw(surface, time, 1);
+        canvas.Restore();
+    }
+
+    /// <summary>Draws the layer's content at a time, at <paramref name="amount"/> opacity.</summary>
+    protected abstract void Draw(SkiaCanvas surface, double time, double amount);
 
     public abstract XElement ToSif(SifWriter sif);
 
@@ -378,10 +478,15 @@ internal abstract class MotionLayer
             Desc is null ? null : new XAttribute("desc", Desc),
             SifWriter.Param("z_depth", new XElement("real", new XAttribute("value", "0"))),
             sif.Param("amount", Amount),
-            SifWriter.Param("blend_method", new XElement("integer", new XAttribute("value", "0"))),
+            SifWriter.Param("blend_method", new XElement("integer", new XAttribute("value", Blend.Synfig))),
             content);
 
     protected double AmountAt(double time) => Math.Clamp(Amount.Evaluate(time)[0], 0, 1);
+
+    protected static string P(SKPoint p) => $"{SvgAnimationWriter.N(p.X)} {SvgAnimationWriter.N(p.Y)}";
+
+    // An affine map keeps a track exact: a keySpline shapes progress between two values, not the values.
+    protected static MotionTrack Affine(MotionTrack t, double k, double c) => t with { Values = [.. t.Values.Select(v => k * v + c)] };
 
     protected static SKPaint Paint(double[] color, double amount) =>
         new() { Color = MotionTypes.ToSkColor(color, amount), IsAntialias = true, Style = SKPaintStyle.Fill };
@@ -392,11 +497,10 @@ internal abstract class MotionLayer
     {
         private readonly MotionNode color = o.Node("color", MotionType.Color, "#000000");
 
-        public override void Render(SkiaCanvas surface, double time)
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
         {
-            var canvas = surface.SkCanvas;
-            using var paint = Paint(color.Evaluate(time), AmountAt(time));
-            canvas.DrawPaint(paint);
+            using var paint = Paint(color.Evaluate(time), amount);
+            surface.SkCanvas.DrawPaint(paint);
         }
 
         public override XElement ToSif(SifWriter sif) => Element("solid_color", "0.1", sif, sif.Param("color", color));
@@ -423,23 +527,42 @@ internal abstract class MotionLayer
         private readonly MotionNode origin = o.Node("origin", MotionType.Vector, new[] { 0d, 0d });
         private readonly MotionNode radius = o.Node("radius", MotionType.Real, 10d);
         private readonly MotionNode color = o.Node("color", MotionType.Color, "#000000");
+        private readonly bool invert = o.Bool("invert", false);
 
-        public override void Render(SkiaCanvas surface, double time)
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
         {
-            var canvas = surface.SkCanvas;
             var p = origin.Evaluate(time);
-            using var paint = Paint(color.Evaluate(time), AmountAt(time));
-            canvas.DrawCircle((float)p[0], (float)p[1], (float)Math.Abs(radius.Evaluate(time)[0]), paint);
+            using var paint = Paint(color.Evaluate(time), amount);
+            using var path = new SKPath { FillType = invert ? SKPathFillType.InverseWinding : SKPathFillType.Winding };
+            path.AddCircle((float)p[0], (float)p[1], (float)Math.Abs(radius.Evaluate(time)[0]));
+            surface.SkCanvas.DrawPath(path, paint);
         }
 
         public override XElement ToSif(SifWriter sif) => Element("circle", "0.2", sif,
             sif.Param("color", color), sif.Param("radius", radius),
             SifWriter.Param("feather", new XElement("real", new XAttribute("value", "0"))),
             sif.Param("origin", origin),
-            SifWriter.Param("invert", SifWriter.Bool(false)));
+            SifWriter.Param("invert", SifWriter.Bool(invert)));
 
         public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
         {
+            if (invert)
+            {
+                // An inverted disc has no SVG element of its own: everything, less a circle drawn as two arcs.
+                var path = SvgElement("path", new XAttribute("fill-rule", "evenodd"));
+                svg.Attribute(path, "d", t =>
+                {
+                    var local = map.Local(t);
+                    var p = origin.Evaluate(local);
+                    var r = Math.Abs(radius.Evaluate(local)[0]);
+                    string N(double v) => SvgAnimationWriter.N(v);
+                    return $"{SvgAnimationWriter.Everything}M{N(p[0] - r)} {N(p[1])}A{N(r)} {N(r)} 0 1 0 {N(p[0] + r)} {N(p[1])}A{N(r)} {N(r)} 0 1 0 {N(p[0] - r)} {N(p[1])}Z";
+                });
+                Paint(path, "fill", color, svg, map);
+                Opacity(path, svg, map);
+                return path;
+            }
+
             var circle = SvgElement("circle");
             svg.Attribute(circle, "cx", svg.Track(origin, 0, map));
             svg.Attribute(circle, "cy", svg.Track(origin, 1, map));
@@ -460,23 +583,28 @@ internal abstract class MotionLayer
         private readonly MotionNode point2 = o.Node("point2", MotionType.Vector, new[] { 10d, 10d });
         private readonly MotionNode expand = o.Node("expand", MotionType.Real, 0d);
         private readonly MotionNode color = o.Node("color", MotionType.Color, "#000000");
+        private readonly bool invert = o.Bool("invert", false);
 
         public override IEnumerable<MotionNode> Nodes() => [Amount, point1, point2, expand, color];
 
-        public override void Render(SkiaCanvas surface, double time)
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
         {
-            var a = point1.Evaluate(time);
-            var b = point2.Evaluate(time);
-            var e = Math.Abs(expand.Evaluate(time)[0]);
-            using var paint = Paint(color.Evaluate(time), AmountAt(time));
-            surface.SkCanvas.DrawRect(SKRect.Create(
-                (float)(Math.Min(a[0], b[0]) - e), (float)(Math.Min(a[1], b[1]) - e),
-                (float)(Math.Abs(b[0] - a[0]) + 2 * e), (float)(Math.Abs(b[1] - a[1]) + 2 * e)), paint);
+            using var paint = Paint(color.Evaluate(time), amount);
+            using var path = new SKPath { FillType = invert ? SKPathFillType.InverseWinding : SKPathFillType.Winding };
+            path.AddRect(Bounds(time));
+            surface.SkCanvas.DrawPath(path, paint);
+        }
+
+        private SKRect Bounds(double time)
+        {
+            var (x, w) = Corners(time, 0);
+            var (y, h) = Corners(time, 1);
+            return SKRect.Create((float)x, (float)y, (float)w, (float)h);
         }
 
         public override XElement ToSif(SifWriter sif) => Element("rectangle", "0.2", sif,
             sif.Param("color", color), sif.Param("point1", point1), sif.Param("point2", point2), sif.Param("expand", expand),
-            SifWriter.Param("invert", SifWriter.Bool(false)),
+            SifWriter.Param("invert", SifWriter.Bool(invert)),
             SifWriter.Param("feather_x", new XElement("real", new XAttribute("value", "0"))),
             SifWriter.Param("feather_y", new XElement("real", new XAttribute("value", "0"))),
             SifWriter.Param("bevel", new XElement("real", new XAttribute("value", "0"))),
@@ -484,6 +612,19 @@ internal abstract class MotionLayer
 
         public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
         {
+            if (invert)
+            {
+                var path = SvgElement("path", new XAttribute("fill-rule", "evenodd"));
+                svg.Attribute(path, "d", t =>
+                {
+                    var r = Bounds(map.Local(t));
+                    return $"{SvgAnimationWriter.Everything}M{P(new(r.Left, r.Top))}H{SvgAnimationWriter.N(r.Right)}V{SvgAnimationWriter.N(r.Bottom)}H{SvgAnimationWriter.N(r.Left)}Z";
+                });
+                Paint(path, "fill", color, svg, map);
+                Opacity(path, svg, map);
+                return path;
+            }
+
             var rect = SvgElement("rect");
             Side(svg, map, rect, 0, "x", "width");
             Side(svg, map, rect, 1, "y", "height");
@@ -532,8 +673,108 @@ internal abstract class MotionLayer
             return (Math.Min(a, b) - e, Math.Abs(b - a) + 2 * e);
         }
 
-        // An affine map keeps a track exact: a keySpline shapes progress between two values, not the values.
-        private static MotionTrack Affine(MotionTrack t, double k, double c) => t with { Values = [.. t.Values.Select(v => k * v + c)] };
+    }
+
+    /// <summary>
+    /// Synfig's import layer: a picture whose top-left corner is drawn at <c>tl</c> and bottom-right at
+    /// <c>br</c>, so swapping a pair of coordinates mirrors it. The picture is held, never a filename: a
+    /// script hands over pixels, and the <c>.sif</c> writer puts them in a file beside its own.
+    /// </summary>
+    public sealed class ImageLayer : MotionLayer
+    {
+        public ImageLayer(MotionOptions o) : base(o)
+        {
+            picture = MotionPicture.From(o.Raw("image"), o.Who);
+            tl = o.Node("tl", MotionType.Vector, new[] { 0d, 0d });
+            br = o.Node("br", MotionType.Vector, new double[] { picture.Width, picture.Height });
+            var name = o.Has("interpolation") ? o.Raw("interpolation") as string
+                ?? throw new ArgumentException($"{o.Who}'s interpolation is a name: nearest, linear or cubic.") : "linear";
+            interpolation = name switch
+            {
+                "nearest" => 0,
+                "linear" => 1,
+                "cubic" => 3,
+                _ => throw new ArgumentException($"{o.Who} has no interpolation '{name}'. It takes: nearest, linear, cubic.")
+            };
+        }
+
+        private readonly MotionPicture picture;
+        private readonly MotionNode tl, br;
+        private readonly int interpolation;
+
+        public override IEnumerable<MotionNode> Nodes() => [Amount, tl, br];
+
+        internal MotionPicture Picture => picture;
+
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
+        {
+            var a = tl.Evaluate(time);
+            var b = br.Evaluate(time);
+            var sx = (b[0] - a[0]) / picture.Width;
+            var sy = (b[1] - a[1]) / picture.Height;
+            if (sx == 0 || sy == 0) return;
+
+            var canvas = surface.SkCanvas;
+            canvas.Save();
+            canvas.Concat(new SKMatrix((float)sx, 0, (float)a[0], 0, (float)sy, (float)a[1], 0, 0, 1));
+            using var paint = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(amount * 255)) };
+            var sampling = interpolation switch
+            {
+                0 => new SKSamplingOptions(SKFilterMode.Nearest),
+                3 => new SKSamplingOptions(SKCubicResampler.CatmullRom),
+                _ => new SKSamplingOptions(SKFilterMode.Linear)
+            };
+            canvas.DrawImage(picture.Image, 0, 0, sampling, paint);
+            canvas.Restore();
+        }
+
+        public override XElement ToSif(SifWriter sif) => Element("import", "0.1", sif,
+            sif.Param("tl", tl), sif.Param("br", br),
+            SifWriter.Param("c", new XElement("integer", new XAttribute("value", interpolation))),
+            SifWriter.Param("gamma_adjust", new XElement("real", new XAttribute("value", "1"))),
+            SifWriter.Param("filename", new XElement("string", sif.Picture(picture))),
+            SifWriter.Param("time_offset", new XElement("time", new XAttribute("value", "0s"))));
+
+        /// <summary>
+        /// The picture at its own size, under a translation to <c>tl</c> and a scale to <c>br</c>: exact
+        /// wherever one corner holds still, sampled when both move.
+        /// </summary>
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var image = SvgElement("image",
+                new XAttribute("width", picture.Width), new XAttribute("height", picture.Height),
+                new XAttribute("preserveAspectRatio", "none"),
+                interpolation == 0 ? new XAttribute("image-rendering", "pixelated") : null,
+                new XAttribute(SvgAnimationWriter.Xlink + "href", picture.DataUri));
+
+            var chain = new[]
+            {
+                svg.Transform("translate", svg.Track(tl, 0, map), v => $"{SvgAnimationWriter.N(v)} 0", 0),
+                svg.Transform("translate", svg.Track(tl, 1, map), v => $"0 {SvgAnimationWriter.N(v)}", 0),
+                svg.Transform("scale", Scale(svg, map, 0, picture.Width), v => $"{SvgAnimationWriter.N(v, 6)} 1", 1),
+                svg.Transform("scale", Scale(svg, map, 1, picture.Height), v => $"1 {SvgAnimationWriter.N(v, 6)}", 1),
+            }.Where(g => g.HasAttributes || g.HasElements).ToArray();
+
+            object inner = image;
+            for (var i = chain.Length - 1; i >= 0; i--)
+            {
+                chain[i].Add(inner);
+                inner = chain[i];
+            }
+
+            var outer = SvgElement("g", inner);
+            Opacity(outer, svg, map);
+            return outer;
+        }
+
+        private MotionTrack Scale(SvgAnimationWriter svg, MotionTimeMap map, int c, int size)
+        {
+            var a = svg.Track(tl, c, map);
+            var b = svg.Track(br, c, map);
+            if (a.IsStatic) return Affine(b, 1d / size, -a.Values[0] / size);
+            if (b.IsStatic) return Affine(a, -1d / size, b.Values[0] / size);
+            return svg.Track(t => (br.Evaluate(map.Local(t))[c] - tl.Evaluate(map.Local(t))[c]) / size);
+        }
     }
 
     /// <summary>What region and outline share: a spline of points, possibly closed, moved by <c>origin</c>.</summary>
@@ -555,6 +796,9 @@ internal abstract class MotionLayer
 
         protected IReadOnlyList<MotionSplinePoint> Points { get; }
 
+        /// <summary>Whether the shape covers everything but itself.</summary>
+        protected virtual bool Inverted => false;
+
         public override IEnumerable<MotionNode> Nodes() =>
             new[] { Amount, Origin, Color }.Concat(Points.SelectMany(p => p.Nodes()));
 
@@ -562,7 +806,7 @@ internal abstract class MotionLayer
         [
             sif.Param("color", Color),
             sif.Param("origin", Origin),
-            SifWriter.Param("invert", SifWriter.Bool(false)),
+            SifWriter.Param("invert", SifWriter.Bool(Inverted)),
             SifWriter.Param("antialias", SifWriter.Bool(true)),
             SifWriter.Param("feather", new XElement("real", new XAttribute("value", "0"))),
             SifWriter.Param("blurtype", new XElement("integer", new XAttribute("value", "1"))),
@@ -627,18 +871,20 @@ internal abstract class MotionLayer
             var o = Origin.Evaluate(time);
             return [.. Points.Select(p => p.At(time, o))];
         }
-
-        protected static string P(SKPoint p) => $"{SvgAnimationWriter.N(p.X)} {SvgAnimationWriter.N(p.Y)}";
     }
 
     public sealed class RegionLayer(MotionOptions o) : Shape(o, "region", true)
     {
-        public override void Render(SkiaCanvas surface, double time)
+        private readonly bool invert = o.Bool("invert", false);
+
+        protected override bool Inverted => invert;
+
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
         {
-            var canvas = surface.SkCanvas;
             using var path = Path(time, out _);
-            using var paint = Paint(Color.Evaluate(time), AmountAt(time));
-            canvas.DrawPath(path, paint);
+            if (invert) path.FillType = SKPathFillType.InverseWinding;
+            using var paint = Paint(Color.Evaluate(time), amount);
+            surface.SkCanvas.DrawPath(path, paint);
         }
 
         public override XElement ToSif(SifWriter sif) => Element("region", "0.1", sif, ShapeParams(sif));
@@ -646,7 +892,8 @@ internal abstract class MotionLayer
         public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
         {
             var path = SvgElement("path");
-            svg.Attribute(path, "d", t => PathData(map.Local(t)));
+            if (invert) path.SetAttributeValue("fill-rule", "evenodd");
+            svg.Attribute(path, "d", t => (invert ? SvgAnimationWriter.Everything : "") + PathData(map.Local(t)));
             Paint(path, "fill", Color, svg, map);
             Opacity(path, svg, map);
             return path;
@@ -768,14 +1015,14 @@ internal abstract class MotionLayer
             }
         }
 
-        public override void Render(SkiaCanvas surface, double time)
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
         {
             var canvas = surface.SkCanvas;
             using var path = Path(time, out var states);
             if (states.Length == 0) return;
 
             var w = width.Evaluate(time)[0];
-            using var paint = Paint(Color.Evaluate(time), AmountAt(time));
+            using var paint = Paint(Color.Evaluate(time), amount);
 
             if (states.All(s => Math.Abs(s.Width - states[0].Width) < 1e-9))
             {
@@ -869,11 +1116,8 @@ internal abstract class MotionLayer
 
         public override IEnumerable<MotionNode> Nodes() => values.Select(v => v.Node).Prepend(Amount);
 
-        public override void Render(SkiaCanvas surface, double time)
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
         {
-            var amount = AmountAt(time);
-            if (amount <= 0) return;
-
             var canvas = surface.SkCanvas;
             var depth = canvas.Save();
             if (amount < 1)
@@ -938,27 +1182,32 @@ internal abstract class MotionLayer
 
         private readonly MotionGroup children;
         private readonly MotionNode origin, offset, angle, skewAngle, scale;
+
+        internal MotionGroup Children => children;
         private readonly double timeOffset, timeDilation;
 
         public override IEnumerable<MotionNode> Nodes() =>
             new[] { Amount, origin, offset, angle, skewAngle, scale }.Concat(children.Nodes());
 
-        public override void Render(SkiaCanvas surface, double time)
+        /// <summary>
+        /// Draws the children in the group's frame. They are drawn on a surface of their own whenever that
+        /// could differ from drawing them in place — a fade, or a child that blends — because Synfig blends
+        /// a child with its siblings only, never with what lies under the group.
+        /// </summary>
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
         {
             var canvas = surface.SkCanvas;
-            var amount = AmountAt(time);
-            if (amount <= 0) return;
-
             canvas.Save();
             canvas.Concat(Matrix(time));
-            if (amount < 1)
+            var isolate = amount < 1 || children.HasBlendedLayers;
+            if (isolate)
             {
                 using var fade = new SKPaint { Color = new SKColor(255, 255, 255, (byte)Math.Round(amount * 255)) };
                 canvas.SaveLayer(fade);
             }
 
             children.RenderLayers(surface, time * timeDilation + timeOffset);
-            if (amount < 1) canvas.Restore();
+            if (isolate) canvas.Restore();
             canvas.Restore();
         }
 
@@ -985,6 +1234,7 @@ internal abstract class MotionLayer
         {
             var outer = SvgElement("g");
             Opacity(outer, svg, map);
+            if (children.HasBlendedLayers) outer.SetAttributeValue("style", "isolation:isolate");
 
             var skewTrack = svg.Track(skewAngle, 0, map);
             var syTrack = skewTrack.IsStatic && Math.Abs(skewTrack.Values[0]) < 1e-12
@@ -1144,7 +1394,20 @@ internal sealed class MotionOptions
     private readonly string who;
     #endregion
 
+    #region Properties
+    /// <summary>The call the options belong to, for messages.</summary>
+    public string Who => who;
+    #endregion
+
     #region Methods
+    /// <summary>The given keys that were set, as a new options object.</summary>
+    public Hashtable Subset(params string[] keys)
+    {
+        var subset = new Hashtable();
+        foreach (var key in keys.Where(Has)) subset[key] = values[key];
+        return subset;
+    }
+
     public bool Has(string key) => values.Contains(key) && values[key] is not null;
 
     public object? Raw(string key) => values[key];
@@ -1167,9 +1430,10 @@ internal sealed class MotionOptions
 internal sealed class SifWriter
 {
     #region Constructors
-    public SifWriter(MotionComposition composition)
+    public SifWriter(MotionComposition composition, string? stem)
     {
         this.composition = composition;
+        this.stem = stem;
 
         var uses = new Dictionary<MotionNode, int>(ReferenceEqualityComparer.Instance);
         foreach (var node in composition.Nodes()) Count(node);
@@ -1198,11 +1462,34 @@ internal sealed class SifWriter
 
     #region Fields
     private readonly MotionComposition composition;
+    private readonly string? stem;
     private readonly Dictionary<MotionNode, string> ids = new(ReferenceEqualityComparer.Instance);
     private readonly MotionNode[] exportOrder;
+    private readonly Dictionary<string, string> pictures = [];
+    private readonly List<(string Name, byte[] Png)> files = [];
+    #endregion
+
+    #region Properties
+    /// <summary>The pictures the file refers to, by the names it gives them.</summary>
+    public IReadOnlyList<(string Name, byte[] Png)> Pictures => files;
     #endregion
 
     #region Methods
+    /// <summary>The file name an image layer's picture is written under, beside the <c>.sif</c>.</summary>
+    public string Picture(MotionPicture picture)
+    {
+        if (stem is null)
+            throw new InvalidOperationException(
+                "This composition has an image layer, whose picture is written beside the .sif: use composition.saveSif(path) instead of toSif().");
+        // Keyed on the pixels, so the pieces of one cut-out sheet share one file.
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(picture.Png));
+        if (pictures.TryGetValue(key, out var name)) return name;
+        name = $"{stem}-image{pictures.Count + 1}.png";
+        pictures[key] = name;
+        files.Add((name, picture.Png));
+        return name;
+    }
+
     public string Write()
     {
         var c = composition;

@@ -4911,6 +4911,77 @@ comp.render(1);
 - `origin` is the pivot and `offset` where the pivot lands, so `origin` and `offset` set to the same point turns the piece **about** that point. Nested, the child's pivot is in its parent's frame and follows it.
 - The pieces share the picture: `saveSif` writes it once however many pieces it is cut into.
 
+### Bones — `comp.bone(options)`
+
+Nesting groups works for a two-piece arm and gets awkward past that. **Bones** are Synfig's skeleton: a hierarchy of joints you key, with pieces, groups and points bound to them. Draw everything in the **rest pose**, where it sits before anything moves, and bind it; it follows its bone from there.
+
+```javascript
+const n = Motion.nodes;
+
+const sheet = createCanvas(240, 80);
+const s = sheet.getContext('2d');
+s.fillStyle = '#c9553d';
+s.fillRect(10, 30, 110, 20);
+s.fillStyle = '#e5a93c';
+s.fillRect(115, 32, 100, 16);
+
+const comp = Motion.composition({ width: 480, height: 300, fps: 12, duration: 2 });
+comp.fill({ color: '#f2efe8' });
+
+// Joints in the rest pose, in composition coordinates; turn is the keyed rotation about `from`.
+const swing = n.animated('angle', [
+    { time: 0, value: -20, ease: 'halt' }, { time: 1, value: 45, ease: 'halt' }, { time: 2, value: -20, ease: 'halt' }]);
+const bend = n.animated('angle', [
+    { time: 0, value: 0, ease: 'halt' }, { time: 1, value: 80, ease: 'halt' }, { time: 2, value: 0, ease: 'halt' }]);
+const upper = comp.bone({ name: 'upper', from: [130, 100], to: [235, 100], turn: swing });
+const lower = comp.bone({ name: 'lower', parent: upper, from: [235, 100], to: [335, 100], turn: bend });
+
+// The sheet placed so its arm lies along the bones; each piece cut out and bound to its bone.
+const at = { tl: [120, 60], br: [360, 140] };
+comp.cutout(sheet, [[128, 88], [242, 88], [242, 112], [128, 112]], { ...at, bone: upper });
+comp.cutout(sheet, [[230, 90], [340, 90], [340, 110], [230, 110]], { ...at, bone: lower });
+
+// A hand that follows the forearm, and the skeleton drawn over everything to check the rig.
+comp.circle({ origin: n.boneLink(lower, [345, 100]), radius: 12, color: '#1f6f8b' });
+comp.skeleton({ color: '#15151a80' });
+
+log(JSON.stringify(lower.at(1).tip));      // where the hand is at 1 s
+comp.capture({ fps: 4 });
+Motion.sheet('artifacts/rig-sheet.png', { count: 5, cols: 5, scale: 0.4, fps: 4 });
+comp.render(1);
+```
+
+**A bone** is `{ name?, parent?, from, to, turn?, stretch?, width?, tipwidth? }`:
+
+- `from` and `to` are its joints **in the rest pose**, in composition coordinates. A child's `from` is usually its parent's `to`.
+- `turn` (degrees, usually a node) rotates it about `from`, **relative to its parent**, so a child rides its parent's turn and adds its own.
+- `stretch` (a factor, default 1) lengthens it and carries its children along without scaling them.
+- `width` and `tipwidth` are the radii the skeleton draws it with; they default to a fraction of its length.
+
+Or give **Synfig's own fields** — `{ name?, parent?, origin, angle, length?, scalelx?, scalex? }` — where `origin` is in the parent's frame (`[parent's length, 0]` is its tip) and `angle` is absolute within that frame. Then the rest pose is the bone at time 0. Mixing the two forms is refused by name.
+
+- `bone.at(time)` → `{ origin, tip, angle, length }` in composition coordinates — **measure the rig here**, the way `Character.where(...)` measures a figure. `bone.rest` is the same at rest. `bone.name`, `bone.parent`.
+- `comp.bones` → the composition's bones, in the order they were made.
+
+**What can follow a bone:**
+
+| | how | moves |
+| :--- | :--- | :--- |
+| a group | `comp.group({ bone })` | everything in it, as one rigid piece |
+| a cutout piece | `comp.cutout(image, points, { bone })` | the piece |
+| a point | `Motion.nodes.boneLink(bone, [x, y])` → a vector node | the point |
+| a point on several bones | `Motion.nodes.boneInfluence([[a, 1], [b, 1]], [x, y])` | the point, by the bones' frames averaged by weight |
+| a spline point | `{ point, t1?, t2?, bone }` in a region or outline, where `bone` is a bone or a weight list | the point **and its tangents** |
+
+> [!TIP]
+> **Bind a whole piece with a group; bend a shape with weighted points.** A rigid piece — a forearm, a cutout — wants `{ bone }` on its group. A shape that must bend at the joint, like a sleeve, wants its points weighted: points near the elbow on `[[upper, 1], [lower, 1]]`, the rest on one bone each. That is Synfig's bone influence, which is linear blend skinning: it averages the bones' frames, so an evenly weighted point on a joint bent 90° lands between the two arms rather than on an arc, and a joint bent hard pinches. Overlap rigid pieces at the joint instead when that matters.
+
+> [!IMPORTANT]
+> **Bound values are fixed in the rest pose.** A bound group takes its transform from the bone, so `origin`, `offset`, `angle`, `skewAngle` and `scale` alongside `bone` are refused — put a group inside it for its own motion. A bound point is a value where it sits at rest, not a node; animate it by keying the bones.
+
+- **`comp.skeleton({ color?, amount?, blend?, desc? })`** draws every bone as a capsule from origin to tip. Synfig treats its skeleton as an editor guide and never renders it; here it renders, so a sheet can show the rig, and **leave it out of a deliverable**.
+- In `.sif` the bones are Synfig's own `<bones>` section, bound values are bone links and bone influences, and the file opens as a rigged project in Synfig Studio. In SVG, bone-driven motion is sampled at the frame rate: exact at frames, interpolated between.
+
 ### A layer the SDK draws — `comp.drawn(draw, options?)`
 
 The bridge between the model and everything else here: **the nodes say when, the toolkit says what.** `draw(ctx, v, t)` is called for each frame with a fresh context, `v` holding each of `options.values` at that frame, and `t` the layer's own time. `options` is `{ values?, amount?, desc? }`.

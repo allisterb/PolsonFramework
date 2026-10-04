@@ -254,6 +254,14 @@ is Synfig's, and the craft follows from it:
   with the same pixels in every frame. Overlap the pieces a little at each joint, as cut paper does, so a
   bend never opens a gap. The cut is an eraser (`blend: 'alphaOver'`), and like every blend it reaches only
   its own group, which is why a piece is always a group.
+- **Past two pieces, rig it with bones.** `comp.bone({ from, to, parent, turn })` is a joint you key;
+  draw every piece in the rest pose and bind it — `comp.cutout(..., { bone })`, `comp.group({ bone })`, a
+  point as `Motion.nodes.boneLink(bone, [x, y])` — and it follows. Key the turns, not the pieces: one
+  shoulder turn moves the whole arm, and a pose is a handful of angles rather than a dozen transforms.
+  A shape that must bend at a joint, a sleeve, takes weighted points (`Motion.nodes.boneInfluence` or a
+  spline point's `bone: [[upper, 1], [lower, 1]]`); a rigid piece takes one bone. Check the rig with
+  `comp.skeleton()` over a contact sheet, and measure it with `bone.at(t)` — every bone is in `comp.bones` —
+  rather than by eye. The skeleton is a guide: take it out before the deliverable.
 
 ```javascript
 const n = Motion.nodes;

@@ -732,6 +732,26 @@ public sealed class MotionNodeFactory
         return new MotionScale(kind, Node(link, kind, "scale's link"), Node(scalar, MotionType.Real, "scale's scalar"));
     }
 
+    /// <summary>
+    /// A point that follows a bone: given where it sits in the rest pose, in composition coordinates, it is
+    /// carried by the bone's frame from there. Synfig's bone link.
+    /// </summary>
+    public MotionBoneNode BoneLink(MotionBone? bone, object? point) =>
+        bone is null
+            ? throw new ArgumentException("Motion.nodes.boneLink(bone, point) takes a bone made by composition.bone(...).")
+            : new MotionBoneNode(MotionBinding.Parse(bone, "boneLink"), RestPoint(point, "boneLink"));
+
+    /// <summary>
+    /// A point carried by several bones at once, each by its weight: <c>[[bone, weight], ...]</c> or
+    /// <c>[{ bone, weight }, ...]</c>. Synfig's bone influence, which is linear blend skinning.
+    /// </summary>
+    public MotionBoneNode BoneInfluence(object? weights, object? point) =>
+        new(MotionBinding.Parse(weights, "boneInfluence"), RestPoint(point, "boneInfluence"));
+
+    private static double[] RestPoint(object? point, string who) => point is MotionNode
+        ? throw new ArgumentException($"Motion.nodes.{who}'s point is fixed where it sits in the rest pose; the bones move it, so it is a value, not a node.")
+        : MotionTypes.Read(point, MotionType.Vector, $"Motion.nodes.{who}'s point");
+
     /// <summary>A script value as a node of the given type: a node passes through if its type matches.</summary>
     internal static MotionNode Node(object? value, MotionType kind, string who) => value switch
     {

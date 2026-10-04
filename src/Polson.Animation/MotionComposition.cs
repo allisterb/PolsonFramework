@@ -106,8 +106,8 @@ public abstract class MotionLayerList
     /// A piece cut out of a picture, as a group that can be posed: the picture, and an inverted region
     /// that erases everything outside <paramref name="points"/>. <c>options</c> takes the image's
     /// <c>tl</c>, <c>br</c> and <c>interpolation</c> and the group's <c>origin</c>, <c>offset</c>,
-    /// <c>angle</c>, <c>skewAngle</c>, <c>scale</c>, <c>amount</c>, <c>blend</c>, <c>timeOffset</c>,
-    /// <c>timeDilation</c> and <c>desc</c>.
+    /// <c>angle</c>, <c>skewAngle</c>, <c>scale</c>, <c>bone</c>, <c>amount</c>, <c>blend</c>, <c>timeOffset</c>,
+    /// <c>timeDilation</c> and <c>desc</c>. With <c>bone</c> the piece follows the bone from the rest pose.
     /// </summary>
     /// <remarks>
     /// Synfig Studio's Cutout tool builds exactly this: an import layer under a region with
@@ -119,8 +119,8 @@ public abstract class MotionLayerList
     {
         var o = new MotionOptions(options, "cutout",
             "tl", "br", "interpolation",
-            "origin", "offset", "angle", "skewAngle", "scale", "amount", "blend", "timeOffset", "timeDilation", "desc");
-        var group = Group(o.Subset("origin", "offset", "angle", "skewAngle", "scale", "amount", "blend", "timeOffset", "timeDilation", "desc"));
+            "origin", "offset", "angle", "skewAngle", "scale", "bone", "amount", "blend", "timeOffset", "timeDilation", "desc");
+        var group = Group(o.Subset("origin", "offset", "angle", "skewAngle", "scale", "bone", "amount", "blend", "timeOffset", "timeDilation", "desc"));
         var picture = o.Subset("tl", "br", "interpolation");
         picture["image"] = image;
         group.Image(picture);
@@ -130,12 +130,13 @@ public abstract class MotionLayerList
 
     /// <summary>
     /// A group with its own transformation and clock, returned so layers can be added to it:
-    /// <c>{ origin?, offset?, angle?, skewAngle?, scale?, amount?, blend?, timeOffset?, timeDilation?, desc? }</c>.
+    /// <c>{ origin?, offset?, angle?, skewAngle?, scale?, bone?, amount?, blend?, timeOffset?, timeDilation?, desc? }</c>.
+    /// With <c>bone</c> the group takes its transform from the bone instead, carried from the rest pose.
     /// </summary>
     public MotionGroup Group(object? options = null)
     {
         var o = new MotionOptions(options, "group",
-            "origin", "offset", "angle", "skewAngle", "scale", "amount", "blend", "timeOffset", "timeDilation", "desc");
+            "origin", "offset", "angle", "skewAngle", "scale", "bone", "amount", "blend", "timeOffset", "timeDilation", "desc");
         var group = new MotionGroup(o);
         layers.Add(group.Layer);
         return group;
@@ -250,6 +251,7 @@ public sealed class MotionComposition : MotionLayerList
     private readonly MotionToolkit? motion;
     private readonly string? projectRoot;
     private readonly double[] view;
+    private readonly List<MotionBone> bones = [];
     #endregion
 
     #region Properties
@@ -268,6 +270,39 @@ public sealed class MotionComposition : MotionLayerList
     #endregion
 
     #region Methods
+    /// <summary>
+    /// A bone of the composition's skeleton:
+    /// <c>{ name?, parent?, from, to, turn?, stretch?, width?, tipwidth? }</c>, or Synfig's own fields
+    /// <c>{ name?, parent?, origin, angle, length?, scalelx?, scalex?, width?, tipwidth? }</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>from</c> and <c>to</c> are the joints in the rest pose, in composition coordinates; <c>turn</c>
+    /// (degrees) rotates the bone about <c>from</c> relative to its parent, and <c>stretch</c> lengthens it,
+    /// carrying its children along. Synfig's fields are in the parent's frame instead: <c>[parent's length, 0]</c>
+    /// is the parent's tip. A layer or point bound to the bone follows it from the rest pose.
+    /// </remarks>
+    public MotionBone Bone(object? options)
+    {
+        var bone = new MotionBone(options, bones.Count, bones);
+        if (bones.Any(b => b.Name == bone.Name)) throw new ArgumentException($"There is already a bone named '{bone.Name}'.");
+        bones.Add(bone);
+        return bone;
+    }
+
+    /// <summary>The composition's bones, in the order they were made.</summary>
+    public IReadOnlyList<MotionBone> Bones => bones;
+
+    /// <summary>
+    /// A layer drawing every bone as a capsule from origin to tip, so a rig can be seen:
+    /// <c>{ color?, amount?, blend?, desc? }</c>. It draws the bones there are when it renders.
+    /// </summary>
+    public MotionLayerList Skeleton(object? options = null)
+    {
+        var o = new MotionOptions(options, "skeleton", "color", "amount", "blend", "desc");
+        layers.Add(new MotionLayer.SkeletonLayer(o, bones));
+        return this;
+    }
+
     /// <summary>The composition at a time in seconds, on a new canvas.</summary>
     public SkiaCanvas Render(double time)
     {
@@ -385,6 +420,9 @@ public sealed class MotionComposition : MotionLayerList
     }
 
     internal double[] View => view;
+
+    /// <summary>Every node the composition holds, the bones' included.</summary>
+    internal IEnumerable<MotionNode> AllNodes() => bones.SelectMany(b => b.Nodes).Concat(Nodes());
 
     private SKMatrix ViewMatrix()
     {
@@ -1178,7 +1216,22 @@ internal abstract class MotionLayer
             scale = o.Node("scale", MotionType.Vector, new[] { 1d, 1d });
             timeOffset = o.Number("timeOffset", 0);
             timeDilation = o.Number("timeDilation", 1);
+
+            if (o.Has("bone"))
+            {
+                if (o.Raw("bone") is not MotionBone b)
+                    throw new ArgumentException($"{o.Who}'s bone is a bone made by composition.bone(...); a weighted list binds points, not groups.");
+                var own = new[] { "origin", "offset", "angle", "skewAngle", "scale" }.Where(o.Has).ToArray();
+                if (own.Length > 0)
+                    throw new ArgumentException(
+                        $"{o.Who} follows bone '{b.Name}', which gives it its transform: drop {string.Join(", ", own)}, or put them on a group inside it.");
+                bone = b;
+                restInverse = b.RestLink.Invert();
+            }
         }
+
+        private readonly MotionBone? bone;
+        private readonly MotionAffine restInverse;
 
         private readonly MotionGroup children;
         private readonly MotionNode origin, offset, angle, skewAngle, scale;
@@ -1214,6 +1267,9 @@ internal abstract class MotionLayer
         /// <summary>Synfig's summary transformation: <c>offset · axes(scale, angle, skew) · translate(−origin)</c>.</summary>
         private SKMatrix Matrix(double time)
         {
+            // Bound to a bone: carried from the rest pose by the bone's frame, as Synfig's bone link on a transformation.
+            if (bone is not null) return (bone.Link(time) * restInverse).ToSk();
+
             var o = origin.Evaluate(time);
             var off = offset.Evaluate(time);
             var a = angle.Evaluate(time)[0] * Math.PI / 180;
@@ -1236,22 +1292,7 @@ internal abstract class MotionLayer
             Opacity(outer, svg, map);
             if (children.HasBlendedLayers) outer.SetAttributeValue("style", "isolation:isolate");
 
-            var skewTrack = svg.Track(skewAngle, 0, map);
-            var syTrack = skewTrack.IsStatic && Math.Abs(skewTrack.Values[0]) < 1e-12
-                ? svg.Track(scale, 1, map)
-                : svg.Track(t => scale.Evaluate(map.Local(t))[1] * Math.Cos(skewAngle.Evaluate(map.Local(t))[0] * Math.PI / 180));
-
-            var chain = new[]
-            {
-                svg.Transform("translate", svg.Track(offset, 0, map), v => $"{SvgAnimationWriter.N(v)} 0", 0),
-                svg.Transform("translate", svg.Track(offset, 1, map), v => $"0 {SvgAnimationWriter.N(v)}", 0),
-                svg.Transform("rotate", svg.Track(angle, 0, map), SvgAnimationWriter.N, 0),
-                svg.Transform("skewX", Negate(skewTrack), SvgAnimationWriter.N, 0),
-                svg.Transform("scale", svg.Track(scale, 0, map), v => $"{SvgAnimationWriter.N(v)} 1", 1),
-                svg.Transform("scale", syTrack, v => $"1 {SvgAnimationWriter.N(v)}", 1),
-                svg.Transform("translate", Negate(svg.Track(origin, 0, map)), v => $"{SvgAnimationWriter.N(v)} 0", 0),
-                svg.Transform("translate", Negate(svg.Track(origin, 1, map)), v => $"0 {SvgAnimationWriter.N(v)}", 0),
-            }.Where(g => g.HasAttributes || g.HasElements).ToArray();
+            var chain = bone is null ? NodeChain(svg, map) : BoneChain(svg, map);
 
             svg.Depth++;
             var content = children.LayersToSvg(svg, map.Then(timeDilation, timeOffset)).ToArray();
@@ -1267,6 +1308,62 @@ internal abstract class MotionLayer
 
             outer.Add(inner);
             return outer;
+        }
+
+        /// <summary>
+        /// A bound group's transform, sampled: the bone's frame times the inverse rest frame, decomposed per
+        /// time as Synfig decomposes a matrix, with the angles unwrapped so a turn past ±180° does not spin back.
+        /// </summary>
+        private XElement[] BoneChain(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var at = new Dictionary<double, (double X, double Y, double Angle, double Skew, double Sx, double Sy)>();
+            double lastAngle = 0, lastSkew = 0;
+            var first = true;
+            foreach (var t in svg.Times)
+            {
+                var d = (bone!.Link(map.Local(t)) * restInverse).Decompose();
+                var angle = first ? d.Angle : Unwrap(d.Angle, lastAngle);
+                var skew = first ? d.Skew : Unwrap(d.Skew, lastSkew);
+                (lastAngle, lastSkew, first) = (angle, skew, false);
+                at[t] = (d.OffsetX, d.OffsetY, angle, skew, d.ScaleX, d.ScaleY * Math.Cos(skew * Math.PI / 180));
+            }
+
+            return new[]
+            {
+                svg.Transform("translate", svg.Track(t => at[t].X), v => $"{SvgAnimationWriter.N(v)} 0", 0),
+                svg.Transform("translate", svg.Track(t => at[t].Y), v => $"0 {SvgAnimationWriter.N(v)}", 0),
+                svg.Transform("rotate", svg.Track(t => at[t].Angle), SvgAnimationWriter.N, 0),
+                svg.Transform("skewX", svg.Track(t => -at[t].Skew), SvgAnimationWriter.N, 0),
+                svg.Transform("scale", svg.Track(t => at[t].Sx), v => $"{SvgAnimationWriter.N(v, 6)} 1", 1),
+                svg.Transform("scale", svg.Track(t => at[t].Sy), v => $"1 {SvgAnimationWriter.N(v, 6)}", 1),
+            }.Where(g => g.HasAttributes || g.HasElements).ToArray();
+
+            static double Unwrap(double v, double previous)
+            {
+                while (v - previous > 180) v -= 360;
+                while (v - previous < -180) v += 360;
+                return v;
+            }
+        }
+
+        private XElement[] NodeChain(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var skewTrack = svg.Track(skewAngle, 0, map);
+            var syTrack = skewTrack.IsStatic && Math.Abs(skewTrack.Values[0]) < 1e-12
+                ? svg.Track(scale, 1, map)
+                : svg.Track(t => scale.Evaluate(map.Local(t))[1] * Math.Cos(skewAngle.Evaluate(map.Local(t))[0] * Math.PI / 180));
+
+            return new[]
+            {
+                svg.Transform("translate", svg.Track(offset, 0, map), v => $"{SvgAnimationWriter.N(v)} 0", 0),
+                svg.Transform("translate", svg.Track(offset, 1, map), v => $"0 {SvgAnimationWriter.N(v)}", 0),
+                svg.Transform("rotate", svg.Track(angle, 0, map), SvgAnimationWriter.N, 0),
+                svg.Transform("skewX", Negate(skewTrack), SvgAnimationWriter.N, 0),
+                svg.Transform("scale", svg.Track(scale, 0, map), v => $"{SvgAnimationWriter.N(v)} 1", 1),
+                svg.Transform("scale", syTrack, v => $"1 {SvgAnimationWriter.N(v)}", 1),
+                svg.Transform("translate", Negate(svg.Track(origin, 0, map)), v => $"{SvgAnimationWriter.N(v)} 0", 0),
+                svg.Transform("translate", Negate(svg.Track(origin, 1, map)), v => $"0 {SvgAnimationWriter.N(v)}", 0),
+            }.Where(g => g.HasAttributes || g.HasElements).ToArray();
 
             // Negating a track's values leaves its splines right: a spline shapes progress, not direction.
             static MotionTrack Negate(MotionTrack t) => t with { Values = [.. t.Values.Select(v => -v)] };
@@ -1274,8 +1371,10 @@ internal abstract class MotionLayer
 
         public override XElement ToSif(SifWriter sif) => Element("group", "0.3", sif,
             sif.Param("origin", origin),
-            SifWriter.Param("transformation", new XElement("composite", new XAttribute("type", "transformation"),
-                sif.Link("offset", offset), sif.Link("angle", angle), sif.Link("skew_angle", skewAngle), sif.Link("scale", scale))),
+            SifWriter.Param("transformation", bone is null
+                ? new XElement("composite", new XAttribute("type", "transformation"),
+                    sif.Link("offset", offset), sif.Link("angle", angle), sif.Link("skew_angle", skewAngle), sif.Link("scale", scale))
+                : BoneTransformation(sif)),
             SifWriter.Param("canvas", new XElement("canvas", children.LayersToSif(sif))),
             SifWriter.Param("time_dilation", new XElement("real", new XAttribute("value", MotionTypes.Format(timeDilation)))),
             SifWriter.Param("time_offset", new XElement("time", new XAttribute("value", MotionTypes.Time(timeOffset)))),
@@ -1285,6 +1384,80 @@ internal abstract class MotionLayer
             SifWriter.Param("z_range_position", new XElement("real", new XAttribute("value", "0"))),
             SifWriter.Param("z_range_depth", new XElement("real", new XAttribute("value", "0"))),
             SifWriter.Param("z_range_blur", new XElement("real", new XAttribute("value", "0"))));
+
+        /// <summary>A bone link on the transformation, its base value the inverse of the bone's rest frame.</summary>
+        private XElement BoneTransformation(SifWriter sif)
+        {
+            var d = restInverse.Decompose();
+            var local = new XElement("composite", new XAttribute("type", "transformation"),
+                new XElement("offset", SifWriter.Value(MotionType.Vector, [d.OffsetX, d.OffsetY])),
+                new XElement("angle", SifWriter.Value(MotionType.Angle, [d.Angle])),
+                new XElement("skew_angle", SifWriter.Value(MotionType.Angle, [d.Skew])),
+                new XElement("scale", SifWriter.Value(MotionType.Vector, [d.ScaleX, d.ScaleY])));
+            return MotionBinding.Parse(bone, "group").Wrap(sif, "transformation", local);
+        }
+    }
+
+    /// <summary>
+    /// Synfig's skeleton layer: every bone of the composition drawn as a capsule from its origin to its
+    /// tip, <c>width</c> and <c>tipwidth</c> its radii — how a rig is seen.
+    /// </summary>
+    public sealed class SkeletonLayer(MotionOptions o, IReadOnlyList<MotionBone> bones) : MotionLayer(o)
+    {
+        private readonly MotionNode color = o.Node("color", MotionType.Color, "#4a90e2");
+
+        public override IEnumerable<MotionNode> Nodes() => [Amount, color];
+
+        protected override void Draw(SkiaCanvas surface, double time, double amount)
+        {
+            using var path = Path(time, null);
+            using var paint = Paint(color.Evaluate(time), amount);
+            surface.SkCanvas.DrawPath(path, paint);
+        }
+
+        private SKPath Path(double time, int? segments)
+        {
+            var path = new SKPath { FillType = SKPathFillType.Winding };
+            foreach (var bone in bones)
+            {
+                var points = bone.Capsule(time, segments);
+                path.AddPoly([.. points], close: true);
+            }
+
+            return path;
+        }
+
+        /// <summary>
+        /// Synfig's skeleton is an editor guide: excluded from rendering, its colour fixed, its only
+        /// parameters <c>amount</c>, <c>name</c> and <c>bones</c>. So it is written that way, and draws only here.
+        /// </summary>
+        public override XElement ToSif(SifWriter sif) => new("layer",
+            new XAttribute("type", "skeleton"), new XAttribute("active", "true"),
+            new XAttribute("exclude_from_rendering", "true"), new XAttribute("version", "0.1"),
+            Desc is null ? null : new XAttribute("desc", Desc),
+            sif.Param("amount", Amount),
+            SifWriter.Param("name", new XElement("string", "skeleton")),
+            SifWriter.Param("bones", new XElement("static_list", new XAttribute("type", "bone_object"),
+                bones.Select(b => new XElement("entry",
+                    new XElement("bone", new XAttribute("type", "bone_object"), new XAttribute("guid", sif.Bone(b))))))));
+
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            const int segments = 12;
+            var path = SvgElement("path");
+            svg.Attribute(path, "d", t =>
+            {
+                var local = map.Local(t);
+                return string.Concat(bones.Select(b =>
+                {
+                    var points = b.Capsule(local, segments);
+                    return "M" + string.Join("L", points.Select(P)) + "Z";
+                }));
+            });
+            Paint(path, "fill", color, svg, map);
+            Opacity(path, svg, map);
+            return path;
+        }
     }
     #endregion
 }
@@ -1300,13 +1473,34 @@ internal abstract class MotionLayer
 internal sealed class MotionSplinePoint
 {
     #region Fields
-    private static readonly HashSet<string> Keys = ["point", "t1", "t2", "width"];
+    private static readonly HashSet<string> Keys = ["point", "t1", "t2", "width", "bone"];
     private readonly MotionNode point, t1, t2, width;
+    private readonly MotionBinding? binding;
     #endregion
 
     #region Constructors
-    private MotionSplinePoint(MotionNode point, MotionNode t1, MotionNode t2, MotionNode width) =>
-        (this.point, this.t1, this.t2, this.width) = (point, t1, t2, width);
+    private MotionSplinePoint(MotionNode point, MotionNode t1, MotionNode t2, MotionNode width, MotionBinding? binding = null, string? who = null)
+    {
+        (this.point, this.t1, this.t2, this.width, this.binding) = (point, t1, t2, width, binding);
+        if (binding is null) return;
+
+        // Fixed in the rest pose and measured once in the bones' frame, as Synfig Studio does when a vertex is linked.
+        if (point is not MotionConstant || t1 is not MotionConstant || t2 is not MotionConstant)
+            throw new ArgumentException($"{who} follows a bone, so its point and tangents are fixed values in the rest pose, not nodes.");
+        var inverse = binding.Rest.Invert();
+        var p = point.Evaluate(0);
+        var (px, py) = inverse.Apply(p[0], p[1]);
+        this.point = new MotionConstant(MotionType.Vector, [px, py]);
+        this.t1 = Vector(t1);
+        this.t2 = ReferenceEquals(t1, t2) ? this.t1 : Vector(t2);
+
+        MotionNode Vector(MotionNode t)
+        {
+            var v = t.Evaluate(0);
+            var (x, y) = inverse.ApplyVector(v[0], v[1]);
+            return new MotionConstant(MotionType.Vector, [x, y]);
+        }
+    }
     #endregion
 
     #region Methods
@@ -1326,7 +1520,7 @@ internal sealed class MotionSplinePoint
             foreach (var key in d.Keys.Cast<object>().Select(k => k.ToString()!))
             {
                 if (!Keys.Contains(key) && key is not ("x" or "y"))
-                    throw new ArgumentException($"{at} has no '{key}'. A point takes: point, t1, t2, width.");
+                    throw new ArgumentException($"{at} has no '{key}'. A point takes: point, t1, t2, width, bone.");
             }
 
             var p = d.Contains("point") ? d["point"] : item;
@@ -1334,7 +1528,8 @@ internal sealed class MotionSplinePoint
             var t2 = d["t2"] is { } b ? MotionNodeFactory.Node(b, MotionType.Vector, $"{at}'s t2") : t1;
             return new MotionSplinePoint(
                 MotionNodeFactory.Node(p, MotionType.Vector, $"{at}'s point"), t1, t2,
-                d["width"] is { } w ? MotionNodeFactory.Node(w, MotionType.Real, $"{at}'s width") : new MotionConstant(MotionType.Real, [1]));
+                d["width"] is { } w ? MotionNodeFactory.Node(w, MotionType.Real, $"{at}'s width") : new MotionConstant(MotionType.Real, [1]),
+                d["bone"] is { } bone ? MotionBinding.Parse(bone, $"{at}'s bone") : null, at);
         })];
 
         static MotionNode Zero() => new MotionConstant(MotionType.Vector, [0, 0]);
@@ -1345,6 +1540,15 @@ internal sealed class MotionSplinePoint
         var p = point.Evaluate(time);
         var a = t1.Evaluate(time);
         var b = t2.Evaluate(time);
+        if (binding?.At(time) is { } m)
+        {
+            // The vertex by the whole frame, the tangents by its linear part, as Synfig carries a linked point.
+            var (px, py) = m.Apply(p[0], p[1]);
+            var (ax, ay) = m.ApplyVector(a[0], a[1]);
+            var (bx, by) = m.ApplyVector(b[0], b[1]);
+            (p, a, b) = ([px, py], [ax, ay], [bx, by]);
+        }
+
         return new State(
             new SKPoint((float)(p[0] + origin[0]), (float)(p[1] + origin[1])),
             new SKPoint((float)a[0], (float)a[1]),
@@ -1354,15 +1558,19 @@ internal sealed class MotionSplinePoint
 
     public IEnumerable<MotionNode> Nodes() => [point, t1, t2, width];
 
-    public XElement ToSif(SifWriter sif) => new("composite", new XAttribute("type", "bline_point"),
-        sif.Link("point", point),
-        sif.Link("width", width),
-        new XElement("origin", new XElement("real", new XAttribute("value", "0.5"))),
-        new XElement("split", SifWriter.Bool(true)),
-        sif.Link("t1", t1),
-        sif.Link("t2", t2),
-        new XElement("split_radius", SifWriter.Bool(true)),
-        new XElement("split_angle", SifWriter.Bool(true)));
+    public XElement ToSif(SifWriter sif)
+    {
+        var composite = new XElement("composite", new XAttribute("type", "bline_point"),
+            sif.Link("point", point),
+            sif.Link("width", width),
+            new XElement("origin", new XElement("real", new XAttribute("value", "0.5"))),
+            new XElement("split", SifWriter.Bool(true)),
+            sif.Link("t1", t1),
+            sif.Link("t2", t2),
+            new XElement("split_radius", SifWriter.Bool(true)),
+            new XElement("split_angle", SifWriter.Bool(true)));
+        return binding is null ? composite : binding.Wrap(sif, "bline_point", composite);
+    }
     #endregion
 
     #region Types
@@ -1436,12 +1644,13 @@ internal sealed class SifWriter
         this.stem = stem;
 
         var uses = new Dictionary<MotionNode, int>(ReferenceEqualityComparer.Instance);
-        foreach (var node in composition.Nodes()) Count(node);
+        foreach (var node in composition.AllNodes()) Count(node);
+        for (var i = 0; i < composition.Bones.Count; i++) bones[composition.Bones[i]] = Guid(i + 1);
 
         // Children before parents, because Synfig refuses a reference to a def it has not read yet.
         var ordered = new List<MotionNode>();
         var seen = new HashSet<MotionNode>(ReferenceEqualityComparer.Instance);
-        foreach (var node in composition.Nodes()) Visit(node);
+        foreach (var node in composition.AllNodes()) Visit(node);
         foreach (var node in ordered.Where(n => uses[n] > 1)) ids[node] = $"v{ids.Count + 1}";
         exportOrder = [.. ordered.Where(ids.ContainsKey)];
 
@@ -1466,6 +1675,7 @@ internal sealed class SifWriter
     private readonly Dictionary<MotionNode, string> ids = new(ReferenceEqualityComparer.Instance);
     private readonly MotionNode[] exportOrder;
     private readonly Dictionary<string, string> pictures = [];
+    private readonly Dictionary<MotionBone, string> bones = new(ReferenceEqualityComparer.Instance);
     private readonly List<(string Name, byte[] Png)> files = [];
     #endregion
 
@@ -1475,6 +1685,34 @@ internal sealed class SifWriter
     #endregion
 
     #region Methods
+    /// <summary>The guid a bone is written and referred to under.</summary>
+    public string Bone(MotionBone bone) => bones.TryGetValue(bone, out var guid)
+        ? guid
+        : throw new InvalidOperationException($"Bone '{bone.Name}' belongs to another composition, so this one cannot write it.");
+
+    // Synfig's guids are 32 hex digits. These only have to be distinct within the file.
+    private static string Guid(int n) => "B07E" + n.ToString("X28");
+
+    /// <summary>
+    /// The <c>&lt;bones&gt;</c> section: Synfig's root bone, then every bone parent first, each with its
+    /// links. It comes before <c>&lt;defs&gt;</c>, where Synfig expects it and allows references forward.
+    /// </summary>
+    private XElement? BonesSection()
+    {
+        if (bones.Count == 0) return null;
+        const string root = "B07E" + "FFFFFFFFFFFFFFFFFFFFFFFFFFFF";
+        return new XElement("bones",
+            new XElement("bone_root", new XAttribute("type", "bone_object"), new XAttribute("guid", root)),
+            composition.Bones.Select(b => new XElement("bone", new XAttribute("type", "bone_object"), new XAttribute("guid", bones[b]),
+                new XElement("name", new XElement("string", b.Name)),
+                new XElement("parent", new XElement("bone_valuenode", new XAttribute("type", "bone_object"),
+                    new XAttribute("guid", b.Parent is null ? root : bones[b.Parent]))),
+                Link("origin", b.Origin), Link("angle", b.Angle), Link("scalelx", b.Scalelx), Link("width", b.Width),
+                Link("scalex", b.Scalex), Link("tipwidth", b.Tipwidth),
+                new XElement("bone_depth", new XElement("real", new XAttribute("value", "0"))),
+                Link("length", b.Length))));
+    }
+
     /// <summary>The file name an image layer's picture is written under, beside the <c>.sif</c>.</summary>
     public string Picture(MotionPicture picture)
     {
@@ -1505,6 +1743,7 @@ internal sealed class SifWriter
             new XAttribute("begin-time", "0s"),
             new XAttribute("end-time", MotionTypes.Time(c.Duration)),
             new XElement("name", "Polson"),
+            BonesSection(),
             exportOrder.Length == 0 ? null : new XElement("defs", exportOrder.Select(n =>
             {
                 var e = Inline(n);

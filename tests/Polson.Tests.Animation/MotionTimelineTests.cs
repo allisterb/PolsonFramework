@@ -1,9 +1,10 @@
-namespace Polson.Tests.Drawing;
+namespace Polson.Tests.Animation;
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using Polson.Animation;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 

@@ -27,6 +27,7 @@ using Polson.ExtendedMind.Photos;
 using Polson.Drawing.Mesh;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
+using Polson.Animation;
 
 public partial class JsDrawingEngine : Runtime
 {

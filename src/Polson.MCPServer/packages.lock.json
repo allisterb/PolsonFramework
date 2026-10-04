@@ -712,6 +712,14 @@
           "System.CodeDom": "7.0.0"
         }
       },
+      "polson.animation": {
+        "type": "Project",
+        "dependencies": {
+          "Polson.Drawing.Skia": "[0.1.0, )",
+          "Polson.Drawing.Svg": "[0.1.0, )",
+          "Polson.Runtime": "[0.1.0, )"
+        }
+      },
       "polson.drawing.mesh": {
         "type": "Project",
         "dependencies": {

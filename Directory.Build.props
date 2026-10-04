@@ -3,6 +3,12 @@
     <LangVersion>preview</LangVersion>
     <Nullable>enable</Nullable>
     <NoWarn>NETSDK1233</NoWarn>
+
+    <!-- Prune packages the framework already provides (System.Text.Json and the like) from restore.
+         The .NET 10 SDK does this by default; Visual Studio 2022's NuGet (6.14) does not unless told,
+         and then trusts a lock file written without them and fails with NU1101. Stating it here makes
+         the CLI and VS produce identical lock files. -->
+    <RestoreEnablePackagePruning>true</RestoreEnablePackagePruning>
   </PropertyGroup>
 
   <!-- Repository root. $(SolutionDir) is only set when MSBuild is driven by the .sln, so targets that

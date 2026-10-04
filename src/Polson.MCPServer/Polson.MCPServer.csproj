@@ -34,6 +34,7 @@
     <ProjectReference Include="..\Polson.Drawing.Svg\Polson.Drawing.Svg.csproj" />
     <ProjectReference Include="..\Polson.Drawing.Skia\Polson.Drawing.Skia.csproj" />
     <ProjectReference Include="..\Polson.Drawing.Mesh\Polson.Drawing.Mesh.csproj" />
+    <ProjectReference Include="..\Polson.Animation\Polson.Animation.csproj" />
   </ItemGroup>
 
 </Project>

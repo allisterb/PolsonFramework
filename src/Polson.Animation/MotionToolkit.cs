@@ -1,10 +1,11 @@
-namespace Polson.Drawing.Skia;
+namespace Polson.Animation;
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
 
 using SkiaSharp;

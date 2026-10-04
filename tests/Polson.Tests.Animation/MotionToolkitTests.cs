@@ -1,8 +1,9 @@
-namespace Polson.Tests.Drawing;
+namespace Polson.Tests.Animation;
 
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Polson.Animation;
 using Polson.Drawing.Skia;
 using SkiaSharp;
 using Xunit;

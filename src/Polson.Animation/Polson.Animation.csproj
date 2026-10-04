@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Polson.Tests.Animation" />
+    <InternalsVisibleTo Include="Polson.MCPServer" />
+  </ItemGroup>
+
+  <!-- Animation draws through both drawing projects; neither of them references this one, and that
+       direction should stay one-way, as it does for Polson.Drawing.Mesh. -->
+  <ItemGroup>
     <ProjectReference Include="..\Polson.Drawing.Skia\Polson.Drawing.Skia.csproj" />
     <ProjectReference Include="..\Polson.Drawing.Svg\Polson.Drawing.Svg.csproj" />
     <ProjectReference Include="..\Polson.Runtime\Polson.Runtime.csproj" />

@@ -1,4 +1,4 @@
-namespace Polson.Drawing.Skia;
+namespace Polson.Animation;
 
 using System;
 using System.Collections;
@@ -8,6 +8,8 @@ using System.Linq;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+
+using Polson.Drawing.Skia;
 
 using SkiaSharp;
 

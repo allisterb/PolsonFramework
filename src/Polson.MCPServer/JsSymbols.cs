@@ -16,6 +16,7 @@ using Polson.ExtendedMind.Photos;
 using Polson.Drawing.Mesh;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
+using Polson.Animation;
 
 /// <summary>One callable or readable name on the JavaScript surface.</summary>
 public sealed record JsSymbol(

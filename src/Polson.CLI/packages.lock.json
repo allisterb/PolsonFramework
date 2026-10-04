@@ -720,6 +720,14 @@
           "System.CodeDom": "7.0.0"
         }
       },
+      "polson.animation": {
+        "type": "Project",
+        "dependencies": {
+          "Polson.Drawing.Skia": "[0.1.0, )",
+          "Polson.Drawing.Svg": "[0.1.0, )",
+          "Polson.Runtime": "[0.1.0, )"
+        }
+      },
       "polson.drawing.mesh": {
         "type": "Project",
         "dependencies": {
@@ -769,6 +777,7 @@
           "Microsoft.Extensions.Hosting": "[10.0.5, )",
           "ModelContextProtocol": "[1.4.0, )",
           "ModelContextProtocol.AspNetCore": "[1.4.0, )",
+          "Polson.Animation": "[0.1.0, )",
           "Polson.Drawing.Mesh": "[0.1.0, )",
           "Polson.Drawing.Skia": "[0.1.0, )",
           "Polson.Drawing.Svg": "[0.1.0, )",

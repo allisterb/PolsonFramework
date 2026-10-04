@@ -70,6 +70,13 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
         var p = (IDictionary<string, object?>)n.Composite(n.Linear("real", 10, 0), 5).At(0.5);
         Assert.Equal(5d, p["x"]);
         Assert.Equal(5d, p["y"]);
+
+        Assert.Equal(26, (double)n.Add("real", n.Linear("real", 3, 7), 0, 2).At(2), 9);
+        var q = (IDictionary<string, object?>)n.Add("vector", new[] { 1d, 2d }, new[] { 10d, 20d }).At(0);
+        Assert.Equal(11d, q["x"]);
+        Assert.Equal(22d, q["y"]);
+        Assert.Equal(15, (double)n.Scale("real", n.Linear("real", 10, 0), 1.5).At(1), 9);
+        Assert.Equal("#40200080", n.Scale("color", "#80400080", 0.5).At(0));   // alpha untouched
     }
 
     [Theory]
@@ -210,7 +217,7 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
     #endregion
 
     #region Private
-    private static MotionComposition OracleScene(MotionToolkit motion)
+    internal static MotionComposition OracleScene(MotionToolkit motion)
     {
         var n = motion.Nodes;
         var comp = motion.Composition(Opts(("width", 480d), ("height", 270d), ("fps", 12d), ("duration", 2d)));
@@ -240,6 +247,19 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
             new Dictionary<string, object?> { ["point"] = new[] { 300d, 250d }, ["t1"] = new[] { 60d, 60d }, ["width"] = 0.2 },
         })));
 
+        // A keyed offset laid on a formula, a scaled radius and a darkened colour: add and scale.
+        var drift = n.Composite(n.Linear("real", 60, 300), 230d);
+        var bob = Animated("vector", (0, new[] { 0d, 0d }, "halt"), (1, new[] { 0d, -40d }, "halt"), (2, new[] { 0d, 0d }, "halt"));
+        comp.Circle(Opts(
+            ("origin", n.Add("vector", drift, bob)),
+            ("radius", n.Scale("real", Animated("real", (0, 10d, "linear"), (2, 30d, "linear")), 0.5)),
+            ("color", n.Scale("color", "#e5a93c", 0.6))));
+
+        // A bar growing from its baseline, and a rectangle given with its corners the other way round.
+        comp.Rectangle(Opts(("point1", new[] { 20d, 260d }), ("color", "#5fb49c"),
+            ("point2", Animated("vector", (0.2, new[] { 50d, 260d }, "halt"), (1.6, new[] { 50d, 150d }, "halt")))));
+        comp.Rectangle(Opts(("point1", new[] { 120d, 30d }), ("point2", new[] { 70d, 10d }), ("expand", 3d), ("color", "#9b8ec4")));
+
         // A group that turns about its own centre and fades, holding a smaller pair.
         var g = comp.Group(Opts(("origin", new[] { 420d, 70d }), ("offset", new[] { 420d, 70d }),
             ("angle", n.Linear("angle", 90, 0)), ("scale", new[] { 1d, 0.6d }), ("amount", 0.8)));
@@ -256,12 +276,12 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
     private static Dictionary<string, object?> Point(object point, double[] tangent) =>
         new() { ["point"] = point, ["t1"] = tangent };
 
-    private static MotionAnimated Animated<T>(string type, params (double Time, T Value, string Ease)[] keys) =>
+    internal static MotionAnimated Animated<T>(string type, params (double Time, T Value, string Ease)[] keys) =>
         new MotionToolkit().Nodes.Animated(type, keys
             .Select(k => (object)new Dictionary<string, object?> { ["time"] = k.Time, ["value"] = k.Value, ["ease"] = k.Ease })
             .ToArray());
 
-    private static Dictionary<string, object?> Opts(params (string Key, object? Value)[] pairs) =>
+    internal static Dictionary<string, object?> Opts(params (string Key, object? Value)[] pairs) =>
         pairs.ToDictionary(p => p.Key, p => p.Value);
 
     private static string? Synfig()
@@ -314,7 +334,7 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
         }
     }
 
-    private static double Differing(SKBitmap a, SKBitmap b, int tolerance)
+    internal static double Differing(SKBitmap a, SKBitmap b, int tolerance)
     {
         Assert.Equal(a.Width, b.Width);
         Assert.Equal(a.Height, b.Height);
@@ -340,10 +360,10 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
         return new SKColor(Mix(c.Red), Mix(c.Green), Mix(c.Blue));
     }
 
-    private static bool Near(SKColor c, SKColor want) =>
+    internal static bool Near(SKColor c, SKColor want) =>
         c.Alpha > 200 && Math.Abs(c.Red - want.Red) < 40 && Math.Abs(c.Green - want.Green) < 40 && Math.Abs(c.Blue - want.Blue) < 40;
 
-    private static (double X, double Y) Centroid(SKBitmap bitmap, Func<SKColor, bool> match)
+    internal static (double X, double Y) Centroid(SKBitmap bitmap, Func<SKColor, bool> match)
     {
         double sx = 0, sy = 0, n = 0;
         for (var y = 0; y < bitmap.Height; y++)

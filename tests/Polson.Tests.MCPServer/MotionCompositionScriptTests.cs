@@ -85,6 +85,27 @@ public class MotionCompositionScriptTests : TestsRuntime
     }
 
     [Fact]
+    public void AScriptExportsAnimatedSvg()
+    {
+        var result = Execute("""
+            const n = Motion.nodes;
+            const comp = Motion.composition({ width: 320, height: 180, fps: 10, duration: 1.5 });
+            comp.fill({ color: '#f2efe8' });
+            const h = n.animated('real', [{ time: 0, value: 170, ease: 'halt' }, { time: 1, value: 60, ease: 'halt' }]);
+            comp.region({ color: '#1f6f8b', points: [[40, 170], [80, 170], { point: n.composite(80, h) }, { point: n.composite(40, h) }] });
+            comp.circle({ origin: n.composite(n.linear('real', 120, 120), 90), radius: 10, color: '#c9553d' });
+            const svg = comp.toSvg();
+            log('animate ' + (svg.indexOf('<animate') > 0) + ' exact ' + /(\d+) exact/.exec(svg)[1]);
+            log('saved ' + comp.saveSvg('artifacts/bars.svg', { loop: true }).endsWith('bars.svg'));
+            """);
+
+        Assert.True(result.Success, result.Error);
+        var logs = string.Join("\n", result.Logs);
+        Assert.Contains("animate true exact 1", logs);
+        Assert.Contains("saved true", logs);
+    }
+
+    [Fact]
     public void ADrawnLayerWithoutAFunctionFails()
     {
         var result = Execute("const comp = Motion.composition(); comp.drawn({ values: { a: 1 } });");
@@ -93,6 +114,18 @@ public class MotionCompositionScriptTests : TestsRuntime
         Assert.Contains("takes a function first", result.Error);
     }
 
-    private static DrawingExecutionResult Execute(string body) =>
-        new JsDrawingEngine().Execute($"const c = createCanvas(320, 180); {body}", 320, 180, null, "png", 90);
+    private static DrawingExecutionResult Execute(string body)
+    {
+        // A throwaway project root, so a script that saves a file writes it somewhere disposable.
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "polson-motion-" + System.Guid.NewGuid().ToString("N")[..8]);
+        System.IO.Directory.CreateDirectory(root);
+        try
+        {
+            return new JsDrawingEngine { ProjectRoot = root }.Execute($"const c = createCanvas(320, 180); {body}", 320, 180, null, "png", 90);
+        }
+        finally
+        {
+            System.IO.Directory.Delete(root, recursive: true);
+        }
+    }
 }

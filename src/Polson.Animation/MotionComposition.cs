@@ -56,6 +56,17 @@ public abstract class MotionLayerList
         return this;
     }
 
+    /// <summary>
+    /// A rectangle between two corners, in either order: <c>{ point1, point2, expand?, color, amount?, desc? }</c>.
+    /// <c>expand</c> grows it on every side. The bar of a bar chart: keyed corners stay exact in SVG.
+    /// </summary>
+    public MotionLayerList Rectangle(object? options)
+    {
+        var o = new MotionOptions(options, "rectangle", "point1", "point2", "expand", "color", "amount", "desc");
+        layers.Add(new MotionLayer.RectangleLayer(o));
+        return this;
+    }
+
     /// <summary>A filled spline: <c>{ points, loop?, origin?, color, amount?, desc? }</c>.</summary>
     public MotionLayerList Region(object? options)
     {
@@ -122,6 +133,9 @@ public abstract class MotionLayerList
     }
 
     internal IEnumerable<XElement> LayersToSif(SifWriter sif) => layers.Select(l => l.ToSif(sif));
+
+    internal IEnumerable<XElement> LayersToSvg(SvgAnimationWriter svg, MotionTimeMap map) =>
+        [.. layers.Select(l => l.ToSvg(svg, map))];
 
     internal IEnumerable<MotionNode> Nodes() => layers.SelectMany(l => l.Nodes());
     #endregion
@@ -259,6 +273,30 @@ public sealed class MotionComposition : MotionLayerList
         return count;
     }
 
+    /// <summary>
+    /// The composition as an animated SVG: SMIL animation on ordinary elements, playing in a browser and
+    /// in an <c>&lt;img&gt;</c>. <c>options</c>: <c>{ loop?, fps? }</c> — <c>loop</c> repeats instead of
+    /// holding the last frame; <c>fps</c> is the rate for values that cannot be written exactly.
+    /// </summary>
+    public string ToSvg(object? options = null)
+    {
+        var o = new MotionOptions(options, "composition.toSvg", "loop", "fps");
+        var fps = o.Number("fps", Fps);
+        if (fps <= 0 || fps > 240) throw new ArgumentException($"composition.toSvg: fps {fps} is not between 0 and 240.");
+        return new SvgAnimationWriter(this, o.Bool("loop", false), fps).Write();
+    }
+
+    /// <summary>Writes the animated SVG into the project and returns the path written.</summary>
+    public string SaveSvg(string filePath, object? options = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        var svg = ToSvg(options);
+        var full = ProjectPath.Resolve(projectRoot, filePath, nameof(filePath), "Write to");
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, svg, new UTF8Encoding(false));
+        return full;
+    }
+
     /// <summary>The composition as Synfig's <c>.sif</c> XML.</summary>
     public string ToSif() => new SifWriter(this).Write();
 
@@ -305,7 +343,35 @@ internal abstract class MotionLayer
 
     public abstract XElement ToSif(SifWriter sif);
 
+    public abstract XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map);
+
     public abstract IEnumerable<MotionNode> Nodes();
+
+    /// <summary>The layer's <c>amount</c> as SVG <c>opacity</c>, omitted while it is 1.</summary>
+    protected void Opacity(XElement element, SvgAnimationWriter svg, MotionTimeMap map)
+    {
+        var track = svg.Track(Amount, 0, map);
+        if (track.Values.Any(v => v < 0 || v > 1)) track = svg.Track(Amount, 0, map, v => Math.Clamp(v, 0, 1));
+        if (track.IsStatic && Math.Abs(track.Values[0] - 1) < 1e-12) return;
+        svg.Attribute(element, "opacity", track);
+    }
+
+    /// <summary>A colour as <c>fill</c> or <c>stroke</c> plus its opacity: the RGB sampled, the alpha exact where it can be.</summary>
+    protected static void Paint(XElement element, string attribute, MotionNode color, SvgAnimationWriter svg, MotionTimeMap map)
+    {
+        svg.Attribute(element, attribute, t =>
+        {
+            var c = MotionTypes.ToSkColor(color.Evaluate(map.Local(t)));
+            return $"#{c.Red:X2}{c.Green:X2}{c.Blue:X2}";
+        });
+
+        var alpha = svg.Track(color, 3, map);
+        if (alpha.IsStatic && Math.Abs(alpha.Values[0] - 1) < 1e-12) return;
+        svg.Attribute(element, attribute + "-opacity", alpha);
+    }
+
+    protected XElement SvgElement(string name, params object?[] content) =>
+        new(SvgAnimationWriter.Svg + name, Desc is null ? null : new XAttribute("data-desc", Desc), content);
 
     protected XElement Element(string type, string version, SifWriter sif, params object?[] content) =>
         new("layer", new XAttribute("type", type), new XAttribute("active", "true"), new XAttribute("version", version),
@@ -335,6 +401,20 @@ internal abstract class MotionLayer
 
         public override XElement ToSif(SifWriter sif) => Element("solid_color", "0.1", sif, sif.Param("color", color));
 
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            // At the root a fill covers the view; inside a group it must survive the group's transform.
+            var v = svg.View;
+            var (x, y, w, h) = svg.Depth == 0
+                ? (Math.Min(v[0], v[2]), Math.Min(v[1], v[3]), Math.Abs(v[2] - v[0]), Math.Abs(v[3] - v[1]))
+                : (-100000d, -100000d, 200000d, 200000d);
+            var rect = SvgElement("rect", new XAttribute("x", SvgAnimationWriter.N(x)), new XAttribute("y", SvgAnimationWriter.N(y)),
+                new XAttribute("width", SvgAnimationWriter.N(w)), new XAttribute("height", SvgAnimationWriter.N(h)));
+            Paint(rect, "fill", color, svg, map);
+            Opacity(rect, svg, map);
+            return rect;
+        }
+
         public override IEnumerable<MotionNode> Nodes() => [Amount, color];
     }
 
@@ -358,7 +438,102 @@ internal abstract class MotionLayer
             sif.Param("origin", origin),
             SifWriter.Param("invert", SifWriter.Bool(false)));
 
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var circle = SvgElement("circle");
+            svg.Attribute(circle, "cx", svg.Track(origin, 0, map));
+            svg.Attribute(circle, "cy", svg.Track(origin, 1, map));
+            var r = svg.Track(radius, 0, map);
+            if (r.Values.Any(v => v < 0)) r = svg.Track(radius, 0, map, Math.Abs);
+            svg.Attribute(circle, "r", r);
+            Paint(circle, "fill", color, svg, map);
+            Opacity(circle, svg, map);
+            return circle;
+        }
+
         public override IEnumerable<MotionNode> Nodes() => [Amount, origin, radius, color];
+    }
+
+    public sealed class RectangleLayer(MotionOptions o) : MotionLayer(o)
+    {
+        private readonly MotionNode point1 = o.Node("point1", MotionType.Vector, new[] { 0d, 0d });
+        private readonly MotionNode point2 = o.Node("point2", MotionType.Vector, new[] { 10d, 10d });
+        private readonly MotionNode expand = o.Node("expand", MotionType.Real, 0d);
+        private readonly MotionNode color = o.Node("color", MotionType.Color, "#000000");
+
+        public override IEnumerable<MotionNode> Nodes() => [Amount, point1, point2, expand, color];
+
+        public override void Render(SkiaCanvas surface, double time)
+        {
+            var a = point1.Evaluate(time);
+            var b = point2.Evaluate(time);
+            var e = Math.Abs(expand.Evaluate(time)[0]);
+            using var paint = Paint(color.Evaluate(time), AmountAt(time));
+            surface.SkCanvas.DrawRect(SKRect.Create(
+                (float)(Math.Min(a[0], b[0]) - e), (float)(Math.Min(a[1], b[1]) - e),
+                (float)(Math.Abs(b[0] - a[0]) + 2 * e), (float)(Math.Abs(b[1] - a[1]) + 2 * e)), paint);
+        }
+
+        public override XElement ToSif(SifWriter sif) => Element("rectangle", "0.2", sif,
+            sif.Param("color", color), sif.Param("point1", point1), sif.Param("point2", point2), sif.Param("expand", expand),
+            SifWriter.Param("invert", SifWriter.Bool(false)),
+            SifWriter.Param("feather_x", new XElement("real", new XAttribute("value", "0"))),
+            SifWriter.Param("feather_y", new XElement("real", new XAttribute("value", "0"))),
+            SifWriter.Param("bevel", new XElement("real", new XAttribute("value", "0"))),
+            SifWriter.Param("bevCircle", SifWriter.Bool(true)));
+
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var rect = SvgElement("rect");
+            Side(svg, map, rect, 0, "x", "width");
+            Side(svg, map, rect, 1, "y", "height");
+            Paint(rect, "fill", color, svg, map);
+            Opacity(rect, svg, map);
+            return rect;
+        }
+
+        /// <summary>
+        /// One axis: its start and its size. When one corner holds still and the other is keyed and never
+        /// crosses it, both are affine in the keyed one and stay exact; otherwise both are sampled.
+        /// </summary>
+        private void Side(SvgAnimationWriter svg, MotionTimeMap map, XElement rect, int c, string start, string size)
+        {
+            var a = svg.Track(point1, c, map);
+            var b = svg.Track(point2, c, map);
+            var e = svg.Track(expand, 0, map);
+            if (e.IsStatic && (a.IsStatic || b.IsStatic))
+            {
+                var (still, moving) = a.IsStatic ? (a.Values[0], b) : (b.Values[0], a);
+                var ex = Math.Abs(e.Values[0]);
+                if (moving.Values.All(v => v >= still))
+                {
+                    svg.Attribute(rect, start, Affine(a.IsStatic ? a : b, 1, -ex));
+                    svg.Attribute(rect, size, Affine(moving, 1, 2 * ex - still));
+                    return;
+                }
+
+                if (moving.Values.All(v => v <= still))
+                {
+                    svg.Attribute(rect, start, Affine(moving, 1, -ex));
+                    svg.Attribute(rect, size, Affine(moving, -1, still + 2 * ex));
+                    return;
+                }
+            }
+
+            svg.Attribute(rect, start, svg.Track(t => Corners(map.Local(t), c).Min));
+            svg.Attribute(rect, size, svg.Track(t => Corners(map.Local(t), c).Size));
+        }
+
+        private (double Min, double Size) Corners(double time, int c)
+        {
+            var a = point1.Evaluate(time)[c];
+            var b = point2.Evaluate(time)[c];
+            var e = Math.Abs(expand.Evaluate(time)[0]);
+            return (Math.Min(a, b) - e, Math.Abs(b - a) + 2 * e);
+        }
+
+        // An affine map keeps a track exact: a keySpline shapes progress between two values, not the values.
+        private static MotionTrack Affine(MotionTrack t, double k, double c) => t with { Values = [.. t.Values.Select(v => k * v + c)] };
     }
 
     /// <summary>What region and outline share: a spline of points, possibly closed, moved by <c>origin</c>.</summary>
@@ -423,6 +598,37 @@ internal abstract class MotionLayer
         }
 
         protected static SKPoint Third(SKPoint t) => new(t.X / 3f, t.Y / 3f);
+
+        /// <summary>
+        /// The spline as SVG path data with the same commands at every time — a cubic for every segment,
+        /// even a straight one — so SMIL can interpolate one frame's <c>d</c> into the next.
+        /// </summary>
+        protected string PathData(double time)
+        {
+            var s = States(time);
+            if (s.Length == 0) return "";
+
+            var d = new StringBuilder($"M{P(s[0].P)}");
+            for (var i = 1; i < s.Length; i++) Cubic(d, s[i - 1], s[i]);
+            if (Loop)
+            {
+                Cubic(d, s[^1], s[0]);
+                d.Append('Z');
+            }
+
+            return d.ToString();
+
+            static void Cubic(StringBuilder d, MotionSplinePoint.State a, MotionSplinePoint.State b) =>
+                d.Append($"C{P(a.P + Third(a.T2))} {P(b.P - Third(b.T1))} {P(b.P)}");
+        }
+
+        protected MotionSplinePoint.State[] States(double time)
+        {
+            var o = Origin.Evaluate(time);
+            return [.. Points.Select(p => p.At(time, o))];
+        }
+
+        protected static string P(SKPoint p) => $"{SvgAnimationWriter.N(p.X)} {SvgAnimationWriter.N(p.Y)}";
     }
 
     public sealed class RegionLayer(MotionOptions o) : Shape(o, "region", true)
@@ -436,6 +642,15 @@ internal abstract class MotionLayer
         }
 
         public override XElement ToSif(SifWriter sif) => Element("region", "0.1", sif, ShapeParams(sif));
+
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var path = SvgElement("path");
+            svg.Attribute(path, "d", t => PathData(map.Local(t)));
+            Paint(path, "fill", Color, svg, map);
+            Opacity(path, svg, map);
+            return path;
+        }
     }
 
     public sealed class OutlineLayer : Shape
@@ -460,6 +675,98 @@ internal abstract class MotionLayer
             SifWriter.Param("round_tip[0]", SifWriter.Bool(roundTips)),
             SifWriter.Param("round_tip[1]", SifWriter.Bool(roundTips)),
             SifWriter.Param("homogeneous_width", SifWriter.Bool(true)));
+
+        /// <summary>
+        /// A stroke while every point has the same width at every frame; otherwise the tapered outline as
+        /// a filled polygon with a fixed number of vertices, so its <c>d</c> interpolates.
+        /// </summary>
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var path = SvgElement("path");
+            var even = svg.Times.All(t =>
+            {
+                var s = States(map.Local(t));
+                return s.All(p => Math.Abs(p.Width - s[0].Width) < 1e-9);
+            });
+
+            if (even)
+            {
+                svg.Attribute(path, "d", t => PathData(map.Local(t)));
+                path.SetAttributeValue("fill", "none");
+                Paint(path, "stroke", Color, svg, map);
+                svg.Attribute(path, "stroke-width", svg.Track(t =>
+                {
+                    var local = map.Local(t);
+                    var s = States(local);
+                    return s.Length == 0 ? 0 : Math.Abs(width.Evaluate(local)[0] * s[0].Width);
+                }));
+                path.SetAttributeValue("stroke-linecap", roundTips ? "round" : "butt");
+                path.SetAttributeValue("stroke-linejoin", sharpCusps ? "miter" : "round");
+            }
+            else
+            {
+                svg.Attribute(path, "d", t => TaperedData(map.Local(t)));
+                Paint(path, "fill", Color, svg, map);
+            }
+
+            Opacity(path, svg, map);
+            return path;
+        }
+
+        /// <summary>The tapered outline as one polygon: down the left side, round the far tip, back up the right.</summary>
+        private string TaperedData(double time)
+        {
+            const int samples = 32;
+            var s = States(time);
+            var w = width.Evaluate(time)[0];
+            var left = new List<SKPoint>();
+            var right = new List<SKPoint>();
+            var count = Loop ? s.Length : s.Length - 1;
+            SKPoint tan = new(1, 0), first = new(1, 0);
+
+            for (var i = 0; i < count; i++)
+            {
+                var a = s[i];
+                var b = s[(i + 1) % s.Length];
+                using var seg = new SKPath();
+                seg.MoveTo(a.P);
+                seg.CubicTo(a.P + Third(a.T2), b.P - Third(b.T1), b.P);
+                using var measure = new SKPathMeasure(seg);
+                for (var k = i == 0 ? 0 : 1; k <= samples; k++)
+                {
+                    if (!measure.GetPositionAndTangent(measure.Length * k / samples, out var pos, out var tn)) pos = a.P;
+                    else if (tn.Length > 0) tan = tn;
+                    if (i == 0 && k == 0) first = tan;
+                    var half = (float)(Math.Abs(w) * (a.Width + (b.Width - a.Width) * k / samples) / 2);
+                    var n = new SKPoint(-tan.Y * half, tan.X * half);
+                    left.Add(pos + n);
+                    right.Add(pos - n);
+                }
+            }
+
+            if (left.Count == 0) return "";
+
+            var d = new StringBuilder($"M{P(left[0])}");
+            foreach (var q in left.Skip(1)) d.Append($"L{P(q)}");
+            if (!Loop && roundTips) Arc(d, s[^1].P, tan, (float)(Math.Abs(w) * s[^1].Width / 2), true);
+            for (var k = right.Count - 1; k >= 0; k--) d.Append($"L{P(right[k])}");
+            if (!Loop && roundTips) Arc(d, s[0].P, first, (float)(Math.Abs(w) * s[0].Width / 2), false);
+            d.Append('Z');
+            return d.ToString();
+
+            // A semicircle with a fixed vertex count round an end: from the left side to the right.
+            static void Arc(StringBuilder d, SKPoint centre, SKPoint direction, float radius, bool forward)
+            {
+                const int tip = 8;
+                var heading = Math.Atan2(direction.Y, direction.X);
+                var a0 = forward ? heading + Math.PI / 2 : heading - Math.PI / 2;
+                for (var j = 1; j < tip; j++)
+                {
+                    var a = a0 - Math.PI * j / tip;
+                    d.Append($"L{P(new SKPoint(centre.X + (float)(radius * Math.Cos(a)), centre.Y + (float)(radius * Math.Sin(a))))}");
+                }
+            }
+        }
 
         public override void Render(SkiaCanvas surface, double time)
         {
@@ -591,6 +898,8 @@ internal abstract class MotionLayer
             $"The drawn layer{(Desc is null ? "" : $" '{Desc}'")} cannot be written as .sif: Synfig cannot run a script. "
             + "Write the composition without it, or capture it as frames.");
 
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map) => throw SvgAnimationWriter.Refuse("drawn layer", Desc);
+
         /// <summary>Each value's type is read from what it is: a node, a number, a point, or a colour.</summary>
         private static (string, MotionNode)[] ReadValues(object? raw)
         {
@@ -666,6 +975,51 @@ internal abstract class MotionLayer
             var ay = (X: sc[1] * Math.Cos(a + sk + Math.PI / 2), Y: sc[1] * Math.Sin(a + sk + Math.PI / 2));
             var axes = new SKMatrix((float)ax.X, (float)ay.X, (float)off[0], (float)ax.Y, (float)ay.Y, (float)off[1], 0, 0, 1);
             return SKMatrix.Concat(axes, SKMatrix.CreateTranslation((float)-o[0], (float)-o[1]));
+        }
+
+        /// <summary>
+        /// The summary transformation as nested groups, one transform each, so each animates on its own:
+        /// <c>translate(offset) rotate(angle) skewX(−skew) scale(sx, sy·cos skew) translate(−origin)</c>.
+        /// </summary>
+        public override XElement ToSvg(SvgAnimationWriter svg, MotionTimeMap map)
+        {
+            var outer = SvgElement("g");
+            Opacity(outer, svg, map);
+
+            var skewTrack = svg.Track(skewAngle, 0, map);
+            var syTrack = skewTrack.IsStatic && Math.Abs(skewTrack.Values[0]) < 1e-12
+                ? svg.Track(scale, 1, map)
+                : svg.Track(t => scale.Evaluate(map.Local(t))[1] * Math.Cos(skewAngle.Evaluate(map.Local(t))[0] * Math.PI / 180));
+
+            var chain = new[]
+            {
+                svg.Transform("translate", svg.Track(offset, 0, map), v => $"{SvgAnimationWriter.N(v)} 0", 0),
+                svg.Transform("translate", svg.Track(offset, 1, map), v => $"0 {SvgAnimationWriter.N(v)}", 0),
+                svg.Transform("rotate", svg.Track(angle, 0, map), SvgAnimationWriter.N, 0),
+                svg.Transform("skewX", Negate(skewTrack), SvgAnimationWriter.N, 0),
+                svg.Transform("scale", svg.Track(scale, 0, map), v => $"{SvgAnimationWriter.N(v)} 1", 1),
+                svg.Transform("scale", syTrack, v => $"1 {SvgAnimationWriter.N(v)}", 1),
+                svg.Transform("translate", Negate(svg.Track(origin, 0, map)), v => $"{SvgAnimationWriter.N(v)} 0", 0),
+                svg.Transform("translate", Negate(svg.Track(origin, 1, map)), v => $"0 {SvgAnimationWriter.N(v)}", 0),
+            }.Where(g => g.HasAttributes || g.HasElements).ToArray();
+
+            svg.Depth++;
+            var content = children.LayersToSvg(svg, map.Then(timeDilation, timeOffset)).ToArray();
+            svg.Depth--;
+
+            // Innermost first: each transform wraps everything after it in the chain.
+            object inner = content;
+            for (var i = chain.Length - 1; i >= 0; i--)
+            {
+                chain[i].Add(inner);
+                inner = chain[i];
+            }
+
+            outer.Add(inner);
+            return outer;
+
+            // Negating a track's values leaves its splines right: a spline shapes progress, not direction.
+            static MotionTrack Negate(MotionTrack t) => t with { Values = [.. t.Values.Select(v => -v)] };
         }
 
         public override XElement ToSif(SifWriter sif) => Element("group", "0.3", sif,

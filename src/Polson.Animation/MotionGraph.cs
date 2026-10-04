@@ -259,6 +259,62 @@ public sealed class MotionAnimated : MotionNode
         _ => "clamped"
     };
 
+    /// <summary>
+    /// One component of this value as SMIL keys and <c>keySplines</c>, exactly, or false where SMIL cannot
+    /// say it: a temporal tension (a warped clock), or a segment whose curve leaves the range between its
+    /// own two keys (an overshoot, which a keySpline's control points cannot reach).
+    /// </summary>
+    /// <remarks>
+    /// A segment's value is a cubic in its own normalised time, so with control x at ⅓ and ⅔ a keySpline
+    /// is that cubic exactly: <c>y1 = T1 / 3Δ</c>, <c>y2 = 1 − T2 / 3Δ</c>. A constant segment holds until
+    /// Synfig's time epsilon before the next key and jumps there.
+    /// </remarks>
+    internal bool TryKeySplines(int component, out List<(double Time, double Value)> keys, out List<string> splines)
+    {
+        keys = [(waypoints[0].Time, waypoints[0].Value[component])];
+        splines = [];
+        const string straight = "0 0 1 1";
+
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var s = segments[i];
+            if (waypoints[i].TemporalTension != 0 || waypoints[i + 1].TemporalTension != 0) return false;
+
+            var p1 = s.P1[component];
+            var p2 = s.P2[component];
+            var constant = waypoints[i].After == MotionEase.Constant || waypoints[i + 1].Before == MotionEase.Constant;
+            if (constant)
+            {
+                keys.Add((s.S - TimeEpsilon, p1));
+                splines.Add(straight);
+                keys.Add((s.S, waypoints[i + 1].Value[component]));
+                splines.Add(straight);
+                continue;
+            }
+
+            var delta = p2 - p1;
+            var t1 = s.T1[component];
+            var t2 = s.T2[component];
+            if (Math.Abs(delta) < 1e-12)
+            {
+                if (Math.Abs(t1) > 1e-9 || Math.Abs(t2) > 1e-9) return false;
+                splines.Add(straight);
+            }
+            else
+            {
+                var y1 = t1 / (3 * delta);
+                var y2 = 1 - t2 / (3 * delta);
+                if (y1 < -1e-9 || y1 > 1 + 1e-9 || y2 < -1e-9 || y2 > 1 + 1e-9) return false;
+                splines.Add($"{MotionSvgFormat.Number(1d / 3, 6)} {MotionSvgFormat.Number(Math.Clamp(y1, 0, 1), 6)} "
+                    + $"{MotionSvgFormat.Number(2d / 3, 6)} {MotionSvgFormat.Number(Math.Clamp(y2, 0, 1), 6)}");
+            }
+
+            keys.Add((s.S, p2));
+        }
+
+        return true;
+    }
+
     private double[] Search(double time)
     {
         if (waypoints.Length == 1 || time <= waypoints[0].Time) return waypoints[0].Value;
@@ -444,6 +500,9 @@ public sealed class MotionLinear : MotionNode
     private readonly MotionNode slope, offset;
     #endregion
 
+    /// <summary>Whether both terms are constants, so the value is a straight line in time.</summary>
+    internal bool IsStraight => slope is MotionConstant && offset is MotionConstant;
+
     #region Properties
     internal override IEnumerable<MotionNode> Children => [slope, offset];
     #endregion
@@ -497,6 +556,10 @@ public sealed class MotionComposite : MotionNode
 
     #region Fields
     private readonly MotionNode x, y;
+
+    internal MotionNode X => x;
+
+    internal MotionNode Y => y;
     #endregion
 
     #region Properties
@@ -508,6 +571,67 @@ public sealed class MotionComposite : MotionNode
 
     internal override XElement ToSif(SifWriter sif) =>
         sif.Linkable("composite", Type, ("x", x), ("y", y));
+    #endregion
+}
+
+/// <summary><c>(lhs + rhs) × scalar</c>: a keyed offset laid on a formula, or two motions summed.</summary>
+/// <remarks>Synfig's <c>add</c> converter. Exposed to the JavaScript sandbox. See <see cref="MotionNode"/>.</remarks>
+public sealed class MotionAdd : MotionNode
+{
+    #region Constructors
+    internal MotionAdd(MotionType kind, MotionNode lhs, MotionNode rhs, MotionNode scalar) : base(kind) =>
+        (this.lhs, this.rhs, this.scalar) = (lhs, rhs, scalar);
+    #endregion
+
+    #region Fields
+    private readonly MotionNode lhs, rhs, scalar;
+    #endregion
+
+    #region Properties
+    internal override IEnumerable<MotionNode> Children => [lhs, rhs, scalar];
+    #endregion
+
+    #region Methods
+    internal override double[] Evaluate(double time)
+    {
+        var a = lhs.Evaluate(time);
+        var b = rhs.Evaluate(time);
+        var s = scalar.Evaluate(time)[0];
+        return [.. a.Select((v, i) => (v + b[i]) * s)];
+    }
+
+    internal override XElement ToSif(SifWriter sif) =>
+        sif.Linkable("add", Type, ("lhs", lhs), ("rhs", rhs), ("scalar", scalar));
+    #endregion
+}
+
+/// <summary><c>link × scalar</c>. On a colour only red, green and blue are scaled, as in Synfig.</summary>
+/// <remarks>Synfig's <c>scale</c> converter. Exposed to the JavaScript sandbox. See <see cref="MotionNode"/>.</remarks>
+public sealed class MotionScale : MotionNode
+{
+    #region Constructors
+    internal MotionScale(MotionType kind, MotionNode link, MotionNode scalar) : base(kind) =>
+        (this.link, this.scalar) = (link, scalar);
+    #endregion
+
+    #region Fields
+    private readonly MotionNode link, scalar;
+    #endregion
+
+    #region Properties
+    internal override IEnumerable<MotionNode> Children => [link, scalar];
+    #endregion
+
+    #region Methods
+    internal override double[] Evaluate(double time)
+    {
+        var v = link.Evaluate(time);
+        var s = scalar.Evaluate(time)[0];
+        return [.. v.Select((x, i) => Kind == MotionType.Color && i == 3 ? x : x * s)];
+    }
+
+    internal override XElement ToSif(SifWriter sif) =>
+        sif.Linkable("scale", Type, ("link", link), ("scalar", scalar));
     #endregion
 }
 
@@ -592,6 +716,21 @@ public sealed class MotionNodeFactory
     /// <summary>A point from two numbers or two real nodes.</summary>
     public MotionComposite Composite(object? x, object? y) =>
         new(Node(x, MotionType.Real, "composite's x"), Node(y, MotionType.Real, "composite's y"));
+
+    /// <summary><c>(lhs + rhs) × scalar</c>, the scalar defaulting to 1. Any value type.</summary>
+    public MotionAdd Add(string type, object? lhs, object? rhs, object? scalar = null)
+    {
+        var kind = MotionTypes.Parse(type, "Motion.nodes.add");
+        return new MotionAdd(kind, Node(lhs, kind, "add's lhs"), Node(rhs, kind, "add's rhs"),
+            Node(scalar ?? 1d, MotionType.Real, "add's scalar"));
+    }
+
+    /// <summary><c>link × scalar</c>. Any value type; a colour keeps its alpha.</summary>
+    public MotionScale Scale(string type, object? link, object? scalar)
+    {
+        var kind = MotionTypes.Parse(type, "Motion.nodes.scale");
+        return new MotionScale(kind, Node(link, kind, "scale's link"), Node(scalar, MotionType.Real, "scale's scalar"));
+    }
 
     /// <summary>A script value as a node of the given type: a node passes through if its type matches.</summary>
     internal static MotionNode Node(object? value, MotionType kind, string who) => value switch

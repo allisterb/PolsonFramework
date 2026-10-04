@@ -4819,6 +4819,7 @@ comp.render(1.0);                               // one frame, returned as a canv
 - `comp.render(time)` → `SkiaCanvas` — the composition at `time` seconds, on a new transparent canvas.
 - `comp.draw(ctx, time)` — draws it onto an existing context, under the context's current transform, so an animated passage sits inside a drawing made with the rest of the SDK.
 - `comp.capture(options?)` → `number` — renders frames into `Motion`'s buffer for `Motion.sheet` and `Motion.save`. `{ fps?, from?, to? }`; a lower `fps` samples the same timeline more sparsely. **Pass the same `fps` to `Motion.sheet`**, which otherwise labels the frames at its own default of 25 and puts the wrong times under them.
+- `comp.toSvg(options?)` → `string` — the composition as an **animated SVG**; see *Vector animation* below. `comp.saveSvg(path, options?)` writes it into the project and returns the path.
 - `comp.toSif()` → `string` — the composition as Synfig's `.sif` XML. `comp.saveSif(path)` writes it into the project and returns the path.
 
 ### Layers
@@ -4827,6 +4828,7 @@ Each returns the stack it was added to, except `group`, which returns the group 
 
 - `comp.fill({ color, amount?, desc? })` — a flat colour over the whole frame.
 - `comp.circle({ origin, radius, color, amount?, desc? })`.
+- `comp.rectangle({ point1, point2, expand?, color, amount?, desc? })` — between two corners, in either order; `expand` grows it on every side. The bar of a bar chart.
 - `comp.region({ points, loop?, origin?, color, amount?, desc? })` — a filled spline, closed by default.
 - `comp.outline({ points, loop?, origin?, width?, color, sharpCusps?, roundTips?, amount?, desc? })` — a stroked spline, open by default. Each point's `width` multiplies the layer's `width`, and the stroke runs linearly between them along the curve, so a line can taper.
 - `comp.group({ origin?, offset?, angle?, skewAngle?, scale?, amount?, timeOffset?, timeDilation?, desc? })` → a group with the same layer methods. Its transform is applied about `origin` and then moved to `offset`; its children see time as `t × timeDilation + timeOffset`, which is how one passage is reused later or faster.
@@ -4885,6 +4887,8 @@ comp.render(1);
 - `Motion.nodes.linear(type, slope, offset?)` — `offset + slope × t`. Real, angle or vector.
 - `Motion.nodes.sine(angle, amp?)` — `amp × sin(angle)`, the angle in degrees.
 - `Motion.nodes.composite(x, y)` — a point from two numbers or two real nodes.
+- `Motion.nodes.add(type, lhs, rhs, scalar?)` — `(lhs + rhs) × scalar`, the scalar defaulting to 1. How a keyed offset is laid on a formula: `n.add('vector', drift, bob)` is a drift with a bob on it, with no group needed.
+- `Motion.nodes.scale(type, link, scalar)` — `link × scalar`. On a colour only red, green and blue are scaled, so `n.scale('color', ink, 0.6)` darkens without fading.
 
 `type` is `'real'`, `'angle'`, `'vector'` or `'color'`. Values are numbers, `[x, y]` or `{ x, y }`, and CSS colour strings. **A node of the wrong type is refused**, naming the option and both types.
 
@@ -4908,4 +4912,39 @@ Every node reads back:
 > **One node in two places is a link, not a copy.** Pass the same node to two options and both move together; change its keys and both change. Written out as `.sif`, a shared node goes into `<defs>` once and is referenced, so it stays linked in Synfig too.
 
 > [!NOTE]
+### Vector animation — `comp.toSvg(options?)`
+
+The same composition as an SVG that plays by itself — in a browser, in an `<img>`, in a slide — using SMIL animation on ordinary elements. **This is the route for animated infographics**: the deliverable stays vector, and nothing has to be captured or encoded. `options` is `{ loop?, fps? }`: `loop: true` repeats where the default plays once and holds the last frame; `fps` is the rate for anything sampled, defaulting to the composition's.
+
+```javascript
+const n = Motion.nodes;
+const comp = Motion.composition({ width: 480, height: 270, fps: 12, duration: 2 });
+comp.fill({ color: '#faf8f4' });
+
+// Three bars that grow in turn, each easing to its value. A rectangle with one corner keyed is written
+// exactly, so the bars are smooth at any instant, not just at frames.
+const values = [150, 95, 190];
+values.forEach((v, i) => {
+    const x = 90 + i * 110;
+    const corner = n.animated('vector', [
+        { time: 0.2 + i * 0.25, value: [x + 70, 230], ease: 'halt' },
+        { time: 0.9 + i * 0.25, value: [x + 70, 230 - v], ease: 'halt' }]);
+    comp.rectangle({ point1: [x, 230], point2: corner, color: i === 2 ? '#c9553d' : '#1f6f8b' });
+});
+comp.outline({ width: 2, color: '#15151a', points: [[60, 230], [420, 230]] });
+
+comp.saveSvg('artifacts/bars.svg');        // the deliverable
+comp.render(2);                            // and a still of the last frame, to look at
+```
+
+**What is written exactly, and what is sampled.** A keyed value — directly, or as one coordinate of a `composite` — becomes SMIL `keySplines`, which reproduce Synfig's curve at every instant. So does a `linear` with constant terms, and so does a rectangle with one corner still and the other keyed. Everything else is **sampled** at `fps` and interpolated linearly between samples: exact at every frame, close in between. That covers a formula with a key inside it, an `auto` curve that overshoots (a keySpline cannot leave its range), a colour's red, green and blue, and the shape of a region or outline — **keys inside a region's points are sampled too**, so draw a growing bar as a `rectangle`, not a region. The file says which it got, in a comment at the top: `Polson motion: 2 s, 2 exact track(s), 5 sampled at 12 fps`.
+
+- **A group** becomes nested `<g>` elements, one transform each, so each animates on its own; its `timeOffset` and `timeDilation` are folded into the times.
+- **A path keeps the same commands at every frame**, a cubic for every segment, so one frame's `d` interpolates into the next.
+- **A tapered outline** is written as a filled polygon with a fixed number of vertices; an even one is a stroke.
+- **A drawn layer is refused by name**, as `.sif` refuses it: SMIL cannot run a script. Capture it as frames instead.
+
+> [!NOTE]
+> **Checked by rendering it back.** The exported file, rendered by Svg.Skia at a time, against the composition rendered here at the same time: the oracle scene differs in 0.01% of pixels at frame times and 0.05% halfway between them, and a keyed disc lands within 0.1 px of its value at times that are not frames.
+
 > **Checked against Synfig itself.** The same composition rendered by `synfig` 1.5.5 and by this differs only along antialiased edges (about 0.5% of pixels by more than 8 levels in 255), and a disc driven through every ease lands within 0.2 px of where Synfig puts it. Outline corners with `sharpCusps` are the least exact part: a sharp corner is joined as a mitre here.

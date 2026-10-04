@@ -237,6 +237,12 @@ is Synfig's, and the craft follows from it:
   change; two equal nodes drift apart the first time one is edited.
 - **Reuse with a group's clock.** A group's `timeOffset` and `timeDilation` play the same passage later
   or faster without re-keying it — the follow-through that trails an action by a few frames.
+- **Lay a key on a formula with `add`.** `Motion.nodes.add('vector', drift, bob)` is a drift with a bob on
+  it; `Motion.nodes.scale('real', swing, 0.5)` is the same swing at half the size. Neither needs a group.
+- **Deliver vector motion as SVG.** `comp.toSvg()` and `comp.saveSvg(path)` write the composition as SMIL
+  animation that plays in a browser. Keys are written exactly; formulas, colours and shapes are sampled at
+  the frame rate. Keep what must be smooth between frames as keys, and draw a growing bar with
+  `comp.rectangle(...)`: its keyed corner stays exact, where the same keys inside a region's points are sampled.
 - **Key the pose, construct the figure.** A layer made with `comp.drawn((ctx, v, t) => ..., { values })`
   is drawn by the toolkit every frame, from values the nodes give. Key the line of action's `turnDeg`
   and the arm angles, and `Drawing.createMannequinFigure` builds the body at each frame; Manual 28's

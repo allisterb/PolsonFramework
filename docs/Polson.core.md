@@ -5019,6 +5019,79 @@ comp.render(1);
 - Each grid point is pulled by every bone it lies near, weighted by how deep it sits in the bone's capsule over its squared distance from it, and moves by the weighted average of the bones' rest-to-pose motions. A bone's `stretch` scales across it as well as along it.
 - **Not in SVG**: SVG has no mesh warp, so `toSvg` refuses a composition with one, by name. Capture frames instead. In `.sif` it is Synfig's `skeleton_deformation` layer, with a fixed rest copy of each bone written beside it, as Synfig pairs them.
 
+### Rigging a drawing in one call — `comp.rigFromDrawing(image, landmarks, options?)`
+
+Everything above, done for you from one drawing of a figure: bones from its landmarks, each bone's reach set to cover its part of the drawing, and the drawing in a group with a skeleton deformation over it. **For a front view with the arms clear of the body**, the usual cutout or character-sheet view.
+
+An illustration, since it needs a drawing on disk and the optional body detector:
+
+```js
+const cell = Skia.Image.load('refs/kit-front.png');          // a cutout cell, or a drawing on a flat ground
+const body = Character.detect(cell);                          // the landmarks; or give your own (below)
+if (!body.found) exit(body.reason);
+
+const comp = Motion.composition({ width: 900, height: 800, fps: 12, duration: 2 });
+comp.fill({ color: '#e8e4dc' });
+const rig = comp.rigFromDrawing(cell, body, {
+    tl: [150, 60],                                            // where the drawing goes
+    poses: [                                                  // whole-pose keys: degrees from rest
+        { time: 0 },
+        { time: 1, ease: 'halt', rightUpperArm: 55, rightForearm: 70, head: 12, spine: -8 },
+        { time: 2 }
+    ]
+});
+log(`reach ${(rig.reach * 100).toFixed(1)}%, unsure of: ${rig.unsure.join(', ') || 'nothing'}`);
+```
+
+This one runs anywhere, with landmarks given by hand on a drawn figure:
+
+```javascript
+const fig = createCanvas(300, 400);
+const g = fig.getContext('2d');
+g.lineCap = 'round';
+const line = (a, b, w, c) => { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke(); };
+line([150, 110], [150, 220], 50, '#3a6ea5');
+line([150, 110], [70, 115], 18, '#3a6ea5'); line([70, 115], [20, 120], 14, '#e5a93c');
+line([150, 110], [230, 115], 18, '#3a6ea5'); line([230, 115], [280, 120], 14, '#e5a93c');
+line([135, 220], [130, 300], 20, '#2b2b2b'); line([130, 300], [128, 370], 16, '#2b2b2b');
+line([165, 220], [170, 300], 20, '#2b2b2b'); line([170, 300], [172, 370], 16, '#2b2b2b');
+g.fillStyle = '#c98b6b'; g.beginPath(); g.arc(150, 70, 28, 0, Math.PI * 2); g.fill();
+
+// The figure's own left is the page's right, as in Character.
+const landmarks = {
+    nose: [150, 75], leftShoulder: [170, 110], rightShoulder: [130, 110],
+    leftElbow: [230, 115], rightElbow: [70, 115], leftWrist: [270, 119], rightWrist: [30, 119],
+    leftHip: [165, 220], rightHip: [135, 220], leftKnee: [170, 300], rightKnee: [130, 300],
+    leftAnkle: [172, 360], rightAnkle: [128, 360], leftFootIndex: [172, 372], rightFootIndex: [128, 372]
+};
+
+const comp = Motion.composition({ width: 300, height: 400, fps: 12, duration: 2 });
+comp.fill({ color: '#f2efe8' });
+const rig = comp.rigFromDrawing(fig, landmarks, {
+    poses: [{ time: 0 }, { time: 1, ease: 'halt', leftUpperArm: -60, leftForearm: -40, rightThigh: 15 }, { time: 2 }]
+});
+log(rig.names.join(', '));
+comp.render(1);
+```
+
+**`landmarks`** is `Character.detect(image)`, or an object of the same names to points in the image's pixels — for a profile or a stylised figure the detector misses. It needs `nose`, and both sides' `Shoulder`, `Elbow`, `Wrist`, `Hip`, `Knee`, `Ankle` and `FootIndex`; `Index` (a hand's knuckle) is used when present.
+
+**`options`**: `{ tl?, br?, poses?, turns?, move?, prefix?, subdivisions?, desc? }`.
+
+- `tl`, `br` place the drawing, as on `comp.image`; by default at its own size at the origin.
+- **`poses`** — whole-pose keys, `[{ time, ease?, boneName: degrees, ... }]`. **A bone a pose leaves out is at rest in that pose.** Degrees are turns from the rest pose, clockwise on the page, each relative to its parent — so on a figure facing you, raising its right arm (page left) is positive and its left arm negative.
+- `turns` — `{ boneName: node }`, a node per bone, for full control. A bone goes in `poses` or `turns`, not both.
+- `move` — a vector node, `[0, 0]` at rest, that carries the whole figure.
+- `prefix` — prepended to every bone name in the composition, so two rigs can share one; refused by name when a second rig would clash.
+- `subdivisions` — the deformation grid, 48 × 48 by default.
+
+**The rig**: `rig.bones.leftForearm` (and `rig.bone(name)`, which refuses an unknown name), `rig.names`, `rig.group` (the drawing and its deformation), `rig.reach` (the share of the drawing some bone covers — **expect 1**; less means part of the drawing is dropped), `rig.unsure` (landmarks the detector guessed), `rig.keyed` (pixels of an opaque flat ground keyed out; 0 for a cutout).
+
+**The bones** carry `Character.jointMap`'s names: a `hips` root (never deformed by; it only carries), then `spine`, `head`, and per side `UpperArm`, `Forearm`, `Hand`, `Thigh`, `Shin`, `Foot`, prefixed `left` and `right`. So the same name poses a drawn figure and a 3D one.
+
+> [!IMPORTANT]
+> **It bends in the picture plane only.** A drawn front view can wave, lean, step and tilt its head; it cannot turn, foreshorten a limb toward you, or show anything the drawing hides. For those poses use the 3D route — `Character` and `Assets.redraw` — for the key drawings, and this for the motion within each view. **Front views only**: on a profile the detector cannot see the far limbs; give those landmarks yourself or rig the profile by hand with `comp.bone`.
+
 ### A layer the SDK draws — `comp.drawn(draw, options?)`
 
 The bridge between the model and everything else here: **the nodes say when, the toolkit says what.** `draw(ctx, v, t)` is called for each frame with a fresh context, `v` holding each of `options.values` at that frame, and `t` the layer's own time. `options` is `{ values?, amount?, desc? }`.

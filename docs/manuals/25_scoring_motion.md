@@ -266,6 +266,11 @@ is Synfig's, and the craft follows from it:
   a joint — a raglan sleeve, a coat hem over a stepping leg. Put the whole picture in a group with
   `group.skeletonDeformation()` over it and the bones bend it as one sheet. Each bone's `width` is its reach:
   set it to cover the artwork it carries, because anything no bone reaches is dropped.
+- **For a figure, let `comp.rigFromDrawing(image, Character.detect(image), { poses })` do all of that.** It
+  makes the bones from the drawing's landmarks, sizes each reach, and bends the whole picture; you give whole
+  poses as keys — `{ time, rightUpperArm: 55, head: 12 }` — and a bone a key leaves out is at rest. Check
+  `rig.reach` is 1 and `rig.unsure` is empty before trusting it. It moves a figure within its view; a turn or a
+  foreshortened limb is a new key drawing, from the 3D route.
 
 ```javascript
 const n = Motion.nodes;

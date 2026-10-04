@@ -144,7 +144,7 @@ public static class BodyDetector
 /// Exposed to the JavaScript sandbox. Members follow .NET naming here; Jint resolves the JS camelCase spelling
 /// onto them. <b>Not finding a body is a result rather than an error</b>, so read <see cref="Found"/> first.
 /// </remarks>
-public sealed class BodyDetection
+public sealed class BodyDetection : ILandmarkSource
 {
     #region Properties
     /// <summary>Whether a body was found.</summary>
@@ -203,6 +203,17 @@ public sealed class BodyDetection
 
     /// <summary>The model's visibility for a landmark, or 0 for a name there is not.</summary>
     internal float Visibility(string name) => Image.TryGetValue(name, out var p) ? p.V : 0f;
+
+    int ILandmarkSource.SourceWidth => Width;
+
+    int ILandmarkSource.SourceHeight => Height;
+
+    bool ILandmarkSource.TryGetLandmark(string name, out double x, out double y, out double visibility)
+    {
+        var found = Image.TryGetValue(name, out var p);
+        (x, y, visibility) = found ? (p.X, p.Y, p.V) : (0d, 0d, 0d);
+        return found;
+    }
 
     /// <summary>A one-line summary, for a log or a stage note.</summary>
     public override string ToString() => Found

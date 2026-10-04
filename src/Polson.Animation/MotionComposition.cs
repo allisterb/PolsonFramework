@@ -186,6 +186,19 @@ public abstract class MotionLayerList
         return this;
     }
 
+    /// <summary>
+    /// Rigs one drawing to bend: bones from its landmarks, and the drawing in a group with a skeleton deformation
+    /// over it. <c>landmarks</c> is <c>Character.detect(image)</c> or <c>{ leftShoulder: [x, y], ... }</c>.
+    /// <c>options</c>: <c>{ tl?, br?, poses?, turns?, move?, prefix?, subdivisions?, desc? }</c>.
+    /// </summary>
+    /// <remarks>
+    /// The bones carry <c>Character.jointMap</c>'s body-part names under a <c>hips</c> root. Motion is given up front:
+    /// <c>poses</c> as whole-pose keys, <c>[{ time, ease?, leftUpperArm: 40, ... }]</c>, or <c>turns</c> as a node per
+    /// bone; <c>move</c> carries the whole figure.
+    /// </remarks>
+    public MotionRig RigFromDrawing(object? image, object? landmarks, object? options = null) =>
+        MotionRigBuilder.Build(this, Root ?? throw new InvalidOperationException("This stack belongs to no composition."), image, landmarks, options);
+
     /// <summary>The composition this stack belongs to, whose bones it can use.</summary>
     internal MotionComposition? Root { get; private protected set; }
 

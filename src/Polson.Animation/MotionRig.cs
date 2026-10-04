@@ -103,7 +103,7 @@ internal static class MotionRigBuilder
     #region Methods
     public static MotionRig Build(MotionLayerList into, MotionComposition root, object? image, object? landmarks, object? options)
     {
-        var o = new MotionOptions(options, "rigFromDrawing", "tl", "br", "poses", "turns", "move", "prefix", "subdivisions", "desc");
+        var o = new MotionOptions(options, "rigFromDrawing", "tl", "br", "poses", "turns", "follow", "start", "move", "prefix", "subdivisions", "desc");
         var picture = MotionPicture.From(image, "rigFromDrawing's image");
         using var cell = Unpremultiplied(picture.Image);
         var keyed = KeyGround(cell);
@@ -142,19 +142,33 @@ internal static class MotionRigBuilder
             throw new ArgumentException($"rigFromDrawing: the composition already has a bone '{prefix + n}'. Give this rig a prefix: {{ prefix: 'kit.' }}.");
 
         var turns = Turns(o, names);
+        var hipMid = joints["@hipMid"];
+        MotionNode origin = new MotionConstant(MotionType.Vector, Place(hipMid));
+        if (o.Has("follow"))
+        {
+            if (o.Raw("follow") is not IPlanarMotion track)
+                throw new ArgumentException("rigFromDrawing's follow is a recorded motion: Character.track('Jumping Jacks').");
+            var start = o.Has("start") ? o.Number("start", 0) : 0;
+            var (followed, root2) = Follow(track, start, bones, p => { var q = Place(p); return new Vec(q[0], q[1]); },
+                joints["rightHip"], joints["leftHip"], hipMid,
+                new[] { "left", "right" }.Average(s => (joints[s + "Knee"] - joints[s + "Hip"]).Length + (joints[s + "Ankle"] - joints[s + "Knee"]).Length) * scale);
+            foreach (var (bone, node) in followed)
+                turns[bone] = turns.TryGetValue(bone, out var extra) ? Add(MotionType.Angle, node, extra) : node;
+            origin = root2;
+        }
+        else if (o.Has("start")) throw new ArgumentException("rigFromDrawing's start is when a follow begins, and there is no follow.");
+
         var made = new Dictionary<string, MotionBone>();
 
         // The root: at the hips, pointing down, not deformed by, only carrying everything. `move` travels it.
-        var hipMid = joints["@hipMid"];
         var hipSpan = Math.Max(4, (joints["leftHip"] - joints["rightHip"]).Length);
-        var origin = new MotionConstant(MotionType.Vector, Place(hipMid));
         made["hips"] = root.Bone(new Hashtable
         {
             ["name"] = prefix + "hips",
-            ["origin"] = o.Has("move") ? new MotionAdd(MotionType.Vector, origin,
-                MotionNodeFactory.Node(o.Raw("move"), MotionType.Vector, "rigFromDrawing's move"), new MotionConstant(MotionType.Real, [1])) : origin,
+            ["origin"] = o.Has("move") ? Add(MotionType.Vector, origin,
+                MotionNodeFactory.Node(o.Raw("move"), MotionType.Vector, "rigFromDrawing's move")) : origin,
             ["angle"] = turns.TryGetValue("hips", out var hipsTurn)
-                ? new MotionAdd(MotionType.Angle, new MotionConstant(MotionType.Angle, [90]), hipsTurn, new MotionConstant(MotionType.Real, [1]))
+                ? Add(MotionType.Angle, new MotionConstant(MotionType.Angle, [90]), hipsTurn)
                 : (object)90d,
             ["length"] = hipSpan * scale,
             ["width"] = 0d, ["tipwidth"] = 0d,
@@ -186,6 +200,64 @@ internal static class MotionRigBuilder
 
         return new MotionRig(made, group, reach["@covered"], unsure, keyed);
     }
+
+    /// <summary>
+    /// Turns that point each bone where the recorded motion's part points, absolutely, as 3D <c>Character.retarget</c>
+    /// does, and the root's travel; a part with little of its length in the page plane is held toward its parent.
+    /// </summary>
+    /// <remarks>
+    /// A bone's turn is relative to its parent, so each frame's absolute change from the drawing's rest is found
+    /// root first and the parent's is taken off. Each part's change is unwrapped across frames, so a part that
+    /// swings past straight up does not spin back the long way between keys.
+    /// </remarks>
+    private static (Dictionary<string, MotionNode> Turns, MotionNode Origin) Follow(IPlanarMotion track, double start, List<Proto> bones,
+        Func<Vec, Vec> place, Vec rightHip, Vec leftHip, Vec hipMid, double legs)
+    {
+        static double Angle(Vec d) => Math.Atan2(d.Y, d.X) * 180 / Math.PI;
+        static double Wrap(double a) => a - (360 * Math.Round(a / 360));
+        static double Hold(double inPlane)
+        {
+            var t = Math.Clamp((inPlane - 0.25) / 0.35, 0, 1);
+            return t * t * (3 - (2 * t));
+        }
+
+        var times = track.FrameTimes;
+        if (times.Length == 0) throw new ArgumentException("rigFromDrawing's follow has no samples.");
+        var rest = bones.ToDictionary(b => b.Name, b => Angle(place(b.To) - place(b.From)));
+        rest["hips"] = Angle(place(leftHip) - place(rightHip));
+
+        var deltas = new Dictionary<string, double[]>();
+        foreach (var name in rest.Keys) deltas[name] = new double[times.Length];
+        for (var f = 0; f < times.Length; f++)
+        {
+            deltas["hips"][f] = track.TryGetDirection("hips", f, out var hips, out _) ? Wrap(hips - rest["hips"]) : 0;
+            foreach (var b in bones)
+            {
+                var parent = deltas[b.Parent!][f];
+                deltas[b.Name][f] = track.TryGetDirection(b.Name, f, out var a, out var inPlane)
+                    ? parent + (Hold(inPlane) * Wrap(a - rest[b.Name] - parent))
+                    : parent;
+            }
+        }
+
+        foreach (var d in deltas.Values)
+            for (var f = 1; f < d.Length; f++) d[f] = d[f - 1] + Wrap(d[f] - d[f - 1]);
+
+        MotionNode Keys(MotionType type, Func<int, object> value) => new MotionNodeFactory().Animated(type == MotionType.Angle ? "angle" : "vector",
+            times.Select((t, f) => (object)new Hashtable { ["time"] = start + t, ["value"] = value(f) }).ToArray());
+
+        var turns = new Dictionary<string, MotionNode> { ["hips"] = Keys(MotionType.Angle, f => deltas["hips"][f]) };
+        foreach (var b in bones) turns[b.Name] = Keys(MotionType.Angle, f => deltas[b.Name][f] - deltas[b.Parent!][f]);
+        var at = place(hipMid);
+        var origin = Keys(MotionType.Vector, f =>
+        {
+            var (x, y) = track.RootOffset(f);
+            return new[] { at.X + (x * legs), at.Y + (y * legs) };
+        });
+        return (turns, origin);
+    }
+
+    private static MotionNode Add(MotionType type, MotionNode a, MotionNode b) => new MotionAdd(type, a, b, new MotionConstant(MotionType.Real, [1]));
 
     /// <summary>Per-bone turn nodes from <c>poses</c> (whole-pose keys) or <c>turns</c> (a node per bone), never both for one bone.</summary>
     private static Dictionary<string, MotionNode> Turns(MotionOptions o, string[] names)

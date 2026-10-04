@@ -3730,6 +3730,7 @@ Mesh.draw(ctx, turned, { x: 400, y: 300, scale: 520, yawDeg: 20,
 - `Character.stocks()` → `object[]` — The stock bodies here, `{ name, licence, author, file }`. **Licences are per model**: `male` and `female` are Quaternius, CC0, as are most others; `sophia` is CC-BY-SA 4.0 and `jay`, `sintel` and `bunny` are CC-BY, so a drawing made over one of those credits its author. A body Mesh2Motion does not list reports `licence: null`, which means unknown, not free.
 - `Character.info(name)` → `object` — What was recorded when it was built: its files, `joints` (body part → bone), `jointError` (how far each named bone sat from its detected landmark, as a share of body height), `face`, `garments`, `rig` and **`warnings`**. `garments.hangs` is `true` when something hangs between the legs and the character will need cloth, `false` when nothing does, and `null` when it could not be read; `garments.garment` has the upper garment's `sleeves` (`full`, `long`, `none`) and `hemBelow` (`hip`, `knee`, `ankle`).
 - `Character.clips()` → `{ name, seconds, file }[]` — The recorded clips a pose can be taken from.
+- `Character.track(clip, { character?, fps?, from?, to?, yawDeg? })` → `track` — **A clip flattened onto the page**, for `comp.rigFromDrawing(..., { follow: track })` to play on a drawing. Played on `character` (the stock male body unless given), sampled `fps` times a second (12 by default) from `from` to `to` seconds, read from the front or from `yawDeg`. The track: `clip`, `fps`, `frames`, `duration`, `times`, `inPlane` (each part's least share of its length in the page plane over the clip, 0 to 1), `warnings` (the parts that leave the page, in words), and `at(frame)` → `{ time, parts: { name: { angleDeg, inPlane } }, root: { x, y } }`, where angles are page degrees (0 right, 90 down) and `root` is the hips' travel from standing in leg lengths. See *Playing a recorded clip* under Motion.
 - `Character.retarget(character, source, options?)` → `object` — **A whole-body pose**, keyed by body part, ready for `pose(...)`. `character` is a mesh from `Character.load`, or a name. `source` is either:
   - **a clip name**, with `{ at?, time?, moveHips? }`: `at` is a fraction of the clip, `time` is seconds; neither means the first frame.
   - **a body from `Character.detect(image)`**, with `{ faceFront?, moveHips?, flatFeet? }`: the pose in the picture. See *A pose from a picture* below.
@@ -5076,11 +5077,12 @@ comp.render(1);
 
 **`landmarks`** is `Character.detect(image)`, or an object of the same names to points in the image's pixels — for a profile or a stylised figure the detector misses. It needs `nose`, and both sides' `Shoulder`, `Elbow`, `Wrist`, `Hip`, `Knee`, `Ankle` and `FootIndex`; `Index` (a hand's knuckle) is used when present.
 
-**`options`**: `{ tl?, br?, poses?, turns?, move?, prefix?, subdivisions?, desc? }`.
+**`options`**: `{ tl?, br?, follow?, start?, poses?, turns?, move?, prefix?, subdivisions?, desc? }`.
 
 - `tl`, `br` place the drawing, as on `comp.image`; by default at its own size at the origin.
 - **`poses`** — whole-pose keys, `[{ time, ease?, boneName: degrees, ... }]`. **A bone a pose leaves out is at rest in that pose.** Degrees are turns from the rest pose, clockwise on the page, each relative to its parent — so on a figure facing you, raising its right arm (page left) is positive and its left arm negative.
-- `turns` — `{ boneName: node }`, a node per bone, for full control. A bone goes in `poses` or `turns`, not both.
+- `turns` — `{ boneName: node }`, a node per bone, for full control. A bone goes in `poses` or `turns`, not both. With `follow`, both **add** to it, as `move` does: a recorded walk with a head turn of your own.
+- **`follow`** — a recorded motion from `Character.track(clip)`: every bone is turned to point where the performer's matching part points on the page, and the hips travel as theirs did, in leg lengths. `start` is the composition time its first sample plays at, 0 by default. See *Playing a recorded clip* below.
 - `move` — a vector node, `[0, 0]` at rest, that carries the whole figure.
 - `prefix` — prepended to every bone name in the composition, so two rigs can share one; refused by name when a second rig would clash.
 - `subdivisions` — the deformation grid, 48 × 48 by default.
@@ -5091,6 +5093,28 @@ comp.render(1);
 
 > [!IMPORTANT]
 > **It bends in the picture plane only.** A drawn front view can wave, lean, step and tilt its head; it cannot turn, foreshorten a limb toward you, or show anything the drawing hides. For those poses use the 3D route — `Character` and `Assets.redraw` — for the key drawings, and this for the motion within each view. **Front views only**: on a profile the detector cannot see the far limbs; give those landmarks yourself or rig the profile by hand with `comp.bone`.
+
+#### Playing a recorded clip — `follow: Character.track(clip)`
+
+The 162 recorded clips `Character.retarget` poses a 3D body with will also drive a drawing. `Character.track` plays the clip on the stock body, reads it from the front, and samples where each body part points; the rig turns each bone to match.
+
+```js
+const cell = Skia.Image.load('refs/kit-front.png');
+const body = Character.detect(cell);
+const track = Character.track('Jumping Jacks', { fps: 12 });
+for (const w of track.warnings) log(w);                    // the parts that leave the page
+
+const comp = Motion.composition({ width: 900, height: 900, fps: 12, duration: track.duration });
+comp.fill({ color: '#e8e4dc' });
+comp.rigFromDrawing(cell, body, { tl: [150, 100], follow: track });
+comp.capture({ fps: 12 });
+Motion.sheet('artifacts/kit-jacks.png', { count: 6, cols: 6, scale: 0.35, fps: 12 });
+```
+
+- **The directions are matched, not the changes.** Each bone ends up pointing where the performer's part did, whatever pose the drawing was made in, as 3D `retarget` does. An A-pose drawing played from a clip that starts in a T-pose starts in a T-pose.
+- **A part pointing into the page has no page direction**, so it is held to its parent in proportion: fully followed when most of its length is in the page, fully held below about a quarter. A front view's feet point at the camera, so they mostly ride the shins.
+- **Pick clips that move across the page.** `track.inPlane` gives each part's worst share over the clip. Measured across the library from the front: Jumping Jacks, Head Nod, Idle_ShakeOff, Idle_A, Shivering, Dizzy, Strafe_left/right, Hit_Head and Pistol_Aim_Up keep every limb above 0.7; walks and folded arms fall to about 0.5, and punches and sword work below 0.4.
+- **No depth order.** Where the clip crosses the legs or passes an arm in front of the body, the drawing overlaps itself in whatever order the deformation draws it, so a strafe's crossed boots merge.
 
 ### A layer the SDK draws — `comp.drawn(draw, options?)`
 

@@ -93,6 +93,85 @@ public class MotionRigTests : TestsRuntime
     }
     #endregion
 
+    #region Following a recorded motion
+    [Fact]
+    public void AFollowedBonePointsWhereTheTrackDoes()
+    {
+        var comp = new MotionToolkit().Composition(Opts(("width", 300d), ("height", 400d), ("duration", 3d)));
+        var track = new Track([0, 0.5, 1], (part, f) => part == "leftUpperArm" ? (new[] { -90d, 0d, 60d }[f], 1) : null);
+        var rig = comp.RigFromDrawing(Figure(), Landmarks(), Opts(("follow", track), ("start", 1d)));
+
+        var forearmRest = Angle(rig.Bone("leftForearm").At(0)) - Angle(rig.Bone("leftUpperArm").At(0));
+        foreach (var (t, want) in new[] { (1d, -90d), (1.5d, 0d), (2d, 60d) })
+        {
+            Assert.Equal(want, Wrap(Angle(rig.Bone("leftUpperArm").At(t))), 3);
+            // A part the track does not carry follows its parent, keeping the drawing's own bend.
+            Assert.Equal(forearmRest, Wrap(Angle(rig.Bone("leftForearm").At(t)) - Angle(rig.Bone("leftUpperArm").At(t))), 3);
+        }
+
+        Assert.Equal(-90, Wrap(Angle(rig.Bone("leftUpperArm").At(0))), 3);   // before start: the first sample
+    }
+
+    [Fact]
+    public void APartOutOfThePageIsHeldToItsParent()
+    {
+        var comp = new MotionToolkit().Composition(Opts(("width", 300d), ("height", 400d)));
+        var track = new Track([0, 1], (part, f) => part switch
+        {
+            "leftUpperArm" => (-60, 1),
+            "leftForearm" => (150, 0.1),   // pointing at the camera: its page angle means nothing
+            _ => null,
+        });
+        var held = comp.RigFromDrawing(Figure(), Landmarks(), Opts(("follow", track)));
+        var rest = new MotionToolkit().Composition().RigFromDrawing(Figure(), Landmarks());
+        var bend = Angle(rest.Bone("leftForearm").At(0)) - Angle(rest.Bone("leftUpperArm").At(0));
+        Assert.Equal(bend, Wrap(Angle(held.Bone("leftForearm").At(1)) - Angle(held.Bone("leftUpperArm").At(1))), 3);
+    }
+
+    [Fact]
+    public void ItTurnsTheShortWayBetweenSamples()
+    {
+        var comp = new MotionToolkit().Composition(Opts(("width", 300d), ("height", 400d), ("duration", 1d)));
+        var track = new Track([0, 1], (part, f) => part == "leftUpperArm" ? (f == 0 ? 170d : -170d, 1) : null);
+        var rig = comp.RigFromDrawing(Figure(), Landmarks(), Opts(("follow", track)));
+        Assert.True(Math.Abs(Math.Abs(Wrap(Angle(rig.Bone("leftUpperArm").At(0.5)))) - 180) < 1, $"{Angle(rig.Bone("leftUpperArm").At(0.5)):0.0}");
+    }
+
+    [Fact]
+    public void TheRootTravelsInLegLengths()
+    {
+        var comp = new MotionToolkit().Composition(Opts(("width", 300d), ("height", 400d), ("duration", 1d)));
+        var track = new Track([0, 1], (_, _) => null, f => (0, f == 0 ? 0 : -0.5));
+        var rig = comp.RigFromDrawing(Figure(), Landmarks(), Opts(("follow", track)));
+        var legs = Math.Sqrt((5 * 5) + (80 * 80)) + Math.Sqrt((2 * 2) + (60 * 60));   // hip to knee to ankle on the figure
+        Assert.Equal(220 - (0.5 * legs), Origin(rig.Bone("hips").At(1)).Y, 4);
+        Assert.Equal(220, Origin(rig.Bone("hips").At(0)).Y, 4);
+    }
+
+    [Fact]
+    public void PosesAndMoveAddToAFollow()
+    {
+        var motion = new MotionToolkit();
+        var comp = motion.Composition(Opts(("width", 300d), ("height", 400d), ("duration", 1d)));
+        var track = new Track([0, 1], (part, _) => part == "head" ? (-80, 1) : null);
+        var rig = comp.RigFromDrawing(Figure(), Landmarks(), Opts(("follow", track),
+            ("poses", new object[] { Opts(("time", 0d)), Opts(("time", 1d), ("head", 20d)) }),
+            ("move", motion.Nodes.Linear("vector", new[] { 30d, 0d }))));
+        Assert.Equal(-80, Wrap(Angle(rig.Bone("head").At(0))), 3);
+        Assert.Equal(-60, Wrap(Angle(rig.Bone("head").At(1))), 3);
+        Assert.Equal(150 + 30, Origin(rig.Bone("hips").At(1)).X, 4);
+    }
+
+    [Fact]
+    public void FollowTakesARecordedMotionAndStartNeedsOne()
+    {
+        var e = Assert.Throws<ArgumentException>(() => new MotionToolkit().Composition().RigFromDrawing(Figure(), Landmarks(), Opts(("follow", "Walk"))));
+        Assert.Contains("Character.track", e.Message);
+        e = Assert.Throws<ArgumentException>(() => new MotionToolkit().Composition().RigFromDrawing(Figure(), Landmarks(), Opts(("start", 1d))));
+        Assert.Contains("no follow", e.Message);
+    }
+    #endregion
+
     #region Refusals
     [Fact]
     public void AMissingLandmarkIsNamed()
@@ -132,6 +211,31 @@ public class MotionRigTests : TestsRuntime
     #endregion
 
     #region Private
+    private sealed class Track(double[] times, Func<string, int, (double Angle, double InPlane)?> direction, Func<int, (double, double)>? root = null)
+        : IPlanarMotion
+    {
+        public double[] FrameTimes => times;
+
+        public bool TryGetDirection(string part, int frame, out double angleDeg, out double inPlane)
+        {
+            var d = direction(part, frame);
+            (angleDeg, inPlane) = d ?? (0, 0);
+            return d is not null;
+        }
+
+        public (double X, double Y) RootOffset(int frame) => root?.Invoke(frame) ?? (0, 0);
+    }
+
+    private static double Angle(object pose) => (double)((IDictionary<string, object?>)pose)["angle"]!;
+
+    private static (double X, double Y) Origin(object pose)
+    {
+        var o = (IDictionary<string, object?>)((IDictionary<string, object?>)pose)["origin"]!;
+        return ((double)o["x"]!, (double)o["y"]!);
+    }
+
+    private static double Wrap(double a) => a - (360 * Math.Round(a / 360));
+
     /// <summary>A stick figure in thick strokes, arms out: 300 × 400, transparent or on a ground.</summary>
     private static SkiaBitmapWrapper Figure(SKColor? ground = null)
     {

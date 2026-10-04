@@ -122,6 +122,51 @@ public class CharacterToolkit
         })];
 
     /// <summary>
+    /// A recorded clip flattened onto the page, for a drawn rig to play:
+    /// <c>comp.rigFromDrawing(cell, body, { follow: Character.track('Jumping Jacks') })</c>.
+    /// </summary>
+    /// <remarks>
+    /// Played on <c>character</c> (the stock male body unless given) and read from the front, or from
+    /// <c>yawDeg</c>. <c>fps</c> (default 12) is how often it is sampled; <c>from</c> and <c>to</c> are seconds
+    /// within the clip, the whole clip unless given. Read <c>inPlane</c> and <c>warnings</c>: a drawing bends in the
+    /// page only, so a part that points into the page cannot follow.
+    /// </remarks>
+    public CharacterTrack Track(string clip, object? options = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clip);
+        var clips = PoseRetarget.Clips(projectRoot);
+        var found = clips.FirstOrDefault(c => c.Name == clip)
+            ?? throw new ArgumentException($"No clip '{clip}'. Nearest: {string.Join(", ", Nearest(clip, clips.Select(c => c.Name)))}. " +
+                                           "Character.clips() lists them all.", nameof(clip));
+
+        FaceMesh? body = null;
+        double fps = 12, from = 0, to = found.Seconds;
+        float yaw = 0f;
+        if (JsInterop.AsDict(options) is { } opt)
+            foreach (var key in opt.Keys)
+            {
+                var k = Convert.ToString(key, System.Globalization.CultureInfo.InvariantCulture);
+                var v = opt[key!];
+                double Num() => Convert.ToDouble(v, System.Globalization.CultureInfo.InvariantCulture);
+                switch (k)
+                {
+                    case "character": body = Character(v!, "track"); break;
+                    case "fps": fps = Num(); break;
+                    case "from": from = Num(); break;
+                    case "to": to = Num(); break;
+                    case "yawDeg": yaw = (float)Num(); break;
+                    default: throw new ArgumentException($"Character.track has no option '{k}'. It takes character, fps, from, to and yawDeg.");
+                }
+            }
+        if (!(fps > 0) || !double.IsFinite(fps) || fps > 120)
+            throw new ArgumentException($"Character.track: fps is samples per second, above 0 and at most 120; got {fps}.");
+        if (!(from >= 0) || !(to <= found.Seconds + 1e-6) || !(to >= from))
+            throw new ArgumentException($"Character.track: from and to are seconds within '{clip}', 0 to {found.Seconds:0.###}, from no later than to; got {from} to {to}.");
+
+        return CharacterTrack.Sample(body ?? Stock(), found, fps, from, Math.Min(to, found.Seconds), yaw);
+    }
+
+    /// <summary>
     /// A pose for <paramref name="character"/> taken from a recorded clip or from a body found in a picture:
     /// <c>tomas.pose(Character.retarget(tomas, 'Idle_Rail_Call', { at: 0.5 }))</c>, or
     /// <c>Character.retarget(tomas, Character.detect(photo))</c>.

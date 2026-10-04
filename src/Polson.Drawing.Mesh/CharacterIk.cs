@@ -128,6 +128,13 @@ internal static class CharacterIk
         var r = draw.Rotate(new SkiaSharp.SKPoint3(at.X * draw.StretchX, at.Y * draw.StretchY, at.Z * draw.StretchZ));
         return new() { ["x"] = draw.X + (r.X * draw.Scale), ["y"] = draw.Y - (r.Y * draw.Scale), ["depth"] = r.Z };
     }
+    /// <summary>Every joint's model-space position under a pose, by handle: what <see cref="Where"/> reads, for every joint at once.</summary>
+    internal static Dictionary<string, Vector3> Joints(MeshRig rig, object? poseObj, string call)
+    {
+        var world = Forward(rig, ReadPose(rig, poseObj, call, out var moves), moves);
+        return world.ToDictionary(kv => kv.Key, kv => kv.Value.Translation, StringComparer.Ordinal);
+    }
+
     /// <summary>
     /// The <c>Mesh.draw</c> options that stand a character in a frame: feet at <c>at</c> — or the
     /// <c>anchor</c> body part there instead — standing <c>height</c> of the frame tall; see

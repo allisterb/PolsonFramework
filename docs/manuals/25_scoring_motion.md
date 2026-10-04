@@ -271,6 +271,10 @@ is Synfig's, and the craft follows from it:
   poses as keys — `{ time, rightUpperArm: 55, head: 12 }` — and a bone a key leaves out is at rest. Check
   `rig.reach` is 1 and `rig.unsure` is empty before trusting it. It moves a figure within its view; a turn or a
   foreshortened limb is a new key drawing, from the 3D route.
+- **Or let a performer give the motion: `{ follow: Character.track('Jumping Jacks') }`.** The recorded clips
+  that pose the 3D body drive a drawing too, each bone turned to point where the performer's part points on the
+  page. It is only as good as the clip is flat: read `track.warnings` first, and choose a clip that moves across
+  the page (jumping jacks, a nod, a shake-off, a sidestep) rather than toward it (a walk, a punch).
 
 ```javascript
 const n = Motion.nodes;

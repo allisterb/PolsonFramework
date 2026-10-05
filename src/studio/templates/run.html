@@ -1039,6 +1039,10 @@
     if (kind === 'note' || kind === 'message') return e.message || e.text || '';
     if (kind === 'render') return (e.artifact || '') + (motionNote(e) ? '  ' + motionNote(e) : '');
     if (kind === 'export' || kind === 'artifact.read') return e.artifact || '';
+    // The host stored the block signed and empty: the agent did reason here, and its words were not
+    // kept. The desktop app does this to most thinking blocks; Claude Code in a terminal keeps them.
+    // A blank row read as a display fault.
+    if (kind === 'thinking' && e.redacted && !e.text) return '(reasoning not stored by this host)';
     if (kind === 'inspect') return Object.entries(e.probes || {}).map(([k, v]) => `${k} ${v}`).join(', ');
     if (kind === 'tool.call') return toolDetail(e);
     if (kind === 'script.error') return e.error || e.script || '';

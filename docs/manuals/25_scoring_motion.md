@@ -1,6 +1,6 @@
 # Studio Manual 25: Scoring Motion
 
-> **Credits & Theoretical Foundation**: **This manual distils no book in `reference/`, and says so rather than borrowing a citation.** The studio's reference corpus is about drawing, not timing, and there is no animation text in it. What is here comes from three places, each named where it is used: the **position paradigm** is GSAP's, adopted deliberately and credited (it is not from the corpus and no claim is made about the rest of that library); the **cost figures** are our own measurements, recorded in `docs/motion-score-api.md` §3; and the **seek-rather-than-play** model is the studio's own, argued from the medium — an agent renders frames, it does not watch them. Where this manual states a principle of timing craft that animators have long known, it is stated as received practice without attribution to a source we have not read. The calls are documented at `polson://sdk/core/Motion`.
+> **Credits & Theoretical Foundation**: **§11 distils Walt Stanchfield's *Drawn to Life* (vol. 1 ch. 41 and others), cited by chapter there; §1–§10 distil no book in `reference/`.** This header used to say the corpus held no animation text. That was wrong: Stanchfield taught at Disney, and his lectures, ledgered on 2026-09-25 and first read only for gesture, include chapters on timing, phrasing and overlap. §5's received practices are corroborated there. The rest comes from three places, each named where it is used: the **position paradigm** is GSAP's, adopted deliberately and credited (it is not from the corpus and no claim is made about the rest of that library); the **cost figures** are our own measurements, recorded in `docs/motion-score-api.md` §3; and the **seek-rather-than-play** model is the studio's own, argued from the medium — an agent renders frames, it does not watch them. Where this manual states a principle of timing craft that animators have long known, it is stated as received practice without attribution to a source we have not read. The calls are documented at `polson://sdk/core/Motion`.
 > **Purpose**: How to build a piece of motion that can be inspected, revised and resumed — why a score is a function of time rather than a sequence of events, how to place beats so that editing one does not break the rest, and how to look at a result you cannot watch. **It governs the building of a score, not the decision that the piece should move**; see the scope note below.
 
 ---
@@ -25,7 +25,7 @@
 > **And read the firmness here differently from `polson://manual/13`.** That manual is prescriptive
 > because §2 is about *truth* — a bar's length makes a claim that can be false. **Motion makes no
 > such claim, so this manual has no §2 and is mostly craft.** §5 in particular is received practice,
-> unsourced and said so in the header; treat it as advice from a tradition rather than as a finding.
+> corroborated by Stanchfield (§11) but not measured; treat it as advice from a tradition rather than as a finding.
 > The one part that behaves like a correctness rule is §1's purity property, and even that binds
 > **conditionally** — it is what makes seeking work, so it applies exactly when you want seeking.
 >
@@ -468,3 +468,143 @@ comp.render(11 / FPS);
 ```
 
 The route is the mannequin's, so the deliverable is raster: `comp.toSvg()` refuses a `drawn` layer, because SMIL cannot run a script. A piece that has to ship as SVG is keyed on Snap elements or on layers the model draws itself (§8, §9), and gives up the constructed figure to do it.
+
+## 11. Phrasing, Texture and the Extreme–Extreme
+
+> **Source**: Walt Stanchfield, *Drawn to Life*, vol. 1 (Focal Press 2013) ch. 41, *Pose and Mood Plus Timing and Phrasing and Texture*, with chs. 14, 57, 100, 107 and 149, and vol. 2 (Elsevier 2009) ch. 9. Distilled in our own words and cited by chapter, under the books' terms. Every threshold below is **ours**, chosen to make a principle checkable, and is marked as ours where it appears. Stanchfield gives principles, not numbers.
+
+§5 and §10 time a move. This section times a **scene**: how its moves are grouped, where the strongest pose goes, and how busy the whole thing is.
+
+**Animate by extremes, and let the extremes carry the story** (ch. 41). The extremes are the poses the audience has to see; what lies between them can be little more than a suggestion. Stanchfield passes on Don Graham's picture of a hummingbird: it darts, and what you see are the moments it hovers. A key that the motion only passes through at speed is never seen at all.
+
+**Phrasing** (ch. 41). People and animals move in phrases: a move ends in a pose, a gesture ends in a pose, an anticipation comes before the next move. That grouping is the beat or rhythm of an action. In life rhythm can happen by chance; in animation it has to be made on purpose. The practical consequence: beats that fall at equal intervals read as a metronome, not a phrase.
+
+**The extreme–extreme** (ch. 41). One pose in a scene will be the most extreme, and it should be the one that carries the story point, usually the pose from the storyboard. When a scene has dialogue, the one or two stressed words decide which drawing is the anticipation, which the extreme and which the extreme–extreme. Without dialogue, the beat the sentence is about plays the stressed word's part. An emphasis that lands a few frames off its beat reads as wrong (ch. 100).
+
+**Texture** (ch. 41). Timing has a texture, like cloth: an even, busy weave, or a few small groupings on a plain field. A crowd cheering a home run wants several violent extremes in very little film; a lazy afternoon wants one tranquil pose held for a long time. Decide the texture before keying, from the mood, because it sets how many extremes the scene has.
+
+**The anticipation holds until it reads** (ch. 107). A character about to rush off to the right first leans left to gather itself, holds that until the audience has it, then goes. The opposition is what accents the move; the hold is what lets it be seen.
+
+**Parts do not all stop together** (vol. 2 ch. 9; vol. 1 chs. 14, 57). Time the parts so they do not all move at one speed or come to rest on one frame: the body arrives, the arm a frame or two after, the hand after that. Attached and flexible parts trail their roots and settle after them; a tail can ease in many frames after the body has stopped.
+
+**A pose needs time on screen to register** (ch. 149). Stanchfield says it of mouth shapes in dialogue, that one or two frames is hardly enough; applying it to every beat pose is our extension.
+
+**Check arcs across several extremes, not two** (ch. 57). An inbetween that looks right between two drawings can break the arc the drawings either side imply. §10's arc check spans a whole move for this reason.
+
+Each of these is a measurement on the keyed values, taken the way §10 takes its checks:
+
+| Principle | Measured as | Threshold |
+| :--- | :--- | :--- |
+| one extreme–extreme, on the stressed beat | the beat pose furthest from the start, each part measured against its own range, is the stressed beat | within 3 frames (ours) |
+| the anticipation opposes and holds | the main part moves against the action, and the whole pose stays within 1° | 3 frames or more (ours) |
+| parts stop apart, tips after roots | the last frame each part moves more than 0.1° | no more than half on one frame; each tip after its root (ours) |
+| phrasing | the coefficient of variation of the intervals between beats | 0.25 or more (ours) |
+| every beat pose registers | frames where the whole pose is within 1.5° of the beat | 3 or more (ours) |
+| texture | beats per second against the declared texture | a judgment, recorded with `{ judged: true }` |
+
+**Keep each part on its own track.** Staggered stops need it: a row of numbers per pose (§10) makes every part arrive at every key together. Below, each part is a list of `[frame, value, ease]`, and the settle ends on a different frame for each.
+
+**What the checks taught the example below.** Its first draft failed two of them. The settle carried the head and forearm further out than the strike, so the most extreme pose landed on the settle rather than on the point; and the strike was passed at speed, so it was on screen for one frame. Both are Stanchfield's points exactly, and both were fixed in the keys: the parts settle back from the strike, and the strike holds for two frames before they go.
+
+```javascript
+// A point: she draws back, holds, then points hard off to the right. Her body stops first, the arm
+// after it, the forearm after that, and the head last. Each part is its own track, so they can stop apart.
+const n = Motion.nodes;
+const FPS = 24, FRAMES = 48, DURATION = (FRAMES - 1) / FPS;
+
+// Beats. One is stressed: the beat the sentence is about. The texture is declared, not discovered.
+const TEXTURE = 'sparse';     // a few clear moves on a quiet field, not a busy weave
+const BEATS = [
+    { frame: 0,  says: 'she stands, looking ahead' },
+    { frame: 10, says: 'she draws back, arm cocked, gathering herself' },
+    { frame: 14, says: 'she holds the draw-back long enough to read' },
+    { frame: 19, says: 'she points hard off to the right', stress: true },
+    { frame: 34, says: 'she eases back from the point, the head settling last' },
+    { frame: 47, says: 'she holds it' }
+];
+
+// One track per part: [frame, value, ease]. The strike holds two frames; the settles end apart.
+const TRACKS = {
+    lean:      [[0, 0, 'halt'], [4, 0, 'halt'], [10, -10, 'halt'], [14, -10, 'halt'], [19, 16, 'halt'], [21, 16, 'halt'], [24, 10, 'halt'], [47, 10, 'halt']],
+    turn:      [[0, 0, 'halt'], [4, 0, 'halt'], [10, -16, 'halt'], [14, -16, 'halt'], [19, 24, 'halt'], [21, 24, 'halt'], [26, 16, 'halt'], [47, 16, 'halt']],
+    rShoulder: [[0, 100, 'halt'], [4, 100, 'halt'], [10, 130, 'halt'], [14, 130, 'halt'], [19, -16, 'halt'], [21, -16, 'halt'], [28, -8, 'halt'], [47, -8, 'halt']],
+    rElbow:    [[0, -20, 'halt'], [4, -20, 'halt'], [10, -70, 'halt'], [14, -70, 'halt'], [19, 14, 'halt'], [21, 14, 'halt'], [31, 2, 'halt'], [47, 2, 'halt']],
+    lShoulder: [[0, 80, 'halt'], [4, 80, 'halt'], [10, 60, 'halt'], [14, 60, 'halt'], [19, 150, 'halt'], [21, 150, 'halt'], [27, 128, 'halt'], [47, 128, 'halt']],
+    neck:      [[0, 0, 'halt'], [4, 0, 'halt'], [10, -6, 'halt'], [14, -6, 'halt'], [19, 14, 'halt'], [21, 14, 'halt'], [34, 8, 'halt'], [47, 8, 'halt']]
+};
+const ROOT_OF = { rElbow: 'rShoulder', neck: 'lean' };   // a tip settles after its root
+
+const nodes = Object.fromEntries(Object.entries(TRACKS).map(([field, keys]) =>
+    [field, n.animated('real', keys.map(([f, v, e]) => ({ time: f / FPS, value: v, ease: e })))]));
+const valuesAt = f => Object.fromEntries(Object.entries(nodes).map(([k, node]) => [k, node.at(f / FPS)]));
+const frames = Array.from({ length: FRAMES }, (_, f) => valuesAt(f));
+const parts = Object.keys(TRACKS);
+
+// 1. One extreme-extreme, on the stressed beat. Each part is measured against its own range, so a
+//    large angle cannot outvote a small one.
+const span = Object.fromEntries(parts.map(k => {
+    const vs = TRACKS[k].map(key => key[1]);
+    return [k, Math.max(...vs) - Math.min(...vs) || 1];
+}));
+const deviation = f => parts.reduce((s, k) => s + Math.abs(frames[f][k] - frames[0][k]) / span[k], 0);
+const peak = BEATS.reduce((a, b) => deviation(b.frame) > deviation(a.frame) ? b : a);
+const stress = BEATS.find(b => b.stress);
+Stage.check('one extreme-extreme, on the stressed beat', Math.abs(peak.frame - stress.frame) <= 3,
+    `most extreme pose f${peak.frame} (${deviation(peak.frame).toFixed(2)}), stressed beat f${stress.frame}`);
+
+// 2. The anticipation opposes the action, and holds until it reads.
+const a0 = frames[0].rShoulder, aAnt = frames[10].rShoulder, aAct = frames[19].rShoulder;
+let held = 0;
+for (let f = 10; f < FRAMES && parts.every(k => Math.abs(frames[f][k] - frames[10][k]) < 1); f++) held++;
+Stage.check('the draw-back opposes the point and holds', Math.sign(aAnt - a0) !== Math.sign(aAct - a0) && held >= 3,
+    `arm ${a0} -> ${aAnt.toFixed(0)} -> ${aAct.toFixed(0)}, held ${held} frames`);
+
+// 3. The parts stop apart, and every tip after its root.
+const stops = Object.fromEntries(parts.map(k => {
+    let last = 0;
+    for (let f = 1; f < FRAMES; f++) if (Math.abs(frames[f][k] - frames[f - 1][k]) > 0.1) last = f;
+    return [k, last];
+}));
+const together = Math.max(...Object.values(stops).map(s => Object.values(stops).filter(t => t === s).length));
+const tipsLate = Object.entries(ROOT_OF).every(([tip, root]) => stops[tip] > stops[root]);
+Stage.check('the parts stop apart, tips after roots', together <= parts.length / 2 && tipsLate,
+    parts.map(k => `${k} f${stops[k]}`).join(', '));
+
+// 4. Phrasing: the beats are not evenly spaced.
+const gaps = BEATS.slice(1).map((b, i) => b.frame - BEATS[i].frame);
+const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+const cv = Math.sqrt(gaps.reduce((s, g) => s + (g - mean) ** 2, 0) / gaps.length) / mean;
+Stage.check('the beats are phrased, not metronomic', cv >= 0.25, `intervals ${gaps.join(', ')}; variation ${cv.toFixed(2)}`);
+
+// 5. Every beat pose stays on screen long enough to register.
+const onScreen = f => frames.filter(v => parts.every(k => Math.abs(v[k] - frames[f][k]) < 1.5)).length;
+const brief = BEATS.filter(b => onScreen(b.frame) < 3).map(b => `f${b.frame}`);
+Stage.check('every beat pose registers for 3 frames or more', brief.length === 0, brief.length ? `too brief: ${brief.join(', ')}` : 'all register');
+
+// Texture, as declared and as built: a judgment, recorded as one.
+const perSecond = BEATS.length / (FRAMES / FPS);
+Stage.check(`the timing reads as ${TEXTURE}`, perSecond < 4, `${BEATS.length} beats in ${(FRAMES / FPS).toFixed(1)} s`, { judged: true });
+
+// The film, constructed every frame from the keyed values, as in §10.
+const comp = Motion.composition({ width: 480, height: 320, fps: FPS, duration: DURATION });
+comp.fill({ color: '#f2efe8' });
+comp.outline({ width: 3, color: '#15151a', points: [[40, 300], [440, 300]] });
+comp.drawn((ctx, v) => {
+    const fig = Drawing.createMannequinFigure(200, 40, 260, { pose: {
+        lineOfAction: { shape: 'C', turnDeg: v.turn, leanDeg: v.lean }, neckDeg: v.neck,
+        rightArm: { shoulderDeg: v.rShoulder, elbowDeg: v.rElbow }, leftArm: { shoulderDeg: v.lShoulder, elbowDeg: 15 } } });
+    ctx.fillStyle = '#d9d2c3';
+    ctx.fill(Drawing.createFigureGeometry(fig).silhouette);
+    Drawing.drawGestureContour(ctx, fig, { strokeColor: '#15151a', stretchWidth: 2.4, squashWidth: 1.6 });
+    const h = fig.head;
+    ctx.strokeStyle = '#15151a'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.ellipse(h.center.x, h.center.y, h.rx, h.ry, h.angleDeg * Math.PI / 180, 0, Math.PI * 2); ctx.stroke();
+}, { values: nodes, desc: 'pointer' });
+
+comp.capture();
+Motion.sheet('artifacts/manual25-point-beats.png', { indices: BEATS.map(b => b.frame), cols: 6, scale: 0.4 });
+Motion.save('artifacts/manual25-point.webp', { fps: FPS, loop: false });
+comp.render(stress.frame / FPS);
+```
+
+**For the critique, take Stanchfield's order** (chs. 55, 56): before judging anything, name the two or three moments the scene is for; then look at the extremes in order, and again in reverse, which shows an awkward pose the forward order hides.

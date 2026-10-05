@@ -109,6 +109,9 @@ CASES: list[tuple[str, dict, str | None]] = [
     ("a check", {"type": "check", "claim": "accent under 15%", "passed": True}, "pass"),
     ("a failed check", {"type": "check", "claim": "accent under 15%", "passed": False,
                         "detail": "measured 0.21"}, "FAILED"),
+    # hostlog.py: a thinking block the host stored signed and empty.
+    ("withheld thinking", {"type": "thinking", "text": None, "redacted": True}, "not stored by this host"),
+    ("thinking", {"type": "thinking", "text": "check the brief first"}, "check the brief first"),
     ("a judged check", {"type": "check", "claim": "frame 38 reads as a fall", "passed": True,
                         "judged": True, "detail": "flipped and blurred, the bow survives"},
      "pass (judged by eye)"),

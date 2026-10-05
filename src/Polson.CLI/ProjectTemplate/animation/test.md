@@ -13,6 +13,9 @@ Answer these in `findings.md`:
   the sheet ever refuse a frame or label one with the wrong time?
 - **Manual 25 §10.** Did you start from it? Which parts carried over unchanged, and what did you have
   to work out that it did not show?
+- **Phrasing, texture and the extreme–extreme (Manual 25 §11).** Did choosing the stressed beat and the
+  texture first change how many beats you keyed, or where? Which of §11's checks failed first, and did
+  the fix make the film better, or only make the number pass?
 - **The winding.** Did any limb turn the wrong way round between two keys? How did you find out:
   from a check, from the sheet, or not until the critique?
 - **The checks.** Which failed, what did you change, and did the change happen in the keys, the eases

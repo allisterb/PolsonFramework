@@ -13,8 +13,9 @@ here are the **contact sheet** (`Motion.sheet`), one image with one cell per bea
 stage below ends with a check recorded by `Stage.check`, and a failing check is a result rather than
 a failed run, as long as you say what you did about it.
 
-The method is `polson://manual/25`, and its §10 is a complete worked example of this workflow: a
-throw, keyed, checked and saved. The poses come from `polson://manual/24` and `polson://manual/28`.
+The method is `polson://manual/25`. Its §10 is a complete worked example of this workflow (a throw,
+keyed, checked and saved), and its §11 adds what Walt Stanchfield taught Disney's animators about
+the timing of a whole scene: phrasing, texture and the one most extreme pose. The poses come from `polson://manual/24` and `polson://manual/28`.
 
 ---
 
@@ -92,17 +93,33 @@ Break the action into beats, each with a sentence and a **frame number**: the st
 holds. Fix the rate from the brief, then put every beat on a whole frame. The last frame is
 `frames - 1`, and the duration is `(frames - 1) / fps`.
 
-Record each beat with `Stage.expect(...)` and put the table in `animation.md`. These are what the
-critique will judge the film against, so write them before you know how it turns out.
+**Mark one beat as stressed**: the beat the action is about, the moment the brief says must not be
+missed. Its pose will be the scene's **extreme–extreme**, the most extreme of all (Manual 25 §11).
 
-**Check:** there is an anticipation before the main action, and the film ends on (or contains) a
-hold of at least 6 frames.
+**Declare the texture** from the mood: a busy weave of many sharp extremes, or a few clear moves on
+a quiet field. It decides how many beats the action gets, so decide it before you count them.
+
+**Phrase the beats.** A move ends in a pose, an anticipation comes before the next move, and the
+gaps between beats should vary. Beats at equal intervals read as a metronome.
+
+Record each beat with `Stage.expect(...)` and put the table in `animation.md`, with the stressed beat
+and the texture. These are what the critique will judge the film against, so write them before you
+know how it turns out.
+
+**Check:**
+
+- there is an anticipation before the main action;
+- the film ends on (or contains) a hold of at least 6 frames;
+- exactly one beat is stressed;
+- the intervals between beats vary: their coefficient of variation is 0.25 or more.
 
 ### 2. `Keys` — one pose per beat
 
 Draw a key pose for each beat (Manual 24: draw the extremes; Manual 28: the line of action first,
 then the limbs). On the mannequin route a pose is a row of numbers, `{ turn, lean, rShoulder,
-rElbow, ... }`, and `keyed(KEYS)` turns each field into one animated node.
+rElbow, ... }`, and `keyed(KEYS)` turns each field into one animated node. Once parts need to stop
+on different frames (stage 3), give each part its own track of `[frame, value, ease]`, as Manual 25
+§11 does; a row per pose makes every part arrive at every key together.
 
 - **`figureAt(v)` builds the figure from the values alone.** It is called by the drawing and by every
   check, so it must not read the clock or remember anything.
@@ -121,8 +138,16 @@ as a still will not read in motion.
 
 **Check, per extreme key:** Manual 28's checks on the pose that carries the action. The line of
 action bends (`fig.lineOfAction.swing` above `0.15` for a C), shoulders and hips oppose, and the
-action limb is clear of the torso (`limb.subtract(torso).area / limb.area` above `0.8`). And the
-anticipation moves the main driver (the lean, the arm) the opposite way to the action.
+action limb is clear of the torso (`limb.subtract(torso).area / limb.area` above `0.8`).
+
+**Check, across the keys** (Manual 25 §11 has the code):
+
+- **the extreme–extreme is on the stressed beat.** Among the beat poses, the one furthest from the
+  start (each part measured against its own range) is within 3 frames of the stressed beat. If the
+  settle after the action carries a part further out than the action did, the most extreme pose
+  lands on the settle, not the story point;
+- **the anticipation opposes the action and holds until it reads:** the main driver (the lean, the
+  arm) moves the opposite way to the action, and the whole pose holds within 1° for 3 frames or more.
 
 ### 3. `Timing` — eases, spacing and overlap
 
@@ -134,8 +159,13 @@ Set an ease on every key by what the key is (Manual 25 §5, §10):
 - **Two identical keys with `halt`** for a hold.
 
 Then **overlap**. Nothing in a body stops all at once: a trailing arm, a head, a coat tail arrives a
-few frames after the torso. Key the secondary part's beat 2 to 4 frames later than the primary's.
-That is follow-through, and without it the film moves like a puppet on one string.
+few frames after the torso, and a tip settles after its root (Stanchfield, *Drawn to Life* vol. 2
+ch. 9; Manual 25 §11). Key the secondary part's beat 2 to 4 frames later than the primary's. That is
+follow-through, and without it the film moves like a puppet on one string.
+
+**Let every beat pose register.** A pose the motion passes through at speed is on screen for a
+frame and is never seen. Ease into a beat pose, and hold the stressed one for a frame or two before
+the settle starts.
 
 **Check, off the nodes:** Measure these from `figureAt(valuesAt(t))`, not from the picture. Manual
 25 §10 has the code.
@@ -144,7 +174,10 @@ That is follow-through, and without it the film moves like a puppet on one strin
 - **slow in, slow out:** the first and last per-frame steps of each eased move are under half its
   largest;
 - **contact:** the largest `miss` of every solved contact over every frame is under a pixel;
-- **hold:** no field drifts more than half a degree across the hold.
+- **hold:** no field drifts more than half a degree across the hold;
+- **staggered stops:** the last frame each part moves more than 0.1°; no more than half the parts
+  stop on the same frame, and each tip (forearm, hand, head) stops after its root;
+- **register:** every beat pose is held within 1.5° on every part for 3 frames or more.
 
 On the rigged route, measure the same things with `rig.bones.rightHand.at(t)` and say which you
 could not.
@@ -168,6 +201,10 @@ written only in `Deliver`.
 
 Call `Motion.clear()` before capturing again in the same script, or the frames add up.
 
+**Before judging anything, name the two or three moments the film is for** (Stanchfield, vol. 1
+ch. 56). Then look at the beat cells in order, and again in reverse: the unfamiliar direction shows
+an awkward pose that the forward order hides.
+
 Then critique the cells as you would a still. A frame is a canvas, so take a bitmap first:
 `const still = comp.render(frame / FPS).toBitmap()`. Flip it (`still.flip('horizontal')`) and a stiff
 or lopsided pose shows at once; blur it hard (`still.applyFilter(Skia.ImageFilter.blur(6, 6))`) and
@@ -176,6 +213,7 @@ read its sentence from the cell alone. Manual 28 §7 is the silhouette test the 
 
 **Check:** one `Stage.check` per beat sentence: does its cell say it? These verdicts are readings of a
 picture, not measurements, so mark them: `Stage.check(sentence, reads, 'what I saw', { judged: true })`.
+And one more judged check for the texture: does the film read as the texture you declared?
 The detail is what a reader would see, not what you meant. A failure goes back to the stage that owns it, the pose in `Keys` or
 the frame in `Beats`, and the stages after it run again. **A critique that finds nothing was not
 run.**
@@ -230,8 +268,8 @@ and the beat sheet from this render agrees with the one you critiqued.
 1. **`output.webp`**, the animation, written by `Motion.save('output.webp')`. Not the poster still
    and not the last file in `artifacts/`: those are the stages.
 2. **`artwork.js`**, which rebuilds the animation from the top.
-3. **`animation.md`**: the beats table (frame, sentence); the route and why; the keys and the ease on
-   each; a table of every check with its measured value and pass or fail; what the critique changed;
+3. **`animation.md`**: the beats table (frame, sentence), with the stressed beat and the declared
+   texture; the route and why; the keys and the ease on each; a table of every check with its measured value and pass or fail; what the critique changed;
    and whether there is an `output.svg`, and if not, why not.
 
 ---

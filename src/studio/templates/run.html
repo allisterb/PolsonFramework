@@ -217,7 +217,7 @@
     'run.start': 'run started', 'run.begin': 'run started', 'run.end': 'run ended',
     'stage.begin': 'stage', 'stage.end': 'stage ended', 'stage.continue': 'stage continues',
     'note': 'note', 'script.start': 'executing', 'script.ok': 'executed', 'script.error': 'failed',
-    'render': 'rendered', 'inspect': 'looked', 'artifact.read': 'read back',
+    'render': 'rendered', 'export': 'exported', 'inspect': 'looked', 'artifact.read': 'read back',
     'thinking': 'thinking', 'text': 'said', 'tool.call': 'tool',
     'question.open': 'asking', 'question.closed': 'answered', 'message': 'director',
     'stream.lag': 'gap', 'stream.truncated': 'earlier events not kept',
@@ -473,11 +473,18 @@
       const made = pass(key);
       if (event.script) made.script = event.script;
 
-      // A script writing both a raster and an SVG produces two renders for one pass. The raster is
-      // the one to show, so it wins whenever it arrives; the SVG only fills an empty slot.
-      if (kind === 'render' && event.artifact && (!made.artifact || event.format !== 'svg')) {
-        made.artifact = event.artifact;
-        made.v = n;
+      // One pass can render several things: a raster and an SVG, and with Motion an animation, its
+      // contact sheet and the still the script returned. `shows` ranks them; a later render of equal
+      // rank wins. The sheet is also kept on its own, so the pane can show it beside the animation.
+      if (kind === 'render' && event.artifact) {
+        if (event.motion === 'sheet') { made.sheet = event.artifact; made.sheetV = n; }
+        const rank = shows(event);
+        if (!made.artifact || rank >= made.rank) {
+          made.artifact = event.artifact;
+          made.rank = rank;
+          made.v = n;
+          made.note = motionNote(event);
+        }
       }
 
       if (made.artifact || made.script) {
@@ -827,6 +834,29 @@
   // the code named beside it.
   let request = 0;
 
+  // Which render a pass shows when it made more than one. An animation is what the pass was for; an
+  // animated SVG is the same piece in vector, and the raster wins the tie as it does for stills; a
+  // still raster is the usual picture; a contact sheet is the agent's view of an animation and shows
+  // only when nothing else did; a static SVG only fills an empty slot.
+  function shows(event) {
+    if (event.motion === 'animation') return 4;
+    if (event.motion === 'svg') return 3;
+    if (event.motion === 'sheet') return 1;
+    return (event.format || '').toLowerCase() === 'svg' ? 0 : 2;
+  }
+
+  // What a motion render is, beside its path: an animation's length and frames, a sheet's cells.
+  // Empty for a still. Never NaN or undefined in front of a reader.
+  function motionNote(e) {
+    const count = (v, unit) => Number.isFinite(Number(v)) && v !== null && v !== '' ? `${Number(v)} ${unit}` : '';
+    const secs = Number(e.durationMs) / 1000;
+    const len = Number.isFinite(secs) && secs > 0 ? `${secs.toFixed(1)}s` : '';
+    if (e.motion === 'animation') return ['\u25B6 ' + (len || 'animation'), count(e.frames, 'frames')].filter(Boolean).join(' \u00B7 ');
+    if (e.motion === 'svg') return ['\u25B6 ' + (len || 'animation'), 'animated svg'].join(' \u00B7 ');
+    if (e.motion === 'sheet') return ['contact sheet', count(e.cells, 'cells')].filter(Boolean).join(' \u00B7 ');
+    return '';
+  }
+
   function keyOf(kind, event) {
     if (event.execution) return event.execution;
     // RenderSvg writes a render with no execution of its own, so the artifact path is its identity.
@@ -835,7 +865,7 @@
 
   function pass(key) {
     let made = passes.get(key);
-    if (!made) { made = { artifact: null, script: null, v: 0 }; passes.set(key, made); }
+    if (!made) { made = { artifact: null, script: null, v: 0, rank: -1, sheet: null, sheetV: 0 }; passes.set(key, made); }
     return made;
   }
 
@@ -880,9 +910,16 @@
         `in <code>artifacts/</code>.</span>`
       : esc(made.artifact);
 
+    // An animated WebP or SVG plays in a plain <img>, so the animation needs no player. Its contact
+    // sheet, when the pass made one, sits underneath: the sheet is what the agent looked at.
+    const note = made.note ? ` <span class="hint">${esc(made.note)}</span>` : '';
+    const sheet = made.sheet && made.sheet !== made.artifact
+      ? `<img class="sheet" src="${base}/runs/${runId}/artifact/${made.sheet}?v=${made.sheetV}" alt="${esc(made.sheet)}">` +
+        `<figcaption>${esc(made.sheet)} <span class="hint">contact sheet</span></figcaption>`
+      : '';
     render.innerHTML = made.artifact
       ? `<img src="${base}/runs/${runId}/artifact/${made.artifact}?v=${made.v}" alt="${esc(made.artifact)}">` +
-        `<figcaption>${caption}</figcaption>`
+        `<figcaption>${caption}${note}</figcaption>` + sheet
       : '<p class="empty">This pass rendered nothing.</p>';
 
     if (made.script) openScript(made.script);
@@ -1000,7 +1037,8 @@
 
   function detail(kind, e) {
     if (kind === 'note' || kind === 'message') return e.message || e.text || '';
-    if (kind === 'render' || kind === 'artifact.read') return e.artifact || '';
+    if (kind === 'render') return (e.artifact || '') + (motionNote(e) ? '  ' + motionNote(e) : '');
+    if (kind === 'export' || kind === 'artifact.read') return e.artifact || '';
     if (kind === 'inspect') return Object.entries(e.probes || {}).map(([k, v]) => `${k} ${v}`).join(', ');
     if (kind === 'tool.call') return toolDetail(e);
     if (kind === 'script.error') return e.error || e.script || '';
@@ -1269,7 +1307,7 @@
     const buttons = d.formats.map((f) =>
       `<a class="fmt" href="${base}/runs/${runId}/artifact/${f.path}" ` +
       `data-src="${esc(f.path)}" data-format="${esc(f.format)}">` +
-      `${esc(f.format)} · ${size(f.bytes)}</a>`).join('');
+      `${f.animated ? '\u25B6 ' : ''}${esc(f.format)} · ${size(f.bytes)}</a>`).join('');
 
     // Only a *recorded* ending is asserted. `unknown` says nothing rather than implying the run was
     // cut short — see `run_state`, and the archived runs that predate `run.end` entirely.

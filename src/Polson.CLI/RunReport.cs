@@ -90,8 +90,11 @@ internal static class RunReport
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var rendered = events.Where(e => Type(e) == "render")
-            .Select(e => e["artifact"]?.GetValue<string>() ?? "")
+        // An export (a Synfig .sif from a motion composition) is not a render, but the engine wrote
+        // it and the pictures beside it, so none of them is unexplained.
+        var rendered = events.Where(e => Type(e) is "render" or "export")
+            .SelectMany(e => new[] { e["artifact"]?.GetValue<string>() ?? "" }
+                .Concat(e["pictures"] is JsonArray pictures ? pictures.Select(p => p?.GetValue<string>() ?? "") : []))
             .Where(s => s.Length > 0)
             .Select(s => Path.GetFileName(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)

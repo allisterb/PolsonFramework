@@ -221,6 +221,7 @@ public sealed class RunEventLog : Runtime
             case int i: writer.WriteNumberValue(i); break;
             case long l: writer.WriteNumberValue(l); break;
             case double d: writer.WriteNumberValue(d); break;
+            case float f: writer.WriteNumberValue(f); break;
 
             case IReadOnlyDictionary<string, int> tally:
                 writer.WriteStartObject();
@@ -238,6 +239,14 @@ public sealed class RunEventLog : Runtime
                     WriteValue(writer, v);
                 }
                 writer.WriteEndObject();
+                break;
+
+            // A list is an array. Before this case a List<string> of hrefs and a float duration both
+            // fell through to ToString() and were written as a type name and a string.
+            case System.Collections.IEnumerable items:
+                writer.WriteStartArray();
+                foreach (var item in items) WriteValue(writer, item);
+                writer.WriteEndArray();
                 break;
 
             default: writer.WriteStringValue(value.ToString()); break;

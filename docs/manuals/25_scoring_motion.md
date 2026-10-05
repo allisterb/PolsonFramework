@@ -308,3 +308,151 @@ comp.render(1);
 
 It still renders by seeking, so §4 holds unchanged: capture with `comp.capture(...)`, look at the sheet,
 not at a movie. See `polson://sdk/core/Motion` for the calls.
+
+## 10. A Character Beat, Keyed and Checked
+
+> **Implemented by**: `Motion.nodes.animated(...)`, `node.at(t)`, `comp.drawn(...)`, `Drawing.createMannequinFigure`, `Drawing.reachLeg`, `Motion.sheet({ indices })`.
+
+§9 lists the routes; this is one of them taken end to end: a figure throwing a ball, built so that every claim about the motion is a measurement. The `animation` workflow runs this method stage by stage.
+
+**Count in frames, not seconds.** A beat at 2.4 s on a 24 fps film is frame 57.6, which no capture holds, and a sheet asked for it refuses. Put every beat on a frame (`frame: 18`) and divide by the rate where a time is wanted. Animators count this way for the same reason: a frame is the unit the eye receives.
+
+**A pose is a row of numbers, and each number is keyed.** Write each key pose as a flat object (`turn`, `lean`, `rShoulder`, ...), then make one `animated` node per field with a small helper. The whole pose at any time is then a lookup, `node.at(t)` for each field, so a check never has to render to know where the arm was.
+
+**The figure is a pure function of those numbers.** `figureAt(v)` builds the mannequin from `v` alone, which is what `comp.drawn` requires (frames arrive in any order) and what lets the checks call the same function the drawing does. Two things belong inside it rather than in the keys:
+
+- **Contacts are solved every frame, not keyed.** A planted foot is a fixed point, and `Drawing.reachLeg` puts the foot on it at whatever the torso is doing. Keyed leg angles would drift off the mark between keys, because interpolated angles do not keep an end point still. `miss` says when a pose asks for more leg than there is.
+- **Anything that leaves the figure is a function of `t`.** The ball rides the palm until the release frame, then flies on a parabola from where the palm was. It is not keyed at all.
+
+> [!IMPORTANT]
+> **Angles interpolate as plain numbers, so the winding is yours to choose.** Between a key at `-130` and one at `10` the arm passes through `-60`, up and over: an overhand throw. Write the first key as `230`, the same direction on the page, and the arm passes through `120`, down and under. Both render; only one is the throw you meant. Read the angles between two keys before trusting the move, and when a limb turns the wrong way round, add or subtract 360 on one key.
+
+**Ease per key, by what the key is.** `halt` on an extreme gives slow-in and slow-out on both sides of it. `linear` on a key the motion passes through at speed (the release) keeps it fast. Two identical keys with `halt` hold perfectly still between them.
+
+**Check the motion off the nodes.** Each of these is arithmetic on `figureAt(valuesAt(t))`, and each names the received practice it measures:
+
+| Check | Measured as |
+| :--- | :--- |
+| anticipation | the wind-up moves the lean the opposite way to the throw |
+| arcs | the hand's path through the throw bows off its chord by more than a tenth |
+| slow in, slow out | the first and last per-frame steps of a move are under half its largest |
+| contact | the largest `miss` of either foot over every frame is under a pixel |
+| hold | no field drifts more than half a degree across the hold |
+| silhouette at the extreme | the throwing arm is 80% clear of the torso at the wind-up (Manual 28 §7) |
+
+**Look at the beats, not at the film.** Capture every frame, then `Motion.sheet` with `indices` set to the beat frames: one cell per beat, labelled with its frame and time, which is the drawing to hold against the sentences. A second sheet of evenly spaced frames shows the spacing. Call `Motion.clear()` before capturing again in the same script, or the frames add up.
+
+```javascript
+// A throw: anticipation, action, follow-through, hold. One figure, keyed poses, built every frame.
+const n = Motion.nodes;
+const W = 640, H = 400, FPS = 24, FRAMES = 58, DURATION = (FRAMES - 1) / FPS;   // frames 0..57
+
+// Beats, in frames, each with the sentence it has to say.
+const BEATS = [
+    { name: 'ready',   frame: 0,  says: 'she stands, weight even, ball in her right hand' },
+    { name: 'wind-up', frame: 11, says: 'she leans back and cocks the arm behind her head' },
+    { name: 'throw',   frame: 18, says: 'she drives forward and whips the arm through' },
+    { name: 'follow',  frame: 25, says: 'the arm carries on down and across her body' },
+    { name: 'hold',    frame: 43, says: 'she holds, watching the ball go' },
+    { name: 'settle',  frame: 57, says: 'she straightens a little' }
+];
+
+// One pose per beat, as flat numbers so each can be keyed.
+const KEYS = [
+    { frame: 0,  ease: 'halt',   pose: { turn: 0,   lean: 0,   rShoulder: 100,  rElbow: -30, lShoulder: 80,  lElbow: 20 } },
+    { frame: 11, ease: 'halt',   pose: { turn: -28, lean: -12, rShoulder: -130, rElbow: -60, lShoulder: -15, lElbow: 10 } },
+    { frame: 18, ease: 'linear', pose: { turn: 32,  lean: 16,  rShoulder: 10,   rElbow: 5,   lShoulder: 150, lElbow: -40 } },
+    { frame: 25, ease: 'halt',   pose: { turn: 36,  lean: 20,  rShoulder: 120,  rElbow: 20,  lShoulder: 160, lElbow: -50 } },
+    { frame: 43, ease: 'halt',   pose: { turn: 36,  lean: 20,  rShoulder: 120,  rElbow: 20,  lShoulder: 160, lElbow: -50 } },
+    { frame: 57, ease: 'halt',   pose: { turn: 20,  lean: 10,  rShoulder: 105,  rElbow: 10,  lShoulder: 120, lElbow: -30 } }
+];
+
+// One node per field, so the whole pose is keyed and any time is a lookup.
+function keyed(keys) {
+    const out = {};
+    for (const field of Object.keys(keys[0].pose))
+        out[field] = n.animated('real', keys.map(k => ({ time: k.frame / FPS, value: k.pose[field], ease: k.ease })));
+    return out;
+}
+const POSE = keyed(KEYS);
+const valuesAt = t => Object.fromEntries(Object.entries(POSE).map(([k, node]) => [k, node.at(t)]));
+
+// The feet stand on fixed marks and are solved onto them every frame.
+const FLOOR = 360, FOOT_BACK = { x: 245, y: FLOOR }, FOOT_FRONT = { x: 300, y: FLOOR };
+
+// The figure at one set of values. Pure, so frames can be built in any order.
+function figureAt(v) {
+    const torso = { lineOfAction: { shape: 'C', turnDeg: v.turn, leanDeg: v.lean },
+                    rightArm: { shoulderDeg: v.rShoulder, elbowDeg: v.rElbow },
+                    leftArm: { shoulderDeg: v.lShoulder, elbowDeg: v.lElbow } };
+    const first = Drawing.createMannequinFigure(270, 70, 300, { pose: torso });
+    const back = Drawing.reachLeg(first, 'left', FOOT_BACK, { to: 'foot', bend: 'right' });
+    const front = Drawing.reachLeg(first, 'right', FOOT_FRONT, { to: 'foot', bend: 'right' });
+    const fig = Drawing.createMannequinFigure(270, 70, 300, { pose: { ...torso, leftLeg: back.pose, rightLeg: front.pose } });
+    return { fig, legs: [back, front] };
+}
+
+// The ball rides the palm until the release, then flies from where the palm was. A function of t, not a key.
+const RELEASE = 18 / FPS;
+const releaseAt = figureAt(valuesAt(RELEASE)).fig.rightArm.hand;
+const ballAt = (t, hand) => {
+    if (t <= RELEASE) return hand;
+    const s = t - RELEASE;
+    return { x: releaseAt.x + 520 * s, y: releaseAt.y - 260 * s + 300 * s * s };
+};
+
+// The checks, off the nodes rather than off the picture.
+const at = t => valuesAt(t);
+const hand = f => figureAt(at(f / FPS)).fig.rightArm.hand;
+
+const start = at(0), wind = at(11 / FPS), act = at(18 / FPS);
+Stage.check('the wind-up moves against the throw', Math.sign(wind.lean - start.lean) !== Math.sign(act.lean - start.lean),
+    `lean ${start.lean.toFixed(1)} -> ${wind.lean.toFixed(1)} -> ${act.lean.toFixed(1)}`);
+
+const path = [];
+for (let f = 11; f <= 18; f++) path.push(hand(f));
+const a = path[0], b = path[path.length - 1], chord = Math.hypot(b.x - a.x, b.y - a.y);
+const bow = Math.max(...path.map(p => Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / chord));
+Stage.check('the throwing hand travels on an arc', bow / chord > 0.1, `bow ${(bow / chord).toFixed(2)} of a ${chord.toFixed(0)}px chord`);
+
+const steps = [];
+for (let f = 0; f < 11; f++) { const p = hand(f), q = hand(f + 1); steps.push(Math.hypot(q.x - p.x, q.y - p.y)); }
+const top = Math.max(...steps), first = steps[0], last = steps[steps.length - 1];
+Stage.check('the wind-up eases in and out', first < 0.5 * top && last < 0.5 * top,
+    `first ${first.toFixed(1)}, largest ${top.toFixed(1)}, last ${last.toFixed(1)} px a frame`);
+
+let worst = 0, where = 0;
+for (let f = 0; f < FRAMES; f++) for (const leg of figureAt(at(f / FPS)).legs) if (leg.miss > worst) { worst = leg.miss; where = f; }
+Stage.check('the feet stay planted', worst < 1, `largest miss ${worst.toFixed(2)}px, at frame ${where}`);
+
+const h0 = at(25 / FPS), h1 = at(43 / FPS);
+const drift = Math.max(...Object.keys(h0).map(k => Math.abs(h0[k] - h1[k])));
+Stage.check('the hold holds', drift < 0.5, `largest drift ${drift.toFixed(2)} deg over frames 25-43`);
+
+const geo = Drawing.createFigureGeometry(figureAt(wind).fig);
+const clear = geo.groups.rightArm.subtract(geo.groups.torso).area / geo.groups.rightArm.area;
+Stage.check('the wind-up arm reads in silhouette', clear > 0.8, `${(clear * 100).toFixed(0)}% clear of the torso`);
+
+// The film: the composition draws the figure each frame from the keyed values.
+const comp = Motion.composition({ width: W, height: H, fps: FPS, duration: DURATION });
+comp.fill({ color: '#f2efe8' });
+comp.outline({ width: 3, color: '#15151a', points: [[40, FLOOR], [600, FLOOR]] });
+comp.drawn((ctx, v, t) => {
+    const { fig } = figureAt(v);
+    ctx.fillStyle = '#d9d2c3';
+    ctx.fill(Drawing.createFigureGeometry(fig).silhouette);
+    Drawing.drawGestureContour(ctx, fig, { strokeColor: '#15151a', stretchWidth: 2.4, squashWidth: 1.6 });
+    const ball = ballAt(t, fig.rightArm.hand);
+    ctx.fillStyle = '#c9553d';
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, 9, 0, Math.PI * 2); ctx.fill();
+}, { values: POSE, desc: 'thrower' });
+
+// One cell per beat is the drawing to hold against the sentences; the film is what ships.
+comp.capture({ fps: FPS });
+Motion.sheet('artifacts/manual25-throw-beats.png', { indices: BEATS.map(b => b.frame), cols: 6, scale: 0.4, fps: FPS });
+Motion.save('artifacts/manual25-throw.webp', { fps: FPS });
+log(`${Motion.count} frames, ${BEATS.length} beats`);
+comp.render(11 / FPS);
+```
+
+The route is the mannequin's, so the deliverable is raster: `comp.toSvg()` refuses a `drawn` layer, because SMIL cannot run a script. A piece that has to ship as SVG is keyed on Snap elements or on layers the model draws itself (§8, §9), and gives up the constructed figure to do it.

@@ -653,7 +653,7 @@ public partial class DrawingMcpTools
                 }
             }
 
-            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q, executionId, render ?? true), cancellationToken);
+            var runTask = Task.Run(() => Engine.Execute(script, width ?? 800, height ?? 600, session, fmt, q, executionId, render ?? true, scriptPath), cancellationToken);
             var result = await RunWithHeartbeatAsync(runTask, progress, HeartbeatInterval, cancellationToken);
 
             // outFile names a file the caller will open next. A script that rendered nothing used to
@@ -670,6 +670,18 @@ public partial class DrawingMcpTools
                     ["script"] = scriptPath,
                     ["outFile"] = outFile,
                 });
+            }
+
+            // `Motion.save('output.webp')` writes the animation during the script, and `outFile` is
+            // written after it. Given the same path, the still the script returned would replace the
+            // animation, the one deliverable an animation run has, with nothing to say it happened.
+            if (!string.IsNullOrWhiteSpace(outFile) && result.ImageBytes is { Length: > 0 }
+                && result.MotionFiles.Any(f => string.Equals(Path.GetFullPath(f), ResolveOutputPath(outFile, nameof(outFile)), StringComparison.OrdinalIgnoreCase)))
+            {
+                result.Logs.Add(
+                    $"[WARN] outFile '{outFile}' is the file Motion wrote in this script, so the still was not written over it. "
+                    + "The animation is the deliverable; give the still its own name, e.g. outFile: 'artifacts/poster.webp'.");
+                result.ImageBytes = null;
             }
 
             if (!string.IsNullOrWhiteSpace(outFile) && result.ImageBytes != null && result.ImageBytes.Length > 0)

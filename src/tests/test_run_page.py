@@ -37,19 +37,24 @@ RUN_HTML = Path(__file__).resolve().parents[1] / "studio" / "templates" / "run.h
 
 # The harness pulls `detail` out of the template by its own source, so the test cannot drift from a
 # copy: editing the branch in `run.html` is what this reads. `toolDetail` is stubbed rather than
-# extracted - it has its own dependencies, and `tool.call` is not what this is about.
-HARNESS = """
+# extracted - it has its own dependencies, and `tool.call` is not what this is about. `motionNote` is
+# extracted, because the render rows are what it is for.
+EXTRACT = """
 const fs = require('fs');
-const html = fs.readFileSync(process.argv[2], 'utf8');
+const html = fs.readFileSync(process.argv[2], 'utf8').split(String.fromCharCode(13)).join('');
 
-const open = html.indexOf('  function detail(kind, e) {');
-if (open < 0) { console.error('detail() not found in run.html'); process.exit(2); }
-const close = html.indexOf('\\n  }\\n', open);
-if (close < 0) { console.error('end of detail() not found'); process.exit(2); }
-const source = html.slice(open, close + 4);
+function extract(name) {
+  const open = html.indexOf('  function ' + name + '(');
+  if (open < 0) { console.error(name + '() not found in run.html'); process.exit(2); }
+  const close = html.indexOf('\\n  }\\n', open);
+  if (close < 0) { console.error('end of ' + name + '() not found'); process.exit(2); }
+  return html.slice(open, close + 4);
+}
+"""
 
+HARNESS = EXTRACT + """
 const toolDetail = () => '(tool)';
-const make = new Function('toolDetail', source + '; return detail;');
+const make = new Function('toolDetail', extract('motionNote') + extract('detail') + '; return detail;');
 const detail = make(toolDetail);
 
 const cases = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
@@ -111,6 +116,22 @@ CASES: list[tuple[str, dict, str | None]] = [
     ("a render", {"type": "render", "script": "scripts/0001.js",
                   "artifact": "artifacts/board.webp", "format": "webp", "bytes": 51201},
      "artifacts/board.webp"),
+    # JsDrawingEngine.cs: the Motion recorder, for Motion.save, Motion.sheet and comp.saveSvg.
+    ("an animation", {"type": "render", "script": "scripts/0002.js", "artifact": "artifacts/walk.webp",
+                      "format": "webp", "bytes": 80211, "motion": "animation", "frames": 25,
+                      "storedFrames": 22, "durationMs": 2000.0, "width": 480, "height": 270},
+     "2.0s \u00b7 25 frames"),
+    ("a contact sheet", {"type": "render", "artifact": "artifacts/walk-sheet.png", "format": "png",
+                         "motion": "sheet", "cells": 6, "indices": [0, 5, 10, 14, 19, 24]},
+     "contact sheet \u00b7 6 cells"),
+    ("an animated svg", {"type": "render", "artifact": "artifacts/bars.svg", "format": "svg",
+                         "motion": "svg", "durationMs": 1500, "width": 480, "height": 270},
+     "1.5s \u00b7 animated svg"),
+    ("an animation with no length", {"type": "render", "artifact": "a.webp", "motion": "animation"},
+     "animation"),
+    ("an export", {"type": "export", "artifact": "artifacts/walk.sif", "format": "sif",
+                   "motion": "sif", "pictures": ["artifacts/walk-image0.png"]},
+     "artifacts/walk.sif"),
     ("a script error", {"type": "script.error", "error": "ReferenceError: run is not defined"},
      "ReferenceError"),
     ("an inspect", {"type": "inspect", "probes": {"absent": 2}}, "absent 2"),
@@ -155,7 +176,7 @@ class DetailRendererTests(unittest.TestCase):
 
             done = subprocess.run(
                 [_node(), str(harness), str(RUN_HTML), str(cases)],
-                capture_output=True, text=True, timeout=60)
+                capture_output=True, text=True, encoding="utf-8", timeout=60)
 
         if done.returncode != 0:
             raise AssertionError(f"harness failed ({done.returncode}): {done.stderr.strip()}")
@@ -193,6 +214,55 @@ class DetailRendererTests(unittest.TestCase):
     def test_an_incomplete_run_is_not_reported_as_completed(self) -> None:
         """The defect this audit found: `run.py` carries `status`, never `reason`."""
         self.assertNotEqual("completed", self.rendered["orchestrator run ended incomplete"])
+
+
+RANK_HARNESS = EXTRACT + """
+const shows = new Function(extract('shows') + '; return shows;')();
+const events = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+process.stdout.write(JSON.stringify(events.map(shows)));
+"""
+
+
+@unittest.skipIf(_node() is None, "node is not on PATH; the run page's JS cannot be exercised")
+class PassRankTests(unittest.TestCase):
+    """Which render a pass shows when one execution made several: `shows()` in `run.html`.
+
+    With Motion one script can write an animation, its contact sheet and the still it returned, in
+    that order. Before the ranking the still won because it came last, and the animation the pass was
+    for never reached the pane.
+    """
+
+    def rank(self, *events: dict) -> list[int]:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            harness = Path(tmp) / "harness.js"
+            cases = Path(tmp) / "events.json"
+            harness.write_text(textwrap.dedent(RANK_HARNESS), encoding="utf-8")
+            cases.write_text(json.dumps(list(events)), encoding="utf-8")
+            done = subprocess.run([_node(), str(harness), str(RUN_HTML), str(cases)],
+                                  capture_output=True, text=True, encoding="utf-8", timeout=60)
+        if done.returncode != 0:
+            raise AssertionError(f"harness failed ({done.returncode}): {done.stderr.strip()}")
+        return json.loads(done.stdout)
+
+    def test_animation_outranks_still_outranks_sheet_outranks_static_svg(self) -> None:
+        animation, still, sheet, svg = self.rank(
+            {"format": "webp", "motion": "animation"},
+            {"format": "webp"},
+            {"format": "png", "motion": "sheet"},
+            {"format": "svg"})
+        self.assertGreater(animation, still)
+        self.assertGreater(still, sheet)
+        self.assertGreater(sheet, svg)
+
+    def test_an_animated_svg_loses_to_the_raster_and_beats_a_still(self) -> None:
+        """One script writing `output.webp` and `output.svg` should show the WebP, as stills do."""
+        animated_svg, animation, still = self.rank({"format": "svg", "motion": "svg"},
+                                                   {"format": "webp", "motion": "animation"},
+                                                   {"format": "webp"})
+        self.assertGreater(animation, animated_svg)
+        self.assertGreater(animated_svg, still)
 
 
 class ProducerCollisionTests(unittest.TestCase):

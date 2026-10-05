@@ -140,6 +140,7 @@ DELIVERABLES: tuple[tuple[str, str], ...] = (
     ("materials.md", "the materials requisitioned, and what each was for"),
     ("turns.md", "the turn-by-turn record the drawing workflow keeps"),
     ("sketch.md", "the scene in verbs, and every check the sketch was held to"),
+    ("animation.md", "the beats in frames, the keys, and every check the motion was held to"),
 )
 
 #: The same list as a set, for the membership test the route makes.
@@ -626,8 +627,14 @@ def final_render(run: Run) -> dict[str, Any] | None:
 
     **One entry, not one per format.** A raster and a vector of the same artwork are one deliverable
     in two forms; listing them as two rows invites a reader to think the run produced two pieces.
+
+    **Motion changes "the last of each format" in two ways.** A contact sheet (`motion: sheet`) is the
+    agent's view of an animation, never the piece, so it is skipped. And an animation is written
+    *during* a script while an `outFile` still is written after it, so the still would win "latest
+    webp" from the same execution: a moving render therefore beats a still of its format whenever
+    it came, and only a later moving render replaces it.
     """
-    latest: dict[str, str] = {}
+    latest: dict[str, tuple[bool, dict[str, Any]]] = {}
     for event in read_events(run.project.server_events):
         if event.get("type") != "render":
             continue
@@ -635,13 +642,20 @@ def final_render(run: Run) -> dict[str, Any] | None:
         # outlive any one run, so without this an observation shows the previous run's picture.
         if run.since and (event.get("ts") or "") < run.since:
             continue
+        motion = (event.get("motion") or "").lower()
+        if motion == "sheet":
+            continue
         fmt, artifact = (event.get("format") or "").lower(), event.get("artifact")
         if fmt and artifact:
-            latest[fmt] = artifact                  # later events win, so this ends up the last
+            moving = motion in ("animation", "svg")
+            held = latest.get(fmt)
+            if held is None or moving or not held[0]:
+                latest[fmt] = (moving, event)       # later events win within the same kind
 
     formats = []
     for fmt in sorted(latest, key=lambda f: (FORMAT_ORDER.index(f) if f in FORMAT_ORDER else 99, f)):
-        artifact = latest[fmt]
+        moving, event = latest[fmt]
+        artifact = event["artifact"]
         if Path(artifact).suffix.lower() not in ARTIFACT_SUFFIXES:
             # The artifact route would refuse it, so offering it here would be a link to a 404.
             continue
@@ -650,7 +664,12 @@ def final_render(run: Run) -> dict[str, Any] | None:
         except StudioError:
             continue
         if path.is_file():
-            formats.append({"format": fmt, "path": artifact, "bytes": path.stat().st_size})
+            entry: dict[str, Any] = {"format": fmt, "path": artifact, "bytes": path.stat().st_size}
+            if moving:
+                entry["animated"] = True
+                if isinstance(event.get("durationMs"), (int, float)):
+                    entry["durationMs"] = event["durationMs"]
+            formats.append(entry)
 
     if not formats:
         return None

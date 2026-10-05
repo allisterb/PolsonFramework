@@ -1514,6 +1514,24 @@ public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// The animation workflow's deliverable is written by <c>Motion.save</c>, during the script. An
+    /// <c>outFile</c> of the same name would be the still written after it, so the instructions have to
+    /// say which one ships, and that the other must be named something else.
+    /// </summary>
+    [Fact]
+    public void TestTheAnimationWorkflowShipsWhatMotionSaves()
+    {
+        Assert.True(ProjectGenerator.Create(Options("out-animation", o => o.Workflow = "animation")));
+
+        var instructions = File.ReadAllText(Path.Combine(root, "out-animation", "GEMINI.md"));
+
+        Assert.Contains("Motion.save('output.webp')", instructions, StringComparison.Ordinal);
+        Assert.Contains("Do not also pass `outFile: 'output.webp'`", instructions, StringComparison.Ordinal);
+        Assert.Contains("polson://manual/25", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{", instructions, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Provenance is written while the facts are in front of you, not recalled at the end.
     /// </summary>
     /// <remarks>

@@ -34,7 +34,17 @@ using SkiaSharp;
 public class MotionToolkit : IDisposable
 {
     #region Constructors
-    public MotionToolkit(string? projectRoot = null) => this.projectRoot = projectRoot;
+    /// <param name="projectRoot">Where output paths resolve, and the boundary they may not leave.</param>
+    /// <param name="recorder">
+    /// Told about every file this writes, as <c>(type, fullPath, fields)</c>, so the host can put it in
+    /// the run record. The type is <c>render</c> for anything a viewer can watch and <c>export</c> for a
+    /// file that is not viewable. Optional: without it nothing is recorded.
+    /// </param>
+    public MotionToolkit(string? projectRoot = null, Action<string, string, IReadOnlyDictionary<string, object?>>? recorder = null)
+    {
+        this.projectRoot = projectRoot;
+        this.recorder = recorder;
+    }
     #endregion
 
     #region Fields
@@ -49,6 +59,7 @@ public class MotionToolkit : IDisposable
     private const long MaxRetainedPixels = 600_000_000L;
 
     private readonly string? projectRoot;
+    private readonly Action<string, string, IReadOnlyDictionary<string, object?>>? recorder;
     private readonly List<SKBitmap> frames = [];
     private long retainedPixels;
     #endregion
@@ -185,6 +196,18 @@ public class MotionToolkit : IDisposable
             if (codec != null) stored = codec.FrameCount;
         }
 
+        Record("render", full, new()
+        {
+            ["motion"] = "animation",
+            ["format"] = "webp",
+            ["bytes"] = (long)bytes.Length,
+            ["frames"] = frames.Count,
+            ["storedFrames"] = stored,
+            ["durationMs"] = frameMs * frames.Count,
+            ["width"] = frames[0].Width,
+            ["height"] = frames[0].Height
+        });
+
         return new Dictionary<string, object?>
         {
             ["path"] = filePath,
@@ -274,6 +297,17 @@ public class MotionToolkit : IDisposable
         var bytes = SkiaImageEncoder.Encode(sheet, format, quality);
         File.WriteAllBytes(full, bytes);
 
+        Record("render", full, new()
+        {
+            ["motion"] = "sheet",
+            ["format"] = format.ToLowerInvariant() is "jpg" ? "jpeg" : format.ToLowerInvariant(),
+            ["bytes"] = (long)bytes.Length,
+            ["cells"] = picked.Count,
+            ["indices"] = picked.ConvertAll(i => (object?)i),
+            ["width"] = sheetW,
+            ["height"] = sheetH
+        });
+
         return new Dictionary<string, object?>
         {
             ["path"] = filePath,
@@ -313,6 +347,14 @@ public class MotionToolkit : IDisposable
             picked.Add((int)MathF.Round(i * (frames.Count - 1) / (float)(count - 1)));
 
         return picked;
+    }
+
+    /// <summary>Tells the host about a file just written. Never throws: a record is not worth a failed script.</summary>
+    internal void Record(string type, string fullPath, Dictionary<string, object?> fields)
+    {
+        if (recorder is null) return;
+        try { recorder(type, fullPath, fields); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Motion: recording {fullPath} failed: {ex.Message}"); }
     }
 
     public void Dispose()

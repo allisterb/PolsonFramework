@@ -473,7 +473,18 @@ public sealed class MotionComposition : MotionLayerList
         var svg = ToSvg(options);
         var full = ProjectPath.Resolve(projectRoot, filePath, nameof(filePath), "Write to");
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-        File.WriteAllText(full, svg, new UTF8Encoding(false));
+        var bytes = new UTF8Encoding(false).GetBytes(svg);
+        File.WriteAllBytes(full, bytes);
+
+        motion?.Record("render", full, new()
+        {
+            ["motion"] = "svg",
+            ["format"] = "svg",
+            ["bytes"] = (long)bytes.Length,
+            ["durationMs"] = Duration * 1000,
+            ["width"] = Width,
+            ["height"] = Height
+        });
         return full;
     }
 
@@ -496,7 +507,18 @@ public sealed class MotionComposition : MotionLayerList
         var xml = writer.Write();
         Directory.CreateDirectory(dir);
         foreach (var (name, png) in writer.Pictures) File.WriteAllBytes(Path.Combine(dir, name), png);
-        File.WriteAllText(full, xml, new UTF8Encoding(false));
+        var bytes = new UTF8Encoding(false).GetBytes(xml);
+        File.WriteAllBytes(full, bytes);
+
+        // Not a render: nothing in a browser plays a .sif. Recorded as an export so the file the run
+        // left behind is still accounted for, pictures included.
+        motion?.Record("export", full, new()
+        {
+            ["motion"] = "sif",
+            ["format"] = "sif",
+            ["bytes"] = (long)bytes.Length,
+            ["pictures"] = writer.Pictures.Select(p => (object?)Path.Combine(dir, p.Name)).ToList()
+        });
         return full;
     }
 

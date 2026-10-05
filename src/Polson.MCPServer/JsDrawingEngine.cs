@@ -108,8 +108,8 @@ public partial class JsDrawingEngine : Runtime
     
     #region Methods
     /// <summary>Synchronous entry point, for callers with no async context.</summary>
-    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, string? executionId = null, bool render = true) =>
-        ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality, default, executionId, render).GetAwaiter().GetResult();
+    public DrawingExecutionResult Execute(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, string? executionId = null, bool render = true, string? scriptPath = null) =>
+        ExecuteAsync(jsScript, defaultWidth, defaultHeight, session, format, quality, default, executionId, render, scriptPath).GetAwaiter().GetResult();
 
     /// <summary>
     /// Rasterises a returned paper at <b>its own</b> size, falling back to the default viewport only
@@ -152,7 +152,7 @@ public partial class JsDrawingEngine : Runtime
     /// what it wants rendered. Scripts with no `await` are executed unwrapped and keep exactly their
     /// previous semantics, including a bare trailing `paper;`.
     /// </remarks>
-    public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default, string? executionId = null, bool render = true)
+    public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default, string? executionId = null, bool render = true, string? scriptPath = null)
     {
         ArgumentNullException.ThrowIfNull(jsScript);
 
@@ -444,7 +444,29 @@ public partial class JsDrawingEngine : Runtime
 
             // SPIKE: frame capture and animated encoding. Holds bitmaps for the life of the
             // execution, so it is disposed with the engine rather than left to the collector.
-            motionToolkit = new MotionToolkit(ProjectRoot);
+            //
+            // Every file it writes is recorded as it is written: an animation, a sheet and an animated
+            // SVG as `render`, which is what the studio shows, and a .sif as `export`. Without this a
+            // director watching an animation run saw only the still the script returned, and the run
+            // report called the animation an unexplained artifact. The stage is read at call time,
+            // because a script may declare a new one between two saves.
+            var events = Events;
+            motionToolkit = new MotionToolkit(ProjectRoot, (type, fullPath, fields) =>
+            {
+                result.MotionFiles.Add(fullPath);
+                if (events is null) return;
+
+                var record = new Dictionary<string, object?>
+                {
+                    ["script"] = scriptPath,
+                    ["artifact"] = events.Relativize(fullPath)
+                };
+                foreach (var (key, value) in fields)
+                    record[key] = key == "pictures" && value is IEnumerable<object?> paths
+                        ? paths.Select(p => (object?)events.Relativize(p as string)).ToList()
+                        : value;
+                events.Append(type, session?.Stage, executionId, record);
+            });
             engine.SetValue("Motion", motionToolkit);
 
             // Cloud asset requisition. Registered even when disabled so scripts can branch on the

@@ -314,6 +314,27 @@ public class RunReportTests : TestsRuntime, IDisposable
             (report["artifactsNoRenderProduced"] as JsonArray)!.Select(a => a?.ToString()));
     }
 
+    /// <summary>
+    /// A Synfig export is not a render, but the engine wrote it and the pictures beside it, so none of
+    /// them is unexplained.
+    /// </summary>
+    [Fact]
+    public void TestAnExportAndItsPicturesAreExplained()
+    {
+        Script("0001.js");
+        Artifact("walk.sif");
+        Artifact("walk-image0.png");
+        Events(
+            """{"type":"run.start"}""",
+            """{"type":"script.ok","script":"scripts/0001.js"}""",
+            """{"type":"export","script":"scripts/0001.js","artifact":"artifacts/walk.sif","format":"sif","pictures":["artifacts/walk-image0.png"]}""");
+
+        var unexplained = (Report()["artifactsNoRenderProduced"] as JsonArray)!.Select(a => a?.ToString()).ToArray();
+
+        Assert.DoesNotContain("walk.sif", unexplained);
+        Assert.DoesNotContain("walk-image0.png", unexplained);
+    }
+
     /// <summary>No event log at all is the strongest signal, and stops further guessing.</summary>
     [Fact]
     public void TestAMissingEventLogIsReportedOnItsOwn()

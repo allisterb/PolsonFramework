@@ -596,6 +596,10 @@ internal static class ProjectGenerator
         // further than a rough, with no turns to wait on a director between. Seven stages, each one
         // script and one check, and the figures are built by calls rather than by hand.
         ["sketch_scene"] = 30,
+        // Forty against `sketch_scene`'s thirty: the key poses are that workflow's figure work done
+        // once per beat, and every pass then captures every frame. Frames are cheap (Manual 25 §6)
+        // but a run renders its film three or four times, at draft size and at full size.
+        ["animation"] = 40,
         ["infographic"] = 30,
         // Same allowance as `infographic`: the vector discipline changes what is built, not how long
         // it takes. Two Apollo vector runs finished inside it, the longer at 18.6 minutes.
@@ -1073,8 +1077,9 @@ internal static class ProjectGenerator
     [
         "events", "scripts", "artifacts",
         "findings.md", "critique_log.md", "artwork.js", "output.webp", "output.svg", "output.png",
-        // Workflow deliverables: drawing's turns.md, painting's materials.md, sketch_scene's sketch.md.
-        "turns.md", "materials.md", "sketch.md"
+        // Workflow deliverables: drawing's turns.md, painting's materials.md, sketch_scene's sketch.md,
+        // animation's animation.md.
+        "turns.md", "materials.md", "sketch.md", "animation.md"
     ];
 
     /// <summary>What a clear actually managed to do.</summary>
@@ -1344,6 +1349,10 @@ internal static class ProjectGenerator
         // mood family, staging the camera if the brief implies one. 23 is absent: at sketch size the
         // head's tilt and the look carry the expression, and the instructions name it by URI.
         ["sketch_scene"] = ["28", "24", "09", "20"],
+        // Scoring motion is the method and its §10 is this workflow run end to end; the line of
+        // action and the pose method supply the keys. Composition and staging are left out: one
+        // figure, one action, and the frame is not what is being judged.
+        ["animation"] = ["25", "24", "28"],
         ["painting"] = ["09", "07"],
         ["vector_infographic"] = ["09", "13"],
         ["infographic"] = ["09", "13"],

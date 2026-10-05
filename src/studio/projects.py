@@ -58,6 +58,8 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
     "cover": (),
     # The constructed route through a single scene, from Stanchfield's gesture method. No types.
     "sketch_scene": (),
+    # One action, keyed and checked, delivered as an animated WebP (Manual 25 §10). No types.
+    "animation": (),
     "harness": ("image", "infographic", "logo"),
 }
 

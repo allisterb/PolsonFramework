@@ -1574,6 +1574,43 @@ class DeliverableRouteTests(unittest.TestCase):
         picture = self._picture()
         self.assertEqual([f["path"] for f in picture["formats"]], ["artifacts/final.webp"])
 
+    def test_a_contact_sheet_is_never_the_finished_piece(self):
+        """A sheet is the agent's view of an animation. As the last png it would be shown as the piece."""
+        self._made("output.png")
+        self._made("artifacts/walk-sheet.png")
+        self._render_events(
+            {"type": "render", "ts": "2026-10-05T10:00:00Z", "artifact": "output.png", "format": "png"},
+            {"type": "render", "ts": "2026-10-05T10:01:00Z", "artifact": "artifacts/walk-sheet.png",
+             "format": "png", "motion": "sheet", "cells": 6})
+
+        self.assertEqual([f["path"] for f in self._picture()["formats"]], ["output.png"])
+
+    def test_an_animation_beats_the_still_its_own_script_returned(self):
+        """`Motion.save` writes during the script and `outFile` after it, so the still comes last."""
+        self._made("output.webp")
+        self._made("artifacts/still.webp")
+        self._render_events(
+            {"type": "render", "ts": "2026-10-05T10:00:00Z", "artifact": "output.webp", "format": "webp",
+             "motion": "animation", "frames": 25, "durationMs": 2000.0},
+            {"type": "render", "ts": "2026-10-05T10:00:01Z", "artifact": "artifacts/still.webp",
+             "format": "webp"})
+
+        formats = self._picture()["formats"]
+        self.assertEqual([f["path"] for f in formats], ["output.webp"])
+        self.assertTrue(formats[0]["animated"])
+        self.assertEqual(formats[0]["durationMs"], 2000.0)
+
+    def test_a_later_animation_still_replaces_an_earlier_one(self):
+        self._made("artifacts/draft.webp")
+        self._made("output.webp")
+        self._render_events(
+            {"type": "render", "ts": "2026-10-05T10:00:00Z", "artifact": "artifacts/draft.webp",
+             "format": "webp", "motion": "animation"},
+            {"type": "render", "ts": "2026-10-05T10:05:00Z", "artifact": "output.webp",
+             "format": "webp", "motion": "animation"})
+
+        self.assertEqual([f["path"] for f in self._picture()["formats"]], ["output.webp"])
+
     def test_the_name_is_read_from_the_record_not_from_a_convention(self):
         """Three of the eight workflows prescribe no final filename, so the agent invents one.
 

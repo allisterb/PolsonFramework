@@ -52,6 +52,10 @@ public class DrawingExecutionResult
     [JsonIgnore]
     public string SvgXml { get; set; }
 
+    /// <summary>Full paths of the files <c>Motion</c> wrote during the script, so <c>outFile</c> cannot overwrite one.</summary>
+    [JsonIgnore]
+    public List<string> MotionFiles { get; } = [];
+
     public byte[]? ImageBytes { get; set; }
 
     public string? ImageFilePath { get; set; }

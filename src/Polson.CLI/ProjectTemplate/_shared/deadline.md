@@ -24,6 +24,13 @@ Use that rather than stamping your own start. `Date.now()` and `mina.time()` bot
 you spent reading the brief, the manuals and the SDK reference before it is recorded as zero. It
 understates silently and gives back a number that looks right.
 
+**Read the clock before you cut anything, and believe it over your own sense of time.** An agent's
+feel for elapsed time runs fast. On one sketch run the agent wrote its final report believing it was
+at 29 minutes of 30, after cutting a face, the horizon and a second critique pass. The clock read 11.0,
+and the run's own timestamps agreed with the clock. It then distrusted the figure, and finished with 18
+minutes unused. Read `Stage.elapsedMinutes` at every stage boundary and before you drop anything from the
+plan. When it disagrees with how long the work has felt, the clock is right.
+
 The runtime will also tell you, unprompted, when about three-quarters and then nine-tenths of your
 time is gone. Those notices arrive as `[studio runtime]` lines. Treat them as the studio manager
 putting their head round the door: stop, finish the pass you are on, and move.

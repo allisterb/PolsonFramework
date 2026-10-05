@@ -1652,7 +1652,7 @@ Also accessible via `Skia.Drawing`.
 > | :--- | :--- |
 > | `spineDeg` | leans everything above the pelvis as one rigid piece; positive toward screen right |
 > | `neckDeg` | turns the head about the neck, on top of the lean. The only head control: there is no head turn out of the page |
-> | `lineOfAction` | `{ shape: 'C' \| 'S', turnDeg }`, bends the torso at the waist and the neck (below) |
+> | `lineOfAction` | `{ shape: 'C' \| 'S', turnDeg, leanDeg? }`, bends the torso at the waist and the neck; `leanDeg` leans the whole figure separately (below) |
 > | `leftArm` / `rightArm` | `shoulderDeg` aims the upper arm on the page; **`elbowDeg` swings the forearm from the line of the upper arm, signed, so `0` is a straight arm** and the two signs put the hand on opposite sides of it |
 > | `leftLeg` / `rightLeg` | `hipDeg` aims the thigh; **`kneeDeg` swings the shin from the line of the thigh, signed, `0` straight** |
 >
@@ -1669,11 +1669,11 @@ The figure also reports what the pose did to it, which is what a later pass read
 - `figure.bounds` → `Rect` — the extent of every mass, as `{ x, y, width, height, x2, y2, cx, cy }`. Closed-form, so it costs no paths and is safe in a loop.
 - `figure.head.angleDeg` → `number` — how far the head turned: `spineDeg + neckDeg`, plus both bends of a line of action.
 - `figure.ribcage.tiltDeg` → `number` — `shoulderTiltDeg + spineDeg`, plus the waist bend of a line of action. `figure.pelvis.tiltDeg` is the pelvic tilt alone, because the pelvis is the pivot the spine leans over.
-- `figure.lineOfAction` → `{ shape, turnDeg, waistDeg, neckDeg, swing, points, d }` — the torso's centre line, on **every** figure, bent or not. `swing` is how far it bows off its own chord in head units; `d` is SVG path data, so `ctx.stroke(new CanvasPath(figure.lineOfAction.d))` draws it.
+- `figure.lineOfAction` → `{ shape, turnDeg, waistDeg, neckDeg, leanDeg, swing, points, d }` — the torso's centre line, on **every** figure, bent or not. `leanDeg` is where the crown is from the pelvis, in degrees from upright, positive toward screen right, however the lean was set. `swing` is how far it bows off its own chord in head units; `d` is SVG path data, so `ctx.stroke(new CanvasPath(figure.lineOfAction.d))` draws it.
 
 ### The line of action — `pose.lineOfAction`
 
-`pose.lineOfAction: { shape?: 'C' | 'S', turnDeg: number }` bends the torso into a curve. `turnDeg` is how many degrees the line turns end to end, counting both bends, positive toward screen right as `spineDeg` is; `shape` defaults to `'C'`.
+`pose.lineOfAction: { shape?: 'C' | 'S', turnDeg: number, leanDeg?: number }` bends the torso into a curve. `turnDeg` is how many degrees the line turns end to end, counting both bends, positive toward screen right as `spineDeg` is; `shape` defaults to `'C'`. `leanDeg` leans the whole figure, below.
 
 ```javascript
 const recoil = Drawing.createMannequinFigure(200, 40, 380, { pose: {
@@ -1688,6 +1688,20 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 >
 > The bend happens where a torso bends. Head, ribcage and pelvis are solids that keep their shape; the **waist** (hinged at the navel) and the **neck** are where the curve goes, which is Walt Stanchfield's solid-flexible construction (*Drawn to Life*, ch. 25). A **C** bends both the same way and the head ends turned by the whole amount; an **S** bends the neck back against the waist, so the head comes back near upright. The split between the two bends comes from the chain's own segment lengths rather than from a chosen constant, and `waistDeg`/`neckDeg` report what it was.
 >
+> **`leanDeg` sets the lean and leaves the curve to `turnDeg`.** It names where the head ends up from the pelvis, in degrees from upright, and leans the figure there with the **pelvis tilting too**, so the torso's own bend, and so which side stretches, is the curve's alone. `spineDeg` is a different motion: the trunk bending over the pelvis, which the torso reads as a side bend. So a figure leaning into a reach, which is a lean one way and a C the other, is `{ shape: 'C', turnDeg: -30, leanDeg: 25 }`: the right side stretched, the head 25° right of the pelvis, and the swing of a C of −30. Set as `spineDeg: 25` with the same C, the two nearly cancel: measured, the head ends up 6.9° right of the pelvis and the torso has no stretch side at all.
+>
+> ```javascript
+> const reach = Drawing.createMannequinFigure(200, 40, 380, { pose: {
+>     lineOfAction: { shape: 'C', turnDeg: -30, leanDeg: 25 },
+>     rightArm: { shoulderDeg: -24, elbowDeg: 0 },
+>     leftLeg: { hipDeg: 112, kneeDeg: -8 }, rightLeg: { hipDeg: 64, kneeDeg: 14 } } });
+> const side = Drawing.createGestureContour(reach).parts.torso.stretchSide;
+> Stage.check('leans into the reach with the reaching side long', side === 'right' && reach.lineOfAction.leanDeg > 20,
+>     `lean ${reach.lineOfAction.leanDeg.toFixed(1)}, stretch ${side}`);
+> ```
+>
+> The lean holds to the degree whatever `turnDeg` does, so the curve can be pushed in a critique without the head moving. A leg you pose keeps its angle on the page; one you leave unposed hangs straight from its hip, wherever the tilted pelvis put it. Give `leanDeg` or `spineDeg`, not both: both are refused together.
+>
 > **The torso only.** The legs are still posed with `hipDeg` and `kneeDeg`, so a line of action running through the whole figure — down the supporting leg — is the torso's curve continued by hand. An unknown shape, an unknown key, or more than 120 degrees of turning (where the waist and neck fold the figure through itself) is refused by name.
 
 > [!IMPORTANT]
@@ -1697,6 +1711,41 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > const e = Drawing.createMannequinFigure(0, 0, 1000, { pose }).bounds;   // one trial at a nominal height
 > const s = Math.min(panel.width / e.width, panel.height / e.height);     // scaling is linear about the origin
 > const fig = Drawing.createMannequinFigure(panel.x - e.x * s, panel.y - e.y * s, 1000 * s, { pose });
+> ```
+
+- `Drawing.reachArm(figureObj: object, side: 'left' | 'right', point: Point, options?: { to?: 'wrist' | 'palm' | 'hand', bend?: 'down' | 'up' | 'left' | 'right' | 'out' | 'in' })` → `{ pose, shoulderDeg, elbowDeg, reached, miss, at, elbow, to }` — **The arm angles that put a hand on a point.** `pose` is `{ shoulderDeg, elbowDeg }`, ready to go in as `pose.rightArm`; rebuild the figure with it and the hand is there.
+- `Drawing.reachLeg(figureObj: object, side: 'left' | 'right', point: Point, options?: { to?: 'ankle' | 'foot', bend?: 'down' | 'up' | 'left' | 'right' | 'out' | 'in' })` → `{ pose, hipDeg, kneeDeg, reached, miss, at, knee, to }` — **The leg angles that put a foot on a point**, the same solver from the hip. `to: 'foot'` puts the end of the foot there, which is how a figure is planted on a surface that is not level: a heeled deck, a step, a slope.
+
+> [!TIP]
+> **Pose the hands onto the prop, not the prop onto the hands.** A rope under tension is straight from its block through both fists, and two arms posed by angle never put both fists on one line, so the rope ends up kinking at the front hand. Draw the rope first, choose where each hand grips it, and solve:
+>
+> ```javascript
+> const block = { x: 760, y: 200 }, tail = { x: 240, y: 280 };
+> const on = f => ({ x: block.x + (tail.x - block.x) * f, y: block.y + (tail.y - block.y) * f });
+> const torso = { lineOfAction: { shape: 'C', turnDeg: -40, leanDeg: -20 } };
+> let her = Drawing.createMannequinFigure(300, 220, 430, { pose: torso });
+> const front = Drawing.reachArm(her, 'right', on(0.55), { to: 'palm' });
+> const back = Drawing.reachArm(her, 'left', on(0.75), { to: 'palm' });
+> Stage.check('both hands reach the rope', front.reached && back.reached,
+>     `short by ${front.miss.toFixed(1)} and ${back.miss.toFixed(1)}px`);
+> her = Drawing.createMannequinFigure(300, 220, 430, { pose: { ...torso, rightArm: front.pose, leftArm: back.pose } });
+> ```
+>
+> - **`to` is the part of the hand that goes on the point**: `wrist` (the default), `palm`, halfway along the hand and where a rope or a handle passes through a closed fist, or `hand`, the fingertips.
+> - **`bend` picks the elbow's side** of the line from shoulder to point: `down`, `up`, `left` or `right` on the page, or `out` and `in`, away from or toward the body's centre line. Left out, the elbow hangs down, unless the arm is already bent past 30°, when it keeps that side, so solving again after a small change does not flip it. `elbow` says where it went.
+> - **Out of reach is a result**: the arm straightens toward the point, `reached` is false and `miss` is how far short it fell, in pixels. Move the prop, move the figure, or lean it with `leanDeg`. A point too close to fold onto reports the same way.
+> - **Solve last.** The answer is exact for the figure as built: the shoulder is where the torso pose put it and an arm's own pose does not move it. Change the curve or the lean and the shoulder moves, so solve again.
+>
+> **Legs work the same way, with one difference in the default.** Left out, a knee goes `out`, away from the body, which is how a bent knee reads from the front; a figure seen side on bends its knee the way it faces, so say `left` or `right`. The hip moves with the pelvis, and `leanDeg` tilts the pelvis, so set the lean before solving the feet:
+>
+> ```javascript
+> const deck = x => ({ x, y: 600 - (x - 60) * Math.tan(15.6 * Math.PI / 180) });   // heeled, rising to the right
+> const torso = { lineOfAction: { shape: 'C', turnDeg: -40, leanDeg: -20 } };
+> let her = Drawing.createMannequinFigure(300, 160, 430, { pose: torso });
+> const back = Drawing.reachLeg(her, 'left', deck(220), { to: 'foot' });
+> const front = Drawing.reachLeg(her, 'right', deck(430), { to: 'foot' });
+> Stage.check('both feet on the deck', back.reached && front.reached, `short by ${back.miss.toFixed(1)} and ${front.miss.toFixed(1)}px`);
+> her = Drawing.createMannequinFigure(300, 160, 430, { pose: { ...torso, leftLeg: back.pose, rightLeg: front.pose } });
 > ```
 
 - `Drawing.createFigureGeometry(figureObj: object, options?: { padding?: number })` → `{ silhouette: CanvasPath, parts: object, groups: object, partGroups: object, bounds: Rect, padding: number, order: string[] }` — The figure as **geometry** rather than as a drawing. `partGroups` maps each part to its group: `{ leftForearm: 'leftArm', neck: 'torso', … }`.
@@ -1722,8 +1771,8 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 
 - `Drawing.drawMannequinWireframe(ctx: CanvasRenderingContext2D, figureObj: object, options?: { blueLineColor?: string, graphiteColor?: string, lineWidth?: number })` — Renders non-repro blue gesture and joint circle hinges.
 - `Drawing.drawMannequinSolid(ctx: CanvasRenderingContext2D, figureObj: object, options?: { fillColor?: string, shadowColor?: string, strokeColor?: string, strokeWidth?: number })` — Renders shaded volumetric 3D masses (cranial sphere, ribcage egg, pelvic basin, limb cylinders, and box hands/feet).
-- `Drawing.createGestureContour(figureObj: object, options?: { padding?: number })` → `{ stretch: CanvasPath, squash: CanvasPath, parts, padding }` — The figure **lined the way a gesture drawer lines it: straight on the stretch side, curved on the squash side.** `parts` has `leftArm`, `rightArm`, `leftLeg` and `rightLeg`, each `{ stretch, squash, bendDeg, straight }`, and `torso`, `{ stretchSide, leftLength, rightLength, shortfall }`. Open paths: stroke them, do not fill them.
-- `Drawing.drawGestureContour(ctx: CanvasRenderingContext2D, figureObj: object, options?: { padding?: number, strokeColor?: string, strokeWidth?: number, stretchWidth?: number, squashWidth?: number })` → the same — Strokes both and returns what it drew.
+- `Drawing.createGestureContour(figureObj: object, options?: { padding?: number })` → `{ stretch: CanvasPath, squash: CanvasPath, parts, padding }` — The figure **lined the way a gesture drawer lines it: straight on the stretch side, curved on the squash side.** `parts` has `leftArm`, `rightArm`, `leftLeg` and `rightLeg`, each `{ stretch, squash, bendDeg, straight }`, and `torso`, `{ stretch, squash, stretchSide, leftLength, rightLength, shortfall }`. Open paths: stroke them, do not fill them.
+- `Drawing.drawGestureContour(ctx: CanvasRenderingContext2D, figureObj: object, options?: { padding?: number, strokeColor?: string, strokeWidth?: number, stretchWidth?: number, squashWidth?: number })` → the same — Strokes both and returns what it drew. An option it does not take is refused by name.
 
 > [!TIP]
 > **Why it exists: a capsule has the same line on both sides of a bent elbow, and a drawn arm does not.** Walt Stanchfield's rule is that a straight line stands for a stretch and a bent one for a squash (*Drawn to Life*, ch. 13, 19, 24) — so the outside of a bend is two straight lines meeting in an angle at the joint, and the inside is one curve folding into it. `createFigureGeometry` gives the right **mass** and this gives the right **line** over it:
@@ -1735,12 +1784,12 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > log('stretch side: ' + lines.parts.torso.stretchSide);
 > ```
 >
-> **Nothing here is a chosen constant.** The inside of each bend is the joint's own bisector; the squash curve passes through the joint's inner edge at the geometry's radius, so the line sits on the mass; and the torso's stretch is simply its **longer** side, shoulder to hip, with the other side folded inward in proportion to how much shorter it is. A limb bent less than 8° has no inside and is stretched on both sides; a torso whose sides are within 3% has `stretchSide: null`.
+> **Nothing here is a chosen constant.** The inside of each bend is the joint's own bisector; the squash curve passes through the joint's inner edge at the geometry's radius, so the line sits on the mass; and the torso's stretch is simply its **longer** side, with the other side folded inward in proportion to how much shorter it is. Each side runs along the common tangent of the ribcage and the pelvis, the two masses the silhouette is made of, so it sits on the torso's edge however far the ribcage turns; the fold stops well short of the body's axis, so the two sides cannot cross. What decides the stretch is the ribcage's turn against the pelvis: about 4° of it registers. A limb bent less than 8° has no inside and is stretched on both sides; a torso whose sides are within 3% has `stretchSide: null`.
 >
 > **The default standing figure is not level — it stands in contrapposto**, shoulders at −6° and pelvis at +6°, so its torso reports a stretch side too. That is the pose, not an error: a hip-shot stance *is* a stretch and a squash. Pass `shoulderTiltDeg: 0, pelvicTiltDeg: 0` for a figure with none.
 >
 > **Line weight is yours.** `stretchWidth` and `squashWidth` default to one `strokeWidth`, because the source distinguishes the sides by the *shape* of the line rather than its weight. Hands, feet and the head are left to their own drawers. `padding` moves every line out with the mass, which is how a sleeve or a trouser leg is lined — the same padding `createFigureGeometry` takes.
-- `Drawing.findTangents(shapes: object | CanvasPath[], options?: { gap?: number, near?: number, angleDeg?: number, minRun?: number, step?: number })` → `{ tangents, count, touching, aligned, ends, pairs, step }` — **Shapes and lines that touch, line up, or end on each other.** `shapes` is an object of named shapes and lines, an array of them, or a `createFigureGeometry(...)` result, whose `groups` are used. A geometry result *inside* the object adds its groups named after it — `her.leftArm` — so figures and the set go in one bag. Every pair is tested. Each tangent is `{ kind: 'touch' | 'align' | 'end', a, b, at, distance, mark }`, plus `overlapping` and `depth` on a touch, `from`, `to`, `length`, `angleDeg` and `flush` on an alignment, and `end` (`'start'` or `'end'`) and `inside` on an end. `mark` is a `CanvasPath` to stroke.
+- `Drawing.findTangents(shapes: object | CanvasPath[], options?: { gap?: number, near?: number, angleDeg?: number, minRun?: number, step?: number, attached?: string[][] })` → `{ tangents, count, touching, aligned, ends, attached, apart, pairs, step }` — **Shapes and lines that touch, line up, or end on each other.** `shapes` is an object of named shapes and lines, an array of them, or a `createFigureGeometry(...)` result, whose `groups` are used. A geometry result *inside* the object adds its groups named after it — `her.leftArm` — so figures and the set go in one bag. Every pair is tested. Each tangent is `{ kind: 'touch' | 'align' | 'end', a, b, at, distance, mark }`, plus `overlapping` and `depth` on a touch, `from`, `to`, `length`, `angleDeg` and `flush` on an alignment, and `end` (`'start'` or `'end'`) and `inside` on an end. `mark` is a `CanvasPath` to stroke.
   - **A shape** is a closed `CanvasPath`: anything from `createFigureGeometry`, an `ellipse`, a `rect`, a path ending in `closePath()`.
   - **A line** is `{ x1, y1, x2, y2 }`, an array of points (`[{ x, y }, …]` or `[[x, y], …]`), SVG path data (`'M0 400 L1200 380'`), or a `CanvasPath` with no closed contour. A horizon, a boom, a rope, a rail.
 
@@ -1778,6 +1827,19 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > **The lengths default to fractions of the smaller shape's size** (the square root of its area): `gap` 0.08, `near` 0.35, `minRun` 0.35. So the same pose gives the same answer at any scale, and every tangent reports the values it was judged by. Pass pixels to override. `angleDeg` defaults to 15.
 >
 > **The default mannequin already has two.** Standing, its hands hang flat against its thighs, and the finder reports both. Arms hanging straight down line up with the sides of the torso. Held out, they line up with nothing.
+>
+> **Pass `attached` for what meets by construction.** A boom is hinged on its mast and a sheet is made fast to the boom, so their ends meet on purpose, and the finder would report each as an `end`. Name those pairs and their ends and touches move out of `tangents` into `attached`, where the record still shows them:
+>
+> ```js
+> const found = Drawing.findTangents({ her: herGeo, mast, boom, sheet },
+>     { attached: [['boom', 'mast'], ['sheet', 'boom'], ['sheet', 'her']] });
+> Stage.check('no tangents', found.count === 0, found.tangents.map(t => `${t.kind} ${t.a}/${t.b}`).join(', '));
+> Stage.check('the rig is joined', found.apart.length === 0, found.apart.map(x => `${x.a}/${x.b} ${x.distance.toFixed(0)}px apart`).join(', '));
+> ```
+>
+> - **A name covers its parts**: `'her'` matches `her.leftArm`, `her.rightArm` and the rest, so one pair attaches a rope to whichever hand holds it. Either order works. A name that matches nothing is refused, listing the names there are, since a typo would otherwise exempt nothing.
+> - **Running alongside is still reported.** A boom lying along its mast is a tangent whether attached or not; only `end` and `touch` are exempted.
+> - **A declared join must meet.** A pair that neither touches, crosses nor overlaps within its `gap` comes back in `apart`, each `{ a, b, distance, gap, at, mark }` with `mark` the line across the gap. A boom drawn 30px short of its mast is a mistake the declaration catches.
 >
 > It judges only the shapes and lines you give it, and only by their edges. Three lines meeting at a point, and a face stacked straight over the body (an alignment of centre lines, not edges), are not found.
 

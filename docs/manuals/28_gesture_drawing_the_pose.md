@@ -83,8 +83,11 @@ brace their neck and they will still tell you a story — with the waist and the
 **In the toolkit** this is exactly how `pose.lineOfAction` is built: the curve is carried by two bends
 at the waist and the neck, and the three solids keep their shape. A C bends both the same way; an S
 bends the neck back against the waist. `spineDeg` is the other kind of motion — a lean of everything
-above the pelvis as one piece — and the two compose. See `polson://manual/24` §4 for the
-measurement that motivated it.
+above the pelvis as one piece — and the two compose. **To lean a figure without its lean deciding the stretch,
+use `lineOfAction.leanDeg`**, which leans the whole figure, pelvis included, so which side stretches is left to
+the curve: a figure leaning into a reach is `{ shape: 'C', turnDeg: -30, leanDeg: 25 }`. **Both are signed the same way: positive carries the
+head toward screen right**, so `turnDeg: -30` curves a figure whose head goes left. A C's stretch is on the
+side away from the head's travel. See `polson://manual/24` §4 for the measurement that motivated it.
 
 ```js
 const fig = Drawing.createMannequinFigure(x, y, 400, { pose: {
@@ -98,6 +101,15 @@ log(fig.lineOfAction.swing.toFixed(2) + ' H of swing');
 how far the elbow bends. **A head turned with `neckDeg` against the curve takes back the neck's half of
 it**: on the sketch1 run, `neckDeg: -30` dropped a C's swing from 0.280 to 0.127. Measure the swing again
 after any change to the neck.
+
+**Where a hand holds something, solve the arm rather than aiming it.** A rope under tension runs straight
+from its block through both fists, and two arms posed by angle never put both fists on one line: on the
+sketch1 run the rope bent at the deckhand's front hand. Place the prop, choose where each hand grips it, and
+`Drawing.reachArm(fig, 'right', point, { to: 'palm' })` returns the `shoulderDeg` and `elbowDeg` that put the
+palm there, with `reached` and `miss` when the prop is out of reach. Solve after the torso pose is final,
+since the curve and the lean move the shoulder. **Feet are the same**: `Drawing.reachLeg(fig, 'left', point,
+{ to: 'foot' })` plants a foot on a deck that is not level, which is where the weight of a pose is read, and a
+foot placed by eye on a slope floats or sinks.
 
 ### Keep the whole pose in view
 
@@ -242,7 +254,10 @@ Once the gesture reads, and only then:
   Against a line the finder adds a third kind, **end**: a line stopping on an outline or on another line.
   The worst tangents in a staged scene are usually here, not between limbs — on the sketch1 run, the
   horizon crossing the skipper's jaw, the boom ending on his pointing hand and the rail along her thighs
-  were all found by eye, because the finder was then given only the figures.
+  were all found by eye, because the finder was then given only the figures. **What meets by construction is
+  not a tangent**: a boom hinged on its mast, a sheet made fast to the boom, a rope in the hands. Name those
+  pairs in `attached: [['boom', 'mast'], ['rope', 'her']]` and they are reported as joins rather than tangents,
+  and as `apart` if the drawing leaves a gap where the join should be.
 - **The six depth cues in line** (ch. 30, after Bruce McIntyre): overlap; **surface plus size** — feet
   sitting on the ground plane, nearer ones lower and larger; **surface lines** — a sleeve cuff, a belt, a
   collar, the implied line through the eyes, each curving round its form and telling you which way it
@@ -280,7 +295,10 @@ line by direction, weighs the set by length, and names the mood it adds up to, o
 direction can show: horizontals, verticals, vertical against horizontal, conflicting diagonals, an
 unsupported diagonal, zigzag, wave and spiral. The rest of the table — flame shapes, spheres, the arch,
 the fountain, the cascade, the grief line — are shapes rather than directions, and you judge those by
-eye. On the sketch1 run, the set the agent built for *conflicting diagonals* reads back as exactly that.
+eye. **A line within 15° of level counts as horizontal, and within 15° of upright as vertical**
+(`tolerance`), so a deck heeled 10° is still a horizontal: heel it further, or pass a smaller tolerance and
+say why. A diagonal's `lean` is its direction as drawn: rain drawn down to the left is `rising`, because its
+line rises to the right. On the sketch1 run, the set the agent built for *conflicting diagonals* reads back as exactly that.
 
 ## 9. The procedure, run
 

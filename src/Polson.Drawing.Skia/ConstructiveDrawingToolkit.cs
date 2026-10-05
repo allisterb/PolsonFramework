@@ -2703,6 +2703,22 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>Rotates a point about a pivot, for leaning the upper body over the pelvis.</summary>
+    /// <summary>The direction from <paramref name="from"/> to <paramref name="to"/>, in degrees from upright, positive toward screen right.</summary>
+    static float Lean(Point2D from, Point2D to) => MathF.Atan2(to.X - from.X, from.Y - to.Y) * 180f / MathF.PI;
+
+    /// <summary>
+    /// Where the crown lands with no lean: the head turned and the two bends applied as the figure applies
+    /// them, to the standing figure's points. A lean then rotates it about the pelvis.
+    /// </summary>
+    static Point2D Crown(Point2D navel, Point2D neck, Point2D head, float neckDeg, float waistDeg, float neckBendDeg, float H)
+    {
+        head = RotateAbout(head, neck, neckDeg);
+        head = RotateAbout(head, navel, waistDeg);
+        neck = RotateAbout(neck, navel, waistDeg);
+        head = RotateAbout(head, neck, neckBendDeg);
+        return RotateAbout(new Point2D(head.X, head.Y - H * 0.50f), head, neckDeg + waistDeg + neckBendDeg);
+    }
+
     static Point2D RotateAbout(Point2D point, Point2D pivot, float degrees)
     {
         if (degrees == 0f) return point;
@@ -2764,16 +2780,16 @@ public class ConstructiveDrawingToolkit
     /// Past 120 degrees of turning the two bends fold the torso through itself, which renders as a
     /// figure and reads as a defect, so it is refused rather than drawn.
     /// </remarks>
-    static (string Shape, float Amount)? ReadLineOfAction(IDictionary? pose)
+    static (string Shape, float Amount, float? Lean)? ReadLineOfAction(IDictionary? pose)
     {
         if (pose == null || !pose.Contains("lineOfAction") || pose["lineOfAction"] == null) return null;
         var line = JsInterop.AsDict(pose["lineOfAction"])
             ?? throw new ArgumentException("pose.lineOfAction takes an object, such as { shape: 'C', turnDeg: 24 }.");
 
         foreach (var key in line.Keys)
-            if (key?.ToString() is not ("shape" or "turnDeg"))
+            if (key?.ToString() is not ("shape" or "turnDeg" or "leanDeg"))
                 throw new ArgumentException(
-                    $"pose.lineOfAction has no option '{key}'. It takes shape ('C' or 'S') and turnDeg (degrees the line turns, end to end).");
+                    $"pose.lineOfAction has no option '{key}'. It takes shape ('C' or 'S'), turnDeg (degrees the line turns, end to end) and leanDeg (where the head is from the pelvis).");
 
         var shape = (line.Contains("shape") ? line["shape"]?.ToString() : null)?.Trim().ToUpperInvariant() ?? "C";
         if (shape is not ("C" or "S"))
@@ -2787,7 +2803,18 @@ public class ConstructiveDrawingToolkit
             throw new ArgumentException(
                 $"pose.lineOfAction.turnDeg {amount} is more turning than a torso has: past 120 degrees the waist and neck fold the figure through itself. Pose the legs for the rest of the curve.");
 
-        return (shape, amount);
+        float? lean = null;
+        if (line.Contains("leanDeg"))
+        {
+            lean = Num(line, "leanDeg", 0f);
+            if (!float.IsFinite(lean.Value) || MathF.Abs(lean.Value) > 90f)
+                throw new ArgumentException($"pose.lineOfAction.leanDeg is degrees from upright, -90 to 90; got {line["leanDeg"]}.");
+            if (Num(pose, "spineDeg", 0f) != 0f)
+                throw new ArgumentException(
+                    "pose.lineOfAction.leanDeg and pose.spineDeg both set the lean. leanDeg says where the head ends up and solves the spine for it; give one or the other.");
+        }
+
+        return (shape, amount, lean);
     }
 
     /// <summary>A smooth curve through the points, as SVG path data: Catmull-Rom as cubic Béziers.</summary>
@@ -2913,6 +2940,48 @@ public class ConstructiveDrawingToolkit
         // where it was looking rather than tipping its gaze with its chest.
         var spineDeg = PoseAngle(pose, "spineDeg") ?? 0f;
         var neckDeg = PoseAngle(pose, "neckDeg") ?? 0f;
+
+        // The line of action's two bends, found before the lean because a lean is solved against them.
+        // The split is not a constant. A polyline approximating one even curve turns at each vertex in
+        // proportion to the segments either side of it, so each bend's share comes from the chain's own
+        // lengths: pelvis-navel and navel-neck for the waist, navel-neck and neck-head for the neck. The
+        // rotations leave lengths alone, so measuring before the lean is the same as after.
+        var line = ReadLineOfAction(pose);
+        float waistDeg = 0f, neckBendDeg = 0f;
+        if (line is { Amount: not 0f } bend)
+        {
+            var below = SegmentLength(pelvisCenter, navel);
+            var middle = SegmentLength(navel, neckCenter);
+            var above = SegmentLength(neckCenter, headCenter);
+            var waistShare = (below + middle) / (below + 2f * middle + above);
+            waistDeg = bend.Amount * waistShare;
+            neckBendDeg = bend.Amount * (1f - waistShare) * (bend.Shape == "S" ? -1f : 1f);
+        }
+
+        // `leanDeg` names where the head ends up from the pelvis, and leans the whole figure there with the
+        // pelvis tilting too, so the curve and the lean are set separately. spineDeg is a different thing: the
+        // trunk bending over the pelvis, which the torso reads as a side bend, so a figure leaned right that
+        // way stretches its left side however its curve goes. A body leaning into a reach leans from the legs
+        // and keeps its own curve, and the agent who drew sketch1's skipper could not get that: a lean one
+        // way and a C the other partly cancel. Rotating about the pelvis and then bending is the same as
+        // bending and then rotating, so the bent figure's own lean plus the rotation is the lean, exactly.
+        // The hips and the crotch turn with it. A leg hangs straight from its hip wherever the hip went, and
+        // a posed leg keeps its own angles on the page: where the feet plant is the legs' to say, and turned
+        // with the pelvis an unposed leg swings out by the whole rotation, which reads as a fall.
+        if (line?.Lean is { } wantLean)
+        {
+            var bodyLean = wantLean - Lean(pelvisCenter, Crown(navel, neckCenter, headCenter, neckDeg, waistDeg, neckBendDeg, H));
+            spineDeg = bodyLean;
+            pelvicTiltDeg += bodyLean;
+            var (oldLeft, oldRight) = (leftHip, rightHip);
+            leftHip = RotateAbout(leftHip, pelvisCenter, bodyLean);
+            rightHip = RotateAbout(rightHip, pelvisCenter, bodyLean);
+            crotch = RotateAbout(crotch, pelvisCenter, bodyLean);
+            Point2D By(Point2D p, Point2D from, Point2D to) => new(p.X + to.X - from.X, p.Y + to.Y - from.Y);
+            (leftKnee, leftAnkle, leftFoot) = (By(leftKnee, oldLeft, leftHip), By(leftAnkle, oldLeft, leftHip), By(leftFoot, oldLeft, leftHip));
+            (rightKnee, rightAnkle, rightFoot) = (By(rightKnee, oldRight, rightHip), By(rightAnkle, oldRight, rightHip), By(rightFoot, oldRight, rightHip));
+        }
+
         if (spineDeg != 0f || neckDeg != 0f)
         {
             var pivot = pelvisCenter;
@@ -2940,22 +3009,9 @@ public class ConstructiveDrawingToolkit
         // ribcage and pelvis are solids that keep their shape, and the neck and waist between them are
         // where the bending happens (Drawn to Life, ch. 25-26). So the curve is two bends, one at each
         // flexible part — the waist hinged at the navel, the neck at the neck — and a C bends both the
-        // same way while an S bends the neck back against the waist.
-        //
-        // The split is not a constant. A polyline approximating one even curve turns at each vertex in
-        // proportion to the segments either side of it, so each bend's share comes from the chain's own
-        // lengths: pelvis-navel and navel-neck for the waist, navel-neck and neck-head for the neck.
-        var line = ReadLineOfAction(pose);
-        float waistDeg = 0f, neckBendDeg = 0f;
-        if (line is { Amount: not 0f } bend)
+        // same way while an S bends the neck back against the waist. The two angles were found above.
+        if (waistDeg != 0f || neckBendDeg != 0f)
         {
-            var below = SegmentLength(pelvisCenter, navel);
-            var middle = SegmentLength(navel, neckCenter);
-            var above = SegmentLength(neckCenter, headCenter);
-            var waistShare = (below + middle) / (below + 2f * middle + above);
-            waistDeg = bend.Amount * waistShare;
-            neckBendDeg = bend.Amount * (1f - waistShare) * (bend.Shape == "S" ? -1f : 1f);
-
             var waist = navel;
             headCenter = RotateAbout(headCenter, waist, waistDeg);
             neckCenter = RotateAbout(neckCenter, waist, waistDeg);
@@ -3018,6 +3074,9 @@ public class ConstructiveDrawingToolkit
                 ["turnDeg"] = line?.Amount ?? 0f,
                 ["waistDeg"] = waistDeg,
                 ["neckDeg"] = neckBendDeg,
+                // Where the crown is from the pelvis, in degrees from upright, positive toward screen right:
+                // the lean, measured however it was set.
+                ["leanDeg"] = Lean(pelvisCenter, crown),
                 // In head units, so a threshold chosen on a small draft means the same on a final.
                 ["swing"] = Swing(axis) / H,
                 ["points"] = axis.Select(p => (object?)ToDict(p)).ToList(),
@@ -3032,6 +3091,200 @@ public class ConstructiveDrawingToolkit
         figure["bounds"] = FigureBounds(figure);
         return figure;
     }
+
+    #region Reach
+    static readonly string[] ReachOptions = ["to", "bend"];
+    static readonly string[] ReachBends = ["down", "up", "left", "right", "out", "in"];
+
+    /// <summary>
+    /// The arm angles that put a hand on a point: <c>pose.rightArm = Drawing.reachArm(fig, 'right', p, { to: 'palm' }).pose</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two-joint inverse kinematics, solved exactly, against the figure as built: the shoulder is where the
+    /// torso pose put it and an arm's pose does not move it, so rebuilding the figure with the returned
+    /// <c>{ shoulderDeg, elbowDeg }</c> lands the point where asked. Solve after the torso pose is final; a
+    /// change of lean or curve moves the shoulder and the answer with it.
+    /// </para>
+    /// <para>
+    /// <c>to</c> is the part of the hand that goes on the point: <c>wrist</c> (the default), <c>palm</c>,
+    /// halfway along the hand and where a rope or a handle passes through a closed fist, or <c>hand</c>, the
+    /// fingertips. The hand keeps its own angle to the forearm, as it does in a pose.
+    /// </para>
+    /// <para>
+    /// Two elbows reach any point, one either side of the line from shoulder to target. <c>bend</c> picks the
+    /// side the elbow goes: <c>down</c>, <c>up</c>, <c>left</c> or <c>right</c> on the page, or <c>out</c> and
+    /// <c>in</c>, away from or toward the body's centre line. Left out, the elbow goes down, which is where an
+    /// elbow hangs, unless the arm is already bent more than 30 degrees, when it keeps that bend's side, so
+    /// solving again after a small change does not flip the elbow.
+    /// </para>
+    /// <para>
+    /// A point out of reach is not refused: the arm straightens toward it, <c>reached</c> is false and
+    /// <c>miss</c> says how far short it fell, in pixels. So is a point too close to fold onto.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ReachArm(object figureObj, string side, object point, object? options = null)
+    {
+        var fig = ReachFigure(figureObj, "reachArm");
+        var limb = side switch
+        {
+            "left" or "leftArm" => "leftArm",
+            "right" or "rightArm" => "rightArm",
+            _ => throw new ArgumentException($"reachArm takes the side 'left' or 'right', and got '{side}'.", nameof(side))
+        };
+        var (to, bend) = ReachOptionsOf(options, "reachArm", ["wrist", "palm", "hand"], "wrist");
+        var share = to switch { "palm" => 0.5f, "hand" => 1f, _ => 0f };
+        var r = ReachLimb(fig, limb, ["shoulder", "elbow", "wrist", "hand"], point, share, bend, "down", "reachArm");
+        return ReachResult(r, "shoulderDeg", "elbowDeg", "elbow", to);
+    }
+
+    /// <summary>
+    /// The leg angles that put a foot on a point: <c>pose.leftLeg = Drawing.reachLeg(fig, 'left', p, { to: 'foot' }).pose</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same solver as <see cref="ReachArm"/>, from the hip, and as exact: a leg's pose does not move its hip.
+    /// The hip does move with the pelvis, so solve after the torso pose and any <c>leanDeg</c> are final.
+    /// </para>
+    /// <para>
+    /// <c>to</c> is <c>ankle</c> (the default) or <c>foot</c>, the end of the foot, which is what plants a
+    /// figure on a deck or a step: put the foot on the surface and the ankle sits above it. The foot keeps its
+    /// own angle to the shin, as it does in a pose.
+    /// </para>
+    /// <para>
+    /// <c>bend</c> takes the same sides as an arm. Left out, the knee goes <c>out</c>, away from the body's
+    /// centre line, which is how a bent knee reads from the front, unless the leg is already bent more than 30
+    /// degrees, when it keeps that side. A figure seen side on bends its knee the way it faces: say so, with
+    /// <c>left</c> or <c>right</c>.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> ReachLeg(object figureObj, string side, object point, object? options = null)
+    {
+        var fig = ReachFigure(figureObj, "reachLeg");
+        var limb = side switch
+        {
+            "left" or "leftLeg" => "leftLeg",
+            "right" or "rightLeg" => "rightLeg",
+            _ => throw new ArgumentException($"reachLeg takes the side 'left' or 'right', and got '{side}'.", nameof(side))
+        };
+        var (to, bend) = ReachOptionsOf(options, "reachLeg", ["ankle", "foot"], "ankle");
+        var r = ReachLimb(fig, limb, ["hip", "knee", "ankle", "foot"], point, to == "foot" ? 1f : 0f, bend, "out", "reachLeg");
+        return ReachResult(r, "hipDeg", "kneeDeg", "knee", to);
+    }
+
+    static IDictionary ReachFigure(object figureObj, string call) =>
+        JsInterop.AsDict(figureObj) is IDictionary fig && fig.Contains("leftArm") && fig.Contains("leftLeg")
+            ? fig
+            : throw new ArgumentException($"{call} needs a figure from Drawing.createMannequinFigure(...).", nameof(figureObj));
+
+    static (string To, string Bend) ReachOptionsOf(object? options, string call, string[] parts, string defaultPart)
+    {
+        var opt = JsInterop.AsDict(options);
+        string to = defaultPart, bend = "";
+        if (opt == null) return (to, bend);
+        foreach (var key in opt.Keys)
+        {
+            var k = key?.ToString();
+            var v = opt[key!]?.ToString() ?? "";
+            switch (k)
+            {
+                case "to" when Array.IndexOf(parts, v) >= 0: to = v; break;
+                case "to": throw new ArgumentException($"{call}'s to is {string.Join(", ", parts.Select(x => $"'{x}'"))}, and got '{v}'.");
+                case "bend" when Array.IndexOf(ReachBends, v) >= 0: bend = v; break;
+                case "bend": throw new ArgumentException($"{call}'s bend is {string.Join(", ", ReachBends.Select(b => $"'{b}'"))}: the side the joint goes; got '{v}'.");
+                default: throw new ArgumentException($"{call} has no option '{k}'. It takes {string.Join(", ", ReachOptions)}.");
+            }
+        }
+        return (to, bend);
+    }
+
+    /// <summary>
+    /// Two-joint IK for one three-segment limb: root, middle joint, end, tip. <paramref name="share"/> is how far
+    /// along the tip segment the reaching point is, 0 at the end joint and 1 at the tip.
+    /// </summary>
+    static (float Upper, float Bend, Point2D Mid, Point2D At, float Miss) ReachLimb(
+        IDictionary fig, string limb, string[] joints, object point, float share, string bend, string defaultBend, string call)
+    {
+        var target = ExtractPoint(point, float.NaN, float.NaN);
+        if (!float.IsFinite(target.X) || !float.IsFinite(target.Y))
+            throw new ArgumentException($"{call}'s point is a point on the page: {{ x, y }} or [x, y].", nameof(point));
+
+        var chain = JsInterop.AsDict(fig[limb]) ?? throw new ArgumentException($"{call}: the figure has no {limb}.");
+        Point2D root = ExtractPoint(chain[joints[0]]), mid = ExtractPoint(chain[joints[1]]),
+            end = ExtractPoint(chain[joints[2]]), tip = ExtractPoint(chain[joints[3]]);
+        float upperLen = SegmentLength(root, mid), lowerLen = SegmentLength(mid, end), tipLen = SegmentLength(end, tip);
+        var currentUpper = SegmentAngle(root, mid);
+        var currentBend = Wrap180(SegmentAngle(mid, end) - currentUpper);
+        var tipOffset = SegmentAngle(end, tip) - SegmentAngle(mid, end);
+
+        // The middle joint to the reaching point, in the lower segment's own frame: that segment, then the share of the tip.
+        var t = tipOffset * MathF.PI / 180f;
+        float ex = lowerLen + share * tipLen * MathF.Cos(t), ey = share * tipLen * MathF.Sin(t);
+        var reachLen = MathF.Sqrt(ex * ex + ey * ey);
+        var delta = MathF.Atan2(ey, ex) * 180f / MathF.PI;
+
+        // The distance a two-joint chain can span, and the root angle off the target line by the law of cosines.
+        var wanted = SegmentLength(root, target);
+        var span = Math.Clamp(wanted, MathF.Abs(upperLen - reachLen), upperLen + reachLen);
+        var baseDeg = wanted < 1e-4f ? currentUpper : SegmentAngle(root, target);
+        var cos = span < 1e-4f ? 1f : (upperLen * upperLen + span * span - reachLen * reachLen) / (2f * upperLen * span);
+        var alpha = MathF.Acos(Math.Clamp(cos, -1f, 1f)) * 180f / MathF.PI;
+        var reachedAt = AlongSegment(root, span, baseDeg);
+
+        (float Upper, float Bend, Point2D Mid) Solve(float sign)
+        {
+            var upper = baseDeg + sign * alpha;
+            var m = AlongSegment(root, upperLen, upper);
+            var lower = SegmentAngle(m, reachedAt) - delta;
+            return (Wrap180(upper), Wrap180(lower - upper), m);
+        }
+
+        // Distance from the body's centre line, pelvis to neck, for `out` and `in`.
+        var pelvis = ExtractPoint(JsInterop.AsDict(fig["pelvis"])?["center"]);
+        var neck = ExtractPoint(fig["neck"]);
+        float FromAxis(Point2D p)
+        {
+            float ax = neck.X - pelvis.X, ay = neck.Y - pelvis.Y, l = MathF.Max(1e-4f, MathF.Sqrt(ax * ax + ay * ay));
+            return MathF.Abs(ax * (p.Y - pelvis.Y) - ay * (p.X - pelvis.X)) / l;
+        }
+
+        var a = Solve(1f);
+        var b = Solve(-1f);
+        (float Upper, float Bend, Point2D Mid) By(string side) => side switch
+        {
+            "down" => a.Mid.Y >= b.Mid.Y ? a : b,
+            "up" => a.Mid.Y <= b.Mid.Y ? a : b,
+            "left" => a.Mid.X <= b.Mid.X ? a : b,
+            "right" => a.Mid.X >= b.Mid.X ? a : b,
+            "out" => FromAxis(a.Mid) >= FromAxis(b.Mid) ? a : b,
+            _ => FromAxis(a.Mid) <= FromAxis(b.Mid) ? a : b,
+        };
+        // The standing limbs bend up to about 19 degrees, which is the canon and not a choice.
+        var pick = bend != "" ? By(bend)
+            : MathF.Abs(currentBend) > 30f ? (MathF.Sign(a.Bend) == MathF.Sign(currentBend) ? a : b)
+            : By(defaultBend);
+        return (pick.Upper, pick.Bend, pick.Mid, reachedAt, SegmentLength(reachedAt, target));
+    }
+
+    static Dictionary<string, object?> ReachResult((float Upper, float Bend, Point2D Mid, Point2D At, float Miss) r,
+        string rootKey, string bendKey, string midName, string to) => new()
+    {
+        ["pose"] = new Dictionary<string, object?> { [rootKey] = r.Upper, [bendKey] = r.Bend },
+        [rootKey] = r.Upper,
+        [bendKey] = r.Bend,
+        ["reached"] = r.Miss <= 0.5f,
+        ["miss"] = r.Miss,
+        ["at"] = ToDict(r.At),
+        [midName] = ToDict(r.Mid),
+        ["to"] = to
+    };
+
+    static float Wrap180(float degrees)
+    {
+        var d = degrees % 360f;
+        return d > 180f ? d - 360f : d <= -180f ? d + 360f : d;
+    }
+    #endregion
 
     #region Figure Geometry
     /// <summary>A bone as a drawable mass: a tapering band with a disc at each joint.</summary>
@@ -3258,6 +3511,8 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Gesture Contour
+    static readonly string[] GestureDrawOptions = ["padding", "strokeColor", "strokeWidth", "stretchWidth", "squashWidth"];
+
     /// <summary>Below this bend a limb has no inside, so both of its sides are stretched.</summary>
     const float StraightLimbDeg = 8f;
 
@@ -3275,8 +3530,8 @@ public class ConstructiveDrawingToolkit
     /// the joint's inner edge.
     /// </para>
     /// <para>
-    /// The torso is judged by length, not by angle: shoulder to hip on each side, and the longer side is
-    /// the stretch. The squash side folds inward by an amount proportional to how much shorter it is,
+    /// The torso is judged by length, not by angle: each side runs along the common tangent of the ribcage
+    /// and the pelvis, and the longer side is the stretch. The squash side folds inward by an amount proportional to how much shorter it is,
     /// so the drawing says as much as the pose does and no more. Sides within 3% of each other are
     /// both drawn straight and <c>stretchSide</c> is null — a standing torso has no stretch to show.
     /// </para>
@@ -3348,6 +3603,10 @@ public class ConstructiveDrawingToolkit
     {
         ArgumentNullException.ThrowIfNull(ctx);
         var opt = JsInterop.AsDict(options);
+        if (opt != null)
+            foreach (var key in opt.Keys)
+                if (Array.IndexOf(GestureDrawOptions, key?.ToString()) < 0)
+                    throw new ArgumentException($"drawGestureContour has no option '{key}'. It takes {string.Join(", ", GestureDrawOptions)}.");
         Dictionary<string, object?>? geometryOptions = null;
         if (opt != null && opt.Contains("padding")) geometryOptions = new() { ["padding"] = opt["padding"] };
         var contour = CreateGestureContour(figureObj, geometryOptions);
@@ -3418,28 +3677,68 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>The torso's two sides, the longer drawn straight and the shorter folded inward.</summary>
+    /// <remarks>
+    /// Each side runs along the common tangent of the ribcage and pelvis ellipses, the two masses the
+    /// silhouette is built from, so the stretch side lies on the torso's hull whatever the ribcage's tilt.
+    /// It used to run from the shoulder tip, out along the clavicle line, to the hip; on a strong C the
+    /// clavicle line turns with the ribcage, so one side began in the shoulder knob and the other in the
+    /// arm root, and the squash side folded across the chest (sketch1, 2026-10-04). The fold is now also
+    /// held to under two thirds of the way from its chord to the torso's axis, so it cannot reach the
+    /// other side, which lies beyond the axis.
+    /// </remarks>
     static (CanvasPath Stretch, CanvasPath Squash, Dictionary<string, object?> Record) TorsoContour(IDictionary fig, float H, float pad)
     {
-        var clav = JsInterop.AsDict(fig["clavicles"]);
+        var masses = FigureMasses(fig, H);
+        var rib = masses.First(m => m.Name == "ribcage");
+        var pel = masses.First(m => m.Name == "pelvis");
         var pelvis = JsInterop.AsDict(fig["pelvis"]);
-        var sternum = ExtractPoint(fig["sternum"]);
-        var pelCenter = ExtractPoint(pelvis?["center"]);
-        var ls = ExtractPoint(clav?["left"]);
-        var rs = ExtractPoint(clav?["right"]);
         var lh = ExtractPoint(pelvis?["leftHip"]);
-        var rh = ExtractPoint(pelvis?["rightHip"]);
 
-        static Point2D Out(Point2D from, Point2D to, float by)
+        // The torso's axis, pelvis to ribcage, and the direction across it.
+        float ux = rib.C.X - pel.C.X, uy = rib.C.Y - pel.C.Y, ul = MathF.Sqrt(ux * ux + uy * uy);
+        (ux, uy) = ul < 0.001f ? (0f, -1f) : (ux / ul, uy / ul);
+        float ax = -uy, ay = ux;
+        var leftSign = (lh.X - pel.C.X) * ax + (lh.Y - pel.C.Y) * ay >= 0f ? 1f : -1f;
+
+        // How far an ellipse reaches in direction n (its support function), and the point that reaches it.
+        static (float Reach, Point2D At) Support((string Name, string Group, Point2D C, float Rx, float Ry, float Deg) m, float pad, float nx, float ny)
         {
-            float dx = to.X - from.X, dy = to.Y - from.Y, l = MathF.Max(0.001f, MathF.Sqrt(dx * dx + dy * dy));
-            return new Point2D(to.X + dx / l * by, to.Y + dy / l * by);
+            var t = m.Deg * MathF.PI / 180f;
+            float cx = MathF.Cos(t), sy = MathF.Sin(t), rx = m.Rx + pad, ry = m.Ry + pad;
+            float along = nx * cx + ny * sy, up = -nx * sy + ny * cx;
+            var r = MathF.Sqrt(rx * rx * along * along + ry * ry * up * up);
+            if (r < 1e-6f) return (nx * m.C.X + ny * m.C.Y, m.C);
+            float px = rx * rx * along / r, py = ry * ry * up / r;
+            return (nx * m.C.X + ny * m.C.Y + r, new Point2D(m.C.X + px * cx - py * sy, m.C.Y + px * sy + py * cx));
         }
 
-        // Out from the body's centre along the shoulder and hip lines, by the radii the geometry uses.
-        var lTop = Out(sternum, ls, H * 0.29f + pad);
-        var rTop = Out(sternum, rs, H * 0.29f + pad);
-        var lBottom = Out(pelCenter, lh, H * 0.2f + pad);
-        var rBottom = Out(pelCenter, rh, H * 0.2f + pad);
+        // The common tangent on one side: the outward normal tilted toward the ribcage until both masses reach it equally.
+        (Point2D Top, Point2D Bottom) Tangent(float sign)
+        {
+            float bx = ax * sign, by = ay * sign;
+            (float, float) N(float phi) => (MathF.Cos(phi) * bx + MathF.Sin(phi) * ux, MathF.Cos(phi) * by + MathF.Sin(phi) * uy);
+            float F(float phi)
+            {
+                var (nx, ny) = N(phi);
+                return Support(rib, pad, nx, ny).Reach - Support(pel, pad, nx, ny).Reach;
+            }
+
+            float lo = -1.3f, hi = 1.3f, phi = 0f;
+            if (F(lo) < 0f && F(hi) > 0f)
+            {
+                for (var i = 0; i < 40; i++)
+                {
+                    phi = (lo + hi) * 0.5f;
+                    if (F(phi) < 0f) lo = phi; else hi = phi;
+                }
+            }
+
+            var (x, y) = N(phi);
+            return (Support(rib, pad, x, y).At, Support(pel, pad, x, y).At);
+        }
+
+        var (lTop, lBottom) = Tangent(leftSign);
+        var (rTop, rBottom) = Tangent(-leftSign);
 
         var leftLen = SegmentLength(lTop, lBottom);
         var rightLen = SegmentLength(rTop, rBottom);
@@ -3449,7 +3748,6 @@ public class ConstructiveDrawingToolkit
 
         var stretch = new CanvasPath();
         var squash = new CanvasPath();
-        var axis = new Point2D((sternum.X + pelCenter.X) * 0.5f, (sternum.Y + pelCenter.Y) * 0.5f);
 
         void Side(Point2D top, Point2D bottom, bool folded)
         {
@@ -3460,14 +3758,16 @@ public class ConstructiveDrawingToolkit
                 return;
             }
 
-            // Folded toward the body's axis, as deep as the side is short — capped, so an extreme
-            // bend reads as a fold rather than as the waist collapsing through the other side.
+            // Folded toward the axis, as deep as the side is short; capped, so an extreme bend reads as a
+            // fold rather than as the waist collapsing through the other side.
             Point2D mid = new((top.X + bottom.X) * 0.5f, (top.Y + bottom.Y) * 0.5f);
-            float dx = axis.X - mid.X, dy = axis.Y - mid.Y, l = MathF.Max(0.001f, MathF.Sqrt(dx * dx + dy * dy));
-            var depth = MathF.Min(H * 0.35f, H * shortfall);
-            Point2D fold = new(mid.X + dx / l * depth, mid.Y + dy / l * depth);
+            var along = (mid.X - pel.C.X) * ux + (mid.Y - pel.C.Y) * uy;
+            Point2D foot = new(pel.C.X + ux * along, pel.C.Y + uy * along);
+            float dx = foot.X - mid.X, dy = foot.Y - mid.Y, l = MathF.Sqrt(dx * dx + dy * dy);
+            var depth = l < 0.001f ? 0f : MathF.Min(MathF.Min(H * 0.35f, H * shortfall), l * 0.6f);
+            Point2D fold = l < 0.001f ? mid : new(mid.X + dx / l * depth, mid.Y + dy / l * depth);
             squash.MoveTo(top.X, top.Y);
-            squash.QuadraticCurveTo(2f * fold.X - (top.X + bottom.X) * 0.5f, 2f * fold.Y - (top.Y + bottom.Y) * 0.5f, bottom.X, bottom.Y);
+            squash.QuadraticCurveTo(2f * fold.X - mid.X, 2f * fold.Y - mid.Y, bottom.X, bottom.Y);
         }
 
         Side(lTop, lBottom, stretchSide == "right");
@@ -3475,6 +3775,8 @@ public class ConstructiveDrawingToolkit
 
         return (stretch, squash, new Dictionary<string, object?>
         {
+            ["stretch"] = stretch,
+            ["squash"] = squash,
             ["stretchSide"] = stretchSide,
             ["leftLength"] = leftLen,
             ["rightLength"] = rightLen,
@@ -3484,7 +3786,7 @@ public class ConstructiveDrawingToolkit
     #endregion
 
     #region Tangents
-    static readonly string[] TangentOptions = ["gap", "near", "angleDeg", "minRun", "step"];
+    static readonly string[] TangentOptions = ["gap", "near", "angleDeg", "minRun", "step", "attached"];
 
     /// <summary>
     /// Finds the two kinds of tangent Stanchfield corrects: shapes that <b>touch</b> — outlines kissing,
@@ -3604,6 +3906,46 @@ public class ConstructiveDrawingToolkit
                 }
             }
 
+        // Joins declared in `attached` are construction, not tangents: a boom must end on its mast. Their ends
+        // and touches move to `attached`; running alongside is still reported. A declared pair that does not
+        // meet at all is reported under `apart`, because the declaration says they should.
+        var joins = ReadAttached(opt?["attached"], shapes);
+        var attached = new List<object?>();
+        var apart = new List<object?>();
+        if (joins.Count > 0)
+        {
+            bool Joined(object? t) => t is IDictionary d && joins.Any(j => j.Matches(d["a"]?.ToString(), d["b"]?.ToString()));
+            attached.AddRange(touching.Where(Joined));
+            attached.AddRange(ends.Where(Joined));
+            touching.RemoveAll(Joined);
+            ends.RemoveAll(Joined);
+
+            foreach (var join in joins)
+            {
+                var (distance, from, to, gap) = (float.MaxValue, default(Point2D), default(Point2D), 0f);
+                for (var i = 0; i < shapes.Count; i++)
+                    for (var j = 0; j < shapes.Count; j++)
+                    {
+                        if (i == j || !join.Left(shapes[i].Name) || !join.Right(shapes[j].Name)) continue;
+                        var (d, p, q) = Separation(i, j);
+                        if (d < distance) (distance, from, to, gap) = (d, p, q, GapOf(i, j));
+                    }
+                if (distance <= gap) continue;
+                var mark = new CanvasPath();
+                mark.MoveTo(from.X, from.Y);
+                mark.LineTo(to.X, to.Y);
+                apart.Add(new Dictionary<string, object?>
+                {
+                    ["a"] = join.A,
+                    ["b"] = join.B,
+                    ["distance"] = distance,
+                    ["gap"] = gap,
+                    ["at"] = ToDict(new Point2D((from.X + to.X) * 0.5f, (from.Y + to.Y) * 0.5f)),
+                    ["mark"] = mark
+                });
+            }
+        }
+
         var all = new List<object?>(touching);
         all.AddRange(aligned);
         all.AddRange(ends);
@@ -3614,9 +3956,47 @@ public class ConstructiveDrawingToolkit
             ["touching"] = touching.Count,
             ["aligned"] = aligned.Count,
             ["ends"] = ends.Count,
+            ["attached"] = attached,
+            ["apart"] = apart,
             ["pairs"] = pairs,
             ["step"] = step
         };
+
+        // The gap a pair is judged by, sized as the tangent tests size it.
+        float GapOf(int i, int j)
+        {
+            float size;
+            if (open[i] && open[j]) size = 0.25f * MathF.Min(lengths[i], lengths[j]);
+            else if (open[i] || open[j])
+            {
+                var (l, sh) = open[i] ? (i, j) : (j, i);
+                size = MathF.Min(MathF.Sqrt(areas[sh]), 0.25f * lengths[l]);
+            }
+            else size = MathF.Sqrt(MathF.Min(areas[i], areas[j]));
+            return Num(opt, "gap", size * 0.08f);
+        }
+
+        // How far apart two shapes or lines are, and the nearest points; zero where they overlap or cross.
+        (float Distance, Point2D From, Point2D To) Separation(int i, int j)
+        {
+            if (!open[i] && !open[j])
+            {
+                using var overlap = shapes[i].Path.Intersect(shapes[j].Path);
+                if (!overlap.IsEmpty) return (0f, default, default);
+            }
+            var si = open[i] ? LineOf(i).Samples : SamplesOf(i);
+            var sj = open[j] ? LineOf(j).Samples : SamplesOf(j);
+            if (open[i] && !open[j] && si.Any(p => shapes[j].Path.Path.Contains(p.X, p.Y))) return (0f, default, default);
+            if (open[j] && !open[i] && sj.Any(p => shapes[i].Path.Path.Contains(p.X, p.Y))) return (0f, default, default);
+            var (best, from, to) = (float.MaxValue, default(Point2D), default(Point2D));
+            foreach (var p in si)
+                foreach (var q in sj)
+                {
+                    float dx = q.X - p.X, dy = q.Y - p.Y, d2 = dx * dx + dy * dy;
+                    if (d2 < best) (best, from, to) = (d2, new Point2D(p.X, p.Y), new Point2D(q.X, q.Y));
+                }
+            return (best == float.MaxValue ? float.MaxValue : MathF.Sqrt(best), from, to);
+        }
 
         // A pair with at least one line in it. A line against a shape can end on its outline, graze it, or run
         // along it; two lines can end on each other or run side by side. A line crossing a shape or another line
@@ -3798,6 +4178,43 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>The shapes to test, in the order they were given.</summary>
+    /// <summary>
+    /// The <c>attached</c> pairs: <c>[['boom', 'mast'], ['her', 'rope']]</c>. A name matches a shape of that name, or
+    /// every part named under it (<c>her</c> matches <c>her.leftArm</c>); one that matches nothing is refused.
+    /// </summary>
+    static List<Join> ReadAttached(object? value, List<(string Name, CanvasPath Path)> shapes)
+    {
+        var joins = new List<Join>();
+        if (value is null) return joins;
+        if (value is not IList list)
+            throw new ArgumentException("findTangents' attached is a list of pairs that meet by construction: [['boom', 'mast'], ['her', 'rope']].");
+        foreach (var item in list)
+        {
+            if (item is not IList pair || pair.Count != 2 || pair[0] is not string a || pair[1] is not string b)
+                throw new ArgumentException("findTangents' attached takes pairs of names, each [a, b]: [['boom', 'mast']].");
+            var join = new Join(a, b);
+            foreach (var name in new[] { a, b })
+                if (!shapes.Any(sh => Join.Covers(name, sh.Name)))
+                    throw new ArgumentException($"findTangents' attached names '{name}', and there is no such shape. There are: {string.Join(", ", shapes.Select(sh => sh.Name))}.");
+            joins.Add(join);
+        }
+        return joins;
+    }
+
+    /// <summary>Two names, or name prefixes, that meet by construction.</summary>
+    sealed record Join(string A, string B)
+    {
+        public static bool Covers(string declared, string name) =>
+            name == declared || name.StartsWith(declared + ".", StringComparison.Ordinal);
+
+        public bool Left(string name) => Covers(A, name);
+
+        public bool Right(string name) => Covers(B, name);
+
+        public bool Matches(string? a, string? b) => a is not null && b is not null
+            && ((Covers(A, a) && Covers(B, b)) || (Covers(A, b) && Covers(B, a)));
+    }
+
     static List<(string Name, CanvasPath Path)> ReadShapes(object shapesObj)
     {
         var list = ReadNamedPaths(shapesObj);

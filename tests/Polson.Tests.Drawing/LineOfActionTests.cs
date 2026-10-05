@@ -218,4 +218,100 @@ public class LineOfActionTests : TestsRuntime
         Assert.Contains("'curve'", e.Message);
         Assert.Contains("turnDeg", e.Message);
     }
+
+    #region Lean
+    static Dictionary<string, object?> Leaned(string shape, float turn, float lean, Dictionary<string, object?>? legs = null, bool level = false)
+    {
+        var pose = new Dictionary<string, object?>
+        {
+            ["lineOfAction"] = new Dictionary<string, object?> { ["shape"] = shape, ["turnDeg"] = turn, ["leanDeg"] = lean }
+        };
+        if (legs != null) foreach (var kv in legs) pose[kv.Key] = kv.Value;
+        var options = new Dictionary<string, object?> { ["pose"] = pose };
+        if (level) (options["shoulderTiltDeg"], options["pelvicTiltDeg"]) = (0f, 0f);
+        return Kit.CreateMannequinFigure(400f, 50f, Height, options);
+    }
+
+    /// <summary>
+    /// <c>leanDeg</c> holds where the head is from the pelvis while the curve changes, and the curve keeps its
+    /// own swing: the two are set separately. With <c>spineDeg</c> they partly cancel, which is what sketch1's
+    /// agent hit drawing a skipper who leans into a point.
+    /// </summary>
+    [Theory]
+    [InlineData("C")]
+    [InlineData("S")]
+    public void TestALeanHoldsWhateverTheCurve(string shape)
+    {
+        for (var turn = -60f; turn <= 60f; turn += 30f)
+        {
+            var leaned = Line(Leaned(shape, turn, 25f));
+            Assert.Equal(25f, F(leaned["leanDeg"]), 2);
+            Assert.Equal(F(Line(Bent(shape, turn))["swing"]), F(leaned["swing"]), 3);
+        }
+    }
+
+    /// <summary>
+    /// Under a lean the curve alone decides which side stretches, because the pelvis leans with the body. A
+    /// lean taken by the trunk over the pelvis is a side bend, and stretches the side away from it whatever
+    /// the curve.
+    /// </summary>
+    [Fact]
+    public void TestUnderALeanTheCurveDecidesTheStretch()
+    {
+        string? Stretch(Dictionary<string, object?> fig) => (string?)((IDictionary)((IDictionary)Kit.CreateGestureContour(fig)["parts"]!)["torso"]!)["stretchSide"];
+
+        Assert.Equal("right", Stretch(Leaned("C", -30f, 25f, level: true)));
+        Assert.Equal("left", Stretch(Leaned("C", 30f, 25f, level: true)));
+        Assert.Equal("right", Stretch(Leaned("C", -30f, -25f, level: true)));
+    }
+
+    /// <summary>Every figure reports its lean, however it was set: the measurement the critique asks for.</summary>
+    [Fact]
+    public void TestEveryFigureReportsItsLean()
+    {
+        var standing = F(Line(Figure())["leanDeg"]);
+        Assert.InRange(standing, -1f, 1f);
+        Assert.Equal(standing + 20f, F(Line(Figure(new Dictionary<string, object?> { ["spineDeg"] = 20f }))["leanDeg"]), 2);
+    }
+
+    /// <summary>An unposed leg hangs straight from its hip wherever the hip went; a posed leg keeps its angle on the page.</summary>
+    [Fact]
+    public void TestALeanLeavesTheLegsTheirOwn()
+    {
+        var standing = (IDictionary)Figure()["leftLeg"]!;
+        var leaned = (IDictionary)Leaned("C", -30f, 25f)["leftLeg"]!;
+        var (hx, hy) = P(leaned["hip"]);
+        var (kx, ky) = P(leaned["knee"]);
+        var (sx, sy) = P(standing["hip"]);
+        var (skx, sky) = P(standing["knee"]);
+        Assert.Equal(skx - sx, kx - hx, 3);
+        Assert.Equal(sky - sy, ky - hy, 3);
+
+        var posed = (IDictionary)Leaned("C", -30f, 25f, new Dictionary<string, object?>
+        {
+            ["rightLeg"] = new Dictionary<string, object?> { ["hipDeg"] = 64f, ["kneeDeg"] = 0f }
+        })["rightLeg"]!;
+        var (px, py) = P(posed["hip"]);
+        var (qx, qy) = P(posed["knee"]);
+        Assert.Equal(64f, MathF.Atan2(qy - py, qx - px) * 180f / MathF.PI, 2);
+    }
+
+    /// <summary>Two ways of setting one lean are refused together, and a lean past horizontal is refused.</summary>
+    [Fact]
+    public void TestALeanIsSetOnce()
+    {
+        var e = Assert.Throws<ArgumentException>(() => Figure(new Dictionary<string, object?>
+        {
+            ["spineDeg"] = 10f,
+            ["lineOfAction"] = new Dictionary<string, object?> { ["turnDeg"] = 20f, ["leanDeg"] = 15f }
+        }));
+        Assert.Contains("spineDeg", e.Message);
+        Assert.Contains("-90 to 90", Assert.Throws<ArgumentException>(() => Leaned("C", 0f, 120f)).Message);
+        Assert.Equal(15f, F(Line(Figure(new Dictionary<string, object?>   // spineDeg: 0 is no second lean
+        {
+            ["spineDeg"] = 0f,
+            ["lineOfAction"] = new Dictionary<string, object?> { ["turnDeg"] = 20f, ["leanDeg"] = 15f }
+        }))["leanDeg"]), 2);
+    }
+    #endregion
 }

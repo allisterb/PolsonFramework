@@ -96,17 +96,25 @@ public class GestureContourTests : TestsRuntime
     }
 
     /// <summary>The torso's stretch is its longer side, and it follows the line of action.</summary>
+    /// <remarks>
+    /// What decides it is the ribcage's turn against the pelvis. The default figure stands in contrapposto,
+    /// a 12° bend of its own toward the right, so a C the other way must outweigh that before the stretch
+    /// moves: at +30 the two nearly cancel and the torso is drawn even.
+    /// </remarks>
     [Fact]
     public void TestTheTorsoStretchFollowsTheCurve()
     {
-        static string? Side(float turn) =>
+        static string? Side(float turn, bool level) =>
             (string?)Part(Kit.CreateGestureContour(Figure(new Dictionary<string, object?>
             {
                 ["lineOfAction"] = new Dictionary<string, object?> { ["shape"] = "C", ["turnDeg"] = turn }
-            })), "torso")["stretchSide"];
+            }, level ? new Dictionary<string, object?> { ["shoulderTiltDeg"] = 0f, ["pelvicTiltDeg"] = 0f } : null)), "torso")["stretchSide"];
 
-        Assert.Equal("right", Side(-30f));
-        Assert.Equal("left", Side(30f));
+        Assert.Equal("right", Side(-30f, level: true));
+        Assert.Equal("left", Side(30f, level: true));
+        Assert.Equal("right", Side(-30f, level: false));
+        Assert.Null(Side(30f, level: false));
+        Assert.Equal("left", Side(60f, level: false));
     }
 
     /// <summary>An even torso has no stretch to show, so it is drawn straight on both sides.</summary>
@@ -118,6 +126,104 @@ public class GestureContourTests : TestsRuntime
 
         Assert.Null(torso["stretchSide"]);
         Assert.True(Convert.ToSingle(torso["shortfall"]) < 0.03f);
+    }
+
+    /// <summary>The pose sketch1's deckhand was drawn in: a strong C over a rigid lean back, the ribcage at -36°.</summary>
+    static readonly Dictionary<string, object?> Deckhand = new()
+    {
+        ["lineOfAction"] = new Dictionary<string, object?> { ["shape"] = "C", ["turnDeg"] = -40f },
+        ["spineDeg"] = -10f,
+        ["rightArm"] = new Dictionary<string, object?> { ["shoulderDeg"] = -28f, ["elbowDeg"] = 0f },
+        ["leftArm"] = new Dictionary<string, object?> { ["shoulderDeg"] = 14f, ["elbowDeg"] = -62f },
+    };
+
+    /// <summary>Where a point sits against an ellipse: 1 on the outline, below it inside.</summary>
+    static float EllipseValue(IDictionary mass, SKPoint p, float rx, float ry)
+    {
+        var c = P(mass["center"]);
+        var t = Convert.ToSingle(mass["tiltDeg"]) * MathF.PI / 180f;
+        float dx = p.X - c.X, dy = p.Y - c.Y;
+        float u = dx * MathF.Cos(t) + dy * MathF.Sin(t), v = -dx * MathF.Sin(t) + dy * MathF.Cos(t);
+        return MathF.Sqrt(u * u / (rx * rx) + v * v / (ry * ry));
+    }
+
+    static float Mass(IDictionary mass, string key, float fallback) =>
+        mass.Contains(key) && mass[key] != null ? Convert.ToSingle(mass[key]) : fallback;
+
+    /// <summary>
+    /// The torso's sides run from the ribcage's outline to the pelvis's, however far the ribcage turns.
+    /// </summary>
+    /// <remarks>
+    /// sketch1's deckhand found the regression: the sides ran from the shoulder tips, out along the clavicle
+    /// line, so with the ribcage tilted 36° one side started in the shoulder knob and folded across the chest,
+    /// and the other ran through the arm root. Neither tip is on the ribcage then.
+    /// </remarks>
+    [Fact]
+    public void TestTheTorsoSidesRunFromTheRibcageToThePelvis()
+    {
+        var fig = Figure(Deckhand, new Dictionary<string, object?> { ["pelvicTiltDeg"] = 10f });
+        var torso = Part(Kit.CreateGestureContour(fig), "torso");
+        var rib = (IDictionary)fig["ribcage"]!;
+        var pel = (IDictionary)fig["pelvis"]!;
+        var H = Height / 8f;
+
+        foreach (var key in new[] { "stretch", "squash" })
+        {
+            var pts = Points(torso, key);
+            var top = pts[0];
+            var bottom = pts[^1];
+            Assert.Equal(1f, EllipseValue(rib, top, Mass(rib, "rx", H * 0.85f), Mass(rib, "ry", H * 0.70f)), 0.01f);
+            Assert.Equal(1f, EllipseValue(pel, bottom, Mass(pel, "rx", H * 0.70f), Mass(pel, "ry", H * 0.45f)), 0.01f);
+        }
+    }
+
+    /// <summary>
+    /// The two sides of the torso stay on their own sides of its axis, so they cannot cross, across a sweep of
+    /// curves and leans.
+    /// </summary>
+    [Fact]
+    public void TestTheTorsoSidesNeverCross()
+    {
+        foreach (var shape in new[] { "C", "S" })
+            for (var turn = -100f; turn <= 100f; turn += 20f)
+                for (var lean = -40f; lean <= 40f; lean += 20f)
+                {
+                    var fig = Figure(new Dictionary<string, object?>
+                    {
+                        ["lineOfAction"] = new Dictionary<string, object?> { ["shape"] = shape, ["turnDeg"] = turn },
+                        ["spineDeg"] = lean,
+                    });
+                    var torso = Part(Kit.CreateGestureContour(fig), "torso");
+                    if (torso["stretchSide"] is null) continue;
+
+                    var a = P(((IDictionary)fig["pelvis"]!)["center"]);
+                    var b = P(((IDictionary)fig["ribcage"]!)["center"]);
+                    float Side(SKPoint p) => (b.X - a.X) * (p.Y - a.Y) - (b.Y - a.Y) * (p.X - a.X);
+
+                    var line = Points(torso, "stretch");
+                    var curve = Points(torso, "squash");
+                    var straight = MathF.Sign(Side(line[0]));
+                    var where = $"{shape} {turn}, lean {lean}";
+                    Assert.All(line, p => Assert.True(MathF.Sign(Side(p)) == straight, where));
+                    for (var t = 0f; t <= 1f; t += 0.05f)
+                    {
+                        float u = 1 - t;
+                        var p = new SKPoint(u * u * curve[0].X + 2 * u * t * curve[1].X + t * t * curve[2].X,
+                                            u * u * curve[0].Y + 2 * u * t * curve[1].Y + t * t * curve[2].Y);
+                        Assert.True(MathF.Sign(Side(p)) == -straight, $"{where}: the squash crosses the axis at t {t:0.00}");
+                    }
+                }
+    }
+
+    /// <summary>The drawer refuses an option it does not take, as the builder does.</summary>
+    [Fact]
+    public void TestTheDrawerRefusesAnUnknownOption()
+    {
+        using var canvas = new SkiaCanvas(400, 400);
+        var e = Assert.Throws<ArgumentException>(() => canvas.GetContext("2d").DrawGestureContour(Figure(),
+            new Dictionary<string, object?> { ["color"] = "#000" }));
+        Assert.Contains("'color'", e.Message);
+        Assert.Contains("strokeColor", e.Message);
     }
 
     /// <summary>Padding moves every line out with the mass, which is how a sleeve is lined.</summary>

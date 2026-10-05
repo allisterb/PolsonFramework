@@ -113,6 +113,33 @@ public class ResetVerbTests : TestsRuntime, IDisposable
 
         Assert.False(Directory.Exists(Path.Combine(dir, "previous")), "--delete still made an archive");
     }
+
+    /// <summary>
+    /// Every deliverable a workflow template names in bold — <c>**`sketch.md`**</c> — is run output a reset clears.
+    /// </summary>
+    /// <remarks>
+    /// sketch1's second run found the first run's <c>sketch.md</c> still in the project after a reset, because the
+    /// list named only the deliverables every workflow shares. The agent overwrote it unread, which lost the first
+    /// run's record and could as easily have handed the second run its answers.
+    /// </remarks>
+    [Fact]
+    public void TestEveryWorkflowDeliverableIsRunOutput()
+    {
+        var assembly = typeof(ProjectGenerator).Assembly;
+        var named = assembly.GetManifestResourceNames()
+            .Where(r => r.Contains("ProjectTemplate.", StringComparison.Ordinal) && r.EndsWith(".md", StringComparison.Ordinal))
+            .SelectMany(r =>
+            {
+                using var reader = new StreamReader(assembly.GetManifestResourceStream(r)!);
+                return System.Text.RegularExpressions.Regex.Matches(reader.ReadToEnd(), @"\*\*`([a-z_0-9]+\.(?:md|js|webp|svg|png))`\*\*")
+                    .Select(m => m.Groups[1].Value);
+            })
+            .Where(n => n != "brief.md")
+            .Distinct().ToArray();
+
+        Assert.Contains("sketch.md", named);
+        Assert.Empty(named.Except(ProjectGenerator.RunOutput));
+    }
     #endregion
 
     #region What it keeps

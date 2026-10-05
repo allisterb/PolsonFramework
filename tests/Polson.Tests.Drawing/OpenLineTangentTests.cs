@@ -169,4 +169,102 @@ public class OpenLineTangentTests(ITestOutputHelper output) : TestsRuntime
         Assert.Contains("boom", ex.Message);
         Assert.Contains("x1, y1, x2, y2", ex.Message);
     }
+
+    #region Attached
+    /// <summary>The run's rig: a mast, a boom hinged on it, a stay ending on the boom.</summary>
+    static Dictionary<string, object?> Rig(float boomStart = 1f) => new()
+    {
+        ["mast"] = Line(0, 0, 0, 300),
+        ["boom"] = Line(boomStart, 150, 200, 150),
+    };
+
+    Dictionary<string, object?> FindAttached(Dictionary<string, object?> shapes, params string[][] pairs)
+    {
+        var result = Kit.FindTangents(shapes, new Dictionary<string, object?> { ["attached"] = pairs.Select(p => (object)p).ToArray() });
+        foreach (var t in ((IEnumerable)result["tangents"]!).Cast<IDictionary>()) output.WriteLine($"tangent {t["kind"]} {t["a"]}/{t["b"]}");
+        foreach (var t in ((IEnumerable)result["attached"]!).Cast<IDictionary>()) output.WriteLine($"attached {t["kind"]} {t["a"]}/{t["b"]}");
+        return result;
+    }
+
+    static List<IDictionary> List(Dictionary<string, object?> result, string key) => ((IEnumerable)result[key]!).Cast<IDictionary>().ToList();
+
+    /// <summary>
+    /// A boom must end on its mast. Declared attached, the end moves out of the tangents into <c>attached</c>, where
+    /// the record still shows it. sketch1's agent filtered these by hand, by name.
+    /// </summary>
+    [Fact]
+    public void AnAttachedEndIsAJoinNotATangent()
+    {
+        Assert.Equal("end", Assert.Single(Find(Rig()))["kind"]);
+
+        var result = FindAttached(Rig(), ["boom", "mast"]);
+        Assert.Empty(List(result, "tangents"));
+        Assert.Equal(0, result["count"]);
+        Assert.Equal(0, result["ends"]);
+        var join = Assert.Single(List(result, "attached"));
+        Assert.Equal("end", join["kind"]);
+        Assert.Empty(List(result, "apart"));
+    }
+
+    /// <summary>The pair may be given either way round.</summary>
+    [Fact]
+    public void AJoinMatchesEitherWayRound()
+    {
+        Assert.Empty(List(FindAttached(Rig(), ["mast", "boom"]), "tangents"));
+    }
+
+    /// <summary>Running alongside is a tangent whether the two are attached or not.</summary>
+    [Fact]
+    public void AnAttachedPairThatRunsAlongsideStillAligns()
+    {
+        var result = FindAttached(new() { ["rail"] = Line(0, 0, 300, 0), ["deck"] = Line(20, 4, 280, 4) }, ["rail", "deck"]);
+        Assert.Equal("align", Assert.Single(List(result, "tangents"))["kind"]);
+    }
+
+    /// <summary>A declared join that does not meet is apart: the declaration says they should, and the drawing disagrees.</summary>
+    [Fact]
+    public void ADeclaredJoinThatDoesNotMeetIsApart()
+    {
+        var result = FindAttached(Rig(boomStart: 30f), ["boom", "mast"]);
+        Assert.Empty(List(result, "tangents"));
+        var gap = Assert.Single(List(result, "apart"));
+        Assert.Equal("boom", gap["a"]);
+        Assert.Equal("mast", gap["b"]);
+        Assert.Equal(30f, Convert.ToSingle(gap["distance"]), 1.5f);
+        Assert.NotNull(gap["mark"]);
+    }
+
+    /// <summary>A crossing meets: a rope through two fists is gripped, not apart.</summary>
+    [Fact]
+    public void ACrossingMeets()
+    {
+        var result = FindAttached(new() { ["her.hand"] = Circle(100, 100, 20), ["rope"] = Line(0, 100, 300, 100) }, ["her", "rope"]);
+        Assert.Empty(List(result, "apart"));
+    }
+
+    /// <summary>A name covers every part named under it, so one pair can attach a whole figure.</summary>
+    [Fact]
+    public void ANameCoversItsParts()
+    {
+        var shapes = new Dictionary<string, object?> { ["her.hand"] = Circle(100, 100, 40), ["rope"] = Line(400, 100, 141, 100) };
+        Assert.Equal("end", Assert.Single(Find(shapes))["kind"]);
+        var result = FindAttached(shapes, ["her", "rope"]);
+        Assert.Empty(List(result, "tangents"));
+        Assert.Single(List(result, "attached"));
+    }
+
+    /// <summary>A name that matches nothing is refused, listing what there is: a typo would otherwise exempt nothing.</summary>
+    [Fact]
+    public void AnUnknownAttachedNameIsRefused()
+    {
+        var e = Assert.Throws<ArgumentException>(() => Kit.FindTangents(Rig(),
+            new Dictionary<string, object?> { ["attached"] = new object[] { new object[] { "boom", "mats" } } }));
+        Assert.Contains("'mats'", e.Message);
+        Assert.Contains("mast", e.Message);
+
+        e = Assert.Throws<ArgumentException>(() => Kit.FindTangents(Rig(),
+            new Dictionary<string, object?> { ["attached"] = new object[] { "boom" } }));
+        Assert.Contains("pairs", e.Message);
+    }
+    #endregion
 }

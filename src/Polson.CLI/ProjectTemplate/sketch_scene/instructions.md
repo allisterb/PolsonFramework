@@ -101,7 +101,8 @@ figures stand.
 
 **Check:** pass the set lines you drew to `Drawing.classifyLines({ horizon, deck, mast, ... })` and
 confirm its `mood.family` is the family you declared. It sorts every line by direction, weighs them by
-length and names the ch. 42 mood they add up to; `shares` says by how much. A scene declared *calm*
+length and names the ch. 42 mood they add up to; `shares` says by how much. Within 15° of level is
+horizontal, so a gently heeled deck still counts as one. A scene declared *calm*
 whose lines are mostly diagonal has two moods, and the reader will get the other one. Keep the line
 objects: the Silhouette stage passes the same ones to `findTangents`.
 
@@ -111,10 +112,15 @@ For each figure, in this order (Manual 28 §3–§5):
 
 - **The line of action first.** `pose.lineOfAction: { shape: 'C' | 'S', turnDeg }` bends the torso
   through the waist and neck; `spineDeg` only tilts it as a rigid hinge. A reach, a pull or a recoil is
-  a C; a stride or a counter-balanced stance is usually an S.
+  a C; a stride or a counter-balanced stance is usually an S. To lean the whole figure and leave the
+  curve to decide which side stretches, add `leanDeg` to the line of action rather than using `spineDeg`.
 - **Then the limbs, at angles.** Joint angles are screen directions: `0` points screen right, `90`
   straight down, `180` screen left, negative angles point up. `leftArm` is the arm on the left of the
   page. Log one wrist before trusting a direction.
+- **Hands on a prop are solved, not aimed.** A rope, a rail, a wheel: place the prop, choose where each
+  hand holds it, and `Drawing.reachArm(fig, 'right', point, { to: 'palm' })` gives the arm angles. Two
+  hands on a taut rope must both lie on its line, which angles chosen by eye never manage. Feet the
+  same: `Drawing.reachLeg(fig, 'left', point, { to: 'foot' })` plants a foot on a sloping deck.
 - **Opposition.** Shoulders and hips tilt against each other. **Set the pelvis last**, because the
   line of action tilts the ribcage too: its waist bend is added to `shoulderTiltDeg`, so a C of 30°
   turns the default figure's −6° ribcage into +9°, the same way as its +6° pelvis, and the opposition
@@ -148,7 +154,9 @@ Ask the geometry, not the picture:
 - **Tangents.** One call over the whole scene: `Drawing.findTangents({ her: geoA, him: geoB, horizon,
   boom, rope })`, figures as their geometry and the set as the same line objects the Mood stage
   classified. Lines get a third kind, `end`: a boom stopping on a hand. The worst tangents in a staged
-  scene are usually between a figure and a set line, so do not leave the set out. Stroke each tangent's
+  scene are usually between a figure and a set line, so do not leave the set out. Joins the set is built
+  with (a boom on its mast, a rope in the hands) go in `attached: [['boom', 'mast'], ['rope', 'her']]`, and
+  `apart` should come back empty. Stroke each tangent's
   `mark` in red on a probe render so you can see where it is.
 
 **Check:** no tangents, action limbs clear, look paths clear. When one fails, change the **pose**,

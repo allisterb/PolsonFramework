@@ -1072,7 +1072,9 @@ internal static class ProjectGenerator
     internal static readonly string[] RunOutput =
     [
         "events", "scripts", "artifacts",
-        "findings.md", "critique_log.md", "artwork.js", "output.webp", "output.svg", "output.png"
+        "findings.md", "critique_log.md", "artwork.js", "output.webp", "output.svg", "output.png",
+        // Workflow deliverables: drawing's turns.md, painting's materials.md, sketch_scene's sketch.md.
+        "turns.md", "materials.md", "sketch.md"
     ];
 
     /// <summary>What a clear actually managed to do.</summary>

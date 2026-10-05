@@ -208,9 +208,10 @@ tl.stagger(ticks, { height: 70 }, { at: '>+=200', dur: 260, each: 90 });
 
 log(`${tl.count} beats over ${tl.duration} ms; 'open' is at ${tl.labels.open} ms`);
 
-// Seek, capture, repeat. Nothing here depends on the order the frames are taken in.
+// Seek, capture, repeat. Nothing here depends on the order the frames are taken in. Step at the rate
+// the film is saved at (40 ms is 25 fps), or it plays at the wrong speed.
 Motion.clear();
-for (let t = 0; t <= tl.duration; t += 60) { tl.seek(t); Motion.frame(paper); }
+for (let t = 0; t <= tl.duration; t += 40) { tl.seek(t); Motion.frame(paper); }
 log(`captured ${Motion.count} frames`);
 
 Motion.sheet('artifacts/manual25-score-sheet.png', { count: 6, cols: 6, scale: 0.4, fps: 25 });
@@ -300,7 +301,7 @@ late.circle({ origin: ball, radius: 9, color: ink });
 
 log(`${comp.layerCount} layers, ${comp.frameCount} frames; the ball is at ${JSON.stringify(ball.at(1))} at 1 s`);
 comp.capture({ fps: 6 });
-Motion.sheet('artifacts/manual25-graph-sheet.png', { count: 7, cols: 7, scale: 0.4, fps: 6 });   // the capture's fps, so the labels are true
+Motion.sheet('artifacts/manual25-graph-sheet.png', { count: 7, cols: 7, scale: 0.4 });   // captured frames carry their own times
 comp.saveSif('artifacts/manual25-graph.sif');     // the same graph, readable by Synfig
 log(`${comp.toSif().length} characters of .sif`);
 comp.render(1);
@@ -340,7 +341,11 @@ not at a movie. See `polson://sdk/core/Motion` for the calls.
 | hold | no field drifts more than half a degree across the hold |
 | silhouette at the extreme | the throwing arm is 80% clear of the torso at the wind-up (Manual 28 §7) |
 
-**Look at the beats, not at the film.** Capture every frame, then `Motion.sheet` with `indices` set to the beat frames: one cell per beat, labelled with its frame and time, which is the drawing to hold against the sentences. A second sheet of evenly spaced frames shows the spacing. Call `Motion.clear()` before capturing again in the same script, or the frames add up.
+**Look at the beats, not at the film.** Capture every frame, then `Motion.sheet` with `indices` set to the beat frames: one cell per beat, labelled with its film frame and time, which is the drawing to hold against the sentences. A second sheet of evenly spaced frames shows the spacing. Call `Motion.clear()` before capturing again in the same script, or the frames add up. What you decide by looking at a cell is still a check, marked `{ judged: true }` so it cannot be mistaken for a measurement.
+
+**Ink the head.** `Drawing.drawGestureContour` lines the body and leaves the head to you; without it the figure reads as a stick at sheet size. The figure's `head` carries `center`, `rx`, `ry` and `angleDeg`.
+
+**Say whether it loops.** `Motion.save` writes the loop count into the file: `loop: false` plays once and holds the last frame, which is what an action ending in a hold wants. The default plays forever.
 
 ```javascript
 // A throw: anticipation, action, follow-through, hold. One figure, keyed poses, built every frame.
@@ -442,6 +447,9 @@ comp.drawn((ctx, v, t) => {
     ctx.fillStyle = '#d9d2c3';
     ctx.fill(Drawing.createFigureGeometry(fig).silhouette);
     Drawing.drawGestureContour(ctx, fig, { strokeColor: '#15151a', stretchWidth: 2.4, squashWidth: 1.6 });
+    const h = fig.head;                                   // the contour leaves the head to us
+    ctx.strokeStyle = '#15151a'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.ellipse(h.center.x, h.center.y, h.rx, h.ry, h.angleDeg * Math.PI / 180, 0, Math.PI * 2); ctx.stroke();
     const ball = ballAt(t, fig.rightArm.hand);
     ctx.fillStyle = '#c9553d';
     ctx.beginPath(); ctx.arc(ball.x, ball.y, 9, 0, Math.PI * 2); ctx.fill();
@@ -449,9 +457,13 @@ comp.drawn((ctx, v, t) => {
 
 // One cell per beat is the drawing to hold against the sentences; the film is what ships.
 comp.capture({ fps: FPS });
-Motion.sheet('artifacts/manual25-throw-beats.png', { indices: BEATS.map(b => b.frame), cols: 6, scale: 0.4, fps: FPS });
-Motion.save('artifacts/manual25-throw.webp', { fps: FPS });
-log(`${Motion.count} frames, ${BEATS.length} beats`);
+const sheet = Motion.sheet('artifacts/manual25-throw-beats.png', { indices: BEATS.map(b => b.frame), cols: 6, scale: 0.4 });
+
+// A verdict read off the sheet is recorded as one. The detail is what was seen, not a number.
+Stage.check('the wind-up cell reads as a coil, not a wave', true, 'arm behind the head, body bowed back', { judged: true });
+
+const film = Motion.save('artifacts/manual25-throw.webp', { fps: FPS, loop: false });   // plays once, holds the settle
+log(`${film.frames} frames, ${sheet.cells} of ${sheet.held} on the beat sheet, loop ${film.loop}`);
 comp.render(11 / FPS);
 ```
 

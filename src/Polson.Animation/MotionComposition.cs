@@ -446,7 +446,7 @@ public sealed class MotionComposition : MotionLayerList
             var t = from + i / fps;
             if (t > to + 1e-9) break;
             using var frame = Render(t);
-            motion.Frame(frame);
+            motion.FrameAt(frame, (int)Math.Round(t * Fps), t);
             count++;
         }
 

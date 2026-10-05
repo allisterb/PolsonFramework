@@ -1082,7 +1082,7 @@
     // A check is the one row that can be wrong, so its verdict leads. An accepted failure says so and
     // carries its reason: without that a reader sees a failure the run had already decided to keep.
     if (kind === 'check') {
-      const verdict = e.passed ? 'pass' : e.accepted ? 'failed, kept' : 'FAILED';
+      const verdict = (e.passed ? 'pass' : e.accepted ? 'failed, kept' : 'FAILED') + (e.judged ? ' (judged by eye)' : '');
       return [verdict, e.claim, e.detail, e.accepted && e.reason ? `kept because ${e.reason}` : null]
         .filter(Boolean).join(' — ');
     }

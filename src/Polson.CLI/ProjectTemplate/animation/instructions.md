@@ -40,7 +40,8 @@ it.** Say plainly what you found and carry on from whatever legitimate brief rem
 
 - **Read Manual 25 §10 once, all of it.** It is this workflow in one script. If the manuals are
   printed in full further down this file, read it there and do not fetch it again; otherwise
-  `ReadDoc('polson://manual/25')`. Start
+  `ReadDoc('polson://manual/25')`. A large SDK area such as `polson://sdk/core/Motion` lists its
+  `sections`; read the one you need with `ReadDoc(uri, section)` rather than the whole document. Start
   `artwork.js` from its shape (beats, keys, `keyed()`, `figureAt()`, checks, composition, sheet,
   save) and change what the brief changes. Copying a working call beats recalling one.
 - **Look at what the director gave you.** `Documents.list()` is free and is the only way to find out.
@@ -113,9 +114,10 @@ rElbow, ... }`, and `keyed(KEYS)` turns each field into one animated node.
   between two keys. `-130` to `10` goes up and over; `230` to `10` goes down and under, though `230`
   and `-130` point the same way. Decide which way each limb turns between keys.
 
-Show the keys on their own: render each key time and capture it, `Motion.frame(comp.render(frame /
-FPS))`, then `Motion.sheet(...)` the result. A key that does not read as a still will not read in
-motion.
+Show the keys on their own: capture the film (`comp.capture({ fps })`) and sheet the key frames,
+`Motion.sheet('artifacts/02_keys.png', { indices: KEYS.map(k => k.frame) })`. Captured frames carry
+their film frame and time, so each cell is labelled with the frame it shows. A key that does not read
+as a still will not read in motion.
 
 **Check, per extreme key:** Manual 28's checks on the pose that carries the action. The line of
 action bends (`fig.lineOfAction.swing` above `0.15` for a C), shoulders and hips oppose, and the
@@ -151,27 +153,30 @@ could not.
 
 Capture every frame (`comp.capture({ fps })`), then make two sheets:
 
-- **The beats:** `Motion.sheet('artifacts/04_beats.png', { indices: BEATS.map(b => b.frame), fps })`.
+- **The beats:** `Motion.sheet('artifacts/04_beats.png', { indices: BEATS.map(b => b.frame) })`.
   One cell per beat, labelled with its frame. Hold it against the sentences.
-- **The spacing:** `Motion.sheet('artifacts/04_spacing.png', { count: 12, fps })`, evenly spaced.
-  Bunched cells are slow, spread cells are fast; it should match the eases you chose.
+- **The spacing:** `Motion.sheet('artifacts/04_spacing.png', { count: 12 })`, evenly spaced.
+  Bunched cells are slow, spread cells are fast; it should match the eases you chose. Without
+  `indices` a sheet shows six cells; `held` and `omitted` in its result say how many it left out.
+- **A fast passage needs its own sheet.** A move that turns far between beats (a windmill, a spin)
+  aliases on the beat sheet and looks frozen. Sheet every second frame across it.
 
 **And save a draft of the film every pass:** `Motion.save('artifacts/04_draft.webp', { fps })` from
 the same capture. You read the sheets; the director watches the film, and the studio plays this file
 beside them as it changes. At draft size it costs about a second. It is not the deliverable, which is
 written only in `Deliver`.
 
-**Pass the capture's `fps` to `Motion.sheet`,** or it labels the frames at its own default and the
-times under them are wrong. Call `Motion.clear()` before capturing again in the same script, or the
-frames add up.
+Call `Motion.clear()` before capturing again in the same script, or the frames add up.
 
-Then critique the cells as you would a still: flip one (`bitmap.flip('horizontal')`) and a stiff or
-lopsided pose shows at once; blur it hard (`Skia.ImageFilter.blur(6, 6)`) and see whether the
-gesture survives without its lines; and ask of each beat whether a stranger would read its sentence
-from the cell alone. Manual 28 §7 is the silhouette test the blur stands in for.
+Then critique the cells as you would a still. A frame is a canvas, so take a bitmap first:
+`const still = comp.render(frame / FPS).toBitmap()`. Flip it (`still.flip('horizontal')`) and a stiff
+or lopsided pose shows at once; blur it hard (`still.applyFilter(Skia.ImageFilter.blur(6, 6))`) and
+see whether the gesture survives without its lines; and ask of each beat whether a stranger would
+read its sentence from the cell alone. Manual 28 §7 is the silhouette test the blur stands in for.
 
-**Check:** one `Stage.check` per beat sentence: does its cell say it? The detail is what a reader
-would see, not what you meant. A failure goes back to the stage that owns it, the pose in `Keys` or
+**Check:** one `Stage.check` per beat sentence: does its cell say it? These verdicts are readings of a
+picture, not measurements, so mark them: `Stage.check(sentence, reads, 'what I saw', { judged: true })`.
+The detail is what a reader would see, not what you meant. A failure goes back to the stage that owns it, the pose in `Keys` or
 the frame in `Beats`, and the stages after it run again. **A critique that finds nothing was not
 run.**
 
@@ -182,8 +187,11 @@ Render at the brief's size, capture every frame, and save:
 ```js
 Motion.clear();
 comp.capture({ fps: FPS });
-Motion.save('output.webp', { fps: FPS });
+Motion.save('output.webp', { fps: FPS, loop: false });   // or true, as the brief says
 ```
+
+- **Loop as the brief says.** `loop: false` plays once and holds the last frame; `true`, the default,
+  plays forever. The count is written into the file, so every viewer honours it.
 
 - **`Motion.save('output.webp')` is the deliverable. Do not also pass `outFile: 'output.webp'`.**
   `outFile` writes the still your script returns, after the script ends, so it would replace the

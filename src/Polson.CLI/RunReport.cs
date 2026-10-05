@@ -183,6 +183,9 @@ internal static class RunReport
             ["checks"] = checks.Length,
             ["checksFailed"] = checksFailed,
             ["checksAccepted"] = acceptedClaims.Length,
+            // Verdicts read off a picture rather than measured. Counted in `checks` as well, and
+            // reported apart so a run that judged everything does not read as one that measured it.
+            ["checksJudged"] = checks.Count(e => e["judged"]?.GetValue<bool>() == true),
             ["claimsNotMet"] = new JsonArray([.. failedClaims.Select(c => (JsonNode)c!)]),
             ["claimsAccepted"] = new JsonArray(acceptedClaims),
             ["requisitions"] = Count("asset.requisition"),
@@ -535,7 +538,8 @@ internal static class RunReport
             ("claims about the work", Num("expectations") == 0 && Num("checks") == 0
                 ? "none - the run asserted nothing about its own output"
                 : $"{Num("expectations")} stated, {Num("checks")} settled, {Num("checksFailed")} failed"
-                  + (Num("checksAccepted") > 0 ? $", {Num("checksAccepted")} failed and kept on purpose" : "")),
+                  + (Num("checksAccepted") > 0 ? $", {Num("checksAccepted")} failed and kept on purpose" : "")
+                  + (Num("checksJudged") > 0 ? $"; {Num("checksJudged")} of the checks judged by eye" : "")),
             ("artifacts read back", Read(report)),
             ("requisitions", Num("requisitions") == 0 && Num("requisitionsRefused") == 0
                 ? "none"

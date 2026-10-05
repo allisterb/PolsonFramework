@@ -487,20 +487,88 @@ public partial class DrawingMcpTools
         };
     });
 
+    /// <summary>Above this a document lists its sections, so a host that cannot take it whole can ask for parts.</summary>
+    private const int LargeDocChars = 20_000;
+
+    /// <summary>Every Markdown heading outside a code fence, with its level and where it starts.</summary>
+    private static List<(int Level, string Title, int Offset)> DocHeadings(string body)
+    {
+        var found = new List<(int, string, int)>();
+        var fenced = false;
+        var offset = 0;
+        foreach (var line in body.Split('\n'))
+        {
+            var trimmed = line.TrimEnd('\r');
+            if (trimmed.StartsWith("```", StringComparison.Ordinal)) fenced = !fenced;
+            else if (!fenced && trimmed.StartsWith('#'))
+            {
+                var level = trimmed.TakeWhile(c => c == '#').Count();
+                if (level <= 6 && trimmed.Length > level && trimmed[level] == ' ')
+                    found.Add((level, trimmed[(level + 1)..].Trim(), offset));
+            }
+            offset += line.Length + 1;
+        }
+        return found;
+    }
+
+    private static JsonArray SectionList(List<(int Level, string Title, int Offset)> headings) =>
+        [.. headings.Select(h => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(new string('#', h.Level) + " " + h.Title)!)];
+
     [McpServerTool(Name = "ReadDoc")]
     [Description("Reads a studio document IN FULL by its `polson://` URI and returns the text — the SDK method " +
         "reference (polson://sdk/core/{Area}), the schemas (polson://sdk/schema/{Area}), the symbol index " +
         "(polson://sdk/symbols), or a studio manual (polson://manual/13). This is the tool to call when Search " +
         "hands you a `uri` and you need the parameters, not the summary: Search returns excerpts and signatures, " +
         "this returns the whole document. Bare forms work too — '13', 'manual/13', 'sdk/core/Chart'. An unknown " +
-        "URI lists what is actually published rather than returning nothing.")]
+        "URI lists what is actually published rather than returning nothing. A large document also lists its " +
+        "`sections`; pass `section` (a heading, or part of one) to read just that part, which is the way to read " +
+        "a document too big for your host to return whole.")]
     public JsonObject ReadDoc(
-        [Description("The document URI, e.g. 'polson://sdk/core/Chart' or 'polson://manual/13'.")] string uri)
+        [Description("The document URI, e.g. 'polson://sdk/core/Chart' or 'polson://manual/13'.")] string uri,
+        [Description("Optional. A heading, or part of one, e.g. 'Motion.save' or 'A Character Beat'. Returns that " +
+            "section, through to the next heading at the same or a higher level.")] string? section = null)
     => Recorded(nameof(ReadDoc), () =>
     {
         ArgumentNullException.ThrowIfNull(uri);
 
         var body = PolsonResources.Read(uri);
+        if (body is not null && !string.IsNullOrWhiteSpace(section))
+        {
+            var headings = DocHeadings(body);
+            var match = headings.FirstOrDefault(h => h.Title.Contains(section.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (match.Title is null)
+            {
+                return new JsonObject
+                {
+                    ["uri"] = uri,
+                    ["found"] = false,
+                    ["section"] = section,
+                    ["sections"] = SectionList(headings),
+                    ["hint"] = $"No heading in '{uri}' contains '{section}'. `sections` lists every heading in it."
+                };
+            }
+
+            var end = headings.FirstOrDefault(h => h.Offset > match.Offset && h.Level <= match.Level).Offset;
+            var text = body[match.Offset..(end > match.Offset ? end : body.Length)].TrimEnd();
+
+            Events.Append("doc.read", fields: new Dictionary<string, object?>
+            {
+                ["uri"] = uri,
+                ["via"] = nameof(ReadDoc),
+                ["section"] = match.Title,
+                ["chars"] = text.Length
+            });
+
+            return new JsonObject
+            {
+                ["uri"] = uri,
+                ["found"] = true,
+                ["section"] = match.Title,
+                ["length"] = text.Length,
+                ["text"] = text
+            };
+        }
+
         if (body is not null)
         {
             // Recorded here rather than inside Read(...) so the run says how the document was
@@ -513,13 +581,19 @@ public partial class DrawingMcpTools
                 ["chars"] = body.Length
             });
 
-            return new JsonObject
+            var whole = new JsonObject
             {
                 ["uri"] = uri,
                 ["found"] = true,
-                ["length"] = body.Length,
-                ["text"] = body
+                ["length"] = body.Length
             };
+
+            // Listed before the text, so a host that will not return a result this large, and saves it
+            // to a file instead, still shows what can be asked for one section at a time. Claude Code
+            // did exactly that with the 56 KB Motion reference on a live run.
+            if (body.Length > LargeDocChars) whole["sections"] = SectionList(DocHeadings(body));
+            whole["text"] = body;
+            return whole;
         }
 
         // Name what exists rather than returning an empty result: a miss is nearly always a

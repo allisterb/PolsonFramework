@@ -186,7 +186,8 @@ public sealed class StageApi
     /// <param name="options">
     /// <c>{ accepted: 'reason' }</c>: a failing check that is right about the drawing, kept on purpose. It is recorded
     /// as accepted with the reason, counted apart from passes and failures, and returns true, since there is nothing
-    /// left to fix.
+    /// left to fix. <c>{ judged: true }</c>: the verdict is a reading of a picture, not a measurement. It still passes
+    /// or fails, and is marked so a reader can tell the two kinds apart.
     /// </param>
     public bool Check(string claim, bool passed, object? detail = null, object? options = null)
     {
@@ -197,7 +198,7 @@ public sealed class StageApi
         // on this side would be dead code and would also refuse the legitimate claim "true".
         if (detail is not null and not string && JsInterop.AsDict(detail) is not null && options is null)
             (detail, options) = (null, detail);
-        var reason = AcceptedReason(options);
+        var (reason, judged) = CheckOptions(options);
 
         var clean = Clean(claim, MaxNoteLength);
         if (clean.Length == 0) return passed;
@@ -214,6 +215,11 @@ public sealed class StageApi
 
         var cleanDetail = Clean(detail?.ToString(), MaxNoteLength);
         if (cleanDetail.Length > 0) fields["detail"] = cleanDetail;
+
+        // **A verdict from looking is not a measurement, and the record has to say which.** A live animation run
+        // recorded eleven per-beat critiques as checks; they read exactly like its arc and contact measurements,
+        // though each was its own reading of a contact sheet.
+        if (judged) fields["judged"] = true;
         var cleanReason = accepted ? Clean(reason, MaxNoteLength) : string.Empty;
         if (accepted)
         {
@@ -227,24 +233,32 @@ public sealed class StageApi
         // invisible until the run was over - backwards for a workflow shaped draw, measure, correct. One run wrote
         // nineteen checks and could see none of them for three stages, until it wrapped Stage.check in its own log.
         var verdict = passed ? "PASS" : accepted ? "ACCEPTED" : "FAIL";
-        result?.Logs.Add($"[CHECK] {verdict} {clean}" + (cleanDetail.Length > 0 ? $" - {cleanDetail}" : "")
+        result?.Logs.Add($"[CHECK] {verdict}{(judged ? " (judged)" : "")} {clean}" + (cleanDetail.Length > 0 ? $" - {cleanDetail}" : "")
                          + (accepted ? $" (kept: {cleanReason})" : ""));
-        result?.RecordCheck(clean, passed, cleanDetail.Length > 0 ? cleanDetail : null, accepted ? cleanReason : null);
+        result?.RecordCheck(clean, passed, cleanDetail.Length > 0 ? cleanDetail : null, accepted ? cleanReason : null, judged);
         return passed || accepted;
     }
 
-    /// <summary>The reason in <c>{ accepted: 'reason' }</c>, or null. Anything else in the options is refused by name.</summary>
-    private static string? AcceptedReason(object? options)
+    /// <summary>
+    /// The reason in <c>{ accepted: 'reason' }</c>, or null, and whether <c>{ judged: true }</c> was given. Anything
+    /// else in the options is refused by name.
+    /// </summary>
+    private static (string? Reason, bool Judged) CheckOptions(object? options)
     {
-        if (options is null) return null;
+        if (options is null) return (null, false);
         var dict = JsInterop.AsDict(options)
-            ?? throw new ArgumentException("Stage.check's fourth argument is an options object, such as { accepted: 'why this failure is kept' }.");
+            ?? throw new ArgumentException("Stage.check's fourth argument is an options object, such as { accepted: 'why this failure is kept' } or { judged: true }.");
         foreach (var key in dict.Keys)
-            if (key?.ToString() != "accepted")
-                throw new ArgumentException($"Stage.check has no option '{key}'. It takes accepted: the reason a failing check is kept.");
-        if (!dict.Contains("accepted") || dict["accepted"] is null) return null;
+            if (key?.ToString() is not ("accepted" or "judged"))
+                throw new ArgumentException($"Stage.check has no option '{key}'. It takes accepted (the reason a failing check is kept) and judged (true when the verdict is a reading of a picture, not a measurement).");
+
+        var judged = dict.Contains("judged") && dict["judged"] is not null && (dict["judged"] is bool b
+            ? b
+            : throw new ArgumentException("Stage.check: judged is true or false: whether the verdict is your reading of a picture rather than a measurement."));
+
+        if (!dict.Contains("accepted") || dict["accepted"] is null) return (null, judged);
         return dict["accepted"] is string text && text.Trim().Length > 0
-            ? text
+            ? (text, judged)
             : throw new ArgumentException("Stage.check: accepted takes the reason, as a sentence, not true. The reason is what a reader of the record needs.");
     }
 

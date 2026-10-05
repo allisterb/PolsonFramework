@@ -241,7 +241,7 @@ Declares which stage of work you are in, so every script, render and note that f
 > It is the clock only. If your host offers a `budget_status` tool, that reports the same elapsed time *and* what remains of any input-token allowance — which is often the binding constraint, since input is the whole conversation resent every turn and climbs whether or not the work is progressing.
 - `Stage.note(message: string)` — Records a note under the current stage.
 - `Stage.expect(claim: string)` — Records what you expect the next render to show, **before** you make it.
-- `Stage.check(claim: string, passed: boolean, detail?: string, options?: { accepted?: string })` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold. **The verdict also comes back in the `ExecuteScript` response**: each check is a `[CHECK] PASS` or `[CHECK] FAIL` line in the logs, where it was made, and `checks` sums them up as `{ passed, failed, acceptedCount, failures: [{ claim, detail }], accepted: [{ claim, detail, reason }] }`. There is no need to log a check yourself.
+- `Stage.check(claim: string, passed: boolean, detail?: string, options?: { accepted?: string, judged?: boolean })` → `boolean` — Records the verdict on a claim and returns `passed`, so it reads as the test it is: `if (!Stage.check('accent under 15%', share < 0.15, 'measured ' + pct)) { … }`. A failing check is not a failing run — it is the most useful thing the record can hold. **The verdict also comes back in the `ExecuteScript` response**: each check is a `[CHECK] PASS` or `[CHECK] FAIL` line in the logs, where it was made, and `checks` sums them up as `{ passed, failed, acceptedCount, judgedCount, failures: [{ claim, detail }], accepted: [{ claim, detail, reason }] }`. There is no need to log a check yourself.
 
 > [!TIP]
 > **A failure that is right about the drawing, kept on purpose, is a third state: pass `{ accepted: 'why' }`.** A check can be correct and the drawing still want what it found — `findTangents` reporting two fists close together on one rope, or a forearm lying along the rope it grips. Without this the record held a red check and the reason lived in a note somewhere else, so a reader saw a failure the run had already decided about.
@@ -256,8 +256,17 @@ Declares which stage of work you are in, so every script, render and note that f
 >
 > **Accept sparingly, and only after looking.** It is for a measurement that is right and a drawing that is also right. A check you would rather not fail is a check to fix.
 
+> [!TIP]
+> **A verdict you reached by looking is a check too, marked as one: pass `{ judged: true }`.** A critique asks questions no number answers: does this cell read as a fall, does the pose say *pleased*. Those verdicts drive the next pass exactly as measurements do, so they belong in the record as checks, but a reader must be able to tell them from measurements.
+>
+> ```js
+> Stage.check('frame 38 reads as a fall, not a sit', true, 'flipped and blurred, the backward bow survives', { judged: true });
+> ```
+>
+> It is logged as `[CHECK] PASS (judged) …`, counted in `judgedCount` as well as in the passes or failures, and `polson report` says how many of a run's checks were judged by eye. It composes with `accepted`. The `detail` is then what you saw, not a number.
+
 > [!IMPORTANT]
-> **`detail` carries the measurement, not the claim restated.** Against the claim *"monotonic scaling"*, a detail of *"monotonic scaling preserved"* records a belief and dresses it as a test; `'measured ' + n` records something a reader can disagree with. If there is no number, colour, count or returned value to put there, you did not measure — and a claim you cannot measure belongs in a `Stage.note`, honestly, rather than in a `check`, decoratively.
+> **`detail` carries the measurement, not the claim restated.** Against the claim *"monotonic scaling"*, a detail of *"monotonic scaling preserved"* records a belief and dresses it as a test; `'measured ' + n` records something a reader can disagree with. If there is no number, colour, count or returned value to put there, you did not measure — and a claim you cannot measure belongs in a `Stage.note`, or in a check marked `{ judged: true }`, honestly, rather than in an unmarked `check`, decoratively.
 >
 > **A stage of passing checks with no `observe` events measured nothing.** `bitmap.diff`, `bitmap.palette` and `bitmap.rowProfile` write those events themselves, so the record shows the difference between auditing and asserting whether or not you meant it to. See `polson://manual/18` §3a.
 
@@ -4713,8 +4722,13 @@ ctx.fillText(data.citeField('missions.0'), x, y + 20);   // "Apollo 11 - NASA �
 > **This is a spike.** It proves one path end to end — a script drives its own timeline, captures a frame per step, and saves an animated WebP — so that the authoring API above it can be designed against something that works rather than something imagined. The calls below may change. Nothing else in this reference depends on them.
 
 - `Motion.frame(source: SnapPaper | SkiaCanvas | SkiaBitmapWrapper, width?: number, height?: number)` → `number` — Rasterises the **current state** of a paper, canvas or bitmap and keeps it as the next frame. Returns the frame count so far. A **copy** is taken, so a caller may keep drawing on the same paper.
-- `Motion.save(filePath: string, options?: { fps?: number, frameMs?: number, quality?: number, lossless?: boolean })` → `{ path, frames, storedFrames, merged, width, height, frameMs, durationMs, bytes }` — Encodes the held frames as one animated WebP. `filePath` is contained exactly as `outFile` is. Frames are **kept** afterwards, so the same sequence can be saved twice at different qualities without redrawing it.
-- `Motion.sheet(filePath: string, options?: { indices?: number[], count?: number, cols?: number, scale?: number, labels?: boolean, fps?: number, background?: string, labelColor?: string, fontFamily?: string, gap?: number, padding?: number, format?: string, quality?: number })` → `{ path, cells, indices, cols, rows, width, height, bytes }` — Tiles a selection of the held frames into one labelled image. Frames are named by `indices`, or spread evenly across what is held — **always including the first and last**, because the ends of a movement are what a reader checks first.
+- `Motion.save(filePath: string, options?: { fps?: number, frameMs?: number, quality?: number, lossless?: boolean, loop?: boolean | number })` → `{ path, frames, storedFrames, merged, width, height, frameMs, durationMs, loop, bytes }` — Encodes the held frames as one animated WebP. `filePath` is contained exactly as `outFile` is. Frames are **kept** afterwards, so the same sequence can be saved twice at different qualities without redrawing it. **`loop`** is `true` (the default) to play forever, **`false` to play once and hold the last frame**, or a number of plays; it is written into the file, so every viewer honours it.
+- `Motion.sheet(filePath: string, options?: { indices?: number[], count?: number, cols?: number, scale?: number, labels?: boolean, fps?: number, background?: string, labelColor?: string, fontFamily?: string, gap?: number, padding?: number, format?: string, quality?: number })` → `{ path, cells, held, omitted, indices, cols, rows, width, height, bytes }` — Tiles a selection of the held frames into one labelled image. Frames are named by `indices`, or spread evenly across what is held — **always including the first and last**, because the ends of a movement are what a reader checks first. `held` and `omitted` say how many frames were held and how many the sheet left out: without `indices` it shows six.
+
+> [!IMPORTANT]
+> **A sheet labels a frame only with what it knows.** A frame captured by `comp.capture(...)` carries its film frame and time, and is labelled `f18 · 0.75s` whatever `fps` the sheet is given. A frame added by `Motion.frame(...)` has no time, so it is labelled by where it is held, `#3`; pass `fps` only when those frames really are evenly spaced at that rate, and they are labelled `#3 · 0.12s`. Until 2026-10-05 every frame was labelled by its position divided by `fps`, so eleven beat renders added by hand came out labelled at 0.08 s steps that were never in the film.
+>
+> Cells are downsampled with filtering, so a thin line survives a small `scale`.
 - `Motion.count` → `number` — How many frames are held.
 - `Motion.clear()` — Discards them.
 
@@ -4881,7 +4895,7 @@ comp.render(1.0);                               // one frame, returned as a canv
 - `comp.layerCount` → `number` — layers in this stack (a group's are its own).
 - `comp.render(time)` → `SkiaCanvas` — the composition at `time` seconds, on a new transparent canvas.
 - `comp.draw(ctx, time)` — draws it onto an existing context, under the context's current transform, so an animated passage sits inside a drawing made with the rest of the SDK.
-- `comp.capture(options?)` → `number` — renders frames into `Motion`'s buffer for `Motion.sheet` and `Motion.save`. `{ fps?, from?, to? }`; a lower `fps` samples the same timeline more sparsely. **Pass the same `fps` to `Motion.sheet`**, which otherwise labels the frames at its own default of 25 and puts the wrong times under them.
+- `comp.capture(options?)` → `number` — renders frames into `Motion`'s buffer for `Motion.sheet` and `Motion.save`. `{ fps?, from?, to? }`; a lower `fps` samples the same timeline more sparsely. Each frame keeps its film frame and time, so a sheet labels it truthfully without being told the rate.
 - `comp.toSvg(options?)` → `string` — the composition as an **animated SVG**; see *Vector animation* below. `comp.saveSvg(path, options?)` writes it into the project and returns the path.
 - `comp.toSif()` → `string` — the composition as Synfig's `.sif` XML. `comp.saveSif(path)` writes it into the project and returns the path.
 

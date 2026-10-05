@@ -119,6 +119,36 @@ public class DocumentReachabilityTests : TestsRuntime
     }
 
     /// <summary>
+    /// A document too large for a host to return whole can be read one section at a time. Claude Code
+    /// saved the 56 KB Motion reference to a file instead of returning it, and the agent fell back to
+    /// grepping the file.
+    /// </summary>
+    [Fact]
+    public void TestALargeDocumentListsItsSectionsAndReturnsOne()
+    {
+        var whole = Tools().ReadDoc("polson://sdk/core/Motion");
+        var sections = whole["sections"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
+        Assert.Contains(sections, s => s.Contains("Motion.timeline()", StringComparison.Ordinal));
+
+        var part = Tools().ReadDoc("polson://sdk/core/Motion", section: "motion.timeline()");
+        Assert.True(part["found"]!.GetValue<bool>());
+        var text = part["text"]!.GetValue<string>();
+        Assert.StartsWith("## The Score", text, StringComparison.Ordinal);
+        Assert.Contains("tl.seek", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("## The Model", text, StringComparison.Ordinal);   // stops at the next heading of its level
+        Assert.True(text.Length < whole["length"]!.GetValue<int>() / 3);
+    }
+
+    [Fact]
+    public void TestAnUnknownSectionListsTheHeadings()
+    {
+        var result = Tools().ReadDoc("polson://manual/25", section: "no such heading");
+
+        Assert.False(result["found"]!.GetValue<bool>());
+        Assert.Contains(result["sections"]!.AsArray(), n => n!.GetValue<string>().Contains("A Character Beat", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// A prose result is a catalogue entry: what the passage covers and where to read it, not the
     /// passage itself. Signatures lived here briefly and were two thirds of the payload — and every
     /// result stays in the conversation and is re-sent on every later turn, so the waste was charged

@@ -61,6 +61,12 @@ public class MotionToolkit : IDisposable
     private readonly string? projectRoot;
     private readonly Action<string, string, IReadOnlyDictionary<string, object?>>? recorder;
     private readonly List<SKBitmap> frames = [];
+
+    /// <summary>
+    /// Where each held frame sits in its film, when that is known: set by a composition's capture,
+    /// null for a frame added by <see cref="Frame"/>, whose time only the caller knows.
+    /// </summary>
+    private readonly List<(int Frame, double Seconds)?> times = [];
     private long retainedPixels;
     #endregion
 
@@ -133,8 +139,17 @@ public class MotionToolkit : IDisposable
         }
 
         frames.Add(bitmap);
+        times.Add(null);
         retainedPixels += pixels;
         return frames.Count;
+    }
+
+    /// <summary>Keeps a frame and the film frame and time it shows, so a sheet can label it truthfully.</summary>
+    internal int FrameAt(object source, int filmFrame, double seconds)
+    {
+        var count = Frame(source);
+        times[^1] = (filmFrame, seconds);
+        return count;
     }
 
     /// <summary>Discards every held frame.</summary>
@@ -142,6 +157,7 @@ public class MotionToolkit : IDisposable
     {
         foreach (var frame in frames) frame.Dispose();
         frames.Clear();
+        times.Clear();
         retainedPixels = 0;
     }
 
@@ -165,6 +181,7 @@ public class MotionToolkit : IDisposable
         var frameMs = Num(opt, "frameMs", fps > 0 ? 1000f / fps : 40f);
         var quality = Num(opt, "quality", 80f);
         var lossless = opt != null && opt.Contains("lossless") && Convert.ToBoolean(opt["lossless"]);
+        var loops = LoopCount(opt?["loop"]);
 
         if (frameMs <= 0) throw new ArgumentException("fps must be positive.", nameof(options));
 
@@ -184,6 +201,7 @@ public class MotionToolkit : IDisposable
             ?? throw new InvalidOperationException("Encoding the animated WebP produced no data.");
 
         var bytes = data.ToArray();
+        SetWebpLoopCount(bytes, loops);
         File.WriteAllBytes(full, bytes);
 
         // What the file holds, read back from the file rather than assumed. The WebP encoder merges
@@ -218,8 +236,48 @@ public class MotionToolkit : IDisposable
             ["height"] = frames[0].Height,
             ["frameMs"] = frameMs,
             ["durationMs"] = frameMs * frames.Count,
+            ["loop"] = loops == 0 ? true : loops == 1 ? false : loops,
             ["bytes"] = (long)bytes.Length
         };
+    }
+
+    /// <summary>
+    /// The WebP loop count for a <c>loop</c> option: <c>true</c> (or absent) plays forever, which is 0 in
+    /// the file; <c>false</c> plays once and holds the last frame, which is 1; a number plays that many
+    /// times.
+    /// </summary>
+    private static int LoopCount(object? loop) => loop switch
+    {
+        null => 0,
+        bool b => b ? 0 : 1,
+        _ when double.TryParse(Convert.ToString(loop, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out var n)
+            => n >= 1 && n <= ushort.MaxValue && n == Math.Floor(n)
+                ? (int)n
+                : throw new ArgumentException($"Motion.save: loop {n} is not a whole number of plays from 1 to 65535. Use true to loop forever."),
+        _ => throw new ArgumentException("Motion.save: loop is true (forever), false (play once and hold), or a number of plays.")
+    };
+
+    /// <summary>
+    /// Writes the loop count into the animated WebP's <c>ANIM</c> chunk. The encoder always writes 0,
+    /// forever, and exposes no option for it; the field is two little-endian bytes after the chunk's
+    /// four-byte background colour.
+    /// </summary>
+    private static void SetWebpLoopCount(byte[] webp, int loops)
+    {
+        for (var at = 12; at + 8 <= webp.Length;)
+        {
+            var size = BitConverter.ToInt32(webp, at + 4);
+            if (webp[at] == 'A' && webp[at + 1] == 'N' && webp[at + 2] == 'I' && webp[at + 3] == 'M' && size >= 6)
+            {
+                webp[at + 12] = (byte)(loops & 0xff);
+                webp[at + 13] = (byte)(loops >> 8);
+                return;
+            }
+            at += 8 + size + (size & 1);
+        }
+
+        // No ANIM chunk: every frame was identical, the encoder merged them into one, and wrote a
+        // still. There is nothing to loop.
     }
 
     /// <summary>
@@ -253,7 +311,7 @@ public class MotionToolkit : IDisposable
         var gap = Num(opt, "gap", 10f);
         var pad = Num(opt, "padding", 12f);
         var labels = opt == null || !opt.Contains("labels") || Convert.ToBoolean(opt["labels"]);
-        var fps = Num(opt, "fps", 25f);
+        var fps = opt != null && opt.Contains("fps") ? Num(opt, "fps", 25f) : (float?)null;
         var labelH = labels ? Num(opt, "labelHeight", 22f) : 0f;
 
         var cellW = MathF.Max(1f, frames[0].Width * scale);
@@ -276,16 +334,18 @@ public class MotionToolkit : IDisposable
             var x = pad + (i % cols) * (cellW + gap) + gap;
             var y = pad + (i / cols) * (cellH + labelH + gap) + gap;
 
-            canvas.DrawBitmap(frame,
-                SKRect.Create(0, 0, frame.Width, frame.Height),
-                SKRect.Create(x, y, cellW, cellH));
+            // Mipmapped, so a cell smaller than its frame averages the pixels it covers. Point-sampled,
+            // a 2px line at scale 0.4 falls between samples and leaves the cell, so the ground under a
+            // figure simply vanished from a live run's spacing sheet.
+            using (var image = SKImage.FromBitmap(frame))
+                canvas.DrawImage(image,
+                    SKRect.Create(0, 0, frame.Width, frame.Height),
+                    SKRect.Create(x, y, cellW, cellH),
+                    new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
             canvas.DrawRect(SKRect.Create(x, y, cellW, cellH), border);
 
             if (!labels) continue;
-            var ms = fps > 0 ? picked[i] * 1000f / fps : picked[i];
-            canvas.DrawText(
-                $"{picked[i]}  ·  {ms / 1000f:0.00}s",
-                x, y + cellH + labelH * 0.72f, SKTextAlign.Left, font, ink);
+            canvas.DrawText(Label(picked[i], fps), x, y + cellH + labelH * 0.72f, SKTextAlign.Left, font, ink);
         }
 
         var format = opt?["format"]?.ToString() ?? "png";
@@ -312,6 +372,8 @@ public class MotionToolkit : IDisposable
         {
             ["path"] = filePath,
             ["cells"] = picked.Count,
+            ["held"] = frames.Count,
+            ["omitted"] = frames.Count - picked.Count,
             ["indices"] = picked.ConvertAll(i => (object?)i),
             ["cols"] = cols,
             ["rows"] = rows,
@@ -320,6 +382,16 @@ public class MotionToolkit : IDisposable
             ["bytes"] = (long)bytes.Length
         };
     }
+
+    /// <summary>
+    /// A cell's label. A captured frame carries its film frame and time, so it says those. A frame added
+    /// by hand says only where it is held, unless the caller passed <c>fps</c> to assert the frames are
+    /// evenly spaced at that rate: a live run handed the sheet eleven beat renders and an fps, and got
+    /// labels at 0.08 s steps that were never in the film.
+    /// </summary>
+    internal string Label(int index, float? fps) => times[index] is { } at
+        ? $"f{at.Frame}  ·  {at.Seconds:0.00}s"
+        : fps is > 0f ? $"#{index}  ·  {index / fps.Value:0.00}s" : $"#{index}";
 
     /// <summary>Which frames the sheet shows: named outright, or spread across what is held.</summary>
     private List<int> SelectIndices(IDictionary? opt)

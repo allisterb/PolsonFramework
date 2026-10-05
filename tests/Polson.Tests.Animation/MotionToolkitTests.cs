@@ -183,5 +183,116 @@ public class MotionToolkitTests : TestsRuntime
         motion.Frame(canvas);
         Assert.Equal(1, motion.Count);
     }
+
+    /// <summary>
+    /// <c>loop</c> sets the file's own loop count. The encoder always writes 0, forever, so a brief
+    /// asking a film to play once and hold could not be met: a live run delivered exactly that.
+    /// </summary>
+    [Theory]
+    [InlineData(null, 0)]
+    [InlineData(true, 0)]
+    [InlineData(false, 1)]
+    [InlineData(3d, 3)]
+    public void TestLoopSetsTheFilesLoopCount(object? loop, int expected)
+    {
+        using var motion = new MotionToolkit();
+        using var red = Board();
+        using var blue = Board(colour: "#0000ff");
+        motion.Frame(red);
+        motion.Frame(blue);
+
+        var path = TempPath("loop.webp");
+        try
+        {
+            var options = new Dictionary<string, object?> { ["fps"] = 12f };
+            if (loop is not null) options["loop"] = loop;
+            motion.Save(path, options);
+
+            var bytes = File.ReadAllBytes(path);
+            var at = System.Text.Encoding.ASCII.GetString(bytes).IndexOf("ANIM", StringComparison.Ordinal);
+            Assert.True(at > 0, "an animated WebP carries an ANIM chunk");
+            Assert.Equal(expected, BitConverter.ToUInt16(bytes, at + 12));
+
+            using var codec = SKCodec.Create(path);
+            Assert.Equal(2, codec.FrameCount);   // patching the count leaves the file decodable
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData(0d)]
+    [InlineData(1.5d)]
+    [InlineData("twice")]
+    public void TestALoopThatIsNotACountIsRefused(object loop)
+    {
+        using var motion = new MotionToolkit();
+        using var canvas = Board();
+        motion.Frame(canvas);
+
+        Assert.Throws<ArgumentException>(() =>
+            motion.Save(TempPath("bad.webp"), new Dictionary<string, object?> { ["loop"] = loop }));
+    }
+
+    /// <summary>
+    /// A downscaled sheet keeps a thin line. Point-sampled at 0.4, a 2px line on rows the samples
+    /// skip left the cell entirely: a live run's ground line vanished from its spacing sheet.
+    /// </summary>
+    [Fact]
+    public void TestAThinLineSurvivesADownscaledSheet()
+    {
+        using var motion = new MotionToolkit();
+        using var canvas = Board(200, 100, "#ffffff");
+        var ctx = canvas.GetContext("2d");
+        ctx.FillStyle = "#000000";
+        ctx.FillRect(0, 54, 200, 2);   // rows 54-55, which sampling every 2.5px from 1.25 never lands on
+        motion.Frame(canvas);
+
+        var path = TempPath("thin.png");
+        try
+        {
+            motion.Sheet(path, new Dictionary<string, object?> { ["scale"] = 0.4f, ["labels"] = false });
+            using var sheet = SKBitmap.Decode(path);
+
+            // The cell starts at padding 12 + gap 10, and the line lands near 22 + 54 * 0.4.
+            var darkest = 255;
+            for (var y = 40; y <= 46; y++)
+                for (var x = 30; x <= 90; x++)
+                    darkest = Math.Min(darkest, sheet.GetPixel(x, y).Red);
+
+            Assert.True(darkest < 200, $"the line should still darken its rows, darkest was {darkest}");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    /// <summary>
+    /// A captured frame is labelled with its film frame and time; a frame added by hand is labelled by
+    /// where it is held, and gets a time only when the caller asserts a rate.
+    /// </summary>
+    [Fact]
+    public void TestSheetLabelsSayOnlyWhatIsKnown()
+    {
+        using var motion = new MotionToolkit();
+        var comp = motion.Composition(new Dictionary<string, object?> { ["width"] = 40d, ["height"] = 30d, ["fps"] = 24d, ["duration"] = 1d });
+        comp.Fill(new Dictionary<string, object?> { ["color"] = "#ffffff" });
+        comp.Capture(new Dictionary<string, object?> { ["fps"] = 6d });   // t = 0, 1/6, ... 1
+
+        Assert.Equal(7, motion.Count);
+        Assert.Equal("f4  ·  0.17s", motion.Label(1, null));      // film frame 4 at 24 fps, whatever the sheet is told
+        Assert.Equal("f24  ·  1.00s", motion.Label(6, 12f));
+
+        using var canvas = Board();
+        motion.Frame(canvas);
+        Assert.Equal("#7", motion.Label(7, null));
+        Assert.Equal("#7  ·  0.58s", motion.Label(7, 12f));
+
+        var path = TempPath("held.png");
+        try
+        {
+            var sheet = motion.Sheet(path, new Dictionary<string, object?> { ["count"] = 3f });
+            Assert.Equal(8, Convert.ToInt32(sheet["held"]));
+            Assert.Equal(5, Convert.ToInt32(sheet["omitted"]));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
     #endregion
 }

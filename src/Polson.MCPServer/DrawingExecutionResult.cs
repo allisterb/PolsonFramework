@@ -113,9 +113,10 @@ public class DrawingExecutionResult
 
     #region Methods
     /// <summary>Counts one <c>Stage.check</c> verdict into <see cref="Checks"/>. A failure with a reason was accepted.</summary>
-    public void RecordCheck(string claim, bool passed, string? detail, string? acceptedReason = null)
+    public void RecordCheck(string claim, bool passed, string? detail, string? acceptedReason = null, bool judged = false)
     {
         var checks = Checks ??= new CheckSummary();
+        if (judged) checks.JudgedCount++;
         if (passed) checks.Passed++;
         else if (acceptedReason is not null)
         {
@@ -141,6 +142,10 @@ public sealed class CheckSummary
     /// <summary>Failures accepted with a reason; neither passes nor failures.</summary>
     [JsonPropertyName("acceptedCount")]
     public int AcceptedCount { get; set; }
+
+    /// <summary>How many of the checks were judged by eye rather than measured. Counted in the tallies above too.</summary>
+    [JsonPropertyName("judgedCount")]
+    public int JudgedCount { get; set; }
 
     public List<CheckFailure> Failures { get; } = [];
 

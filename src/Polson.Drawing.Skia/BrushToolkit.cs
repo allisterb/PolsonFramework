@@ -74,8 +74,12 @@ public class BrushPreset
     /// This medium's grain in <paramref name="color"/>, or null for a solid medium. How a feature drawer puts
     /// its iris, its lip and its shadow down in the same pencil as its outline.
     /// </summary>
-    internal SKShader? GrainIn(string color) =>
-        Spec is { } s ? SkiaBrushApi.Grain(color, s.Amount, s.Frequency, s.Octaves, s.Seed, s.Lo, s.Hi) : null;
+    /// <remarks>
+    /// <paramref name="dryness"/> scales the grain: below 1 the deposit is denser, which a fine mark needs —
+    /// at full grain a hair or a lash a few pixels wide loses most of itself to the gaps and reads as texture.
+    /// </remarks>
+    internal SKShader? GrainIn(string color, float dryness = 1f) =>
+        Spec is { } s ? SkiaBrushApi.Grain(color, s.Amount * dryness, s.Frequency, s.Octaves, s.Seed, s.Lo, s.Hi) : null;
     #endregion
 
     #region Types

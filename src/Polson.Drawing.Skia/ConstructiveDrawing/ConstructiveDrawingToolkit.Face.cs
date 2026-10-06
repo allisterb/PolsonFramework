@@ -18,7 +18,8 @@ public partial class ConstructiveDrawingToolkit
     }
 
     /// <summary>A colour as the medium lays it down: its grain in that colour, or the plain colour for solid ink.</summary>
-    static object InMedium(BrushPreset? medium, string color) => medium?.GrainIn(color) is { } grain ? grain : color;
+    /// <remarks><paramref name="dryness"/> below 1 lays a denser deposit, for marks only a few pixels wide.</remarks>
+    static object InMedium(BrushPreset? medium, string color, float dryness = 1f) => medium?.GrainIn(color, dryness) is { } grain ? grain : color;
 
     /// <summary>The same, always as a shader, so it can be masked by a gradient.</summary>
     static SKShader ShaderInMedium(BrushPreset? medium, string color) =>
@@ -417,7 +418,7 @@ public partial class ConstructiveDrawingToolkit
         }
         if (lashes > 0f)
         {
-            ctx.FillStyle = InMedium(medium, inkColor);
+            ctx.FillStyle = InMedium(medium, inkColor, 0.35f);
             ctx.Fill(lashMarks);
         }
 
@@ -524,14 +525,78 @@ public partial class ConstructiveDrawingToolkit
         mass.QuadraticCurveTo(under.X, under.Y, inner.X, inner.Y + half);
         mass.ClosePath();
 
+        // **Hairs**, Hamm's way (Drawing the Head and Figure, p. 8): they grow obliquely away from the nose,
+        // nearly upright at the brow's head; past the peak of the arch the top hairs turn down to meet the
+        // under hairs, which still slant up. Each hair is placed in the brow's own frame — how far along it,
+        // how far across — from a fixed seed, so an expression that moves the brow carries the same hairs with
+        // it rather than reshuffling them between frames.
+        var hairs = Math.Clamp(Num(optDict, "hairs", 0f), 0f, 1f);
+        var hairMarks = new CanvasPath();
+        if (hairs > 0f)
+        {
+            Point2D topInner = new(inner.X, inner.Y - half), lowInner = new(inner.X, inner.Y + half);
+            Point2D Top(float s) => Quad(topInner, top, outer, s);
+            Point2D Low(float s) => Quad(outer, under, lowInner, 1f - s);
+            // A fixed number for the setting, never taken from the brow's current length: an expression that
+            // stretches or tilts the brow must keep the same hairs, or a sequence reshuffles them frame to frame.
+            var count = Math.Max(8, (int)MathF.Round(80f * hairs));
+            var rng = new SeededRandom((uint)Math.Max(1f, Num(optDict, "seed", 1f)));
+            var hairWidth = MathF.Max(0.35f, half * 0.12f);
+
+            for (var i = 0; i < count; i++)
+            {
+                var s = (float)((i + rng.Next()) / count);
+                var v = (float)rng.Next();
+                Point2D a = Top(s), b = Low(s);
+                var c = new Point2D(a.X + (b.X - a.X) * v, a.Y + (b.Y - a.Y) * v);
+                var band = MathF.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
+
+                // The brow's direction here, and the normal pointing up off it.
+                float tx = 2f * (1f - s) * (crest.X - inner.X) + 2f * s * (outer.X - crest.X);
+                float ty = 2f * (1f - s) * (crest.Y - inner.Y) + 2f * s * (outer.Y - crest.Y);
+                var tl = MathF.Max(1e-4f, MathF.Sqrt(tx * tx + ty * ty));
+                (tx, ty) = (tx / tl, ty / tl);
+                float nx = ty, ny = -tx;
+                if (ny > 0f) (nx, ny) = (-nx, -ny);
+
+                // Degrees above the brow's line: upright at the head, oblique along the body, and past the peak
+                // down for the top hairs and still up for the under ones.
+                var angle = s < 0.12f ? 68f - s / 0.12f * 26f
+                          : s < 0.5f ? 42f - (s - 0.12f) / 0.38f * 18f
+                          : v < 0.5f ? -22f : 18f;
+                angle += (float)rng.Range(-8, 8);
+                var rad = angle * MathF.PI / 180f;
+                float dx = tx * MathF.Cos(rad) + nx * MathF.Sin(rad), dy = ty * MathF.Cos(rad) + ny * MathF.Sin(rad);
+                var hairLength = MathF.Max(band, half * 0.4f) * (0.75f - 0.25f * s) * (float)rng.Range(0.8, 1.15);
+                var bow = hairLength * 0.08f;
+
+                var from = new Point2D(c.X - dx * hairLength * 0.5f, c.Y - dy * hairLength * 0.5f);
+                hairMarks.AddPath(CreateTaperedStrokePath(from,
+                    new Point2D(from.X + dx * hairLength / 3f + nx * bow, from.Y + dy * hairLength / 3f + ny * bow),
+                    new Point2D(from.X + dx * hairLength * 2f / 3f + nx * bow, from.Y + dy * hairLength * 2f / 3f + ny * bow),
+                    new Point2D(c.X + dx * hairLength * 0.5f, c.Y + dy * hairLength * 0.5f), hairWidth));
+            }
+        }
+
         ctx.Save();
 
         ApplyMedium(ctx, medium);
         ctx.FillStyle = InMedium(medium, inkColor);
-        ctx.Fill(mass);
+
+        // With hairs the mass stays as a faint tone under them, which is how a pencil brow is built up.
+        if (hairs > 0f)
+        {
+            ctx.Save();
+            ctx.GlobalAlpha = 1f - 0.8f * hairs;
+            ctx.Fill(mass);
+            ctx.Restore();
+            ctx.FillStyle = InMedium(medium, inkColor, 0.35f);
+            ctx.Fill(hairMarks);
+        }
+        else ctx.Fill(mass);
         ctx.Restore();
 
-        return new Dictionary<string, object?> { ["mass"] = mass, ["spine"] = spine };
+        return new Dictionary<string, object?> { ["mass"] = mass, ["spine"] = spine, ["hairs"] = hairMarks };
     }
 
     /// <summary>

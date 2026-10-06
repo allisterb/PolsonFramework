@@ -91,6 +91,55 @@ public class HammEyeTests : TestsRuntime
         Assert.NotEqual("0", Darkest(new() { ["medium"] = Brushes.Pencil("#2e2e2e", 2f, 1f, 7) }));  // gaps in the grain
     }
 
+    static Dictionary<string, object?> Brow(Dictionary<string, object?> head, Dictionary<string, object?>? options) =>
+        Toolkit.DrawComicBrow(new SkiaCanvas(800, 800).GetContext("2d"), head["nearBrow"]!, false, options);
+
+    static int Contours(CanvasPath path)
+    {
+        using var measure = new SkiaSharp.SKPathMeasure(path.Path, false);
+        var n = 0;
+        do if (measure.Length > 0f) n++; while (measure.NextContour());
+        return n;
+    }
+
+    [Fact]
+    public void TestHairsAreOptInAndScaleWithTheSetting()
+    {
+        var head = Head();
+        Assert.True(((CanvasPath)Brow(head, null)["hairs"]!).Path.IsEmpty);
+        var few = Contours((CanvasPath)Brow(head, new() { ["hairs"] = 0.4f })["hairs"]!);
+        var many = Contours((CanvasPath)Brow(head, new() { ["hairs"] = 1f })["hairs"]!);
+        Assert.True(many > few && few > 0, $"{few} hairs at 0.4, {many} at 1");
+    }
+
+    [Fact]
+    public void TestTheSameHairsRideAMovedBrow()
+    {
+        // Placed in the brow's own frame from a fixed seed: the same render twice, and the same number of hairs
+        // when an expression moves the brow, so a sequence does not reshuffle them frame to frame.
+        var head = Head();
+        var a = ((CanvasPath)Brow(head, new() { ["hairs"] = 1f })["hairs"]!).Path.ToSvgPathData();
+        var b = ((CanvasPath)Brow(head, new() { ["hairs"] = 1f })["hairs"]!).Path.ToSvgPathData();
+        Assert.Equal(a, b);
+
+        var sad = Toolkit.ApplyFacialExpression(head, "sadness", 1f);
+        Assert.Equal(Contours((CanvasPath)Brow(head, new() { ["hairs"] = 1f })["hairs"]!),
+                     Contours((CanvasPath)Brow(sad, new() { ["hairs"] = 1f })["hairs"]!));
+        Assert.NotEqual(a, ((CanvasPath)Brow(head, new() { ["hairs"] = 1f, ["seed"] = 7 })["hairs"]!).Path.ToSvgPathData());
+    }
+
+    [Fact]
+    public void TestHairsStayAboutTheBrow()
+    {
+        var head = Head();
+        var parts = Brow(head, new() { ["hairs"] = 1f });
+        var mass = ((CanvasPath)parts["mass"]!).Path.TightBounds;
+        var hairs = ((CanvasPath)parts["hairs"]!).Path.TightBounds;
+        var thickness = Convert.ToSingle(((Dictionary<string, object?>)head["nearBrow"]!)["thickness"]);
+        Assert.True(hairs.Top > mass.Top - thickness * 0.6f, $"hairs reach {mass.Top - hairs.Top:0.0}px above a {thickness:0}px brow");
+        Assert.True(hairs.Bottom < mass.Bottom + thickness * 0.6f);
+    }
+
     [Fact]
     public void TestToneGradesFromFromToTo()
     {

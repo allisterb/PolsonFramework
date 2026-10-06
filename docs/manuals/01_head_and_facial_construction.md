@@ -346,9 +346,14 @@ const grey = { medium: pencil, inkColor: '#2e2e2e', irisColor: '#7a7a7a', sclera
 const eye = head.nearEye, brow = head.nearBrow;
 Drawing.drawTone(ctx, Drawing.createEyeSocket(eye, brow),
     { medium: pencil, amount: 0.2, from: { x: eye.center.x, y: brow.peak.y }, to: eye.center, softness: 5 });
-Drawing.drawComicBrow(ctx, brow, false, grey);
+Drawing.drawComicBrow(ctx, brow, false, { ...grey, hairs: 1 });
 Drawing.drawComicEye(ctx, eye, false, { ...grey, lashes: 0.6, tone: 1 });
 ```
+
+**A pencil brow is hairs, not a shape.** `hairs: 1` draws the brow as Hamm does (p. 8): hairs growing obliquely
+away from the nose, nearly upright at its head, and past the peak of the arch the top hairs turning down to meet
+the under hairs, which still slant up. Over a faint tone of the brow's mass, that is how a pencil brow is built
+up. The hairs are placed in the brow's own frame, so a brow raised or knitted by an expression keeps the same hairs.
 
 Use greys in pencil. The comic defaults — a blue iris, a red lip — are colours a dry medium does not have.
 

@@ -1476,7 +1476,7 @@ Also accessible via `Skia.Drawing`.
 > ```
 >
 > A non-positive or non-finite value falls back to the default rather than drawing an invisible iris.
-- `Drawing.drawComicBrow(ctx: CanvasRenderingContext2D, browObj: object, isFar?: boolean, options?: { inkColor?: string, thickness?: number, medium?: BrushPreset })` → `{ mass, spine }` — Renders one eyebrow from its three stations, **returning the filled brow and its centre-line as `CanvasPath`s**. Pass `head.nearBrow` and `head.farBrow`.
+- `Drawing.drawComicBrow(ctx: CanvasRenderingContext2D, browObj: object, isFar?: boolean, options?: { inkColor?: string, thickness?: number, medium?: BrushPreset, hairs?: number, seed?: number })` → `{ mass, spine, hairs }` — Renders one eyebrow from its three stations, **returning the filled brow, its centre-line and its hairs as `CanvasPath`s**. `hairs` (0–1, default 0) draws it as hair strokes over a faint tone instead of a solid mass, Hamm's way (*Drawing the Head and Figure*, p. 8): hairs grow obliquely away from the nose, nearly upright at the brow's head, and past the peak the top hairs turn down to meet the under hairs still slanting up. They are placed in the brow's own frame from `seed`, so an expression that moves the brow keeps the same hairs. Pass `head.nearBrow` and `head.farBrow`.
 
 > [!IMPORTANT]
 > **The brow is a station pair per eye, not a point at the head's centre — and `head.brow` is not it.** `createLoomisHead` carries `nearBrow` and `farBrow`, each `{ inner, peak, outer, thickness }`, and those are the drawn eyebrows. **`head.brow` stays what it always was**: the ball's equator, the landmark `createHeadGeometry` takes the cranium's centre and radius from, and a construction line rather than anything you ink.

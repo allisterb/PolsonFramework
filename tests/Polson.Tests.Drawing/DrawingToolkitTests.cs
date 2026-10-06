@@ -1637,7 +1637,7 @@ public class DrawingToolkitTests : TestsRuntime
 
         var brow = toolkit.DrawComicBrow(ctx, head["nearBrow"]!, false, null);
 
-        Assert.Equal(new[] { "mass", "spine" }, brow.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
+        Assert.Equal(new[] { "hairs", "mass", "spine" }, brow.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
 
         var mass = ((CanvasPath)brow["mass"]!).Path.Bounds;
         var eye = ((CanvasPath)toolkit.DrawComicEye(ctx, head["nearEye"]!, false, null)["aperture"]!).Path.Bounds;

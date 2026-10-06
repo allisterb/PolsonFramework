@@ -656,7 +656,7 @@ Segment methods mirror the context's own path construction and take the same arg
 Each returns a **new** path and leaves both operands untouched, so a shape can be combined repeatedly
 and the results chain: `a.union(b).subtract(c)`.
 
-- `path.union(other: CanvasPath)` → `CanvasPath` — Everything covered by either path.
+- `path.union(other: CanvasPath)` → `CanvasPath` — Everything covered by either path. Where two curves coincide Skia can fail a boolean operation, or report a union as done and drop a piece; either is retried with the operands simplified and then nudged a 256th of a pixel, and only an operation that fails every way throws.
 - `path.subtract(other: CanvasPath)` → `CanvasPath` — What is left once `other` is cut out. **This is how you cut a counter as real geometry** — a genuine hole in one path, rather than an even-odd sub-path that depends on winding, or a background-coloured shape laid on top that only works on a plain ground.
 - `path.intersect(other: CanvasPath)` → `CanvasPath` — Only what both cover.
 - `path.xor(other: CanvasPath)` → `CanvasPath` — What either covers, but not both.
@@ -1182,7 +1182,7 @@ Also accessible via `Skia.Drawing`.
 > **Two things named `brow`, and they are not the same thing.** `head.brow` is a single point on the facial meridian at the 1.5-unit line: it is the **ball's equator**, the landmark `createHeadGeometry` takes the cranium's centre and radius from, and the axis `AU4` knits toward. Nothing draws it but the construction sheet. `head.nearBrow` and `head.farBrow` are the **drawn eyebrows** — `{ inner, peak, outer, thickness }` apiece, sitting over their own eye, and what `drawComicBrow` and the brow Action Units act on.
 >
 > Three stations rather than two because two cannot carry an arch, and the arch is exactly where `AU1` and `AU2` differ. The tail runs a little past the eye's outer corner and the peak sits two thirds out, roughly over the outer limbus.
-- `Drawing.createParametricHead(headObj: object, parameters?: { eyesDistance?: number, eyesSize?: number, eyesOpening?: number, noseLength?: number, jawShape?: number, chinShape?: number, chinLength?: number, mouthWidth?: number })` → `object` — Displaces a Loomis head's landmarks by named character parameters and returns a **whole head**, ready for `drawLoomisWireframe` and the comic feature calls. Each parameter is a signed scale, `-1 … 0 … +1`, defaulting to `0`; out-of-range values are clamped, and a misspelled one is refused by name.
+- `Drawing.createParametricHead(headObj: object, parameters?: { eyesDistance?: number, eyesSize?: number, eyesOpening?: number, eyeLine?: number, noseLength?: number, jawShape?: number, chinShape?: number, chinLength?: number, mouthWidth?: number })` → `object` — Displaces a Loomis head's landmarks by named character parameters and returns a **whole head**, ready for `drawLoomisWireframe` and the comic feature calls. Each parameter is a signed scale, `-1 … 0 … +1`, defaulting to `0`; out-of-range values are clamped, and a misspelled one is refused by name.
 
 > [!IMPORTANT]
 > **This is how a character survives a page.** It is a pure function of the head and the parameters — no clock, no randomness, no state — so the same numbers give identical landmarks in panel 1 and panel 40. Consistency comes from *you keeping the numbers*, which a `const` at the top of `artwork.js` already does; nothing here remembers a face.
@@ -1247,6 +1247,14 @@ Also accessible via `Skia.Drawing`.
 > Compare `noseLength: 1`, which breaks at **0.40**, below Brennan's own recommended setting.
 >
 > The taxonomy follows Schwind et al., *FaceMaker* (Springer 2017, DOI 10.1007/978-3-319-53088-8_6), whose parameter set was derived by surveying nine commercial RPG character creators. Their implementation morphs 3D meshes; this moves the landmarks Loomis construction already computes, which is the 2D analogue rather than a port.
+
+> [!TIP]
+> **`eyeLine` is the first decision on a cartoon head.** Gautier (*Drawing and Cartooning 1,001 Faces*, ch. "Cartoons") starts the cartoon from the portrait oval and sets the eye line above or below its standard mark. Positive lowers it, which gives a larger cranium over a smaller face, the young and cute end; negative raises it, a low brow and a long lower face. It moves the eyes, the drawn brows and the top of the nose bridge by up to a tenth of the head, and leaves the skull, the nose base, the mouth and the chin where they are. `polson://manual/23` §10 has the cartoon head as a whole.
+
+- `Drawing.squashHead(headObj: object, amount: number)` → `head` — **Squashes or stretches the face while the skull keeps its shape**, `-1` squashed to `+1` stretched. The lower face is scaled about the eye line, vertically by `1 + 0.35 × amount` and across by its inverse, so its area is kept. The crown, hairline, cranium, ears, eyes and brows do not move; the nose, mouth, jaw and chin do. Returns a new head.
+
+> [!TIP]
+> **This is Stanchfield's rule for a head in motion** (*Drawn to Life* vol. 1 ch. 37): the skull is pretty solid and the rest of the head does the squashing and stretching, and a squash keeps its volume (chs. 6–8). It is a pure function of the head and the amount, so it can be keyed: in a `comp.drawn(...)` animation, a jaw drop or a laugh stretches the face frame by frame and the character stays the same person. Apply it after `createParametricHead` and any expression. A face shape from `createHeadGeometry({ face })` follows it, because the shape is built from the landmarks it moves.
 - `Drawing.blendHead(base: object, from: object, to: object, amount: number)` → `head` — **One head moved toward another**: `base + amount × (to − from)`, measured in head units rather than pixels. Returns a new head; none of the three arguments is modified.
 - `Drawing.exaggerateHead(headObj: object, amount: number, reference?: object)` → `head` — Pushes a head **further from** a reference. `0` leaves it alone, `1` doubles every difference. `reference` defaults to the canon — the same head with no character parameters, at its own size, position and turn.
 
@@ -1313,7 +1321,7 @@ Also accessible via `Skia.Drawing`.
 > faces"*, and a successful caricature often came from comparing against **any face that simply
 > seemed very different**. That is what the `reference` argument is for.
 
-- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, ears: { far, near }, bounds, padding, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
+- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic', face?: 'loomis' | 'oval' | 'round' | 'box' | 'narrow' | 'wedge' | 'pear' | 'peanut' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, ears: { far, near }, bounds, padding, face, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
 
 > [!IMPORTANT]
 > **This is what stops features being marks floating in space.** `createLoomisHead` places landmarks and the comic feature drawers put marks at them, and until this there was nothing in between — a live run drew two correctly proportioned faces that read as **masks on undifferentiated shoulder-masses**, because the features had nothing to sit on. Clip them to `mass` and they belong to a head.
@@ -1365,6 +1373,14 @@ Also accessible via `Skia.Drawing`.
 > **Both ears are drawn as of 2026-09-19, and the advice that used to be here is now wrong.** This note read: *"there is one ear, on the side `jaw.ear` names, which is right for a three-quarter view and wrong for a frontal one: mirror `parts.ear` about `crown.x` when the head is square on."* It is `parts.ear` **and** `parts.nearEar` now, so a caller still mirroring by hand gets three. `ear` keeps its name and its side — it is the far one, the ear `jaw.ear` locates — because renaming it to `farEar` would break every caller to make a pair read tidily.
 >
 > **The near ear narrows where the far one widens**, which is the same fact from the other side: an ear is edge-on frontally and full-face in profile. At yaw 0 the two are identical and the head is symmetric; past that the near one is swallowed by the cranium it is unioned into. **Measured on a 240px head it stops altering the outline at 10°** — 2.71px of protrusion frontally, 0.57px at 8°, nothing from 10° on. That is the physics rather than a fudge: a frontal ear sits exactly *on* the ball's silhouette, so any turn toward it puts it behind the head's own edge. **A turned head therefore renders byte-identically to before**; only frontal ones change, and they change by gaining the ear they should always have had.
+> [!TIP]
+> **`face` builds the face as one of Stanchfield's cartoon head shapes under the same cranium** (*Drawn to Life* vol. 1 ch. 37: a circle for the skull over an oval for the face, and a cartoon head is that pair pushed into another shape). `oval` is his basic face; `round` is fuller through the cheeks; `box` is square-jawed; `narrow` is a narrow rectangle; `wedge` is a wide brow over a pointed chin; `pear` is narrow at the temples and wide at the jowls; `peanut` is pinched at the cheekbones. Each spans the jaw stations at the brow line and ends on the chin, so the character parameters and `squashHead` move it. It replaces `parts.jaw`, and `farCheek`/`nearCheek` come back empty, since a cheek is the seam between Loomis's ball and his jaw. `loomis`, the default, is the construction as before. The shapes are drawn about the facial axis and foreshorten with the turn; past about 45° build the turn by hand.
+
+- `Drawing.measureFaceAir(headObj: object, options?: { skull?: 'loomis' | 'comic', face?: string })` → `{ share, air, byFeature: { eyes, brows, nose, mouth }, face, message }` — **How much of the face the features cover**, from hairline to chin, with the eyes, brows, nose and mouth drawn as `drawComicEye` and its siblings draw them. `options` sets the face outline as `createHeadGeometry` does.
+
+> [!TIP]
+> **Gautier's warning, measured.** A face crammed with large eyes and a wide mouth reads as badly drawn: the features need open space around them, or "air" (*Drawing and Cartooning 1,001 Faces*, ch. "Cartoons"). He gives no number. Measured here: the canon face is about **6%** features, and one crammed with big open eyes and a wide mouth about **11.5%**, so a cartoon face that passes **10%** is worth looking at again. That threshold is the studio's. It rasterises the features rather than adding path areas, because strokes, fills and their overlaps are what crowd a face, and measures at least 400px tall, so a small head gives the same answer as a large one.
+
 - `Drawing.createHeadForFigure(figureObj: object, options?: { yawDeg?: number, pitchDeg?: number, skull?: 'loomis' | 'comic', neckLength?: number, character?: object })` → `head` — **A head built to sit on a mannequin.** Returns an ordinary head — everything that takes one works unchanged — carrying an extra `fit` block: `{ rollDeg, pivot, headHeight, neckLength, reach, skull }`.
 
 > [!IMPORTANT]
@@ -1395,6 +1411,8 @@ Also accessible via `Skia.Drawing`.
 > ```
 >
 > `yawDeg` defaults to **0** rather than `createLoomisHead`'s 35: a head on a figure faces where the figure faces until told otherwise. `character` is passed to `createParametricHead`, so a character stays the same person from panel to panel.
+>
+> **On a child it gives a child's face.** Gautier (*1,001 Faces*, ch. "Children"): a cranium larger than the face, eyes that keep their adult size so look larger and sit wider, a small nose and a smaller mouth, the lower face catching up around ten. The head takes a lower eye line, larger and wider-set eyes, a shorter nose and a narrower mouth, fading out by twelve; the amounts are the studio's, and anything in your `character` wins. A head up to about four is also built on the rounder `loomis` skull. A child's brows are very light, which no parameter sets yet: draw them thinner yourself, with `drawComicBrow`'s `thickness`. `face: 'round'` in `createHeadGeometry` suits a small child.
 >
 > **Drawing it onto a body has two ordering rules that are not obvious and produce a wrong picture silently** — the head and neck go down **first** with the torso over them, or the neck's closed base is outlined across the chest; and the mannequin's own head egg has to be cut out of the body (`figGeo.silhouette.subtract(figGeo.groups.head)`) or it paints over the face. Worked through in `polson://manual/23` §8.
 
@@ -1652,7 +1670,7 @@ Also accessible via `Skia.Drawing`.
 - `Drawing.createVolumetricSphereShader(options?: { lightColor?: string, baseColor?: string, shadowColor?: string })` → `SKShader` — SkSL procedural 3D sphere lighting shader.
 
 ## Full-Body Anatomy, Mannequins & Expressions
-- `Drawing.createMannequinFigure(originX: number, originY: number, totalHeight?: number, options?: { shoulderTiltDeg?: number, pelvicTiltDeg?: number, spineOffset?: number, shoulderSpanHeads?: number, pose?: object })` → `object` — Computes full 8-head proportional skeletal joint nodes (Head, Clavicles, Sternum, Ribcage, Spine, Pelvis, Hips, Knees, Ankles, Feet, Shoulders, Elbows, Wrists, Hands). `pose` takes `spineDeg`, `neckDeg`, `lineOfAction`, and `leftArm`/`rightArm` (`shoulderDeg`, `elbowDeg`) and `leftLeg`/`rightLeg` (`hipDeg`, `kneeDeg`); see `polson://manual/24` and `polson://manual/08`.
+- `Drawing.createMannequinFigure(originX: number, originY: number, totalHeight?: number, options?: { shoulderTiltDeg?: number, pelvicTiltDeg?: number, spineOffset?: number, shoulderSpanHeads?: number, build?: 'male' | 'female', age?: number, pose?: object })` → `object` — Computes full 8-head proportional skeletal joint nodes (Head, Clavicles, Sternum, Ribcage, Spine, Pelvis, Hips, Knees, Ankles, Feet, Shoulders, Elbows, Wrists, Hands). `pose` takes `spineDeg`, `neckDeg`, `lineOfAction`, and `leftArm`/`rightArm` (`shoulderDeg`, `elbowDeg`) and `leftLeg`/`rightLeg` (`hipDeg`, `kneeDeg`); see `polson://manual/24` and `polson://manual/08`.
 
 > [!IMPORTANT]
 > **The pose's keys, all of them, and what each angle measures.** Angles are degrees on the page: `0` points right, `90` down, negative up.
@@ -1673,8 +1691,19 @@ Also accessible via `Skia.Drawing`.
 > [!TIP]
 > **`shoulderSpanHeads` is in head units and defaults to `1.8`, which is narrower than any published canon** — it is a shoulder-*joint* span. The figure canons measure different things and all are usable: Loomis gives `2.33` for the figure at its widest and about `2.0` for the shoulder "cape"; Faragasso, after Reilly, gives `2.67` across. Pick one to suit the build you are drawing. See `polson://manual/08` §1.
 
+> [!TIP]
+> **`build` and `age` draw a woman or a child on their own canons**, not the male figure scaled. `build: 'female'` is Loomis's female (*Figure Drawing for All It's Worth* p. 27): still eight heads, the nipples and navel a sixth of a head lower and the crotch a third of a head below the middle, the wrists level with it; narrower at the shoulders and ribs, a waist of one head, wider at the hips. `age` is years, and follows Loomis's proportions at various ages (p. 29): **4 heads at one, 5 at three, 6 at five, 7 at ten, 7½ at fifteen**, the adult build from eighteen, interpolated between. A child's legs are short for its trunk (the crotch sits 0.71 of the way down at one year, against half), its arms end at the hip, its head is rounder, and its trunk narrower for its head. Under a year is drawn as one. Combine them: `{ build: 'female', age: 16 }` grows into the female build.
+>
+> ```javascript
+> const kid = Drawing.createMannequinFigure(200, 100, 300, { age: 5 });
+> log(`${kid.build.heads.toFixed(1)} heads; head ${kid.headUnit.toFixed(0)}px of ${kid.totalHeight}`);   // 6.0 heads; head 50px of 300
+> ```
+>
+> **`totalHeight` is the height you draw it at**, so a five-year-old beside an adult is your call: Loomis's plate puts him at 42 inches to the man's 72. `headUnit` is the figure's own head, so pose, solve and measure it exactly as an adult. The landmarks were measured off Loomis's plates and the widths are the studio's reading of them.
+
 The figure also reports what the pose did to it, which is what a later pass reads instead of keeping the pose object around:
 
+- `figure.build` → `{ name, age, heads, widthUnit, armUnit, legUnit, waistUnit }` — what it was built as. `heads` is its height in its own heads; the units are the widths its masses are drawn at, which `createFigureGeometry` and `drawMannequinSolid` read.
 - `figure.bounds` → `Rect` — the extent of every mass, as `{ x, y, width, height, x2, y2, cx, cy }`. Closed-form, so it costs no paths and is safe in a loop.
 - `figure.head.angleDeg` → `number` — how far the head turned: `spineDeg + neckDeg`, plus both bends of a line of action.
 - `figure.ribcage.tiltDeg` → `number` — `shoulderTiltDeg + spineDeg`, plus the waist bend of a line of action. `figure.pelvis.tiltDeg` is the pelvic tilt alone, because the pelvis is the pivot the spine leans over.

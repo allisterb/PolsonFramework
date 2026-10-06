@@ -300,8 +300,9 @@ Parametric 8-head proportional full-body anatomical joint model returned by `Dra
   "title": "MannequinFigure",
   "type": "object",
   "properties": {
-    "headUnit": { "type": "number", "description": "Height of one head unit (totalHeight / 8)." },
+    "headUnit": { "type": "number", "description": "Height of the figure's own head: totalHeight / 8 for an adult, / 4 for a one-year-old." },
     "totalHeight": { "type": "number", "description": "Total standing figure height in pixels." },
+    "build": { "type": "object", "description": "What the figure was built as, and the widths its masses are drawn at.", "properties": { "name": { "type": "string", "enum": ["male", "female"] }, "age": { "type": ["number", "null"] }, "heads": { "type": "number" }, "widthUnit": { "type": "number" }, "armUnit": { "type": "number" }, "legUnit": { "type": "number" }, "waistUnit": { "type": "number" } } },
     "head": { "type": "object", "properties": { "center": { "type": "object" }, "rx": { "type": "number" }, "ry": { "type": "number" } } },
     "neck": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
     "sternum": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },

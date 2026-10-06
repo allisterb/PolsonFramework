@@ -10,6 +10,9 @@
 > *Drawing the Head and Hands* (Viking Press, 1956) — p. 24, the text for Plate 7 *Action of the head on the
 > neck*, and p. 46. **Faragasso's terms name retrieval systems explicitly**, so it is distilled and cited here
 > and its text stays out of the retrieval corpus.  
+> **§8b, the cartoon head**, is from Walt Stanchfield, *Drawn to Life* (vol. 1 chs. 35, 37, 48; vol. 2 chs. 31, 45),
+> whose terms name retrieval systems, so it is distilled, cited and kept out of the corpus as Faragasso is; and
+> Dick Gautier, *Drawing and Cartooning 1,001 Faces* (Perigee 1993), ch. "Cartoons", handled as the Bokhua row.  
 > **Purpose**: The *comic* idiom for a head, as distinct from the portrait idiom every other head
 > source here teaches. Where Loomis builds a head that could be a person, this builds one that reads
 > instantly at panel size — and the difference between them is measurable, not a matter of feel.
@@ -1040,8 +1043,113 @@ every caller that re-strokes it at its own tier, which is the thing those return
 
 ---
 
+## 8b. The cartoon head — two masses, a shape, an eye line and air
+
+> **Sources for this section**: Walt Stanchfield, *Drawn to Life* vol. 1 (Focal Press 2013) — ch. 35
+> *The Head in Gesture*, ch. 37 *A Little More on Heads*, ch. 48 *Drawing and Caricature*; vol. 2
+> (Elsevier 2009) ch. 31 *Caricature* and ch. 45 *Think Caricature*. Dick Gautier, *Drawing and
+> Cartooning 1,001 Faces* (Perigee 1993), ch. "Cartoons", book pp. 65–76. Distilled in our own words
+> and cited by chapter. **Neither gives a cartoon canon in numbers**, and the coordinates and
+> thresholds below are the studio's.
+
+The comic head of §1–§8 is still a person, drawn for a panel. A **cartoon** head goes further, and
+the two sources agree on how: not by a different canon of proportions, but by a different shape and
+a different placement of the same features.
+
+**Two masses** (Stanchfield ch. 35, 37). From the front the head is a circle for the skull over a
+narrower oval for the face; from the side it is two eggs, and the ear sits where they meet. The
+overlap gives the temple, the narrowing face and the chin without measuring anything. That is the
+construction `createHeadGeometry` already uses: the cranium ball, and a face hung below it.
+
+**A cartoon is that pair pushed into another shape** (ch. 37). His drawings show a vocabulary of
+head shapes: square, a tall rectangle, a C, a rounded box, a peanut, triangles both ways, a circle.
+Disney built most of its characters on the circle and added cheeks, ears or a bill (ch. 35).
+`createHeadGeometry({ face })` builds the face as one of those shapes, under the same cranium:
+
+| `face` | the shape |
+| :--- | :--- |
+| `loomis` | the construction as before: Loomis's jaw, with cheeks (the default) |
+| `oval` | Stanchfield's basic face |
+| `round` | fuller through the cheeks |
+| `box` | square-jawed |
+| `narrow` | a narrow rectangle |
+| `wedge` | a wide brow over a pointed chin |
+| `pear` | narrow at the temples, wide at the jowls |
+| `peanut` | pinched at the cheekbones |
+
+**Then the eye line** (Gautier, "Cartoons"). Start from the portrait oval and move the line for the
+eyes above or below the standard mark. Lowered, the cranium grows over a smaller face, which reads
+young; raised, the brow is low and the lower face long. `createParametricHead({ eyeLine })` moves the
+eyes, the drawn brows and the top of the bridge by up to a tenth of the head and leaves the rest.
+He adds that the same features in different head shapes make different characters, and that the
+spatial relationships still have to make visual sense in a cartoon.
+
+**Leave air** (Gautier). His example of an inept cartoon is a face crowded with big eyes and a wide
+mouth: the features have to share a small area and still leave open space. `measureFaceAir(head)`
+measures the share of the face, hairline to chin, that the drawn features cover. **Measured: the
+canon face is about 6%, and one crammed with big open eyes and a wide mouth about 11.5%.** Above 10%
+is worth looking at again; that threshold is ours.
+
+**The skull is rigid; the face squashes and stretches** (Stanchfield ch. 37; squash keeping its
+volume, chs. 6–8). `squashHead(head, amount)` scales the lower face about the eye line, longer and
+narrower or shorter and wider with its area kept, and leaves the skull, the ears, the eyes and the
+brows alone. A first version pivoted on the brow line and crushed the eyes into the brows, which is
+why the eyes now ride with the skull. Key it in an animation and a jaw drop or a laugh stretches the
+face while the character stays recognisable.
+
+**Fix the norm first** (ch. 35). The character's normal head and features have to be settled before
+any squash or stretch, so a deviation reads as one; squashed or stretched, it must stay that
+character. That is the order of the calls: `createParametricHead` for who it is, then an expression,
+then `squashHead` for the moment.
+
+**Caricature is exaggerating what is already there** (ch. 48; vol. 2 ch. 31, 45): find the model's
+own peculiarities, a long upper lip, a low forehead, and overload them; every drawing carries some.
+That is `exaggerateHead` (§6a), Brennan's method, from a different direction.
+
+```javascript
+// Three cartoon characters from one construction: a shape, an eye line, and a squash for the moment.
+const canvas = createCanvas(900, 420);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f2efe8';
+ctx.fillRect(0, 0, 900, 420);
+
+function draw(head, face, label) {
+    const geo = Drawing.createHeadGeometry(head, { face, neckLength: 0 });
+    ctx.fillStyle = '#e9d9c4'; ctx.fill(geo.silhouette);
+    ctx.strokeStyle = '#15151a'; ctx.lineWidth = 2.5; ctx.stroke(geo.silhouette);
+    ctx.save(); ctx.clip(geo.mass);
+    const ink = { inkColor: '#15151a' };
+    Drawing.drawComicBrow(ctx, head.farBrow, true, ink); Drawing.drawComicBrow(ctx, head.nearBrow, false, ink);
+    Drawing.drawComicEye(ctx, head.farEye, true, ink); Drawing.drawComicEye(ctx, head.nearEye, false, ink);
+    Drawing.drawComicNose(ctx, head.noseWedge, ink); Drawing.drawComicMouth(ctx, head.mouthGuides, ink);
+    ctx.restore();
+
+    // Air: the share of the face the features cover. Above 10% is worth a second look.
+    const air = Drawing.measureFaceAir(head, { face });
+    Stage.check(`${label}: the features leave air`, air.share < 0.10, air.message);
+    ctx.fillStyle = '#15151a'; ctx.font = '15px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(label, head.chin.x, 395);
+}
+
+const at = x => Drawing.createLoomisHead(x, 180, 240, 0);
+
+// A kid: low eye line, round face.
+draw(Drawing.createParametricHead(at(150), { eyeLine: 1, eyesSize: 0.4, noseLength: -0.6 }), 'round', 'kid');
+
+// A brute: high eye line, box jaw, and a small squash so the lower face reads heavy.
+draw(Drawing.squashHead(Drawing.createParametricHead(at(450), { eyeLine: -0.8, jawShape: 0.6, eyesSize: -0.3 }), -0.4), 'box', 'brute');
+
+// A worrier: narrow face, long, with the stretch doing the length.
+draw(Drawing.squashHead(Drawing.createParametricHead(at(750), { eyeLine: 0.3, mouthWidth: -0.4 }), 0.6), 'narrow', 'worrier');
+
+canvas;
+```
+
 ## 9. What this does not give you
 
+- **No cartoon canon in numbers.** §8b's sources teach the cartoon head as a shape, an eye line and
+  air, not as proportions, and neither gives a figure to measure against. The face shapes'
+  coordinates and the 10% air threshold are the studio's.
 - **A composed head is not a rendered one.** §7 closed the gap this section used to name: there is
   now a silhouette, an ear and a neck, §8 joins it to a body, and §8a inks the ear and puts the
   features on a tier. What §7 gives you is still *shape* — four masses and their union — and it does

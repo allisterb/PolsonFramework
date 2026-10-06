@@ -74,6 +74,14 @@ Decide in the `Keys` stage, and say which in a `Stage.note`.
    key it on a Snap paper with `Motion.timeline()` (Manual 25 §8) and deliver `output.svg` as well.
    Tell the director, because the brief may have meant another workflow.
 
+**If the character has a face that acts**, build the head on the mannequin with
+`Drawing.createHeadForFigure(figure, { character })` and draw it each frame, as Manual 23 §8 does.
+A cartoon head is a face shape (`createHeadGeometry(head, { face })`), an eye line
+(`createParametricHead(head, { eyeLine })`) and air (`measureFaceAir`); in motion the skull stays rigid
+and the face squashes and stretches with `Drawing.squashHead(head, amount)`, which you can key. Read
+`ReadDoc('polson://manual/23', 'The cartoon head')` before the `Keys` stage. Fix the character's normal face first,
+so a squash reads as one.
+
 ---
 
 ## The stages

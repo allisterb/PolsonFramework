@@ -92,6 +92,87 @@ other end:
 > you are drawing; a slight build and a heavyweight boxer are not the same number, and neither is
 > wrong.
 
+### The woman and the child
+
+> **Sources**: Andrew Loomis, *Figure Drawing for All It's Worth* (Viking Press, 1943), p. 27 "Ideal
+> Proportion, Female" and p. 29 "Ideal Proportions at Various Ages"; Dick Gautier, *Drawing and
+> Cartooning 1,001 Figures in Action* (Perigee 1994), Basics and Children (book pp. 11–15, 113–115), and
+> *Drawing and Cartooning 1,001 Faces* (Perigee 1993), ch. "Children". Distilled in our own words.
+> **Implemented by** `createMannequinFigure(x, y, height, { build, age })`.
+
+**The woman is not the man made smaller.** Loomis keeps her at eight heads and moves her landmarks:
+the nipples and the navel sit a sixth of a head lower than the man's, the crotch a third of a head
+below the middle, and the wrists level with the crotch. She is two heads at her widest against his two
+and a third, her waist is one head, and her thighs are a little wider than her armpits. Her navel is
+below her waist; his is level with it or above. Loomis draws her about half a head shorter than the
+man. Gautier gives her seven heads rather than eight and recommends adding a head when the figure is
+to be idealised; he also gives her shoulders as one and a half heads and her hips as two, wider than
+Loomis does. `build: 'female'` follows Loomis.
+
+**A child is a different set of proportions, not a scaled adult.** The head grows little, from about
+six inches at one year to nine in the adult, and the legs grow nearly twice as fast as the trunk. So
+the figure is four heads tall at one, five at three, six at five, seven at ten and seven and a half at
+fifteen (Loomis; Gautier gives a newborn four heads and a fourteen-year-old nearly seven). The middle
+of the figure moves down with age, from about the navel at one year to the crotch in the adult; a
+baby's arm ends at its hip. `age` interpolates between those plates, from one year to eighteen.
+
+**The child's head**. Gautier: the cranium is large for the face, the eyes keep their adult size and so
+look larger and wider set, the nose is small and upturned, the mouth small, the neck slimmer, and around
+ten the lower face catches up. `createHeadForFigure` gives a child figure that face, fading out by
+twelve; give it `character` to change it. His cartoon shortcut is a face that fills a third of the
+head, and a cartoon infant can be one head to one body.
+
+```javascript
+// Loomis's age plate, rebuilt: each figure at its height in inches, on one floor.
+const canvas = createCanvas(940, 420);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f2efe8';
+ctx.fillRect(0, 0, 940, 420);
+
+const floor = 390, perInch = 340 / 72;
+const cast = [['man', {}, 72], ['woman', { build: 'female' }, 68], ['10', { age: 10 }, 52.5],
+              ['5', { age: 5 }, 42], ['3', { age: 3 }, 32.5], ['1', { age: 1 }, 24]];
+
+cast.forEach(([label, options, inches], i) => {
+    const h = inches * perInch, x = 80 + i * 155;
+    const fig = Drawing.createMannequinFigure(x, floor - h, h, { ...options, shoulderTiltDeg: 0, pelvicTiltDeg: 0 });
+    const body = Drawing.createFigureGeometry(fig);
+    const head = Drawing.createHeadForFigure(fig);
+    const geo = Drawing.createHeadGeometry(head);
+
+    ctx.fillStyle = '#e9d9c4';
+    ctx.fill(geo.silhouette);
+    ctx.fill(body.silhouette.subtract(body.groups.head));
+    ctx.strokeStyle = '#15151a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke(body.silhouette.subtract(body.groups.head).union(geo.mass));
+    ctx.save();
+    ctx.clip(geo.mass);
+    const ink = { inkColor: '#15151a' };
+    Drawing.drawComicEye(ctx, head.farEye, true, ink);
+    Drawing.drawComicEye(ctx, head.nearEye, false, ink);
+    Drawing.drawComicMouth(ctx, head.mouthGuides, ink);
+    ctx.restore();
+
+    // The middle of the figure sinks from the navel toward the crotch as the legs grow.
+    const crotch = (fig.crotch.y - (floor - h)) / h;
+    Stage.check(`${label}: ${fig.build.heads.toFixed(1)} heads`, fig.build.heads >= 4 && fig.build.heads <= 8,
+        `crotch ${(crotch * 100).toFixed(0)}% of the way down`);
+    ctx.fillStyle = '#15151a';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${label} · ${fig.build.heads.toFixed(1)} heads`, x, floor + 22);
+});
+
+canvas;
+```
+
+**What the widths are.** The landmarks were measured off Loomis's plates, to a few hundredths of the
+height. The trunk widths are each figure's widest against the adult's, and the limbs are thick for the
+head in a baby and thin through childhood as the baby fat goes; those are the studio's reading of the
+plates, not Loomis's numbers. A child's brows are very light, and no parameter sets that yet: draw them
+with `drawComicBrow`'s `thickness`.
+
 ### The 3 Solid Masses & Dynamic Contrapposto
 
 > **Principle**:

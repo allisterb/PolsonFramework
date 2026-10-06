@@ -2847,7 +2847,18 @@ public class ConstructiveDrawingToolkit
     public Dictionary<string, object?> CreateMannequinFigure(float originX, float originY, float totalHeight = 560f, object? options = null)
     {
         var opt = JsInterop.AsDict(options);
-        var H = totalHeight / 8f;
+        var (build, age, canon) = ReadFigureCanon(opt);
+
+        // Every station below is written in the adult male's head units, 0 at the crown and 8 at the
+        // floor, and placed through the canon: Y(s) carries a station to where this build and age put
+        // it, by its landmarks. For the adult male Y(s) is originY + H * s exactly, so a figure drawn
+        // before builds existed is unchanged. H is the figure's own head; W is how wide it is, in the
+        // same units: an infant's head is a quarter of its height and its body much narrower than an
+        // adult's measured in it.
+        var H = totalHeight * canon.Chin;
+        var W = H * canon.Width;
+        float Y(float s) => originY + totalHeight * canon.Remap(s / 8f);
+        float Span(float a, float b) => (Y(b) - Y(a)) / (H * (b - a));
         var shoulderTiltDeg = opt != null && opt.Contains("shoulderTiltDeg") ? Convert.ToSingle(opt["shoulderTiltDeg"], CultureInfo.InvariantCulture) : -6f;
         var pelvicTiltDeg = opt != null && opt.Contains("pelvicTiltDeg") ? Convert.ToSingle(opt["pelvicTiltDeg"], CultureInfo.InvariantCulture) : 6f;
         var spineOffset = opt != null && opt.Contains("spineOffset") ? Convert.ToSingle(opt["spineOffset"], CultureInfo.InvariantCulture) : 6f;
@@ -2856,14 +2867,14 @@ public class ConstructiveDrawingToolkit
         var radPelvis = (pelvicTiltDeg * MathF.PI) / 180f;
 
         // Head (0.0H to 1.0H)
-        var headY = originY + H * 0.5f;
+        var headY = Y(0.5f);
         var headCenter = new Point2D(originX, headY);
 
         // Neck (1.0H to 1.3H)
-        var neckCenter = new Point2D(originX + spineOffset * 0.2f, originY + H * 1.15f);
+        var neckCenter = new Point2D(originX + spineOffset * 0.2f, Y(1.15f));
 
         // Shoulders / Clavicles (1.4H)
-        var shoulderY = originY + H * 1.4f;
+        var shoulderY = Y(1.4f);
         // In head units, so it survives any figure height. The canons disagree and all of them are
         // usable: Loomis gives 2 1/3 H for the figure at its widest and about 2 H for the shoulder
         // "cape"; Faragasso, after Reilly, gives 1 1/3 H from the pit of the neck to each shoulder,
@@ -2873,46 +2884,52 @@ public class ConstructiveDrawingToolkit
         var shoulderSpanHeads = opt != null && opt.Contains("shoulderSpanHeads")
             ? Convert.ToSingle(opt["shoulderSpanHeads"], CultureInfo.InvariantCulture)
             : 1.8f;
-        var shoulderSpan = H * shoulderSpanHeads;
+        var shoulderSpan = opt != null && opt.Contains("shoulderSpanHeads") ? H * shoulderSpanHeads : W * shoulderSpanHeads * canon.Shoulders;
         var leftShoulder = new Point2D(originX - MathF.Cos(radShoulder) * (shoulderSpan * 0.5f), shoulderY - MathF.Sin(radShoulder) * (shoulderSpan * 0.5f));
         var rightShoulder = new Point2D(originX + MathF.Cos(radShoulder) * (shoulderSpan * 0.5f), shoulderY + MathF.Sin(radShoulder) * (shoulderSpan * 0.5f));
         var sternalNotch = new Point2D(originX + spineOffset * 0.3f, shoulderY);
 
         // Ribcage (1.4H to 2.8H)
-        var ribcageCenter = new Point2D(originX + spineOffset * 0.6f, originY + H * 2.1f);
-        var ribcageRx = H * 0.85f;
-        var ribcageRy = H * 0.70f;
+        var ribcageCenter = new Point2D(originX + spineOffset * 0.6f, Y(2.1f));
+        var ribcageRx = W * 0.85f * canon.Ribs;
+        var ribcageRy = H * 0.70f * Span(1.4f, 2.8f);
 
         // Navel (3.0H)
-        var navel = new Point2D(originX + spineOffset * 0.8f, originY + H * 3.0f);
+        var navel = new Point2D(originX + spineOffset * 0.8f, Y(3.0f));
 
         // Pelvis (3.2H to 4.0H)
-        var pelvisY = originY + H * 3.6f;
-        var pelvisSpan = H * 1.4f;
+        var pelvisY = Y(3.6f);
+        var pelvisSpan = W * 1.4f * canon.Hips;
         var leftHip = new Point2D(originX - MathF.Cos(radPelvis) * (pelvisSpan * 0.5f), pelvisY - MathF.Sin(radPelvis) * (pelvisSpan * 0.5f));
         var rightHip = new Point2D(originX + MathF.Cos(radPelvis) * (pelvisSpan * 0.5f), pelvisY + MathF.Sin(radPelvis) * (pelvisSpan * 0.5f));
         var pelvisCenter = new Point2D(originX + spineOffset * 0.4f, pelvisY);
-        var crotch = new Point2D(originX, originY + H * 4.0f);
+        var crotch = new Point2D(originX, Y(4.0f));
+
+        // The arm is placed by where the wrist hangs, not by the body's landmarks: a child's arm is
+        // short for its trunk, so at one year the wrist reaches the hip where an adult's reaches the
+        // crotch (Loomis, Figure Drawing p. 29). Elbow and hand keep the adult's shares of the arm.
+        var wristY = originY + totalHeight * canon.Wrist;
+        float Arm(float s) => shoulderY + (wristY - shoulderY) * (s - 1.4f) / 2.6f;
 
         // Left Arm (Shoulder -> Elbow 2.8H -> Wrist 4.0H -> Hand 4.8H)
-        var leftElbow = new Point2D(leftShoulder.X - H * 0.3f, originY + H * 2.8f);
-        var leftWrist = new Point2D(leftShoulder.X - H * 0.2f, originY + H * 4.0f);
-        var leftHand = new Point2D(leftWrist.X - 2f, leftWrist.Y + H * 0.75f);
+        var leftElbow = new Point2D(leftShoulder.X - W * 0.3f, Arm(2.8f));
+        var leftWrist = new Point2D(leftShoulder.X - W * 0.2f, wristY);
+        var leftHand = new Point2D(leftWrist.X - 2f, Arm(4.75f));
 
         // Right Arm
-        var rightElbow = new Point2D(rightShoulder.X + H * 0.35f, originY + H * 2.85f);
-        var rightWrist = new Point2D(rightShoulder.X + H * 0.25f, originY + H * 4.0f);
-        var rightHand = new Point2D(rightWrist.X + 2f, rightWrist.Y + H * 0.75f);
+        var rightElbow = new Point2D(rightShoulder.X + W * 0.35f, Arm(2.85f));
+        var rightWrist = new Point2D(rightShoulder.X + W * 0.25f, wristY);
+        var rightHand = new Point2D(rightWrist.X + 2f, Arm(4.75f));
 
         // Left Leg (Hip -> Knee 6.0H -> Ankle 7.8H -> Foot 8.0H)
-        var leftKnee = new Point2D(leftHip.X + H * 0.05f, originY + H * 6.0f);
-        var leftAnkle = new Point2D(leftKnee.X - H * 0.05f, originY + H * 7.8f);
-        var leftFoot = new Point2D(leftAnkle.X - H * 0.15f, originY + H * 8.0f);
+        var leftKnee = new Point2D(leftHip.X + W * 0.05f, Y(6.0f));
+        var leftAnkle = new Point2D(leftKnee.X - W * 0.05f, Y(7.8f));
+        var leftFoot = new Point2D(leftAnkle.X - W * 0.15f, Y(8.0f));
 
         // Right Leg
-        var rightKnee = new Point2D(rightHip.X - H * 0.05f, originY + H * 6.0f);
-        var rightAnkle = new Point2D(rightKnee.X + H * 0.05f, originY + H * 7.8f);
-        var rightFoot = new Point2D(rightAnkle.X + H * 0.15f, originY + H * 8.0f);
+        var rightKnee = new Point2D(rightHip.X - W * 0.05f, Y(6.0f));
+        var rightAnkle = new Point2D(rightKnee.X + W * 0.05f, Y(7.8f));
+        var rightFoot = new Point2D(rightAnkle.X + W * 0.15f, Y(8.0f));
 
         // A pose re-places the limbs from joint angles. Applied *after* the canon has laid the figure
         // out, so the segment lengths are the canon's and only the directions change — and a limb the
@@ -3053,16 +3070,27 @@ public class ConstructiveDrawingToolkit
         {
             ["headUnit"] = H,
             ["totalHeight"] = totalHeight,
+            // What the figure was built as, with the widths the geometry draws its masses at.
+            ["build"] = new Dictionary<string, object?>
+            {
+                ["name"] = build,
+                ["age"] = age,
+                ["heads"] = 1f / canon.Chin,
+                ["widthUnit"] = W,
+                ["armUnit"] = H * canon.Arms,
+                ["legUnit"] = H * canon.Legs,
+                ["waistUnit"] = W * canon.Waist
+            },
             // Echoed so a caller can read back what the figure is doing — and so a later pass can
             // reproduce or nudge a pose without having kept the arguments that made it.
             ["posed"] = pose != null,
-            ["head"] = new Dictionary<string, object?> { ["center"] = ToDict(headCenter), ["rx"] = H * 0.36f, ["ry"] = H * 0.50f, ["angleDeg"] = headAngleDeg },
+            ["head"] = new Dictionary<string, object?> { ["center"] = ToDict(headCenter), ["rx"] = H * canon.HeadWidth * 0.5f, ["ry"] = H * 0.50f, ["angleDeg"] = headAngleDeg },
             ["neck"] = ToDict(neckCenter),
             ["sternum"] = ToDict(sternalNotch),
             ["clavicles"] = new Dictionary<string, object?> { ["left"] = ToDict(leftShoulder), ["right"] = ToDict(rightShoulder), ["center"] = ToDict(sternalNotch) },
             ["ribcage"] = new Dictionary<string, object?> { ["center"] = ToDict(ribcageCenter), ["rx"] = ribcageRx, ["ry"] = ribcageRy, ["tiltDeg"] = ribcageTiltDeg },
             ["navel"] = ToDict(navel),
-            ["pelvis"] = new Dictionary<string, object?> { ["center"] = ToDict(pelvisCenter), ["leftHip"] = ToDict(leftHip), ["rightHip"] = ToDict(rightHip), ["rx"] = H * 0.70f, ["ry"] = H * 0.45f, ["tiltDeg"] = pelvicTiltDeg },
+            ["pelvis"] = new Dictionary<string, object?> { ["center"] = ToDict(pelvisCenter), ["leftHip"] = ToDict(leftHip), ["rightHip"] = ToDict(rightHip), ["rx"] = W * 0.70f * canon.Hips, ["ry"] = H * 0.45f * Span(3.15f, 4.05f), ["tiltDeg"] = pelvicTiltDeg },
             ["crotch"] = ToDict(crotch),
             ["leftArm"] = new Dictionary<string, object?> { ["shoulder"] = ToDict(leftShoulder), ["elbow"] = ToDict(leftElbow), ["wrist"] = ToDict(leftWrist), ["hand"] = ToDict(leftHand) },
             ["rightArm"] = new Dictionary<string, object?> { ["shoulder"] = ToDict(rightShoulder), ["elbow"] = ToDict(rightElbow), ["wrist"] = ToDict(rightWrist), ["hand"] = ToDict(rightHand) },
@@ -3346,10 +3374,18 @@ public class ConstructiveDrawingToolkit
         var sternum = ExtractPoint(fig["sternum"]);
         var pelCenter = ExtractPoint(pelvis?["center"]);
 
+        // A figure carries its own widths (a child's limbs are thinner for its head than an adult's);
+        // one built before builds existed has none, and its head unit is its width.
+        var build = JsInterop.AsDict(fig["build"]);
+        var W = Num(build, "widthUnit", H);
+        var waist = Num(build, "waistUnit", W);
+        var arm = Num(build, "armUnit", W);
+        var leg = Num(build, "legUnit", W);
+
         var bones = new List<(string, string, Point2D, Point2D, float, float)>
         {
-            ("neck", "torso", neck, sternum, H * 0.18f, H * 0.34f),
-            ("shoulders", "torso", ExtractPoint(clav?["left"]), ExtractPoint(clav?["right"]), H * 0.29f, H * 0.29f)
+            ("neck", "torso", neck, sternum, W * 0.18f, W * 0.34f),
+            ("shoulders", "torso", ExtractPoint(clav?["left"]), ExtractPoint(clav?["right"]), W * 0.29f, W * 0.29f)
         };
 
         // A waist bent by a line of action is two pieces meeting at the navel, or the capsule would cut
@@ -3358,10 +3394,10 @@ public class ConstructiveDrawingToolkit
         if (Num(JsInterop.AsDict(fig["lineOfAction"]), "waistDeg", 0f) != 0f)
         {
             var navel = ExtractPoint(fig["navel"]);
-            bones.Insert(1, ("spine", "torso", sternum, navel, H * 0.55f, H * 0.575f));
-            bones.Insert(2, ("spine", "torso", navel, pelCenter, H * 0.575f, H * 0.58f));
+            bones.Insert(1, ("spine", "torso", sternum, navel, waist * 0.55f, waist * 0.575f));
+            bones.Insert(2, ("spine", "torso", navel, pelCenter, waist * 0.575f, waist * 0.58f));
         }
-        else bones.Insert(1, ("spine", "torso", sternum, pelCenter, H * 0.55f, H * 0.58f));
+        else bones.Insert(1, ("spine", "torso", sternum, pelCenter, waist * 0.55f, waist * 0.58f));
 
         void Limb(IDictionary? d, string side, string group, string j0, string j1, string j2, string j3,
                   string n0, string n1, string n2, float r0, float r1, float r2, float r3)
@@ -3374,13 +3410,13 @@ public class ConstructiveDrawingToolkit
         }
 
         Limb(lArm, "left", "leftArm", "shoulder", "elbow", "wrist", "hand",
-            "UpperArm", "Forearm", "Hand", H * 0.22f, H * 0.16f, H * 0.12f, H * 0.10f);
+            "UpperArm", "Forearm", "Hand", arm * 0.22f, arm * 0.16f, arm * 0.12f, arm * 0.10f);
         Limb(rArm, "right", "rightArm", "shoulder", "elbow", "wrist", "hand",
-            "UpperArm", "Forearm", "Hand", H * 0.22f, H * 0.16f, H * 0.12f, H * 0.10f);
+            "UpperArm", "Forearm", "Hand", arm * 0.22f, arm * 0.16f, arm * 0.12f, arm * 0.10f);
         Limb(lLeg, "left", "leftLeg", "hip", "knee", "ankle", "foot",
-            "Thigh", "Shin", "Foot", H * 0.28f, H * 0.20f, H * 0.14f, H * 0.10f);
+            "Thigh", "Shin", "Foot", leg * 0.28f, leg * 0.20f, leg * 0.14f, leg * 0.10f);
         Limb(rLeg, "right", "rightLeg", "hip", "knee", "ankle", "foot",
-            "Thigh", "Shin", "Foot", H * 0.28f, H * 0.20f, H * 0.14f, H * 0.10f);
+            "Thigh", "Shin", "Foot", leg * 0.28f, leg * 0.20f, leg * 0.14f, leg * 0.10f);
 
         return bones;
     }
@@ -4959,6 +4995,10 @@ public class ConstructiveDrawingToolkit
 
         var H = fig.Contains("headUnit") ? Convert.ToSingle(fig["headUnit"], CultureInfo.InvariantCulture) : 70f;
 
+        var buildUnits = JsInterop.AsDict(fig["build"]);
+        var armU = Num(buildUnits, "armUnit", H);
+        var legU = Num(buildUnits, "legUnit", H);
+
         ctx.Save();
         ctx.FillStyle = fillColor;
         ctx.StrokeStyle = strokeColor;
@@ -4992,13 +5032,13 @@ public class ConstructiveDrawingToolkit
         // Legs
         if (lLeg != null)
         {
-            DrawCylinderLimb(ExtractPoint(lLeg["hip"]), ExtractPoint(lLeg["knee"]), H * 0.28f, H * 0.20f);
-            DrawCylinderLimb(ExtractPoint(lLeg["knee"]), ExtractPoint(lLeg["ankle"]), H * 0.20f, H * 0.14f);
+            DrawCylinderLimb(ExtractPoint(lLeg["hip"]), ExtractPoint(lLeg["knee"]), legU * 0.28f, legU * 0.20f);
+            DrawCylinderLimb(ExtractPoint(lLeg["knee"]), ExtractPoint(lLeg["ankle"]), legU * 0.20f, legU * 0.14f);
         }
         if (rLeg != null)
         {
-            DrawCylinderLimb(ExtractPoint(rLeg["hip"]), ExtractPoint(rLeg["knee"]), H * 0.28f, H * 0.20f);
-            DrawCylinderLimb(ExtractPoint(rLeg["knee"]), ExtractPoint(rLeg["ankle"]), H * 0.20f, H * 0.14f);
+            DrawCylinderLimb(ExtractPoint(rLeg["hip"]), ExtractPoint(rLeg["knee"]), legU * 0.28f, legU * 0.20f);
+            DrawCylinderLimb(ExtractPoint(rLeg["knee"]), ExtractPoint(rLeg["ankle"]), legU * 0.20f, legU * 0.14f);
         }
 
         // Pelvis
@@ -5026,13 +5066,13 @@ public class ConstructiveDrawingToolkit
         // Arms
         if (lArm != null)
         {
-            DrawCylinderLimb(ExtractPoint(lArm["shoulder"]), ExtractPoint(lArm["elbow"]), H * 0.22f, H * 0.16f);
-            DrawCylinderLimb(ExtractPoint(lArm["elbow"]), ExtractPoint(lArm["wrist"]), H * 0.16f, H * 0.12f);
+            DrawCylinderLimb(ExtractPoint(lArm["shoulder"]), ExtractPoint(lArm["elbow"]), armU * 0.22f, armU * 0.16f);
+            DrawCylinderLimb(ExtractPoint(lArm["elbow"]), ExtractPoint(lArm["wrist"]), armU * 0.16f, armU * 0.12f);
         }
         if (rArm != null)
         {
-            DrawCylinderLimb(ExtractPoint(rArm["shoulder"]), ExtractPoint(rArm["elbow"]), H * 0.22f, H * 0.16f);
-            DrawCylinderLimb(ExtractPoint(rArm["elbow"]), ExtractPoint(rArm["wrist"]), H * 0.16f, H * 0.12f);
+            DrawCylinderLimb(ExtractPoint(rArm["shoulder"]), ExtractPoint(rArm["elbow"]), armU * 0.22f, armU * 0.16f);
+            DrawCylinderLimb(ExtractPoint(rArm["elbow"]), ExtractPoint(rArm["wrist"]), armU * 0.16f, armU * 0.12f);
         }
 
         // Head
@@ -5178,7 +5218,7 @@ public class ConstructiveDrawingToolkit
     /// which looks like the parameter having no effect.
     /// </remarks>
     private static readonly string[] HeadParameters =
-        ["eyesDistance", "eyesSize", "eyesOpening", "noseLength",
+        ["eyesDistance", "eyesSize", "eyesOpening", "eyeLine", "noseLength",
          "jawShape", "chinShape", "chinLength", "mouthWidth"];
 
     /// <summary>
@@ -5244,6 +5284,11 @@ public class ConstructiveDrawingToolkit
         // Each parameter's full-scale displacement, as a fraction of head height. Kept modest: a
         // face at +1 should read as a different person, not as a deformity, and the canon sits in
         // the middle of a range a reader would accept as human.
+        // Gautier's first cartoon decision: start from the portrait oval and set the eye line above or
+        // below its standard mark (*Drawing and Cartooning 1,001 Faces*, ch. "Cartoons"). Positive
+        // lowers it, which enlarges the cranium over the face. A tenth of the head either way keeps
+        // the eye clear of the hairline above and the nose below.
+        MoveEyeLine(result, P("eyeLine") * H * 0.11f);
         MoveEyes(result, P("eyesDistance") * eyeW * 0.45f, P("eyesSize"));
         OpenEyes(result, P("eyesOpening"));
         StretchNose(result, P("noseLength") * H * 0.07f);
@@ -5252,6 +5297,78 @@ public class ConstructiveDrawingToolkit
         LengthenChin(result, P("chinLength"), H);
         WidenMouth(result, P("mouthWidth") * H * 0.06f);
 
+        return result;
+    }
+
+    /// <summary>
+    /// Squashes or stretches the face while the skull keeps its shape: <c>amount</c> from <c>-1</c>
+    /// (squashed flat) through <c>0</c> to <c>+1</c> (stretched long). Returns a new head.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Stanchfield, *Drawn to Life* vol. 1 ch. 37: the skull is usually pretty solid, and the rest of
+    /// the head does the squashing and stretching; chs. 6-8: a squash keeps its volume. So the face
+    /// below the eye line is scaled about it, vertically by <c>s</c> and across by <c>1/s</c>, which
+    /// keeps its area. The crown, hairline, cranium, ears, eyes and brows do not move. The eyes stay
+    /// with the skull because a squash that pushed them into the brows crushed them to slits on the
+    /// first version of this call. At <c>+1</c> the lower face is 1.35 times as long, at <c>-1</c>
+    /// 0.65 times. The range is the studio's: past it the nose meets the mouth.
+    /// </para>
+    /// <para>
+    /// It is a pure function of the head and the amount, so it can be keyed: a jaw drop or a laugh in a
+    /// <c>comp.drawn(...)</c> animation stretches the face frame by frame and the character stays the
+    /// same person (ch. 35). Apply it after the character parameters and any expression.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> SquashHead(object headObj, float amount)
+    {
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException("squashHead needs a head from Drawing.createLoomisHead(...).", nameof(headObj));
+        if (!float.IsFinite(amount))
+            throw new ArgumentException("squashHead: amount must be a number from -1 (squash) to 1 (stretch).", nameof(amount));
+
+        var result = CloneHead(head);
+        var a = Math.Clamp(amount, -1f, 1f);
+        if (a == 0f) return result;
+
+        var sy = 1f + (a * 0.35f);
+        var sx = 1f / sy;
+        var axis = ExtractPoint(head["brow"]);
+        var eyeLine = head.Contains("eyeLineY") && head["eyeLineY"] is not null
+            ? Convert.ToSingle(head["eyeLineY"], CultureInfo.InvariantCulture)
+            : ExtractPoint(JsInterop.AsDict(head["nearEye"])?["center"]).Y;
+        var pivot = new Point2D(axis.X, eyeLine);
+        float MapY(float y) => pivot.Y + ((y - pivot.Y) * sy);
+
+        // The skull and what is fixed to it. `fit` is a figure's placement, not a landmark.
+        var skull = new HashSet<string> { "unit", "origin", "crown", "hairline", "brow", "fit",
+                                          "nearEye", "farEye", "nearBrow", "farBrow", "eyeLineY" };
+
+        void Walk(Dictionary<string, object?> dict, string? parent)
+        {
+            foreach (var key in dict.Keys.ToList())
+            {
+                if (parent is null && skull.Contains(key)) continue;
+                if (parent == "jaw" && key == "ear") continue;   // the ear rides the skull
+                if (parent == "noseWedge" && key == "bridgeTop") continue;   // between the eyes
+
+                switch (dict[key])
+                {
+                    case Dictionary<string, object?> point when point.Count == 2 && point.ContainsKey("x") && point.ContainsKey("y"):
+                        var p = ExtractPoint(point);
+                        dict[key] = ToDict(new Point2D(pivot.X + ((p.X - pivot.X) * sx), MapY(p.Y)));
+                        break;
+                    case Dictionary<string, object?> nested:
+                        Walk(nested, key);
+                        break;
+                    case not null when key is "upperLipY" or "lowerLipY":
+                        dict[key] = MapY(Convert.ToSingle(dict[key], CultureInfo.InvariantCulture));
+                        break;
+                }
+            }
+        }
+
+        Walk(result, null);
         return result;
     }
 
@@ -6531,7 +6648,96 @@ public class ConstructiveDrawingToolkit
         return 0f;
     }
 
-    static readonly string[] MannequinOptionKeys = ["shoulderTiltDeg", "pelvicTiltDeg", "spineOffset", "shoulderSpanHeads", "pose"];
+    /// <summary>
+    /// Where a figure's landmarks fall, as fractions of its standing height down from the crown, and how
+    /// wide it is in its own head units against the adult male: the trunk by <c>Width</c> and the
+    /// shoulder, rib, waist and hip factors on it, the limbs by <c>Arms</c> and <c>Legs</c> on the head.
+    /// </summary>
+    readonly record struct FigureCanon(float Chin, float Nipples, float Navel, float Crotch, float Knee, float Wrist,
+        float Width, float Shoulders, float Ribs, float Waist, float Hips, float Arms, float Legs, float HeadWidth)
+    {
+        static readonly float[] AdultMale = [0f, 0.125f, 0.25f, 0.375f, 0.5f, 0.75f, 1f];
+
+        /// <summary>A fraction of the adult male's height to the same landmark on this figure.</summary>
+        public float Remap(float f)
+        {
+            float[] to = [0f, Chin, Nipples, Navel, Crotch, Knee, 1f];
+            if (f <= 0f) return f * Chin / 0.125f;
+            for (var i = 1; i < AdultMale.Length; i++)
+                if (f <= AdultMale[i])
+                    return to[i - 1] + (to[i] - to[i - 1]) * (f - AdultMale[i - 1]) / (AdultMale[i] - AdultMale[i - 1]);
+            return 1f + (f - 1f);
+        }
+
+        public static FigureCanon Lerp(FigureCanon a, FigureCanon b, float t)
+        {
+            float L(float x, float y) => x + (y - x) * t;
+            return new(L(a.Chin, b.Chin), L(a.Nipples, b.Nipples), L(a.Navel, b.Navel), L(a.Crotch, b.Crotch),
+                L(a.Knee, b.Knee), L(a.Wrist, b.Wrist), L(a.Width, b.Width), L(a.Shoulders, b.Shoulders),
+                L(a.Ribs, b.Ribs), L(a.Waist, b.Waist), L(a.Hips, b.Hips), L(a.Arms, b.Arms), L(a.Legs, b.Legs),
+                L(a.HeadWidth, b.HeadWidth));
+        }
+    }
+
+    // Loomis, Figure Drawing for All It's Worth, p. 26: chin 1, nipples 2, navel 3, crotch 4, the bottom
+    // of the knees 6, in eight heads; the wrist level with the crotch.
+    static readonly FigureCanon MaleCanon = new(0.125f, 0.25f, 0.375f, 0.5f, 0.75f, 0.5f, 1f, 1f, 1f, 1f, 1f, 1f, 1f, 0.72f);
+
+    // Loomis p. 27: still eight heads, the nipples and navel a sixth of a head lower than the male's and
+    // the crotch a third of a head below the middle, the wrists level with it. Two heads at the widest
+    // against his two and a third, a waist of one head, and thighs a little wider than the armpits.
+    // The width factors are read off that plate and are the studio's.
+    static readonly FigureCanon FemaleCanon = new(0.125f, 13f / 48f, 19f / 48f, 13f / 24f, 0.75f, 13f / 24f,
+        1f, 0.86f, 0.9f, 0.9f, 1.1f, 0.9f, 1f, 0.72f);
+
+    // Loomis p. 29, "Ideal Proportions at Various Ages": 4 heads at one year, 5 at three, 6 at five, 7 at
+    // ten, 7 1/2 at fifteen. The landmarks were measured off the plate's own head lines; the trunk widths
+    // are each figure's widest against the adult's 2 1/3 heads, and the head widths off its row of heads.
+    // Limbs are in head units, not narrowed with the trunk: a one-year-old's thigh is about as thick for
+    // its head as an adult's, and thins through childhood as the baby fat goes (Gautier, 1,001 Figures
+    // p. 113). Measured by the studio, so good to a few hundredths of the height; the limbs are judged.
+    static readonly (float Age, FigureCanon Canon)[] ChildCanons =
+    [
+        (1f,  new(0.25f,   0.40f,  0.52f,  0.71f,  0.84f, 0.61f, 0.62f, 1f, 1f, 1f, 1f, 0.95f, 1.00f, 0.86f)),
+        (3f,  new(0.20f,   0.33f,  0.46f,  0.59f,  0.78f, 0.61f, 0.69f, 1f, 1f, 1f, 1f, 0.90f, 0.95f, 0.81f)),
+        (5f,  new(1f / 6f, 0.30f,  0.41f,  0.57f,  0.76f, 0.60f, 0.72f, 1f, 1f, 1f, 1f, 0.85f, 0.88f, 0.77f)),
+        (10f, new(1f / 7f, 0.28f,  0.39f,  0.53f,  0.73f, 0.56f, 0.80f, 1f, 1f, 1f, 1f, 0.82f, 0.85f, 0.76f)),
+        (15f, new(2f / 15f, 0.265f, 0.382f, 0.515f, 0.74f, 0.53f, 0.90f, 1f, 1f, 1f, 1f, 0.90f, 0.92f, 0.73f))
+    ];
+
+    /// <summary>The build and age a figure was asked for, and the canon they give.</summary>
+    static (string Build, float? Age, FigureCanon Canon) ReadFigureCanon(IDictionary? opt)
+    {
+        var build = opt?["build"]?.ToString()?.Trim().ToLowerInvariant() ?? "male";
+        var adult = build switch
+        {
+            "male" => MaleCanon,
+            "female" => FemaleCanon,
+            _ => throw new ArgumentException(
+                $"createMannequinFigure build '{build}' not recognised. Accepted: male, female. A child is an age: {{ age: 5 }}.")
+        };
+        if (opt == null || !opt.Contains("age") || opt["age"] == null) return (build, null, adult);
+
+        var age = Num(opt, "age", 18f);
+        if (!float.IsFinite(age) || age < 0f)
+            throw new ArgumentException($"createMannequinFigure age is years, 0 or more; got {opt["age"]}.");
+
+        // Under a year is drawn as one: Gautier gives a newborn four heads, as Loomis gives the one-year-old.
+        // From fifteen the figure grows into the adult build by eighteen.
+        if (age <= ChildCanons[0].Age) return (build, age, ChildCanons[0].Canon);
+        if (age >= 18f) return (build, age, adult);
+        for (var i = 1; i < ChildCanons.Length; i++)
+            if (age <= ChildCanons[i].Age)
+            {
+                var (a0, c0) = ChildCanons[i - 1];
+                var (a1, c1) = ChildCanons[i];
+                return (build, age, FigureCanon.Lerp(c0, c1, (age - a0) / (a1 - a0)));
+            }
+        var last = ChildCanons[^1];
+        return (build, age, FigureCanon.Lerp(last.Canon, adult, (age - last.Age) / (18f - last.Age)));
+    }
+
+    static readonly string[] MannequinOptionKeys = ["shoulderTiltDeg", "pelvicTiltDeg", "spineOffset", "shoulderSpanHeads", "build", "age", "pose"];
     static readonly string[] PoseKeys = ["spineDeg", "neckDeg", "lineOfAction", "leftArm", "rightArm", "leftLeg", "rightLeg"];
     static readonly string[] ArmKeys = ["shoulderDeg", "elbowDeg"];
     static readonly string[] LegKeys = ["hipDeg", "kneeDeg"];
@@ -7424,6 +7630,34 @@ public class ConstructiveDrawingToolkit
     /// describe the same feature, and a head where they disagree draws a wireframe that does not meet
     /// the inked nose.
     /// </remarks>
+    /// <summary>
+    /// Moves the eye line: both eyes, both drawn brows and the top of the nose bridge, which sits
+    /// between them. The cranium's equator (<c>brow</c>) stays, since the skull does not move.
+    /// </summary>
+    static void MoveEyeLine(Dictionary<string, object?> head, float dy)
+    {
+        if (dy == 0f) return;
+
+        foreach (var (group, keys) in new[]
+                 {
+                     ("nearEye", new[] { "inner", "outer", "center" }), ("farEye", new[] { "inner", "outer", "center" }),
+                     ("nearBrow", new[] { "inner", "peak", "outer" }), ("farBrow", new[] { "inner", "peak", "outer" }),
+                     ("noseWedge", new[] { "bridgeTop" })
+                 })
+        {
+            if (!head.TryGetValue(group, out var g) || g is not Dictionary<string, object?> dict) continue;
+            foreach (var key in keys)
+            {
+                if (!dict.ContainsKey(key)) continue;
+                var p = ExtractPoint(dict[key]);
+                dict[key] = ToDict(new Point2D(p.X, p.Y + dy));
+            }
+        }
+
+        if (head.TryGetValue("eyeLineY", out var y) && y is not null)
+            head["eyeLineY"] = Convert.ToSingle(y, CultureInfo.InvariantCulture) + dy;
+    }
+
     static void StretchNose(Dictionary<string, object?> head, float dy)
     {
         if (dy == 0f) return;
@@ -7605,7 +7839,23 @@ public class ConstructiveDrawingToolkit
 
     #region Head Geometry
     /// <summary>Accepted options for <see cref="CreateHeadGeometry"/>. An unrecognised one is refused.</summary>
-    static readonly string[] HeadGeometryOptions = ["padding", "neckLength", "neckWidth", "skull"];
+    static readonly string[] HeadGeometryOptions = ["padding", "neckLength", "neckWidth", "skull", "face"];
+
+    /// <summary>
+    /// The face shapes <c>createHeadGeometry({ face })</c> can build in place of Loomis's jaw: points
+    /// across (<c>-1</c> to <c>1</c> of the face's half-width) and down (<c>0</c> at the brow line, <c>1</c>
+    /// at the chin), smoothed into a curve. The family is Stanchfield's (*Drawn to Life* vol. 1 ch. 37,
+    /// the basic head shapes a cartoon deviates into) and Gautier's (*Cartoons*, the same features in
+    /// different head shapes); the coordinates are the studio's.
+    /// </summary>
+    static readonly Dictionary<string, (float U, float V)[]> FaceShapes = new()
+    {
+        ["box"] = [(-1f, 0f), (1f, 0f), (1f, 0.8f), (0.85f, 1f), (-0.85f, 1f), (-1f, 0.8f)],
+        ["narrow"] = [(-0.75f, 0f), (0.75f, 0f), (0.75f, 0.85f), (0.55f, 1f), (-0.55f, 1f), (-0.75f, 0.85f)],
+        ["wedge"] = [(-1.05f, 0f), (1.05f, 0f), (0.9f, 0.35f), (0.12f, 1f), (-0.12f, 1f), (-0.9f, 0.35f)],
+        ["pear"] = [(-0.7f, 0f), (0.7f, 0f), (1.15f, 0.65f), (0.8f, 0.95f), (0f, 1f), (-0.8f, 0.95f), (-1.15f, 0.65f)],
+        ["peanut"] = [(-1f, 0f), (1f, 0f), (0.7f, 0.4f), (1f, 0.75f), (0.55f, 1f), (-0.55f, 1f), (-1f, 0.75f), (-0.7f, 0.4f)],
+    };
 
     /// <summary>Chaikin corner-cutting on a closed polygon: each pass replaces every vertex with two.</summary>
     /// <remarks>
@@ -7796,6 +8046,47 @@ public class ConstructiveDrawingToolkit
         var jawPath = Polygon(Chaikin(jawPts, 2), padding);
         foreach (var p in jawPts) Extent(p.X, p.Y, padding, padding);
 
+        // **A face shape in place of the jaw, under the same cranium** (Stanchfield ch. 35, 37: a circle
+        // for the skull over an oval for the face, and a cartoon head is that pair pushed into another
+        // shape). The face spans the jaw stations at the brow line and ends on the chin, so the
+        // character parameters, an expression or `squashHead` still move it.
+        var face = opt?["face"]?.ToString()?.Trim().ToLowerInvariant() ?? "loomis";
+        var shaped = face != "loomis";
+        if (shaped)
+        {
+            var far = ExtractPoint(jaw?["farStation"]);
+            var near = ExtractPoint(jaw?["nearStation"]);
+            var top = brow.Y;
+            var w = MathF.Abs(near.X - far.X) * 0.5f;
+            var cxTop = (near.X + far.X) * 0.5f;
+
+            (float U, float V)[] shape;
+            if (face is "oval" or "round")
+            {
+                // An ellipse inside the brow-to-chin box. A round face is a fuller superellipse, wider
+                // through the cheeks: a true circle in a box taller than it is wide comes out narrower
+                // than the oval, which is the opposite of round.
+                var n = face == "round" ? 2.8f : 2f;
+                if (face == "round") w *= 1.12f;
+                shape = [.. Enumerable.Range(0, 32).Select(i =>
+                {
+                    var t = i * MathF.PI * 2f / 32f;
+                    float s = MathF.Sin(t), c = MathF.Cos(t);
+                    float Pow(float v) => MathF.Sign(v) * MathF.Pow(MathF.Abs(v), 2f / n);
+                    return (Pow(s), 0.5f - (0.5f * Pow(c)));
+                })];
+            }
+            else if (!FaceShapes.TryGetValue(face, out shape!))
+            {
+                throw new ArgumentException(
+                    $"createHeadGeometry face not recognised: {face}. Accepted: loomis, oval, round, {string.Join(", ", FaceShapes.Keys)}.");
+            }
+
+            var pts = shape.Select(s => new Point2D(cxTop + ((chin.X - cxTop) * s.V) + (s.U * w), top + (s.V * (chin.Y - top)))).ToList();
+            jawPath = Polygon(face is "oval" or "round" ? pts : Chaikin(pts, 3), padding);
+            foreach (var p in pts) Extent(p.X, p.Y, padding, padding);
+        }
+
         // cos(yaw), recovered from the one place the construction recorded it. The clamp is the
         // construction's, not ours, and it is why the ear stops widening past about 63 degrees.
         var cos = eyeW > 0f ? Math.Clamp(Num(JsInterop.AsDict(head["farEye"]), "width", eyeW) / eyeW, 0f, 1f) : 1f;
@@ -7918,8 +8209,9 @@ public class ConstructiveDrawingToolkit
             return touch is null ? new CanvasPath() : Polygon([touch.Value, angle, craniumC], padding);
         }
 
-        var farCheek = Cheek(earCx, earRx, ExtractPoint(jaw?["angle"]), earDir);
-        var nearCheek = Cheek(nearEarCx, nearEarRx, ExtractPoint(jaw?["nearAngle"]), -earDir);
+        // A cheek is the seam between Loomis's ball and his jaw, so a shaped face has none.
+        var farCheek = shaped ? new CanvasPath() : Cheek(earCx, earRx, ExtractPoint(jaw?["angle"]), earDir);
+        var nearCheek = shaped ? new CanvasPath() : Cheek(nearEarCx, nearEarRx, ExtractPoint(jaw?["nearAngle"]), -earDir);
 
         // Behind the ear at the top, deep under the skull — the cited part. How far down and how
         // thick are the studio's, and both are in head units so they scale.
@@ -8020,6 +8312,7 @@ public class ConstructiveDrawingToolkit
                     ["x2"] = x1, ["y2"] = y1, ["cx"] = (x0 + x1) * 0.5f, ["cy"] = (y0 + y1) * 0.5f
                 },
             ["padding"] = padding,
+            ["face"] = face,
             // Construction order, NOT depth — as on a figure. The neck goes down first because the
             // jaw overlaps it; on a head turned far enough that the far jaw passes behind the neck,
             // the caller still has to say so.
@@ -8031,7 +8324,133 @@ public class ConstructiveDrawingToolkit
     }
 
     /// <summary>Accepted options for <see cref="CreateHeadForFigure"/>. An unrecognised one is refused.</summary>
+    /// <summary>
+    /// A child's face, as character parameters fading out by twelve. Gautier (Drawing and Cartooning 1,001
+    /// Faces, ch. "Children"): the cranium is larger than the face, the eyes keep their adult size so look
+    /// larger and are set wider, the nose is small and the mouth smaller, and around ten the lower face
+    /// catches up. The amounts are the studio's.
+    /// </summary>
+    static Dictionary<string, object?> ChildFace(float age)
+    {
+        var t = Math.Clamp((12f - age) / 11f, 0f, 1f);
+        if (t <= 0f) return [];
+        return new()
+        {
+            ["eyeLine"] = 0.9f * t, ["eyesSize"] = 0.4f * t, ["eyesDistance"] = 0.3f * t,
+            ["noseLength"] = -0.6f * t, ["mouthWidth"] = -0.4f * t
+        };
+    }
+
     static readonly string[] HeadForFigureOptions = ["yawDeg", "pitchDeg", "skull", "neckLength", "character"];
+
+    static readonly string[] FaceAirOptions = ["skull", "face"];
+
+    /// <summary>
+    /// How much of the face the features cover, and how much is left as "air": the eyes, brows, nose
+    /// and mouth drawn as <c>drawComicEye</c> and its siblings draw them, measured against the face
+    /// from hairline to chin.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Gautier's warning about cartoon heads (*Drawing and Cartooning 1,001 Faces*, ch. "Cartoons"): a
+    /// face crammed with large eyes and a wide mouth reads as badly drawn, because the features need
+    /// open space around them; they have to share a small area and still make sense. He gives no
+    /// number, so the threshold a workflow checks against is the studio's.
+    /// </para>
+    /// <para>
+    /// Measured by rasterising, not by adding path areas: the strokes, the fills and their overlaps
+    /// are what a reader sees crowding the face. The head is drawn at least 400px tall for the count,
+    /// so a small head is not measured at a few dozen pixels. <c>options</c> takes the
+    /// <c>skull</c> and <c>face</c> that <c>createHeadGeometry</c> takes, which set the face outline.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> MeasureFaceAir(object headObj, object? options = null)
+    {
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException("measureFaceAir needs a head from Drawing.createLoomisHead(...).", nameof(headObj));
+
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownHeadParameters(opt, FaceAirOptions, "measureFaceAir option");
+
+        var geoOptions = new Dictionary<string, object?> { ["neckLength"] = 0f };
+        if (opt?["skull"] is { } skull) geoOptions["skull"] = skull;
+        if (opt?["face"] is { } faceShape) geoOptions["face"] = faceShape;
+        var geometry = CreateHeadGeometry(head, geoOptions);
+
+        var mass = (CanvasPath)geometry["mass"]!;
+        var bounds = JsInterop.AsDict(geometry["bounds"]);
+        float x0 = Num(bounds, "x", 0f), y0 = Num(bounds, "y", 0f);
+        float bw = Num(bounds, "width", 1f), bh = Num(bounds, "height", 1f);
+
+        var hairline = ExtractPoint(head["hairline"]);
+        var chin = ExtractPoint(head["chin"]);
+        var band = new CanvasPath();
+        band.Rect(x0 - 1f, hairline.Y, bw + 2f, chin.Y - hairline.Y + 1f);
+        var faceRegion = mass.Intersect(band);
+
+        var scale = MathF.Max(1f, 400f / MathF.Max(1f, bh));
+        var w = (int)MathF.Ceiling(bw * scale) + 2;
+        var h = (int)MathF.Ceiling(bh * scale) + 2;
+
+        SkiaCanvas Surface(Action<CanvasRenderingContext2D> draw)
+        {
+            var canvas = new SkiaCanvas(w, h);
+            var ctx = canvas.GetContext("2d");
+            ctx.Scale(scale, scale);
+            ctx.Translate(-x0 + (1f / scale), -y0 + (1f / scale));
+            draw(ctx);
+            return canvas;
+        }
+
+        using var mask = Surface(ctx => { ctx.FillStyle = "#000000"; ctx.Fill(faceRegion); });
+        var maskPixels = mask.SkBitmap.Pixels;
+        var facePixels = maskPixels.Count(p => p.Alpha > 0);
+
+        int Covered(SkiaCanvas canvas)
+        {
+            var px = canvas.SkBitmap.Pixels;
+            var n = 0;
+            for (var i = 0; i < px.Length; i++)
+                if (px[i].Alpha > 0 && maskPixels[i].Alpha > 0) n++;
+            return n;
+        }
+
+        var ink = new Dictionary<string, object?> { ["inkColor"] = "#000000" };
+        using var eyes = Surface(ctx => { DrawComicEye(ctx, head["farEye"]!, true, ink); DrawComicEye(ctx, head["nearEye"]!, false, ink); });
+        using var brows = Surface(ctx =>
+        {
+            if (head.Contains("farBrow")) DrawComicBrow(ctx, head["farBrow"]!, true, ink);
+            if (head.Contains("nearBrow")) DrawComicBrow(ctx, head["nearBrow"]!, false, ink);
+        });
+        using var nose = Surface(ctx => DrawComicNose(ctx, head["noseWedge"]!, ink));
+        using var mouth = Surface(ctx => DrawComicMouth(ctx, head["mouthGuides"]!, ink));
+        using var all = Surface(ctx =>
+        {
+            DrawComicEye(ctx, head["farEye"]!, true, ink); DrawComicEye(ctx, head["nearEye"]!, false, ink);
+            if (head.Contains("farBrow")) DrawComicBrow(ctx, head["farBrow"]!, true, ink);
+            if (head.Contains("nearBrow")) DrawComicBrow(ctx, head["nearBrow"]!, false, ink);
+            DrawComicNose(ctx, head["noseWedge"]!, ink);
+            DrawComicMouth(ctx, head["mouthGuides"]!, ink);
+        });
+
+        float Share(SkiaCanvas canvas) => facePixels == 0 ? 0f : Covered(canvas) / (float)facePixels;
+        var share = Share(all);
+
+        return new Dictionary<string, object?>
+        {
+            ["share"] = share,
+            ["air"] = 1f - share,
+            ["byFeature"] = new Dictionary<string, object?>
+            {
+                ["eyes"] = Share(eyes),
+                ["brows"] = Share(brows),
+                ["nose"] = Share(nose),
+                ["mouth"] = Share(mouth)
+            },
+            ["face"] = geometry["face"],
+            ["message"] = $"features cover {share:P1} of the face, hairline to chin"
+        };
+    }
 
     /// <summary>
     /// A head built to sit on a mannequin figure: placed and scaled to the figure's own head mass,
@@ -8096,7 +8515,10 @@ public class ConstructiveDrawingToolkit
         var opt = JsInterop.AsDict(options);
         RefuseUnknownHeadParameters(opt, HeadForFigureOptions, "createHeadForFigure option");
 
-        var skull = opt?["skull"]?.ToString()?.Trim().ToLowerInvariant() ?? "comic";
+        // A child's head is rounder than an adult's (Loomis, Figure Drawing p. 29): at three it is about
+        // 0.8 of its height across, which is Loomis's six-eye skull rather than the comic five.
+        var figureHead = Num(node, "rx", 0f) / MathF.Max(Num(node, "ry", 1f), 0.001f);
+        var skull = opt?["skull"]?.ToString()?.Trim().ToLowerInvariant() ?? (figureHead > 0.786f ? "loomis" : "comic");
         if (skull is not ("loomis" or "comic"))
             throw new ArgumentException(
                 $"createHeadForFigure skull not recognised: {skull}. Accepted: loomis, comic.");
@@ -8111,7 +8533,10 @@ public class ConstructiveDrawingToolkit
         var head = CreateLoomisHead(center.X, center.Y, headHeight,
             Num(opt, "yawDeg", 0f), Num(opt, "pitchDeg", 0f));
 
-        if (JsInterop.AsDict(opt?["character"]) is IDictionary character)
+        var character = ChildFace(Num(JsInterop.AsDict(fig["build"]), "age", 18f));
+        if (JsInterop.AsDict(opt?["character"]) is IDictionary given)
+            foreach (DictionaryEntry e in given) character[e.Key.ToString()!] = e.Value;
+        if (character.Count > 0)
             head = CreateParametricHead(head, character);
 
         // Measured on the figure in hand rather than on the canon, which is what lets a posed figure

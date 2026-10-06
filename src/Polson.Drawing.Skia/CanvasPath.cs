@@ -238,9 +238,30 @@ public class CanvasPath : IDisposable
     {
         ArgumentNullException.ThrowIfNull(other);
 
+        // Skia's path ops can fail, or report success and drop a piece, where two curves coincide: a
+        // thigh and a shin meeting on the same circle at the knee lost the shin, depending only on where
+        // on the page the figure stood, and a posed figure failed outright on some frames and not others.
+        // A union cannot be smaller than what went into it, so check that. Either way, retry with the
+        // operands simplified, then with one nudged by a 256th of a pixel, which moves the curves off each
+        // other; only if both fail is it an error.
         var combined = new SKPath();
+        var ran = Path.Op(other.Path, op, combined);
+        var done = ran && !(op == SKPathOp.Union && Dropped(combined, Path, other.Path));
+        if (!done)
+            foreach (var (a, b) in Retries(other))
+            {
+                var again = new SKPath();
+                if (a.Op(b, op, again) && !(op == SKPathOp.Union && Dropped(again, Path, other.Path)))
+                {
+                    combined.Dispose();
+                    combined = again;
+                    ran = done = true;
+                    break;
+                }
+                again.Dispose();
+            }
 
-        if (!Path.Op(other.Path, op, combined))
+        if (!ran)
         {
             combined.Dispose();
             throw new InvalidOperationException(
@@ -261,6 +282,25 @@ public class CanvasPath : IDisposable
 
         combined.Dispose();
         return new CanvasPath(normalised);
+    }
+
+    /// <summary>Whether a union lost part of an operand: it no longer reaches their joint bounds.</summary>
+    static bool Dropped(SKPath union, SKPath a, SKPath b)
+    {
+        var want = SKRect.Union(a.TightBounds, b.TightBounds);
+        var got = union.TightBounds;
+        const float slack = 0.5f;
+        return got.Left > want.Left + slack || got.Top > want.Top + slack || got.Right < want.Right - slack || got.Bottom < want.Bottom - slack;
+    }
+
+    IEnumerable<(SKPath A, SKPath B)> Retries(CanvasPath other)
+    {
+        var a = new SKPath();
+        var b = new SKPath();
+        if (Path.Simplify(a) && other.Path.Simplify(b)) yield return (a, b);
+        var nudged = new SKPath(other.Path);
+        nudged.Transform(SKMatrix.CreateTranslation(1f / 256f, 1f / 256f));
+        yield return (Path, nudged);
     }
 
     /// <summary>Whether the point lies inside the filled path, under the path's fill rule.</summary>

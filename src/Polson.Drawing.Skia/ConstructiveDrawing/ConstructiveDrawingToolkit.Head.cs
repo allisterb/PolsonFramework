@@ -248,7 +248,8 @@ public partial class ConstructiveDrawingToolkit
                 ["outer"] = ToDict(nearOuter),
                 ["center"] = ToDict(nearCenter),
                 ["width"] = eyeW,
-                ["height"] = eyeW * 0.45f
+                ["height"] = eyeW * 0.45f,
+                ["lowerLift"] = 0f
             },
             ["farEye"] = new Dictionary<string, object?>
             {
@@ -256,7 +257,8 @@ public partial class ConstructiveDrawingToolkit
                 ["outer"] = ToDict(farOuter),
                 ["center"] = ToDict(farCenter),
                 ["width"] = eyeWFar,
-                ["height"] = eyeWFar * 0.45f
+                ["height"] = eyeWFar * 0.45f,
+                ["lowerLift"] = 0f
             },
             ["nearBrow"] = Brow(nearInner, nearOuter),
             ["farBrow"] = Brow(farInner, farOuter),
@@ -568,7 +570,8 @@ public partial class ConstructiveDrawingToolkit
             ["outer"] = ToDict(new Point2D(x0 + side * 1.5f * e, yEye)),
             ["center"] = ToDict(new Point2D(x0 + side * e, yEye)),
             ["width"] = e,
-            ["height"] = eyeH
+            ["height"] = eyeH,
+            ["lowerLift"] = 0f
         };
 
         // The same brow stations Loomis's head carries, on Hamm's brow line.
@@ -1256,12 +1259,14 @@ public partial class ConstructiveDrawingToolkit
         ("nearEye.center", HeadValue.Point),
         ("nearEye.width", HeadValue.Length),
         ("nearEye.height", HeadValue.Length),
+        ("nearEye.lowerLift", HeadValue.Length),
 
         ("farEye.inner", HeadValue.Point),
         ("farEye.outer", HeadValue.Point),
         ("farEye.center", HeadValue.Point),
         ("farEye.width", HeadValue.Length),
         ("farEye.height", HeadValue.Length),
+        ("farEye.lowerLift", HeadValue.Length),
 
         ("nearBrow.inner", HeadValue.Point),
         ("nearBrow.peak", HeadValue.Point),

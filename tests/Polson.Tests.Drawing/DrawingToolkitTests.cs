@@ -1563,7 +1563,7 @@ public class DrawingToolkitTests : TestsRuntime
         var nose = toolkit.DrawComicNose(ctx, head["noseWedge"]!, null);
         var mouth = toolkit.DrawComicMouth(ctx, head["mouthGuides"]!, null);
 
-        Assert.Equal(new[] { "aperture", "catchlight", "iris", "lowerLid", "pupil", "upperLid" },
+        Assert.Equal(new[] { "aperture", "catchlight", "fold", "innerCorner", "iris", "lashes", "lowerLid", "lowerRim", "pupil", "upperLid" },
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "base", "bridge", "bridgeMark", "farNostril", "farNostrilHole", "nostril", "nostrilHole", "underPlane" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());

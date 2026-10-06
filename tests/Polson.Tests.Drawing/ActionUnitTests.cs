@@ -294,12 +294,13 @@ public class ActionUnitTests : TestsRuntime
     /// <para>
     /// <b>This test named AU2 until 2026-09-18</b>, when the head grew inner and outer brow
     /// stations and AU2 became implementable. A refusal list is a statement about the geometry, so
-    /// it has to move when the geometry does.
+    /// it has to move when the geometry does. <b>It named AU6 until 2026-10-06</b>, when the lower lid
+    /// began to move on its own and AU6 became the unit that lifts it.
     /// </para>
     /// </remarks>
     [Theory]
-    [InlineData("AU6")]
     [InlineData("AU9")]
+    [InlineData("AU10")]
     [InlineData("AU17")]
     public void TestAUnitTheGeometryCannotShowIsRefused(string unit)
     {
@@ -307,6 +308,62 @@ public class ActionUnitTests : TestsRuntime
             () => Toolkit.ApplyActionUnits(Head(), new Dictionary<string, object?> { [unit] = 0.5f }));
 
         Assert.Contains(unit, ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>AU6 lifts the lower lid and leaves the upper where it is — Hamm's laughing eye (p. 9).</summary>
+    [Fact]
+    public void TestAU6LiftsOnlyTheLowerLid()
+    {
+        var head = Head();
+        var lifted = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU6"] = 1f });
+
+        Assert.Equal(0f, Convert.ToSingle(G(head, "nearEye")["lowerLift"]), 4);
+        Assert.True(Convert.ToSingle(G(lifted, "nearEye")["lowerLift"]) > 0f);
+        Assert.True(Convert.ToSingle(G(lifted, "farEye")["lowerLift"]) > 0f);
+        Assert.Equal(Aperture(head), Aperture(lifted), 4);                // the upper lid's opening is untouched
+        Assert.Equal(BrowY(head, "peak"), BrowY(lifted, "peak"), 4);
+
+        var nearOnly = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU6"] = 1f },
+            new Dictionary<string, object?> { ["side"] = "near" });
+        Assert.Equal(0f, Convert.ToSingle(G(nearOnly, "farEye")["lowerLift"]), 4);
+    }
+
+    /// <summary>A lifted lower lid is drawn higher, so it covers more of the iris.</summary>
+    [Fact]
+    public void TestAU6RaisesTheDrawnApertureFloor()
+    {
+        float Floor(Dictionary<string, object?> h) =>
+            ((CanvasPath)Toolkit.DrawComicEye(new SkiaCanvas(800, 600).GetContext("2d"), h["nearEye"]!, false, null)["aperture"]!).Path.TightBounds.Bottom;
+
+        var head = Head();
+        var lifted = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU6"] = 1f });
+        Assert.True(Floor(lifted) < Floor(head) - 1f, $"floor {Floor(head)} → {Floor(lifted)}");
+    }
+
+    /// <summary>AU6 composes with AU7 in either order, and a lifted lid blends like any other landmark.</summary>
+    [Fact]
+    public void TestAU6ComposesAndBlends()
+    {
+        var head = Head();
+        var a = Toolkit.ApplyActionUnits(Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU6"] = 0.7f }),
+            new Dictionary<string, object?> { ["AU7"] = 0.5f });
+        var b = Toolkit.ApplyActionUnits(Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU7"] = 0.5f }),
+            new Dictionary<string, object?> { ["AU6"] = 0.7f });
+        AssertSameShape(a, b, "head");
+
+        var smile = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU6"] = 1f });
+        var blended = Toolkit.BlendHead(head, head, smile, 0.5f);
+        Assert.Equal(Convert.ToSingle(G(smile, "nearEye")["lowerLift"]) * 0.5f,
+            Convert.ToSingle(G(blended, "nearEye")["lowerLift"]), 2);
+    }
+
+    /// <summary>Joy lifts the lower lids rather than narrowing both.</summary>
+    [Fact]
+    public void TestJoyUsesTheCheekNotTheLidTightener()
+    {
+        var joy = Toolkit.ExpressionUnits("joy");
+        Assert.True(joy.ContainsKey("AU6"));
+        Assert.False(joy.ContainsKey("AU7"));
     }
 
     /// <summary>

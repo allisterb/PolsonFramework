@@ -64,6 +64,23 @@ public class BrushPreset
 
     /// <summary>What happens at the mark's edge. Null for a hard edge.</summary>
     public SKMaskFilter? Edge { get; set; }
+
+    /// <summary>How the grain was made, so it can be laid down again in another colour. Null for a solid medium.</summary>
+    internal GrainSpec? Spec { get; init; }
+    #endregion
+
+    #region Methods
+    /// <summary>
+    /// This medium's grain in <paramref name="color"/>, or null for a solid medium. How a feature drawer puts
+    /// its iris, its lip and its shadow down in the same pencil as its outline.
+    /// </summary>
+    internal SKShader? GrainIn(string color) =>
+        Spec is { } s ? SkiaBrushApi.Grain(color, s.Amount, s.Frequency, s.Octaves, s.Seed, s.Lo, s.Hi) : null;
+    #endregion
+
+    #region Types
+    /// <summary>The parameters a grain shader was built from.</summary>
+    internal sealed record GrainSpec(float Amount, float Frequency, int Octaves, int Seed, float Lo, float Hi);
     #endregion
 }
 
@@ -102,7 +119,7 @@ public class SkiaBrushApi
         half4 main(float2 p) {
             half4 n = noise.eval(p);
             float lum = (n.r + n.g + n.b) / 3.0;
-            float a = smoothstep(lo, hi, lum);
+            float a = smoothstep(lo, hi, lum) * ink.a;
             return half4(half3(ink.rgb) * a, a);
         }
         """;
@@ -120,7 +137,10 @@ public class SkiaBrushApi
         new("pencil", color, width, "round",
             grain: Grain(color, grain, frequency: 0.45f, octaves: 3, seed: seed, lo: 0.02f, hi: 0.15f),
             texture: grain > 0f ? SKPathEffect.CreateDiscrete(9f, 1.0f, (uint)seed) : null,
-            edge: SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 0.6f));
+            edge: SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 0.6f))
+        {
+            Spec = grain > 0f ? new BrushPreset.GrainSpec(grain, 0.45f, 3, seed, 0.02f, 0.15f) : null
+        };
 
     /// <summary>
     /// Pen and ink: solid, crisp, with just enough irregularity not to read as a vector line.
@@ -147,7 +167,10 @@ public class SkiaBrushApi
     public BrushPreset Chalk(string color = "#2e2a26", float width = 7f, float grain = 1f, int seed = 3) =>
         new("chalk", color, width, "round",
             grain: Grain(color, grain, frequency: 0.18f, octaves: 2, seed: seed, lo: 0.03f, hi: 0.18f),
-            edge: SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 1.4f));
+            edge: SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 1.4f))
+        {
+            Spec = grain > 0f ? new BrushPreset.GrainSpec(grain, 0.18f, 2, seed, 0.03f, 0.18f) : null
+        };
 
     /// <summary>
     /// Marker: flat, opaque, wide, with the faintly bled edge of ink on absorbent paper.
@@ -186,11 +209,12 @@ public class SkiaBrushApi
     }
 
     /// <summary>Builds the grain shader for a dry medium, or null when an even deposit was asked for.</summary>
-    private static SKShader? Grain(string color, float amount, float frequency, int octaves, int seed, float lo, float hi)
+    internal static SKShader? Grain(string color, float amount, float frequency, int octaves, int seed, float lo, float hi)
     {
         if (amount <= 0f) return null;
 
-        var ink = SKColor.Parse(color);
+        // The CSS parser rather than SKColor.Parse, so an rgba() shadow keeps its alpha.
+        var ink = SkiaColorParser.Parse(color);
 
         // A wider window keeps more of the stroke, so less grain; a narrower one breaks it up more.
         var span = (hi - lo) / Math.Clamp(amount, 0.05f, 4f);
@@ -204,7 +228,7 @@ public class SkiaBrushApi
 
         var uniforms = new SKRuntimeEffectUniforms(effect)
         {
-            ["ink"] = new[] { ink.Red / 255f, ink.Green / 255f, ink.Blue / 255f, 1f },
+            ["ink"] = new[] { ink.Red / 255f, ink.Green / 255f, ink.Blue / 255f, ink.Alpha / 255f },
             ["lo"] = mid - span / 2f,
             ["hi"] = mid + span / 2f,
         };

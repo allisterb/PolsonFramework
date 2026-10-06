@@ -817,10 +817,10 @@ Both honour `globalAlpha`, `globalCompositeOperation`, `filter`, `colorFilter`, 
 Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with the leading context argument dropped: `Drawing.drawPerspectiveGrid(ctx, grid, options)` and `ctx.drawPerspectiveGrid(grid, options)` are the same call.
 
 > [!IMPORTANT]
-> **This list is exhaustive — taking a context as its first parameter is not enough.** Nine toolkit
+> **This list is exhaustive — taking a context as its first parameter is not enough.** Ten toolkit
 > methods that do take one have no shortcut: `drawLoomisWireframe`, `drawDoubleCircleWireframe`,
 > `drawMannequinWireframe`, `drawMannequinSolid`, `drawComicEye`, `drawComicBrow`, `drawComicNose`,
-> `drawComicMouth` and `drawComicEar`. Call those as
+> `drawComicMouth`, `drawComicEar` and `drawTone`. Call those as
 > `Drawing.drawLoomisWireframe(ctx, head)`.
 >
 > The mannequin and hand pairs are the traps worth knowing, because each shortcut exists under a
@@ -1441,7 +1441,7 @@ Also accessible via `Skia.Drawing`.
 > **Drawing it onto a body has two ordering rules that are not obvious and produce a wrong picture silently** — the head and neck go down **first** with the torso over them, or the neck's closed base is outlined across the chest; and the mannequin's own head egg has to be cut out of the body (`figGeo.silhouette.subtract(figGeo.groups.head)`) or it paints over the face. Worked through in `polson://manual/23` §8.
 
 - `Drawing.drawLoomisWireframe(ctx: CanvasRenderingContext2D, headObj: object, options?: { blueLineColor?: string, graphiteColor?: string })` — Renders non-repro blue (`#4a90e2`) and graphite (`#444444`) construction wireframe.
-- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string, irisRatio?: number, weight?: number })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, **returning each as a `CanvasPath`**. **The lid opening is `eye.height / eye.width`**, so an eye narrows or widens by changing `height` — which is what `eyesOpening` and any expression blend move. The canon's own ratio is `0.45`, and an eye carrying neither field falls back to it, so nothing drawn before this was readable renders differently.
+- `Drawing.drawComicEye(ctx: CanvasRenderingContext2D, eyeObj: object, isFar?: boolean, options?: { inkColor?: string, irisColor?: string, scleraColor?: string, irisRatio?: number, weight?: number, detail?: number, fold?: number, lashes?: number, tone?: number, medium?: BrushPreset })` → `{ aperture, iris, pupil, catchlight, upperLid, lowerLid, fold, lowerRim, innerCorner, lashes }` — Renders S-curve upper eyelid, shaded sclera, colored iris, pupil, and white catchlight, with Hamm's construction (below), **returning each as a `CanvasPath`**. **The lid opening is `eye.height / eye.width`**, so an eye narrows or widens by changing `height` — which is what `eyesOpening` and any expression blend move. The canon's own ratio is `0.45`, and an eye carrying neither field falls back to it, so nothing drawn before this was readable renders differently.
 
 > [!TIP]
 > **`height` was written by `createLoomisHead` and read by nothing until 2026-09-18.** Every
@@ -1451,9 +1451,20 @@ Also accessible via `Skia.Drawing`.
 > width is what stops it also reading as half shut.
 >
 > The iris is clipped to `aperture`, so a closing eye covers it correctly without anything else
-> being told. **Upper and lower lids are not separable yet** — one number moves the whole opening —
-> so an Action Unit layer above this can express closure and widening but not yet a lower-lid
-> tightener on its own.
+> being told. **The lower lid moves on its own**, as `eye.lowerLift` (pixels it has risen, 0 at rest), which is
+> what `AU6` moves: a laughing lower lid pushes up over the iris while the upper stays. Every head carries
+> `lowerLift: 0`, and `blendHead` blends it.
+
+> [!TIP]
+> **Hamm's eye** (*Drawing the Head and Figure*, p. 7, with pp. 8–9). On by default: the **fold** of the upper lid, a strip just above it (step 10; `fold` scales it, `0` removes it); the lower lid's inner outline **faded away** so the eye does not look hard (step 6); a small **wedge at the inner corner** (step 7); and the lower lid's **margin**, a light line below it from midway to the outer corner (p. 8). `detail: 0` draws the plain eye as before.
+>
+> Opt-in: **`lashes`** (0–1) sweeps lashes up and out from the outer part of the upper lid and clusters short ones under the outer part of the lower, none at the inner corner (steps 5–6, p. 9), and thickens the lash line. **`tone`** (0–1) adds his values: the iris darkening to its rim, and the upper lid's shadow over the iris and the white (steps 8–9). The highlight stays paper.
+>
+> ```javascript
+> Drawing.drawComicEye(ctx, head.nearEye, false, { lashes: 0.8, tone: 1 });
+> ```
+>
+> **`medium`** takes a brush from `Skia.Brush`, and every ink line, fill and tone in the eye is laid down in it, each in its own colour — so a pencil eye is pencil. The brow, nose, mouth and ear drawers take the same option; `drawTone` shades a face in the same medium.
 
 > [!TIP]
 > **`irisRatio` is the iris radius as a fraction of the eye's drawn width, and its default of `0.32` is a comic iris rather than a real one.** A real iris measures **0.19** here: on MediaPipe's canonical face model (Apache 2.0, 468 vertices) the iris diameter is **0.1886 of the interpupillary distance**, measured off the iris ring vertices with nothing inferred — and this construction places the pupils one eye-width either side of the facial axis, so IPD is exactly twice the drawn width and the two ratios are the same number.
@@ -1465,7 +1476,7 @@ Also accessible via `Skia.Drawing`.
 > ```
 >
 > A non-positive or non-finite value falls back to the default rather than drawing an invisible iris.
-- `Drawing.drawComicBrow(ctx: CanvasRenderingContext2D, browObj: object, isFar?: boolean, options?: { inkColor?: string, thickness?: number })` → `{ mass, spine }` — Renders one eyebrow from its three stations, **returning the filled brow and its centre-line as `CanvasPath`s**. Pass `head.nearBrow` and `head.farBrow`.
+- `Drawing.drawComicBrow(ctx: CanvasRenderingContext2D, browObj: object, isFar?: boolean, options?: { inkColor?: string, thickness?: number, medium?: BrushPreset })` → `{ mass, spine }` — Renders one eyebrow from its three stations, **returning the filled brow and its centre-line as `CanvasPath`s**. Pass `head.nearBrow` and `head.farBrow`.
 
 > [!IMPORTANT]
 > **The brow is a station pair per eye, not a point at the head's centre — and `head.brow` is not it.** `createLoomisHead` carries `nearBrow` and `farBrow`, each `{ inner, peak, outer, thickness }`, and those are the drawn eyebrows. **`head.brow` stays what it always was**: the ball's equator, the landmark `createHeadGeometry` takes the cranium's centre and radius from, and a construction line rather than anything you ink.
@@ -1483,7 +1494,7 @@ Also accessible via `Skia.Drawing`.
 >
 > **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
 
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number, medium?: BrushPreset })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
 
 > [!IMPORTANT]
 > **The nose has a width, and it is exactly one eye across.** Dick Gautier gives the one measurement the other head references decline to: *"The width of the base of the nose measures exactly one eye width, the same as the distance between the eyes measured from the inside corner"* (*Drawing and Cartooning 1,001 Faces*, Perigee 1993, p. 27). **Both quantities were already in `createLoomisHead`** — `unit.eyeW`, and an inner-corner gap the construction sets to exactly one eye-width — and the nose used neither: it ran from a single point on the axis to one nostril, so it had no width anywhere.
@@ -1491,8 +1502,24 @@ Also accessible via `Skia.Drawing`.
 > `noseWedge` now carries **`farNostril`** beside `nearNostril`, foreshortening with the turn as the far eye and the far mouth corner do. The bottom plane spans both wings rather than being a one-sided triangle — Loomis runs it *"from a point on the ball of the nose to a point on the lower corner of the nostril"* and Faragasso terminates his two nasal-bone lines at *the corners* of it, plural. Faragasso reaches the same span from the brows instead of from the eyes, which is two independent routes to one number.
 >
 > A nose object built before this still draws: with no `farNostril`, the bottom plane falls back to the triangle it was.
-- `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string, weight?: number })` → `{ cavity, teeth, lipLine, lipMark, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow. `lipLine` stays the open centre-line; **`lipMark` is the tapered mark actually filled**.
-- `Drawing.drawComicEar(ctx: CanvasRenderingContext2D, earObj: object, isFar?: boolean, options?: { inkColor?: string, shadowColor?: string, weight?: number, hatch?: boolean })` → `{ helix, antihelix, concha, lobe, tragus }` — Renders one ear: the outer rim, the ridge inside it, the bowl between them, the lobe and the tragus. Pass **`geo.ears.far`** or **`geo.ears.near`** from `createHeadGeometry`.
+- `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string, weight?: number, medium?: BrushPreset })` → `{ cavity, teeth, lipLine, lipMark, lowerLip }` — Renders Cupid's bow upper lip, teeth shelf, mouth cavity, and lower lip shadow. `lipLine` stays the open centre-line; **`lipMark` is the tapered mark actually filled**.
+- `Drawing.drawComicEar(ctx: CanvasRenderingContext2D, earObj: object, isFar?: boolean, options?: { inkColor?: string, shadowColor?: string, weight?: number, hatch?: boolean, medium?: BrushPreset })` → `{ helix, antihelix, concha, lobe, tragus }` — Renders one ear: the outer rim, the ridge inside it, the bowl between them, the lobe and the tragus. Pass **`geo.ears.far`** or **`geo.ears.near`** from `createHeadGeometry`.
+- `Drawing.drawTone(ctx: CanvasRenderingContext2D, shape: CanvasPath, options?: { color?: string, amount?: number, from?: Point, to?: Point, softness?: number, medium?: BrushPreset })` → `CanvasPath` — **Graded tone in a shape**: full `amount` (0–1, default 0.35) at `from`, nothing at `to`, multiplied over what is there so it darkens rather than covers. Without `from` and `to` it is flat. `softness` blurs the shape's edge by that many pixels; `medium` lays the tone down as that medium's grain. Hamm's values are graded — dark at the core of a form, fading with no edge (*Drawing the Head and Figure*, p. 7, steps 8–9).
+- `Drawing.createEyeSocket(eyeObj: object, browObj: object)` → `CanvasPath` — The socket between a brow and its eye, from under the brow to the upper lid: the shape to shade to set an eye into its head.
+
+> [!TIP]
+> **A face in pencil.** Pass the same brush as `medium` to every feature drawer, and shade with `drawTone`:
+>
+> ```javascript
+> const pencil = Skia.Brush.pencil('#2e2e2e', 2, 1, 7);
+> const grey = { medium: pencil, inkColor: '#2e2e2e', irisColor: '#7a7a7a', scleraColor: '#f6f3ec' };
+> Drawing.drawTone(ctx, Drawing.createEyeSocket(head.nearEye, head.nearBrow),
+>     { medium: pencil, amount: 0.2, from: { x: head.nearEye.center.x, y: head.nearBrow.peak.y }, to: head.nearEye.center, softness: 5 });
+> Drawing.drawComicBrow(ctx, head.nearBrow, false, grey);
+> Drawing.drawComicEye(ctx, head.nearEye, false, { ...grey, lashes: 0.6, tone: 1 });
+> ```
+>
+> Each colour is laid down as the medium's grain in that colour, so an iris is grey pencil and a lip is a lighter pencil; the white of the eye, the teeth and the highlights stay paper. A pencil is a dry medium — use greys, not the comic defaults' blue iris and red lip.
 
 > [!IMPORTANT]
 > **Until 2026-09-19 nothing drew an ear at all**, and every head this studio produced wore two blank flaps. `createHeadGeometry` has carried `parts.ear` and `parts.nearEar` since the same week, but those are *masses* — padded ellipses unioned into the silhouette — with no internal structure. Manual 23 §9 named it: what the composition gives you is shape, and *"it does not shade them"*.
@@ -2064,7 +2091,7 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > Gautier again: *"when sorrow falls upon us, our mouths purse and curl while the intricate network of
 > muscles around the eyes squeezes tightly together"* (p. 81). The tuple moved a brow and two mouth
 > corners and left the aperture exactly as it found it — so every other expression in the table
-> touched the eye and the one described as eye-centred did not. `0.40` sits between `joy`'s `0.25` and
+> touched the eye and the one described as eye-centred did not. `0.40` sits between a light squeeze and
 > `disgust`'s `0.45`: a squeeze, short of the hard narrowing `anger` gets at `0.60`.
 
 > [!IMPORTANT]
@@ -2102,6 +2129,7 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > | `AU2` | Outer Brow Raiser | Frontalis, Pars Lateralis | the brow's **tail**, up |
 > | `AU4` | Brow Lowerer | Corrugator and depressors | all three stations down, **and the inner ends inward** |
 > | `AU5` | Upper Lid Raiser | Levator Palpebrae Superioris | the lid aperture, open |
+> | `AU6` | Cheek Raiser | Orbicularis Oculi, Pars Orbitalis | the **lower** lid, up — the laughing eye |
 > | `AU7` | Lid Tightener | Orbicularis Oculi, Pars Palpebralis | the lid aperture, narrowed |
 > | `AU12` | Lip Corner Puller | Zygomatic Major | the mouth corners, out **and** up |
 > | `AU15` | Lip Corner Depressor | Triangularis | the mouth corners, down |
@@ -2121,9 +2149,6 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > [!IMPORTANT]
 > **What is deliberately absent, and why each one would have been worse than an omission.**
 >
-> - **`AU6` (Cheek Raiser)** — `createHeadGeometry` now composes a cheek, but it is *derived* from the
->   ear and the jaw angle rather than being a landmark, so there is nothing for a unit to displace;
->   and `drawComicEye` draws no crow's feet, so the Duchenne marker still has nowhere to land.
 > - **`AU9` / `AU10`** — the upper lip is a single `upperLipY`, so a sneer would read as the whole lip
 >   rising.
 > - **`AU17` (Chin Raiser)** — the mentalis bulge is a surface change rather than a landmark move.
@@ -3786,7 +3811,7 @@ Both are passed to `Mesh.draw`, both take `-1 … 0 … +1`, both clamp, and an 
 > `Drawing.applyActionUnits` is still the better tool for a performance — what this route buys that the other cannot is **rotation and identity from one image**.
 
 > [!IMPORTANT]
-> **A real ARKit name this construction cannot show is refused *by name*, with the reason** — `cheekPuff`, `noseSneer`, `mouthPucker`, `eyeLookUp`, `jawForward` and the rest. They are correctly spelled, so a bare "not recognised" would send you hunting for a typo that is not there; and accepting all fifty-two so two thirds could quietly do nothing is the silent-no-op failure this file has a scar from. The same judgment `applyActionUnits` makes for AU6, AU9 and AU17.
+> **A real ARKit name this construction cannot show is refused *by name*, with the reason** — `cheekPuff`, `noseSneer`, `mouthPucker`, `eyeLookUp`, `jawForward` and the rest. They are correctly spelled, so a bare "not recognised" would send you hunting for a typo that is not there; and accepting all fifty-two so two thirds could quietly do nothing is the silent-no-op failure this file has a scar from. The same judgment `applyActionUnits` makes for AU9, AU10 and AU17.
 >
 > **The pre-ARKit spellings still work and draw exactly what they drew** — `browLower`, `squint`, `mouthOpen`, `mouthCornerDown` and `mouthWide` resolve to `browDown`, `eyeSquint`, `jawOpen`, `mouthFrown` and `mouthStretch`. Asserted vertex-by-vertex, not merely by not throwing.
 

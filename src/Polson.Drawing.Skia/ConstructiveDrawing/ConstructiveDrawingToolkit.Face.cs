@@ -8,45 +8,111 @@ using SkiaSharp;
 
 public partial class ConstructiveDrawingToolkit
 {
-    #region Comic Feature Drawing Helpers
+    #region Drawing Media
+    /// <summary>The medium a feature drawer was asked to draw in, or null for solid ink.</summary>
+    static BrushPreset? ReadMedium(IDictionary? opt, string who)
+    {
+        if (opt is null || !opt.Contains("medium") || opt["medium"] is null) return null;
+        return opt["medium"] as BrushPreset
+            ?? throw new ArgumentException($"{who}'s medium is a brush from Skia.Brush, such as Skia.Brush.pencil(); it was given {opt["medium"]!.GetType().Name}.");
+    }
+
+    /// <summary>A colour as the medium lays it down: its grain in that colour, or the plain colour for solid ink.</summary>
+    static object InMedium(BrushPreset? medium, string color) => medium?.GrainIn(color) is { } grain ? grain : color;
+
+    /// <summary>The same, always as a shader, so it can be masked by a gradient.</summary>
+    static SKShader ShaderInMedium(BrushPreset? medium, string color) =>
+        medium?.GrainIn(color) ?? SKShader.CreateColor(SkiaColorParser.Parse(color));
+
+    /// <summary>Puts the medium's path texture and edge on the context. Call inside the drawer's own save.</summary>
+    static void ApplyMedium(CanvasRenderingContext2D ctx, BrushPreset? medium)
+    {
+        if (medium is null) return;
+        ctx.PathEffect = medium.Texture;
+        ctx.MaskFilter = medium.Edge;
+    }
+
     /// <summary>
-    /// Draws the eye and <b>returns the parts it built</b>, each as a <see cref="CanvasPath"/>:
-    /// <c>aperture</c>, <c>iris</c>, <c>pupil</c>, <c>catchlight</c>, <c>upperLid</c>, <c>lowerLid</c>.
+    /// Fills <paramref name="shape"/> with <paramref name="paint"/> at alpha <paramref name="alphaFrom"/> at
+    /// <paramref name="from"/>, grading to <paramref name="alphaTo"/> at <paramref name="to"/>.
+    /// </summary>
+    static void FillGraded(CanvasRenderingContext2D ctx, CanvasPath shape, SKShader paint,
+                           Point2D from, Point2D to, float alphaFrom, float alphaTo, float softness = 0f)
+    {
+        using var ramp = SKShader.CreateLinearGradient(
+            new SKPoint(from.X, from.Y), new SKPoint(to.X, to.Y),
+            [new SKColor(0, 0, 0, (byte)(Math.Clamp(alphaFrom, 0f, 1f) * 255f)), new SKColor(0, 0, 0, (byte)(Math.Clamp(alphaTo, 0f, 1f) * 255f))],
+            null, SKShaderTileMode.Clamp);
+        ctx.Save();
+        ctx.FillStyle = SKShader.CreateCompose(ramp, paint, SKBlendMode.SrcIn);
+        ctx.MaskFilter = softness > 0.05f ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, softness) : null;
+        ctx.Fill(shape);
+        ctx.Restore();
+    }
+
+    static readonly string[] ToneOptions = ["color", "amount", "from", "to", "softness", "medium"];
+
+    /// <summary>
+    /// Lays graded tone into a shape: full <c>amount</c> at <c>from</c>, nothing at <c>to</c>, multiplied over
+    /// what is there so it darkens rather than covers. Without <c>from</c> and <c>to</c> the tone is flat.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <c>aperture</c> is the one worth having: it is the shape the sclera fills and the shape the
-    /// interior is clipped to, so it is what a caller clips a highlight, a cast shadow from the brow,
-    /// or a reflected window into. Reconstructing it by hand means re-deriving the eyelid curve from
-    /// <c>inner</c>, <c>outer</c> and the eye's own width, which is exactly the duplication these
-    /// return values exist to prevent.
-    /// </para>
-    /// <para>
-    /// The two lids are open centre-lines rather than filled shapes, so they can be re-stroked at a
-    /// different weight — Studio Manual 03's tier hierarchy is a decision about weight, and an eye
-    /// drawn at panel size wants a different one from an eye in close-up. Pass either through
-    /// <c>ctx.strokeToPath(...)</c> to turn it into a fillable mark.
-    /// </para>
-    /// <para>A script that ignores the return value behaves exactly as before.</para>
+    /// Hamm's values are graded — dark at the core of a form, fading with no edge (<i>Drawing the Head and
+    /// Figure</i>, p. 7, steps 8–9). <c>softness</c> blurs the shape's own edge by that many pixels, and a
+    /// <c>medium</c> puts the tone down as that medium's grain, so pencil tone reads as pencil.
     /// </remarks>
-    public Dictionary<string, object?> DrawComicEye(CanvasRenderingContext2D ctx, object eyeObj, bool isFar = false, object? options = null)
+    public CanvasPath DrawTone(CanvasRenderingContext2D ctx, CanvasPath shape, object? options = null)
     {
         ArgumentNullException.ThrowIfNull(ctx);
-        if (JsInterop.AsDict(eyeObj) is not IDictionary eye) return [];
+        ArgumentNullException.ThrowIfNull(shape);
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownHeadParameters(opt, ToneOptions, "drawTone option");
 
-        var optDict = JsInterop.AsDict(options);
-        var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
-        var irisColor = optDict?["irisColor"]?.ToString() ?? "#3b6884";
-        var scleraColor = optDict?["scleraColor"]?.ToString() ?? "#f1f4f7";
+        var medium = ReadMedium(opt, "drawTone");
+        var paint = ShaderInMedium(medium, opt?["color"]?.ToString() ?? "#2a2a2a");
+        var amount = Math.Clamp(Num(opt, "amount", 0.35f), 0f, 1f);
+        var b = shape.Path.TightBounds;
+        var hasRamp = opt != null && opt.Contains("from") && opt["from"] is not null && opt.Contains("to") && opt["to"] is not null;
+        var from = hasRamp ? ExtractPoint(opt!["from"]) : new Point2D(b.Left, b.MidY);
+        var to = hasRamp ? ExtractPoint(opt!["to"]) : new Point2D(b.Right, b.MidY);
 
-        // A multiplier on the feature's own weights rather than a pixel count, as `drawComicBrow`'s
-        // `thickness` already is — so a tier chosen here survives a change of head size.
-        var weight = Fraction(optDict, "weight", 1f);
+        ctx.Save();
+        ctx.GlobalCompositeOperation = "multiply";
+        FillGraded(ctx, shape, paint, from, to, amount, hasRamp ? 0f : amount, MathF.Max(0f, Num(opt, "softness", 0f)));
+        ctx.Restore();
+        return shape;
+    }
 
+    /// <summary>
+    /// The socket between a brow and its eye: under the brow's line, down to the outer corner, and back along the
+    /// upper lid. The shape <c>drawTone</c> shades to set an eye into its head.
+    /// </summary>
+    public CanvasPath CreateEyeSocket(object eyeObj, object browObj)
+    {
+        if (JsInterop.AsDict(eyeObj) is not IDictionary eye || JsInterop.AsDict(browObj) is not IDictionary brow)
+            throw new ArgumentException("createEyeSocket needs an eye and its brow, such as head.nearEye and head.nearBrow.");
+        var lids = EyeLids(eye);
+        Point2D bi = ExtractPoint(brow["inner"]), bp = ExtractPoint(brow["peak"]), bo = ExtractPoint(brow["outer"]);
+        var crest = ControlThrough(bi, bp, bo);
+
+        var socket = new CanvasPath();
+        socket.MoveTo(bi.X, bi.Y);
+        socket.QuadraticCurveTo(crest.X, crest.Y, bo.X, bo.Y);
+        socket.LineTo(lids.Outer.X + lids.Dir * lids.W * 0.08f, lids.Outer.Y);
+        socket.BezierCurveTo(lids.Cp2.X, lids.Cp2.Y, lids.Cp1.X, lids.Cp1.Y, lids.Inner.X, lids.Inner.Y);
+        socket.ClosePath();
+        return socket;
+    }
+
+    /// <summary>An eye's lid geometry, shared by the drawer and the socket.</summary>
+    readonly record struct EyeLidFrame(Point2D Inner, Point2D Outer, Point2D Center, float W, float Dir, float Up, float LowerDrop,
+                                       Point2D Cp1, Point2D Cp2);
+
+    static EyeLidFrame EyeLids(IDictionary eye)
+    {
         var inner = ExtractPoint(eye["inner"]);
         var outer = ExtractPoint(eye["outer"]);
         var center = ExtractPoint(eye["center"]);
-
         var w = MathF.Abs(outer.X - inner.X);
         if (w <= 0.1f) w = 24f;
         var dir = outer.X > inner.X ? 1f : -1f;
@@ -59,8 +125,85 @@ public partial class ConstructiveDrawingToolkit
         // scale- and yaw-invariant, so a projected far eye narrows without also closing; and at the
         // canon's own 0.45 it reproduces the previous constants exactly, which is what lets this
         // change render every existing script byte-identically.
-        var openness = Ratio(eye, "height", "width", CanonOpenness);
-        var up = w * openness;
+        var up = w * Ratio(eye, "height", "width", CanonOpenness);
+
+        // **The lower lid moves on its own** (`lowerLift`, pixels it has risen), which is what Hamm's eye wheel
+        // needs and his laugh shows: the lower lid pushes up over the iris while the upper stays (p. 9). It may
+        // rise a little past the corners' line, never further.
+        var lowerDrop = MathF.Max(-up * 0.35f, (up * LidFloor) - Num(eye, "lowerLift", 0f));
+        return new EyeLidFrame(inner, outer, center, w, dir, up, lowerDrop,
+            new Point2D(inner.X + dir * w * 0.3f, inner.Y - up), new Point2D(inner.X + dir * w * 0.7f, inner.Y - up * LidCrest));
+    }
+
+    static Point2D Cubic(Point2D a, Point2D b, Point2D c, Point2D d, float t)
+    {
+        var u = 1f - t;
+        return new Point2D(u * u * u * a.X + 3f * u * u * t * b.X + 3f * u * t * t * c.X + t * t * t * d.X,
+                           u * u * u * a.Y + 3f * u * u * t * b.Y + 3f * u * t * t * c.Y + t * t * t * d.Y);
+    }
+
+    static Point2D Quad(Point2D a, Point2D c, Point2D b, float t)
+    {
+        var u = 1f - t;
+        return new Point2D(u * u * a.X + 2f * u * t * c.X + t * t * b.X, u * u * a.Y + 2f * u * t * c.Y + t * t * b.Y);
+    }
+    #endregion
+
+    #region Comic Feature Drawing Helpers
+    /// <summary>
+    /// Draws the eye and <b>returns the parts it built</b>, each as a <see cref="CanvasPath"/>:
+    /// <c>aperture</c>, <c>iris</c>, <c>pupil</c>, <c>catchlight</c>, <c>upperLid</c>, <c>lowerLid</c>,
+    /// <c>fold</c>, <c>lowerRim</c>, <c>innerCorner</c> and <c>lashes</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>aperture</c> is the one worth having: it is the shape the sclera fills and the shape the
+    /// interior is clipped to, so it is what a caller clips a highlight, a cast shadow from the brow,
+    /// or a reflected window into. Reconstructing it by hand means re-deriving the eyelid curve from
+    /// <c>inner</c>, <c>outer</c> and the eye's own width, which is exactly the duplication these
+    /// return values exist to prevent.
+    /// </para>
+    /// <para>
+    /// The lids, the fold and the rim are open centre-lines rather than filled shapes, so they can be re-stroked
+    /// at a different weight — Studio Manual 03's tier hierarchy is a decision about weight, and an eye drawn at
+    /// panel size wants a different one from an eye in close-up.
+    /// </para>
+    /// <para>
+    /// <b>Hamm's construction</b> (<i>Drawing the Head and Figure</i>, p. 7, with pp. 8–9): the fold of the upper
+    /// lid (step 10); the lower lid's inner outline faded away so the eye does not look hard (step 6); a small
+    /// wedge at the inner corner (step 7); the lower lid's margin, which shows from midway to the outer corner
+    /// (p. 8). These are on by default; <c>detail: 0</c> draws the plain eye. <c>lashes</c> (0–1, default 0) adds
+    /// sweeping lashes at the outer top and short clusters at the outer bottom, none at the inner corner (steps
+    /// 5–6, p. 9). <c>tone</c> (0–1, default 0) adds his values: the iris darkening to its rim, and the shadow of
+    /// the upper lid over the iris and the white (steps 8–9).
+    /// </para>
+    /// <para>
+    /// <c>medium</c> takes a brush from <c>Skia.Brush</c>, and every ink line, fill and tone is laid down in it, so
+    /// a pencil eye is pencil. The white of the eye and the highlight stay paper.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> DrawComicEye(CanvasRenderingContext2D ctx, object eyeObj, bool isFar = false, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (JsInterop.AsDict(eyeObj) is not IDictionary eye) return [];
+
+        var optDict = JsInterop.AsDict(options);
+        var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
+        var irisColor = optDict?["irisColor"]?.ToString() ?? "#3b6884";
+        var scleraColor = optDict?["scleraColor"]?.ToString() ?? "#f1f4f7";
+        var medium = ReadMedium(optDict, "drawComicEye");
+
+        // A multiplier on the feature's own weights rather than a pixel count, as `drawComicBrow`'s
+        // `thickness` already is — so a tier chosen here survives a change of head size.
+        var weight = Fraction(optDict, "weight", 1f);
+        var detail = Math.Clamp(Num(optDict, "detail", 1f), 0f, 1f);
+        var foldAmount = detail > 0f ? MathF.Max(0f, Num(optDict, "fold", 1f)) : 0f;
+        var lashes = Math.Clamp(Num(optDict, "lashes", 0f), 0f, 1f);
+        var tone = Math.Clamp(Num(optDict, "tone", 0f), 0f, 1f);
+
+        var lids = EyeLids(eye);
+        Point2D inner = lids.Inner, outer = lids.Outer, center = lids.Center;
+        float w = lids.W, dir = lids.Dir, up = lids.Up, lowerDrop = lids.LowerDrop;
 
         // **The iris, as a settable fraction of the eye's own width, defaulting to the comic canon.**
         // 0.32 is a deliberately large iris and is what every existing script draws; the measured
@@ -80,51 +223,203 @@ public partial class ConstructiveDrawingToolkit
         // and stroked as the upper lid — so it is built once.
         var upperLid = new CanvasPath();
         upperLid.MoveTo(inner.X, inner.Y);
-        upperLid.BezierCurveTo(inner.X + dir * w * 0.3f, inner.Y - up, inner.X + dir * w * 0.7f, inner.Y - up * LidCrest, outer.X, outer.Y);
+        upperLid.BezierCurveTo(lids.Cp1.X, lids.Cp1.Y, lids.Cp2.X, lids.Cp2.Y, outer.X, outer.Y);
 
         var aperture = new CanvasPath(upperLid);
-        aperture.QuadraticCurveTo(center.X, inner.Y + up * LidFloor, inner.X, inner.Y);
+        aperture.QuadraticCurveTo(center.X, inner.Y + lowerDrop, inner.X, inner.Y);
         aperture.ClosePath();
 
         var iris = Disc(new Point2D(irisX, irisY), irisR);
         var pupil = Disc(new Point2D(irisX, irisY), irisR * 0.45f);
         var catchlight = Disc(new Point2D(irisX - irisR * 0.25f, irisY - irisR * 0.25f), irisR * 0.22f);
 
+        // The lower lid, its start following the lid as it rises so a lifted lid stays one curve.
+        var lowerStart = new Point2D(inner.X + dir * w * 0.2f, inner.Y + lowerDrop * (LowerLidStart / LidFloor));
+        var lowerCtrl = new Point2D(center.X, inner.Y + lowerDrop);
+        var lowerEnd = new Point2D(outer.X - dir * w * 0.1f, outer.Y);
         var lowerLid = new CanvasPath();
-        lowerLid.MoveTo(inner.X + dir * w * 0.2f, inner.Y + up * LowerLidStart);
-        lowerLid.QuadraticCurveTo(center.X, inner.Y + up * LidFloor, outer.X - dir * w * 0.1f, outer.Y);
+        lowerLid.MoveTo(lowerStart.X, lowerStart.Y);
+        lowerLid.QuadraticCurveTo(lowerCtrl.X, lowerCtrl.Y, lowerEnd.X, lowerEnd.Y);
+
+        // Step 10: the fold of the upper lid, a strip just above it — "narrow or wide" — following the lid's own
+        // curve, closing in toward the corners and on the lid as the lid lowers.
+        var fold = new CanvasPath();
+        if (foldAmount > 0f)
+        {
+            // The gap peaks a little inside the middle and closes toward both ends; the lid is sampled and each
+            // point lifted, then the points joined through their midpoints so the fold is one smooth curve.
+            var g = up * 0.32f * foldAmount;
+            const int n = 14;
+            var pts = new Point2D[n];
+            for (var i = 0; i < n; i++)
+            {
+                var s = i / (float)(n - 1);
+                var p = Cubic(inner, lids.Cp1, lids.Cp2, outer, 0.16f + 0.81f * s);
+                pts[i] = new Point2D(p.X, p.Y - g * (0.35f + 0.65f * MathF.Sin(MathF.PI * MathF.Pow(s, 0.85f))));
+            }
+
+            fold.MoveTo(pts[0].X, pts[0].Y);
+            for (var i = 1; i < n - 1; i++)
+                fold.QuadraticCurveTo(pts[i].X, pts[i].Y, (pts[i].X + pts[i + 1].X) * 0.5f, (pts[i].Y + pts[i + 1].Y) * 0.5f);
+            fold.LineTo(pts[n - 1].X, pts[n - 1].Y);
+        }
+
+        // p. 8: the lower lid's margin squares off from midway to the outer corner, a light line below the lid.
+        var lowerRim = new CanvasPath();
+        if (detail > 0f)
+        {
+            var gap = new Point2D(0f, w * 0.055f);
+            Point2D On(float t) { var p = Quad(lowerStart, lowerCtrl, lowerEnd, t); return new Point2D(p.X + gap.X, p.Y + gap.Y); }
+            var mid = ControlThrough(On(0.45f), On(0.69f), On(0.93f));
+            lowerRim.MoveTo(On(0.45f).X, On(0.45f).Y);
+            lowerRim.QuadraticCurveTo(mid.X, mid.Y, On(0.93f).X, On(0.93f).Y);
+        }
+
+        // Step 7: a small wedge at the inner corner.
+        var innerCorner = new CanvasPath();
+        if (detail > 0f)
+        {
+            innerCorner.MoveTo(inner.X, inner.Y);
+            innerCorner.LineTo(inner.X + dir * w * 0.075f, inner.Y - up * 0.12f);
+            innerCorner.LineTo(inner.X + dir * w * 0.065f, inner.Y + MathF.Max(up * 0.06f, lowerDrop * 0.2f));
+            innerCorner.ClosePath();
+        }
+
+        // Steps 5–6 and p. 9: lashes sweep up and out from the outer part of the upper lid and cluster short below
+        // the outer part of the lower; none grow at the inner corner.
+        var lashMarks = new CanvasPath();
+        if (lashes > 0f)
+        {
+            var thick = w * 0.028f * weight;
+            Point2D Away(Point2D from, Point2D tangent, bool upward, float turnDeg)
+            {
+                var l = MathF.Max(1e-4f, MathF.Sqrt(tangent.X * tangent.X + tangent.Y * tangent.Y));
+                float nx = -tangent.Y / l, ny = tangent.X / l;
+                if ((ny < 0f) != upward) (nx, ny) = (-nx, -ny);
+                var a = turnDeg * MathF.PI / 180f;
+                float rx1 = nx * MathF.Cos(a) - ny * MathF.Sin(a), ry1 = nx * MathF.Sin(a) + ny * MathF.Cos(a);
+                float rx2 = nx * MathF.Cos(-a) - ny * MathF.Sin(-a), ry2 = nx * MathF.Sin(-a) + ny * MathF.Cos(-a);
+                return rx1 * dir >= rx2 * dir ? new Point2D(rx1, ry1) : new Point2D(rx2, ry2);
+            }
+
+            void Lash(Point2D at, Point2D d, float length, float curl)
+            {
+                var tip = new Point2D(at.X + d.X * length + dir * length * 0.2f, at.Y + d.Y * length + curl * length);
+                var mark = CreateTaperedStrokePath(at,
+                    new Point2D(at.X + d.X * length * 0.4f, at.Y + d.Y * length * 0.4f),
+                    new Point2D(at.X + d.X * length * 0.8f, at.Y + d.Y * length * 0.8f),
+                    tip, thick);
+                lashMarks.AddPath(mark);
+            }
+
+            var upperCount = 4 + (int)MathF.Round(6f * lashes);
+            for (var i = 0; i < upperCount; i++)
+            {
+                var s = upperCount == 1 ? 0.5f : i / (float)(upperCount - 1);
+                var t = 0.5f + 0.48f * s;
+                var p = Cubic(inner, lids.Cp1, lids.Cp2, outer, t);
+                var q = Cubic(inner, lids.Cp1, lids.Cp2, outer, MathF.Min(1f, t + 0.01f));
+                var tangent = new Point2D(q.X - p.X, q.Y - p.Y);
+                Lash(p, Away(p, tangent, true, 15f + 45f * s), w * (0.07f + 0.13f * s) * (0.6f + 0.4f * lashes), -0.15f);
+            }
+
+            var lowerCount = 3 + (int)MathF.Round(3f * lashes);
+            for (var i = 0; i < lowerCount; i++)
+            {
+                // In pairs: Hamm's "abbreviated clusters".
+                var s = lowerCount == 1 ? 0.5f : i / (float)(lowerCount - 1);
+                var t = 0.58f + 0.36f * s + (i % 2 == 1 ? -0.025f : 0f);
+                var p = Quad(lowerStart, lowerCtrl, lowerEnd, t);
+                var q = Quad(lowerStart, lowerCtrl, lowerEnd, MathF.Min(1f, t + 0.01f));
+                var tangent = new Point2D(q.X - p.X, q.Y - p.Y);
+                Lash(p, Away(p, tangent, false, 25f), w * 0.06f * (0.6f + 0.4f * lashes), 0.1f);
+            }
+        }
 
         ctx.Save();
+        ApplyMedium(ctx, medium);
 
-        // 1. Sclera fill inside eyelid bounds
+        // 1. Sclera — paper, in any medium — then the interior, clipped to the lids.
         ctx.Save();
         ctx.FillStyle = scleraColor;
         ctx.Fill(aperture);
         ctx.Clip(aperture);
 
-        // 2. Iris & Pupil
-        ctx.FillStyle = irisColor;
+        // 2. Iris & Pupil. Hamm's values (step 8): the iris darkens toward its rim.
+        ctx.FillStyle = InMedium(medium, irisColor);
         ctx.Fill(iris);
-        ctx.StrokeStyle = inkColor;
+        if (tone > 0f)
+        {
+            using var rim = SKShader.CreateRadialGradient(new SKPoint(irisX, irisY), irisR,
+                [SKColors.Transparent, new SKColor(0, 0, 0, (byte)(150f * tone))], [0.45f, 1f], SKShaderTileMode.Clamp);
+            ctx.Save();
+            ctx.FillStyle = SKShader.CreateCompose(rim, ShaderInMedium(medium, inkColor), SKBlendMode.SrcIn);
+            ctx.Fill(iris);
+            ctx.Restore();
+        }
+        ctx.StrokeStyle = InMedium(medium, inkColor);
         ctx.LineWidth = Tier(IrisRimTier, w, EyeWidthAt240, weight);
         ctx.Stroke(iris);                 // dark iris rim
 
-        ctx.FillStyle = inkColor;
+        ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(pupil);
+
+        // Step 9: the upper lid's shadow over the iris and the white, fading downward.
+        if (tone > 0f)
+        {
+            ctx.Save();
+            ctx.GlobalCompositeOperation = "multiply";
+            FillGraded(ctx, aperture, ShaderInMedium(medium, inkColor),
+                new Point2D(center.X, inner.Y - up), new Point2D(center.X, inner.Y - up * 0.05f), 0.55f * tone, 0f);
+            ctx.Restore();
+        }
+
+        // The highlight stays paper: Hamm puts it in with opaque white or an eraser.
         ctx.FillStyle = "#ffffff";
         ctx.Fill(catchlight);
 
         ctx.Restore();
 
-        // 3. Thick Inked S-Curve Upper Eyelid
-        ctx.StrokeStyle = inkColor;
-        ctx.LineWidth = Tier(LidTier, w, EyeWidthAt240, weight * (isFar ? FarFeatureWeight : 1f));
+        // 3. Thick Inked S-Curve Upper Eyelid, heavier when lashes grow out of it (step 10).
+        ctx.StrokeStyle = InMedium(medium, inkColor);
+        ctx.LineWidth = Tier(LidTier, w, EyeWidthAt240, weight * (isFar ? FarFeatureWeight : 1f) * (1f + 0.35f * lashes));
         ctx.LineCap = "round";
         ctx.Stroke(upperLid);
 
-        // 4. Delicate Lower Eyelid
+        // 4. Delicate Lower Eyelid, fading out toward the inner corner (step 6).
         ctx.LineWidth = Tier(LowerLidTier, w, EyeWidthAt240, weight);
+        if (detail > 0f)
+        {
+            using var fade = SKShader.CreateLinearGradient(
+                new SKPoint(lowerStart.X, 0f), new SKPoint(center.X, 0f),
+                [new SKColor(0, 0, 0, (byte)(255f * (1f - 0.85f * detail))), SKColors.Black], null, SKShaderTileMode.Clamp);
+            ctx.StrokeStyle = SKShader.CreateCompose(fade, ShaderInMedium(medium, inkColor), SKBlendMode.SrcIn);
+        }
         ctx.Stroke(lowerLid);
+
+        // 5. Hamm's additions: the fold, the lower lid's margin, the inner corner, the lashes.
+        ctx.StrokeStyle = InMedium(medium, inkColor);
+        if (foldAmount > 0f)
+        {
+            ctx.LineWidth = Tier(LowerLidTier, w, EyeWidthAt240, weight * 0.85f);
+            ctx.Stroke(fold);
+        }
+        if (detail > 0f)
+        {
+            ctx.Save();
+            ctx.GlobalAlpha = 0.6f;
+            ctx.LineWidth = Tier(IrisRimTier, w, EyeWidthAt240, weight * 0.8f);
+            ctx.Stroke(lowerRim);
+            ctx.GlobalAlpha = 0.5f;
+            ctx.FillStyle = InMedium(medium, inkColor);
+            ctx.Fill(innerCorner);
+            ctx.Restore();
+        }
+        if (lashes > 0f)
+        {
+            ctx.FillStyle = InMedium(medium, inkColor);
+            ctx.Fill(lashMarks);
+        }
 
         ctx.Restore();
 
@@ -135,7 +430,11 @@ public partial class ConstructiveDrawingToolkit
             ["pupil"] = pupil,
             ["catchlight"] = catchlight,
             ["upperLid"] = upperLid,
-            ["lowerLid"] = lowerLid
+            ["lowerLid"] = lowerLid,
+            ["fold"] = fold,
+            ["lowerRim"] = lowerRim,
+            ["innerCorner"] = innerCorner,
+            ["lashes"] = lashMarks
         };
     }
 
@@ -180,6 +479,7 @@ public partial class ConstructiveDrawingToolkit
 
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
+        var medium = ReadMedium(optDict, "drawComicBrow");
         var weight = optDict is not null && optDict.Contains("thickness")
             ? Convert.ToSingle(optDict["thickness"], CultureInfo.InvariantCulture) : 1f;
 
@@ -225,7 +525,9 @@ public partial class ConstructiveDrawingToolkit
         mass.ClosePath();
 
         ctx.Save();
-        ctx.FillStyle = inkColor;
+
+        ApplyMedium(ctx, medium);
+        ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(mass);
         ctx.Restore();
 
@@ -249,6 +551,7 @@ public partial class ConstructiveDrawingToolkit
 
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
+        var medium = ReadMedium(optDict, "drawComicNose");
         var shadowColor = optDict?["shadowColor"]?.ToString() ?? "#b06f4c";
         var weight = Fraction(optDict, "weight", 1f);
 
@@ -376,16 +679,18 @@ public partial class ConstructiveDrawingToolkit
 
         ctx.Save();
 
-        ctx.FillStyle = shadowColor;
+        ApplyMedium(ctx, medium);
+
+        ctx.FillStyle = InMedium(medium, shadowColor);
         ctx.Fill(underPlane);
 
-        ctx.FillStyle = inkColor;
+        ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(bridgeMark);
 
         ctx.Fill(nostrilHole);
         if (hasFar) ctx.Fill(farNostrilHole);
 
-        ctx.StrokeStyle = inkColor;
+        ctx.StrokeStyle = InMedium(medium, inkColor);
         ctx.LineCap = "round";
         if (hasFar)
         {
@@ -449,6 +754,7 @@ public partial class ConstructiveDrawingToolkit
 
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
+        var medium = ReadMedium(optDict, "drawComicEar");
 
         // **A neutral, near-transparent bowl rather than the nose's orange under-plane.** The first
         // version borrowed `#b06f4c` from `drawComicNose` and at panel size the ear read as a bruise:
@@ -524,7 +830,9 @@ public partial class ConstructiveDrawingToolkit
 
         ctx.Save();
 
-        ctx.FillStyle = shadowColor;
+        ApplyMedium(ctx, medium);
+
+        ctx.FillStyle = InMedium(medium, shadowColor);
         ctx.Fill(concha);
 
         // **Cross-contour arcs across the bowl, which is what `drawCrossContourHatch` is for.** They
@@ -537,11 +845,11 @@ public partial class ConstructiveDrawingToolkit
                                   MathF.PI * 0.15f, MathF.PI * 0.85f, 3, inkColor,
                                   MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier * 0.8f)));
 
-        ctx.FillStyle = inkColor;
+        ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(helix);
         ctx.Fill(antihelix);
 
-        ctx.StrokeStyle = inkColor;
+        ctx.StrokeStyle = InMedium(medium, inkColor);
         ctx.LineWidth = MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier));
         ctx.LineCap = "round";
         ctx.Stroke(lobe);
@@ -576,6 +884,7 @@ public partial class ConstructiveDrawingToolkit
 
         var optDict = JsInterop.AsDict(options);
         var inkColor = optDict?["inkColor"]?.ToString() ?? "#0a0a0c";
+        var medium = ReadMedium(optDict, "drawComicMouth");
         var lipColor = optDict?["lipColor"]?.ToString() ?? "#b84848";
         var teethColor = optDict?["teethColor"]?.ToString() ?? "#fbf8ee";
         var cavityColor = optDict?["cavityColor"]?.ToString() ?? "#3a1215";
@@ -627,7 +936,9 @@ public partial class ConstructiveDrawingToolkit
 
         ctx.Save();
 
-        ctx.FillStyle = cavityColor;
+        ApplyMedium(ctx, medium);
+
+        ctx.FillStyle = InMedium(medium, cavityColor);
         ctx.Fill(cavity);
 
         // **Clipped to the cavity, because teeth outside a mouth are a hole in the face.** The teeth
@@ -645,15 +956,15 @@ public partial class ConstructiveDrawingToolkit
         // lifts to nothing at each corner, and the teeth's top edge follows the same curve — so
         // without this the white of the teeth shows through as a notch at whichever corner is longer.
         // The round-capped constant stroke used to cover it by being constant.
-        ctx.StrokeStyle = inkColor;
+        ctx.StrokeStyle = InMedium(medium, inkColor);
         ctx.LineWidth = MathF.Max(0.4f, Tier(LipLineTier, mw, MouthWidthAt240, weight * 0.4f));
         ctx.LineCap = "round";
         ctx.Stroke(lipLine);
 
-        ctx.FillStyle = inkColor;
+        ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(lipMark);
 
-        ctx.FillStyle = lipColor;
+        ctx.FillStyle = InMedium(medium, lipColor);
         ctx.Fill(lowerLip);
 
         ctx.Restore();
@@ -1174,6 +1485,12 @@ public partial class ConstructiveDrawingToolkit
             // Orbicularis Oculi, Pars Palpebralis - the lid narrows.
             ["AU7"] = (head, w, h, s) => ScaleAperture(head, -0.018f * h * w, s),
 
+            // Orbicularis Oculi, Pars Orbitalis - the cheek rises and pushes the LOWER lid up, leaving the
+            // upper where it is. Hamm: "whenever mouth is in laughing position, the lower lid pushes up,
+            // covering part of iris" (Drawing the Head and Figure, p. 9). Reachable since the lower lid moves
+            // on its own (`lowerLift`); before that it could only narrow both lids, which is AU7.
+            ["AU6"] = (head, w, h, s) => LiftLowerLids(head, 0.030f * h * w, s),
+
             // Zygomatic Major. Loomis's "happy muscles", which pull the corners OUT and diagonally
             // UP - the diagonal is his, and a corner lifted straight up reads as a smirk.
             ["AU12"] = (head, w, h, s) => MoveMouthCorners(head, 0.018f * h * w, -0.032f * h * w, s),
@@ -1279,6 +1596,19 @@ public partial class ConstructiveDrawingToolkit
         }
     }
 
+    /// <summary>Raises the lower lids by <paramref name="lift"/> pixels, which is a change to each eye's <c>lowerLift</c>.</summary>
+    /// <remarks>Additive, like every unit: a lift is added to the lift already there, so units fold in any order.</remarks>
+    static void LiftLowerLids(Dictionary<string, object?> head, float lift, FaceSide side = FaceSide.Both)
+    {
+        foreach (var group in new[] { "nearEye", "farEye" })
+        {
+            if (!SideCovers(side, group == "nearEye")) continue;
+            if (head[group] is not Dictionary<string, object?> eye) continue;
+            var had = eye.TryGetValue("lowerLift", out var v) && v is not null ? Convert.ToSingle(v, CultureInfo.InvariantCulture) : 0f;
+            eye["lowerLift"] = had + lift;
+        }
+    }
+
     /// <summary>Moves both mouth corners outward and vertically, each away from the mouth's centre.</summary>
     /// <remarks>
     /// The outward direction is read off the corners' own positions rather than assumed from their
@@ -1374,9 +1704,10 @@ public partial class ConstructiveDrawingToolkit
     private static readonly Dictionary<string, Dictionary<string, float>> ExpressionTuples =
         new(StringComparer.Ordinal)
         {
-            // Zygomatic major pulls the corners out and up; the eye narrowing is the part of Loomis's
-            // cheek-puff this construction can actually show.
-            ["joy"] = new(StringComparer.Ordinal) { ["AU12"] = 0.85f, ["AU7"] = 0.25f },
+            // Zygomatic major pulls the corners out and up, and the cheek pushes the lower lid up under the
+            // eye - Loomis's cheek-puff, and Hamm's laughing lower lid (p. 9). It was AU7 until the lower lid
+            // could move on its own, which narrowed both lids and read as a squint rather than a smile.
+            ["joy"] = new(StringComparer.Ordinal) { ["AU6"] = 0.60f, ["AU12"] = 0.85f },
 
             // Corrugator hard down and knitting, eyes narrowed. The mouth "squares" in Loomis and
             // cannot here.

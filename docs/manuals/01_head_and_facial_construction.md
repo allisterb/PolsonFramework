@@ -275,7 +275,7 @@ The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is
 | `head.crown`, `head.hairline` | Top dome bounds | The dome above the upper third. |
 | `head.brow`, `head.eyeLineY` | Brow line and eye line | `eyeLineY` is **exactly** `H/2`, at 1¾ units. **`head.brow` is the ball's equator, not an eyebrow** — `createHeadGeometry` takes the cranium's centre and radius from it, and nothing but the construction sheet draws it. |
 | `head.noseBase`, `head.mouthCenter`, `head.chin` | Lower two thirds | Each division is one `unit.thirdH`; the lip line is ⅓ of one below the nose. |
-| `head.nearEye`, `head.farEye` | `{ inner, outer, center, width, height }` | Pass straight to `Drawing.drawComicEye(...)`. |
+| `head.nearEye`, `head.farEye` | `{ inner, outer, center, width, height, lowerLift }` | Pass straight to `Drawing.drawComicEye(...)`. `lowerLift` is how far the lower lid has risen, 0 at rest; `AU6` moves it. |
 | `head.nearBrow`, `head.farBrow` | `{ inner, peak, outer, thickness }` | The **drawn** eyebrows, one per eye — pass straight to `Drawing.drawComicBrow(...)`. Three stations because two cannot carry an arch, and the arch is where AU1 differs from AU2. |
 | `head.noseWedge` | `{ bridgeTop, apex, underNose, nearNostril }` | Pass straight to `Drawing.drawComicNose(...)`. |
 | `head.mouthGuides` | `{ center, leftCorner, rightCorner, upperLipY, lowerLipY }` | Pass straight to `Drawing.drawComicMouth(...)`. |
@@ -302,6 +302,55 @@ The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is
 2. **The iris is clipped by the upper lid**, never a free-floating circle.
 3. **The catchlight sits opposite the key light** and is the only pure white in the eye.
 4. **The far eye loses detail, not just width** — compress it and drop the catchlight rather than drawing a smaller copy.
+
+#### Hamm's eye, step by step
+
+> **Source**: Jack Hamm, *Drawing the Head and Figure* (Perigee, 1963), p. 7 "The Eye — Step by Step", with
+> pp. 8–10. Distilled in our own words.
+
+Hamm builds the eye from a football-shaped ellipse and then takes things away from it as much as he adds:
+
+1. **The fold** of the upper lid: a strip just above the lid, narrow or wide, sometimes hardly showing.
+2. **The lower lid fades** toward the inner corner. Drawn all the way round, an eye looks hard.
+3. **A small wedge** marks the inner corner.
+4. **The lower lid's margin** shows as a light line from midway to the outer corner.
+5. **Lashes** sweep up and out from the outer part of the upper lid and cluster short under the outer part of
+   the lower. **None grow at the inner corner**; drawing them all round is a mistake.
+6. **Values**: the iris darkens toward its rim, and the upper lid throws a light shadow over the iris and the
+   white. The highlight is paper.
+
+`drawComicEye` draws 1–4 by default (`detail: 0` turns them off, `fold` scales the strip), and 5 and 6 when asked
+(`lashes`, `tone`, each 0–1):
+
+```js
+Drawing.drawComicEye(ctx, head.nearEye, false, { lashes: 0.6, tone: 1 });
+```
+
+**The eye moves in five horizontals** (p. 10, "the eye wheel"): the brow's upper and lower edges, the lid fold,
+the upper lid and the lower lid, each up or down from its normal awake setting. Four of the five are here: the
+brow stations move with `AU1`, `AU2` and `AU4`, the fold follows the upper lid, the upper lid with `AU5` and
+`AU7`, and **the lower lid on its own with `AU6`**, which is the one a laugh needs — Hamm: when the mouth laughs,
+the lower lid pushes up over part of the iris (p. 9). `joy` uses it.
+
+#### Drawing the face in pencil
+
+Hamm draws in pencil, and much of a sketch's character is the line and the tone, not the construction. Every
+feature drawer takes `medium`, a brush from `Skia.Brush`; each line, fill and tone is laid down in it, so a pencil
+brow is pencil rather than a solid black shape with a rough edge. Shade with `Drawing.drawTone(ctx, shape, {
+medium, amount, from, to, softness })`, which grades from `from` to `to` with no hard edge, and use
+`Drawing.createEyeSocket(eye, brow)` for the socket that sets an eye into the head:
+
+```js
+const pencil = Skia.Brush.pencil('#2e2e2e', 2, 1, 7);
+const grey = { medium: pencil, inkColor: '#2e2e2e', irisColor: '#7a7a7a', scleraColor: '#f6f3ec' };
+const eye = head.nearEye, brow = head.nearBrow;
+Drawing.drawTone(ctx, Drawing.createEyeSocket(eye, brow),
+    { medium: pencil, amount: 0.2, from: { x: eye.center.x, y: brow.peak.y }, to: eye.center, softness: 5 });
+Drawing.drawComicBrow(ctx, brow, false, grey);
+Drawing.drawComicEye(ctx, eye, false, { ...grey, lashes: 0.6, tone: 1 });
+```
+
+Use greys in pencil. The comic defaults — a blue iris, a red lip — are colours a dry medium does not have.
 
 ### B. The Comic Nose (Bridge & Wing in 3/4)
 In 3/4 view, the nose projects out from the far cheek silhouette:

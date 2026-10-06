@@ -59,6 +59,26 @@ public class HammEyeTests : TestsRuntime
     }
 
     [Fact]
+    public void TestIrisMarkingsAreOptInStayInTheIrisAndRepeat()
+    {
+        Assert.True(((CanvasPath)Draw(null)["irisMarks"]!).Path.IsEmpty);
+
+        var parts = Draw(new() { ["markings"] = 1f });
+        var marks = ((CanvasPath)parts["irisMarks"]!).Path;
+        var iris = ((CanvasPath)parts["iris"]!).Path.TightBounds;
+        var b = marks.TightBounds;
+        Assert.False(marks.IsEmpty);
+        Assert.True(b.Left >= iris.Left - 1f && b.Right <= iris.Right + 1f && b.Top >= iris.Top - 1f && b.Bottom <= iris.Bottom + 1f,
+            "markings stay inside the iris");
+
+        // They stop short of the pupil, converging on it rather than crossing it (p. 9).
+        var pupil = ((CanvasPath)parts["pupil"]!).Path.TightBounds;
+        Assert.False(marks.Contains(pupil.MidX, pupil.MidY));
+
+        Assert.Equal(marks.ToSvgPathData(), ((CanvasPath)Draw(new() { ["markings"] = 1f })["irisMarks"]!).Path.ToSvgPathData());
+    }
+
+    [Fact]
     public void TestAMediumMustBeABrush()
     {
         var ex = Assert.Throws<ArgumentException>(() => Draw(new() { ["medium"] = "pencil" }));

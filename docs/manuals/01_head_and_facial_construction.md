@@ -318,12 +318,14 @@ Hamm builds the eye from a football-shaped ellipse and then takes things away fr
    the lower. **None grow at the inner corner**; drawing them all round is a mistake.
 6. **Values**: the iris darkens toward its rim, and the upper lid throws a light shadow over the iris and the
    white. The highlight is paper.
+7. **The iris's markings converge toward the pupil**, and its colouring shows most at the outer edge (p. 9).
+   The pupil is drawn whole, which is where the eye's sparkle comes from.
 
-`drawComicEye` draws 1–4 by default (`detail: 0` turns them off, `fold` scales the strip), and 5 and 6 when asked
-(`lashes`, `tone`, each 0–1):
+`drawComicEye` draws 1–4 by default (`detail: 0` turns them off, `fold` scales the strip), and 5–7 when asked
+(`lashes`, `tone`, `markings`, each 0–1):
 
 ```js
-Drawing.drawComicEye(ctx, head.nearEye, false, { lashes: 0.6, tone: 1 });
+Drawing.drawComicEye(ctx, head.nearEye, false, { lashes: 0.6, tone: 1, markings: 1 });
 ```
 
 **The eye moves in five horizontals** (p. 10, "the eye wheel"): the brow's upper and lower edges, the lid fold,

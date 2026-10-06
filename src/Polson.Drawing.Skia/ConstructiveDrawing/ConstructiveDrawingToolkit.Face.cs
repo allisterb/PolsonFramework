@@ -22,8 +22,8 @@ public partial class ConstructiveDrawingToolkit
     static object InMedium(BrushPreset? medium, string color, float dryness = 1f) => medium?.GrainIn(color, dryness) is { } grain ? grain : color;
 
     /// <summary>The same, always as a shader, so it can be masked by a gradient.</summary>
-    static SKShader ShaderInMedium(BrushPreset? medium, string color) =>
-        medium?.GrainIn(color) ?? SKShader.CreateColor(SkiaColorParser.Parse(color));
+    static SKShader ShaderInMedium(BrushPreset? medium, string color, float dryness = 1f) =>
+        medium?.GrainIn(color, dryness) ?? SKShader.CreateColor(SkiaColorParser.Parse(color));
 
     /// <summary>Puts the medium's path texture and edge on the context. Call inside the drawer's own save.</summary>
     static void ApplyMedium(CanvasRenderingContext2D ctx, BrushPreset? medium)
@@ -201,6 +201,7 @@ public partial class ConstructiveDrawingToolkit
         var foldAmount = detail > 0f ? MathF.Max(0f, Num(optDict, "fold", 1f)) : 0f;
         var lashes = Math.Clamp(Num(optDict, "lashes", 0f), 0f, 1f);
         var tone = Math.Clamp(Num(optDict, "tone", 0f), 0f, 1f);
+        var markings = Math.Clamp(Num(optDict, "markings", 0f), 0f, 1f);
 
         var lids = EyeLids(eye);
         Point2D inner = lids.Inner, outer = lids.Outer, center = lids.Center;
@@ -232,6 +233,29 @@ public partial class ConstructiveDrawingToolkit
 
         var iris = Disc(new Point2D(irisX, irisY), irisR);
         var pupil = Disc(new Point2D(irisX, irisY), irisR * 0.45f);
+
+        // Hamm p. 9: the iris's markings converge toward the pupil, and its colouring shows most at the outer
+        // edge. Radial streaks from near the rim in to just outside the pupil, dark ones with lighter ones between,
+        // each bending a little. Seeded, so an eye keeps its markings from frame to frame.
+        var irisMarks = new CanvasPath();
+        var irisLights = new CanvasPath();
+        if (markings > 0f)
+        {
+            var rng = new SeededRandom((uint)Math.Max(1f, Num(optDict, "seed", 1f)));
+            var count = Math.Max(10, (int)MathF.Round(44f * markings));
+            var pupilR = irisR * 0.45f;
+            Point2D Polar(float r, float a) => new(irisX + r * MathF.Cos(a), irisY + r * MathF.Sin(a));
+            for (var i = 0; i < count; i++)
+            {
+                var a = (float)((i + rng.Range(-0.3, 0.3)) / count * Math.PI * 2.0);
+                var light = i % 3 == 1;
+                float rOut = irisR * (float)rng.Range(0.82, 0.98), rIn = pupilR * (float)rng.Range(1.05, 1.5);
+                var bend = (float)rng.Range(-0.06, 0.06);
+                var mark = CreateTaperedStrokePath(Polar(rOut, a), Polar(rOut + (rIn - rOut) / 3f, a + bend * 0.3f),
+                    Polar(rOut + (rIn - rOut) * 2f / 3f, a + bend * 0.7f), Polar(rIn, a + bend), irisR * (light ? 0.05f : 0.07f));
+                (light ? irisLights : irisMarks).AddPath(mark);
+            }
+        }
         var catchlight = Disc(new Point2D(irisX - irisR * 0.25f, irisY - irisR * 0.25f), irisR * 0.22f);
 
         // The lower lid, its start following the lid as it rises so a lifted lid stays one curve.
@@ -346,23 +370,37 @@ public partial class ConstructiveDrawingToolkit
         ctx.Fill(aperture);
         ctx.Clip(aperture);
 
-        // 2. Iris & Pupil. Hamm's values (step 8): the iris darkens toward its rim.
-        ctx.FillStyle = InMedium(medium, irisColor);
+        // 2. Iris & Pupil. Hamm's values (step 8): the iris darkens toward its rim. In a dry medium the iris is laid
+        // as an even mid-tone, so the markings and the rim carry it rather than drowning in the grain.
+        ctx.FillStyle = InMedium(medium, irisColor, 0.4f);
         ctx.Fill(iris);
         if (tone > 0f)
         {
             using var rim = SKShader.CreateRadialGradient(new SKPoint(irisX, irisY), irisR,
                 [SKColors.Transparent, new SKColor(0, 0, 0, (byte)(150f * tone))], [0.45f, 1f], SKShaderTileMode.Clamp);
             ctx.Save();
-            ctx.FillStyle = SKShader.CreateCompose(rim, ShaderInMedium(medium, inkColor), SKBlendMode.SrcIn);
+            ctx.FillStyle = SKShader.CreateCompose(rim, ShaderInMedium(medium, inkColor, 0.4f), SKBlendMode.SrcIn);
             ctx.Fill(iris);
+            ctx.Restore();
+        }
+        if (markings > 0f)
+        {
+            ctx.Save();
+            ctx.Clip(iris);
+            ctx.GlobalAlpha = 0.3f + 0.7f * markings;
+            ctx.FillStyle = InMedium(medium, inkColor, 0.3f);
+            ctx.Fill(irisMarks);
+            ctx.GlobalAlpha = 0.55f * markings;
+            ctx.FillStyle = InMedium(medium, "#ffffff", 0.35f);
+            ctx.Fill(irisLights);
             ctx.Restore();
         }
         ctx.StrokeStyle = InMedium(medium, inkColor);
         ctx.LineWidth = Tier(IrisRimTier, w, EyeWidthAt240, weight);
         ctx.Stroke(iris);                 // dark iris rim
 
-        ctx.FillStyle = InMedium(medium, inkColor);
+        // Hamm: draw the pupil in its entirety for sparkle (p. 9), so in a dry medium it is laid dense.
+        ctx.FillStyle = InMedium(medium, inkColor, 0.2f);
         ctx.Fill(pupil);
 
         // Step 9: the upper lid's shadow over the iris and the white, fading downward.
@@ -435,7 +473,8 @@ public partial class ConstructiveDrawingToolkit
             ["fold"] = fold,
             ["lowerRim"] = lowerRim,
             ["innerCorner"] = innerCorner,
-            ["lashes"] = lashMarks
+            ["lashes"] = lashMarks,
+            ["irisMarks"] = irisMarks
         };
     }
 

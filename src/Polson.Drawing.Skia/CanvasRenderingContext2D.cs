@@ -1266,6 +1266,10 @@ public class CanvasRenderingContext2D
     public Dictionary<string, object?> DrawGestureContour(object figure, object? options = null) =>
         _toolkit.DrawGestureContour(this, figure, options);
 
+    /// <summary>Overlapping shapes lined in depth: far contours stop at near ones in a T.</summary>
+    public Dictionary<string, object?> DrawOverlapContour(object shapes, object? options = null) =>
+        _toolkit.DrawOverlapContour(this, shapes, options);
+
     public void DrawTorsoMusculature(object figure, object? options = null) =>
         _toolkit.DrawTorsoMusculature(this, figure, options);
 

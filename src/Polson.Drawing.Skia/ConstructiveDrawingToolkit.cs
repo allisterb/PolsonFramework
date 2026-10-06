@@ -3821,6 +3821,273 @@ public class ConstructiveDrawingToolkit
     }
     #endregion
 
+    #region Overlap Contour
+    static readonly string[] OverlapOptions = ["order", "step"];
+    static readonly string[] OverlapDrawOptions = ["order", "step", "strokeColor", "outerWidth", "innerWidth"];
+
+    /// <summary>A figure's groups nearest first when nothing says otherwise: a standing figure seen from the front.</summary>
+    static readonly string[] FigureDepth = ["head", "leftArm", "rightArm", "torso", "leftLeg", "rightLeg"];
+
+    /// <summary>
+    /// Overlapping shapes lined in depth: each outline is hidden wherever a nearer shape covers it, so a far
+    /// contour stops at the near one in a T — Hamm's "principle of the T" (<i>Drawing the Head and Figure</i>,
+    /// p. 48): the stem of the T reads as going behind the crossbar, and that junction is what states depth on
+    /// a line drawing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>shapes</c> takes what <c>findTangents</c> takes — named closed shapes, an array of them, a
+    /// <c>createFigureGeometry</c> result (its groups are used), or several of those in one object — and also a
+    /// figure from <c>createMannequinFigure</c>, whose geometry is built here. Lines are refused: a line has no
+    /// inside to hide anything behind.
+    /// </para>
+    /// <para>
+    /// Depth is the caller's, because the toolkit has no z. Shapes are nearest first in the order given;
+    /// <c>order</c> names some or all of them, nearest first, and a name covers every shape under it
+    /// (<c>'him'</c> covers <c>him.leftArm</c>). A figure's groups default to head, arms, torso, legs: a
+    /// standing figure seen from the front.
+    /// </para>
+    /// <para>
+    /// The visible lines come back split in two: <c>outer</c>, which lies on the silhouette of the whole
+    /// arrangement, and <c>inner</c>, the overlap lines inside it — Janson's heavy contour and lighter interior
+    /// (Manual 03). Each T-junction is reported with the near and far shape it joins. Runs are found by sampling
+    /// every <c>step</c> pixels and their ends refined by bisection, then cut from the outline itself, so the
+    /// lines are the exact curves, not polylines.
+    /// </para>
+    /// <para>
+    /// Groups are united, so a limb has no line across its own joints. Passing a geometry's <c>parts</c> lines
+    /// every mass on its own, which also draws a seam across every joint.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateOverlapContour(object shapesObj, object? options = null)
+    {
+        var opt = JsInterop.AsDict(options);
+        if (opt != null)
+            foreach (var key in opt.Keys)
+                if (Array.IndexOf(OverlapOptions, key?.ToString()) < 0)
+                    throw new ArgumentException($"createOverlapContour has no option '{key}'. It takes {string.Join(", ", OverlapOptions)}.");
+        return OverlapContour(shapesObj, opt);
+    }
+
+    /// <summary>Strokes <see cref="CreateOverlapContour"/>'s lines, the silhouette heavier than the overlaps, and returns what it drew.</summary>
+    public Dictionary<string, object?> DrawOverlapContour(CanvasRenderingContext2D ctx, object shapesObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        var opt = JsInterop.AsDict(options);
+        if (opt != null)
+            foreach (var key in opt.Keys)
+                if (Array.IndexOf(OverlapDrawOptions, key?.ToString()) < 0)
+                    throw new ArgumentException($"drawOverlapContour has no option '{key}'. It takes {string.Join(", ", OverlapDrawOptions)}.");
+        var contour = OverlapContour(shapesObj, opt);
+
+        ctx.Save();
+        ctx.StrokeStyle = opt?["strokeColor"]?.ToString() ?? "#1a1a18";
+        ctx.LineCap = "round";
+        ctx.LineJoin = "round";
+        ctx.LineWidth = Num(opt, "innerWidth", 2f);
+        ctx.Stroke((CanvasPath)contour["inner"]!);
+        ctx.LineWidth = Num(opt, "outerWidth", 3.5f);
+        ctx.Stroke((CanvasPath)contour["outer"]!);
+        ctx.Restore();
+        return contour;
+    }
+
+    Dictionary<string, object?> OverlapContour(object shapesObj, IDictionary? opt)
+    {
+        var shapes = OrderByDepth(ReadNamedPaths(WithFigureGeometry(shapesObj, out var single), "createOverlapContour"),
+            opt?["order"], single);
+        if (shapes.Count == 0) throw new ArgumentException("createOverlapContour needs at least one shape.");
+        foreach (var (name, path) in shapes)
+            if (IsOpen(path.Path, out _))
+                throw new ArgumentException($"createOverlapContour: '{name}' is a line, and a line has no inside to hide anything behind. Give it a width with ctx.strokeToPath(...) to make it a shape.");
+
+        var smallest = shapes.Select(s => CanvasPath.AreaOf(s.Path.Path)).Where(a => a > 0f).DefaultIfEmpty(1600f).Min();
+        var step = opt != null && opt.Contains("step") ? MathF.Max(0.25f, Num(opt, "step", 1f)) : Math.Clamp(MathF.Sqrt(smallest) / 40f, 0.5f, 3f);
+        var probe = MathF.Max(1.5f, step);
+
+        var outer = new CanvasPath();
+        var inner = new CanvasPath();
+        var junctions = new List<object?>();
+        var records = new Dictionary<string, object?>();
+
+        // The nearest shape in front of shape i that covers a point, or -1.
+        int Hider(int i, float x, float y)
+        {
+            for (var j = 0; j < i; j++) if (shapes[j].Path.Path.Contains(x, y)) return j;
+            return -1;
+        }
+
+        for (var i = 0; i < shapes.Count; i++)
+        {
+            var own = shapes[i].Path.Path;
+            var lines = new CanvasPath();
+            float visibleLength = 0f, hiddenLength = 0f;
+            using var simple = new SKPath();
+            var source = own.Simplify(simple) ? simple : own;
+            using var measure = new SKPathMeasure(source, true);
+            do
+            {
+                var length = measure.Length;
+                if (length <= 0f) continue;
+
+                // 0 an overlap line, 1 on the silhouette, -(j + 2) hidden by shape j.
+                int Code(float d)
+                {
+                    if (!measure.GetPositionAndTangent(d, out var p, out var t)) return 0;
+                    var h = Hider(i, p.X, p.Y);
+                    if (h >= 0) return -(h + 2);
+                    var l = MathF.Max(1e-6f, MathF.Sqrt(t.X * t.X + t.Y * t.Y));
+                    float nx = t.Y / l, ny = -t.X / l;
+                    if (own.Contains(p.X + nx * probe, p.Y + ny * probe)) (nx, ny) = (-nx, -ny);
+                    float ox = p.X + nx * probe, oy = p.Y + ny * probe;
+                    return shapes.Any(s => s.Path.Path.Contains(ox, oy)) ? 0 : 1;
+                }
+
+                var n = Math.Max(16, (int)MathF.Ceiling(length / step));
+                var codes = new int[n];
+                for (var k = 0; k < n; k++) codes[k] = Code(length * k / n);
+
+                // Where the code changes between sample k - 1 and k, refined to a tenth of a sample.
+                var cuts = new List<(float At, int From, int To)>();
+                for (var k = 0; k < n; k++)
+                {
+                    var prev = codes[(k - 1 + n) % n];
+                    if (prev == codes[k]) continue;
+                    float lo = length * ((k - 1 + n) % n) / n, hi = k == 0 ? length : length * k / n;
+                    for (var it = 0; it < 12 && hi - lo > step * 0.01f; it++)
+                    {
+                        var mid = (lo + hi) * 0.5f;
+                        if (Code(mid) == prev) lo = mid; else hi = mid;
+                    }
+                    cuts.Add(((lo + hi) * 0.5f % length, prev, codes[k]));
+                }
+
+                if (cuts.Count == 0)
+                {
+                    if (codes[0] < 0) { hiddenLength += length; continue; }
+                    visibleLength += length;
+                    var whole = codes[0] == 1 ? outer : inner;
+                    Segment(measure, 0f, length, whole.Path, true);
+                    whole.Path.Close();
+                    Segment(measure, 0f, length, lines.Path, true);
+                    lines.Path.Close();
+                    continue;
+                }
+
+                cuts.Sort((a, b) => a.At.CompareTo(b.At));
+                for (var c = 0; c < cuts.Count; c++)
+                {
+                    var (from, was, code) = cuts[c];
+                    var to = cuts[(c + 1) % cuts.Count].At;
+                    var span = to > from ? to - from : length - from + to;
+
+                    // A change between hidden and shown is a T-junction: this far line stops at the near one.
+                    if ((was < 0) != (code < 0) && measure.GetPosition(from, out var at))
+                    {
+                        var near = shapes[-Math.Min(was, code) - 2].Name;
+                        var mark = new CanvasPath();
+                        mark.Arc(at.X, at.Y, MathF.Max(4f, probe * 2f), 0f, MathF.PI * 2f);
+                        junctions.Add(new Dictionary<string, object?>
+                        {
+                            ["at"] = ToDict(new Point2D(at.X, at.Y)),
+                            ["near"] = near,
+                            ["far"] = shapes[i].Name,
+                            ["mark"] = mark
+                        });
+                    }
+
+                    if (code < 0) { hiddenLength += span; continue; }
+                    visibleLength += span;
+                    foreach (var target in new[] { code == 1 ? outer : inner, lines })
+                    {
+                        if (to > from) Segment(measure, from, to, target.Path, true);
+                        else
+                        {
+                            Segment(measure, from, length, target.Path, true);
+                            Segment(measure, 0f, to, target.Path, false);
+                        }
+                    }
+                }
+            }
+            while (measure.NextContour());
+
+            records[shapes[i].Name] = new Dictionary<string, object?>
+            {
+                ["lines"] = lines,
+                ["visibleLength"] = visibleLength,
+                ["hiddenLength"] = hiddenLength,
+                ["depth"] = i
+            };
+        }
+
+        var all = new CanvasPath();
+        all.AddPath(outer);
+        all.AddPath(inner);
+        return new Dictionary<string, object?>
+        {
+            ["lines"] = all,
+            ["outer"] = outer,
+            ["inner"] = inner,
+            ["junctions"] = junctions,
+            ["count"] = junctions.Count,
+            ["order"] = shapes.Select(s => (object?)s.Name).ToList(),
+            ["shapes"] = records,
+            ["step"] = step
+        };
+    }
+
+    /// <summary>Appends the stretch of a contour from <paramref name="from"/> to <paramref name="to"/>, as a new line or continuing the last.</summary>
+    static void Segment(SKPathMeasure measure, float from, float to, SKPath target, bool newLine)
+    {
+        using var builder = new SKPathBuilder();
+        if (!measure.GetSegment(from, to, builder, true)) return;
+        using var piece = builder.Detach();
+        target.AddPath(piece, newLine ? SKPathAddMode.Append : SKPathAddMode.Extend);
+    }
+
+    /// <summary>A figure, or an object holding figures, with each figure replaced by its geometry.</summary>
+    object WithFigureGeometry(object shapesObj, out bool single)
+    {
+        static bool IsFigure(object? o) => JsInterop.AsDict(o) is IDictionary d && d.Contains("headUnit") && d.Contains("pelvis");
+        single = IsFigure(shapesObj) || (JsInterop.AsDict(shapesObj) is IDictionary g && g.Contains("groups") && g["groups"] is not CanvasPath);
+        if (IsFigure(shapesObj)) return CreateFigureGeometry(shapesObj);
+        if (single || JsInterop.AsDict(shapesObj) is not IDictionary dict) return shapesObj;
+
+        var result = new Dictionary<string, object?>();
+        foreach (DictionaryEntry kv in dict)
+            result[kv.Key.ToString()!] = IsFigure(kv.Value) ? CreateFigureGeometry(kv.Value!) : kv.Value;
+        return result;
+    }
+
+    /// <summary>Shapes nearest first: by <paramref name="orderObj"/>, then by figure depth within each figure, then as given.</summary>
+    static List<(string Name, CanvasPath Path)> OrderByDepth(List<(string Name, CanvasPath Path)> shapes, object? orderObj, bool single)
+    {
+        var order = orderObj switch
+        {
+            null => [],
+            string one => [one],
+            IEnumerable many => many.Cast<object?>().Select(o => o?.ToString() ?? "").ToList(),
+            _ => throw new ArgumentException("createOverlapContour's order is a list of names, nearest first: ['him', 'her.leftArm'].")
+        };
+        foreach (var name in order)
+            if (!shapes.Any(s => Join.Covers(name, s.Name)))
+                throw new ArgumentException($"createOverlapContour's order names '{name}', and there is no such shape. There are: {string.Join(", ", shapes.Select(s => s.Name))}.");
+
+        string Owner(string name) => name.LastIndexOf('.') is var dot and > 0 ? name[..dot] : single ? "" : name;
+        var firstOwner = new Dictionary<string, int>();
+        for (var k = 0; k < shapes.Count; k++) firstOwner.TryAdd(Owner(shapes[k].Name), k);
+
+        return shapes
+            .Select((s, k) => (s, k))
+            .OrderBy(x => order.FindIndex(o => Join.Covers(o, x.s.Name)) is var r and >= 0 ? r : order.Count)
+            .ThenBy(x => firstOwner[Owner(x.s.Name)])
+            .ThenBy(x => Array.IndexOf(FigureDepth, x.s.Name[(x.s.Name.LastIndexOf('.') + 1)..]) is var f and >= 0 ? f : FigureDepth.Length)
+            .ThenBy(x => x.k)
+            .Select(x => x.s)
+            .ToList();
+    }
+    #endregion
+
     #region Tangents
     static readonly string[] TangentOptions = ["gap", "near", "angleDeg", "minRun", "step", "attached"];
 

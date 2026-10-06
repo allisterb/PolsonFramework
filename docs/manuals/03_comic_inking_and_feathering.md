@@ -2,7 +2,8 @@
 
 > **Source Reference**: Klaus Janson, *The DC Comics Guide to Inking Comics* (Watson-Guptill / DC
 > Comics, 2003) — §1 from ch. 6 (p. 80), §2 from ch. 7 (p. 88), §4 from ch. 9 (pp. 110–113), §5 from
-> ch. 7 (pp. 90, 96–98). Pixel widths are the studio's calibration; no book gives pixels.
+> ch. 7 (pp. 90, 96–98). §1a from Jack Hamm, *Drawing the Head and Figure* (Perigee, 1963), p. 48.
+> Pixel widths are the studio's calibration; no book gives pixels.
 > **Purpose**: Janson's inking craft as code — the line-weight hierarchy, tapered strokes, directional feathering and where the blacks go. **Conventions of one tradition**, taught by one of its best practitioners; other inkers weight a page differently, and a piece that is not inked comic art may want none of it.
 
 ---
@@ -52,6 +53,48 @@ Comic inking derives its punch and depth from **stroke weight contrast**:
 > - **Overlap is what creates depth.** His example is a spear crossing the edge of a cliff: drawn
 >   overlapping the edge it puts the spear in front, drawn inside the cliff's shape the illusion
 >   disappears. Two figures in close proximity get the same treatment.
+
+### 1a. The T: where an overlap is drawn
+
+> **Implemented by**: `Drawing.createOverlapContour(...)` and `Drawing.drawOverlapContour(ctx, ...)`,
+> which line overlapping shapes in a depth order you give and report every junction.
+>
+> **Source**: Jack Hamm, *Drawing the Head and Figure* (Perigee, 1963), p. 48, "The Principle of the T".
+
+Janson says overlap makes depth; Hamm says what an overlap looks like on the page. Two strokes in the
+shape of a T are enough: **the stem seems to go behind the crossbar**, even when the crossbar is tilted
+almost parallel to it. So wherever one form passes in front of another, the near form's contour runs
+on unbroken and the far form's contour **stops at it**. Hamm's advice is to look for these junctions on
+the model before learning a single muscle, and to ask of every part whether it is nearer or farther
+than the parts beside it: on a standing figure the head, shoulders, chest, thighs and knees are in
+front, and the lines beside them go behind.
+
+Three things follow, and the call does each of them:
+
+- **Depth is a decision, not a measurement.** A line drawing carries no z, so the same two shapes read
+  either way round depending on which line stops. The call takes the order from you (`order`, nearest
+  first) and changes the drawing completely when you change it. A forearm across the belly in front of
+  the torso, and the same forearm behind it, are two drawings.
+- **The silhouette is Tier 1 and the overlaps are Tier 2.** What lies on the outside of the whole
+  arrangement comes back as `outer`, what lies inside it as `inner`; `drawOverlapContour` strokes them at
+  3.5 and 2 px by default, the bottom of each tier in §1.
+- **A line that stops is a claim.** Each junction comes back with the shape in front and the shape
+  behind. Read them: a T you did not intend is a depth you did not mean, and it is as visible as a
+  tangent.
+
+```js
+const fig = Drawing.createMannequinFigure(300, 40, 660, { pose });
+const lined = ctx.drawOverlapContour(fig, { order: ['head', 'rightArm', 'torso'] });
+Stage.check('the forearm reads in front of the body',
+    lined.junctions.some(j => j.near === 'rightArm' && j.far === 'torso'),
+    lined.junctions.map(j => `${j.far} behind ${j.near}`).join(', '));
+```
+
+> [!IMPORTANT]
+> **The mannequin is lined by its groups**, so a limb has no T at its own elbow or knee; a bent knee
+> coming forward over its own shin, which Hamm also marks, is not drawn. Lining `geometry.parts` instead
+> puts a seam at every joint, which is worse. For a single limb that folds over itself, draw that T by
+> hand.
 
 ---
 

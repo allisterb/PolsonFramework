@@ -829,7 +829,7 @@ Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with
 > lost two scripts guessing `ctx.drawMannequinWireframe` and `ctx.drawLoomisWireframe`, so it is worth
 > checking the list above rather than assuming a shortcut exists.
 
-`ctx.drawHand` · `ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawGestureContour` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
+`ctx.drawHand` · `ctx.drawPerspectiveGrid` · `ctx.drawPerspectiveBox` · `ctx.drawPerspectiveCylinder` · `ctx.renderVolumetricSphere` · `ctx.renderVolumetricCylinder` · `ctx.drawCastShadow` · `ctx.drawRimLight` · `ctx.drawMannequin` · `ctx.drawGestureContour` · `ctx.drawOverlapContour` · `ctx.drawTorsoMusculature` · `ctx.drawCompositionGrid` · `ctx.drawLeadingLines` · `ctx.drawVignette` · `ctx.drawSquircle` · `ctx.drawEmblemBadge` · `ctx.drawGoldenSpiral` · `ctx.drawIsometricGrid` · `ctx.drawPolarGrid` · `ctx.drawClearSpaceGuide` · `ctx.generateFaviconScaleTest` · `ctx.generateMonochromeTest` · `ctx.generateBrandPresentationSheet`
 
 Parameters and semantics are documented under `polson://sdk/core/Drawing` and `polson://sdk/core/Logo`. Use whichever reads better; the shortcut form suits long chains on one context.
 
@@ -1827,6 +1827,24 @@ Stage.check('the recoil reads as a curve', recoil.lineOfAction.swing > 0.25,
 > **The default standing figure is not level — it stands in contrapposto**, shoulders at −6° and pelvis at +6°, so its torso reports a stretch side too. That is the pose, not an error: a hip-shot stance *is* a stretch and a squash. Pass `shoulderTiltDeg: 0, pelvicTiltDeg: 0` for a figure with none.
 >
 > **Line weight is yours.** `stretchWidth` and `squashWidth` default to one `strokeWidth`, because the source distinguishes the sides by the *shape* of the line rather than its weight. Hands, feet and the head are left to their own drawers. `padding` moves every line out with the mass, which is how a sleeve or a trouser leg is lined — the same padding `createFigureGeometry` takes.
+- `Drawing.createOverlapContour(shapes: object | CanvasPath[], options?: { order?: string[], step?: number })` → `{ lines, outer, inner, junctions, count, order, shapes, step }` — **Overlapping shapes lined in depth: each outline is hidden wherever a nearer shape covers it, so a far line stops at a near one in a T.** `shapes` takes what `findTangents` takes, a figure from `createMannequinFigure` (its geometry is built here), or several figures in one object (`{ her, him }`). `lines` is every visible line, split into `outer` (on the silhouette of the whole arrangement) and `inner` (the overlap lines inside it); all three are open `CanvasPath`s cut from the outlines themselves, so they are the exact curves. Each junction is `{ at, near, far, mark }`. `shapes` holds, per shape, its `lines`, `visibleLength`, `hiddenLength` and `depth` (0 nearest). `order` comes back nearest first.
+- `Drawing.drawOverlapContour(ctx, shapes, options?: { order?, step?, strokeColor?, outerWidth?, innerWidth? })` → the same — Strokes the silhouette at `outerWidth` (3.5) and the overlap lines at `innerWidth` (2), the bottom of Manual 03's first and second tiers. An option it does not take is refused by name.
+
+> [!TIP]
+> **Hamm's principle of the T** (*Drawing the Head and Figure*, p. 48): where one form passes in front of another, the far form's contour stops at the near one, and the stem of the T reads as going behind the crossbar. That junction is what states depth on a line drawing; an outline of the whole silhouette has none of it, and a stack of separately stroked capsules has every line crossing every other.
+>
+> ```js
+> const fig = Drawing.createMannequinFigure(300, 40, 660, { pose });
+> ctx.fillStyle = '#e4ddcc';
+> ctx.fill(Drawing.createFigureGeometry(fig).silhouette);
+> const lined = ctx.drawOverlapContour(fig, { order: ['head', 'rightArm', 'torso'] });
+> log(lined.junctions.map(j => `${j.far} behind ${j.near}`).join(', '));
+> ```
+>
+> - **Depth is yours**, because the toolkit has no z. Shapes are nearest first as given; `order` names some or all of them, nearest first, and a name covers every shape under it (`'him'` covers `him.leftArm`), so `{ order: ['her'] }` puts one figure in front of another. A figure's groups default to head, arms, torso, legs: standing, seen from the front. Put an arm that passes behind the body after `'torso'`.
+> - **The silhouette is heavier than the overlaps**, Janson's rule (Manual 03 §1). Which side of a line is outside is judged by probing 1.5 px out, so the change of weight lands within about a pixel of a crossing.
+> - **A figure is lined by its groups**, which are united, so a limb has no line across its own elbow or knee. Passing `geometry.parts` instead lines every mass on its own and draws a seam at every joint.
+> - Lines are refused: a line has no inside to hide anything behind. Give one a width with `ctx.strokeToPath(...)`.
 - `Drawing.findTangents(shapes: object | CanvasPath[], options?: { gap?: number, near?: number, angleDeg?: number, minRun?: number, step?: number, attached?: string[][] })` → `{ tangents, count, touching, aligned, ends, attached, apart, pairs, step }` — **Shapes and lines that touch, line up, or end on each other.** `shapes` is an object of named shapes and lines, an array of them, or a `createFigureGeometry(...)` result, whose `groups` are used. A geometry result *inside* the object adds its groups named after it — `her.leftArm` — so figures and the set go in one bag. Every pair is tested. Each tangent is `{ kind: 'touch' | 'align' | 'end', a, b, at, distance, mark }`, plus `overlapping` and `depth` on a touch, `from`, `to`, `length`, `angleDeg` and `flush` on an alignment, and `end` (`'start'` or `'end'`) and `inside` on an end. `mark` is a `CanvasPath` to stroke.
   - **A shape** is a closed `CanvasPath`: anything from `createFigureGeometry`, an `ellipse`, a `rect`, a path ending in `closePath()`.
   - **A line** is `{ x1, y1, x2, y2 }`, an array of points (`[{ x, y }, …]` or `[[x, y], …]`), SVG path data (`'M0 400 L1200 380'`), or a `CanvasPath` with no closed contour. A horizon, a boom, a rope, a rail.

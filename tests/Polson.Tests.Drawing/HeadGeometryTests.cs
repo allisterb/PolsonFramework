@@ -101,15 +101,24 @@ public class HeadGeometryTests : TestsRuntime
     /// failed to build would show up only as a head with no ear — which is exactly the kind of
     /// absence the drawing-1 run proved nobody notices in a render.
     /// </remarks>
-    [Fact]
-    public void TestEveryMassIsDrawn()
+    /// <remarks>
+    /// The cheeks are the seam between the ball and the jaw hung under it, so only <c>face: 'ball'</c>
+    /// builds them; Loomis's skull outline carries its own cheek and returns them empty, by name.
+    /// </remarks>
+    [Theory]
+    [InlineData("ball")]
+    [InlineData("loomis")]
+    public void TestEveryMassIsDrawn(string face)
     {
-        var geo = Geometry(Head(35f));
+        var geo = Geometry(Head(35f), new Dictionary<string, object?> { ["face"] = face });
 
         foreach (var name in PartNames(geo))
         {
             var box = Part(geo, name).Path.Bounds;
-            Assert.True(box.Width > 1f && box.Height > 1f, $"{name} is empty: {box}");
+            if (face == "loomis" && name is "farCheek" or "nearCheek")
+                Assert.True(Part(geo, name).Path.IsEmpty, $"{name} should be empty on Loomis's skull");
+            else
+                Assert.True(box.Width > 1f && box.Height > 1f, $"{name} is empty: {box}");
         }
     }
 
@@ -142,15 +151,18 @@ public class HeadGeometryTests : TestsRuntime
     }
 
     /// <summary>The silhouette is one shape covering every mass, not merely the head.</summary>
-    [Fact]
-    public void TestTheSilhouetteCoversEveryMass()
+    [Theory]
+    [InlineData("ball")]
+    [InlineData("loomis")]
+    public void TestTheSilhouetteCoversEveryMass(string face)
     {
         var head = Head(35f);
-        var geo = Geometry(head);
+        var geo = Geometry(head, new Dictionary<string, object?> { ["face"] = face });
         var silhouette = ((CanvasPath)geo["silhouette"]!).Path;
 
         foreach (var name in PartNames(geo))
         {
+            if (Part(geo, name).Path.IsEmpty) continue;
             var box = Part(geo, name).Path.Bounds;
             Assert.True(silhouette.Contains(box.MidX, box.MidY), $"the silhouette does not cover the {name}");
         }
@@ -196,8 +208,11 @@ public class HeadGeometryTests : TestsRuntime
             toolkit.CreateParametricHead(Head(), new Dictionary<string, object?> { ["jawShape"] = jawShape });
 
         var squaredHead = Shaped(1f);
-        var squared = Geometry(squaredHead);
-        var tapered = Geometry(Shaped(-1f));
+        // The ball's jaw part is the jaw alone; Loomis's skull outline runs up to the temple, so its
+        // width is the temple's - LoomisSkullTests measures that outline at the jaw's own height.
+        var ball = new Dictionary<string, object?> { ["face"] = "ball" };
+        var squared = Geometry(squaredHead, ball);
+        var tapered = Geometry(Shaped(-1f), ball);
 
         Assert.True(Part(squared, "jaw").Path.Bounds.Width > Part(tapered, "jaw").Path.Bounds.Width + 2f,
             "jawShape did not reach the jaw mass at all");
@@ -327,7 +342,8 @@ public class HeadGeometryTests : TestsRuntime
                      Part(Geometry(Head(0f)), "nearEar").Path.Bounds.Width, 2);
 
         // And a turned head's outline is exactly what it was before the near ear existed.
-        var turned = ((CanvasPath)Geometry(Head(30f))["silhouette"]!).Path.Bounds;
+        // On the ball, which is round on both sides; Loomis's skull has a face side and a back.
+        var turned = ((CanvasPath)Geometry(Head(30f), new Dictionary<string, object?> { ["face"] = "ball" })["silhouette"]!).Path.Bounds;
         var crownX = Convert.ToSingle(((Dictionary<string, object?>)Head(30f)["crown"]!)["x"]);
         Assert.Equal(crownX - turned.Left, turned.Right - crownX, 1);
     }
@@ -355,7 +371,7 @@ public class HeadGeometryTests : TestsRuntime
     public void TestTheCheekClosesTheStepUnderTheEar(float yaw)
     {
         var head = Head(yaw);
-        var geo = Geometry(head, new Dictionary<string, object?> { ["neckLength"] = 0f });
+        var geo = Geometry(head, new Dictionary<string, object?> { ["neckLength"] = 0f, ["face"] = "ball" });
 
         var before = WorstStep(head, WithoutCheek(geo));
         var after = WorstStep(head, (CanvasPath)geo["silhouette"]!);
@@ -403,7 +419,7 @@ public class HeadGeometryTests : TestsRuntime
     {
         static float Gain(float yaw)
         {
-            var geo = Geometry(Head(yaw), new Dictionary<string, object?> { ["neckLength"] = 0f });
+            var geo = Geometry(Head(yaw), new Dictionary<string, object?> { ["neckLength"] = 0f, ["face"] = "ball" });
             var without = Part(geo, "cranium").Union(Part(geo, "jaw")).Union(Part(geo, "ear"))
                                               .Union(Part(geo, "nearEar")).Union(Part(geo, "farCheek"));
             var with = without.Union(Part(geo, "nearCheek"));
@@ -436,7 +452,7 @@ public class HeadGeometryTests : TestsRuntime
     [Fact]
     public void TestAFrontalHeadGetsTwoCheeks()
     {
-        var geo = Geometry(Head(), new Dictionary<string, object?> { ["neckLength"] = 0f });
+        var geo = Geometry(Head(), new Dictionary<string, object?> { ["neckLength"] = 0f, ["face"] = "ball" });
         SKRect far = Part(geo, "farCheek").Path.Bounds, near = Part(geo, "nearCheek").Path.Bounds;
 
         Assert.True(far.Width > 1f && near.Width > 1f, "a frontal head should carry both cheeks");
@@ -532,8 +548,9 @@ public class HeadGeometryTests : TestsRuntime
     [Fact]
     public void TestTheComicSkullIsNarrowerAndNoShorter()
     {
-        var loomis = Part(Geometry(Head(0f)), "cranium").Path.Bounds;
-        var comic = Part(Geometry(Head(0f), new Dictionary<string, object?> { ["skull"] = "comic" }), "cranium").Path.Bounds;
+        // Measured on the whole ball: Loomis's skull slices its sides, which the comic skull is already inside.
+        var loomis = Part(Geometry(Head(0f), new Dictionary<string, object?> { ["face"] = "ball" }), "cranium").Path.Bounds;
+        var comic = Part(Geometry(Head(0f), new Dictionary<string, object?> { ["skull"] = "comic", ["face"] = "ball" }), "cranium").Path.Bounds;
 
         Assert.Equal(loomis.Width * 5f / 6f, comic.Width, 1);
         Assert.Equal(loomis.Height, comic.Height, 1);

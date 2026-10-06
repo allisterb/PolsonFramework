@@ -103,6 +103,11 @@ public partial class ConstructiveDrawingToolkit
     /// edge on the head's half-width (Plate 18), which is already why <c>jaw.ear</c> sits where it does.
     /// </para>
     /// <para>
+    /// <b>The default outline is Loomis's skull rather than the ball.</b> The ball's sides are sliced flat
+    /// (Plate 1), and the face runs over bone from temple to cheekbone to a boxy jaw and a square chin
+    /// (Plates 5, 6). <c>face: 'ball'</c> keeps the whole ball with the jaw hung under it.
+    /// </para>
+    /// <para>
     /// <b>The neck's attachment is cited; its length and width are the studio's.</b> Loomis puts the
     /// turning muscles on the skull <em>just behind the ears</em> at the top and on the breastbone
     /// between the collarbones at the bottom, and places the pivot <em>well inside the roundness of
@@ -173,6 +178,11 @@ public partial class ConstructiveDrawingToolkit
         var noseBase = ExtractPoint(head["noseBase"]);
         var ear = ExtractPoint(jaw?["ear"]);
 
+        // cos(yaw), recovered from the one place the construction recorded it. The clamp is the
+        // construction's, not ours, and it is why the ear stops widening past about 63 degrees.
+        var cos = eyeW > 0f ? Math.Clamp(Num(JsInterop.AsDict(head["farEye"]), "width", eyeW) / eyeW, 0f, 1f) : 1f;
+        var sin = MathF.Sqrt(MathF.Max(0f, 1f - cos * cos));
+
         float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
         void Extent(float cx, float cy, float hw, float hh)
         {
@@ -224,12 +234,19 @@ public partial class ConstructiveDrawingToolkit
         var face = opt?["face"]?.ToString()?.Trim() ?? (IsDoubleCircle(head) ? "doubleCircle" : "loomis");
         if (!string.Equals(face, "doubleCircle", StringComparison.OrdinalIgnoreCase)) face = face.ToLowerInvariant();
         else face = "doubleCircle";
-        var shaped = face != "loomis";
+        var shaped = face is not ("loomis" or "ball");
 
         // **Hamm's own outline** (Drawing the Head and Figure, pp. 2–3): the cheek arcs swung from J and K down
         // to the chin circle, and the big circle trimmed by verticals from J and K. Built from the head's ball and
         // chin, so it reaches any head, and squashHead or a longer chin move it with them.
         Func<float, float>? sideAt = null;
+        // Which way the face has turned on the page: the facial axis swings off the crown's.
+        var faceSign = MathF.Sign(brow.X - crown.X);
+        // How far the ears sit behind the side plane's centre, which turns them back as the head turns.
+        // Only Loomis's skull places them on the plane, so only it carries the depth.
+        var earBack = 0f;
+        // The skull outline's own stations, per side, so the planes can be built on the same bones.
+        Dictionary<string, object?>? stations = null;
         if (face == "doubleCircle")
         {
             var frame = DoubleCircleOf(crown, brow, chin)
@@ -264,6 +281,129 @@ public partial class ConstructiveDrawingToolkit
                 return (frame.J.X + MathF.Sqrt(MathF.Max(0f, frame.Arc * frame.Arc - dy * dy)) - axis) * wScale;
             };
         }
+        else if (face == "loomis")
+        {
+            // **Loomis's skull, not his ball** (Drawing the Head and Hands, Plates 1, 5, 6 and 19). The
+            // ball is the head's width INCLUDING the ears; Plate 1 slices a side plane off each side of
+            // it, and the ears sit on those planes. Plate 6: with the exception of the cheeks, the flesh
+            // lies over bone and takes its shape, so the face's outline runs from bony landmark to bony
+            // landmark - the temple, the cheekbone, the jaw angle, a square chin - rather than hanging a
+            // jaw under a whole ball. Measured on the ball and jaw this replaces (now `face: 'ball'`):
+            // 3.0 units wide at the brow and 2.96 at the eyes, falling from 2.75 at the nose line to
+            // 1.71 a quarter of a unit lower. Plate 19 reads about 2.6, 2.5, 2.3 at the nose, 2.0 at
+            // the mouth, 1.65 at the jaw.
+            //
+            // The slice is projected as a sliced sphere turns: past the angle at which the ball's own
+            // edge would cross the plane, the outline is the plane's rim instead, so the side flattens
+            // frontally and the ball comes back round as the head turns. Where it is cut is the studio's
+            // reading of Plate 19, 2.6 units across; the comic skull is already narrower than that.
+            var slice = thirdH * 1.3f;
+            var sliceSkull = slice / wScale;
+            float Sliced(float y, float r0, float s)
+            {
+                var dy = y - brow.Y;
+                var r2 = (r0 * r0) - (dy * dy);
+                if (r2 <= 0f) return 0f;
+                var r = MathF.Sqrt(r2);
+                // The plane meets the dome in a rounded edge rather than a crease: a polynomial smooth
+                // minimum over a fifth of a unit.
+                var k = thirdH * 0.2f;
+                var h = MathF.Max(k - MathF.Abs(r - s), 0f) / k;
+                s = MathF.Min(r, s) - (h * h * k * 0.25f);
+                return (r * cos <= s ? r : (s * cos) + (MathF.Sqrt(MathF.Max(0f, r2 - (s * s))) * sin)) * wScale;
+            }
+
+            // **Below the brow, only the back of the ball is skull.** Its front quarter is where the eye
+            // sockets and cheekbones are, and those are narrower than the ball, so on the side the face
+            // turns toward the outline below the brow is the face's own, not the ball's. What is left of
+            // the ball there is the half behind the side plane's centre, which projects to its rim at
+            // `min(r, s) · cos`. Frontally that is the same width as the whole ball, so only a turned
+            // head changes; without it a three-quarter face sat inside a balloon.
+            var rimR = ballR + padding;
+            float Behind(float y)
+            {
+                var dy = y - brow.Y;
+                var r2 = (rimR * rimR) - (dy * dy);
+                return r2 <= 0f ? 0f : MathF.Min(MathF.Sqrt(r2), sliceSkull + padding) * cos * wScale;
+            }
+
+            var left = new List<Point2D>(49);
+            var right = new List<Point2D>(49);
+            for (var i = 0; i <= 48; i++)
+            {
+                var y = brow.Y - (rimR * MathF.Cos(MathF.PI * i / 48f));
+                var full = Sliced(y, rimR, sliceSkull + padding);
+                // Eased over the brow ridge rather than cut at it, or the dome leaves a sliver standing
+                // proud of the temple on a turned head.
+                // From the temple, where the face's outline leaves the dome (below).
+                var ease = SmoothStep(-thirdH * 0.3f, thirdH * 0.4f, y - brow.Y);
+                var front = faceSign == 0f ? full : full + ((Behind(y) - full) * ease);
+                left.Add(new Point2D(crown.X - (faceSign < 0f ? front : full), y));
+                right.Add(new Point2D(crown.X + (faceSign > 0f ? front : full), y));
+            }
+
+            right.Reverse();
+            var rim = left.Concat(right).ToList();
+            cranium = Polygon(rim, 0f);
+            // The ball's own extent was recorded above; the slice narrows it.
+            x0 = rim.Min(p => p.X); x1 = rim.Max(p => p.X);
+
+            // The ears sit on the side planes rather than on the ball's equator.
+            sideAt = y => MathF.Min(Reach(y), slice);
+            earBack = -faceSign * sin * thirdH * 0.3f;
+
+            // The face, bone to bone, one side at a time. Every station hangs off a landmark the
+            // character parameters already move - the nose-line station, the jaw angle, the chin
+            // corner, the chin - so a wider jaw or a longer chin changes the outline for free. The
+            // offsets are the studio's reading of Plates 5 and 19, in units of the head.
+            //
+            // Each station also has a depth in front of the side plane, and turns with it: the temple and
+            // cheekbone stand well forward, the jaw angle hardly at all. That is what puts the cheekbone on
+            // the silhouette of a three-quarter head, which a station on the plane alone cannot do.
+            var turn = sin * faceSign * thirdH;
+            var lower = MathF.Max(1f, chin.Y - noseBase.Y);
+            var eyeY = Num(head, "eyeLineY", (brow.Y + noseBase.Y) * 0.5f);
+            var mouthY = ExtractPoint(head["mouthCenter"]).Y;
+            List<Point2D> Side(Point2D station, Point2D angle, Point2D corner)
+            {
+                var d = MathF.Sign(station.X - crown.X);
+                if (d == 0f) d = MathF.Sign(angle.X - crown.X);
+
+                // Temple: on the dome's own edge above the brow, so the face rolls off the skull rather
+                // than meeting it in a notch.
+                var templeY = brow.Y - (thirdH * 0.3f);
+                var temple = new Point2D(crown.X + (d * Sliced(templeY, rimR, sliceSkull + padding)), templeY);
+                // A second point higher on the dome, so the corner smoothing turns at the top, inside the
+                // dome, and not at the temple, where it would pull the face's edge in off the skull.
+                var crestY = brow.Y - (thirdH * 0.6f);
+                var crest = new Point2D(crown.X + (d * Sliced(crestY, rimR, sliceSkull + padding)), crestY);
+                // Cheekbone: the widest point of the face, a little below the eye (Plate 5).
+                var zygoma = new Point2D(station.X + (d * thirdH * 0.12f * cos) + (turn * 0.8f), eyeY + ((noseBase.Y - eyeY) * 0.33f));
+                var side = new Point2D(station.X + (d * thirdH * 0.03f * cos) + (turn * 0.75f), station.Y);
+                // Jaw angle: the lower jaw is a box (Plate 5), so its corner stands out and down from
+                // where the ramus leaves the ear.
+                var gonion = new Point2D(angle.X + (d * thirdH * 0.16f * cos) + (turn * 0.15f), angle.Y + (lower * 0.33f));
+                // The cheek runs straight from the cheekbone to the jaw angle and is a little full at the
+                // mouth - the one place Plate 6 lets flesh rather than bone set the line.
+                var t = Math.Clamp((mouthY - side.Y) / MathF.Max(1f, gonion.Y - side.Y), 0f, 1f);
+                var cheek = new Point2D(side.X + ((gonion.X - side.X) * t) + (turn * 0.2f), mouthY);
+                // The chin is square, with a flat at the bottom.
+                var chinCorner = new Point2D(chin.X + ((corner.X - chin.X) * 0.85f), chin.Y - (lower * 0.1f));
+                var flat = new Point2D(chin.X + ((corner.X - chin.X) * 0.62f), chin.Y);
+                return [crest, temple, zygoma, side, cheek, gonion, chinCorner, flat];
+            }
+
+            var farSide = Side(ExtractPoint(jaw?["farStation"]), ExtractPoint(jaw?["angle"]), ExtractPoint(jaw?["chinFar"]));
+            var nearSide = Side(ExtractPoint(jaw?["nearStation"]), ExtractPoint(jaw?["nearAngle"]), ExtractPoint(jaw?["chinNear"]));
+            string[] stationNames = ["crest", "temple", "zygoma", "side", "cheek", "gonion", "chinCorner", "flat"];
+            Dictionary<string, object?> Named(List<Point2D> pts) =>
+                stationNames.Select((n, i) => (n, i)).ToDictionary(e => e.n, e => (object?)ToDict(pts[e.i]));
+            stations = new() { ["far"] = Named(farSide), ["near"] = Named(nearSide) };
+            nearSide.Reverse();
+            var outline = Chaikin([.. farSide, .. nearSide], 2);
+            jawPath = Polygon(outline, padding);
+            foreach (var p in outline) Extent(p.X, p.Y, padding, padding);
+        }
         else if (shaped)
         {
             var far = ExtractPoint(jaw?["farStation"]);
@@ -291,18 +431,13 @@ public partial class ConstructiveDrawingToolkit
             else if (!FaceShapes.TryGetValue(face, out shape!))
             {
                 throw new ArgumentException(
-                    $"createHeadGeometry face not recognised: {face}. Accepted: loomis, doubleCircle, oval, round, {string.Join(", ", FaceShapes.Keys)}.");
+                    $"createHeadGeometry face not recognised: {face}. Accepted: loomis, ball, doubleCircle, oval, round, {string.Join(", ", FaceShapes.Keys)}.");
             }
 
             var pts = shape.Select(s => new Point2D(cxTop + ((chin.X - cxTop) * s.V) + (s.U * w), top + (s.V * (chin.Y - top)))).ToList();
             jawPath = Polygon(face is "oval" or "round" ? pts : Chaikin(pts, 3), padding);
             foreach (var p in pts) Extent(p.X, p.Y, padding, padding);
         }
-
-        // cos(yaw), recovered from the one place the construction recorded it. The clamp is the
-        // construction's, not ours, and it is why the ear stops widening past about 63 degrees.
-        var cos = eyeW > 0f ? Math.Clamp(Num(JsInterop.AsDict(head["farEye"]), "width", eyeW) / eyeW, 0f, 1f) : 1f;
-        var sin = MathF.Sqrt(MathF.Max(0f, 1f - cos * cos));
 
         // **The ear straddles the ball's own silhouette, and that is Loomis rather than a nudge to
         // make it show.** Plate 1 attaches the ears along the same halfway line round the ball that
@@ -324,7 +459,7 @@ public partial class ConstructiveDrawingToolkit
         // ear: half of it is inside the cranium, so the reader sees one radius against a full unit.
         var earRx = thirdH * (0.18f + 0.07f * sin) + padding;
         var earOut = (sideAt?.Invoke(ear.Y) ?? Reach(ear.Y)) * cos - earRx * 0.3f;
-        var earCx = crown.X + earDir * earOut;
+        var earCx = crown.X + earDir * earOut + earBack;
         var earPath = OrientedEllipse(new Point2D(earCx, ear.Y), earRx, earRy, 0f);
         Extent(earCx, ear.Y, earRx, earRy);
 
@@ -349,7 +484,7 @@ public partial class ConstructiveDrawingToolkit
         // hiding for free, which is as well, since a construction with no cheek could not do it any
         // other way.
         var nearEarRx = MathF.Max(0f, thirdH * 0.18f * (1f - sin)) + padding;
-        var nearEarCx = crown.X - (earDir * ((sideAt?.Invoke(ear.Y) ?? Reach(ear.Y)) * cos - (nearEarRx * 0.3f)));
+        var nearEarCx = crown.X - (earDir * ((sideAt?.Invoke(ear.Y) ?? Reach(ear.Y)) * cos - (nearEarRx * 0.3f))) + earBack;
         var nearEarPath = OrientedEllipse(new Point2D(nearEarCx, ear.Y), nearEarRx, earRy, 0f);
         Extent(nearEarCx, ear.Y, nearEarRx, earRy);
 
@@ -421,9 +556,15 @@ public partial class ConstructiveDrawingToolkit
             return touch is null ? new CanvasPath() : Polygon([touch.Value, angle, craniumC], padding);
         }
 
-        // A cheek is the seam between Loomis's ball and his jaw, so a shaped face has none.
-        var farCheek = shaped ? new CanvasPath() : Cheek(earCx, earRx, ExtractPoint(jaw?["angle"]), earDir);
-        var nearCheek = shaped ? new CanvasPath() : Cheek(nearEarCx, nearEarRx, ExtractPoint(jaw?["nearAngle"]), -earDir);
+        // A cheek is the seam between the ball and the jaw hung under it, so only `face: 'ball'` has
+        // one; Loomis's skull outline carries its own cheek, and a shaped face has none.
+        // Each ear is strung to the jaw angle on its own side, whichever name that angle goes by.
+        var angleA = ExtractPoint(jaw?["angle"]);
+        var angleB = ExtractPoint(jaw?["nearAngle"]);
+        var earSideAngle = MathF.Sign(angleA.X - crown.X) == earDir ? angleA : angleB;
+        var otherAngle = MathF.Sign(angleA.X - crown.X) == earDir ? angleB : angleA;
+        var farCheek = face != "ball" ? new CanvasPath() : Cheek(earCx, earRx, earSideAngle, earDir);
+        var nearCheek = face != "ball" ? new CanvasPath() : Cheek(nearEarCx, nearEarRx, otherAngle, -earDir);
 
         // Behind the ear at the top, deep under the skull — the cited part. How far down and how
         // thick are the studio's, and both are in head units so they scale.
@@ -509,7 +650,7 @@ public partial class ConstructiveDrawingToolkit
                     // with that measurement — 2.71px of protrusion frontally, 0.57px at 8 degrees,
                     // nothing from 10 on — instead of drifting from it by however much the padding
                     // and the skull's own narrowing happen to be worth.
-                    ["visible"] = nearEarPath.Subtract(cranium).Path.Bounds.Width > 0.75f
+                    ["visible"] = nearEarPath.Subtract(cranium.Union(jawPath)).Path.Bounds.Width > 0.75f
                 }
             },
             ["bounds"] = x0 > x1
@@ -525,6 +666,8 @@ public partial class ConstructiveDrawingToolkit
                 },
             ["padding"] = padding,
             ["face"] = face,
+            // Where Loomis's skull outline turns, per side: null for every other face.
+            ["stations"] = stations,
             // Construction order, NOT depth — as on a figure. The neck goes down first because the
             // jaw overlaps it; on a head turned far enough that the far jaw passes behind the neck,
             // the caller still has to say so.
@@ -628,20 +771,23 @@ public partial class ConstructiveDrawingToolkit
         }
 
         var ink = new Dictionary<string, object?> { ["inkColor"] = "#000000" };
+        // Hamm's hollows beside the bridge sit in the air between the eyes: they are shading, not a feature, and counting
+        // them would mark a face down for following him. Full detail at every size, so a small head is measured as a large one.
+        var noseInk = new Dictionary<string, object?> { ["inkColor"] = "#000000", ["depressions"] = 0f, ["detail"] = 4f };
         using var eyes = Surface(ctx => { DrawComicEye(ctx, head["farEye"]!, true, ink); DrawComicEye(ctx, head["nearEye"]!, false, ink); });
         using var brows = Surface(ctx =>
         {
             if (head.Contains("farBrow")) DrawComicBrow(ctx, head["farBrow"]!, true, ink);
             if (head.Contains("nearBrow")) DrawComicBrow(ctx, head["nearBrow"]!, false, ink);
         });
-        using var nose = Surface(ctx => DrawComicNose(ctx, head["noseWedge"]!, ink));
+        using var nose = Surface(ctx => DrawComicNose(ctx, head["noseWedge"]!, noseInk));
         using var mouth = Surface(ctx => DrawComicMouth(ctx, head["mouthGuides"]!, ink));
         using var all = Surface(ctx =>
         {
             DrawComicEye(ctx, head["farEye"]!, true, ink); DrawComicEye(ctx, head["nearEye"]!, false, ink);
             if (head.Contains("farBrow")) DrawComicBrow(ctx, head["farBrow"]!, true, ink);
             if (head.Contains("nearBrow")) DrawComicBrow(ctx, head["nearBrow"]!, false, ink);
-            DrawComicNose(ctx, head["noseWedge"]!, ink);
+            DrawComicNose(ctx, head["noseWedge"]!, noseInk);
             DrawComicMouth(ctx, head["mouthGuides"]!, ink);
         });
 

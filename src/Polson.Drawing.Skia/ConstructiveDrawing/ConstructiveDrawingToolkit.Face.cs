@@ -658,6 +658,11 @@ public partial class ConstructiveDrawingToolkit
         var medium = ReadMedium(optDict, "drawComicNose");
         var shadowColor = optDict?["shadowColor"]?.ToString() ?? "#b06f4c";
         var weight = Fraction(optDict, "weight", 1f);
+        var depressions = Math.Clamp(Num(optDict, "depressions", 1f), 0f, 1f);
+        var hasLight = optDict is not null && optDict.Contains("light") && optDict["light"] is not null;
+        var lightDeg = hasLight ? Num(optDict, "light", 0f) : 0f;
+        var shade = Math.Clamp(Num(optDict, "shadow", 0.5f), 0f, 1f);
+        var hasDetail = optDict is not null && optDict.Contains("detail") && optDict["detail"] is not null;
 
         var bridgeTop = ExtractPoint(nose["bridgeTop"]);
         var apex = ExtractPoint(nose["apex"]);
@@ -728,28 +733,48 @@ public partial class ConstructiveDrawingToolkit
         // toward the septum; the opening sits inside it, low and toward the middle. Its size comes from
         // that side's own half-width, so the far wing foreshortens with the turn by itself.
         var tierR = len * (NostrilRadiusTier / NoseLengthAt240);
-        (CanvasPath Wing, CanvasPath Hole, Point2D Centre, Point2D Curl) Wing(Point2D edge)
+        var nearHalf = MathF.Abs(underNose.X - nearNostril.X);
+        var farHalf = hasFar ? MathF.Abs(underNose.X - farNostril.X) : nearHalf;
+
+        // **The far wing goes round the ball as the head turns** (Hamm, p. 15): first the opening slips out of
+        // sight, then only the wing's rim shows, and the opening is a trace hugging the septum, just beyond it;
+        // then the far wing is gone. How far the head has turned is read from the nose itself, as the far half of
+        // the base against the near half, which runs as the cosine of the turn on these constructions.
+        var farRatio = nearHalf > 0.1f ? Math.Clamp(farHalf / nearHalf, 0f, 1f) : 1f;
+        var farRim = SmoothStep(0.45f, 0.70f, farRatio);
+        var farCavity = SmoothStep(0.62f, 0.92f, farRatio);
+
+        (CanvasPath Wing, CanvasPath Hole, Point2D Centre, Point2D Curl) Wing(Point2D edge, float rim, float cavity)
         {
             var inward = underNose.X >= edge.X ? 1f : -1f;
             var halfSpan = MathF.Abs(underNose.X - edge.X);
             var r = halfSpan > tierR ? halfSpan * 0.26f : MathF.Max(0.5f, halfSpan * 0.4f);
             var c = new Point2D(edge.X + (inward * r), edge.Y);
             var outward = inward > 0f ? MathF.PI : 0f;
-            const float up = 75f * MathF.PI / 180f, under = 85f * MathF.PI / 180f;
+            // The curl under the wing is lost first, then the rim shortens.
+            float up = 75f * MathF.PI / 180f * (0.4f + (0.6f * rim)), under = 85f * MathF.PI / 180f * (0.2f + (0.8f * cavity));
 
             var wing = new CanvasPath();
-            if (inward < 0f) wing.Arc(c.X, c.Y, r, outward - up, outward + under);
-            else wing.Arc(c.X, c.Y, r, outward + up, outward - under, true);
+            if (rim > 0.02f)
+            {
+                if (inward < 0f) wing.Arc(c.X, c.Y, r, outward - up, outward + under);
+                else wing.Arc(c.X, c.Y, r, outward + up, outward - under, true);
+            }
 
+            // The opening shrinks to a trace and slides in against the septum, just on its own side.
+            var open = new Point2D(c.X + (inward * r * 0.7f), c.Y + (r * 0.55f));
+            var trace = new Point2D(underNose.X - (inward * r * 0.35f), underNose.Y - (r * 0.05f));
+            var at = new Point2D(trace.X + ((open.X - trace.X) * cavity), trace.Y + ((open.Y - trace.Y) * cavity));
             var hole = new CanvasPath();
-            hole.Ellipse(c.X + (inward * r * 0.7f), c.Y + (r * 0.55f), r * 0.5f, r * 0.24f, inward * 0.2f, 0f, MathF.PI * 2f);
+            if (rim > 0.02f)
+                hole.Ellipse(at.X, at.Y, r * 0.5f * (0.3f + (0.7f * cavity)), r * 0.24f * (0.6f + (0.4f * cavity)), inward * 0.2f, 0f, MathF.PI * 2f);
             // The opening's inner end, where the bottom of the ball begins.
             return (wing, hole, c, new Point2D(c.X + (inward * r * 1.2f), c.Y + (r * 0.55f)));
         }
 
-        var (nostril, nostrilHole, nearCentre, nearCurl) = Wing(nearNostril);
+        var (nostril, nostrilHole, nearCentre, nearCurl) = Wing(nearNostril, 1f, 1f);
         var (farNostrilPath, farNostrilHole, farCentre, farCurl) = hasFar
-            ? Wing(farNostril)
+            ? Wing(farNostril, farRim, farCavity)
             : (new CanvasPath(), new CanvasPath(), underNose, underNose);
 
         // **The bottom plane is a shadow under the ball, between the wings.** Loomis's Plate 26 bounds it by
@@ -781,6 +806,147 @@ public partial class ConstructiveDrawingToolkit
         noseBase.MoveTo(baseFar.X, baseFar.Y);
         noseBase.QuadraticCurveTo(baseControl.X, baseControl.Y, baseNear.X, baseNear.Y);
 
+        // The ridge of the nose at a height: on the line from bridgeTop down to the apex.
+        Point2D Ridge(float y)
+        {
+            var s = MathF.Abs(apex.Y - bridgeTop.Y) > 0.1f ? Math.Clamp((y - bridgeTop.Y) / (apex.Y - bridgeTop.Y), 0f, 1f) : 0f;
+            return new Point2D(bridgeTop.X + ((apex.X - bridgeTop.X) * s), y);
+        }
+        var nearSide = nearNostril.X >= underNose.X ? 1f : -1f;
+
+        // Which side is in shadow, when a light is given: the side facing away from it. Light straight from above
+        // or below lights both sides alike, so neither gets the side shadow.
+        var lightX = hasLight ? MathF.Cos(lightDeg * MathF.PI / 180f) : 0f;
+        var shadowSide = MathF.Abs(lightX) > 0.2f ? -MathF.Sign(lightX) : 0f;
+
+        // **The depressions beside the bridge, between the eyes** (Hamm, p. 14): it is usually well to indicate
+        // both, or at least one. A short concave line each side, bowing in toward the bridge, from just above the
+        // eye line to just below it, a little inside the inner eye corner. The base is one eye wide and so is the
+        // gap between the eyes, so each half of the base says how far out the inner corner is. On a turned head the
+        // far one fades: the far side of the bridge is becoming its silhouette.
+        var depressionMarks = new CanvasPath();
+        var depressionW = Tier(NostrilTier, len, NoseLengthAt240, weight * 0.6f);
+        var depressionParts = new List<(CanvasPath Mark, float Alpha)>();
+        if (depressions > 0f)
+        {
+            foreach (var side in new[] { nearSide, -nearSide })
+            {
+                var half = side == nearSide ? nearHalf : farHalf;
+                if (half < 0.5f) continue;
+                float y0 = bridgeTop.Y + (len * 0.04f), y1 = bridgeTop.Y + (len * 0.30f), ym = (y0 + y1) / 2f;
+                Point2D a = new(Ridge(y0).X + (side * half * 0.74f), y0);
+                Point2D m = new(Ridge(ym).X + (side * half * 0.56f), ym);
+                Point2D b = new(Ridge(y1).X + (side * half * 0.70f), y1);
+                var cp = ControlThrough(a, m, b);
+                var mark = CreateTaperedStrokePath(a, new Point2D(a.X + ((cp.X - a.X) * 2f / 3f), a.Y + ((cp.Y - a.Y) * 2f / 3f)),
+                    new Point2D(b.X + ((cp.X - b.X) * 2f / 3f), b.Y + ((cp.Y - b.Y) * 2f / 3f)), b, depressionW * TaperGain);
+                var lit = shadowSide == 0f ? 1f : side == shadowSide ? 1.3f : 0.6f;
+                var alpha = Math.Clamp(depressions * lit * (side == nearSide ? 1f : 0.35f + (0.65f * farRatio)), 0f, 1f);
+                if (alpha <= 0.01f) continue;
+                depressionMarks.AddPath(mark);
+                depressionParts.Add((mark, alpha));
+            }
+        }
+
+        // **The shadow side of the nose** (Hamm, p. 14): with a light from one side the nose takes a shadow down
+        // that side of the bridge and round under the wing, one shape, with no other shading on the face needed.
+        // And the line alongside a front-view nose: in full light treat it lightly; with the face in shadow it
+        // cannot be ignored. `shadow` is how much of that the face is in, 0 to 1.
+        var sideShadow = new CanvasPath();
+        var sideLine = new CanvasPath();
+        if (shadowSide != 0f)
+        {
+            var half = shadowSide == nearSide ? nearHalf : farHalf;
+            var c = shadowSide == nearSide ? nearCentre : farCentre;
+            var r = half > tierR ? half * 0.26f : MathF.Max(0.5f, half * 0.4f);
+            var y0 = bridgeTop.Y + (len * 0.22f);
+            var ridgeTop = Ridge(y0);
+            var outerTop = new Point2D(ridgeTop.X + (shadowSide * half * 0.42f), y0 + (len * 0.04f));
+            var wingTop = new Point2D(c.X, c.Y - r);
+            var wingOuter = new Point2D(c.X + (shadowSide * r * 0.95f), c.Y - (r * 0.2f));
+            var ballSide = new Point2D(apex.X + (shadowSide * half * 0.22f), apex.Y + (len * 0.04f));
+
+            sideShadow.MoveTo(ridgeTop.X, ridgeTop.Y);
+            var down = ControlThrough(ridgeTop, new Point2D(Ridge(apex.Y - (len * 0.25f)).X + (shadowSide * half * 0.08f), apex.Y - (len * 0.25f)), ballSide);
+            sideShadow.QuadraticCurveTo(down.X, down.Y, ballSide.X, ballSide.Y);
+            sideShadow.QuadraticCurveTo(ballSide.X + (shadowSide * r * 0.3f), c.Y - (r * 0.9f), wingTop.X, wingTop.Y);
+            sideShadow.QuadraticCurveTo(wingOuter.X, wingTop.Y, wingOuter.X, wingOuter.Y);
+            var up = ControlThrough(wingOuter, new Point2D(outerTop.X + (shadowSide * half * 0.1f), (outerTop.Y + wingOuter.Y) / 2f), outerTop);
+            sideShadow.QuadraticCurveTo(up.X, up.Y, outerTop.X, outerTop.Y);
+            sideShadow.ClosePath();
+
+            // The vertical alongside: the side plane's outer edge, from below the depression to the wing.
+            var lineTop = new Point2D(outerTop.X, outerTop.Y + (len * 0.08f));
+            sideLine.AddPath(CreateTaperedStrokePath(lineTop,
+                new Point2D(lineTop.X + ((wingOuter.X - lineTop.X) * 0.33f) + (shadowSide * half * 0.05f), lineTop.Y + ((wingOuter.Y - lineTop.Y) * 0.33f)),
+                new Point2D(lineTop.X + ((wingOuter.X - lineTop.X) * 0.66f) + (shadowSide * half * 0.05f), lineTop.Y + ((wingOuter.Y - lineTop.Y) * 0.66f)),
+                new Point2D(wingTop.X + (shadowSide * r * 0.5f), wingTop.Y), Tier(NostrilTier, len, NoseLengthAt240, weight * 0.7f) * TaperGain));
+        }
+
+        // **How much of the nose to draw** (Hamm's progression, pp. 1, 3, 5): a dash for the base where it meets the
+        // face; then the bottom of the ball as a cupped curve with one stroke down the side of the bridge; then the
+        // wings and nostrils, joined by the base, with the hollows between the eyes; then the whole form, with the
+        // plane under the ball, the bridge and the shadow side. The early stages are what a small or quick nose is,
+        // not only scaffolding: at long-shot size two wings and two openings close up into a blob, and an inker drops
+        // parts rather than thinning them. Left out, the level follows the nose's own length; a head 160px tall or
+        // more gets everything.
+        var detail = hasDetail
+            ? Math.Clamp((int)MathF.Round(Num(optDict, "detail", 4f)), 1, 4)
+            : len >= NoseDetailLength[2] ? 4 : len >= NoseDetailLength[1] ? 3 : len >= NoseDetailLength[0] ? 2 : 1;
+
+        if (detail <= 2)
+        {
+            Point2D Out(Point2D edge, float share) =>
+                new(underNose.X + ((edge.X - underNose.X) * share), underNose.Y + ((edge.Y - underNose.Y) * share));
+            var markW = Tier(NostrilTier, len, NoseLengthAt240, weight) * TaperGain;
+            noseBase = new CanvasPath();
+            if (detail == 1)
+            {
+                // The base line: a short flat dash about the nose's width, sagging a hair.
+                Point2D a = Out(farNostril, 0.6f), b = Out(nearNostril, 0.6f);
+                var sag = new Point2D(underNose.X, underNose.Y + (len * 0.02f));
+                var cp = ControlThrough(a, sag, b);
+                noseBase.AddPath(CreateTaperedStrokePath(a, Lerp(a, cp, 2f / 3f), Lerp(b, cp, 2f / 3f), b, markW));
+            }
+            else
+            {
+                // The bottom of the ball, its ends turned up toward the wings.
+                Point2D a = Out(farNostril, 0.8f), b = Out(nearNostril, 0.8f);
+                a = new Point2D(a.X, a.Y - (len * 0.07f));
+                b = new Point2D(b.X, b.Y - (len * 0.07f));
+                var low = new Point2D(underNose.X, underNose.Y + (len * 0.02f));
+                noseBase.AddPath(CreateTaperedStrokePath(a,
+                    new Point2D(a.X + ((low.X - a.X) * 0.25f), low.Y), new Point2D(b.X + ((low.X - b.X) * 0.25f), low.Y), b, markW));
+
+                // One stroke down the side of the bridge: the shadow side when lit, else the far side.
+                var s = shadowSide != 0f ? shadowSide : -nearSide;
+                var half = s == nearSide ? nearHalf : farHalf;
+                float y0 = bridgeTop.Y + (len * 0.12f), y1 = bridgeTop.Y + (len * 0.62f);
+                Point2D strokeTop = new(Ridge(y0).X + (s * half * 0.62f), y0), strokeEnd = new(Ridge(y1).X + (s * half * 0.5f), y1);
+                sideLine = new CanvasPath();
+                sideLine.AddPath(CreateTaperedStrokePath(strokeTop, Lerp(strokeTop, strokeEnd, 1f / 3f), Lerp(strokeTop, strokeEnd, 2f / 3f), strokeEnd,
+                    Tier(NostrilTier, len, NoseLengthAt240, weight * 0.8f) * TaperGain));
+            }
+        }
+
+        // What is not drawn at this level is not returned either, so the parts are what is on the page.
+        if (detail < 4)
+        {
+            underPlane = new CanvasPath();
+            bridgeMark = new CanvasPath();
+            sideShadow = new CanvasPath();
+            if (detail == 3) sideLine = new CanvasPath();
+        }
+        if (detail < 3)
+        {
+            nostril = new CanvasPath();
+            farNostrilPath = new CanvasPath();
+            nostrilHole = new CanvasPath();
+            farNostrilHole = new CanvasPath();
+            depressionMarks = new CanvasPath();
+            depressionParts.Clear();
+        }
+
         ctx.Save();
 
         ApplyMedium(ctx, medium);
@@ -788,15 +954,49 @@ public partial class ConstructiveDrawingToolkit
         ctx.FillStyle = InMedium(medium, shadowColor);
         ctx.Fill(underPlane);
 
+        if (!sideShadow.Path.IsEmpty)
+        {
+            // Darkest at the wing, fading up the bridge, multiplied so it darkens the skin rather than covering it.
+            var b = sideShadow.Path.TightBounds;
+            ctx.Save();
+            ctx.GlobalCompositeOperation = "multiply";
+            FillGraded(ctx, sideShadow, ShaderInMedium(medium, shadowColor, 0.5f), new Point2D(b.MidX, b.Bottom), new Point2D(b.MidX, b.Top),
+                0.35f + (0.55f * shade), 0.05f, len * 0.03f);
+            ctx.Restore();
+        }
+
         ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(bridgeMark);
+
+        if (!depressionMarks.Path.IsEmpty)
+        {
+            // Each mark at its own strength: the far one fades with the turn, and a light lifts one side.
+            ctx.Save();
+            ctx.FillStyle = InMedium(medium, inkColor, 0.35f);
+            foreach (var (mark, alpha) in depressionParts)
+            {
+                ctx.GlobalAlpha = alpha;
+                ctx.Fill(mark);
+            }
+            ctx.Restore();
+        }
+
+        if (!sideLine.Path.IsEmpty)
+        {
+            ctx.Save();
+            ctx.FillStyle = InMedium(medium, inkColor, 0.35f);
+            ctx.GlobalAlpha = detail <= 2 ? 1f : 0.25f + (0.75f * shade);
+            ctx.Fill(sideLine);
+            ctx.Restore();
+        }
 
         ctx.Fill(nostrilHole);
         if (hasFar) ctx.Fill(farNostrilHole);
 
         ctx.StrokeStyle = InMedium(medium, inkColor);
         ctx.LineCap = "round";
-        if (hasFar)
+        if (detail <= 2) ctx.Fill(noseBase);
+        else if (hasFar)
         {
             ctx.LineWidth = Tier(NostrilTier, len, NoseLengthAt240, weight * 0.6f);
             ctx.Stroke(noseBase);
@@ -816,7 +1016,11 @@ public partial class ConstructiveDrawingToolkit
             ["farNostril"] = farNostrilPath,
             ["nostrilHole"] = nostrilHole,
             ["farNostrilHole"] = farNostrilHole,
-            ["base"] = noseBase
+            ["base"] = noseBase,
+            ["depressions"] = depressionMarks,
+            ["sideShadow"] = sideShadow,
+            ["sideLine"] = sideLine,
+            ["detail"] = detail
         };
     }
 
@@ -1158,6 +1362,14 @@ public partial class ConstructiveDrawingToolkit
     private const float IrisRimTier = 1.2f;
     private const float NoseBridgeTier = 2.4f;
     private const float NostrilTier = 2.0f;
+
+    /// <summary>The nose lengths at which <c>drawComicNose</c> steps up to detail 2, 3 and 4.</summary>
+    /// <remarks>
+    /// The nose runs about a quarter of the head on these constructions, so these are heads of roughly 45, 90 and
+    /// 160px: a dash in a crowd, a cupped base and one bridge stroke in a long shot, the wings from a medium shot.
+    /// The studio's, judged by eye on Hamm's own sizes.
+    /// </remarks>
+    private static readonly float[] NoseDetailLength = [11f, 22f, 40f];
     private const float NostrilRadiusTier = 3.5f;
     private const float LipLineTier = 2.4f;
     private const float HelixTier = 2.6f;
@@ -1279,6 +1491,14 @@ public partial class ConstructiveDrawingToolkit
     /// than drawing a zero-radius iris or throwing, since an option is a preference and a silently
     /// absent feature is worse than an ignored number.
     /// </remarks>
+    static Point2D Lerp(Point2D a, Point2D b, float s) => new(a.X + ((b.X - a.X) * s), a.Y + ((b.Y - a.Y) * s));
+
+    static float SmoothStep(float edge0, float edge1, float x)
+    {
+        var s = Math.Clamp((x - edge0) / (edge1 - edge0), 0f, 1f);
+        return s * s * (3f - (2f * s));
+    }
+
     static float Fraction(IDictionary? d, string key, float fallback)
     {
         var v = Num(d, key, float.NaN);

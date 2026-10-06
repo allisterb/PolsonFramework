@@ -243,11 +243,50 @@ keeps the chin inside its own jaw at every yaw.
 > the near jaw is the floor's output rather than the construction's, so treat it as approximate
 > there, not at 60°.
 
+### The outline: the skull, not the ball
+
+The ball is a construction, not a head. Plate 19's three units are the width **including the ears**,
+and Plate 1 slices a side off each side of the ball before anything else is built. Plate 5 then
+simplifies the skull into the ball, the side plane, the brow ledge, the cheekbone, the upper jaw as a
+block and the lower jaw as a box, and Plate 6 says that, except at the cheeks, the flesh lies over
+bone and takes its shape. So the head's outline runs from bone to bone.
+
+`createHeadGeometry` draws it that way by default (`face: 'loomis'`):
+
+- **The cranium is the ball with its sides sliced flat**, 2.6 units across. The flat side meets the
+  dome in a rounded edge. As the head turns, the slice is projected the way a sliced sphere turns, so
+  the side plane flattens a frontal head and the ball comes back round in three-quarter.
+- **Below the brow, only the back of the ball is skull.** Its front quarter is where the eye sockets
+  and cheekbones are. On the side the face turns toward, the outline below the brow is the face's.
+- **The face runs from the temple to the cheekbone** (the widest point of the face, a little below the
+  eye), then down the cheek to a jaw angle that stands out like the corner of a box, to a square chin
+  with a flat. Each station hangs off a landmark in `head.jaw`, so `jawShape`, `chinShape` and
+  `chinLength` move the outline. Each also has a depth in front of the side plane, so the cheekbone
+  makes the silhouette of a turned head.
+- **The ears sit on the side planes**, set back a little, so the near ear goes behind the face as the
+  head turns.
+
+Measured frontally, in units, without the ears:
+
+| row | Plate 19 (read off the plate) | `face: 'loomis'` | `face: 'ball'` (before) |
+| :--- | ---: | ---: | ---: |
+| temple | ~2.65 | 2.60 | 2.96 |
+| eye line | ~2.5 | 2.60 | 2.96 |
+| nose base | ~2.3 | 2.27 | 2.75 |
+| mouth | ~2.0 | 2.04 | 1.57 |
+| jaw | ~1.65 | 1.51 | 1.31 |
+
+`face: 'ball'` keeps the old outline: the whole ball, a jaw hung under it, and the cheek triangles
+that closed the step below the ear.
+
 ### Still unsourced, and marked as such
 
 - **The temporal slice.** Loomis says only *"a fairly thin slice"* on each side and gives no fraction.
   `head.temporalOval` returns `rx = 0.32·W`, `ry = 0.26·H` — a studio choice, not a canon. The
-  §1 diagram's old *"2/3 R"* was invented and has been removed.
+  §1 diagram's old *"2/3 R"* was invented and has been removed. The outline cuts the slice 1.3 units
+  off the axis, which is the studio's reading of Plate 19's widths, not a figure Loomis gives.
+- **The outline's stations.** Which bones the outline runs over is Loomis's (Plates 5 and 6); how far
+  out and how far forward each one sits is the studio's reading of the plates.
 - **The jaw's proportions**, though its *construction* is now Loomis's — see below. The angle's depth
   below the nose line and the chin's share of the span between the two angles are the studio's; he
   gives no measurement for either.
@@ -263,7 +302,7 @@ keeps the chin inside its own jaw at every yaw.
 
 In a 3/4 view, the head is rotated around the vertical Y-axis by yaw angle $\theta \approx 30^\circ\text{ to }45^\circ$:
 
-`Drawing.createLoomisHead(originX, originY, headHeight, yawDeg, pitchDeg)` performs this construction and returns every landmark below. The yaw term is what produces the 3/4 read: the facial centreline shifts by $\sin\theta$, and far-side features compress by $\cos\theta$.
+`Drawing.createLoomisHead(originX, originY, headHeight, yawDeg, pitchDeg)` performs this construction and returns every landmark below. The yaw term is what produces the 3/4 read: the facial centreline shifts by $\sin\theta$, and far-side features compress by $\cos\theta$. The face turns toward the far side: for positive yaw the centreline, the nose tip and the chin move toward −x, where the far eye narrows, and the ear you see is at +x beside the full near eye. (Before 2026-10-06 the centreline moved the other way, so the narrowed eye sat beside the visible ear.)
 
 The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is scaled by `max(0.45, cos(yaw))` — the floor is what stops the far eye vanishing at a steep turn.
 
@@ -363,8 +402,42 @@ Use greys in pencil. The comic defaults — a blue iris, a red lip — are colou
 In 3/4 view, the nose projects out from the far cheek silhouette:
 1. **Keystone bridge**: Begins at the eye line level.
 2. **Nose Ridge Slope**: Slopes forward down to the apex ($Y_{\text{nose}}$).
-3. **Under-Nose Base**: the bottom plane faces down, so from the front it is a shallow lens of shadow under the ball, between the wings and deepest under the tip, with a short curve beneath the tip for the bottom of the ball (Hamm's "‿", *Drawing the Head and Figure*, p. 4).
-4. **Nostrils**: each wing is a short curve **inside** the nose, its outermost point on the base's edge (`noseWedge.nearNostril` and `farNostril`, one eye apart frontally), curling back under toward the septum, with a small dark opening inside it. The far wing shrinks with the turn.
+3. **Under-Nose Base**: the bottom plane faces down, so from the front it is a shallow lens of shadow under the ball, between the wings and deepest under the tip, with a short curve beneath the tip for the bottom of the ball (Hamm's "‿", *Drawing the Head and Figure*, p. 14).
+4. **Nostrils**: each wing is a short curve **inside** the nose, its outermost point on the base's edge (`noseWedge.nearNostril` and `farNostril`, one eye apart frontally), curling back under toward the septum, with a small dark opening inside it.
+5. **The far wing goes round the ball as the head turns** (Hamm, p. 15): first the far opening slips toward the
+   septum and shrinks to a trace just beyond it, then only the wing's rim shows, then the far wing is gone.
+6. **The depressions beside the bridge** (p. 14): Hamm says it is usually well to indicate the two hollows either
+   side of the nose between the eyes, or at least one. Short concave lines bowing in toward the bridge, at the eye
+   line, a little inside each inner corner. On by default; `depressions` (0–1) sets their strength, `0` removes them.
+7. **Light the nose and it carries its own shadow** (p. 14). Give `light`, the direction toward the light in
+   degrees (0 right, −90 up, so −40 is upper right), and the side facing away gets one graded shadow shape down
+   the side of the bridge and round under the wing, plus the line alongside the nose on that side. Hamm: in full
+   light treat that line lightly; with the face in shadow it cannot be ignored. `shadow` (0–1, default 0.5) is
+   how much of the face is in shadow. Light from straight above or below gives no side shadow.
+
+```js
+Drawing.drawComicNose(ctx, head.noseWedge, { light: -40, shadow: 0.6 });
+```
+
+Hamm never draws two round holes alone, and drops the line down the side of a front-view nose unless the face is
+in shadow; the drawer does both.
+
+#### How much nose to draw
+
+Hamm's book builds the nose up in stages, and each stage is a nose in its own right (*Drawing the Head and Figure*,
+pp. 1, 3, 5, then 13–15):
+
+| `detail` | draws | Hamm |
+| :--- | :--- | :--- |
+| 1 | a short dash for the base, where the nose meets the face | p. 1, step 3 |
+| 2 | the bottom of the ball, ends turned up, and one stroke down the side of the bridge | p. 1, steps 4–6 |
+| 3 | the wings and nostrils joined by the base, and the hollows between the eyes | p. 3, steps 9–10 |
+| 4 | the whole form: the plane under the ball, the bridge, the shadow side when lit | p. 5, step 10; p. 14 |
+
+The early stages are what a small or quickly drawn nose is. At long-shot size two wings and two openings close up into
+a blob, and an inker drops parts rather than thinning them, so **left out, `detail` follows the head's size**: about
+160px and up gets 4, about 90px gets 3, about 45px gets 2, smaller gets 1. Set it to draw a thumbnail or a rough at
+any size, or the full nose on a small head.
 
 ### C. The Determined / Open Comic Mouth
 1. **Upper Lip**: M-shaped Cupid's bow line, darker fill or deep shadow line.
@@ -380,7 +453,7 @@ looked at:
 | :--- | :--- |
 | `drawComicEye` | `aperture`, `iris`, `pupil`, `catchlight`, `upperLid`, `lowerLid` |
 | `drawComicBrow` | `mass`, `spine` |
-| `drawComicNose` | `underPlane`, `bridge`, `bridgeMark`, `nostril`, `farNostril`, `nostrilHole`, `farNostrilHole`, `base` |
+| `drawComicNose` | `underPlane`, `bridge`, `bridgeMark`, `nostril`, `farNostril`, `nostrilHole`, `farNostrilHole`, `base`, `depressions`, `sideShadow`, `sideLine` |
 | `drawComicMouth` | `cavity`, `teeth`, `lipLine`, `lowerLip` |
 
 **`aperture` is the one that changes what you can do.** It is both the sclera fill and the clip the

@@ -1117,7 +1117,8 @@ Disney built most of its characters on the circle and added cheeks, ears or a bi
 
 | `face` | the shape |
 | :--- | :--- |
-| `loomis` | the construction as before: Loomis's jaw, with cheeks (the default) |
+| `loomis` | Loomis's skull: the ball sliced flat at the sides, cheekbones, a boxy jaw and a square chin (the default; Manual 01 §2a) |
+| `ball` | the whole ball with a jaw hung under it, and cheek triangles below the ears (the default before 2026-10-06) |
 | `oval` | Stanchfield's basic face |
 | `round` | fuller through the cheeks |
 | `box` | square-jawed |

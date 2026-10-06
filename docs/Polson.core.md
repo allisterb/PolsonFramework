@@ -1179,6 +1179,9 @@ Also accessible via `Skia.Drawing`.
 ## Loomis Head & Feature Construction
 - `Drawing.createLoomisHead(originX: number, originY: number, headHeight: number, yawDeg?: number, pitchDeg?: number)` → `object` — Computes all 3D head landmarks, proportional ratios (Rule of Thirds, 1/5th eye width), temporal ovals, eye sockets, **brow stations**, nose wedge, mouth guides, and jaw angles.
 
+> [!IMPORTANT]
+> **Positive `yawDeg` turns the face toward −x, the far side.** The `far` eye, brow, nostril and mouth corner sit at −x and narrow with the turn; the nose tip and the chin swing that way; and `jaw.ear` is the ear you see, at +x, beside the full-width `near` eye. Until 2026-10-06 the facial axis and nose swung toward +x while the narrowed eye stayed at −x, so a turned head foreshortened the eye beside its own visible ear. Scripts that placed things by the old direction (a hat brim, hair parted on the side, a prop in front of the face) will find the face now turns the other way. **Negative yaw is not a mirror** of positive: the far features still narrow at −x. Draw a head turned the other way by mirroring the canvas (`ctx.scale(-1, 1)`).
+
 > [!TIP]
 > **Two things named `brow`, and they are not the same thing.** `head.brow` is a single point on the facial meridian at the 1.5-unit line: it is the **ball's equator**, the landmark `createHeadGeometry` takes the cranium's centre and radius from, and the axis `AU4` knits toward. Nothing draws it but the construction sheet. `head.nearBrow` and `head.farBrow` are the **drawn eyebrows** — `{ inner, peak, outer, thickness }` apiece, sitting over their own eye, and what `drawComicBrow` and the brow Action Units act on.
 >
@@ -1345,7 +1348,7 @@ Also accessible via `Skia.Drawing`.
 > faces"*, and a successful caricature often came from comparing against **any face that simply
 > seemed very different**. That is what the `reference` argument is for.
 
-- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic', face?: 'loomis' | 'doubleCircle' | 'oval' | 'round' | 'box' | 'narrow' | 'wedge' | 'pear' | 'peanut' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, ears: { far, near }, bounds, padding, face, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
+- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic', face?: 'loomis' | 'ball' | 'doubleCircle' | 'oval' | 'round' | 'box' | 'narrow' | 'wedge' | 'pear' | 'peanut' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, ears: { far, near }, bounds, padding, face, stations, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
 
 > [!IMPORTANT]
 > **This is what stops features being marks floating in space.** `createLoomisHead` places landmarks and the comic feature drawers put marks at them, and until this there was nothing in between — a live run drew two correctly proportioned faces that read as **masks on undifferentiated shoulder-masses**, because the features had nothing to sit on. Clip them to `mass` and they belong to a head.
@@ -1379,11 +1382,15 @@ Also accessible via `Skia.Drawing`.
 >
 > **The neck is anchored under the ear, not under the chin.** Loomis attaches the turning muscles to the skull just behind the ears and puts the pivot deep under it — that is the fact that makes a head sit rather than float. Its length and thickness are the studio's; see `polson://manual/23` §7.
 >
+> **The default outline is Loomis's skull, not his ball** (*Drawing the Head and Hands*, Plates 1, 5, 6 and 19). The ball's sides are sliced flat, 2.6 units across; below the brow, the side the face turns toward is the face's own outline. That outline runs over bone: temple, cheekbone (the face's widest point, just below the eye), down the cheek to a boxy jaw angle, then a square chin with a flat. Frontally it measures 2.6 units at the temples, 2.27 at the nose, 2.04 at the mouth and 1.51 at the jaw. The whole ball measured 2.96, 2.75, 1.57 and 1.31, which is the balloon-headed look. Every station hangs off a `head.jaw` landmark, so the character parameters move it. The ears sit on the side planes and go behind the face as the head turns. **`face: 'ball'` keeps the old outline**: the whole ball with a jaw hung under it, and the cheek triangles of the note below. Only that outline has `farCheek` and `nearCheek`; under the default they come back empty. `stations` gives the points the outline turns at, per side (`far`, `near`): `crest`, `temple`, `zygoma`, `side`, `cheek`, `gonion`, `chinCorner` and `flat`. It is null for every other face.
+>
 > **`skull: 'comic'` narrows the cranium to five eye-widths against Loomis's six**, at the same height — `polson://manual/23` §1 measured both schools on one head, and 5/6 is the difference. Opt-in, because the landmarks were laid out for a six-eye head; on a comic page it is usually what you want.
 >
 > **`order` is construction order, not depth**, as on a figure. A head turned far enough that the far jaw passes behind the neck still needs a clip to say so.
 
 > [!WARNING]
+> **This note is about `face: 'ball'`**, the default until 2026-10-06; Loomis's skull outline carries its own cheek.
+>
 > **~~There is no cheek.~~ Fixed 2026-09-19 — `parts.farCheek` and `parts.nearCheek`.** This note used to read: *"where the ball's inward curve crosses the jaw's outward one the union shows a shallow concave step — a cheekbone at panel size, a seam at portrait size; ink over it or union your own wedge in."* Both halves of that were wrong, and the way they were wrong is worth more than the fix.
 >
 > **It was not shallow, and not where the note said.** Printing the outline row by row — rather than scoring it against a local chord, which is what a first pass did — a 480px frontal head holds 205–211px off its axis from the brow all the way down to y=564 and then reads **153 at y=572**: a 45px cliff in eight rows, with everything above and below it already smooth. The ball meeting the jaw has nothing to do with it. It is **the foot of the ear** — a tall narrow ellipse riding a ball that is collapsing underneath it, stopping dead at the nose line.
@@ -1398,7 +1405,7 @@ Also accessible via `Skia.Drawing`.
 >
 > **The near ear narrows where the far one widens**, which is the same fact from the other side: an ear is edge-on frontally and full-face in profile. At yaw 0 the two are identical and the head is symmetric; past that the near one is swallowed by the cranium it is unioned into. **Measured on a 240px head it stops altering the outline at 10°** — 2.71px of protrusion frontally, 0.57px at 8°, nothing from 10° on. That is the physics rather than a fudge: a frontal ear sits exactly *on* the ball's silhouette, so any turn toward it puts it behind the head's own edge. **A turned head therefore renders byte-identically to before**; only frontal ones change, and they change by gaining the ear they should always have had.
 > [!TIP]
-> **`face` builds the face as one of Stanchfield's cartoon head shapes under the same cranium** (*Drawn to Life* vol. 1 ch. 37: a circle for the skull over an oval for the face, and a cartoon head is that pair pushed into another shape). `oval` is his basic face; `round` is fuller through the cheeks; `box` is square-jawed; `narrow` is a narrow rectangle; `wedge` is a wide brow over a pointed chin; `pear` is narrow at the temples and wide at the jowls; `peanut` is pinched at the cheekbones. Each spans the jaw stations at the brow line and ends on the chin, so the character parameters and `squashHead` move it. It replaces `parts.jaw`, and `farCheek`/`nearCheek` come back empty, since a cheek is the seam between Loomis's ball and his jaw. `loomis`, the default, is the construction as before. The shapes are drawn about the facial axis and foreshorten with the turn; past about 45° build the turn by hand.
+> **`face` builds the face as one of Stanchfield's cartoon head shapes under the same cranium** (*Drawn to Life* vol. 1 ch. 37: a circle for the skull over an oval for the face, and a cartoon head is that pair pushed into another shape). `oval` is his basic face; `round` is fuller through the cheeks; `box` is square-jawed; `narrow` is a narrow rectangle; `wedge` is a wide brow over a pointed chin; `pear` is narrow at the temples and wide at the jowls; `peanut` is pinched at the cheekbones. Each spans the jaw stations at the brow line and ends on the chin, so the character parameters and `squashHead` move it. It replaces `parts.jaw`, and `farCheek`/`nearCheek` come back empty, since a cheek is the seam between Loomis's ball and his jaw. `loomis`, the default, is Loomis's skull (above); `ball` is the whole ball with a jaw under it. The shapes are drawn about the facial axis and foreshorten with the turn; past about 45° build the turn by hand.
 
 - `Drawing.measureFaceAir(headObj: object, options?: { skull?: 'loomis' | 'comic', face?: string })` → `{ share, air, byFeature: { eyes, brows, nose, mouth }, face, message }` — **How much of the face the features cover**, from hairline to chin, with the eyes, brows, nose and mouth drawn as `drawComicEye` and its siblings draw them. `options` sets the face outline as `createHeadGeometry` does.
 
@@ -1494,7 +1501,22 @@ Also accessible via `Skia.Drawing`.
 >
 > **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
 
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number, medium?: BrushPreset })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number, detail?: number, depressions?: number, light?: number, shadow?: number, medium?: BrushPreset })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base, depressions, sideShadow, sideLine, detail }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
+
+> [!TIP]
+> **`detail` (1–4) is how much of the nose is drawn, and it follows Hamm's own progression** (pp. 1, 3, 5): **1** the base line, a short dash where the nose meets the face; **2** the bottom of the ball with its ends turned up, and one stroke down the side of the bridge (the shadow side when lit, else the far side); **3** the wings and nostrils joined by the base, with the hollows between the eyes; **4** the whole form, with the plane under the ball, the bridge and the side shadow. A part not drawn at a level comes back empty, so the parts are what is on the page, and `detail` reports the level used.
+>
+> **Left out, the level follows the head's size**, as an inker simplifies a nose at a distance rather than thinning it: a head of about 160px or more gets 4, about 90px gets 3, about 45px gets 2, and smaller gets 1. The sizes are the studio's. Pass `detail` to choose.
+>
+> **Hamm's nose** (*Drawing the Head and Figure*, pp. 14–15). Three things a nose does in his drawings:
+>
+> - **`depressions`** (0–1, default 1): the two hollows beside the bridge between the eyes, which he says it is usually well to indicate. Short concave lines at the eye line, just inside the inner corners. The far one fades as the head turns.
+> - **The far wing goes round the ball.** As the head turns the far opening shrinks to a trace hugging the septum, then only the wing's rim shows, then it is gone. Read from the nose itself, as the far half of the base against the near, so it needs no yaw.
+> - **`light`**: the direction toward the light, in degrees (0 right, −90 up). The side facing away takes one graded shadow down the side of the bridge and round under the wing (`sideShadow`, multiplied in `shadowColor`), and the line alongside the nose (`sideLine`). **`shadow`** (0–1, default 0.5) is how much of the face is in shadow: Hamm treats that line lightly in full light and firmly in shadow. A light from straight above or below gives no side shadow.
+>
+> ```javascript
+> Drawing.drawComicNose(ctx, head.noseWedge, { light: -40, shadow: 0.6 });
+> ```
 
 > [!IMPORTANT]
 > **The nose has a width, and it is exactly one eye across.** Dick Gautier gives the one measurement the other head references decline to: *"The width of the base of the nose measures exactly one eye width, the same as the distance between the eyes measured from the inside corner"* (*Drawing and Cartooning 1,001 Faces*, Perigee 1993, p. 27). **Both quantities were already in `createLoomisHead`** — `unit.eyeW`, and an inner-corner gap the construction sets to exactly one eye-width — and the nose used neither: it ran from a single point on the axis to one nostril, so it had no width anywhere.
@@ -1577,6 +1599,27 @@ Also accessible via `Skia.Drawing`.
 > ```
 >
 > `underPlane` and `cavity` are the face's two shadow shapes, so `nose.underPlane.union(mouth.cavity)` is one mass to re-fill when the light moves. The lids and `lipLine` come back as **open centre-lines** rather than filled marks, so they can be re-stroked at another tier's weight or run through `ctx.strokeToPath(...)` to be tapered.
+
+### The planes of the head
+- `Drawing.createHeadPlanes(headObj: object, options?: { detail?: 'basic' | 'secondary', skull?: 'loomis' | 'comic', face?: string, yawDeg?: number, pitchDeg?: number })` → `{ planes, byName, mass, detail, yawDeg, pitchDeg }` — **Loomis's planes of the head (Plate 9) as shapes**, each `{ name, group, side, path, normal, facing, visible }`. `path` is a `CanvasPath` clipped to the head's mass; `normal` is the direction it faces in the head's own frame (x toward the near side, y down, z out of the face); `facing` is the same turned with the head; `visible` is false once it faces away.
+- `Drawing.drawHeadPlanes(ctx: CanvasRenderingContext2D, planesOrHead: object, options?: { light?: number, lightFront?: number, values?: 0 | 2 | 3, color?: string, amount?: number, softness?: number, medium?: BrushPreset, lines?: boolean, lineColor?: string, lineWidth?: number, fill?: boolean })` → `{ planes: [{ name, light, tone }], light }` — **Lights the planes**: each takes the tone its facing earns against one light, laid down by `drawTone`. Pass a head instead of planes for its basic planes.
+
+> [!TIP]
+> **Loomis: "the planes of the head should be memorized, for through them we have a foundation for rendering the head in light and shadow"** (*Drawing the Head and Hands*, Plate 9). The light picks which planes are dark; you do not find the shadows by looking at a render.
+>
+> ```javascript
+> const head = Drawing.createLoomisHead(400, 330, 360, 25);
+> const geo = Drawing.createHeadGeometry(head);
+> ctx.fillStyle = '#efe2cf';
+> ctx.fill(geo.silhouette);
+> Drawing.drawHeadPlanes(ctx, Drawing.createHeadPlanes(head), { light: -135, lines: true });   // then the features over it
+> ```
+>
+> - **The basic planes**: `top`; `forehead`; `farForeheadSide` and `nearForeheadSide`, the side of the head from the temple back; `farSocket` and `nearSocket` under the brow ledge; `noseFront`, `farNoseSide`, `nearNoseSide`, `noseBottom`; `farCheekFront` and `nearCheekFront`; `farJawSide` and `nearJawSide`, behind the line from the cheekbone to the chin corner; `muzzle`; `chin`.
+> - **`detail: 'secondary'`** splits them as Plate 9's numbered drawing does: the forehead into `farForehead`, `forehead`, `nearForehead`; each cheek front into `CheekUpper` (under the eye, facing up), `CheekInner` (beside the nose) and `CheekLower`; the nose's bottom into its wings and centre; and the muzzle into two `UpperLip` halves and a `lowerLip`.
+> - **Every corner is a landmark or a station of the skull outline**, so the planes follow an expression, `createParametricHead` and the turn. **The facings are the studio's reading of the plate**, not his numbers.
+> - **`light`** is the direction toward the light on the page in degrees (0 right, −90 up), as for `drawComicNose`, default −135 (upper left); **`lightFront`** (0–1, default 0.5) is how far it comes from in front. **`values: 3`** (default) is Loomis's light, halftone and shadow: a plane facing the light by more than 0.45 stays paper, one by more than 0.1 takes 45% of `amount` (default 0.4), the rest take all of it. `2` keeps only light and shadow, the cel idiom of `polson://manual/04`; `0` grades smoothly. The thresholds are the studio's.
+> - **`lines: true`** strokes the planes' edges, `#4a90e2` by default, as Plate 9 draws them. **`fill: false`** draws only the lines.
 
 ## Inking, Feathering & Ribbons
 - `Drawing.drawTaperedStroke(ctx: CanvasRenderingContext2D, start: Point | number, cp1: Point | number, cp2: Point | number, end: Point | number, maxThickness: number, fillOrStrokeStyle?: string | SKShader)` → `CanvasPath` — Smooth tapered Bézier inking stroke. Fills the mark **and returns it**.

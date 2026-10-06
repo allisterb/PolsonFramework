@@ -86,14 +86,15 @@ public class DrawingToolkitTests : TestsRuntime
 
         // The ear is a unit off the cranium axis at full front, so its outer edge lands on the head's
         // half-width, and it swings inward with the turn rather than staying pinned to the front view.
+        // It is the ear you see, on the near side: positive yaw turns the face toward the far side.
         var thirdH = Convert.ToSingle(unit["thirdH"]);
-        Assert.Equal(500f - thirdH, X("jaw", "ear"), 3);
+        Assert.Equal(500f + thirdH, X("jaw", "ear"), 3);
 
         var turned = toolkit.CreateLoomisHead(500f, 400f, 210f, 55f, 0f);
         var turnedEar = Convert.ToSingle(((Dictionary<string, object?>)
             ((Dictionary<string, object?>)turned["jaw"]!)["ear"]!)["x"]);
-        Assert.Equal(500f - thirdH * MathF.Cos(55f * MathF.PI / 180f), turnedEar, 3);
-        Assert.True(turnedEar > X("jaw", "ear"), "the ear must come in toward the axis as the head turns.");
+        Assert.Equal(500f + thirdH * MathF.Cos(55f * MathF.PI / 180f), turnedEar, 3);
+        Assert.True(turnedEar < X("jaw", "ear"), "the ear must come in toward the axis as the head turns.");
     }
 
     /// <summary>
@@ -1565,7 +1566,7 @@ public class DrawingToolkitTests : TestsRuntime
 
         Assert.Equal(new[] { "aperture", "catchlight", "fold", "innerCorner", "iris", "irisMarks", "lashes", "lowerLid", "lowerRim", "pupil", "upperLid" },
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "base", "bridge", "bridgeMark", "farNostril", "farNostrilHole", "nostril", "nostrilHole", "underPlane" },
+        Assert.Equal(new[] { "base", "bridge", "bridgeMark", "depressions", "detail", "farNostril", "farNostrilHole", "nostril", "nostrilHole", "sideLine", "sideShadow", "underPlane" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "cavity", "lipLine", "lipMark", "lowerLip", "teeth" },
             mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
@@ -1962,7 +1963,8 @@ public class DrawingToolkitTests : TestsRuntime
     private static float BridgeThickness(ConstructiveDrawingToolkit toolkit, float headHeight, float yaw = 0f)
     {
         var head = toolkit.CreateLoomisHead(450f, 450f, headHeight, yaw);
-        var nose = toolkit.DrawComicNose(new SkiaCanvas(4, 4).GetContext("2d"), head["noseWedge"]!, null);
+        var nose = toolkit.DrawComicNose(new SkiaCanvas(4, 4).GetContext("2d"), head["noseWedge"]!,
+            new Dictionary<string, object?> { ["detail"] = 4 });         // the full nose at every size, to compare its ink
         return ((CanvasPath)nose["bridgeMark"]!).Path.Bounds.Width;
     }
 
@@ -2035,9 +2037,9 @@ public class DrawingToolkitTests : TestsRuntime
         var nostril = (IDictionary<string, object?>)nose["nearNostril"]!;
         var ear = (IDictionary<string, object?>)jaw["ear"]!;
 
-        // The near ear's base, mirroring the far one the construction records, on the nose line.
+        // The near ear's base, which is the ear the construction records, on the nose line.
         float ux = Convert.ToSingle(under["x"]), uy = Convert.ToSingle(under["y"]);
-        var earBaseX = (2f * 400f) - Convert.ToSingle(ear["x"]);
+        var earBaseX = Convert.ToSingle(ear["x"]);
         var noseLineY = uy - (Convert.ToSingle(unit["H"]) * 0.035f);
 
         float nx = Convert.ToSingle(nostril["x"]), ny = Convert.ToSingle(nostril["y"]);

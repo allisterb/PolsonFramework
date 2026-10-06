@@ -37,17 +37,20 @@ In comic illustration, lighting is typically established by a strong **Key Light
 
 ## 2. The 5 Essential Cel-Shading Planes of the 3/4 Face
 
-> **Implemented by**: no dedicated call — the planes are polygons you fill, but their corners come from the `LoomisHead` landmarks (`head.jaw.cheekApex`, `head.temporalOval`, `head.noseWedge`), not from eyeballed coordinates.
+> **Implemented by**: `Drawing.createHeadPlanes(head, { detail })` builds Plate 9's planes as shapes, each
+> with the direction it faces, and `Drawing.drawHeadPlanes(ctx, planes, { light, values: 2 })` gives each
+> one flat tone for one light: cel shading. Their corners are landmarks and stations of the skull outline,
+> so they follow an expression, the character parameters and the turn. The five shadows below are cast or
+> local shapes rather than planes, and are still yours to draw on top.
 
-> **One of the five now has geometry.** Since 2026-09-19 `Drawing.createHeadGeometry(...)` returns
-> `parts.farCheek` and `parts.nearCheek` — the cheek hollow / mandible plane below as a real
-> `CanvasPath`, built as the outer tangent from the jaw angle to the ear. It is there to close a
-> hole in the *silhouette* rather than to shade anything, so it is the mass rather than the lit
-> plane; but it is the right shape to clip a hollow to, and it moves with `squareJaw` because the
-> jaw angle does. The other four are still yours to fill.
+> **Basic or secondary.** The basic set is the top of the head, the forehead and its sides, the eye
+> sockets, the nose block (front, sides, bottom), each cheek's front, the side of the jaw behind the line
+> from the cheekbone to the chin corner, the muzzle and the chin. `detail: 'secondary'` splits the
+> forehead, the cheek fronts, the nose's bottom and the muzzle into the facets of Loomis's numbered
+> drawing. The facings and the light thresholds are the studio's reading of the plate.
 
 > **Source**: Andrew Loomis, *Drawing the Head and Hands* — Plate 9, "Basic and secondary planes of
-> the head" (p. 29), and Plate 32, "Modeling the planes" (p. 61).
+> the head" (p. 33; PDF p. 29), and Plate 32, "Modeling the planes" (p. 61).
 
 > **Principle**:
 > **Cel shading is Loomis's plane exercise with the tones held flat, and he describes it in one

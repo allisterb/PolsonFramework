@@ -221,9 +221,50 @@ public partial class ConstructiveDrawingToolkit
         // for the skull over an oval for the face, and a cartoon head is that pair pushed into another
         // shape). The face spans the jaw stations at the brow line and ends on the chin, so the
         // character parameters, an expression or `squashHead` still move it.
-        var face = opt?["face"]?.ToString()?.Trim().ToLowerInvariant() ?? "loomis";
+        var face = opt?["face"]?.ToString()?.Trim() ?? (IsDoubleCircle(head) ? "doubleCircle" : "loomis");
+        if (!string.Equals(face, "doubleCircle", StringComparison.OrdinalIgnoreCase)) face = face.ToLowerInvariant();
+        else face = "doubleCircle";
         var shaped = face != "loomis";
-        if (shaped)
+
+        // **Hamm's own outline** (Drawing the Head and Figure, pp. 2–3): the cheek arcs swung from J and K down
+        // to the chin circle, and the big circle trimmed by verticals from J and K. Built from the head's ball and
+        // chin, so it reaches any head, and squashHead or a longer chin move it with them.
+        Func<float, float>? sideAt = null;
+        if (face == "doubleCircle")
+        {
+            var frame = DoubleCircleOf(crown, brow, chin)
+                ?? throw new ArgumentException("createHeadGeometry face 'doubleCircle': this head's chin is inside its cranium circle, so there are no tangents to build the face from.");
+            var axis = frame.A.X;
+            float Sx(float x) => axis + (x - axis) * wScale;
+            CanvasPath Oval(Point2D c, float r) => OrientedEllipse(new Point2D(Sx(c.X), c.Y), r * wScale + padding, r + padding, 0f);
+            CanvasPath Box(float xa, float ya, float xb, float yb)
+            {
+                var p = new CanvasPath();
+                p.Rect(MathF.Min(xa, xb), MathF.Min(ya, yb), MathF.Abs(xb - xa), MathF.Abs(yb - ya));
+                return p;
+            }
+
+            var far = frame.Arc * 4f + frame.R1 * 4f;
+            var topY = MathF.Min(frame.J.Y, frame.K.Y) - padding;
+            var lens = Oval(frame.J, frame.Arc).Intersect(Oval(frame.K, frame.Arc));
+            var keep = Box(axis - far, topY, axis, frame.L.Y).Union(Box(axis, topY, axis + far, frame.M.Y));
+            jawPath = lens.Intersect(keep).Union(Oval(frame.F, frame.R2));
+            cranium = cranium.Intersect(Box(Sx(frame.J.X) - padding, crown.Y - padding * 2f - frame.R1, Sx(frame.K.X) + padding, frame.A.Y + frame.R1 + padding));
+            var b = jawPath.Path.Bounds;
+            Extent(b.MidX, b.MidY, b.Width * 0.5f, b.Height * 0.5f);
+            // The sides trim the ball, so it no longer reaches the extent recorded for it above.
+            x0 = MathF.Max(x0, MathF.Min(Sx(frame.J.X) - padding, b.Left));
+            x1 = MathF.Min(x1, MathF.Max(Sx(frame.K.X) + padding, b.Right));
+
+            // How far the outline reaches from the axis at a height: the side above J–K, a cheek arc below.
+            sideAt = y =>
+            {
+                if (y <= frame.K.Y) return (frame.K.X - axis) * wScale;
+                var dy = y - frame.J.Y;
+                return (frame.J.X + MathF.Sqrt(MathF.Max(0f, frame.Arc * frame.Arc - dy * dy)) - axis) * wScale;
+            };
+        }
+        else if (shaped)
         {
             var far = ExtractPoint(jaw?["farStation"]);
             var near = ExtractPoint(jaw?["nearStation"]);
@@ -250,7 +291,7 @@ public partial class ConstructiveDrawingToolkit
             else if (!FaceShapes.TryGetValue(face, out shape!))
             {
                 throw new ArgumentException(
-                    $"createHeadGeometry face not recognised: {face}. Accepted: loomis, oval, round, {string.Join(", ", FaceShapes.Keys)}.");
+                    $"createHeadGeometry face not recognised: {face}. Accepted: loomis, doubleCircle, oval, round, {string.Join(", ", FaceShapes.Keys)}.");
             }
 
             var pts = shape.Select(s => new Point2D(cxTop + ((chin.X - cxTop) * s.V) + (s.U * w), top + (s.V * (chin.Y - top)))).ToList();
@@ -282,7 +323,7 @@ public partial class ConstructiveDrawingToolkit
         // slightly. Thinner than this and the mass reads as a chip out of the skull rather than as an
         // ear: half of it is inside the cranium, so the reader sees one radius against a full unit.
         var earRx = thirdH * (0.18f + 0.07f * sin) + padding;
-        var earOut = Reach(ear.Y) * cos - earRx * 0.3f;
+        var earOut = (sideAt?.Invoke(ear.Y) ?? Reach(ear.Y)) * cos - earRx * 0.3f;
         var earCx = crown.X + earDir * earOut;
         var earPath = OrientedEllipse(new Point2D(earCx, ear.Y), earRx, earRy, 0f);
         Extent(earCx, ear.Y, earRx, earRy);
@@ -308,7 +349,7 @@ public partial class ConstructiveDrawingToolkit
         // hiding for free, which is as well, since a construction with no cheek could not do it any
         // other way.
         var nearEarRx = MathF.Max(0f, thirdH * 0.18f * (1f - sin)) + padding;
-        var nearEarCx = crown.X - (earDir * (Reach(ear.Y) * cos - (nearEarRx * 0.3f)));
+        var nearEarCx = crown.X - (earDir * ((sideAt?.Invoke(ear.Y) ?? Reach(ear.Y)) * cos - (nearEarRx * 0.3f)));
         var nearEarPath = OrientedEllipse(new Point2D(nearEarCx, ear.Y), nearEarRx, earRy, 0f);
         Extent(nearEarCx, ear.Y, nearEarRx, earRy);
 

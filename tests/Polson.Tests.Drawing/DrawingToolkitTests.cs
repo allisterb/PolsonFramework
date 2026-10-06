@@ -1,4 +1,4 @@
-﻿namespace Polson.Tests.Drawing;
+namespace Polson.Tests.Drawing;
 
 using System;
 using System.Collections;
@@ -1565,7 +1565,7 @@ public class DrawingToolkitTests : TestsRuntime
 
         Assert.Equal(new[] { "aperture", "catchlight", "iris", "lowerLid", "pupil", "upperLid" },
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "bridge", "bridgeMark", "farNostril", "nostril", "underPlane" },
+        Assert.Equal(new[] { "base", "bridge", "bridgeMark", "farNostril", "farNostrilHole", "nostril", "nostrilHole", "underPlane" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "cavity", "lipLine", "lipMark", "lowerLip", "teeth" },
             mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
@@ -2088,6 +2088,42 @@ public class DrawingToolkitTests : TestsRuntime
         var tFar = (IDictionary<string, object?>)turned["farNostril"]!;
         Assert.True(Convert.ToSingle(tNear["x"]) - Convert.ToSingle(tFar["x"]) < baseWidth * 0.95f,
             "a turned nose should show a narrower base than a frontal one");
+    }
+
+    /// <summary>The nostril wings lie inside the nose, their outermost points on the base's edges.</summary>
+    /// <remarks>
+    /// A nostril landmark is the base's outer edge, so a wing centred on it hung half off the nose. Each
+    /// wing must reach the edge and go no further, and each opening must sit between the edge and the septum.
+    /// </remarks>
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(35f)]
+    public void TestTheNostrilWingsLieInsideTheNose(float yaw)
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var head = toolkit.CreateLoomisHead(400f, 400f, 480f, yaw);
+        var nose = (IDictionary<string, object?>)head["noseWedge"]!;
+        var drawn = toolkit.DrawComicNose(new SkiaCanvas(800, 800).GetContext("2d"), nose, null);
+        float X(string key) => Convert.ToSingle(((IDictionary<string, object?>)nose[key]!)["x"]);
+        var septum = X("underNose");
+
+        foreach (var (wingKey, holeKey, edgeKey) in new[] { ("nostril", "nostrilHole", "nearNostril"), ("farNostril", "farNostrilHole", "farNostril") })
+        {
+            var edge = X(edgeKey);
+            var wing = ((CanvasPath)drawn[wingKey]!).Path.TightBounds;
+            var hole = ((CanvasPath)drawn[holeKey]!).Path.TightBounds;
+            var (lo, hi) = edge < septum ? (edge, septum) : (septum, edge);
+            Assert.InRange(wing.Left, lo - 0.5f, hi);
+            Assert.InRange(wing.Right, lo, hi + 0.5f);
+            Assert.Equal(edge, edge < septum ? wing.Left : wing.Right, 0.5f);       // the outermost point is the edge
+            Assert.InRange(hole.MidX, lo, hi);
+        }
+
+        // The shadow under the ball stays between the wings, clear of the nose's outer edges: it was a
+        // diamond out to those edges, which read as a moustache.
+        var shadow = ((CanvasPath)drawn["underPlane"]!).Path.TightBounds;
+        Assert.True(shadow.Left > MathF.Min(X("nearNostril"), X("farNostril")) + 1f, $"shadow reaches the far edge at {shadow.Left}");
+        Assert.True(shadow.Right < MathF.Max(X("nearNostril"), X("farNostril")) - 1f, $"shadow reaches the near edge at {shadow.Right}");
     }
 
     /// <summary>The ear's proportions are Gautier's thirds, not the estimates they replaced.</summary>

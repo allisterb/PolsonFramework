@@ -307,8 +307,8 @@ The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is
 In 3/4 view, the nose projects out from the far cheek silhouette:
 1. **Keystone bridge**: Begins at the eye line level.
 2. **Nose Ridge Slope**: Slopes forward down to the apex ($Y_{\text{nose}}$).
-3. **Under-Nose Base**: Connects apex inward to the septum base with an angled dark shadow plane.
-4. **Near Nostril**: Small curved teardrop stroke positioned at $(X_{\text{center}} + \text{width} \cdot 0.35, Y_{\text{nose}})$.
+3. **Under-Nose Base**: the bottom plane faces down, so from the front it is a shallow lens of shadow under the ball, between the wings and deepest under the tip, with a short curve beneath the tip for the bottom of the ball (Hamm's "‿", *Drawing the Head and Figure*, p. 4).
+4. **Nostrils**: each wing is a short curve **inside** the nose, its outermost point on the base's edge (`noseWedge.nearNostril` and `farNostril`, one eye apart frontally), curling back under toward the septum, with a small dark opening inside it. The far wing shrinks with the turn.
 
 ### C. The Determined / Open Comic Mouth
 1. **Upper Lip**: M-shaped Cupid's bow line, darker fill or deep shadow line.
@@ -324,7 +324,7 @@ looked at:
 | :--- | :--- |
 | `drawComicEye` | `aperture`, `iris`, `pupil`, `catchlight`, `upperLid`, `lowerLid` |
 | `drawComicBrow` | `mass`, `spine` |
-| `drawComicNose` | `underPlane`, `bridge`, `nostril` |
+| `drawComicNose` | `underPlane`, `bridge`, `bridgeMark`, `nostril`, `farNostril`, `nostrilHole`, `farNostrilHole`, `base` |
 | `drawComicMouth` | `cavity`, `teeth`, `lipLine`, `lowerLip` |
 
 **`aperture` is the one that changes what you can do.** It is both the sclera fill and the clip the

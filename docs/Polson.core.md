@@ -817,9 +817,10 @@ Both honour `globalAlpha`, `globalCompositeOperation`, `filter`, `colorFilter`, 
 Many `Drawing.*` and `Logo.*` methods are also available directly on `ctx`, with the leading context argument dropped: `Drawing.drawPerspectiveGrid(ctx, grid, options)` and `ctx.drawPerspectiveGrid(grid, options)` are the same call.
 
 > [!IMPORTANT]
-> **This list is exhaustive — taking a context as its first parameter is not enough.** Seven toolkit
-> methods that do take one have no shortcut: `drawLoomisWireframe`, `drawMannequinWireframe`,
-> `drawMannequinSolid`, `drawComicEye`, `drawComicNose`, `drawComicMouth` and `drawComicEar`. Call those as
+> **This list is exhaustive — taking a context as its first parameter is not enough.** Nine toolkit
+> methods that do take one have no shortcut: `drawLoomisWireframe`, `drawDoubleCircleWireframe`,
+> `drawMannequinWireframe`, `drawMannequinSolid`, `drawComicEye`, `drawComicBrow`, `drawComicNose`,
+> `drawComicMouth` and `drawComicEar`. Call those as
 > `Drawing.drawLoomisWireframe(ctx, head)`.
 >
 > The mannequin and hand pairs are the traps worth knowing, because each shortcut exists under a
@@ -1182,6 +1183,29 @@ Also accessible via `Skia.Drawing`.
 > **Two things named `brow`, and they are not the same thing.** `head.brow` is a single point on the facial meridian at the 1.5-unit line: it is the **ball's equator**, the landmark `createHeadGeometry` takes the cranium's centre and radius from, and the axis `AU4` knits toward. Nothing draws it but the construction sheet. `head.nearBrow` and `head.farBrow` are the **drawn eyebrows** — `{ inner, peak, outer, thickness }` apiece, sitting over their own eye, and what `drawComicBrow` and the brow Action Units act on.
 >
 > Three stations rather than two because two cannot carry an arch, and the arch is exactly where `AU1` and `AU2` differ. The tail runs a little past the eye's outer corner and the peak sits two thirds out, roughly over the outer limbus.
+- `Drawing.createDoubleCircleHead(originX: number, originY: number, headHeight: number)` → `object` — **A front view built by Jack Hamm's double-circle construction** (*Drawing the Head and Figure*, pp. 2–4): five eyes wide, every feature placed off two circles and the lines between them. The same landmark schema as `createLoomisHead`, plus `construction: 'doubleCircle'`.
+- `Drawing.drawDoubleCircleWireframe(ctx, headObj, options?: { blueLineColor?: string, labels?: boolean, lineWidth?: number })` — Draws Hamm's steps 1–8 for a head: the starting line in fifths, the big circle, C/F/D/E on the centre line, the chin circle, the tangents, J–K, the cheek arcs and the sides. `labels: true` letters the points as he does.
+
+> [!TIP]
+> **Which construction to use.** Both return the same kind of head, so everything downstream — the feature drawers, `createParametricHead`, expressions, `blendHead`, `createHeadGeometry` — takes either. The choice is the view and the proportion:
+>
+> | | `createLoomisHead` | `createDoubleCircleHead` |
+> | :--- | :--- | :--- |
+> | view | any yaw and pitch | **front only** |
+> | width | six eyes (the ball) | **five eyes**, Lee & Buscema's and Faragasso's figure |
+> | outline | ball and jaw, with cheeks | Hamm's: the ball trimmed by verticals, cheek arcs, a round chin |
+> | features | Loomis's thirds | Hamm's: eyes' tops on J–K, nose on C, mouth from F to D |
+>
+> In eye-widths *e* = `headHeight / 7`, from the big circle's centre A (the head's `brow` landmark): the big circle's radius is 2.5 *e*; the nose sits on C at 2.5 *e* below A, the mouth runs from F at 3 *e* to D at 3.5 *e*, and the chin E is at 4.5 *e*. The chin circle is centred on F and reaches E. The tangents between the circles touch the big circle at J and K, 0.83 *e* below A, and **the tops of the eyes sit on J–K**, under the second and fourth fifths. The nose is the middle fifth wide; the mouth is 1.5 *e*, measured on Hamm's step-9 plate. The hairline is Loomis's, since Hamm gives none here.
+>
+> ```js
+> const head = Drawing.createDoubleCircleHead(400, 360, 520);
+> Drawing.drawDoubleCircleWireframe(ctx, head, { labels: true });   // the construction
+> const geo = Drawing.createHeadGeometry(head);                       // Hamm's outline, by default
+> ctx.fill(geo.silhouette);
+> ```
+>
+> **The head says which construction built it**, as `construction: 'doubleCircle'`, so you do not have to remember: `createHeadGeometry` gives it Hamm's outline by default, and `exaggerateHead` measures it against Hamm's canon rather than Loomis's. `createHeadGeometry(head, { face: 'doubleCircle' })` puts Hamm's outline on any head, a Loomis one included; it is built from the ball, the chin and the axis, so `chinLength` and `squashHead` move it, while `jawShape` and `chinShape`, which move Loomis's jaw stations, do not. For a turned head use `createLoomisHead`: a turn is not part of Hamm's construction.
 - `Drawing.createParametricHead(headObj: object, parameters?: { eyesDistance?: number, eyesSize?: number, eyesOpening?: number, eyeLine?: number, noseLength?: number, jawShape?: number, chinShape?: number, chinLength?: number, mouthWidth?: number })` → `object` — Displaces a Loomis head's landmarks by named character parameters and returns a **whole head**, ready for `drawLoomisWireframe` and the comic feature calls. Each parameter is a signed scale, `-1 … 0 … +1`, defaulting to `0`; out-of-range values are clamped, and a misspelled one is refused by name.
 
 > [!IMPORTANT]
@@ -1321,7 +1345,7 @@ Also accessible via `Skia.Drawing`.
 > faces"*, and a successful caricature often came from comparing against **any face that simply
 > seemed very different**. That is what the `reference` argument is for.
 
-- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic', face?: 'loomis' | 'oval' | 'round' | 'box' | 'narrow' | 'wedge' | 'pear' | 'peanut' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, ears: { far, near }, bounds, padding, face, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
+- `Drawing.createHeadGeometry(headObj: object, options?: { padding?: number, neckLength?: number, neckWidth?: number, skull?: 'loomis' | 'comic', face?: 'loomis' | 'doubleCircle' | 'oval' | 'round' | 'box' | 'narrow' | 'wedge' | 'pear' | 'peanut' })` → `{ silhouette, mass, parts: { cranium, jaw, ear, nearEar, farCheek, nearCheek, neck }, ears: { far, near }, bounds, padding, face, order }` — **The composed head**: the construction's masses as real `CanvasPath` geometry rather than as landmarks. `silhouette` is everything unioned; `mass` is the head *without* the neck, which is what a feature clips to and what a hat sits on. `neckLength` is the whole extent below the chin as a fraction of head height (default `0.30`, base cap included); `0` omits the neck. **A head from `createHeadForFigure` carries its own `neckLength` and `skull`, and they are used as the defaults here** — an explicit option still wins. An unrecognised option is refused by name.
 
 > [!IMPORTANT]
 > **This is what stops features being marks floating in space.** `createLoomisHead` places landmarks and the comic feature drawers put marks at them, and until this there was nothing in between — a live run drew two correctly proportioned faces that read as **masks on undifferentiated shoulder-masses**, because the features had nothing to sit on. Clip them to `mass` and they belong to a head.
@@ -1459,7 +1483,7 @@ Also accessible via `Skia.Drawing`.
 >
 > **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
 
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings come back separately.
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
 
 > [!IMPORTANT]
 > **The nose has a width, and it is exactly one eye across.** Dick Gautier gives the one measurement the other head references decline to: *"The width of the base of the nose measures exactly one eye width, the same as the distance between the eyes measured from the inside corner"* (*Drawing and Cartooning 1,001 Faces*, Perigee 1993, p. 27). **Both quantities were already in `createLoomisHead`** — `unit.eyeW`, and an inner-corner gap the construction sets to exactly one eye-width — and the nose used neither: it ran from a single point on the axis to one nostril, so it had no width anywhere.

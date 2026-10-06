@@ -266,18 +266,6 @@ public partial class ConstructiveDrawingToolkit
         var len = MathF.Abs(underNose.Y - bridgeTop.Y);
         if (len <= 0.1f) len = NoseLengthAt240;
 
-        // **The bottom plane spans both wings.** Both sources describe it that way and neither
-        // describes half of one: Loomis's Plate 26 runs it *"from a point on the ball of the nose to
-        // a point on the lower corner of the nostril"*, and Faragasso's front view terminates his two
-        // nasal-bone lines at *the corners of the top of the bottom plane* — corners, plural. It was
-        // a one-sided triangle here only because the far wing was not a landmark.
-        var underPlane = new CanvasPath();
-        underPlane.MoveTo(apex.X, apex.Y);
-        underPlane.LineTo(nearNostril.X, nearNostril.Y);
-        underPlane.LineTo(underNose.X, underNose.Y);
-        if (hasFar) underPlane.LineTo(farNostril.X, farNostril.Y);
-        underPlane.ClosePath();
-
         // **The bridge is a tapered mark, not a constant-width polyline.** Manual 03 §3 says outright
         // that a constant-width stroke reads as a technical drawing rather than as inking, and this
         // call was drawing one. The envelope is heaviest in the middle and vanishes at both ends,
@@ -323,17 +311,68 @@ public partial class ConstructiveDrawingToolkit
         bridge.LineTo(apex.X, apex.Y);
         bridge.LineTo(underNose.X, underNose.Y);
 
-        // **Two wings, mirrored.** The near one keeps its arc exactly; the far one is its reflection,
-        // so a frontal nose is symmetric and a turned one foreshortens with the landmark rather than
-        // by a factor applied here.
-        var wingR = len * (NostrilRadiusTier / NoseLengthAt240);
-        var nostril = new CanvasPath();
-        nostril.Arc(nearNostril.X, nearNostril.Y, wingR, 0.2f, MathF.PI * 1.5f);
+        // **Two wings, and each lies inside the nose.** A nostril landmark is the *outer edge* of the
+        // base — Gautier's one-eye width is measured edge to edge — so the wing's outermost point sits on
+        // it and its centre lies inward, toward the septum. Until 2026-10-06 each wing was a 270° hook
+        // centred ON the landmark, so half of it hung off the side of the nose like an earring, and on a
+        // turned head the far one dangled below the nose.
+        //
+        // The wing bulges outward from just above the base, round its outer edge, and curls back under
+        // toward the septum; the opening sits inside it, low and toward the middle. Its size comes from
+        // that side's own half-width, so the far wing foreshortens with the turn by itself.
+        var tierR = len * (NostrilRadiusTier / NoseLengthAt240);
+        (CanvasPath Wing, CanvasPath Hole, Point2D Centre, Point2D Curl) Wing(Point2D edge)
+        {
+            var inward = underNose.X >= edge.X ? 1f : -1f;
+            var halfSpan = MathF.Abs(underNose.X - edge.X);
+            var r = halfSpan > tierR ? halfSpan * 0.26f : MathF.Max(0.5f, halfSpan * 0.4f);
+            var c = new Point2D(edge.X + (inward * r), edge.Y);
+            var outward = inward > 0f ? MathF.PI : 0f;
+            const float up = 75f * MathF.PI / 180f, under = 85f * MathF.PI / 180f;
 
-        var farNostrilPath = new CanvasPath();
-        if (hasFar)
-            farNostrilPath.Arc(farNostril.X, farNostril.Y, wingR,
-                               MathF.PI - (MathF.PI * 1.5f), MathF.PI - 0.2f);
+            var wing = new CanvasPath();
+            if (inward < 0f) wing.Arc(c.X, c.Y, r, outward - up, outward + under);
+            else wing.Arc(c.X, c.Y, r, outward + up, outward - under, true);
+
+            var hole = new CanvasPath();
+            hole.Ellipse(c.X + (inward * r * 0.7f), c.Y + (r * 0.55f), r * 0.5f, r * 0.24f, inward * 0.2f, 0f, MathF.PI * 2f);
+            // The opening's inner end, where the bottom of the ball begins.
+            return (wing, hole, c, new Point2D(c.X + (inward * r * 1.2f), c.Y + (r * 0.55f)));
+        }
+
+        var (nostril, nostrilHole, nearCentre, nearCurl) = Wing(nearNostril);
+        var (farNostrilPath, farNostrilHole, farCentre, farCurl) = hasFar
+            ? Wing(farNostril)
+            : (new CanvasPath(), new CanvasPath(), underNose, underNose);
+
+        // **The bottom plane is a shadow under the ball, between the wings.** Loomis's Plate 26 bounds it by
+        // lines from the ball of the nose to the nostrils' lower corners, and Faragasso's front view ends at
+        // the corners of the bottom plane; both describe a plane facing down. Seen from the front it is
+        // foreshortened to a shallow lens, deepest under the tip and thinning to nothing at the wings, which
+        // are lit. Until 2026-10-06 it was the four landmarks filled as a diamond out to the nose's outer
+        // edges — a hard brown bowtie under every nose that read as a moustache.
+        //
+        // The top runs through a point 40% of the way from the tip down to the septum, the underside of the
+        // ball; the bottom through the septum. Both pass through their points rather than toward them.
+        var ballUnder = new Point2D(apex.X + ((underNose.X - apex.X) * 0.4f), apex.Y + ((underNose.Y - apex.Y) * 0.4f));
+        var top = ControlThrough(farCentre, ballUnder, nearCentre);
+        var bottom = ControlThrough(nearCentre, underNose, farCentre);
+        var underPlane = new CanvasPath();
+        underPlane.MoveTo(farCentre.X, farCentre.Y);
+        underPlane.QuadraticCurveTo(top.X, top.Y, nearCentre.X, nearCentre.Y);
+        underPlane.QuadraticCurveTo(bottom.X, bottom.Y, farCentre.X, farCentre.Y);
+        underPlane.ClosePath();
+
+        // The bottom of the ball: one light line under the tip, through the septum — Hamm's front-view "‿".
+        // It stops short of the openings: carried out to the wings it closed the nose into a bracket, and
+        // carried to the openings it joined them into a dumbbell.
+        Point2D Toward(Point2D from, float share) =>
+            new(from.X + ((underNose.X - from.X) * share), from.Y + ((underNose.Y - from.Y) * share));
+        Point2D baseFar = Toward(farCurl, 0.4f), baseNear = Toward(nearCurl, 0.4f);
+        var baseControl = ControlThrough(baseFar, new Point2D(underNose.X, underNose.Y + (len * 0.01f)), baseNear);
+        var noseBase = new CanvasPath();
+        noseBase.MoveTo(baseFar.X, baseFar.Y);
+        noseBase.QuadraticCurveTo(baseControl.X, baseControl.Y, baseNear.X, baseNear.Y);
 
         ctx.Save();
 
@@ -343,9 +382,17 @@ public partial class ConstructiveDrawingToolkit
         ctx.FillStyle = inkColor;
         ctx.Fill(bridgeMark);
 
+        ctx.Fill(nostrilHole);
+        if (hasFar) ctx.Fill(farNostrilHole);
+
         ctx.StrokeStyle = inkColor;
-        ctx.LineWidth = Tier(NostrilTier, len, NoseLengthAt240, weight);
         ctx.LineCap = "round";
+        if (hasFar)
+        {
+            ctx.LineWidth = Tier(NostrilTier, len, NoseLengthAt240, weight * 0.6f);
+            ctx.Stroke(noseBase);
+        }
+        ctx.LineWidth = Tier(NostrilTier, len, NoseLengthAt240, weight);
         ctx.Stroke(nostril);
         if (hasFar) ctx.Stroke(farNostrilPath);
 
@@ -357,7 +404,10 @@ public partial class ConstructiveDrawingToolkit
             ["bridge"] = bridge,
             ["bridgeMark"] = bridgeMark,
             ["nostril"] = nostril,
-            ["farNostril"] = farNostrilPath
+            ["farNostril"] = farNostrilPath,
+            ["nostrilHole"] = nostrilHole,
+            ["farNostrilHole"] = farNostrilHole,
+            ["base"] = noseBase
         };
     }
 

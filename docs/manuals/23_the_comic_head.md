@@ -13,6 +13,8 @@
 > **§8b, the cartoon head**, is from Walt Stanchfield, *Drawn to Life* (vol. 1 chs. 35, 37, 48; vol. 2 chs. 31, 45),
 > whose terms name retrieval systems, so it is distilled, cited and kept out of the corpus as Faragasso is; and
 > Dick Gautier, *Drawing and Cartooning 1,001 Faces* (Perigee 1993), ch. "Cartoons", handled as the Bokhua row.  
+> **§1a, the double-circle head**, is from Jack Hamm, *Drawing the Head and Figure* (Perigee, 1963), pp. 2–4,
+> handled as the Bokhua row.  
 > **Purpose**: The *comic* idiom for a head, as distinct from the portrait idiom every other head
 > source here teaches. Where Loomis builds a head that could be a person, this builds one that reads
 > instantly at panel size — and the difference between them is measurable, not a matter of feel.
@@ -46,13 +48,14 @@ numbers, and between them most of what makes a face read as drawn for a panel ra
 > in `reference/`, that is the wrong way round — and this section should be read with that in mind
 > until somebody settles it.**
 >
-> Three independent sources cluster at **five**, and only Loomis says six:
+> Four independent sources cluster at **five**, and only Loomis says six:
 >
 > | source | head width in eye-widths | what it is |
 > | :--- | ---: | :--- |
 > | Loomis, *Drawing the Head and Hands*, Plate 19 | **6.0** | a portrait canon |
 > | Lee & Buscema, *How to Draw Comics the Marvel Way*, ch. 8 | **5** | a comic canon |
 > | **Faragasso**, *Mastering Drawing the Human Figure*, ch. 18 (book p. 171) | **5** | an academic, Reilly-method canon |
+> | **Hamm**, *Drawing the Head and Figure*, p. 2 (and p. 4) | **5** | a commercial-illustration canon, built as a construction |
 > | MediaPipe canonical face model, measured | **4.87** | a mean of real faces, ears excluded |
 >
 > Faragasso is the one that changes the reading. He is not drawing comics — he teaches the Reilly
@@ -65,6 +68,52 @@ numbers, and between them most of what makes a face read as drawn for a panel ra
 > studio has drawn used `loomis` by default, and `createHeadForFigure` already overrides to `comic`
 > for a reason measured against the mannequin. What would settle it is reading Loomis's Plate 19
 > directly to see whether his six includes an allowance the others do not.
+
+## 1a. A five-eye head to build on: Hamm's double circle
+
+> **Implemented by**: `Drawing.createDoubleCircleHead(x, y, height)` and
+> `Drawing.drawDoubleCircleWireframe(ctx, head, { labels })`; `createHeadGeometry` gives the head Hamm's outline.
+
+Lee & Buscema give the five-eye width and leave the rest to the eye. Jack Hamm gives a **construction** that
+produces it, and every feature with it, from two circles (*Drawing the Head and Figure*, pp. 2–3):
+
+1. A line marked in fifths is the head's width: five eyes.
+2. A circle on it, centred on the middle fifth, five eyes across. Its centre line is the **starting line**.
+3. Below it, down the centre line, two more eye-lengths. The bottom of the circle, C, is where the nose goes.
+4. Halfway between C and the next mark is F, the top of the mouth; the mark below C is D, the bottom of the
+   mouth. A smaller circle centred on F reaching the last mark, E, is the chin.
+5. Lines tangent to both circles give the sides of the face.
+6. Where they touch the big circle, J and K, is the line **the tops of the eyes sit on**.
+7. Arcs swung from J through K, and from K through J, are the cheeks; they run down to the chin circle.
+8. Verticals up from J and K are the sides of the head, trimming the big circle slightly at the temples.
+
+Then the features: eyes under the second and fourth fifths, the nose on C directly under the middle fifth,
+the mouth between F and D and a little wider than the nose, the brows halfway between the eyes and the
+starting line. Page 4 adds that an eye is half as tall as it is long, and the ears run from the eyes' tops
+to the nose.
+
+**Why it is worth having beside Loomis.** It is a front view of the five-eye head that §1 found four
+sources agree on, and its proportions come out of the geometry rather than being a list of numbers: the
+eyes sit 0.83 of an eye below the starting line *because* that is where the tangents touch. Drawn over
+Hamm's own plate at his scale, the toolkit's construction lands on his lines.
+
+**When to use which.**
+
+| | `createLoomisHead` | `createDoubleCircleHead` |
+| :--- | :--- | :--- |
+| view | any turn and tilt | front only |
+| width | six eyes | five eyes |
+| outline | ball and jaw | trimmed ball, cheek arcs, round chin |
+
+Both are the same kind of head, so the feature drawers, expressions, character parameters and
+`createHeadGeometry` take either. For a frontal face in a panel, start with the double circle; for anything
+turned, Loomis.
+
+> [!IMPORTANT]
+> **Hamm calls it a learning device** — *use it sparingly, then sketch freehand* — and his own heads vary
+> it: cheeks flatter, chins round, square or pointed. The construction is a start, not a face. Vary it with
+> `createParametricHead` (`chinLength` lengthens the chin circle) and with `squashHead`; Loomis's jaw
+> parameters, `jawShape` and `chinShape`, do not reach Hamm's outline.
 
 ## 2. Finding the mouth and the chin by construction
 

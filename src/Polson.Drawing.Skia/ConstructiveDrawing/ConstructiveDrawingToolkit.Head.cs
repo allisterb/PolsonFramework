@@ -455,6 +455,288 @@ public partial class ConstructiveDrawingToolkit
     }
     #endregion
 
+    #region Double-Circle Head
+    /// <summary>
+    /// Hamm's double-circle construction (<i>Drawing the Head and Figure</i>, pp. 2–3), read off a head's own
+    /// landmarks: the ball, the chin circle, the tangents joining them, and the cheek arcs swung from J and K.
+    /// </summary>
+    /// <param name="A">Centre of the big circle, on the starting line — the head's <c>brow</c> landmark.</param>
+    /// <param name="C">Bottom of the big circle: the nose line.</param>
+    /// <param name="F">Centre of the chin circle, and the top of the mouth.</param>
+    /// <param name="D">As far below F as C is above it: the bottom of the mouth.</param>
+    /// <param name="E">The chin.</param>
+    /// <param name="J">Where the left tangent touches the big circle; the eyes' tops sit on J–K.</param>
+    /// <param name="G">Where the left tangent touches the chin circle.</param>
+    /// <param name="L">Where the left cheek arc, swung from K, meets the chin circle.</param>
+    /// <param name="Arc">The cheek arcs' radius, |JK|.</param>
+    readonly record struct DoubleCircleFrame(Point2D A, float R1, Point2D C, Point2D F, Point2D D, Point2D E, float R2,
+        Point2D J, Point2D K, Point2D G, Point2D H, float Arc, Point2D L, Point2D M);
+
+    /// <summary>Whether a head was built by <see cref="CreateDoubleCircleHead"/>.</summary>
+    static bool IsDoubleCircle(IDictionary head) =>
+        string.Equals(head.Contains("construction") ? head["construction"]?.ToString() : null, "doubleCircle", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The construction for any head: the ball from <c>crown</c> and <c>brow</c>, and the chin circle two thirds
+    /// of the way from the ball's centre to the chin, reaching the chin — where Hamm puts it. Null when the chin
+    /// sits so high there is no tangent between the circles.
+    /// </summary>
+    static DoubleCircleFrame? DoubleCircleOf(Point2D crown, Point2D brow, Point2D chin)
+    {
+        var a = new Point2D(crown.X, brow.Y);
+        var r1 = brow.Y - crown.Y;
+        float ex = chin.X - a.X, ey = chin.Y - a.Y, ae = MathF.Sqrt(ex * ex + ey * ey);
+        if (r1 <= 0f || ae <= 0f) return null;
+
+        float ux = ex / ae, uy = ey / ae, px = -uy, py = ux;
+        var f = new Point2D(a.X + ex * 2f / 3f, a.Y + ey * 2f / 3f);
+        float r2 = ae / 3f, d = ae * 2f / 3f;
+        if (d <= MathF.Abs(r1 - r2) + 1e-3f) return null;
+
+        // The outer tangents: a normal whose component along the centre line is (r1 − r2) / d.
+        float c = (r1 - r2) / d, s = MathF.Sqrt(MathF.Max(0f, 1f - c * c));
+        Point2D Touch(Point2D o, float r, float side) => new(o.X + r * (c * ux + side * s * px), o.Y + r * (c * uy + side * s * py));
+        Point2D j = Touch(a, r1, 1f), k = Touch(a, r1, -1f);
+        var arc = MathF.Sqrt((k.X - j.X) * (k.X - j.X) + (k.Y - j.Y) * (k.Y - j.Y));
+
+        // Where a cheek arc meets the chin circle: the lower crossing, or — Hamm's own case, where the arc passes
+        // a hundredth of an eye outside the circle — the point of closest approach.
+        Point2D Meet(Point2D centre)
+        {
+            float dx = f.X - centre.X, dy = f.Y - centre.Y, q = MathF.Sqrt(dx * dx + dy * dy);
+            if (q <= 1e-3f) return new Point2D(f.X, f.Y + r2);
+            if (q + r2 <= arc || q >= arc + r2) return new Point2D(centre.X + dx / q * arc, centre.Y + dy / q * arc);
+            var along = (q * q + arc * arc - r2 * r2) / (2f * q);
+            var h = MathF.Sqrt(MathF.Max(0f, arc * arc - along * along));
+            float bx = centre.X + dx / q * along, by = centre.Y + dy / q * along;
+            Point2D p1 = new(bx - dy / q * h, by + dx / q * h), p2 = new(bx + dy / q * h, by - dx / q * h);
+            return p1.Y >= p2.Y ? p1 : p2;
+        }
+
+        var cPt = new Point2D(a.X + ux * r1, a.Y + uy * r1);
+        return new DoubleCircleFrame(a, r1, cPt, f, new Point2D(2f * f.X - cPt.X, 2f * f.Y - cPt.Y), chin, r2,
+            j, k, Touch(f, r2, 1f), Touch(f, r2, -1f), arc, Meet(k), Meet(j));
+    }
+
+    /// <summary>
+    /// A head built by Jack Hamm's double-circle construction (<i>Drawing the Head and Figure</i>, pp. 2–4): a
+    /// front view, five eyes wide, with every feature placed off two circles and the lines between them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// In eye-widths <c>e</c> = <c>headHeight</c> / 7, from the big circle's centre A: the big circle has radius
+    /// 2.5 e, so it is five eyes across; the nose sits on C, its bottom, at 2.5 e; the mouth runs from F at 3 e to
+    /// D at 3.5 e; the chin E is at 4.5 e, and the chin circle is centred on F and reaches it. The tangents from
+    /// circle to circle touch the big circle at J and K, 0.83 e below A, and the eyes' tops sit on J–K, under the
+    /// second and fourth fifths of the starting line. The brows sit halfway between that line and the eyes; the
+    /// ears run from the eyes' tops to the nose; the nose is the middle fifth wide and the mouth 1.5 e, measured
+    /// on Hamm's step-9 plate. An eye is half as tall as it is wide (p. 4).
+    /// </para>
+    /// <para>
+    /// The head is in the same schema as <see cref="CreateLoomisHead"/>, so every feature drawer, expression,
+    /// parametric call and <c>createHeadGeometry</c> takes it; the last builds Hamm's own outline for it — the
+    /// big circle trimmed by verticals from J and K, the cheek arcs, and the chin circle. The hairline is
+    /// Loomis's, a seventh of the head below the crown; Hamm gives none here.
+    /// </para>
+    /// <para>
+    /// <b>A front view only.</b> Hamm draws turned heads by other means, and a turn is not a property of this
+    /// construction; for one, use <see cref="CreateLoomisHead"/>.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, object?> CreateDoubleCircleHead(float originX, float originY, float headHeight)
+    {
+        var H = headHeight;
+        var e = H / 7f;
+        var x0 = originX;
+        var top = originY - H * 0.5f;
+        var a = top + 2.5f * e;
+
+        // The tangent points, from the frame itself, so the eye line and the outline cannot disagree.
+        var frame = DoubleCircleOf(new Point2D(x0, top), new Point2D(x0, a), new Point2D(x0, top + 7f * e))!.Value;
+        var eyeTop = frame.J.Y;
+        var eyeH = 0.5f * e;
+        var yEye = eyeTop + eyeH * 0.5f;
+        var yBrow = (a + eyeTop) * 0.5f;
+        var yNose = frame.C.Y;
+        var upperLip = frame.F.Y;
+        var lowerLip = frame.D.Y;
+        var yMouth = upperLip + (lowerLip - upperLip) / 3f;    // the top lip is a third of the mouth's depth (p. 4)
+
+        Dictionary<string, object?> Eye(float side) => new()
+        {
+            ["inner"] = ToDict(new Point2D(x0 + side * 0.5f * e, yEye)),
+            ["outer"] = ToDict(new Point2D(x0 + side * 1.5f * e, yEye)),
+            ["center"] = ToDict(new Point2D(x0 + side * e, yEye)),
+            ["width"] = e,
+            ["height"] = eyeH
+        };
+
+        // The same brow stations Loomis's head carries, on Hamm's brow line.
+        Dictionary<string, object?> Brow(float side)
+        {
+            var inner = new Point2D(x0 + side * 0.5f * e, yBrow);
+            var outer = new Point2D(x0 + side * 1.62f * e, yBrow);
+            return new Dictionary<string, object?>
+            {
+                ["inner"] = ToDict(inner),
+                ["peak"] = ToDict(new Point2D(inner.X + (outer.X - inner.X) * 0.66f, yBrow - 0.14f * e)),
+                ["outer"] = ToDict(outer),
+                ["thickness"] = 0.24f * e
+            };
+        }
+
+        // Points on a cheek arc and on the chin circle, for the jaw landmarks a Loomis-style jaw would use.
+        Point2D OnArc(Point2D centre, float y, float side) =>
+            new(centre.X + side * MathF.Sqrt(MathF.Max(0f, frame.Arc * frame.Arc - (y - centre.Y) * (y - centre.Y))), y);
+        var chinY = frame.E.Y - 0.25f * frame.R2;
+        var chinDx = frame.R2 * MathF.Sqrt(1f - 0.5625f);
+        var yEar = (eyeTop + yNose) * 0.5f;
+        var W = 5f * e;
+
+        return new Dictionary<string, object?>
+        {
+            ["construction"] = "doubleCircle",
+            ["unit"] = new Dictionary<string, object?>
+            {
+                ["H"] = H,
+                ["W"] = W,
+                ["eyeW"] = e,
+                // What createHeadGeometry reads it for: the ear's height, eyes' tops to nose (p. 4).
+                ["thirdH"] = yNose - eyeTop
+            },
+            ["origin"] = new Dictionary<string, object?> { ["x"] = originX, ["y"] = originY },
+            ["crown"] = ToDict(new Point2D(x0, top)),
+            ["hairline"] = ToDict(new Point2D(x0, top + e)),
+            ["brow"] = ToDict(frame.A),
+            ["eyeLineY"] = yEye,
+            ["noseBase"] = ToDict(new Point2D(x0, yNose)),
+            ["mouthCenter"] = ToDict(new Point2D(x0, yMouth)),
+            ["chin"] = ToDict(frame.E),
+            ["farEye"] = Eye(-1f),
+            ["nearEye"] = Eye(1f),
+            ["farBrow"] = Brow(-1f),
+            ["nearBrow"] = Brow(1f),
+            ["noseWedge"] = new Dictionary<string, object?>
+            {
+                ["bridgeTop"] = ToDict(new Point2D(x0, (yBrow + yEye) * 0.5f)),
+                ["apex"] = ToDict(new Point2D(x0, yNose - 0.245f * e)),
+                ["underNose"] = ToDict(new Point2D(x0, yNose)),
+                ["nearNostril"] = ToDict(new Point2D(x0 + 0.5f * e, yNose - 0.03f * e)),
+                ["farNostril"] = ToDict(new Point2D(x0 - 0.5f * e, yNose - 0.03f * e))
+            },
+            ["mouthGuides"] = new Dictionary<string, object?>
+            {
+                ["center"] = ToDict(new Point2D(x0, yMouth)),
+                ["leftCorner"] = ToDict(new Point2D(x0 - 0.75f * e, yMouth)),
+                ["rightCorner"] = ToDict(new Point2D(x0 + 0.75f * e, yMouth)),
+                ["upperLipY"] = upperLip,
+                ["lowerLipY"] = lowerLip
+            },
+            ["jaw"] = new Dictionary<string, object?>
+            {
+                ["ear"] = ToDict(new Point2D(x0 - 2f * e, yEar)),
+                ["angle"] = ToDict(OnArc(frame.K, upperLip, -1f)),
+                ["nearAngle"] = ToDict(OnArc(frame.J, upperLip, 1f)),
+                ["farStation"] = ToDict(frame.J),
+                ["nearStation"] = ToDict(frame.K),
+                ["chinFar"] = ToDict(new Point2D(x0 - chinDx, chinY)),
+                ["chinNear"] = ToDict(new Point2D(x0 + chinDx, chinY)),
+                ["chin"] = ToDict(frame.E),
+                ["cheekApex"] = ToDict(new Point2D(frame.J.X + 0.35f * e, yEye + 0.3f * e))
+            },
+            ["temporalOval"] = new Dictionary<string, object?>
+            {
+                ["cx"] = x0 - W * 0.15f,
+                ["cy"] = (a + yNose) * 0.5f,
+                ["rx"] = W * 0.32f,
+                ["ry"] = H * 0.26f
+            }
+        };
+    }
+
+    static readonly string[] DoubleCircleWireframeOptions = ["blueLineColor", "labels", "lineWidth"];
+
+    /// <summary>
+    /// Draws Hamm's construction for a head, steps 1–8: the starting line in fifths, the big circle, the centre
+    /// line with C, F, D and E, the chin circle, the tangents, J–K, the cheek arcs and the sides.
+    /// </summary>
+    /// <remarks>
+    /// Works on any head, since the frame is read off its landmarks; on a Loomis head the fifths, which are its
+    /// eye-widths, show that the ball is six eyes across rather than five. <c>labels</c> letters the points as
+    /// Hamm does.
+    /// </remarks>
+    public void DrawDoubleCircleWireframe(CanvasRenderingContext2D ctx, object headObj, object? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        if (JsInterop.AsDict(headObj) is not IDictionary head)
+            throw new ArgumentException("drawDoubleCircleWireframe needs a head from Drawing.createDoubleCircleHead(...) or createLoomisHead(...).", nameof(headObj));
+        var opt = JsInterop.AsDict(options);
+        RefuseUnknownHeadParameters(opt, DoubleCircleWireframeOptions, "drawDoubleCircleWireframe option");
+
+        var f = DoubleCircleOf(ExtractPoint(head["crown"]), ExtractPoint(head["brow"]), ExtractPoint(head["chin"]))
+            ?? throw new ArgumentException("drawDoubleCircleWireframe: this head's chin is inside its cranium circle, so there is no construction to draw.");
+        var e = Num(JsInterop.AsDict(head["unit"]), "eyeW", f.R1 / 2.5f);
+        var labels = opt != null && opt.Contains("labels") && opt["labels"] is true;
+
+        ctx.Save();
+        ctx.StrokeStyle = opt?["blueLineColor"]?.ToString() ?? "#4a90e2";
+        ctx.LineWidth = Num(opt, "lineWidth", 1.5f);
+
+        void Line(Point2D p, Point2D q) { ctx.BeginPath(); ctx.MoveTo(p.X, p.Y); ctx.LineTo(q.X, q.Y); ctx.Stroke(); }
+        void Circle(Point2D c, float r) { ctx.BeginPath(); ctx.Arc(c.X, c.Y, r, 0f, MathF.PI * 2f); ctx.Stroke(); }
+        void Tick(Point2D p, float half, bool across) =>
+            Line(across ? new Point2D(p.X, p.Y - half) : new Point2D(p.X - half, p.Y), across ? new Point2D(p.X, p.Y + half) : new Point2D(p.X + half, p.Y));
+        void ArcBetween(Point2D centre, Point2D from, Point2D to)
+        {
+            float a0 = MathF.Atan2(from.Y - centre.Y, from.X - centre.X), a1 = MathF.Atan2(to.Y - centre.Y, to.X - centre.X);
+            var sweep = a1 - a0;
+            while (sweep > MathF.PI) sweep -= MathF.PI * 2f;
+            while (sweep < -MathF.PI) sweep += MathF.PI * 2f;
+            ctx.BeginPath();
+            ctx.Arc(centre.X, centre.Y, f.Arc, a0, a0 + sweep, sweep < 0f);
+            ctx.Stroke();
+        }
+
+        // Steps 1–2: the starting line in fifths, and the big circle on it.
+        Line(new Point2D(f.A.X - f.R1 * 1.1f, f.A.Y), new Point2D(f.A.X + f.R1 * 1.1f, f.A.Y));
+        for (var k = -5; k <= 5; k += 2) Tick(new Point2D(f.A.X + k * 0.5f * e, f.A.Y), e * 0.15f, true);
+        Circle(f.A, f.R1);
+        // Step 3: the centre line, with C, F, D and E.
+        Line(new Point2D(f.A.X, f.A.Y - f.R1 * 1.1f), new Point2D(f.E.X, f.E.Y + e * 0.4f));
+        foreach (var p in new[] { f.C, f.F, f.D, f.E }) Tick(p, e * 0.3f, false);
+        // Steps 4–6: the chin circle, the tangents, and J–K.
+        Circle(f.F, f.R2);
+        Line(f.J, f.G);
+        Line(f.K, f.H);
+        Line(f.J, f.K);
+        // Step 7: the cheek arcs, from K swung about J and from J swung about K.
+        ArcBetween(f.J, f.K, f.M);
+        ArcBetween(f.K, f.J, f.L);
+        // Step 8: the sides, up from J and K.
+        Line(f.J, new Point2D(f.J.X, f.A.Y - f.R1 * 0.85f));
+        Line(f.K, new Point2D(f.K.X, f.A.Y - f.R1 * 0.85f));
+
+        if (labels)
+        {
+            ctx.FillStyle = ctx.StrokeStyle;
+            ctx.Font = $"{MathF.Max(9f, e * 0.32f):0}px sans-serif";
+            void Label(string text, Point2D p, float dx, float dy) => ctx.FillText(text, p.X + dx, p.Y + dy);
+            var g = e * 0.18f;
+            Label("A", f.A, g, -g);
+            Label("C", f.C, -e * 0.55f, g);
+            Label("F", f.F, -e * 0.55f, g);
+            Label("D", f.D, -e * 0.55f, g);
+            Label("E", f.E, -e * 0.55f, g);
+            Label("J", f.J, -e * 0.4f, g);
+            Label("K", f.K, g, g);
+            Label("L", f.L, -e * 0.4f, g);
+            Label("M", f.M, g, g);
+        }
+
+        ctx.Restore();
+    }
+    #endregion
+
     #region Parametric Head
     /// <summary>
     /// Accepted parameter names for <see cref="CreateParametricHead"/>. An unrecognised one is refused.
@@ -1107,10 +1389,12 @@ public partial class ConstructiveDrawingToolkit
     /// asked for a caricature pays nothing for one. The turn is recovered rather than remembered,
     /// which is the same route <see cref="CreateHeadGeometry"/> takes and for the same reason: yaw
     /// is not stored on the head, and re-deriving it is exact enough for a reference face.
+    /// A head built by another construction is measured against that construction's canon.
     /// </remarks>
     static Dictionary<string, object?> CanonFor(IDictionary head)
     {
         var (origin, h) = HeadFrame(head, "headObj");
+        if (IsDoubleCircle(head)) return new ConstructiveDrawingToolkit().CreateDoubleCircleHead(origin.X, origin.Y, h);
         var yaw = MathF.Acos(Math.Clamp(HeadTurn(head), 0f, 1f)) * 180f / MathF.PI;
         return new ConstructiveDrawingToolkit().CreateLoomisHead(origin.X, origin.Y, h, yaw);
     }

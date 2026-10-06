@@ -31,7 +31,7 @@ This restriction is fundamental to this harness: it evaluates whether the publis
 
 If a tool call is refused, that is the harness working as designed. Record it in `findings.md` only if the refusal blocked something the published API told you to do.
 
-**Before anything else, verify the harness is configured correctly.** Attempt to read `../../../../src/Polson.Drawing.Skia/ConstructiveDrawingToolkit.cs`, then attempt to read `reference_images/comic2.png`. The first must be **denied** and the second must **succeed**. Report the result in one line and stop if either goes the other way — a harness that lets you see the implementation invalidates the run, and one that hides the reference image makes the task impossible.
+**Before anything else, verify the harness is configured correctly.** Attempt to read `../../../../src/Polson.Drawing.Skia/ConstructiveDrawing/ConstructiveDrawingToolkit.cs`, then attempt to read `reference_images/comic2.png`. The first must be **denied** and the second must **succeed**. Report the result in one line and stop if either goes the other way — a harness that lets you see the implementation invalidates the run, and one that hides the reference image makes the task impossible.
 
 > One gap worth knowing: `ExecuteScript`'s `outFile` writes through the MCP server, not through your file tools, so it is **not** covered by the permission rules above. Keep every path you pass to it relative to this folder.
 

@@ -326,6 +326,44 @@ public class ActionUnitTests : TestsRuntime
         Assert.Equal(M(laugh, "openUp") * 0.5f, M(half, "openUp"), 2);
         Assert.Equal(M(laugh, "openDown") * 0.5f, M(half, "openDown"), 2);
     }
+
+    /// <summary>
+    /// The mouth's shape options move what they name: <c>full</c> thickens both lips, <c>balance</c> moves the
+    /// fullness between them, <c>bow</c> deepens the notch of Cupid's bow; and a laughing upper lip stays clear of
+    /// the nose however full it is.
+    /// </summary>
+    [Fact]
+    public void TestTheMouthsShapeOptionsMoveWhatTheyName()
+    {
+        var head = Head();
+        Dictionary<string, object?> Draw(Dictionary<string, object?> h, string key, float value) =>
+            Toolkit.DrawComicMouth(new SkiaCanvas(600, 600).GetContext("2d"), h["mouthGuides"]!, new Dictionary<string, object?> { [key] = value });
+        static float Area(Dictionary<string, object?> parts, string key) => ((CanvasPath)parts[key]!).Area;
+        var plain = Draw(head, "full", 0f);
+
+        Assert.True(Area(Draw(head, "full", 1f), "upperLip") > Area(plain, "upperLip") * 1.4f, "full lips are not fuller");
+        Assert.True(Area(Draw(head, "full", -1f), "lowerLip") < Area(plain, "lowerLip") * 0.6f, "thin lips are not thinner");
+
+        var upperFull = Draw(head, "balance", 1f);
+        Assert.True(Area(upperFull, "upperLip") > Area(plain, "upperLip") && Area(upperFull, "lowerLip") < Area(plain, "lowerLip"),
+            "balance +1 did not move the fullness to the upper lip");
+
+        // The bow's notch, measured as the lowest point of the upper lip's top edge across its middle.
+        static float Notch(Dictionary<string, object?> parts, float cx)
+        {
+            var lip = (CanvasPath)parts["upperLip"]!;
+            var column = new CanvasPath();
+            column.Rect(cx - 0.5f, 0f, 1f, 600f);
+            return lip.Intersect(column).Path.TightBounds.Top - lip.Path.TightBounds.Top;
+        }
+        var cx = Convert.ToSingle(((Dictionary<string, object?>)G(head, "mouthGuides")["center"]!)["x"]);
+        Assert.True(Notch(Draw(head, "bow", 1f), cx) > Notch(plain, cx) * 1.5f, "a deep bow has no deeper notch");
+        Assert.True(Notch(Draw(head, "bow", -1f), cx) < Notch(plain, cx) * 0.3f, "a flat bow still has a notch");
+
+        var laugh = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU25"] = 1f });
+        var nose = Convert.ToSingle(((Dictionary<string, object?>)G(head, "noseWedge")["underNose"]!)["y"]);
+        Assert.True(((CanvasPath)Draw(laugh, "full", 1f)["upperLip"]!).Path.TightBounds.Top > nose, "a full laughing lip reached the nose");
+    }
     #endregion
 
     #region Refusal Tests

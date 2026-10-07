@@ -1298,6 +1298,10 @@ public partial class ConstructiveDrawingToolkit
     /// the eyes, so it is the one most often redrawn — and <c>lipLine</c> being a centre-line rather
     /// than a filled mark is what lets it be re-stroked heavier, run through
     /// <c>ctx.strokeToPath(...)</c> to be tapered, or clipped against the head's own silhouette.
+    /// <para>
+    /// The shape, each -1 to +1 and 0 by default, from Hamm's p. 11 catalogue: <c>full</c> (thin to full),
+    /// <c>balance</c> (lower lip fuller to upper lip fuller) and <c>bow</c> (flat to a deep Cupid's bow).
+    /// </para>
     /// </remarks>
     public Dictionary<string, object?> DrawComicMouth(CanvasRenderingContext2D ctx, object mouthObj, object? options = null)
     {
@@ -1333,6 +1337,19 @@ public partial class ConstructiveDrawingToolkit
         var upperT = MathF.Max(F(2f), (center.Y - openUp) - Read("upperLipY", center.Y - F(4.8f)));
         var lowerT = MathF.Max(F(3f), Read("lowerLipY", center.Y + F(7.2f)) - (center.Y + openDown));
         var open = openUp + openDown > F(0.6f);
+
+        // **The mouth's shape**, each -1 to +1 and 0 by default, the three ways the mouths in Hamm's p. 11
+        // catalogue differ: `full` from lips drawn nearly as a line to full ones; `balance` from a fuller lower
+        // lip (Faragasso, p. 177) to a fuller upper one (Gautier, p. 28); `bow` from a flat upper lip to a deep
+        // Cupid's bow with high peaks set close. Width is the head's (`mouthWidth`). The amounts are the studio's.
+        float Option(string key) => Math.Clamp(Num(optDict, key, 0f), -1f, 1f);
+        float full = Option("full"), balance = Option("balance"), bow = Option("bow");
+        var fullness = full >= 0f ? 1f + (0.7f * full) : 1f + (0.6f * full);
+        // A laugh stretches the upper lip thin as it rises (p. 12), so its extra fullness fades as it opens; a full
+        // upper lip on a rising one would otherwise climb into the nose.
+        var upperScale = fullness * (1f + (0.35f * balance));
+        upperT = MathF.Max(F(0.8f), upperT * (1f + ((upperScale - 1f) * upperT / (upperT + openUp))));
+        lowerT = MathF.Max(F(1f), lowerT * fullness * (1f - (0.35f * balance)));
         var tone = Math.Clamp(Num(optDict, "tone", 1f), 0f, 1f);
         var creases = Math.Clamp(Num(optDict, "creases", 0f), 0f, 1f);
 
@@ -1384,7 +1401,8 @@ public partial class ConstructiveDrawingToolkit
 
         // **The line of the opening**, the darkest part of the mouth (p. 11). Closed, it dips a little at the
         // centre, where the upper lip's protrusion presses down on the lower.
-        var dip = F(0.9f);
+        // A deep bow presses its tubercle down harder; thin lips close nearly straight.
+        var dip = F(0.9f) * (1f + (0.4f * bow)) * MathF.Min(1f, fullness);
         var apertureTop = Through(left, Across(-0.5f, center.Y - (openUp * 0.85f) + (open ? 0f : dip * 0.6f)), new Point2D(center.X, center.Y - openUp + (open ? 0f : dip)),
                                   Across(0.5f, center.Y - (openUp * 0.85f) + (open ? 0f : dip * 0.6f)), right);
         var apertureBottom = open
@@ -1394,8 +1412,11 @@ public partial class ConstructiveDrawingToolkit
         // **The upper lip**: Cupid's bow on top, two peaks either side of a notch under the hollow above the
         // mouth; its rim projects farther than the lower lip's, so it is in shade.
         var lipTop = center.Y - openUp - upperT;
-        var upperOutline = Through(left, Across(-0.62f, lipTop + (upperT * 0.45f)), Across(-0.3f, lipTop), new Point2D(center.X, lipTop + (upperT * 0.25f)),
-                                   Across(0.3f, lipTop), Across(0.62f, lipTop + (upperT * 0.45f)), right);
+        var notch = upperT * (bow >= 0f ? 0.25f + (0.3f * bow) : 0.25f * (1f + bow));
+        var peak = 0.3f - (0.08f * bow);
+        var shoulder = upperT * (0.45f + (0.1f * bow));
+        var upperOutline = Through(left, Across(-0.62f, lipTop + shoulder), Across(-peak, lipTop), new Point2D(center.X, lipTop + notch),
+                                   Across(peak, lipTop), Across(0.62f, lipTop + shoulder), right);
         var upperLip = Shape(upperOutline.Concat(Enumerable.Reverse(apertureTop)));
 
         // **The lower lip**: fuller, rounder and lit, from the opening down to its rounded underside.

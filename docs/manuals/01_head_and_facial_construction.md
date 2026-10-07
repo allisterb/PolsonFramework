@@ -465,6 +465,31 @@ what the gap opens, and the lower lip, the teeth and the chin stay nearly where 
 not hold for a yelling laugh or a mouth open in awe, which drop the jaw (`AU26`). The mouth is drawn open, with its
 upper teeth, only when the head says it is: `mouthGuides.openUp` and `openDown`, both 0 at rest.
 
+**Mouths differ in three ways** across the catalogue on p. 11, and the drawer takes each as an option from −1
+to +1, 0 by default: **`full`**, lips drawn nearly as a line to full ones; **`balance`**, which lip carries the
+fullness; **`bow`**, an upper lip with a flat top to a deep Cupid's bow whose peaks stand high and close together.
+The sources disagree on `balance`: Gautier makes the upper lip the fuller one, *especially with women* (*1,001
+Faces*, p. 28), and Faragasso the lower (*Mastering Drawing the Human Figure*, p. 177). The canon sits between
+them, `-1` is Faragasso's and `+1` Gautier's. Width is not one of them: it is the head's `mouthWidth`, since it
+moves the corners every other feature is placed against. The amounts are the studio's.
+
+```javascript
+const canvas = createCanvas(480, 520);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f6f3ec'; ctx.fillRect(0, 0, 480, 520);
+
+const MORT_MOUTH = { full: 0.6, balance: -0.4, bow: -0.5 };     // keep it beside the character's parameters
+const head = Drawing.createLoomisHead(240, 250, 420, 15);
+ctx.fillStyle = '#efe2cf';
+ctx.fill(Drawing.createHeadGeometry(head).silhouette);
+Drawing.drawComicNose(ctx, head.noseWedge, { inkColor: '#15151a' });
+Drawing.drawComicMouth(ctx, head.mouthGuides, { inkColor: '#15151a', ...MORT_MOUTH });
+canvas;
+```
+
+A laugh stretches the upper lip thin (p. 12), so a full upper lip loses its extra fullness as `AU25` lifts it, and
+stays clear of the nose.
+
 ### D. The three drawers hand their parts back
 
 Each returns the shapes it built, so a feature can be worked on after it is drawn rather than only

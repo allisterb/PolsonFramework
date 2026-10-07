@@ -91,6 +91,7 @@ public partial class ConstructiveDrawingToolkit
 
         // The skull outline's stations, or the jaw frame for a face that has none.
         var stations = JsInterop.AsDict(geo["stations"]);
+        var ears = JsInterop.AsDict(geo["ears"]);
         var jaw = JsInterop.AsDict(head["jaw"]);
         Point2D S(string side, string key)
         {
@@ -116,13 +117,21 @@ public partial class ConstructiveDrawingToolkit
         var big = H * 2f;
 
         var planes = new List<Dictionary<string, object?>>();
-        void Add(string name, string group, string side, IReadOnlyList<Point2D> pts, (float X, float Y, float Z) normal)
+        static CanvasPath Poly(IReadOnlyList<Point2D> pts)
         {
             var poly = new CanvasPath();
             poly.MoveTo(pts[0].X, pts[0].Y);
             for (var i = 1; i < pts.Count; i++) poly.LineTo(pts[i].X, pts[i].Y);
             poly.ClosePath();
-            var path = poly.Intersect(mass);
+            return poly;
+        }
+
+        void Add(string name, string group, string side, IReadOnlyList<Point2D> pts, (float X, float Y, float Z) normal) =>
+            AddPath(name, group, side, Poly(pts), normal);
+
+        void AddPath(string name, string group, string side, CanvasPath shape, (float X, float Y, float Z) normal)
+        {
+            var path = shape.Intersect(mass);
             var facing = Turn(normal.X, normal.Y, normal.Z);
             var l = MathF.Sqrt((normal.X * normal.X) + (normal.Y * normal.Y) + (normal.Z * normal.Z));
             planes.Add(new Dictionary<string, object?>
@@ -174,15 +183,25 @@ public partial class ConstructiveDrawingToolkit
             var cheekLine = Lerp(zygoma, corner, t);
             var chinTop = new Point2D(corner.X, lowerLipY + ((chin.Y - lowerLipY) * 0.35f));
 
-            Add($"{side}ForeheadSide", "forehead", side,
-                [ft, topOut, new Point2D(topOut.X + (dirOut * big), topOut.Y), new Point2D(topOut.X + (dirOut * big), zygoma.Y), zygoma, socketOut, fb],
-                (d, -0.15f, 0.25f));
+            // The jaw side is the ramus and the masseter: back along the zygomatic arch to the front of the ear,
+            // down the back of the ramus to the angle, then forward to the chin corner (Plate 9). Everything
+            // outward of the face above and behind it is the side of the head, the ear's own plane.
+            var ear = new[] { "far", "near" }
+                .Select(k => JsInterop.AsDict(ears?[k]))
+                .Where(e => e is not null)
+                .MaxBy(e => (ExtractPoint(e!["center"]).X - brow.X) * dirOut);
+            var earC = ear is null ? new Point2D(gonion.X, zygoma.Y) : ExtractPoint(ear["center"]);
+            var earFrontX = earC.X - (dirOut * (ear is null ? 0f : Num(ear, "width", 0f)) * 0.5f);
+            if ((earFrontX - zygoma.X) * dirOut < 0f) earFrontX = zygoma.X;
+            var lobeY = earC.Y + ((ear is null ? 0f : Num(ear, "height", 0f)) * 0.4f);
+            var jawSide = Poly([zygoma, new Point2D(earFrontX, zygoma.Y), new Point2D(earFrontX, lobeY), gonion,
+                                new Point2D(corner.X, chin.Y + big), corner]);
+            var headSide = Poly([ft, topOut, new Point2D(topOut.X + (dirOut * big), topOut.Y), new Point2D(topOut.X + (dirOut * big), chin.Y + big),
+                                 new Point2D(corner.X, chin.Y + big), corner, zygoma, socketOut, fb]).Subtract(jawSide);
+            AddPath($"{side}ForeheadSide", "forehead", side, headSide, (d, -0.1f, 0.1f));   // the sliced side of the ball: sagittal, barely tilted
             Add($"{side}Socket", "eye", side, [bIn, fb, socketOut, socketIn, bridgeSide], (d * 0.15f, 0.6f, 0.8f));
             Add($"{side}NoseSide", "nose", side, [bridgeSide, apexSide, nostril, socketIn], (d * 0.9f, 0f, 0.45f));
-            Add($"{side}JawSide", "cheek", side,
-                [zygoma, new Point2D(zygoma.X + (dirOut * big), zygoma.Y), new Point2D(zygoma.X + (dirOut * big), chin.Y + big),
-                 new Point2D(corner.X, chin.Y + big), corner],
-                (d * 0.9f, 0.25f, 0.35f));
+            AddPath($"{side}JawSide", "cheek", side, jawSide, (d * 0.9f, 0.25f, 0.35f));
 
             if (secondary)
             {

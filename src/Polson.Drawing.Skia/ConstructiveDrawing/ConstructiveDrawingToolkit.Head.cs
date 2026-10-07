@@ -133,14 +133,21 @@ public partial class ConstructiveDrawingToolkit
         // pinned to the front view and drifted off the side of a turned head.
         // The ear you see is on the near side, beside the full-width eye: the face turns away from it.
         var earPt = new Point2D(originX + unit * MathF.Cos(rad), (yBrow + yNose) * 0.5f);
-        var farEarX = originX - unit * MathF.Cos(rad);
         // Plate 1: the jaw line connects about halfway around the ball on each side, and the ears attach
         // along that same halfway line - so the jaw angle hangs directly below the ear rather than at its
         // own fraction of W, and follows the ear round as the head turns. Its depth below the nose line
         // is the studio's; Loomis gives no measurement for it.
         // `angle` is the FAR jaw angle, under the far ear - hidden on a turned head, but the far jaw still
         // hangs from it. Held clear of the chin as the face turns toward this side (see below).
-        var farAngleFree = farEarX + unit * 0.25f;
+        //
+        // The angles are placed in the head's own frame and turned with it: three quarters of a unit out
+        // from the axis, frontally where the jaw has always been, and a tenth of a unit back of the centre
+        // line, under the front of the ear where it joins the head. Measured from the ear on
+        // the page instead, as this was until 2026-10-07, the near angle took the far side's step in
+        // toward the face, so at 45 degrees it sat three quarters of a unit in front of its own ear and
+        // the near jaw cut into the skull and bulged back out below it.
+        float JawAngleX(float lateral) => originX + (lateral * MathF.Cos(rad)) + (unit * 0.1f * MathF.Sin(rad));
+        var farAngleFree = JawAngleX(-unit * 0.75f);
         var jawAnglePt = new Point2D(MathF.Min(farAngleFree, chinPt.X - unit * 0.15f), yNose + unit * 0.3f);
 
         // Plate 1: the jaw line connects about halfway around the ball ON EACH SIDE, so the jaw has two
@@ -155,8 +162,8 @@ public partial class ConstructiveDrawingToolkit
         var stationHalf = MathF.Sqrt(MathF.Max(1f, ballR * ballR - unit * unit)) * MathF.Cos(rad);
         var farStationPt = new Point2D(MathF.Min(originX - stationHalf, jawAnglePt.X - unit * 0.1f), yNose);
 
-        // **The near angle is the far one mirrored about the cranium axis, stated as a mirror so it
-        // cannot drift again.** It did drift: this read `originX + stationHalf - unit * 0.25f`, which
+        // **The near angle is the far one mirrored in the head's own frame, so it cannot drift again.**
+        // It did drift: this read `originX + stationHalf - unit * 0.25f`, which
         // measures from the *station* while the far angle measures from the *ear* — and those are two
         // different quantities, 1.118 units and 1.000 units off the axis at yaw 0. So a head that was
         // square on had `jaw.angle` at -0.750 units and `jaw.nearAngle` at +0.868, with `chinFar` and
@@ -179,8 +186,9 @@ public partial class ConstructiveDrawingToolkit
         // figure that was written down was wrong by twenty. It had never been measured — which is
         // also how 60 came to sit next to a range this call documents as 30-45.
         // Since 2026-10-06 the face turns toward the far side, so it is the far angle that the chin
-        // approaches and the far angle that carries the guard; the near one is the free far one mirrored.
-        var nearAngleX = MathF.Max((2f * originX) - farAngleFree, chinPt.X + unit * 0.15f);
+        // approaches and the far angle that carries the guard; the near one is the free far one mirrored
+        // across the head, at the same depth.
+        var nearAngleX = MathF.Max(JawAngleX(unit * 0.75f), chinPt.X + unit * 0.15f);
         var nearAnglePt = new Point2D(nearAngleX, jawAnglePt.Y);
         var nearStationPt = new Point2D(MathF.Max(originX + stationHalf, nearAngleX + unit * 0.1f), yNose);
         var chinFarPt = new Point2D(chinPt.X + (jawAnglePt.X - chinPt.X) * 0.8f, yChin);

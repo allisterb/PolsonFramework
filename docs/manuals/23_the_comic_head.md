@@ -678,9 +678,14 @@ rather than a second construction to keep in step with the first:
   under the skull*. That is why the column is anchored **under the ear rather than under the chin** —
   and it is the single fact that makes a head sit rather than float. He gives no measurement for how
   long or how thick, so `neckLength` defaults to **0.30 of the head height** and `neckWidth` to 1.3
-  units — both the studio's. `neckLength` is the **whole** extent below the chin, base cap included:
-  measured to the capsule's centre instead it overshot by a third and rendered as a light-bulb stem.
-  The offset behind the face is scaled by the turn, so a frontal head gets a centred neck.
+  units — both the studio's. `neckLength` is the **whole** extent below the chin, to the lowest
+  point of the neck's base. **The neck is a column leaning forward, open at the bottom** (Plate 7,
+  p. 29): its back line drops from the base of the skull behind the ear and its front line from
+  under the jaw, both running down and forward to the pit of the neck. It is built as two
+  cross-sections in the head's own frame, a little back of the centre line at the top, and turned
+  with the head, so a frontal neck stands straight and a turned one leans toward the face. The lean
+  and the widening at the base are the studio's. Until 2026-10-07 it was an upright capsule with a
+  rounded end, which read as a light-bulb stem and hung straight down off the back of a turned head.
 - **`skull: 'comic'` narrows the cranium to five eye-widths**, which is §1's measurement of this
   manual's own source against Loomis's construction — 6.0 against 5, so the comic skull is 5/6 of the
   ball, at the same height. It is the one departure from the construction this call offers, and it is
@@ -927,7 +932,8 @@ soft mark aimed **below** the ear — not closed up, and not run to the ear itse
 
 > **Source Reference**: Andrew Loomis, *Drawing the Head and Hands* (Viking, 1956), **Plate 26,
 > "Construction of the nose and the ears"** — for what it declines to give as much as for what it
-> does. Line weight is Klaus Janson's, through `polson://manual/03` §1.
+> does. The drawing is Jack Hamm's, *Drawing the Head and Figure* (Perigee, 1983), **p. 16, "Drawing
+> the ear"**: six steps and a front view. Line weight is Klaus Janson's, through `polson://manual/03` §1.
 
 ### The ear had a mass and no drawing
 
@@ -937,8 +943,16 @@ wore two blank flaps**, and §9's first bullet said so without anyone reading it
 *it does not shade them.*
 
 `drawComicEar` takes `geo.ears.far` or `geo.ears.near`, each carrying `{ center, width, height,
-faceDir }`, and inks four parts: the **helix** (the outer rim), the **antihelix** (the ridge inside
-it), the **concha** (the bowl between them) and the **lobe**.
+faceDir }`, and draws the ear in **Jack Hamm's six steps** (*Drawing the Head and Figure*, p. 16):
+the top-heavy C of the **helix**; two lines that bypass each other at the front, the rim rolling
+down into the bowl and the **tragus** pointing out; the raised Y of the **antihelix**; the small U of
+the **notch** under the bowl; the **rim** line inside the back of the helix; and the tone in the
+**concha**, deepest toward the opening. `detail` stops after any step, and left out it follows the
+ear's size and its turn: an ear seen edge-on from the front is its rim and the line inside it, as in
+Hamm's front view. Gautier's thirds (below) still set the bowl, the lobe and the tragus. Three
+options shape it, each −1 to +1, after the ways Hamm shows ears differing (figs. A–I): `lobe`
+(attached to free), `rim` (thin to wide and rolled) and `top` (round to pointed). They are drawing
+options rather than head parameters, so a character keeps them in a `const` beside its face.
 
 ```javascript
 const canvas = createCanvas(420, 520);
@@ -1260,6 +1274,12 @@ canvas;
   > `MathF.Max((2f * originX) - jawAnglePt.X, …)` — rather than as a second formula for the same
   > rule, so the two cannot restate it differently again. The chin guard that stops the near jaw
   > crossing the chin at high yaw is untouched.
+  >
+  > **Corrected 2026-10-07: a mirror on the page is not a mirror on the head.** Mirrored on the
+  > page, the near angle took the far angle's step in toward the face, which is depth on the far
+  > side and wrong on the near one: at 45° it sat three quarters of a unit in front of its own ear.
+  > Both angles are now one point in the head's frame, 0.75 units out and 0.1 back, turned with the
+  > head, so the frontal mirror holds and a turned head's near angle hangs under its ear.
   >
   > **Measured, the change reaches nothing past 40°.** Diffing every jaw landmark between the two
   > builds across the canon and two parametric characters: the near angle moves **8.09px at yaw 0**

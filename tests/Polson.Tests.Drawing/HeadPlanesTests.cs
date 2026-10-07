@@ -119,6 +119,28 @@ public class HeadPlanesTests : TestsRuntime
         Assert.True(tones["noseBottom"] > 0f, "the bottom of the nose faces down, away from a side light");
     }
 
+    /// <summary>
+    /// At 45° the side of the head and the jaw side below it face the same way, so one light shades them alike;
+    /// a lit skull over a dark jaw read as a square cut out of the head.
+    /// </summary>
+    [Fact]
+    public void TestATurnedHeadsSideIsOneShadow()
+    {
+        var head = Head(45f);
+        var lit = Toolkit.DrawHeadPlanes(new SkiaCanvas(800, 800).GetContext("2d"), Planes(head),
+            new Dictionary<string, object?> { ["light"] = -135f, ["values"] = 2 });
+        var tones = ((List<object?>)lit["planes"]!).Cast<Dictionary<string, object?>>()
+            .ToDictionary(p => (string)p["name"]!, p => Convert.ToSingle(p["tone"]));
+        Assert.True(tones["nearJawSide"] > 0f);
+        Assert.Equal(tones["nearJawSide"], tones["nearForeheadSide"]);
+
+        // The jaw side ends at the ear rather than running on round the back of the skull.
+        var ear = (Dictionary<string, object?>)((Dictionary<string, object?>)Toolkit.CreateHeadGeometry(head)["ears"]!)["far"]!;
+        var earCenter = (Dictionary<string, object?>)ear["center"]!;
+        var earFront = Convert.ToSingle(earCenter["x"]) - (Convert.ToSingle(ear["width"]) * 0.5f);
+        Assert.True(Path(Plane(Planes(head), "nearJawSide")).Path.Bounds.Right <= earFront + 1f);
+    }
+
     [Fact]
     public void TestAHeadIsLitAsItsBasicPlanes()
     {

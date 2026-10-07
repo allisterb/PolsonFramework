@@ -61,11 +61,14 @@ public class HeadGeometryTests : TestsRuntime
         return MathF.Abs(inside - OriginX);
     }
 
-    /// <summary>The largest single-pixel step INWARD anywhere between the brow and the chin.</summary>
+    /// <summary>
+    /// The largest single-pixel step INWARD between the brow and the chin's underside. The last few rows
+    /// are left out: there the outline turns under the chin, and every row is a step by design.
+    /// </summary>
     static float WorstStep(Dictionary<string, object?> head, CanvasPath outline)
     {
         var brow = Convert.ToSingle(((Dictionary<string, object?>)head["brow"]!)["y"]);
-        var chin = Convert.ToSingle(((Dictionary<string, object?>)head["chin"]!)["y"]);
+        var chin = Convert.ToSingle(((Dictionary<string, object?>)head["chin"]!)["y"]) - (H * 0.03f);
         var worst = 0f;
         foreach (var dir in new[] { -1f, 1f })
         {
@@ -383,6 +386,42 @@ public class HeadGeometryTests : TestsRuntime
     }
 
     /// <summary>
+    /// On a turned head the outline runs from the skull down the back of the jaw to its angle, with no
+    /// step where the skull ends.
+    /// </summary>
+    /// <remarks>
+    /// The near jaw angle used to be the far one mirrored on the page, so it took the far side's step in
+    /// toward the face: at 45 degrees it sat three quarters of a unit in front of its own ear, and the
+    /// outline cut in under the skull and bulged back out at the angle. Measured with no neck, which
+    /// would otherwise cover it.
+    /// </remarks>
+    [Theory]
+    [InlineData(25f)]
+    [InlineData(45f)]
+    public void TestATurnedJawHasNoStepUnderTheSkull(float yaw)
+    {
+        var head = Head(yaw);
+        var outline = (CanvasPath)Geometry(head, new Dictionary<string, object?> { ["neckLength"] = 0f })["silhouette"]!;
+        var step = WorstStep(head, outline);
+        Assert.True(step < H * 0.015f, $"a {step:F1}px step on a {H}px head at yaw {yaw}");
+
+        // Below the nose the head only narrows toward the chin: a jaw angle standing out below a skull
+        // that has already curved in is the bulge this fixed.
+        var nose = Convert.ToSingle(((Dictionary<string, object?>)head["noseBase"]!)["y"]);
+        var chin = Convert.ToSingle(((Dictionary<string, object?>)head["chin"]!)["y"]) - (H * 0.03f);
+        foreach (var dir in new[] { -1f, 1f })
+        {
+            var least = Reach(outline, nose, dir);
+            for (var y = nose + 1f; y <= chin; y += 1f)
+            {
+                var here = Reach(outline, y, dir);
+                Assert.True(here < least + (H * 0.015f), $"the outline widens again by {here - least:F1}px at y {y:F0}, yaw {yaw}");
+                least = MathF.Min(least, here);
+            }
+        }
+    }
+
+    /// <summary>
     /// The cheek fills inward of the ear and never makes the head wider.
     /// </summary>
     /// <remarks>
@@ -585,6 +624,34 @@ public class HeadGeometryTests : TestsRuntime
         var geo = Geometry(head, new Dictionary<string, object?> { ["neckLength"] = fraction });
 
         Assert.Equal(fraction * H, Box(geo, "silhouette").Bottom - chinY, 1);
+    }
+
+    /// <summary>
+    /// The neck leans forward (Plate 7): frontally it stands straight, and on a turn its base comes
+    /// forward of its top, toward the side the face turns to.
+    /// </summary>
+    [Fact]
+    public void TestTheNeckLeansForward()
+    {
+        float Centre(Dictionary<string, object?> geo, float y)
+        {
+            var strip = new CanvasPath();
+            strip.Rect(-5000f, y - 1f, 10000f, 2f);
+            var b = Part(geo, "neck").Intersect(strip).Path.Bounds;
+            return (b.Left + b.Right) * 0.5f;
+        }
+
+        foreach (var yaw in new[] { 0f, 45f })
+        {
+            var head = Head(yaw);
+            var chinY = Convert.ToSingle(((Dictionary<string, object?>)head["chin"]!)["y"]);
+            var geo = Geometry(head, new Dictionary<string, object?> { ["neckLength"] = 0.4f });
+            var lean = Centre(geo, chinY + (0.3f * H)) - Centre(geo, chinY);
+
+            // Positive yaw turns the face toward -x.
+            if (yaw == 0f) Assert.True(MathF.Abs(lean) < 1f, $"a frontal neck leans {lean:F1}px");
+            else Assert.True(lean < -0.05f * H, $"the turned neck's base is only {lean:F1}px toward the face");
+        }
     }
 
     /// <summary>

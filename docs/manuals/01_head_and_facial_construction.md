@@ -217,8 +217,13 @@ than reverse-engineering them: `farStation`, `angle`, `chinFar`, `chinNear`, `ne
 the chin corners are taken from the two angles rather than from a fraction of `W` — which is what
 keeps the chin inside its own jaw at every yaw.
 
-> **At yaw 0 the frame is an exact mirror, and it was not until 2026-09-19.** `angle` is derived
-> from the ear landmark and `nearAngle` is that value mirrored about the cranium axis; the two
+> **At yaw 0 the frame is an exact mirror, and it was not until 2026-09-19.** `angle` and `nearAngle`
+> are one point mirrored across the head: three quarters of a unit out from the axis and a tenth of
+> a unit back of it, under the front of the ear, turned with the head. (From 2026-09-19 to
+> 2026-10-07 the mirror was taken on the page instead, which put a turned head's near jaw angle
+> three quarters of a unit in front of its own ear and left a step in the outline under the skull.
+> The default outline now also carries the back edge of the jaw from under the ear to its angle on
+> the side the face turns away from.) The two
 > stations are `±√(ballR² − unit²)`; the chin corners are 0.8 of their own angle's span from a chin
 > that sits on the axis. Before that date `nearAngle` had its own formula, measured from the
 > **station** rather than from the **ear** — 1.118 units against 1.000 — so a head with no turn in it

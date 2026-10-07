@@ -2197,7 +2197,7 @@ public class DrawingToolkitTests : TestsRuntime
         var parts = toolkit.DrawComicEar(canvas.GetContext("2d"), ears["far"]!, true,
             new Dictionary<string, object?> { ["inkColor"] = "#000000" });
 
-        Assert.Equal(new[] { "antihelix", "concha", "helix", "lobe", "tragus" },
+        Assert.Equal(new[] { "antihelix", "concha", "crus", "detail", "helix", "lobe", "notch", "rim", "tragus" },
             parts.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
 
         // The rim encloses the bowl: an ear whose helix does not contain its concha is two marks
@@ -2206,6 +2206,77 @@ public class DrawingToolkitTests : TestsRuntime
         var concha = ((CanvasPath)parts["concha"]!).Path.Bounds;
         Assert.True(helix.Height > concha.Height, "the rim should be taller than the bowl inside it");
         Assert.True(helix.Height > 0f && concha.Width > 0f);
+    }
+
+    /// <summary>
+    /// The ear is drawn in Hamm's six steps (<i>Drawing the Head and Figure</i>, p. 16), and each <c>detail</c>
+    /// adds the step's part: the C, the two bypassing lines, the Y, the U, the rim line, the tone.
+    /// </summary>
+    [Fact]
+    public void TestTheEarIsBuiltInHammsSixSteps()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var ear = new Dictionary<string, object?>
+        {
+            ["center"] = new Dictionary<string, object?> { ["x"] = 100f, ["y"] = 120f },
+            ["width"] = 60f, ["height"] = 120f, ["faceDir"] = 1f
+        };
+        string[] added = ["helix", "crus", "antihelix", "notch", "rim"];
+        for (var detail = 1; detail <= 5; detail++)
+        {
+            var parts = toolkit.DrawComicEar(new SkiaCanvas(200, 240).GetContext("2d"), ear, false,
+                new Dictionary<string, object?> { ["detail"] = detail });
+            Assert.Equal(detail, Convert.ToInt32(parts["detail"]));
+            Assert.False(((CanvasPath)parts[added[detail - 1]]!).IsEmpty, $"detail {detail} lacks its {added[detail - 1]}");
+            if (detail < 5) Assert.True(((CanvasPath)parts[added[detail]]!).IsEmpty, $"detail {detail} drew the next step's {added[detail]}");
+        }
+
+        // The Y rises from the notch at the bottom of the bowl to under the top of the rim.
+        var full = toolkit.DrawComicEar(new SkiaCanvas(200, 240).GetContext("2d"), ear, false,
+            new Dictionary<string, object?> { ["detail"] = 6 });
+        var y = ((CanvasPath)full["antihelix"]!).Path.TightBounds;
+        Assert.True(y.Top < 120f - 36f && y.Bottom > 120f + 15f, $"the Y runs {y.Top:F0} to {y.Bottom:F0}");
+
+        // Edge-on from the front, the ear is its rim and one line inside it.
+        var edgeOn = toolkit.DrawComicEar(new SkiaCanvas(200, 240).GetContext("2d"), new Dictionary<string, object?>
+        {
+            ["center"] = new Dictionary<string, object?> { ["x"] = 100f, ["y"] = 120f },
+            ["width"] = 20f, ["height"] = 120f, ["faceDir"] = 1f
+        });
+        Assert.Equal(2, Convert.ToInt32(edgeOn["detail"]));
+    }
+
+    /// <summary>
+    /// The ear's shape options move what they name: an attached lobe ends higher, a wide rim is heavier,
+    /// a pointed top peaks behind the ear's centre.
+    /// </summary>
+    [Fact]
+    public void TestTheEarsShapeOptionsMoveWhatTheyName()
+    {
+        var toolkit = new ConstructiveDrawingToolkit();
+        var ear = new Dictionary<string, object?>
+        {
+            ["center"] = new Dictionary<string, object?> { ["x"] = 100f, ["y"] = 120f },
+            ["width"] = 60f, ["height"] = 120f, ["faceDir"] = 1f
+        };
+        CanvasPath Helix(string key, float value) => (CanvasPath)toolkit.DrawComicEar(new SkiaCanvas(200, 240).GetContext("2d"), ear, false,
+            new Dictionary<string, object?> { [key] = value })["helix"]!;
+        var plain = Helix("lobe", 0f);
+
+        Assert.True(Helix("lobe", -1f).Path.TightBounds.Bottom < plain.Path.TightBounds.Bottom - 3f, "an attached lobe did not end higher");
+        Assert.True(Helix("rim", 1f).Area > plain.Area * 1.2f, "a wide rim is not heavier");
+        Assert.True(Helix("rim", -1f).Area < plain.Area * 0.8f, "a thin rim is not lighter");
+
+        // The face is to the right (faceDir 1), so the back of the ear is to the left.
+        static float PeakX(CanvasPath p)
+        {
+            var b = p.Path.TightBounds;
+            var row = new CanvasPath();
+            row.Rect(b.Left, b.Top, b.Width, 2f);
+            var hit = p.Intersect(row).Path.TightBounds;
+            return hit.MidX;
+        }
+        Assert.True(PeakX(Helix("top", 1f)) < PeakX(plain) - 3f, "a pointed top does not peak behind the centre");
     }
 
     /// <summary>

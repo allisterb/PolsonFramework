@@ -115,9 +115,9 @@ public partial class ConstructiveDrawingToolkit
     /// and Hands</em>, the head-on-neck passage in Part One — <b>cite by passage, not by page</b>: the
     /// scan's page numbers do not survive extraction reliably). That is the one fact that makes a head
     /// sit rather than float, and it is why the column is anchored under the ear rather than under the
-    /// chin. He gives no measurement for how long or how thick, so <c>neckLength</c> defaults to
-    /// 0.42 H below the chin and the half-width is derived from the jaw stations — which also means
-    /// the neck foreshortens with the turn, because the stations do.
+    /// chin. Plate 7 draws it as a column leaning forward, open at the bottom, and it is built so. He
+    /// gives no measurement for how long or how thick, so <c>neckLength</c> defaults to 0.30 H below the
+    /// chin and <c>neckWidth</c> to 1.3 units, and the lean is the studio's.
     /// </para>
     /// <para>
     /// <b>The ear widens with the turn rather than narrowing.</b> Frontally an ear is seen edge-on; in
@@ -566,26 +566,64 @@ public partial class ConstructiveDrawingToolkit
         var farCheek = face != "ball" ? new CanvasPath() : Cheek(earCx, earRx, earSideAngle, earDir);
         var nearCheek = face != "ball" ? new CanvasPath() : Cheek(nearEarCx, nearEarRx, otherAngle, -earDir);
 
-        // Behind the ear at the top, deep under the skull — the cited part. How far down and how
-        // thick are the studio's, and both are in head units so they scale.
-        var neckHalf = MathF.Max(thirdH * 0.2f, Num(opt, "neckWidth", thirdH * 1.30f) * 0.5f);
-        // **Scaled by the turn, so a frontal head gets a centred neck.** Loomis's "a little back of
-        // the centre line" is a statement about depth, and depth only becomes screen offset once the
-        // head turns — applied flat it hangs the column off one side of a head looking straight out.
-        var neckX = crown.X + (ear.X - crown.X) * 0.45f * sin;
-        var neckTop = new Point2D(neckX, (noseBase.Y + chin.Y) * 0.5f);
+        // **The ramus, on the side the face turns away from.** There the face's own stations pass
+        // inside the skull, and the outline from the bottom of the skull to the jaw angle is the back
+        // edge of the jaw, running from under the ear down to its angle (Plate 1). Without it the
+        // outline cut in under the skull and bulged back out at the angle. It is the cheek's tangent
+        // from the ear, taken to the outline's own jaw angle, and it fades in with the turn, so a
+        // frontal head is untouched.
+        if (face == "loomis" && faceSign != 0f && earDir == -faceSign && stations is not null)
+        {
+            var side = new[] { "far", "near" }
+                .Select(k => JsInterop.AsDict(stations[k]))
+                .MaxBy(st => (ExtractPoint(st?["gonion"]).X - crown.X) * earDir);
+            Point2D At(string key) => ExtractPoint(side?[key]);
+            var gonion = At("gonion");
+            var touch = EarTangent(earCx, earRx - padding, earRy - padding, gonion, earDir);
+            var grow = SmoothStep(0.05f, 0.35f, sin);
+            // Down to the jaw angle, along the jaw to the chin corner and back up the cheek, so no gap is left.
+            if (touch is { } t && grow > 0f)
+                jawPath = jawPath.Union(Polygon([Lerp(gonion, t, grow), gonion, At("chinCorner"), At("cheek"), At("side"), craniumC], padding));
+        }
 
+        // The neck is a column leaning forward (Plate 7): seen from the side its back line drops from the
+        // base of the skull behind the ear and its front line from under the jaw, both running down and
+        // forward to the pit of the neck. So it is built in the head's own frame (x across, z out of the
+        // face) as two cross-sections, one under the skull and a slightly larger one at the base, set a
+        // little back of the centre line at the top as Loomis puts the pivot, and turned with the head.
+        // The leaning, the widening and the depth are the studio's; he gives no numbers.
+        var neckHalf = MathF.Max(thirdH * 0.2f, Num(opt, "neckWidth", thirdH * 1.30f) * 0.5f);
         var neck = new CanvasPath();
         if (neckLength > 0f)
         {
-            // `neckLength` is the whole extent below the chin, base cap included. Measuring to the
-            // capsule's centre instead put the drawn end a further half-width down, which is how the
-            // first version of this came out as a light-bulb stem a third longer than asked for.
-            var baseR = neckHalf + padding;
-            var neckBase = new Point2D(neckX, MathF.Max(neckTop.Y + 1f, chin.Y + neckLength - baseR));
-            neck = Capsule(neckTop, neckBase, neckHalf + padding, baseR);
-            Extent(neckTop.X, neckTop.Y, neckHalf + padding, neckHalf + padding);
-            Extent(neckBase.X, neckBase.Y, baseR, baseR);
+            // Screen x of a head-frame point: across scales by cos, depth shows toward the face's side by sin.
+            float ScreenX(float x, float z) => crown.X + (x * cos) + (faceSign * sin * z);
+            float HalfWidth(float wx, float wz) => MathF.Sqrt((wx * cos * wx * cos) + (wz * sin * wz * sin)) + padding;
+
+            var topY = noseBase.Y;
+            var bottomY = chin.Y + neckLength;
+            var length = MathF.Max(1f, bottomY - topY);
+            var topZ = -thirdH * 0.3f;
+            var bottomZ = topZ + (length * 0.25f);                    // leaning forward, about 14 degrees
+            var topX = ScreenX(0f, topZ);
+            var topHalf = HalfWidth(neckHalf, thirdH * 0.65f);
+            var bottomX = ScreenX(0f, bottomZ);
+            var bottomHalf = HalfWidth(neckHalf * 1.15f, thirdH * 0.72f);
+
+            // Open at the bottom, as Loomis leaves it: a shallow cut curving down, its lowest point
+            // `neckLength` below the chin, so that option still measures the whole extent.
+            var dip = MathF.Min(thirdH * 0.12f, length * 0.25f);
+            neck.MoveTo(topX - topHalf, topY);
+            neck.LineTo(topX + topHalf, topY);
+            // As line segments rather than a curve, so the path's bounds are its drawn bounds.
+            for (var i = 0; i <= 12; i++)
+            {
+                var t = 1f - (2f * i / 12f);
+                neck.LineTo(bottomX + (t * bottomHalf), bottomY - (dip * t * t));
+            }
+            neck.ClosePath();
+            Extent(topX, topY, topHalf, 0f);
+            Extent(bottomX, bottomY - (dip * 0.5f), bottomHalf, dip * 0.5f);
         }
 
         var mass = cranium.Union(farCheek).Union(nearCheek).Union(jawPath).Union(earPath).Union(nearEarPath);

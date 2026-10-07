@@ -1025,8 +1025,8 @@ public partial class ConstructiveDrawingToolkit
     }
 
     /// <summary>
-    /// Draws one ear and <b>returns the parts it built</b>: <c>helix</c>, <c>antihelix</c>,
-    /// <c>concha</c> and <c>lobe</c>.
+    /// Draws one ear in Hamm's six steps and <b>returns the parts it built</b>: <c>helix</c>, <c>crus</c>,
+    /// <c>tragus</c>, <c>antihelix</c>, <c>notch</c>, <c>rim</c>, <c>concha</c> and <c>lobe</c>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1042,8 +1042,8 @@ public partial class ConstructiveDrawingToolkit
     /// their correct positions than one of drawing the actual details themselves. Noses and ears vary
     /// widely in shape but not a great deal in basic construction."* So there is no measured ear to
     /// implement — the placement half is what <c>createHeadGeometry</c> already does, and this is the
-    /// basic construction: an outer rim, the ridge inside it, the bowl between them, and the lobe.
-    /// The proportions below are the studio's, by eye, and are not his.
+    /// basic construction. The drawing is Jack Hamm's six steps (<i>Drawing the Head and Figure</i>, p. 16),
+    /// over Gautier's thirds; the placements inside the ear are the studio's reading of Hamm's plate.
     /// </para>
     /// <para>
     /// Pass <c>geo.ears.far</c> or <c>geo.ears.near</c>. An ear foreshortens the opposite way to an
@@ -1051,8 +1051,10 @@ public partial class ConstructiveDrawingToolkit
     /// the turn, so this call needs no yaw: a narrow ear simply draws narrow.
     /// </para>
     /// <para>
-    /// <c>options</c>: <c>inkColor</c>, <c>shadowColor</c>, <c>weight</c> as a multiplier, and
-    /// <c>hatch</c> (default <c>true</c>) for the cross-contour arcs inside the bowl.
+    /// <c>options</c>: <c>inkColor</c>, <c>shadowColor</c>, <c>weight</c> as a multiplier, <c>detail</c>
+    /// (1-6, Hamm's steps; by size and turn when left out), <c>hatch</c> (default <c>false</c>) for
+    /// cross-contour arcs over the bowl, and the shape, each -1 to +1: <c>lobe</c> (attached to free),
+    /// <c>rim</c> (thin to wide) and <c>top</c> (round to pointed).
     /// </para>
     /// </remarks>
     public Dictionary<string, object?> DrawComicEar(CanvasRenderingContext2D ctx, object earObj, bool isFar = false, object? options = null)
@@ -1067,9 +1069,9 @@ public partial class ConstructiveDrawingToolkit
         // **A neutral, near-transparent bowl rather than the nose's orange under-plane.** The first
         // version borrowed `#b06f4c` from `drawComicNose` and at panel size the ear read as a bruise:
         // the concha is a hollow catching less light, not a lit plane of its own.
-        var shadowColor = optDict?["shadowColor"]?.ToString() ?? "rgba(0,0,0,0.13)";
+        var shadowColor = optDict?["shadowColor"]?.ToString() ?? "#5a4a44";
         var weight = Fraction(optDict, "weight", 1f);
-        var hatch = optDict is null || !optDict.Contains("hatch") || Convert.ToBoolean(optDict["hatch"]);
+        var hatch = optDict is not null && optDict.Contains("hatch") && Convert.ToBoolean(optDict["hatch"]);
 
         var center = ExtractPoint(ear["center"]);
         var w = Num(ear, "width", 0f);
@@ -1092,86 +1094,197 @@ public partial class ConstructiveDrawingToolkit
 
         var tier = isFar ? FarFeatureWeight : 1f;
 
-        // **The helix — the outer rim, from the top of the ear round the back to the lobe.** Tapered,
-        // because a rim is a rolled edge: it is fullest where it turns away from the light at the back
-        // and thins where it meets the skull at either end.
-        var helixTop = new Point2D(center.X + (faceDir * rx * 0.35f), center.Y - ry);
-        var helixLobe = new Point2D(center.X + (faceDir * rx * 0.15f), center.Y + ry);
-        var helix = CreateTaperedStrokePath(
-            helixTop,
-            new Point2D(center.X + (back * rx * 1.02f), center.Y - (ry * 0.70f)),
-            new Point2D(center.X + (back * rx * 0.90f), center.Y + (ry * 0.52f)),
-            helixLobe,
-            Tier(HelixTier, h, EarHeightAt240, weight * tier * TaperGain));
+        // **Hamm's six steps** (Drawing the Head and Figure, p. 16), in his order and in the ear's own frame:
+        // `u` across, positive toward the face; `v` down, -1 at the top and +1 at the bottom of the lobe.
+        // 1 the top-heavy C of the rim; 2 two lines that bypass each other at the front, the rim rolling
+        // inside and the tragus edge pointing outside; 3 the raised Y of the antihelix; 4 the small U of the
+        // notch between tragus and antitragus; 5 the back line inside the rim; 6 the tone, deepest in the bowl.
+        // Each stage is what a smaller ear is, so left out, `detail` follows the ear's height, as the nose's
+        // does. The placements are the studio's reading of his drawings, over Gautier's thirds.
+        // The points below were laid out from the back of the rim (u -0.95) to the tragus (u 0.45); spread
+        // over the whole ear, so the front third where the ear meets the head is not left empty. Without it
+        // the drawn ear was about a third as wide as it was tall, against Gautier's half and Hamm's 0.55.
+        Point2D P(float u, float v) => new(center.X + (faceDir * (-0.97f + ((u + 0.95f) * 1.36f)) * rx), center.Y + (v * ry));
 
-        // **The antihelix — the Y-shaped ridge inside the rim**, drawn as its single strong arm. It
-        // runs roughly parallel to the helix at about half the radius, which is what gives an ear its
-        // depth rather than reading as a flat disc.
-        var antihelix = CreateTaperedStrokePath(
-            new Point2D(center.X + (faceDir * rx * 0.10f), center.Y - (ry * 0.62f)),
-            new Point2D(center.X + (back * rx * 0.58f), center.Y - (ry * 0.42f)),
-            new Point2D(center.X + (back * rx * 0.50f), center.Y + (ry * 0.18f)),
-            new Point2D(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 0.46f)),
-            Tier(AntihelixTier, h, EarHeightAt240, weight * tier * TaperGain));
+        // **The ear's shape**, each -1 to +1 and 0 by default, the three ways Hamm shows ears differing
+        // (p. 16, figs. A-I): `lobe` from attached to the cheek to hanging free, `rim` from a thin rim to a
+        // wide rolled one, `top` from a broad round top to a pointed one. The amounts are the studio's.
+        float Shape(string key) => Math.Clamp(Num(optDict, key, 0f), -1f, 1f);
+        float lobeShape = Shape("lobe"), rimShape = Shape("rim"), topShape = Shape("top");
+        // An attached lobe is short and runs straight forward into the cheek; a free one hangs full and round
+        // and turns back up at its front. `end` marks the helix's last point, where the lobe meets the head.
+        (float, float) Lobe(float u, float v, bool end = false)
+        {
+            if (lobeShape < 0f)
+            {
+                var a = -lobeShape;
+                v = 0.62f + ((v - 0.62f) * (1f - (0.45f * a)));
+                return end ? (u + (0.22f * a), v - (0.08f * a)) : (u + (0.08f * a), v);
+            }
+            // A free lobe: the bottom rounds out and the end curls up and back, leaving a notch where it
+            // meets the head.
+            var f = lobeShape;
+            return end ? (u - (0.08f * f), v - (0.16f * f)) : (u + (u > 0f ? 0.04f * f : 0f), MathF.Min(1f, v + (0.03f * f)));
+        }
+        // A pointed top rises to a peak behind its centre, its shoulders falling away either side; a round top
+        // broadens, its shoulders lifting.
+        (float, float) Top(float u, float v, float pull)
+        {
+            if (pull >= 1f)
+                return topShape > 0f ? (u - (0.22f * topShape), v - (0.06f * topShape)) : (u, v + (0.02f * -topShape));
+            return topShape > 0f ? (u, v + (0.12f * topShape * pull)) : (u + (0.08f * -topShape * MathF.Sign(u)), v - (0.10f * -topShape * pull));
+        }
+        var hasDetail = optDict is not null && optDict.Contains("detail") && optDict["detail"] is not null;
+        // How far round the ear is seen: 1 in profile, a third of that edge-on from the front. Seen edge-on an
+        // ear is its rim and the line inside it (Hamm's front view, p. 16, fig. a), so a foreshortened ear
+        // draws fewer stages, and its lines are lighter so the rim does not close up into a blot.
+        var open = Math.Clamp(w / (h * 0.5f), 0f, 1f);
+        var detail = hasDetail
+            ? Math.Clamp((int)MathF.Round(Num(optDict, "detail", 6f)), 1, 6)
+            : Math.Min(h >= EarDetailHeight[3] ? 6 : h >= EarDetailHeight[2] ? 5 : h >= EarDetailHeight[1] ? 3 : h >= EarDetailHeight[0] ? 2 : 1,
+                       open < 0.45f ? 2 : open < 0.7f ? 5 : 6);
+        var lineScale = 0.45f + (0.55f * open);
 
-        // **The ear is three thirds, and each one has a name.** Gautier, p. 29: the top third is where
-        // it attaches to the head, *"the second section is the largest opening, the bowl"*, and the
-        // bottom third is the lobe. The first version of this call had the bowl at 0.24 of the
-        // half-height and the lobe at 0.78 — by eye, and both wrong against a published proportion
-        // that was sitting in a book on the shelf. A third of the half-height is 0.333.
-        float cx = center.X + (faceDir * rx * 0.22f), cy = center.Y + (ry * 0.02f);
-        float crx = rx * 0.34f, cry = ry * Third;
+        // A drawn line through the ear's own points: a Catmull-Rom curve, filled as a ribbon that swells to
+        // `tierWidth` and thins to nothing at both ends, fullest at `peak` along it.
+        CanvasPath Line(float tierWidth, float peak, params (float U, float V)[] at)
+        {
+            var pts = at.Select(a => P(a.U, a.V)).ToArray();
+            var curve = new List<Point2D>();
+            for (var i = 0; i < pts.Length - 1; i++)
+            {
+                Point2D p0 = pts[Math.Max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.Min(pts.Length - 1, i + 2)];
+                for (var k = 0; k < 12; k++)
+                {
+                    float t = k / 12f, t2 = t * t, t3 = t2 * t;
+                    float B(float a, float b, float c, float d) =>
+                        0.5f * ((2f * b) + ((-a + c) * t) + (((2f * a) - (5f * b) + (4f * c) - d) * t2) + ((-a + (3f * b) - (3f * c) + d) * t3));
+                    curve.Add(new Point2D(B(p0.X, p1.X, p2.X, p3.X), B(p0.Y, p1.Y, p2.Y, p3.Y)));
+                }
+            }
+            curve.Add(pts[^1]);
+
+            var half = Tier(tierWidth, h, EarHeightAt240, weight * tier * TaperGain) * lineScale * 0.5f;
+            var left = new List<Point2D>(curve.Count);
+            var right = new List<Point2D>(curve.Count);
+            for (var i = 0; i < curve.Count; i++)
+            {
+                var t = i / (float)(curve.Count - 1);
+                var a = curve[Math.Max(0, i - 1)];
+                var b = curve[Math.Min(curve.Count - 1, i + 1)];
+                float dx = b.X - a.X, dy = b.Y - a.Y, l = MathF.Max(1e-4f, MathF.Sqrt((dx * dx) + (dy * dy)));
+                var swell = t < peak ? t / peak : (1f - t) / (1f - peak);
+                var wdt = half * MathF.Sqrt(Math.Clamp(swell, 0f, 1f));
+                left.Add(new Point2D(curve[i].X - (dy / l * wdt), curve[i].Y + (dx / l * wdt)));
+                right.Add(new Point2D(curve[i].X + (dy / l * wdt), curve[i].Y - (dx / l * wdt)));
+            }
+
+            var path = new CanvasPath();
+            path.MoveTo(left[0].X, left[0].Y);
+            foreach (var q in left.Skip(1)) path.LineTo(q.X, q.Y);
+            for (var i = right.Count - 1; i >= 0; i--) path.LineTo(right[i].X, right[i].Y);
+            path.ClosePath();
+            return path;
+        }
+
+        // 1. **The top-heavy C** - the helix: from where the rim leaves the head above the tragus, up over a
+        // rounded top, down the back where it is widest, and round under the lobe. Fullest at the back.
+        var helix = Line(HelixTier * (1f + (0.4f * rimShape)), 0.4f,
+            (0.30f, -0.52f), Top(0.30f, -0.84f, 0.3f), Top(0.02f, -0.99f, 1f), Top(-0.55f, -0.88f, 0.5f), (-0.92f, -0.42f),
+            (-0.90f, 0.12f), (-0.62f, 0.62f), Lobe(-0.22f, 0.95f), Lobe(0.12f, 0.90f), Lobe(0.22f, 0.76f, true));
+
+        // 2. **Two lines that bypass each other.** The rim's inner edge runs forward under the top and rolls
+        // down inside, into the top of the bowl ("pointing inside": the crus of the helix); below it the
+        // tragus's edge comes up and out toward the face ("pointing outside"), passing it on the outside.
+        // The tragus is the ear's midpoint (Gautier, p. 29), the one position a source states exactly.
+        var crus = detail >= 2 ? Line(AntihelixTier, 0.45f, Top(-0.08f, -0.80f, 0.6f), Top(0.20f, -0.70f, 0.4f), (0.24f, -0.46f), (0.04f, -0.28f)) : new CanvasPath();
+        var tragus = detail >= 2 ? Line(AntihelixTier, 0.5f, (0.20f, 0.28f), (0.36f, 0.14f), (0.43f, -0.05f), (0.40f, -0.22f)) : new CanvasPath();
+
+        // 3. **The raised Y** - the antihelix: a stem rising behind the bowl and forking under the top, one
+        // branch up toward the back of the rim, the other forward over the bowl.
+        var antihelix = new CanvasPath();
+        if (detail >= 3)
+        {
+            (float, float) fork = (-0.27f, -0.24f);
+            antihelix = Line(AntihelixTier, 0.55f, (-0.10f, 0.38f), (-0.22f, 0.14f), (-0.28f, -0.06f), fork)
+                .Union(Line(AntihelixTier * 0.8f, 0.4f, fork, (-0.38f, -0.46f), (-0.38f, -0.64f), Top(-0.30f, -0.76f, 0.5f)))
+                .Union(Line(AntihelixTier * 0.8f, 0.4f, fork, (-0.14f, -0.38f), (-0.02f, -0.44f), (0.06f, -0.46f)));
+        }
+
+        // 4. **The small U** - the notch at the bottom of the bowl, from the tragus down and up into the
+        // antitragus at the foot of the Y.
+        var notch = detail >= 4 ? Line(ConchaTier, 0.5f, (0.22f, 0.22f), (0.16f, 0.40f), (0.04f, 0.46f), (-0.08f, 0.36f)) : new CanvasPath();
+
+        // 5. **The back line, or rim line** - the inner edge of the rim along the back, so the rim reads as a
+        // rolled band rather than as the ear's outline.
+        var rim = detail >= 5
+            ? Line(ConchaTier, 0.4f, Top(-0.20f, -0.80f + (0.06f * rimShape), 0.8f), (-0.62f + (0.08f * rimShape), -0.64f),
+                   (-0.72f + (0.10f * rimShape), -0.12f), (-0.54f + (0.08f * rimShape), 0.40f), (-0.30f, 0.64f))
+            : new CanvasPath();
+
+        // The bowl, the deepest part of the ear, as the lines enclose it: under the crus, down the front of
+        // the Y's stem, round the notch and up the tragus. It fills the middle third (Gautier, p. 29).
         var concha = new CanvasPath();
-        concha.Ellipse(cx, cy, crx, cry, 0f, 0f, MathF.PI * 2f, false);
+        {
+            (float U, float V)[] bowl = [(0.04f, -0.28f), (-0.18f, -0.24f), (-0.20f, 0.04f), (-0.10f, 0.34f),
+                                         (0.06f, 0.40f), (0.20f, 0.26f), (0.30f, 0.04f), (0.22f, -0.18f)];
+            var mid0 = P((bowl[^1].U + bowl[0].U) * 0.5f, (bowl[^1].V + bowl[0].V) * 0.5f);
+            concha.MoveTo(mid0.X, mid0.Y);
+            for (var i = 0; i < bowl.Length; i++)
+            {
+                var a = P(bowl[i].U, bowl[i].V);
+                var b = P(bowl[(i + 1) % bowl.Length].U, bowl[(i + 1) % bowl.Length].V);
+                concha.QuadraticCurveTo(a.X, a.Y, (a.X + b.X) * 0.5f, (a.Y + b.Y) * 0.5f);
+            }
+            concha.ClosePath();
+        }
 
-        // The lobe fills the bottom third, so it is centred at two thirds down rather than at 0.78.
+        // The lobe fills the bottom third. It is softer than the rest (Hamm), so it is the helix's own thin
+        // end and no line of its own; this is its shape, for a caller to shade.
         var lobe = new CanvasPath();
-        lobe.Arc(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 2f * Third), rx * 0.34f,
+        lobe.Arc(center.X + (faceDir * rx * 0.05f), center.Y + (ry * 2f * Third), rx * 0.34f * (1f + (0.25f * lobeShape)),
                  MathF.PI * 0.05f, MathF.PI * 0.95f);
 
-        // **The tragus, which nothing drew.** *"That small, hard piece of flesh that covers the hole
-        // to the ear, is the midpoint of the ear"* — so it is the one part whose position is exactly
-        // stated rather than estimated, and it is what stops the bowl reading as an empty dish.
-        var tragus = new CanvasPath();
-        tragus.Arc(cx + (faceDir * crx * 0.72f), center.Y, MathF.Max(0.4f, rx * 0.15f),
-                   MathF.PI * (faceDir > 0f ? 1.42f : 0.42f), MathF.PI * (faceDir > 0f ? 2.42f : 1.42f));
-
         ctx.Save();
-
         ApplyMedium(ctx, medium);
 
-        ctx.FillStyle = InMedium(medium, shadowColor);
-        ctx.Fill(concha);
-
-        // **Cross-contour arcs across the bowl, which is what `drawCrossContourHatch` is for.** They
-        // run across the form rather than along it, so they state the hollow instead of shading it
-        // flat — the same reason Manual 03 §4 hatches a three-quarter head at two different angles.
-        // Three arcs rather than four, and only where they are big enough to read: below about eight
-        // pixels of bowl they merge into the blob they were drawn to avoid.
-        if (hatch && cry > 4f)
-            DrawCrossContourHatch(ctx, cx, cy, crx * 0.82f, cry * 0.82f,
-                                  MathF.PI * 0.15f, MathF.PI * 0.85f, 3, inkColor,
-                                  MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier * 0.8f)));
+        // 6. **The tone**: the bowl nearly always catches some shadow, deepest toward the opening by the
+        // tragus. Cross-contour arcs over it are optional (`hatch`).
+        if (detail >= 6)
+        {
+            var tone = new Dictionary<string, object?>
+            {
+                ["color"] = shadowColor, ["amount"] = 0.3f, ["from"] = ToDict(P(0.16f, 0.06f)), ["to"] = ToDict(P(-0.22f, -0.26f)),
+                ["softness"] = MathF.Max(0.5f, h * 0.02f)
+            };
+            if (optDict?["medium"] is { } m) tone["medium"] = m;
+            DrawTone(ctx, concha, tone);
+            if (hatch && h * Third > 8f)
+                DrawCrossContourHatch(ctx, P(0.04f, 0.06f).X, P(0.04f, 0.06f).Y, rx * 0.24f, ry * 0.28f,
+                                      MathF.PI * 0.15f, MathF.PI * 0.85f, 3, inkColor,
+                                      MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier * 0.8f)));
+        }
 
         ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(helix);
-        ctx.Fill(antihelix);
-
-        ctx.StrokeStyle = InMedium(medium, inkColor);
-        ctx.LineWidth = MathF.Max(0.3f, Tier(ConchaTier, h, EarHeightAt240, weight * tier));
-        ctx.LineCap = "round";
-        ctx.Stroke(lobe);
-        ctx.Stroke(tragus);
+        if (detail >= 2) { ctx.Fill(crus); ctx.Fill(tragus); }
+        if (detail >= 3) ctx.Fill(antihelix);
+        if (detail >= 4) ctx.Fill(notch);
+        if (detail >= 5) ctx.Fill(rim);
 
         ctx.Restore();
 
         return new Dictionary<string, object?>
         {
             ["helix"] = helix,
+            ["crus"] = crus,
+            ["tragus"] = tragus,
             ["antihelix"] = antihelix,
+            ["notch"] = notch,
+            ["rim"] = rim,
             ["concha"] = concha,
             ["lobe"] = lobe,
-            ["tragus"] = tragus
+            ["detail"] = detail
         };
     }
 
@@ -1378,6 +1491,8 @@ public partial class ConstructiveDrawingToolkit
 
     /// <summary>An ear divides into thirds — attachment, bowl, lobe — which is Gautier, p. 29.</summary>
     private const float Third = 1f / 3f;
+    // The ear heights at which drawComicEar steps down Hamm's stages, from 6 at 40px (a head of about 140px).
+    private static readonly float[] EarDetailHeight = [9f, 16f, 26f, 40f];
 
     /// <summary>What is left of the bridge mark on a head with no turn in it.</summary>
     private const float FrontalBridge = 0.38f;

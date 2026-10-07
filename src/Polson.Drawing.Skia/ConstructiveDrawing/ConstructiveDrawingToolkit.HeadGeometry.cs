@@ -812,6 +812,16 @@ public partial class ConstructiveDrawingToolkit
         // Hamm's hollows beside the bridge sit in the air between the eyes: they are shading, not a feature, and counting
         // them would mark a face down for following him. Full detail at every size, so a small head is measured as a large one.
         var noseInk = new Dictionary<string, object?> { ["inkColor"] = "#000000", ["depressions"] = 0f, ["detail"] = 4f };
+        // The mouth's room is its lips, its opening and its teeth, counted as hard shapes: the lips' soft-edged
+        // tone would count a halo that grows, against the face, as the head shrinks.
+        var mouthInk = new Dictionary<string, object?> { ["inkColor"] = "#000000", ["tone"] = 0f };
+        void Mouth(CanvasRenderingContext2D ctx)
+        {
+            var parts = DrawComicMouth(ctx, head["mouthGuides"]!, mouthInk);
+            ctx.FillStyle = "#000000";
+            foreach (var key in new[] { "upperLip", "lowerLip" })
+                if (parts.TryGetValue(key, out var p) && p is CanvasPath lip) ctx.Fill(lip);
+        }
         using var eyes = Surface(ctx => { DrawComicEye(ctx, head["farEye"]!, true, ink); DrawComicEye(ctx, head["nearEye"]!, false, ink); });
         using var brows = Surface(ctx =>
         {
@@ -819,14 +829,14 @@ public partial class ConstructiveDrawingToolkit
             if (head.Contains("nearBrow")) DrawComicBrow(ctx, head["nearBrow"]!, false, ink);
         });
         using var nose = Surface(ctx => DrawComicNose(ctx, head["noseWedge"]!, noseInk));
-        using var mouth = Surface(ctx => DrawComicMouth(ctx, head["mouthGuides"]!, ink));
+        using var mouth = Surface(Mouth);
         using var all = Surface(ctx =>
         {
             DrawComicEye(ctx, head["farEye"]!, true, ink); DrawComicEye(ctx, head["nearEye"]!, false, ink);
             if (head.Contains("farBrow")) DrawComicBrow(ctx, head["farBrow"]!, true, ink);
             if (head.Contains("nearBrow")) DrawComicBrow(ctx, head["nearBrow"]!, false, ink);
             DrawComicNose(ctx, head["noseWedge"]!, noseInk);
-            DrawComicMouth(ctx, head["mouthGuides"]!, ink);
+            Mouth(ctx);
         });
 
         float Share(SkiaCanvas canvas) => facePixels == 0 ? 0f : Covered(canvas) / (float)facePixels;

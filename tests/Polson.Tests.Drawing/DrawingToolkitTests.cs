@@ -1568,7 +1568,7 @@ public class DrawingToolkitTests : TestsRuntime
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "base", "bridge", "bridgeMark", "depressions", "detail", "farNostril", "farNostrilHole", "nostril", "nostrilHole", "sideLine", "sideShadow", "underPlane" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "cavity", "lipLine", "lipMark", "lowerLip", "teeth" },
+        Assert.Equal(new[] { "cavity", "corners", "creases", "lipLine", "lipMark", "lowerLip", "open", "teeth", "underShadow", "upperLip" },
             mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
 
         // The iris sits inside the aperture it is clipped to, which is the relationship that makes

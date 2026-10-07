@@ -265,6 +265,69 @@ public class ActionUnitTests : TestsRuntime
     }
     #endregion
 
+    #region Mouth Tests
+    static float M(Dictionary<string, object?> head, string key) => Convert.ToSingle(G(head, "mouthGuides")[key]);
+
+    /// <summary>At rest the lips are closed, and the drawn mouth shows no teeth.</summary>
+    [Fact]
+    public void TestTheMouthIsClosedAtRest()
+    {
+        var head = Head();
+        Assert.Equal(0f, M(head, "openUp"));
+        Assert.Equal(0f, M(head, "openDown"));
+
+        var drawn = Toolkit.DrawComicMouth(new SkiaCanvas(600, 600).GetContext("2d"), head["mouthGuides"]!);
+        Assert.False((bool)drawn["open"]!);
+        Assert.True(((CanvasPath)drawn["teeth"]!).IsEmpty);
+    }
+
+    /// <summary>A dropped jaw opens the mouth below its line: the lower lip goes down with the chin.</summary>
+    [Fact]
+    public void TestAJawDropOpensTheMouthBelow()
+    {
+        var head = Head();
+        var open = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU26"] = 1f });
+        Assert.Equal(M(open, "lowerLipY") - M(head, "lowerLipY"), M(open, "openDown"), 3);
+        Assert.Equal(0f, M(open, "openUp"));
+
+        var ctx = new SkiaCanvas(600, 600).GetContext("2d");
+        var drawn = Toolkit.DrawComicMouth(ctx, open["mouthGuides"]!);
+        Assert.True((bool)drawn["open"]!);
+        Assert.False(((CanvasPath)drawn["teeth"]!).IsEmpty);
+    }
+
+    /// <summary>
+    /// Hamm's laugh (<i>Drawing the Head and Figure</i>, p. 12): the lips part by the upper lip rising, so the
+    /// distance from the nose to the top of the lip shortens by what the gap opens, and the lower lip and the
+    /// chin stay where they were.
+    /// </summary>
+    [Fact]
+    public void TestLipsPartByTheUpperLipRising()
+    {
+        var head = Head();
+        var laugh = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU25"] = 1f });
+        var nose = Convert.ToSingle(((Dictionary<string, object?>)G(head, "noseWedge")["underNose"]!)["y"]);
+
+        Assert.True(M(laugh, "openUp") > 0f);
+        Assert.Equal(M(head, "lowerLipY"), M(laugh, "lowerLipY"), 3);
+        Assert.Equal(Convert.ToSingle(((Dictionary<string, object?>)head["chin"]!)["y"]),
+                     Convert.ToSingle(((Dictionary<string, object?>)laugh["chin"]!)["y"]), 3);
+        // A + B: nose to the top of the upper lip, plus the gap, is what it was.
+        Assert.Equal(M(head, "upperLipY") - nose, (M(laugh, "upperLipY") - nose) + M(laugh, "openUp"), 3);
+    }
+
+    /// <summary>An opening blends like any other part of a head, so a laugh can be keyed.</summary>
+    [Fact]
+    public void TestAnOpeningBlends()
+    {
+        var head = Head();
+        var laugh = Toolkit.ApplyActionUnits(head, new Dictionary<string, object?> { ["AU25"] = 1f, ["AU26"] = 0.5f });
+        var half = Toolkit.BlendHead(head, head, laugh, 0.5f);
+        Assert.Equal(M(laugh, "openUp") * 0.5f, M(half, "openUp"), 2);
+        Assert.Equal(M(laugh, "openDown") * 0.5f, M(half, "openDown"), 2);
+    }
+    #endregion
+
     #region Refusal Tests
     /// <summary>An unknown unit is refused and the known ones are listed.</summary>
     /// <remarks>

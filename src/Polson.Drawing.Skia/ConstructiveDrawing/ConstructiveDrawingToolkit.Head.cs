@@ -296,7 +296,10 @@ public partial class ConstructiveDrawingToolkit
                 ["leftCorner"] = ToDict(mouthLeft),
                 ["rightCorner"] = ToDict(mouthRight),
                 ["upperLipY"] = yMouth - H * 0.02f,
-                ["lowerLipY"] = yMouth + H * 0.03f
+                ["lowerLipY"] = yMouth + H * 0.03f,
+                // How far the lips part above and below the line of the mouth; closed at rest.
+                ["openUp"] = 0f,
+                ["openDown"] = 0f
             },
             ["jaw"] = new Dictionary<string, object?>
             {
@@ -653,7 +656,9 @@ public partial class ConstructiveDrawingToolkit
                 ["leftCorner"] = ToDict(new Point2D(x0 - 0.75f * e, yMouth)),
                 ["rightCorner"] = ToDict(new Point2D(x0 + 0.75f * e, yMouth)),
                 ["upperLipY"] = upperLip,
-                ["lowerLipY"] = lowerLip
+                ["lowerLipY"] = lowerLip,
+                ["openUp"] = 0f,
+                ["openDown"] = 0f
             },
             ["jaw"] = new Dictionary<string, object?>
             {
@@ -1309,6 +1314,8 @@ public partial class ConstructiveDrawingToolkit
         ("mouthGuides.rightCorner", HeadValue.Point),
         ("mouthGuides.upperLipY", HeadValue.CoordY),
         ("mouthGuides.lowerLipY", HeadValue.CoordY),
+        ("mouthGuides.openUp", HeadValue.Length),
+        ("mouthGuides.openDown", HeadValue.Length),
 
         ("jaw.ear", HeadValue.Point),
         ("jaw.angle", HeadValue.Point),

@@ -1289,8 +1289,9 @@ public partial class ConstructiveDrawingToolkit
     }
 
     /// <summary>
-    /// Draws the mouth and <b>returns the parts it built</b>: <c>cavity</c>, <c>teeth</c>,
-    /// <c>lipLine</c> (the inked upper lip, as an open centre-line) and <c>lowerLip</c>.
+    /// Draws the mouth in Hamm's terms and <b>returns the parts it built</b>: <c>cavity</c>, <c>teeth</c>,
+    /// <c>lipLine</c> (the line of the opening, as an open centre-line), <c>lipMark</c>, <c>upperLip</c>,
+    /// <c>lowerLip</c>, <c>underShadow</c>, <c>corners</c> and <c>creases</c>, and whether it is <c>open</c>.
     /// </summary>
     /// <remarks>
     /// The mouth is the feature Studio Manual 23 §4 says carries expression along with the brows and
@@ -1316,77 +1317,191 @@ public partial class ConstructiveDrawingToolkit
         var left = ExtractPoint(mouth["leftCorner"]);
         var right = ExtractPoint(mouth["rightCorner"]);
 
-        // **The mouth's GEOMETRY was in absolute pixels too, not just its ink** — the cavity 12px
-        // deep, the lower lip a 6px disc 16px below centre, the teeth inset 3px from each corner.
-        // So a mouth on a 600px head had a cavity a fortieth of its own width and a lower lip that
-        // had all but vanished, while a 60px head wore a lip larger than the mouth. Every offset is
-        // now a fraction of the mouth's own width, calibrated on the 240px head that produced the
-        // constants, so that size is unchanged and the rest are no longer wrong.
+        // **The mouth's GEOMETRY is a fraction of the mouth's own width**, never pixels, calibrated on the
+        // 240px head the ink tiers are, so a mouth reads the same at any head size.
         var mw = MathF.Abs(right.X - left.X);
         if (mw <= 0.1f) mw = MouthWidthAt240;
         float F(float px) => mw * (px / MouthWidthAt240);
+        float Read(string key, float fallback) =>
+            mouth.Contains(key) && mouth[key] is not null ? Convert.ToSingle(mouth[key], CultureInfo.InvariantCulture) : fallback;
 
-        // The upper lip curve bounds the cavity and is also the inked line, so it is built once.
-        var lipLine = new CanvasPath();
-        lipLine.MoveTo(left.X, left.Y);
-        lipLine.QuadraticCurveTo(center.X, center.Y - F(2f), right.X, right.Y);
+        // **Hamm's mouth** (Drawing the Head and Figure, pp. 11-12). The lips part above and below the line of
+        // the mouth by `openUp` and `openDown`; the upper lip runs from `upperLipY` down to the opening and the
+        // lower lip from the opening to `lowerLipY`. A head carries all four; a bare mouth is closed at rest.
+        var openUp = MathF.Max(0f, Read("openUp", 0f));
+        var openDown = MathF.Max(0f, Read("openDown", 0f));
+        var upperT = MathF.Max(F(2f), (center.Y - openUp) - Read("upperLipY", center.Y - F(4.8f)));
+        var lowerT = MathF.Max(F(3f), Read("lowerLipY", center.Y + F(7.2f)) - (center.Y + openDown));
+        var open = openUp + openDown > F(0.6f);
+        var tone = Math.Clamp(Num(optDict, "tone", 1f), 0f, 1f);
+        var creases = Math.Clamp(Num(optDict, "creases", 0f), 0f, 1f);
 
-        var cavity = new CanvasPath(lipLine);
-        cavity.QuadraticCurveTo(center.X, center.Y + F(12f), left.X, left.Y);
-        cavity.ClosePath();
+        // The two halves of a turned mouth differ, so every point is placed off its own half.
+        float dl = center.X - left.X, dr = right.X - center.X;
+        Point2D Across(float s, float y) => new(s < 0f ? center.X + (s * dl) : center.X + (s * dr), y);
 
+        // A curve through points, sampled, for building the lips as filled shapes.
+        static List<Point2D> Through(params Point2D[] pts)
+        {
+            var curve = new List<Point2D>();
+            for (var i = 0; i < pts.Length - 1; i++)
+            {
+                Point2D p0 = pts[Math.Max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.Min(pts.Length - 1, i + 2)];
+                for (var k = 0; k < 10; k++)
+                {
+                    float t = k / 10f, t2 = t * t, t3 = t2 * t;
+                    float B(float a, float b, float c, float d) =>
+                        0.5f * ((2f * b) + ((-a + c) * t) + (((2f * a) - (5f * b) + (4f * c) - d) * t2) + ((-a + (3f * b) - (3f * c) + d) * t3));
+                    curve.Add(new Point2D(B(p0.X, p1.X, p2.X, p3.X), B(p0.Y, p1.Y, p2.Y, p3.Y)));
+                }
+            }
+            curve.Add(pts[^1]);
+            return curve;
+        }
+        static CanvasPath Shape(IEnumerable<Point2D> outline)
+        {
+            var path = new CanvasPath();
+            var first = true;
+            foreach (var p in outline)
+            {
+                if (first) path.MoveTo(p.X, p.Y); else path.LineTo(p.X, p.Y);
+                first = false;
+            }
+            path.ClosePath();
+            return path;
+        }
+        static CanvasPath Open(IEnumerable<Point2D> line)
+        {
+            var path = new CanvasPath();
+            var first = true;
+            foreach (var p in line)
+            {
+                if (first) path.MoveTo(p.X, p.Y); else path.LineTo(p.X, p.Y);
+                first = false;
+            }
+            return path;
+        }
+
+        // **The line of the opening**, the darkest part of the mouth (p. 11). Closed, it dips a little at the
+        // centre, where the upper lip's protrusion presses down on the lower.
+        var dip = F(0.9f);
+        var apertureTop = Through(left, Across(-0.5f, center.Y - (openUp * 0.85f) + (open ? 0f : dip * 0.6f)), new Point2D(center.X, center.Y - openUp + (open ? 0f : dip)),
+                                  Across(0.5f, center.Y - (openUp * 0.85f) + (open ? 0f : dip * 0.6f)), right);
+        var apertureBottom = open
+            ? Through(left, Across(-0.5f, center.Y + (openDown * 0.85f) + dip * 0.6f), new Point2D(center.X, center.Y + openDown + dip), Across(0.5f, center.Y + (openDown * 0.85f) + dip * 0.6f), right)
+            : apertureTop;
+
+        // **The upper lip**: Cupid's bow on top, two peaks either side of a notch under the hollow above the
+        // mouth; its rim projects farther than the lower lip's, so it is in shade.
+        var lipTop = center.Y - openUp - upperT;
+        var upperOutline = Through(left, Across(-0.62f, lipTop + (upperT * 0.45f)), Across(-0.3f, lipTop), new Point2D(center.X, lipTop + (upperT * 0.25f)),
+                                   Across(0.3f, lipTop), Across(0.62f, lipTop + (upperT * 0.45f)), right);
+        var upperLip = Shape(upperOutline.Concat(Enumerable.Reverse(apertureTop)));
+
+        // **The lower lip**: fuller, rounder and lit, from the opening down to its rounded underside.
+        var lipBottom = center.Y + openDown + lowerT;
+        var lowerOutline = Through(right, Across(0.62f, lipBottom - (lowerT * 0.42f)), Across(0.3f, lipBottom - (lowerT * 0.05f)), new Point2D(center.X, lipBottom),
+                                   Across(-0.3f, lipBottom - (lowerT * 0.05f)), Across(-0.62f, lipBottom - (lowerT * 0.42f)), left);
+        var lowerLip = Shape(apertureBottom.Concat(lowerOutline.Skip(1)));
+
+        // **The cavity**, between the two edges of the opening; a sliver when the mouth is closed.
+        var cavityBottom = open ? apertureBottom : Through(left, new Point2D(center.X, center.Y + dip + F(0.8f)), right);
+        var cavity = Shape(apertureTop.Concat(Enumerable.Reverse(cavityBottom)));
+
+        // **The upper teeth**, the set that shows in a laugh, under the upper lip and clipped to the opening.
         var teeth = new CanvasPath();
-        teeth.MoveTo(left.X + F(3f), left.Y);
-        teeth.QuadraticCurveTo(center.X, center.Y - F(2f), right.X - F(3f), right.Y);
-        teeth.LineTo(right.X - F(4f), right.Y + F(4f));
-        teeth.QuadraticCurveTo(center.X, center.Y + F(3f), left.X + F(4f), left.Y + F(3f));
-        teeth.ClosePath();
+        if (open)
+        {
+            var teethH = MathF.Min((openUp + openDown) * 0.75f + F(0.6f), F(9f));
+            teeth = Shape(Through(Across(-0.82f, center.Y - (openUp * 0.6f)), new Point2D(center.X, center.Y - openUp), Across(0.82f, center.Y - (openUp * 0.6f)))
+                .Concat(Through(Across(0.78f, center.Y - (openUp * 0.6f) + (teethH * 0.6f)), new Point2D(center.X, center.Y - openUp + teethH),
+                                Across(-0.78f, center.Y - (openUp * 0.6f) + (teethH * 0.6f)))));
+        }
 
-        var lowerLip = new CanvasPath();
-        lowerLip.Arc(center.X, center.Y + F(16f), F(6f), 0.2f, MathF.PI - 0.2f);
+        // **The shadow under the lower lip**, in the depression above the chin.
+        var underTop = lipBottom - (lowerT * 0.05f);
+        var underShadow = Shape(Through(Across(-0.55f, underTop - (lowerT * 0.3f)), new Point2D(center.X, underTop), Across(0.55f, underTop - (lowerT * 0.3f)))
+            .Concat(Through(Across(0.3f, underTop + (lowerT * 0.25f)), new Point2D(center.X, underTop + (lowerT * 0.55f)), Across(-0.3f, underTop + (lowerT * 0.25f)))));
 
-        // **The lip slit as a tapered mark.** Full weight through the middle and lifting at both
-        // corners, which is what stops a mouth reading as a drawn-on line. `lipLine` keeps its
-        // documented meaning as the open centre-line; the filled mark arrives beside it.
+        // **The corner depressions**, which may register interesting shadow (p. 11): a small hook at each corner.
+        var cornerMarks = new CanvasPath();
+        foreach (var (c, side) in new[] { (left, -1f), (right, 1f) })
+        {
+            cornerMarks.MoveTo(c.X - (side * F(0.9f)), c.Y - F(0.2f));
+            cornerMarks.QuadraticCurveTo(c.X + (side * F(0.6f)), c.Y + F(0.5f), c.X + (side * F(1.1f)), c.Y - F(0.6f));
+        }
+
+        // **The skin creases** across each lip (p. 11): about two dozen, short and light, running across the lip.
+        var creaseMarks = new CanvasPath();
+        if (creases > 0f)
+        {
+            var count = (int)MathF.Round(6f + (10f * creases));
+            for (var i = 1; i < count; i++)
+            {
+                var s = -0.8f + (1.6f * i / count);
+                var at = Across(s, center.Y);
+                var reach = 1f - (s * s);
+                creaseMarks.MoveTo(at.X, center.Y - openUp - (upperT * 0.15f));
+                creaseMarks.LineTo(at.X + (s * F(0.4f)), center.Y - openUp - (upperT * (0.15f + (0.5f * reach))));
+                creaseMarks.MoveTo(at.X, center.Y + openDown + (lowerT * 0.15f));
+                creaseMarks.LineTo(at.X + (s * F(0.4f)), center.Y + openDown + (lowerT * (0.15f + (0.55f * reach))));
+            }
+        }
+
+        // **The opening as the inked line**: tapered, full through the middle and lifting at the corners.
+        var lipLine = Open(apertureTop);
         var lipMark = CreateTaperedStrokePath(
             left,
-            new Point2D(left.X + ((center.X - left.X) * 0.6f), center.Y - F(2f)),
-            new Point2D(right.X - ((right.X - center.X) * 0.6f), center.Y - F(2f)),
+            new Point2D(left.X + ((center.X - left.X) * 0.6f), center.Y - (openUp * 0.9f) + (open ? 0f : dip)),
+            new Point2D(right.X - ((right.X - center.X) * 0.6f), center.Y - (openUp * 0.9f) + (open ? 0f : dip)),
             right,
             Tier(LipLineTier, mw, MouthWidthAt240, weight * TaperGain));
 
         ctx.Save();
-
         ApplyMedium(ctx, medium);
 
-        ctx.FillStyle = InMedium(medium, cavityColor);
-        ctx.Fill(cavity);
+        Dictionary<string, object?> ToneOf(string color, float amount, Point2D? from = null, Point2D? to = null)
+        {
+            var t = new Dictionary<string, object?> { ["color"] = color, ["amount"] = amount, ["softness"] = MathF.Min(1.5f, MathF.Max(0.4f, F(0.15f))) };
+            if (from is { } a && to is { } b) { t["from"] = ToDict(a); t["to"] = ToDict(b); }
+            if (optDict?["medium"] is { } m) t["medium"] = m;
+            return t;
+        }
 
-        // **Clipped to the cavity, because teeth outside a mouth are a hole in the face.** The teeth
-        // polygon's lower edge dips below the cavity's return curve at whichever corner is longer —
-        // this construction's corners are not symmetric — so a wedge of white stood outside the mouth.
-        // It was always there and was four pixels wide at 240px; scaling the geometry made it visible
-        // rather than making it happen.
-        ctx.Save();
-        ctx.Clip(cavity);
-        ctx.FillStyle = teethColor;
-        ctx.Fill(teeth);
-        ctx.Restore();
+        // The lips in their values: the upper in shade, the lower lit with its fullest part lightest, and the
+        // shadow under it. Multiplied over the skin, so they darken rather than paint.
+        if (tone > 0f)
+        {
+            DrawTone(ctx, upperLip, ToneOf(lipColor, 0.55f * tone));
+            DrawTone(ctx, lowerLip, ToneOf(lipColor, 0.32f * tone, new Point2D(center.X, lipBottom), new Point2D(center.X, center.Y + openDown)));
+            DrawTone(ctx, underShadow, ToneOf("#3a3030", 0.28f * tone, new Point2D(center.X, underTop), new Point2D(center.X, underTop + (lowerT * 0.55f))));
+        }
 
-        // **A hairline along the centre-line under the tapered mark, to seal the corners.** The taper
-        // lifts to nothing at each corner, and the teeth's top edge follows the same curve — so
-        // without this the white of the teeth shows through as a notch at whichever corner is longer.
-        // The round-capped constant stroke used to cover it by being constant.
-        ctx.StrokeStyle = InMedium(medium, inkColor);
-        ctx.LineWidth = MathF.Max(0.4f, Tier(LipLineTier, mw, MouthWidthAt240, weight * 0.4f));
-        ctx.LineCap = "round";
-        ctx.Stroke(lipLine);
+        if (open)
+        {
+            ctx.FillStyle = InMedium(medium, cavityColor);
+            ctx.Fill(cavity);
+            ctx.Save();
+            ctx.Clip(cavity);
+            ctx.FillStyle = teethColor;
+            ctx.Fill(teeth);
+            ctx.Restore();
+        }
+
+        if (creases > 0f)
+        {
+            ctx.StrokeStyle = InMedium(medium, lipColor);
+            ctx.LineWidth = MathF.Max(0.3f, Tier(LipLineTier, mw, MouthWidthAt240, weight * 0.25f));
+            ctx.LineCap = "round";
+            ctx.Stroke(creaseMarks);
+        }
 
         ctx.FillStyle = InMedium(medium, inkColor);
         ctx.Fill(lipMark);
-
-        ctx.FillStyle = InMedium(medium, lipColor);
-        ctx.Fill(lowerLip);
+        ctx.StrokeStyle = InMedium(medium, inkColor);
+        ctx.LineCap = "round";
+        ctx.LineWidth = MathF.Max(0.4f, Tier(LipLineTier, mw, MouthWidthAt240, weight * 0.45f));
+        ctx.Stroke(cornerMarks);
 
         ctx.Restore();
 
@@ -1396,7 +1511,12 @@ public partial class ConstructiveDrawingToolkit
             ["teeth"] = teeth,
             ["lipLine"] = lipLine,
             ["lipMark"] = lipMark,
-            ["lowerLip"] = lowerLip
+            ["upperLip"] = upperLip,
+            ["lowerLip"] = lowerLip,
+            ["underShadow"] = underShadow,
+            ["corners"] = cornerMarks,
+            ["creases"] = creaseMarks,
+            ["open"] = open
         };
     }
     #endregion
@@ -1941,6 +2061,13 @@ public partial class ConstructiveDrawingToolkit
             // Masseter and the pterygoids relaxed. The one unit that reaches the silhouette, so a
             // dropped jaw changes the head's outline rather than only its marks.
             ["AU26"] = (head, w, h, _) => DropJaw(head, 0.055f * h * w),
+
+            // Lips Part. Hamm's laugh (Drawing the Head and Figure, p. 12): in a normal laugh the lips part by
+            // the UPPER lip rising - the distance from the nose to the top of the lip shortens as the gap
+            // opens, the two adding up to the same - while the lower lip, the teeth and the chin stay nearly
+            // where they were. So this lifts the whole upper lip and leaves the jaw alone; a yelling laugh or a
+            // mouth open in awe is AU26 as well.
+            ["AU25"] = (head, w, h, _) => PartLips(head, 0.030f * h * w),
         };
 
     /// <summary>
@@ -2074,6 +2201,15 @@ public partial class ConstructiveDrawingToolkit
         }
     }
 
+    /// <summary>Parts the lips by lifting the whole upper lip (Hamm's laugh, p. 12); the jaw stays.</summary>
+    static void PartLips(Dictionary<string, object?> head, float lift)
+    {
+        if (head["mouthGuides"] is not Dictionary<string, object?> mouth) return;
+        if (mouth.TryGetValue("upperLipY", out var upper) && upper is not null)
+            mouth["upperLipY"] = Convert.ToSingle(upper, CultureInfo.InvariantCulture) - lift;
+        mouth["openUp"] = (mouth.TryGetValue("openUp", out var o) && o is not null ? Convert.ToSingle(o, CultureInfo.InvariantCulture) : 0f) + lift;
+    }
+
     /// <summary>Drops the jaw: the lower lip opens and the chin stations follow it down.</summary>
     /// <remarks>
     /// The chin moves because a jaw drop is a change to the head's <i>outline</i>, not only to the
@@ -2086,6 +2222,8 @@ public partial class ConstructiveDrawingToolkit
             && mouth.TryGetValue("lowerLipY", out var lower) && lower is not null)
         {
             mouth["lowerLipY"] = Convert.ToSingle(lower, CultureInfo.InvariantCulture) + drop;
+            // The lower lip goes down with the jaw, so the mouth opens below its line.
+            mouth["openDown"] = (mouth.TryGetValue("openDown", out var o) && o is not null ? Convert.ToSingle(o, CultureInfo.InvariantCulture) : 0f) + drop;
         }
 
         NudgePoint(head, "chin", 0f, drop * 0.55f);

@@ -322,7 +322,7 @@ The yaw offset is `sin(yaw) · W · 0.22` on the facial axis, and the far eye is
 | `head.nearEye`, `head.farEye` | `{ inner, outer, center, width, height, lowerLift }` | Pass straight to `Drawing.drawComicEye(...)`. `lowerLift` is how far the lower lid has risen, 0 at rest; `AU6` moves it. |
 | `head.nearBrow`, `head.farBrow` | `{ inner, peak, outer, thickness }` | The **drawn** eyebrows, one per eye — pass straight to `Drawing.drawComicBrow(...)`. Three stations because two cannot carry an arch, and the arch is where AU1 differs from AU2. |
 | `head.noseWedge` | `{ bridgeTop, apex, underNose, nearNostril }` | Pass straight to `Drawing.drawComicNose(...)`. |
-| `head.mouthGuides` | `{ center, leftCorner, rightCorner, upperLipY, lowerLipY }` | Pass straight to `Drawing.drawComicMouth(...)`. |
+| `head.mouthGuides` | `{ center, leftCorner, rightCorner, upperLipY, lowerLipY, openUp, openDown }` | Pass straight to `Drawing.drawComicMouth(...)`. `openUp` and `openDown` are how far the lips part above and below the line of the mouth, 0 at rest. |
 | `head.jaw` | `{ ear, angle, nearAngle, farStation, nearStation, chinFar, chinNear, chin, cheekApex }` | The whole jaw frame, ordered left to right. Both stations are the ball's halfway line, foreshortened by the turn — §2a. |
 | `head.temporalOval` | `{ cx, cy, rx, ry }` | The temple plane sliced off the ball. `rx = 0.32·W`, `ry = 0.26·H`; the diagram's "2/3 R" is not this and is not Loomis's. |
 
@@ -444,10 +444,26 @@ a blob, and an inker drops parts rather than thinning them, so **left out, `deta
 160px and up gets 4, about 90px gets 3, about 45px gets 2, smaller gets 1. Set it to draw a thumbnail or a rough at
 any size, or the full nose on a small head.
 
-### C. The Determined / Open Comic Mouth
-1. **Upper Lip**: M-shaped Cupid's bow line, darker fill or deep shadow line.
-2. **Mouth Opening**: Angled wedge revealing white teeth shelf and dark mouth cavity (`#2c0d0d`).
-3. **Lower Lip**: Defined by a **subtle shadow crescent** underneath rather than an outline around the whole lip!
+### C. The mouth (Hamm)
+
+Jack Hamm, *Drawing the Head and Figure*, pp. 11–12, and `drawComicMouth`:
+
+1. **The line of the opening is the darkest part of the mouth.** It is the one inked line: tapered, and dipping a
+   little at the centre where the upper lip's protrusion presses on the lower.
+2. **The upper lip** carries Cupid's bow, two peaks either side of a notch under the hollow that runs up to the nose.
+   Its rim projects farther than the lower lip's, so it is in shade.
+3. **The lower lip** is fuller and lit, and it may catch the upper lip's shadow; under it is a **depression** that
+   catches shadow above the chin. Shade it; do not outline it.
+4. **The corners** are depressions that may register a little shadow.
+5. **The creases** — about two dozen across each lip — show more on "o" and "u" and nearly vanish in a laugh
+   (`creases`, off by default).
+
+**The laugh and the triangle** (p. 12). The outer corners of the eyes and the bottom of the lower lip make an
+equilateral triangle in the straight mouth and the laughing mouth alike, because in a normal laugh the lips part by
+the **upper** lip rising: the distance from the nose to the top of the lip (half an eye, ordinarily) shortens by
+what the gap opens, and the lower lip, the teeth and the chin stay nearly where they were. That is `AU25`. It does
+not hold for a yelling laugh or a mouth open in awe, which drop the jaw (`AU26`). The mouth is drawn open, with its
+upper teeth, only when the head says it is: `mouthGuides.openUp` and `openDown`, both 0 at rest.
 
 ### D. The three drawers hand their parts back
 
@@ -459,7 +475,7 @@ looked at:
 | `drawComicEye` | `aperture`, `iris`, `pupil`, `catchlight`, `upperLid`, `lowerLid` |
 | `drawComicBrow` | `mass`, `spine` |
 | `drawComicNose` | `underPlane`, `bridge`, `bridgeMark`, `nostril`, `farNostril`, `nostrilHole`, `farNostrilHole`, `base`, `depressions`, `sideShadow`, `sideLine` |
-| `drawComicMouth` | `cavity`, `teeth`, `lipLine`, `lowerLip` |
+| `drawComicMouth` | `cavity`, `teeth`, `lipLine`, `lipMark`, `upperLip`, `lowerLip`, `underShadow`, `corners`, `creases`, `open` |
 
 **`aperture` is the one that changes what you can do.** It is both the sclera fill and the clip the
 interior is drawn inside — so it is what a highlight, a reflected window, or a hard-edged shadow from

@@ -9,7 +9,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Docs", "Docs", "{02EA681E-C
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
 		CLAUDE.md = CLAUDE.md
-		GEMINI.md = GEMINI.md
 		LICENSE = LICENSE
 		docs\devpost\Polson.Cinema.md = docs\devpost\Polson.Cinema.md
 		README.md = README.md

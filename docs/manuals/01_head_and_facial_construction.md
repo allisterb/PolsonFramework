@@ -427,6 +427,38 @@ Drawing.drawComicNose(ctx, head.noseWedge, { light: -40, shadow: 0.6 });
 Hamm never draws two round holes alone, and drops the line down the side of a front-view nose unless the face is
 in shadow; the drawer does both.
 
+#### The nose's shape
+
+Hamm's p. 13 is a catalogue of lower noses, male and female, and three differences run through its labels. The
+drawer takes each as an option from −1 to +1, 0 by default:
+
+- **`ball`**: a small ball to a large one. A large ball crowds the wings, which shrink, and its underside starts
+  nearer the tip (male 3 and 4 are large and small round balls, male 6 a small ball).
+- **`nostrils`**: openings "barely discernible" (male 4) to large ones running straight across (female 2 and 4).
+  Independent of the ball: Hamm pairs a small ball with hidden nostrils as readily as a large one.
+- **`septum`**: tapered up into the tip, where the base runs nearly straight across, to hanging low below the wings
+  (female 4, "low-hanging septum").
+
+He says the greater difference between a male and a female nose shows in the front view, where the male's parts are
+less delicate; in these terms that is a larger ball, larger wings and a heavier line (`weight`). The nose's width is
+the head's, one eye across (Gautier, p. 27), and its length is the head's `noseLength`. The amounts are the studio's.
+
+```javascript
+const canvas = createCanvas(480, 420);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f6f3ec'; ctx.fillRect(0, 0, 480, 420);
+
+const MORT_NOSE = { ball: 0.7, nostrils: -0.5, septum: 0.3 };    // keep it beside the character's parameters
+const head = Drawing.createLoomisHead(240, 180, 520, 20);
+ctx.fillStyle = '#efe2cf';
+ctx.fill(Drawing.createHeadGeometry(head).silhouette);
+Drawing.drawComicNose(ctx, head.noseWedge, { inkColor: '#15151a', ...MORT_NOSE });
+canvas;
+```
+
+The aquiline hook, the pointed tip and the profile undersides in the right-hand column are profile shapes, which a
+nose drawn from three landmarks has no outline for; they are not options.
+
 #### How much nose to draw
 
 Hamm's book builds the nose up in stages, and each stage is a nose in its own right (*Drawing the Head and Figure*,

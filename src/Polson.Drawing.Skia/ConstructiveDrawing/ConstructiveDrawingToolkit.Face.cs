@@ -647,6 +647,10 @@ public partial class ConstructiveDrawingToolkit
     /// what a caller re-fills when the light moves, or unions with the other shadow shapes on a face
     /// to make one cast-shadow mass. Studio Manual 03's rule is that a heavy line is the beginning of
     /// a shadow — that only becomes actionable when the shadow is a shape you hold.
+    /// <para>
+    /// The shape, each -1 to +1 and 0 by default, from Hamm's p. 13 catalogue: <c>ball</c> (small to large),
+    /// <c>nostrils</c> (hidden to exposed) and <c>septum</c> (tucked into the tip to low-hanging).
+    /// </para>
     /// </remarks>
     public Dictionary<string, object?> DrawComicNose(CanvasRenderingContext2D ctx, object noseObj, object? options = null)
     {
@@ -663,6 +667,17 @@ public partial class ConstructiveDrawingToolkit
         var lightDeg = hasLight ? Num(optDict, "light", 0f) : 0f;
         var shade = Math.Clamp(Num(optDict, "shadow", 0.5f), 0f, 1f);
         var hasDetail = optDict is not null && optDict.Contains("detail") && optDict["detail"] is not null;
+
+        // **The nose's shape**, each -1 to +1 and 0 by default, the ways the lower noses in Hamm's p. 13 catalogue
+        // differ: `ball` from a small ball to a large one that crowds the wings (male 3, 4, 6); `nostrils` from openings
+        // barely discernible to large ones running straight across (male 4, female 2, 4); `septum` from tapered up into
+        // the tip to hanging low below the wings (female 4, column 2). Width is the head's, one eye across. The amounts
+        // are the studio's.
+        float Option(string key) => Math.Clamp(Num(optDict, key, 0f), -1f, 1f);
+        float ballShape = Option("ball"), nostrilShape = Option("nostrils"), septumShape = Option("septum");
+        // How far the septum hangs, as a share of the nose's length: it drops below the wings, and tucked it only
+        // flattens the base, never arches it, since Hamm's tucked septa run straight across.
+        var septumDrop = septumShape >= 0f ? 0.045f * septumShape : 0.012f * septumShape;
 
         var bridgeTop = ExtractPoint(nose["bridgeTop"]);
         var apex = ExtractPoint(nose["apex"]);
@@ -748,7 +763,10 @@ public partial class ConstructiveDrawingToolkit
         {
             var inward = underNose.X >= edge.X ? 1f : -1f;
             var halfSpan = MathF.Abs(underNose.X - edge.X);
-            var r = halfSpan > tierR ? halfSpan * 0.26f : MathF.Max(0.5f, halfSpan * 0.4f);
+            // A large ball crowds the wings, so they shrink as it grows. The openings keep their own size (`rOpen`):
+            // Hamm pairs a small ball with nostrils barely discernible as readily as with large ones.
+            var rOpen = halfSpan > tierR ? halfSpan * 0.26f : MathF.Max(0.5f, halfSpan * 0.4f);
+            var r = rOpen * (1f - (0.25f * ballShape));
             var c = new Point2D(edge.X + (inward * r), edge.Y);
             var outward = inward > 0f ? MathF.PI : 0f;
             // The curl under the wing is lost first, then the rim shortens.
@@ -765,9 +783,13 @@ public partial class ConstructiveDrawingToolkit
             var open = new Point2D(c.X + (inward * r * 0.7f), c.Y + (r * 0.55f));
             var trace = new Point2D(underNose.X - (inward * r * 0.35f), underNose.Y - (r * 0.05f));
             var at = new Point2D(trace.X + ((open.X - trace.X) * cavity), trace.Y + ((open.Y - trace.Y) * cavity));
+            // Exposed openings grow mostly across, as Hamm's "large straight-across nostrils" do; hidden ones shrink to slits.
+            float openX = 1f + (0.7f * nostrilShape),
+                  openY = nostrilShape >= 0f ? 1f + (0.3f * nostrilShape) : 1f + (0.5f * nostrilShape);
             var hole = new CanvasPath();
             if (rim > 0.02f)
-                hole.Ellipse(at.X, at.Y, r * 0.5f * (0.3f + (0.7f * cavity)), r * 0.24f * (0.6f + (0.4f * cavity)), inward * 0.2f, 0f, MathF.PI * 2f);
+                hole.Ellipse(at.X, at.Y, rOpen * 0.5f * (0.3f + (0.7f * cavity)) * openX, rOpen * 0.24f * (0.6f + (0.4f * cavity)) * openY,
+                             inward * 0.2f, 0f, MathF.PI * 2f);
             // The opening's inner end, where the bottom of the ball begins.
             return (wing, hole, c, new Point2D(c.X + (inward * r * 1.2f), c.Y + (r * 0.55f)));
         }
@@ -786,9 +808,12 @@ public partial class ConstructiveDrawingToolkit
         //
         // The top runs through a point 40% of the way from the tip down to the septum, the underside of the
         // ball; the bottom through the septum. Both pass through their points rather than toward them.
-        var ballUnder = new Point2D(apex.X + ((underNose.X - apex.X) * 0.4f), apex.Y + ((underNose.Y - apex.Y) * 0.4f));
+        // A larger ball's underside starts nearer the tip, so the plane is taller; a low-hanging septum drops its bottom.
+        var ballShare = 0.4f - (0.2f * ballShape);
+        var ballUnder = new Point2D(apex.X + ((underNose.X - apex.X) * ballShare), apex.Y + ((underNose.Y - apex.Y) * ballShare));
+        var septum = new Point2D(underNose.X, underNose.Y + (len * septumDrop));
         var top = ControlThrough(farCentre, ballUnder, nearCentre);
-        var bottom = ControlThrough(nearCentre, underNose, farCentre);
+        var bottom = ControlThrough(nearCentre, septum, farCentre);
         var underPlane = new CanvasPath();
         underPlane.MoveTo(farCentre.X, farCentre.Y);
         underPlane.QuadraticCurveTo(top.X, top.Y, nearCentre.X, nearCentre.Y);
@@ -800,8 +825,10 @@ public partial class ConstructiveDrawingToolkit
         // carried to the openings it joined them into a dumbbell.
         Point2D Toward(Point2D from, float share) =>
             new(from.X + ((underNose.X - from.X) * share), from.Y + ((underNose.Y - from.Y) * share));
-        Point2D baseFar = Toward(farCurl, 0.4f), baseNear = Toward(nearCurl, 0.4f);
-        var baseControl = ControlThrough(baseFar, new Point2D(underNose.X, underNose.Y + (len * 0.01f)), baseNear);
+        // A larger ball carries the curve further out toward the wings; the septum sets how low it sags.
+        var baseShare = 0.4f - (0.2f * ballShape);
+        Point2D baseFar = Toward(farCurl, baseShare), baseNear = Toward(nearCurl, baseShare);
+        var baseControl = ControlThrough(baseFar, new Point2D(underNose.X, underNose.Y + (len * (0.01f + septumDrop))), baseNear);
         var noseBase = new CanvasPath();
         noseBase.MoveTo(baseFar.X, baseFar.Y);
         noseBase.QuadraticCurveTo(baseControl.X, baseControl.Y, baseNear.X, baseNear.Y);
@@ -903,18 +930,20 @@ public partial class ConstructiveDrawingToolkit
             if (detail == 1)
             {
                 // The base line: a short flat dash about the nose's width, sagging a hair.
-                Point2D a = Out(farNostril, 0.6f), b = Out(nearNostril, 0.6f);
-                var sag = new Point2D(underNose.X, underNose.Y + (len * 0.02f));
+                var reach = 0.6f * (1f + (0.2f * ballShape));
+                Point2D a = Out(farNostril, reach), b = Out(nearNostril, reach);
+                var sag = new Point2D(underNose.X, underNose.Y + (len * (0.02f + septumDrop)));
                 var cp = ControlThrough(a, sag, b);
                 noseBase.AddPath(CreateTaperedStrokePath(a, Lerp(a, cp, 2f / 3f), Lerp(b, cp, 2f / 3f), b, markW));
             }
             else
             {
                 // The bottom of the ball, its ends turned up toward the wings.
-                Point2D a = Out(farNostril, 0.8f), b = Out(nearNostril, 0.8f);
+                var reach = 0.8f * (1f + (0.15f * ballShape));
+                Point2D a = Out(farNostril, reach), b = Out(nearNostril, reach);
                 a = new Point2D(a.X, a.Y - (len * 0.07f));
                 b = new Point2D(b.X, b.Y - (len * 0.07f));
-                var low = new Point2D(underNose.X, underNose.Y + (len * 0.02f));
+                var low = new Point2D(underNose.X, underNose.Y + (len * (0.02f + septumDrop)));
                 noseBase.AddPath(CreateTaperedStrokePath(a,
                     new Point2D(a.X + ((low.X - a.X) * 0.25f), low.Y), new Point2D(b.X + ((low.X - b.X) * 0.25f), low.Y), b, markW));
 

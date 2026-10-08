@@ -1501,7 +1501,7 @@ Also accessible via `Skia.Drawing`.
 >
 > **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
 
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number, detail?: number, depressions?: number, light?: number, shadow?: number, medium?: BrushPreset })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base, depressions, sideShadow, sideLine, detail }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number, detail?: number, depressions?: number, light?: number, shadow?: number, ball?: number, nostrils?: number, septum?: number, medium?: BrushPreset })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base, depressions, sideShadow, sideLine, detail }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
 
 > [!TIP]
 > **`detail` (1–4) is how much of the nose is drawn, and it follows Hamm's own progression** (pp. 1, 3, 5): **1** the base line, a short dash where the nose meets the face; **2** the bottom of the ball with its ends turned up, and one stroke down the side of the bridge (the shadow side when lit, else the far side); **3** the wings and nostrils joined by the base, with the hollows between the eyes; **4** the whole form, with the plane under the ball, the bridge and the side shadow. A part not drawn at a level comes back empty, so the parts are what is on the page, and `detail` reports the level used.
@@ -1516,6 +1516,13 @@ Also accessible via `Skia.Drawing`.
 >
 > ```javascript
 > Drawing.drawComicNose(ctx, head.noseWedge, { light: -40, shadow: 0.6 });
+> ```
+>
+> **The nose's shape is three options, each −1 to +1 and 0 by default**, the differences running through Hamm's p. 13 catalogue of lower noses: **`ball`** from a small ball to a large one that crowds the wings (they shrink, and the plane under it grows taller); **`nostrils`** from openings barely discernible to large ones running straight across, independent of the ball; **`septum`** from tapered into the tip, the base nearly straight across, to hanging low below the wings. Width is one eye across, the head's; length is `noseLength`. Keep a character's nose in a `const` beside its ears and mouth. The amounts are the studio's.
+>
+> ```javascript
+> const MORT_NOSE = { ball: 0.7, nostrils: -0.5, septum: 0.3 };
+> Drawing.drawComicNose(ctx, head.noseWedge, { inkColor: '#15151a', ...MORT_NOSE });
 > ```
 
 > [!IMPORTANT]

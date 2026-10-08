@@ -114,6 +114,35 @@ public class HammNoseTests : TestsRuntime
         Assert.True(lit.MidX > axis, "light from the left puts the stroke on the right");
     }
 
+    /// <summary>
+    /// The nose's shape options from Hamm's p. 13 catalogue move what they name: a large ball shrinks the wings and
+    /// raises its underside; exposed nostrils are larger openings, hidden ones smaller, whatever the ball; a
+    /// low-hanging septum drops the base, a tucked one flattens it without arching it.
+    /// </summary>
+    [Fact]
+    public void TestTheNosesShapeOptionsMoveWhatTheyName()
+    {
+        var head = Head();
+        Dictionary<string, object?> With(string key, float value) => Draw(head, new() { [key] = value });
+        static float Area(Dictionary<string, object?> parts, string key) => ((CanvasPath)parts[key]!).Area;
+        var plain = Draw(head);
+
+        var large = With("ball", 1f);
+        Assert.True(Bounds(large, "nostril").Height < Bounds(plain, "nostril").Height * 0.85f, "a large ball does not crowd the wings");
+        Assert.True(Bounds(large, "underPlane").Height > Bounds(plain, "underPlane").Height * 1.3f, "a large ball's underside is no taller");
+
+        Assert.True(Area(With("nostrils", 1f), "nostrilHole") > Area(plain, "nostrilHole") * 1.8f, "exposed nostrils are not larger");
+        Assert.True(Area(With("nostrils", -1f), "nostrilHole") < Area(plain, "nostrilHole") * 0.3f, "hidden nostrils are not smaller");
+        Assert.Equal(Area(plain, "nostrilHole"), Area(With("ball", -1f), "nostrilHole"), 0.5f);
+
+        var septum = P(Nose(head), "underNose", "y");
+        var len = septum - P(Nose(head), "bridgeTop", "y");
+        Assert.True(Bounds(With("septum", 1f), "base").Bottom > Bounds(plain, "base").Bottom + (len * 0.03f), "a low septum does not hang");
+        var tucked = Bounds(With("septum", -1f), "base");
+        Assert.True(tucked.Bottom >= septum - 1f, "a tucked septum arches the base");
+        Assert.True(tucked.Height < Bounds(plain, "base").Height, "a tucked septum does not flatten the base");
+    }
+
     [Theory]
     [InlineData(0f, -1f)]       // light from the right: shadow on the left
     [InlineData(-40f, -1f)]     // from the upper right

@@ -1501,10 +1501,33 @@ Also accessible via `Skia.Drawing`.
 >
 > **The curve passes *through* `peak`**, not toward it — a quadratic aimed at a landmark reaches only halfway to it, so `peak` would mean about half of what its name says.
 
-- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number, detail?: number, depressions?: number, light?: number, shadow?: number, ball?: number, nostrils?: number, septum?: number, medium?: BrushPreset })` → `{ underPlane, bridge, bridgeMark, nostril, farNostril, nostrilHole, farNostrilHole, base, depressions, sideShadow, sideLine, detail }` — Renders the nose, **returning each part as a `CanvasPath`**. `bridge` is the open centre-line through the three landmarks; **`bridgeMark` is the tapered mark actually filled**; the two nostril wings and their openings come back separately. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the shadow under the ball: a shallow lens between the wings, deepest under the tip; `base` is the short curve under the tip, Hamm's front-view "‿".
+- `Drawing.drawComicNose(ctx: CanvasRenderingContext2D, noseObj: object, options?: { inkColor?: string, shadowColor?: string, weight?: number, detail?: number, depressions?: number, light?: number, shadow?: number, tone?: number, build?: 'male' | 'female', treatment?: string, marks?: string[], ball?: number, nostrils?: number, septum?: number, medium?: BrushPreset })` → `{ treatment, marks, underPlane, bridge, bridgeMark, noseLine, nostril, farNostril, nostrilHole, farNostrilHole, base, depressions, shadowMark, hatch, sideShadow, sideLine, planes, detail }` — Renders the nose **as a lit solid with one of Hamm's treatments over it**, returning each part as a `CanvasPath`, the `treatment` drawn and the `marks` it was made of. The solid is `createNoseSolid`'s (below): its planes take the tone, and `planes` lists them with the `light` and `tone` each received. `bridge` is the ridge of the solid as an open centre-line; **`bridgeMark` is the profile line, empty on a front view**; `noseLine` is the line down the side; the two wing arcs (`nostril`, `farNostril`) and the inner nostril marks (`nostrilHole`, `farNostrilHole`, dashes or arcs, never holes) come back separately; `shadowMark` and `hatch` are the black and hatched shadow shapes. A nostril landmark is the **outer edge** of the nose base, so each wing is drawn inside the nose with its outermost point on it. `underPlane` is the solid's underside between the wings; `base` is the short curve under the tip, Hamm's front-view "‿".
 
+> [!IMPORTANT]
+> **`treatment` picks one of Hamm's sixteen noses** (*Drawing the Head and Figure*, p. 14), because his front-view noses differ in *which marks* they use, not only in proportion. Default `'female1'`.
+>
+> | treatment | marks (Hamm's figure) |
+> | :--- | :--- |
+> | `female1` | slashes beside the bridge, the wings, a dash for each nostril: `( ~ - )` |
+> | `female2` | slashes, and one long base line, the cavities lost in it |
+> | `female3` | one line down the shadow side, curling into its wing; the other wing and a dash |
+> | `female4` | a bold slash, and the shadow wing and under-tip in black |
+> | `female5` | slashes, the wings, and the `‿` under the tip |
+> | `female6` | slashes, and a short wavy base alone |
+> | `female7` | one slash, the nose line with hatching into the wing, the lit wing and its nostril |
+> | `female8` | slashes, the lit wing, and a black wedge under the shadow wing |
+> | `male1` … `male8` | the semi-front noses: the profile line down the side the tip swings to, turning round under it, with the near wing (single or double), a base, a heavy bar (`male3`), a black or hatched shadow (`male5`, `male7`, `male8`) |
+>
+> He says the patterns may be interchanged, so any treatment suits any face; `build` sets how heavily it is drawn. Sides follow `light`, or his light from the top right when none is given. A male treatment on a front view has no profile to follow, so its profile becomes a nose line on the shadow side.
+>
+> **`marks` composes your own** from the same marks, instead of a treatment: `'slashes'`, `'wings'`, `'doubleWings'`, `'nostrils'` (dashes), `'nostrilArcs'`, `'base'`, `'longBase'`, `'waveBase'`, `'baseBar'`, `'noseLine'`, `'profile'`, `'shadow'`, `'underShadow'`, `'tipShadow'`, `'hatch'`, each optionally with a side after a colon: `both`, `shadow`, `lit`, `near`, `far` or `profile`.
+>
+> ```javascript
+> Drawing.drawComicNose(ctx, head.noseWedge, { treatment: 'female3' });
+> Drawing.drawComicNose(ctx, head.noseWedge, { marks: ['slashes', 'noseLine:near', 'baseBar'] });
+> ```
 > [!TIP]
-> **`detail` (1–4) is how much of the nose is drawn, and it follows Hamm's own progression** (pp. 1, 3, 5): **1** the base line, a short dash where the nose meets the face; **2** the bottom of the ball with its ends turned up, and one stroke down the side of the bridge (the shadow side when lit, else the far side); **3** the wings and nostrils joined by the base, with the hollows between the eyes; **4** the whole form, with the plane under the ball, the bridge and the side shadow. A part not drawn at a level comes back empty, so the parts are what is on the page, and `detail` reports the level used.
+> **`detail` (1–4) is how much of the nose is drawn, and it follows Hamm's own progression** (pp. 1, 3, 5): **1** the base line, a short dash where the nose meets the face; **2** the bottom of the ball with its ends turned up, and one stroke down the side of the bridge (the shadow side when lit, else the far side); **3** the treatment's lines; **4** its tone and shadow shapes too, over the solid lit, and the profile line on a turned head. A part not drawn at a level comes back empty, so the parts are what is on the page, and `detail` reports the level used.
 >
 > **Left out, the level follows the head's size**, as an inker simplifies a nose at a distance rather than thinning it: a head of about 160px or more gets 4, about 90px gets 3, about 45px gets 2, and smaller gets 1. The sizes are the studio's. Pass `detail` to choose.
 >
@@ -1512,7 +1535,9 @@ Also accessible via `Skia.Drawing`.
 >
 > - **`depressions`** (0–1, default 1): the two hollows beside the bridge between the eyes, which he says it is usually well to indicate. Short concave lines at the eye line, just inside the inner corners. The far one fades as the head turns.
 > - **The far wing goes round the ball.** As the head turns the far opening shrinks to a trace hugging the septum, then only the wing's rim shows, then it is gone. Read from the nose itself, as the far half of the base against the near, so it needs no yaw.
-> - **`light`**: the direction toward the light, in degrees (0 right, −90 up). The side facing away takes one graded shadow down the side of the bridge and round under the wing (`sideShadow`, multiplied in `shadowColor`), and the line alongside the nose (`sideLine`). **`shadow`** (0–1, default 0.5) is how much of the face is in shadow: Hamm treats that line lightly in full light and firmly in shadow. A light from straight above or below gives no side shadow.
+> - **`light`**: the direction toward the light, in degrees (0 right, −90 up). Each plane of the solid takes the tone its facing earns, graded and multiplied in `shadowColor`, so the side facing away darkens down the bridge and round under the wing in one shape (`sideShadow`, the shaded planes on that side), with the line alongside the nose (`sideLine`). **`shadow`** (0–1, default 0.5) is how much of the face is in shadow: Hamm treats that line lightly in full light and firmly in shadow. With no `light`, the light is from above and only the underside darkens: the nose's "little shadow" (p. 14). **`tone`** (0–1, default 1) scales all of it; `0` leaves only the lines.
+> - **No line down the middle of a front view.** None of Hamm's eight front-view noses has one (p. 14). Turned, the edge of the front plane on the side the tip swings toward is the nose's profile (p. 15, "actual profile"), and `bridgeMark` is that line, from the end of the nasal bone to the ball, heavier as the turn grows.
+> - **`build`**: `'male'` or `'female'`. Hamm: the patterns are interchangeable; *the male is usually more coarse; the female more delicate*. A man's nose gets heavier marks, firmer tone and a broader, bolder ball; a woman's lighter ones, and no line along its side, which he says is risky and best left out. Left out, neither. The amounts are the studio's.
 >
 > ```javascript
 > Drawing.drawComicNose(ctx, head.noseWedge, { light: -40, shadow: 0.6 });
@@ -1530,7 +1555,15 @@ Also accessible via `Skia.Drawing`.
 >
 > `noseWedge` now carries **`farNostril`** beside `nearNostril`, foreshortening with the turn as the far eye and the far mouth corner do. The bottom plane spans both wings rather than being a one-sided triangle — Loomis runs it *"from a point on the ball of the nose to a point on the lower corner of the nostril"* and Faragasso terminates his two nasal-bone lines at *the corners* of it, plural. Faragasso reaches the same span from the brows instead of from the eyes, which is two independent routes to one number.
 >
-> A nose object built before this still draws: with no `farNostril`, the bottom plane falls back to the triangle it was.
+> A nose object built before this still draws: with no `farNostril`, the far half mirrors the near one.
+- `Drawing.createNoseSolid(noseObj: object, options?: { yawDeg?: number, pitchDeg?: number, ball?: number, septum?: number, build?: 'male' | 'female' })` → `{ planes, yawDeg, ridge, profile, tip }` — **The nose as a solid**, built to Hamm's cross-sections (*Drawing the Head and Figure*, p. 15): narrowest between the eyes, widest at the base where bone becomes cartilage, the sides nearly perpendicular to the face, the nasal bone ending near halfway (p. 13), then the cartilage, the ball, a wing each side and the plane under the ball back to the septum. Each plane is `{ name, group, side, path, normal, facing, visible }`, the same form as `createHeadPlanes`, so `drawHeadPlanes` lights it. `profile` is the edge the turned nose shows; `tip` lands on `apex`.
+
+> [!TIP]
+> **It is what `drawComicNose` lights, and what `createHeadPlanes` uses for its nose planes**, so the drawn nose and the head's planes agree. Every station is placed off the `noseWedge` landmarks — the near half at full width, the far half foreshortened as the construction foreshortens it, depth swung by exactly the amount that puts the tip on `apex` — so it follows the character parameters, an expression and the turn. The yaw is read from the nose; **pitch is not recoverable from the nose alone**, so pass `pitchDeg` when the head is tilted. The proportions inside the nose are the studio's reading of the plates.
+>
+> ```javascript
+> Drawing.drawHeadPlanes(ctx, Drawing.createNoseSolid(head.noseWedge, { build: 'male' }), { light: -40, values: 0 });
+> ```
 - `Drawing.drawComicMouth(ctx: CanvasRenderingContext2D, mouthObj: object, options?: { inkColor?: string, lipColor?: string, teethColor?: string, cavityColor?: string, weight?: number, tone?: number, creases?: number, full?: number, balance?: number, bow?: number, medium?: BrushPreset })` → `{ cavity, teeth, lipLine, lipMark, upperLip, lowerLip, underShadow, corners, creases, open }` — Renders the mouth in **Hamm's terms** (*Drawing the Head and Figure*, pp. 11–12), **returning each part as a `CanvasPath`** and whether it is `open`. `lipLine` is the line of the opening as an open centre-line; **`lipMark` is the tapered mark actually filled**.
 
 > [!TIP]
@@ -1615,7 +1648,7 @@ Also accessible via `Skia.Drawing`.
 > [!TIP]
 > **The nose bridge and the lip line are tapered marks now, not constant-width strokes.** Manual 03 §3 says outright that a constant-width stroke reads as a technical drawing rather than as inking, and these two were drawing one. The envelope is heaviest in the middle and lifts at both ends.
 >
-> **A frontal nose all but loses its bridge, deliberately.** At yaw 0 the nose's three landmarks are collinear and vertical, so a full-weight mark can only be a wedge down the centre of the face. The bridge line is the break between the front plane and the side plane, so it belongs to a turned head — and the turn is recovered from the nose's own landmarks rather than passed in, so it survives an expression or a blend.
+> **A frontal nose has no bridge line, deliberately.** At yaw 0 a bridge mark can only be a wedge down the centre of the face, and none of Hamm's front views has one. The line is the nose's profile, so it belongs to a turned head — and the turn is recovered from the nose's own landmarks rather than passed in, so it survives an expression or a blend.
 
 > [!TIP]
 > **`aperture` is the one to reach for.** It is both the sclera fill and the clip the interior is drawn inside, so it is what a highlight, a reflected window, or a hard-edged shadow from the brow gets clipped to — and rebuilding it means re-deriving the eyelid curve from `inner`, `outer` and the eye's own width.

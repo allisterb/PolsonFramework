@@ -116,6 +116,11 @@ public partial class ConstructiveDrawingToolkit
         var axisShift = hairline.X - brow.X;
         var big = H * 2f;
 
+        // The nose's planes are the nose solid's (createNoseSolid), turned by the same yaw and pitch, so the head's
+        // planes and the drawn nose agree.
+        var noseSolid = noseWedge is null ? null : BuildNoseSolid(noseWedge, 0f, 0f, 0f, yaw, pitch);
+        IEnumerable<NoseFacet> NoseFacets(Func<NoseFacet, bool> which) => noseSolid?.Facets.Where(which) ?? [];
+
         var planes = new List<Dictionary<string, object?>>();
         static CanvasPath Poly(IReadOnlyList<Point2D> pts)
         {
@@ -200,7 +205,13 @@ public partial class ConstructiveDrawingToolkit
                                  new Point2D(corner.X, chin.Y + big), corner, zygoma, socketOut, fb]).Subtract(jawSide);
             AddPath($"{side}ForeheadSide", "forehead", side, headSide, (d, -0.1f, 0.1f));   // the sliced side of the ball: sagittal, barely tilted
             Add($"{side}Socket", "eye", side, [bIn, fb, socketOut, socketIn, bridgeSide], (d * 0.15f, 0.6f, 0.8f));
-            Add($"{side}NoseSide", "nose", side, [bridgeSide, apexSide, nostril, socketIn], (d * 0.9f, 0f, 0.45f));
+            if (noseSolid is null)
+                Add($"{side}NoseSide", "nose", side, [bridgeSide, apexSide, nostril, socketIn], (d * 0.9f, 0f, 0.45f));
+            else
+            {
+                var (sidePath, sideNormal) = MergeNoseFacets(NoseFacets(f => f.Side == side && f.Group is "side" or "wing"));
+                AddPath($"{side}NoseSide", "nose", side, sidePath, (sideNormal.X, sideNormal.Y, sideNormal.Z));
+            }
             AddPath($"{side}JawSide", "cheek", side, jawSide, (d * 0.9f, 0.25f, 0.35f));
 
             if (secondary)
@@ -246,20 +257,31 @@ public partial class ConstructiveDrawingToolkit
             Add("forehead", "forehead", "center", [ftFar, ftNear, fbNear, fbFar], (0f, -0.25f, 1f));
         }
 
-        var bridgeFar = new Point2D(bridgeTop.X - (eyeW * 0.12f), bridgeTop.Y);
-        var bridgeNear = new Point2D(bridgeTop.X + (eyeW * 0.12f), bridgeTop.Y);
-        var apexFar = new Point2D(apex.X - (eyeW * 0.22f), apex.Y);
-        var apexNear = new Point2D(apex.X + (eyeW * 0.22f), apex.Y);
-        Add("noseFront", "nose", "center", [bridgeFar, bridgeNear, apexNear, apexFar], (0f, -0.3f, 1f));
-        if (secondary)
+        void AddNose(string name, string side, Func<NoseFacet, bool> which)
         {
-            Add("farNoseBottom", "nose", "far", [apexFar, underNose, nostrilFar], (-0.5f, 1f, 0.25f));
-            Add("noseBottom", "nose", "center", [apexFar, apexNear, underNose], (0f, 1f, 0.3f));
-            Add("nearNoseBottom", "nose", "near", [apexNear, nostrilNear, underNose], (0.5f, 1f, 0.25f));
+            var (path, n) = MergeNoseFacets(NoseFacets(which));
+            AddPath(name, "nose", side, path, (n.X, n.Y, n.Z));
+        }
+
+        if (noseSolid is null)
+        {
+            var bridgeFar = new Point2D(bridgeTop.X - (eyeW * 0.12f), bridgeTop.Y);
+            var bridgeNear = new Point2D(bridgeTop.X + (eyeW * 0.12f), bridgeTop.Y);
+            var apexFar = new Point2D(apex.X - (eyeW * 0.22f), apex.Y);
+            var apexNear = new Point2D(apex.X + (eyeW * 0.22f), apex.Y);
+            Add("noseFront", "nose", "center", [bridgeFar, bridgeNear, apexNear, apexFar], (0f, -0.3f, 1f));
+            Add("noseBottom", "nose", "center", [apexFar, apexNear, nostrilNear, underNose, nostrilFar], (0f, 1f, 0.25f));
         }
         else
         {
-            Add("noseBottom", "nose", "center", [apexFar, apexNear, nostrilNear, underNose, nostrilFar], (0f, 1f, 0.25f));
+            AddNose("noseFront", "center", f => f.Group is "bridge" or "ball");
+            if (secondary)
+            {
+                AddNose("farNoseBottom", "far", f => f.Group == "under" && f.Side == "far");
+                AddNose("noseBottom", "center", f => f.Group == "under" && f.Side == "center");
+                AddNose("nearNoseBottom", "near", f => f.Group == "under" && f.Side == "near");
+            }
+            else AddNose("noseBottom", "center", f => f.Group == "under");
         }
 
         if (secondary)

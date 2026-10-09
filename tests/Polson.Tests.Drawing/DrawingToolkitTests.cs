@@ -1566,7 +1566,7 @@ public class DrawingToolkitTests : TestsRuntime
 
         Assert.Equal(new[] { "aperture", "catchlight", "fold", "innerCorner", "iris", "irisMarks", "lashes", "lowerLid", "lowerRim", "pupil", "upperLid" },
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "base", "bridge", "bridgeMark", "depressions", "detail", "farNostril", "farNostrilHole", "nostril", "nostrilHole", "sideLine", "sideShadow", "underPlane" },
+        Assert.Equal(new[] { "base", "bridge", "bridgeMark", "depressions", "detail", "farNostril", "farNostrilHole", "hatch", "marks", "noseLine", "nostril", "nostrilHole", "planes", "shadowMark", "sideLine", "sideShadow", "treatment", "underPlane" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "cavity", "corners", "creases", "lipLine", "lipMark", "lowerLip", "open", "teeth", "underShadow", "upperLip" },
             mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
@@ -1960,12 +1960,14 @@ public class DrawingToolkitTests : TestsRuntime
     /// one mark here that is exactly vertical — its three landmarks are collinear at yaw 0 — so the
     /// filled mark's bounding width *is* its peak thickness, with nothing else in it.
     /// </remarks>
-    private static float BridgeThickness(ConstructiveDrawingToolkit toolkit, float headHeight, float yaw = 0f)
+    private static float BridgeThickness(ConstructiveDrawingToolkit toolkit, float headHeight, float yaw = 30f)
     {
+        // A front-view nose has no bridge line, so the head is turned; the mark's area over its length, which goes as
+        // the head, is its mean thickness.
         var head = toolkit.CreateLoomisHead(450f, 450f, headHeight, yaw);
         var nose = toolkit.DrawComicNose(new SkiaCanvas(4, 4).GetContext("2d"), head["noseWedge"]!,
-            new Dictionary<string, object?> { ["detail"] = 4 });         // the full nose at every size, to compare its ink
-        return ((CanvasPath)nose["bridgeMark"]!).Path.Bounds.Width;
+            new Dictionary<string, object?> { ["detail"] = 4, ["treatment"] = "male1" });   // the full nose, a treatment with a profile line
+        return ((CanvasPath)nose["bridgeMark"]!).Area / headHeight;
     }
 
     /// <summary>
@@ -1993,28 +1995,21 @@ public class DrawingToolkitTests : TestsRuntime
     }
 
     /// <summary>
-    /// **A turned head gets its bridge line; a frontal one all but loses it.**
+    /// **A turned head gets its bridge line; a frontal one has none.**
     /// </summary>
     /// <remarks>
-    /// At yaw 0 the nose's three landmarks are collinear and vertical, so a full-weight bridge can
-    /// only be a wedge down the middle of the face. The bridge is the break between the front and
-    /// side planes, so it belongs to a turned head — and the turn is recovered from the nose itself
-    /// rather than passed in, which is what makes it survive an expression or a blend.
+    /// None of Hamm's front-view noses has a line down the middle (<i>Drawing the Head and Figure</i>, p. 14), and at
+    /// yaw 0 a bridge mark can only be a wedge ruled down the face. The line is the nose's profile, the edge of its
+    /// front plane, so it belongs to a turned head; the turn is recovered from the nose itself rather than passed in,
+    /// which is what makes it survive an expression or a blend.
     /// </remarks>
     [Fact]
-    public void TestTheNoseBridgeIsLighterOnAFrontalHead()
+    public void TestTheNoseBridgeIsAbsentOnAFrontalHead()
     {
         var toolkit = new ConstructiveDrawingToolkit();
-
-        // The frontal mark is exactly vertical, so its bounding width is its peak thickness; the
-        // turned one leans, so its width is thickness plus lean — which only strengthens the claim.
-        var frontal = BridgeThickness(toolkit, 300f, 0f);
-        var turned = BridgeThickness(toolkit, 300f, 40f);
-        Assert.True(turned > frontal * 1.5f,
-            $"a turned bridge should carry more ink than a frontal one: {turned:F2} against {frontal:F2}");
-        Assert.True(frontal > 0.2f, "a frontal bridge should be light rather than absent");
+        Assert.Equal(0f, BridgeThickness(toolkit, 300f, 0f));
+        Assert.True(BridgeThickness(toolkit, 300f, 40f) > 0.2f, "a turned nose carries its profile line");
     }
-
     /// <summary>The nostril sits on Loomis's line from the base of the nose to the base of the ear.</summary>
     /// <remarks>
     /// Plate 26 gives the rule and this is the whole of it. Before 2026-09-19 the nostril sat at a
@@ -2124,7 +2119,8 @@ public class DrawingToolkitTests : TestsRuntime
         // The shadow under the ball stays between the wings, clear of the nose's outer edges: it was a
         // diamond out to those edges, which read as a moustache.
         var shadow = ((CanvasPath)drawn["underPlane"]!).Path.TightBounds;
-        Assert.True(shadow.Left > MathF.Min(X("nearNostril"), X("farNostril")) + 1f, $"shadow reaches the far edge at {shadow.Left}");
+        // Turned, the ball overhangs the far wing (Hamm p. 15), so only the front view is held clear of the far edge.
+        if (yaw == 0f) Assert.True(shadow.Left > MathF.Min(X("nearNostril"), X("farNostril")) + 1f, $"shadow reaches the far edge at {shadow.Left}");
         Assert.True(shadow.Right < MathF.Max(X("nearNostril"), X("farNostril")) - 1f, $"shadow reaches the near edge at {shadow.Right}");
     }
 

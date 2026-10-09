@@ -1566,7 +1566,7 @@ public class DrawingToolkitTests : TestsRuntime
 
         Assert.Equal(new[] { "aperture", "catchlight", "fold", "innerCorner", "iris", "irisMarks", "lashes", "lowerLid", "lowerRim", "pupil", "upperLid" },
             eye.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "base", "bridge", "bridgeMark", "depressions", "detail", "farNostril", "farNostrilHole", "hatch", "marks", "noseLine", "nostril", "nostrilHole", "planes", "shadowMark", "sideLine", "sideShadow", "treatment", "underPlane" },
+        Assert.Equal(new[] { "base", "bridge", "bridgeMark", "depressions", "detail", "farNostril", "farNostrilHole", "hatch", "marks", "noseLine", "nostril", "nostrilHole", "planes", "septum", "shadowMark", "sideLine", "sideShadow", "treatment", "underPlane", "variation" },
             nose.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "cavity", "corners", "creases", "lipLine", "lipMark", "lowerLip", "open", "teeth", "underShadow", "upperLip" },
             mouth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray());

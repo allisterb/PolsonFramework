@@ -223,6 +223,66 @@ public class HammNoseTests : TestsRuntime
     }
 
     /// <summary>
+    /// Hamm's p. 15 variations each move what they name: a wide septum shows its furrow and widens the plane under the
+    /// ball; wings set wide apart stand past the base's edges; high wings sit higher and rounder than low flat ones; the
+    /// wing groove brought forward carries the opening down; a squared ball's under surface is flatter.
+    /// </summary>
+    [Fact]
+    public void TestThePage15VariationsMoveWhatTheyName()
+    {
+        var head = Head();
+        Dictionary<string, object?> With(string key, float value) => Draw(head, new() { [key] = value });
+        var plain = Draw(head);
+
+        var wide = Draw(head, new() { ["septumWidth"] = 1f, ["treatment"] = "female5" });
+        Assert.True(Drawn(wide, "septum"), "the furrow");
+        Assert.True(((CanvasPath)wide["underPlane"]!).Area > ((CanvasPath)plain["underPlane"]!).Area * 1.25f, "a wider plane under the ball");
+        Assert.False(Drawn(plain, "septum"));
+
+        var edge = P(Nose(head), "nearNostril", "x");
+        Assert.True(Bounds(With("wingSpan", 1f), "nostril").Right > edge + 3f, "wings extra wide apart");
+
+        Assert.True(Bounds(With("wingHeight", 1f), "nostril").Top < Bounds(With("wingHeight", -1f), "nostril").Top - 3f, "high wings sit higher");
+        Assert.True(Bounds(With("wingHeight", 1f), "nostril").Height > Bounds(With("wingHeight", -1f), "nostril").Height * 1.5f, "and rounder");
+
+        Assert.True(Bounds(With("groove", 1f), "nostrilHole").MidY > Bounds(plain, "nostrilHole").MidY + 1f, "the groove forward and down");
+
+        static float UnderY(Dictionary<string, object?> solid) =>
+            Convert.ToSingle(((Dictionary<string, object?>)((System.Collections.IList)solid["planes"]!).Cast<Dictionary<string, object?>>()
+                .First(p => (string)p["name"]! == "under")["normal"]!)["y"]);
+        Assert.True(UnderY(Toolkit.CreateNoseSolid(Nose(head), new Dictionary<string, object?> { ["ballSquare"] = 1f }))
+                  > UnderY(Toolkit.CreateNoseSolid(Nose(head), new Dictionary<string, object?> { ["ballSquare"] = -1f })), "a squared ball's flattened under surface");
+    }
+
+    /// <summary>
+    /// His under view looks up into the nostrils and his top view down over the ball (p. 15): from below the openings
+    /// open wide whatever the treatment and the plane under the ball faces the reader; from above they go behind the ball.
+    /// </summary>
+    [Fact]
+    public void TestTheUnderAndTopViewsShowWhatTheySee()
+    {
+        var head = Head();
+        static float Area(Dictionary<string, object?> parts) => ((CanvasPath)parts["nostrilHole"]!).Area;
+        var front = Draw(head);
+        var under = Draw(head, new() { ["variation"] = "underView" });
+        var over = Draw(head, new() { ["variation"] = "topView" });
+        Assert.Equal("underView", under["variation"]);
+        Assert.True(Area(under) > Area(front) * 2f, "the openings open from below");
+        Assert.True(Area(over) < Area(front) * 0.3f, "and go behind the ball from above");
+        Assert.True(Drawn(Draw(head, new() { ["variation"] = "underView", ["treatment"] = "female5" }), "nostrilHole"),
+            "a treatment without openings gets them from below");
+
+        float UnderFacing(string variation) => Convert.ToSingle(((Dictionary<string, object?>)((System.Collections.IList)Toolkit.CreateNoseSolid(Nose(head),
+            new Dictionary<string, object?> { ["variation"] = variation })["planes"]!).Cast<Dictionary<string, object?>>()
+            .First(p => (string)p["name"]! == "under")["facing"]!)["z"]);
+        Assert.True(UnderFacing("underView") > 0.4f && UnderFacing("topView") < UnderFacing("underView") - 0.4f);
+
+        // An option beside a variation overrides it; an unknown variation is refused.
+        Assert.True(Area(Draw(head, new() { ["variation"] = "underView", ["pitchDeg"] = 0f })) < Area(under));
+        Assert.Throws<ArgumentException>(() => Draw(head, new() { ["variation"] = "sideways" }));
+    }
+
+    /// <summary>
     /// The solid's planes face where a nose's do, and the head's own planes are the solid's, so they agree.
     /// </summary>
     [Fact]

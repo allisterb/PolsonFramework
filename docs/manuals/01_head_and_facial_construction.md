@@ -516,6 +516,31 @@ canvas;
 The aquiline hook, the pointed tip and the profile undersides in the right-hand column are profile shapes, which a
 nose drawn from three landmarks has no outline for; they are not options.
 
+#### Hamm's p. 15 variations
+
+The bottom row of his p. 15 is six more noses, each a shape or a view the p. 13 catalogue does not cover: a wide
+furrowed septum squared onto the area above the lip; an under view showing the angle of the wings' attachment and a
+very narrow septum; a top view with the wings extra wide apart and a rounded ball; a squared ball with a flattened
+under surface and low flat wings; high rounded wings with a thick undefined ball; and the wing groove brought forward
+and down with the tip flattened. Each is an option from −1 to +1 (`septumWidth`, `wingSpan`, `ballSquare`,
+`wingHeight`, `groove`), read by the solid as well as the marks, so the tone changes with the shape. His two views are
+`pitchDeg`: looking up opens the nostrils and turns the plane under the ball toward you; looking down hides the
+openings behind the ball. `variation` names a figure (`'wideSeptum'`, `'underView'`, `'topView'`, `'squaredBall'`,
+`'highWings'`, `'grooveForward'`), and anything given beside it overrides it. The amounts are the studio's.
+
+```javascript
+const canvas = createCanvas(900, 260);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f6f3ec'; ctx.fillRect(0, 0, 900, 260);
+
+['squaredBall', 'highWings', 'grooveForward'].forEach((variation, i) => {
+    const head = Drawing.createLoomisHead(150 + i * 300, 30, 420, 25);
+    ctx.fillStyle = '#efe2cf';
+    ctx.fill(Drawing.createHeadGeometry(head).silhouette);
+    Drawing.drawComicNose(ctx, head.noseWedge, { inkColor: '#15151a', treatment: 'male1', variation, light: -40 });
+});
+canvas;
+```
 #### How much nose to draw
 
 Hamm's book builds the nose up in stages, and each stage is a nose in its own right (*Drawing the Head and Figure*,

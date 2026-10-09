@@ -8,7 +8,46 @@ using System.Linq;
 public partial class ConstructiveDrawingToolkit
 {
     #region Nose Solid
-    static readonly string[] NoseSolidOptions = ["yawDeg", "pitchDeg", "ball", "septum", "build"];
+    static readonly string[] NoseSolidOptions =
+        ["yawDeg", "pitchDeg", "ball", "septum", "septumWidth", "wingSpan", "ballSquare", "wingHeight", "groove", "variation", "build"];
+
+    /// <summary>
+    /// The nose's shape, each -1 to +1 and 0 by default. <c>Ball</c>, <c>Septum</c> (and <c>nostrils</c>, which only the
+    /// drawer reads) are Hamm's p. 13 catalogue; the rest are his p. 15 variations: <c>SeptumWidth</c> from very narrow
+    /// to wide, furrowed and squared onto the lip; <c>WingSpan</c> to wings extra wide apart; <c>BallSquare</c> from a
+    /// rounded ball to a squared one with a flattened under surface; <c>WingHeight</c> from low flat wings to high
+    /// rounded ones; <c>Groove</c> from a thick undefined ball to the wing groove brought forward and down, tip flattened.
+    /// </summary>
+    readonly record struct NoseShape(float Ball, float Septum, float SeptumWidth, float WingSpan, float BallSquare, float WingHeight, float Groove);
+
+    /// <summary>
+    /// Hamm's six p. 15 variations as settings: the shape each figure shows, and the view for the two that are views.
+    /// Any option given beside a variation overrides it. The amounts are the studio's reading of the figures.
+    /// </summary>
+    static readonly Dictionary<string, Dictionary<string, float>> NoseVariations = new()
+    {
+        ["wideSeptum"] = new() { ["septumWidth"] = 1f, ["septum"] = 0.3f },                        // wide furrowed septum squared onto the lip
+        ["underView"] = new() { ["pitchDeg"] = -35f, ["septumWidth"] = -1f },                      // under view, the wings' attachment, very narrow septum
+        ["topView"] = new() { ["pitchDeg"] = 30f, ["wingSpan"] = 1f, ["ballSquare"] = -1f },       // top view, wings extra wide apart, rounded ball
+        ["squaredBall"] = new() { ["ballSquare"] = 1f, ["wingHeight"] = -1f },                     // squared ball, flattened under surface, low flat wing
+        ["highWings"] = new() { ["wingHeight"] = 1f, ["groove"] = -1f, ["ball"] = 0.5f },          // high rounded wings, thick undefined ball
+        ["grooveForward"] = new() { ["groove"] = 1f }                                              // wing groove forward and down, tip flattened
+    };
+
+    /// <summary>Reads the shape options, starting from a named <c>variation</c> when one is given, and the pitch.</summary>
+    static (NoseShape Shape, float? Pitch, string? Variation) ReadNoseShape(IDictionary? opt, string call)
+    {
+        var name = opt?["variation"]?.ToString()?.Trim();
+        Dictionary<string, float> preset = [];
+        if (!string.IsNullOrEmpty(name) && !NoseVariations.TryGetValue(name, out preset!))
+            throw new ArgumentException($"{call} variation not recognised: '{name}'. Accepted: {string.Join(", ", NoseVariations.Keys)}.");
+        bool Given(string key) => opt != null && opt.Contains(key) && opt[key] is not null;
+        float Value(string key) => Math.Clamp(Given(key) ? Num(opt, key, 0f) : preset.GetValueOrDefault(key), -1f, 1f);
+        float? pitch = Given("pitchDeg") ? Num(opt, "pitchDeg", 0f) : preset.TryGetValue("pitchDeg", out var p) ? p : null;
+        return (new NoseShape(Value("ball"), Value("septum"), Value("septumWidth"), Value("wingSpan"), Value("ballSquare"),
+                              Value("wingHeight"), Value("groove")),
+                pitch is { } deg ? deg * MathF.PI / 180f : null, string.IsNullOrEmpty(name) ? null : name);
+    }
 
     /// <summary>
     /// The nose as a solid (Hamm, <i>Drawing the Head and Figure</i>, pp. 13–15): its planes as shapes on the page,
@@ -37,8 +76,8 @@ public partial class ConstructiveDrawingToolkit
         RefuseUnknownHeadParameters(opt, NoseSolidOptions, "createNoseSolid option");
 
         float? Angle(string key) => opt != null && opt.Contains(key) && opt[key] is not null ? Num(opt, key, 0f) * MathF.PI / 180f : null;
-        var solid = BuildNoseSolid(nose, Math.Clamp(Num(opt, "ball", 0f), -1f, 1f), Math.Clamp(Num(opt, "septum", 0f), -1f, 1f),
-            NoseBuild(opt, "createNoseSolid"), Angle("yawDeg"), Angle("pitchDeg"));
+        var (shape, pitch, _) = ReadNoseShape(opt, "createNoseSolid");
+        var solid = BuildNoseSolid(nose, shape, NoseBuild(opt, "createNoseSolid"), Angle("yawDeg"), pitch);
 
         return new Dictionary<string, object?>
         {
@@ -120,8 +159,9 @@ public partial class ConstructiveDrawingToolkit
     /// solid agrees with the landmarks it came from, whatever moved them. The normals are turned by the yaw that ratio
     /// implies; pitch is not recoverable from the nose alone and is 0 unless given.
     /// </remarks>
-    static NoseSolidModel BuildNoseSolid(IDictionary nose, float ball, float septumShape, float coarse, float? yawOverride, float? pitchOverride)
+    static NoseSolidModel BuildNoseSolid(IDictionary nose, NoseShape shape, float coarse, float? yawOverride, float? pitchOverride)
     {
+        var (ball, septumShape, septumWidth, wingSpan, ballSquare, wingHeight, groove) = shape;
         var bridgeTop = ExtractPoint(nose["bridgeTop"]);
         var apex = ExtractPoint(nose["apex"]);
         var underNose = ExtractPoint(nose["underNose"]);
@@ -147,16 +187,20 @@ public partial class ConstructiveDrawingToolkit
 
         // **The shape.** A larger ball is wider at the front, stands further out and starts its underside nearer the
         // tip, so the plane beneath it is taller; a coarser nose is a little broader and bolder in the ball.
-        var front = 1f + (0.35f * ball) + (0.12f * coarse);
+        // From p. 15: a squared ball is broader at the front, and a thick undefined ball broader still; the wing groove
+        // brought forward flattens the tip; wings set wide apart stand out past the base's own width.
+        var front = 1f + (0.35f * ball) + (0.12f * coarse) + (0.12f * ballSquare) + (0.2f * MathF.Max(0f, -groove));
         var depth = 1f + (0.12f * ball) + (0.08f * coarse);
-        var tipZ = 0.44f * depth;
+        var tipZ = 0.44f * depth * (1f - (0.2f * MathF.Max(0f, groove)));
+        var span = 1f + (0.25f * wingSpan);
         var depthToX = tipOff / (tipZ * len);
         var septumDrop = septumShape >= 0f ? 0.045f * septumShape : 0.012f * septumShape;
 
         Point2D Page(Vec3 p)
         {
             var across = p.X >= 0f ? p.X : p.X * farRatio;
-            return new Point2D(AxisX(p.Y) + (nearSign * across * width) + (depthToX * p.Z * len), bridgeTop.Y + (p.Y * len));
+            // Pitch swings depth up or down the page: nodding down, what stands out drops.
+            return new Point2D(AxisX(p.Y) + (nearSign * across * width) + (depthToX * p.Z * len), bridgeTop.Y + (p.Y * len) + (MathF.Sin(pitch) * p.Z * len));
         }
 
         // The stations in the nose's own frame, then measured in pixels for the normals.
@@ -171,16 +215,26 @@ public partial class ConstructiveDrawingToolkit
             (0f,         0.13f, 0f,                  0f,    0.045f,          0.08f),
             (vBone,      0.22f, vBone,               0f,    0.07f,           0.22f),
             (vCartilage, 0.28f, vCartilage,          0f,    0.085f * front,  0.32f * depth),
-            (vBallTop,   0.46f, vBallTop + 0.03f,    0f,    0.14f * front,   0.40f * depth),
-            (vUnder,     0.50f, vUnder + 0.02f,      0.05f, 0.16f * front,   tipZ)
+            (vBallTop,   0.46f * span, vBallTop + 0.03f - (wingHeight >= 0f ? 0.06f * wingHeight : 0.04f * wingHeight), 0f,
+                         (ballSquare >= 0f ? 0.14f + (0.02f * ballSquare) : 0.14f * (1f + (0.25f * ballSquare))) * front,
+                         // The tip flattened by the groove brought forward: the front of the ball stands as far out as the tip.
+                         0.40f * depth + ((tipZ - (0.40f * depth)) * MathF.Max(0f, groove))),
+            (vUnder,     0.50f * span, vUnder + 0.02f, wingHeight >= 0f ? 0.05f + (0.06f * wingHeight) : 0.05f * (1f + wingHeight),
+                         0.16f * front,   tipZ)
         ];
         Vec3 Base(int r, float s) => new(s * rows[r].BaseX, rows[r].BaseV, rows[r].BaseZ);
         Vec3 Front(int r, float s) => new(s * rows[r].FrontX, rows[r].V, rows[r].FrontZ);
 
         // Under the ball: the wing's lower edge, the ball's underside each side, and the septum where it meets the lip.
-        Vec3 WingFoot(float s) => new(s * 0.38f, 0.985f, 0.10f);
-        Vec3 BallFoot(float s) => new(s * 0.10f * front, 0.975f, 0.30f * depth);
-        var septum = new Vec3(0f, 1f + septumDrop, 0.02f);
+        // The groove brought forward and down carries the wing's foot with it; a squared ball's under surface is flatter,
+        // its foot further out; a wide septum widens the ball's underside and squares onto the lip in two corners.
+        var grooveOn = MathF.Max(0f, groove);
+        Vec3 WingFoot(float s) => new(s * 0.38f * span, 0.985f + (0.01f * grooveOn), 0.10f + (0.06f * grooveOn));
+        Vec3 BallFoot(float s) => new(s * 0.10f * front * (1f + (0.6f * septumWidth)),
+            0.975f - (0.04f * MathF.Max(0f, ballSquare)) + (0.015f * MathF.Max(0f, -ballSquare)), (0.30f + (0.08f * ballSquare)) * depth);
+        var septumHalf = 0.06f * MathF.Max(0f, septumWidth);
+        Vec3 Septum(float s) => new(s * septumHalf, 1f + septumDrop, 0.02f);
+        var septum = Septum(0f);
 
         var facets = new List<NoseFacet>();
         void Add(string name, string group, string side, params Vec3[] pts)
@@ -215,7 +269,8 @@ public partial class ConstructiveDrawingToolkit
             foreach (var (side, s) in new[] { ("far", -1f), ("near", 1f) })
                 Add(side + names[r], r < 2 ? "side" : groups[r], side, Base(r, s), Front(r, s), Front(r + 1, s), Base(r + 1, s));
         }
-        Add("under", "under", "center", Front(4, -1f), Front(4, 1f), BallFoot(1f), septum, BallFoot(-1f));
+        if (septumHalf > 0f) Add("under", "under", "center", Front(4, -1f), Front(4, 1f), BallFoot(1f), Septum(1f), Septum(-1f), BallFoot(-1f));
+        else Add("under", "under", "center", Front(4, -1f), Front(4, 1f), BallFoot(1f), septum, BallFoot(-1f));
         foreach (var (side, s) in new[] { ("far", -1f), ("near", 1f) })
             Add(side + "WingBottom", "under", side, Base(4, s), Front(4, s), BallFoot(s), WingFoot(s));
 
@@ -234,7 +289,13 @@ public partial class ConstructiveDrawingToolkit
             var start = Page(Front(0, frameSide));
             profile.MoveTo(start.X, start.Y);
             for (var r = 1; r < rows.Length; r++) { var p = Page(Front(r, frameSide)); profile.LineTo(p.X, p.Y); }
-            curl = [Page(BallFoot(frameSide)), Page(new Vec3(-frameSide * 0.06f, 0.995f + septumDrop, 0.12f))];
+            // A squared ball turns a corner under the tip rather than rolling round it.
+            var corner = MathF.Max(0f, ballSquare);
+            curl = corner > 0f
+                ? [Page(new Vec3(frameSide * rows[4].FrontX, vUnder + (0.09f * corner), tipZ * (1f - (0.03f * corner)))),
+                   Page(new Vec3(frameSide * rows[4].FrontX * 0.8f, vUnder + (0.11f * corner), tipZ * (1f - (0.15f * corner)))), Page(BallFoot(frameSide)),
+                   Page(new Vec3(-frameSide * 0.06f, 0.995f + septumDrop, 0.12f))]
+                : [Page(BallFoot(frameSide)), Page(new Vec3(-frameSide * 0.06f, 0.995f + septumDrop, 0.12f))];
         }
 
         var turn = SmoothStep(0.05f, 0.5f, MathF.Abs(MathF.Sin(yaw)));

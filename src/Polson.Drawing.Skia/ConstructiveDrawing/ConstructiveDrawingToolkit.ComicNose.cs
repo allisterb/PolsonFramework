@@ -194,8 +194,16 @@ public partial class ConstructiveDrawingToolkit
         // **The nose's shape**, each -1 to +1 and 0 by default, the ways the lower noses in Hamm's p. 13 catalogue
         // differ: `ball` from a small ball to a large one that crowds the wings; `nostrils` from openings barely
         // discernible to large ones running straight across; `septum` from tapered up into the tip to hanging low.
-        float Option(string key) => Math.Clamp(Num(optDict, key, 0f), -1f, 1f);
-        float ballShape = Option("ball"), nostrilShape = Option("nostrils"), septumShape = Option("septum");
+        // And the p. 15 variations (`septumWidth`, `wingSpan`, `ballSquare`, `wingHeight`, `groove`, and `pitchDeg` for his
+        // under and top views), or one of his six figures by name as `variation`.
+        var (shape, pitch, variation) = ReadNoseShape(optDict, "drawComicNose");
+        float ballShape = shape.Ball, nostrilShape = Math.Clamp(Num(optDict, "nostrils", 0f), -1f, 1f), septumShape = shape.Septum;
+        float septumWidth = shape.SeptumWidth, ballSquare = shape.BallSquare, wingHeight = shape.WingHeight, groove = shape.Groove;
+        var span = 1f + (0.25f * shape.WingSpan);
+        // Looking up at the nose (his under view) opens the nostrils and shows the wings' attachment; looking down on it
+        // (his top view) hides them behind the ball.
+        var pitchSin = MathF.Sin(pitch ?? 0f);
+        float under = Math.Clamp(-pitchSin / MathF.Sin(35f * MathF.PI / 180f), 0f, 1f), over = Math.Clamp(pitchSin / MathF.Sin(35f * MathF.PI / 180f), 0f, 1f);
         var septumDrop = septumShape >= 0f ? 0.045f * septumShape : 0.012f * septumShape;
 
         var bridgeTop = ExtractPoint(nose["bridgeTop"]);
@@ -210,7 +218,7 @@ public partial class ConstructiveDrawingToolkit
 
         // **The nose is a solid first** (createNoseSolid, Hamm p. 15): its planes take the tone, and its edges and
         // stations are where the marks go. Built from these landmarks, so it follows whatever moved them.
-        var solid = BuildNoseSolid(nose, ballShape, septumShape, coarse, null, null);
+        var solid = BuildNoseSolid(nose, shape, coarse, null, pitch);
         var bridge = solid.Ridge;
 
         var tierR = len * (NostrilRadiusTier / NoseLengthAt240);
@@ -229,29 +237,43 @@ public partial class ConstructiveDrawingToolkit
         NoseWing Wing(float side)
         {
             var near = side == nearSide;
-            var edge = near ? nearNostril : farNostril;
+            // Wings set extra wide apart stand out past the base's own width (p. 15, top view).
+            var edge = Lerp(underNose, near ? nearNostril : farNostril, span);
+            edge = new Point2D(edge.X, (near ? nearNostril : farNostril).Y);
             float rim = near ? 1f : hasFar ? farRim : 0f, cavity = near ? 1f : hasFar ? farCavity : 0f;
+            // Seen from above, the openings go behind the ball.
+            cavity *= 1f - over;
             var inward = -side;
             var halfSpan = MathF.Abs(underNose.X - edge.X);
-            // A large ball crowds the wings, so they shrink as it grows; the openings keep their own size.
+            // A large ball crowds the wings, so they shrink as it grows; the openings keep their own size. High wings are
+            // rounder and sit higher, low ones flatter and lower (p. 15).
             var rOpen = halfSpan > tierR ? halfSpan * 0.26f : MathF.Max(0.5f, halfSpan * 0.4f);
-            var r = rOpen * (1f - (0.25f * ballShape));
-            var c = new Point2D(edge.X + (inward * r), edge.Y);
+            var r = rOpen * (1f - (0.25f * ballShape)) * (1f + (0.35f * MathF.Max(0f, wingHeight)));
+            var ry = r * (1f + (0.45f * wingHeight));
+            var c = new Point2D(edge.X + (inward * r), edge.Y - (r * (wingHeight >= 0f ? 0.6f : 0.25f) * wingHeight));
             var outward = inward > 0f ? MathF.PI : 0f;
-            float up = 75f * MathF.PI / 180f * (0.4f + (0.6f * rim)), under = 85f * MathF.PI / 180f * (0.2f + (0.8f * cavity));
+            // The wing groove brought forward carries the curl further round under; an undefined ball leaves only the rim.
+            float up = 75f * MathF.PI / 180f * (0.4f + (0.6f * rim)) * (1f + (0.35f * MathF.Min(0f, groove))),
+                  curl = 85f * MathF.PI / 180f * (0.2f + (0.8f * cavity)) * (groove >= 0f ? 1f + (0.7f * groove) : 1f + (0.7f * groove))
+                         + (30f * MathF.PI / 180f * under);
             var arc = new CanvasPath();
             if (rim > 0.02f)
             {
-                if (inward < 0f) arc.Arc(c.X, c.Y, r, outward - up, outward + under);
-                else arc.Arc(c.X, c.Y, r, outward + up, outward - under, true);
+                if (inward < 0f) arc.Ellipse(c.X, c.Y, r, ry, 0f, outward - up, outward + curl);
+                else arc.Ellipse(c.X, c.Y, r, ry, 0f, outward + up, outward - curl, true);
             }
-            // The opening shrinks to a trace and slides in against the septum, just on its own side.
-            var open = new Point2D(c.X + (inward * r * 0.7f), c.Y + (r * 0.55f));
+            // The opening shrinks to a trace and slides in against the septum, just on its own side; a narrow septum
+            // brings the two together, a wide one parts them; the groove brought forward and down carries it with it.
+            var open = new Point2D(c.X + (inward * r * (0.7f + (0.2f * MathF.Max(0f, groove)))), c.Y + (ry * 0.55f) + (r * 0.25f * MathF.Max(0f, groove)));
+            open = new Point2D(open.X + (inward * r * 0.3f * -septumWidth), open.Y - (under * r * 0.5f));
             var trace = new Point2D(underNose.X - (inward * r * 0.35f), underNose.Y - (r * 0.05f));
             var at = Lerp(trace, open, cavity);
             // Exposed openings grow mostly across, as Hamm's "large straight-across nostrils" do; hidden ones to slits.
-            float openX = 1f + (0.7f * nostrilShape), openY = nostrilShape >= 0f ? 1f + (0.3f * nostrilShape) : 1f + (0.5f * nostrilShape);
-            return new NoseWing(arc, c, r, rOpen, at, openX, openY, inward, rim, cavity, new Point2D(c.X + (inward * r * 1.2f), c.Y + (r * 0.55f)));
+            // From below they open further, deeper than wide.
+            // From above they close up behind the ball.
+            float openX = (1f + (0.7f * nostrilShape)) * (1f + (0.3f * under)) * (1f - over),
+                  openY = (nostrilShape >= 0f ? 1f + (0.3f * nostrilShape) : 1f + (0.5f * nostrilShape)) * (1f + (1.6f * under)) * (1f - (0.5f * over));
+            return new NoseWing(arc, c, r, rOpen, at, openX, openY, inward, rim, cavity, new Point2D(c.X + (inward * r * 1.2f), c.Y + (ry * 0.55f)));
         }
 
         Point2D Ridge(float y)
@@ -340,7 +362,7 @@ public partial class ConstructiveDrawingToolkit
             CanvasPath mark;
             if (!arc)
             {
-                var tilt = g.Inward * 0.2f;
+                var tilt = g.Inward * (0.2f + (0.9f * under));
                 float dx = MathF.Cos(tilt) * rx, dy = MathF.Sin(tilt) * rx;
                 Point2D a = new(g.Opening.X - dx, g.Opening.Y - dy), b = new(g.Opening.X + dx, g.Opening.Y + dy);
                 mark = CreateTaperedStrokePath(a, new Point2D(Lerp(a, b, 1f / 3f).X, Lerp(a, b, 1f / 3f).Y + (ry * 0.4f)),
@@ -448,6 +470,10 @@ public partial class ConstructiveDrawingToolkit
             hatch.AddPath(lines.Intersect(region));
         }
 
+        // Seen from below the openings are the subject (p. 15, under view), so a treatment without them gets them.
+        if (under > 0.3f && !recipe.Any(m => m.Kind is "nostrils" or "nostrilArcs"))
+            recipe = [.. recipe, M("nostrils")];
+
         if (detail >= 3)
         {
             foreach (var mark in recipe)
@@ -470,9 +496,9 @@ public partial class ConstructiveDrawingToolkit
                                 // A second, shorter arc inside the first: the wing's rolled edge.
                                 var inner = new CanvasPath();
                                 var outward = g.Inward > 0f ? MathF.PI : 0f;
-                                var span = 55f * MathF.PI / 180f;
-                                if (g.Inward < 0f) inner.Arc(g.Centre.X + (g.Inward * g.R * 0.2f), g.Centre.Y, g.R * 0.75f, outward - span, outward + (span * 0.6f));
-                                else inner.Arc(g.Centre.X + (g.Inward * g.R * 0.2f), g.Centre.Y, g.R * 0.75f, outward + span, outward - (span * 0.6f), true);
+                                var innerSpan = 55f * MathF.PI / 180f;
+                                if (g.Inward < 0f) inner.Arc(g.Centre.X + (g.Inward * g.R * 0.2f), g.Centre.Y, g.R * 0.75f, outward - innerSpan, outward + (innerSpan * 0.6f));
+                                else inner.Arc(g.Centre.X + (g.Inward * g.R * 0.2f), g.Centre.Y, g.R * 0.75f, outward + innerSpan, outward - (innerSpan * 0.6f), true);
                                 wingArcs[s].AddPath(inner);
                             }
                         }
@@ -487,10 +513,22 @@ public partial class ConstructiveDrawingToolkit
                         Point2D Toward(Point2D from, float share) => Lerp(from, underNose, share);
                         var baseShare = 0.4f - (0.2f * ballShape);
                         Point2D a = Toward(Wing(-nearSide).Curl, baseShare), b = Toward(Wing(nearSide).Curl, baseShare);
-                        var cp = ControlThrough(a, septumPt, b);
+                        // From above the tip overhangs the septum, so the bottom of the ball cups lower.
+                        var low = new Point2D(septumPt.X, septumPt.Y + (len * 0.05f * over));
+                        var cp = ControlThrough(a, low, b);
+                        // As a cubic, so it can square off: a squared ball or a wide septum squared onto the lip pulls the
+                        // bottom flat out toward the ends; a rounded ball cups it.
+                        Point2D c1 = Lerp(a, cp, 2f / 3f), c2 = Lerp(b, cp, 2f / 3f);
+                        var square = Math.Clamp(ballSquare + MathF.Max(0f, septumWidth), -1f, 1f);
+                        if (square > 0f) { c1 = new Point2D(c1.X + ((a.X - c1.X) * 0.7f * square), c1.Y); c2 = new Point2D(c2.X + ((b.X - c2.X) * 0.7f * square), c2.Y); }
+                        else if (square < 0f)
+                        {
+                            c1 = new Point2D(c1.X + ((low.X - c1.X) * 0.5f * -square), c1.Y + (len * 0.02f * -square));
+                            c2 = new Point2D(c2.X + ((low.X - c2.X) * 0.5f * -square), c2.Y + (len * 0.02f * -square));
+                        }
                         noseBase = new CanvasPath();
                         noseBase.MoveTo(a.X, a.Y);
-                        noseBase.QuadraticCurveTo(cp.X, cp.Y, b.X, b.Y);
+                        noseBase.BezierCurveTo(c1.X, c1.Y, c2.X, c2.Y, b.X, b.Y);
                         baseStroked = true;
                         baseWidth = Ink(NostrilTier, 0.6f * w);
                         break;
@@ -540,6 +578,17 @@ public partial class ConstructiveDrawingToolkit
             }
         }
 
+        // **A wide furrowed septum** (p. 15): the furrow, a light line up its middle from the base; the squared corners
+        // onto the lip are the base's own (`base` squares off with the septum's width).
+        var septumMarks = new CanvasPath();
+        if (detail >= 3 && septumWidth > 0.3f)
+        {
+            var reach = (septumWidth - 0.3f) / 0.7f;
+            var top = new Point2D(underNose.X, underNose.Y - (len * 0.07f));
+            var foot = new Point2D(underNose.X, septumPt.Y - (len * 0.005f));
+            septumMarks.AddPath(CreateTaperedStrokePath(top, Lerp(top, foot, 1f / 3f), Lerp(top, foot, 2f / 3f), foot,
+                Ink(NostrilTier, 0.55f * reach) * TaperGain));
+        }
         // **The vertical alongside the front-view nose** (p. 14): with the face lit from one side, a line down the side
         // of the nose on the shadow side; in full light treat it lightly, in shadow it cannot be ignored. Left out for a
         // woman's nose, and where the treatment already puts a line on that side.
@@ -617,6 +666,7 @@ public partial class ConstructiveDrawingToolkit
         ctx.Fill(hatch);
         ctx.Fill(bridgeMark);
         ctx.Fill(noseLine);
+        ctx.Fill(septumMarks);
 
         if (slashParts.Count > 0)
         {
@@ -669,6 +719,8 @@ public partial class ConstructiveDrawingToolkit
             ["base"] = noseBase,
             ["depressions"] = depressionMarks,
             ["shadowMark"] = shadowMark,
+            ["septum"] = septumMarks,
+            ["variation"] = variation,
             ["hatch"] = hatch,
             ["sideShadow"] = sideShadow,
             ["sideLine"] = sideLine,

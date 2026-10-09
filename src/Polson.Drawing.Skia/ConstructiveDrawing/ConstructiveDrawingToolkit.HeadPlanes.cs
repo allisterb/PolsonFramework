@@ -118,7 +118,7 @@ public partial class ConstructiveDrawingToolkit
 
         // The nose's planes are the nose solid's (createNoseSolid), turned by the same yaw and pitch, so the head's
         // planes and the drawn nose agree.
-        var noseSolid = noseWedge is null ? null : BuildNoseSolid(noseWedge, 0f, 0f, 0f, yaw, pitch);
+        var noseSolid = noseWedge is null ? null : BuildNoseSolid(noseWedge, default, 0f, yaw, pitch);
         IEnumerable<NoseFacet> NoseFacets(Func<NoseFacet, bool> which) => noseSolid?.Facets.Where(which) ?? [];
 
         var planes = new List<Dictionary<string, object?>>();

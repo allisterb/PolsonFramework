@@ -378,6 +378,47 @@ brow stations move with `AU1`, `AU2` and `AU4`, the fold follows the upper lid, 
 `AU7`, and **the lower lid on its own with `AU6`**, which is the one a laugh needs — Hamm: when the mouth laughs,
 the lower lid pushes up over part of the iris (p. 9). `joy` uses it.
 
+#### Hamm's eye wheel
+
+His p. 10 is a diagram of everything the eye region can do. *"The eye is the number one feature transmitting
+thoughts behind expressions,"* and it has eight areas of response, working singly or in combination: five horizontals
+that move up and down, twist and tilt, and three areas of skin where lines appear. Each horizontal has numbered
+settings, and **3 in every column is the normal awake setting**:
+
+| horizontal | settings | what the ends of the range are |
+| :--- | :--- | :--- |
+| the brow's upper edge (`browTop`) | 1–3 | raised; normal |
+| the brow's lower edge (`browBottom`) | 1–5 | raised; pulled down, which at the inner end is a frown |
+| the lid fold (`fold`) | 1–3 | high toward the brow; normal |
+| the upper lid (`upperLid`) | 1–5 | wide open up under the fold; nearly closed |
+| the lower lid (`lowerLid`) | 1–4 | pushed up over the iris, as in a laugh; dropped |
+
+The skin areas are A, between the brows; B, across the forehead; and C, at the outer corner. `Drawing.eyeWheel(head,
+settings)` sets a head by these numbers. A brow setting given as `{ inner, outer }` tilts it, `near` and `far` take
+a side's own settings to twist the face, and fractions are allowed. The lines follow the settings that make them, and
+`Drawing.drawEyeLines` draws them. He notes the normal setting differs with people, so the numbers are read against the
+head's own normal: set a neutral character head. What each number moves is the studio's reading of his diagram.
+
+His wheel is an experiment in variety: a circle of eye and brow halves turned against a face, because *"the artist
+finds himself getting into a rut when it comes to types of faces."* Turning it in code is a loop over settings:
+
+```javascript
+const canvas = createCanvas(960, 250);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = '#f6f3ec'; ctx.fillRect(0, 0, 960, 250);
+
+const wheel = [{}, { upperLid: 1, fold: 1, browTop: 1 }, { browBottom: { inner: 5, outer: 3 } }, { lowerLid: 1, upperLid: 3.5 }];
+wheel.forEach((settings, i) => {
+    const head = Drawing.eyeWheel(Drawing.createLoomisHead(120 + i * 240, 120, 360, 0), settings);
+    const ink = { inkColor: '#15151a' };
+    Drawing.drawEyeLines(ctx, head, ink);
+    Drawing.drawComicBrow(ctx, head.farBrow, true, ink);
+    Drawing.drawComicBrow(ctx, head.nearBrow, false, ink);
+    Drawing.drawComicEye(ctx, head.farEye, true, ink);
+    Drawing.drawComicEye(ctx, head.nearEye, false, ink);
+});
+canvas;
+```
 #### Drawing the face in pencil
 
 Hamm draws in pencil, and much of a sketch's character is the line and the tone, not the construction. Every

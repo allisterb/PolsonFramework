@@ -269,7 +269,9 @@ public partial class ConstructiveDrawingToolkit
                 ["center"] = ToDict(nearCenter),
                 ["width"] = eyeW,
                 ["height"] = eyeW * 0.45f,
-                ["lowerLift"] = 0f
+                ["lowerLift"] = 0f,
+                // How far the lid fold sits above its usual place, in pixels; Hamm's eye wheel moves it (p. 10).
+                ["foldLift"] = 0f
             },
             ["farEye"] = new Dictionary<string, object?>
             {
@@ -278,7 +280,9 @@ public partial class ConstructiveDrawingToolkit
                 ["center"] = ToDict(farCenter),
                 ["width"] = eyeWFar,
                 ["height"] = eyeWFar * 0.45f,
-                ["lowerLift"] = 0f
+                ["lowerLift"] = 0f,
+                // How far the lid fold sits above its usual place, in pixels; Hamm's eye wheel moves it (p. 10).
+                ["foldLift"] = 0f
             },
             ["nearBrow"] = Brow(nearInner, nearOuter),
             ["farBrow"] = Brow(farInner, farOuter),
@@ -594,7 +598,9 @@ public partial class ConstructiveDrawingToolkit
             ["center"] = ToDict(new Point2D(x0 + side * e, yEye)),
             ["width"] = e,
             ["height"] = eyeH,
-            ["lowerLift"] = 0f
+            ["lowerLift"] = 0f,
+            // How far the lid fold sits above its usual place, in pixels; Hamm's eye wheel moves it (p. 10).
+            ["foldLift"] = 0f
         };
 
         // The same brow stations Loomis's head carries, on Hamm's brow line.
@@ -1285,6 +1291,7 @@ public partial class ConstructiveDrawingToolkit
         ("nearEye.width", HeadValue.Length),
         ("nearEye.height", HeadValue.Length),
         ("nearEye.lowerLift", HeadValue.Length),
+        ("nearEye.foldLift", HeadValue.Length),
 
         ("farEye.inner", HeadValue.Point),
         ("farEye.outer", HeadValue.Point),
@@ -1292,6 +1299,7 @@ public partial class ConstructiveDrawingToolkit
         ("farEye.width", HeadValue.Length),
         ("farEye.height", HeadValue.Length),
         ("farEye.lowerLift", HeadValue.Length),
+        ("farEye.foldLift", HeadValue.Length),
 
         ("nearBrow.inner", HeadValue.Point),
         ("nearBrow.peak", HeadValue.Point),

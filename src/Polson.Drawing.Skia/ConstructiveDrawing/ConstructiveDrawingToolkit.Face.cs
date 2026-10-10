@@ -273,7 +273,8 @@ public partial class ConstructiveDrawingToolkit
         {
             // The gap peaks a little inside the middle and closes toward both ends; the lid is sampled and each
             // point lifted, then the points joined through their midpoints so the fold is one smooth curve.
-            var g = up * 0.32f * foldAmount;
+            // `foldLift` (pixels) moves it as Hamm's eye wheel does (p. 10); it never closes onto the lid.
+            var g = MathF.Max(up * 0.05f, (up * 0.32f * foldAmount) + Num(eye, "foldLift", 0f));
             const int n = 14;
             var pts = new Point2D[n];
             for (var i = 0; i < n; i++)

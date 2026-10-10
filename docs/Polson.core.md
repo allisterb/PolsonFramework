@@ -1483,6 +1483,31 @@ Also accessible via `Skia.Drawing`.
 > ```
 >
 > A non-positive or non-finite value falls back to the default rather than drawing an invisible iris.
+- `Drawing.eyeWheel(headObj: object, settings?: { browTop?: number | { inner, outer }, browBottom?: number | { inner, outer }, fold?: number, upperLid?: number, lowerLid?: number, lines?: { A?, B?, C? }, near?: object, far?: object })` → `head` — Sets the eyes and brows by **Hamm's eye wheel** (*Drawing the Head and Figure*, p. 10) and returns a new head, carrying `eyeWheel` (the settings) and `eyeLines` (the skin lines' strengths).
+- `Drawing.drawEyeLines(ctx: CanvasRenderingContext2D, headObj: object, options?: { inkColor?: string, weight?: number, medium?: BrushPreset, A?: number, B?: number, C?: number })` → `{ between, forehead, outer }` — Draws the wheel's skin lines, **returning each area as a `CanvasPath`**.
+
+> [!TIP]
+> **The wheel is Hamm's account of what the eye region can do.** Five horizontals *"may move up and down, twist and tilt"*, each with numbered settings, and **3 is "the normal awake setting"** in every column:
+>
+> | setting | range | 1 | 3 | top of range |
+> | :--- | :--- | :--- | :--- | :--- |
+> | `browTop` | 1–3 | the brow's upper edge raised | normal | — |
+> | `browBottom` | 1–5 | its lower edge raised | normal | pulled down (a frown at the inner end) |
+> | `fold` | 1–3 | the lid fold high, toward the brow | normal | — |
+> | `upperLid` | 1–5 | wide open, up under the fold | normal | nearly closed |
+> | `lowerLid` | 1–4 | pushed up over the iris (a laugh) | normal | dropped |
+>
+> A brow setting can be `{ inner, outer }`, which is the **tilt**: `browTop: { inner: 1, outer: 3 }` is a worried brow. `near` and `far` take a side's own settings, which is the **twist**: `{ far: { browTop: 1 } }` raises one brow. Fractions are allowed. Each lid keeps its place when the other moves, and the fold never closes onto the lid, nor rises into the brow: on these heads the normal fold sits just under the brow, so `fold: 1` lifts it only as far as the brow has been raised. The forehead lines sit well up the forehead, nearly level, so neither reads as a second brow. Settings are read against the head's own normal, so set the wheel on a neutral character head.
+>
+> **The three skin areas**: A between the brows, B across the forehead, C at the outer corner of the eye. Their strength follows the settings: a brow's inner end pulled down creases A, raised brows line B, a lower lid pushed up crinkles C. `lines: { A, B, C }` (0–1) sets them instead, and `drawEyeLines` draws them; its own `A`, `B`, `C` options set both sides.
+>
+> ```javascript
+> const head = Drawing.eyeWheel(Drawing.createLoomisHead(400, 300, 440), { lowerLid: 1, upperLid: 3.5 });   // a laugh
+> Drawing.drawEyeLines(ctx, head, { inkColor: '#15151a' });
+> Drawing.drawComicEye(ctx, head.nearEye, false, { inkColor: '#15151a' });
+> ```
+>
+> **A wheel head is an ordinary head**, so it blends and stores like an expression: `blendHead(head, neutral, wheeled, 0.5)` is halfway there. The fold's place is the eye's `foldLift` (pixels above its usual place, 0 by default), which `drawComicEye` reads. The amounts behind each number are the studio's reading of his diagram.
 - `Drawing.drawComicBrow(ctx: CanvasRenderingContext2D, browObj: object, isFar?: boolean, options?: { inkColor?: string, thickness?: number, medium?: BrushPreset, hairs?: number, seed?: number })` → `{ mass, spine, hairs }` — Renders one eyebrow from its three stations, **returning the filled brow, its centre-line and its hairs as `CanvasPath`s**. `hairs` (0–1, default 0) draws it as hair strokes over a faint tone instead of a solid mass, Hamm's way (*Drawing the Head and Figure*, p. 8): hairs grow obliquely away from the nose, nearly upright at the brow's head, and past the peak the top hairs turn down to meet the under hairs still slanting up. They are placed in the brow's own frame from `seed`, so an expression that moves the brow keeps the same hairs. Pass `head.nearBrow` and `head.farBrow`.
 
 > [!IMPORTANT]

@@ -285,6 +285,13 @@ is Synfig's, and the craft follows from it:
   rules from the corpus are worth keying in: the eyes follow the mouth by about three frames in a smile (Essa),
   and the parts should not all stop on one frame (§11). `face.headAt(t)` places a balloon or a prop on the head
   at any time. It is not exported to `.sif` or SVG; capture it.
+- **Key an expression by when it lands: `Motion.nodes.envelope({ at: 0.4 })`.** One hit is the whole curve of an
+  action as Essa measured it on real faces: it rises *accelerating* into the peak at `at`, falls fast, then
+  relaxes slowly to rest. That is the opposite of the ease-out a hand-keyed rise usually gets, and it is why a
+  face keyed with `halt` keys looks like it is dialled up rather than performed. `hold` keeps the peak; a second hit in the same
+  envelope starts from wherever the first has got to, so a re-take never jumps. `{ from: 3 }` lets it drive an
+  eye-wheel setting from its normal. The three-frame lag is then one number: `AU6: n.envelope({ at: 0.55 + 3 / 24 })`.
+  `sharpness: 0` is the linear ramp, for comparison.
 - **Or let a performer give the motion: `{ follow: Character.track('Jumping Jacks') }`.** The recorded clips
   that pose the 3D body drive a drawing too, each bone turned to point where the performer's part points on the
   page. It is only as good as the clip is flat: read `track.warnings` first, and choose a clip that moves across

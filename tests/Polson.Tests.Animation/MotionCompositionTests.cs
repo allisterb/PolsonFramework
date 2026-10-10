@@ -249,6 +249,35 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
         output.WriteLine($"worst centre error {worst:0.000}px over {theirs.Length} frames");
         Assert.True(worst < 0.5, $"worst centre error {worst:0.000}px");
     }
+
+    /// <summary>
+    /// The envelope, which Synfig has no node for, written as a linear key on every frame: a disc driven along x by two
+    /// hits, the second retriggering mid-release, measured in Synfig's render at every frame.
+    /// </summary>
+    [Fact]
+    public void SynfigPlaysTheEnvelopeAsWeBakeIt()
+    {
+        if (Synfig() is not { } synfig) return;
+
+        var motion = new MotionToolkit();
+        var comp = motion.Composition(Opts(("width", 400d), ("height", 120d), ("fps", 12d), ("duration", 2.5d)));
+        comp.Fill(Opts(("color", "#ffffff")));
+        var e = motion.Nodes.Envelope(new object[] { Opts(("at", 0.5d)), Opts(("at", 1.2d), ("peak", 0.7d), ("hold", 0.2d)) });
+        var x = motion.Nodes.Add("real", motion.Nodes.Scale("real", e, 300d), 50d);
+        comp.Circle(Opts(("origin", motion.Nodes.Composite(x, 60d)), ("radius", 9d), ("color", "#ff0000")));
+
+        var theirs = RenderWithSynfig(synfig, comp, "envelope");
+        var worst = 0d;
+        for (var i = 0; i < theirs.Length; i++)
+        {
+            using var bitmap = theirs[i];
+            var (cx, _) = Centroid(bitmap, c => c.Red > 128 && c.Green < 128);
+            worst = Math.Max(worst, Math.Abs(cx - (double)x.At(i / comp.Fps)));
+        }
+
+        output.WriteLine($"worst centre error {worst:0.000}px over {theirs.Length} frames");
+        Assert.True(worst < 0.5, $"worst centre error {worst:0.000}px");
+    }
     #endregion
 
     #region Private

@@ -1819,6 +1819,10 @@ internal sealed class SifWriter
     #region Properties
     /// <summary>The pictures the file refers to, by the names it gives them.</summary>
     public IReadOnlyList<(string Name, byte[] Png)> Pictures => files;
+
+    public double Fps => composition.Fps;
+
+    public double Duration => composition.Duration;
     #endregion
 
     #region Methods

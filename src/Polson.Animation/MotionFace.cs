@@ -302,7 +302,8 @@ internal sealed class MotionFaceLayer : MotionLayer
                         wheel["both"].Concat(wheel[side]).GroupBy(e => e.Key).ToDictionary(g => g.Key, g => g.Last().Value),
                         offsets["both"].Concat(offsets[side]).GroupBy(e => e.Key).ToDictionary(g => g.Key, g => g.Sum(e => e.Value)));
             head = Toolkit.EyeWheel(head, settings);
-        }        return head;
+        }
+        return head;
 
         static void Add(Dictionary<string, object?> into, string unit, float w) =>
             into[unit] = (into.TryGetValue(unit, out var had) && had is float f ? f : 0f) + w;

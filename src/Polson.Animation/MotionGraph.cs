@@ -685,6 +685,108 @@ public sealed class MotionWeightedAverage : MotionNode
     #endregion
 }
 
+/// <summary>
+/// An action's strength over time, as Essa measured facial muscles: an exponential rise into the peak (application), an
+/// exponential fall from it (release), then a passive return to rest (relaxation). A hit starts from wherever the one
+/// before it has got to, so a retrigger never jumps.
+/// </summary>
+/// <remarks>
+/// Essa, <i>Analysis, Interpretation and Synthesis of Facial Expressions</i> (MIT PhD thesis, 1995), §6.1 and Figs 6-6 and
+/// 6-7: application fitted as <c>a(e^bx − 1)</c>, release as <c>a(e^(c − bx) − 1)</c>, and relaxation put down to residual
+/// stress in the skin rather than the muscle. Each phase here is that curve run between its two levels over its own
+/// duration, <c>sharpness</c> being <c>b</c> times the duration; at 0 it is the linear ramp Essa set it against. The
+/// durations, the residual and the relaxation's curve are ours: the thesis warps every expression to ten samples. Not a
+/// Synfig node, so it is written to <c>.sif</c> as a linear key on every frame. Exposed to the JavaScript sandbox. See
+/// <see cref="MotionNode"/>.
+/// </remarks>
+public sealed class MotionEnvelope : MotionNode
+{
+    #region Constructors
+    internal MotionEnvelope(double rest, IReadOnlyList<MotionHit> hits) : base(MotionType.Real)
+    {
+        if (hits.Count == 0) throw new ArgumentException("Motion.nodes.envelope needs at least one hit.");
+        this.rest = rest;
+        this.hits = [.. hits.OrderBy(h => h.At)];
+        starts = new double[this.hits.Length];
+        starts[0] = rest;
+        for (var i = 1; i < this.hits.Length; i++)
+        {
+            var (before, h) = (this.hits[i - 1], this.hits[i]);
+            if (h.At - before.At < MotionAnimated.TimeEpsilon)
+                throw new ArgumentException($"Two hits peak at {MotionTypes.Time(h.At)}; one peak per time.");
+            if (h.Start < before.Start)
+                throw new ArgumentException($"The hit at {MotionTypes.Time(h.At)} starts its attack at {MotionTypes.Time(h.Start)}, before the hit at "
+                    + $"{MotionTypes.Time(before.At)} starts its own at {MotionTypes.Time(before.Start)}; shorten its attack.");
+            starts[i] = Phase(before, starts[i - 1], h.Start);
+        }
+    }
+    #endregion
+
+    #region Fields
+    private readonly double rest;
+    private readonly MotionHit[] hits;
+    /// <summary>The value each hit's attack starts from: where the hit before it had got to.</summary>
+    private readonly double[] starts;
+    #endregion
+
+    #region Properties
+    /// <summary>How many hits it holds.</summary>
+    public int Count => hits.Length;
+
+    /// <summary>When the first attack starts, in seconds.</summary>
+    public double Start => hits[0].Start;
+
+    /// <summary>When the last hit has settled back to rest, in seconds.</summary>
+    public double End => hits[^1].End;
+    #endregion
+
+    #region Methods
+    internal override double[] Evaluate(double time)
+    {
+        var i = Array.FindLastIndex(hits, h => h.Start <= time);
+        return [i < 0 ? rest : Phase(hits[i], starts[i], time)];
+    }
+
+    internal override XElement ToSif(SifWriter sif)
+    {
+        // Synfig has no envelope, so it is given the curve where Synfig samples it: a linear key on every frame it moves in.
+        const double slack = 1e-6;
+        var first = (int)Math.Max(0, Math.Floor(Start * sif.Fps + slack));
+        var last = (int)Math.Min(Math.Ceiling(sif.Duration * sif.Fps - slack), Math.Ceiling(End * sif.Fps - slack));
+        if (last < first) return SifWriter.Value(Kind, Evaluate(0));
+        return new("animated", new XAttribute("type", Type),
+            Enumerable.Range(first, last - first + 1).Select(f => f / sif.Fps).Select(t => new XElement("waypoint",
+                new XAttribute("time", MotionTypes.Time(t)), new XAttribute("before", "linear"), new XAttribute("after", "linear"),
+                SifWriter.Value(Kind, Evaluate(t)))));
+    }
+
+    /// <summary>One hit's value at a time at or after its start, its attack rising from <paramref name="from"/>.</summary>
+    private double Phase(MotionHit h, double from, double time)
+    {
+        if (time < h.At) return from + (h.Peak - from) * Rise((time - h.Start) / h.Attack, h.AttackSharpness);
+        var t = time - h.At - h.Hold;
+        if (t <= 0) return h.Peak;
+        var low = rest + h.Residual * (h.Peak - rest);
+        if (t < h.Release) return low + (h.Peak - low) * Rise(1 - t / h.Release, h.ReleaseSharpness);
+        t -= h.Release;
+        return t < h.Settle ? rest + (low - rest) * Rise(1 - t / h.Settle, h.SettleSharpness) : rest;
+    }
+
+    /// <summary><c>(e^ku − 1) / (e^k − 1)</c>: 0 to 1 over <c>u</c>, accelerating for positive <c>k</c>, straight at 0.</summary>
+    private static double Rise(double u, double k) => Math.Abs(k) < 1e-9 ? u : double.ExpM1(k * u) / double.ExpM1(k);
+    #endregion
+}
+
+/// <summary>One hit of a <see cref="MotionEnvelope"/>, its times in seconds and its peak at <see cref="At"/>.</summary>
+internal sealed record MotionHit(
+    double At, double Peak, double Attack, double Hold, double Release, double Residual, double Settle,
+    double AttackSharpness, double ReleaseSharpness, double SettleSharpness)
+{
+    public double Start => At - Attack;
+
+    public double End => At + Hold + Release + Settle;
+}
+
 /// <summary>Builds nodes from script values: <c>Motion.nodes</c>.</summary>
 /// <remarks>
 /// Every factory takes the value type first where it is ambiguous, and refuses a value of the wrong
@@ -696,6 +798,12 @@ public sealed class MotionNodeFactory
     #region Fields
     private static readonly HashSet<string> WaypointKeys =
         ["time", "value", "before", "after", "ease", "tension", "continuity", "bias", "temporalTension"];
+
+    private static readonly string[] HitKeys = ["at", "peak", "attack", "hold", "release", "residual", "settle", "sharpness"];
+
+    private static readonly string[] DefaultKeys = ["from", .. HitKeys.Skip(1)];
+
+    private static readonly string[] Phases = ["attack", "release", "settle"];
     #endregion
 
     #region Methods
@@ -808,6 +916,59 @@ public sealed class MotionNodeFactory
     }
 
     /// <summary>
+    /// An action's strength over time, keyed by when it peaks, after Essa: one hit or an array of
+    /// <c>{ at, peak?, attack?, hold?, release?, residual?, settle?, sharpness? }</c>, with <paramref name="defaults"/> giving
+    /// every hit's defaults and <c>from</c>, the rest value. Real.
+    /// </summary>
+    /// <remarks>
+    /// Seconds: <c>attack</c> 0.25 rising into the peak, <c>hold</c> 0 at it, <c>release</c> 0.4 falling to <c>residual</c>
+    /// (0.15 of the rise), <c>settle</c> 0.6 back to rest. <c>peak</c> 1, <c>from</c> 0. <c>sharpness</c> 2.5, a number for every
+    /// phase or <c>{ attack, release, settle }</c>; 0 is a linear ramp, negative eases the other way.
+    /// </remarks>
+    public MotionEnvelope Envelope(object? hits, object? defaults = null)
+    {
+        const string who = "Motion.nodes.envelope";
+        var shared = defaults is null ? new Hashtable()
+            : JsInterop.AsDict(defaults) ?? throw new ArgumentException($"{who}(hits, defaults): defaults is an object of hit settings and 'from'.");
+        Refuse(shared, DefaultKeys, $"{who}'s defaults");
+
+        IList list = hits switch
+        {
+            IList l when l.Count > 0 => l,
+            IList => throw new ArgumentException($"{who} takes a hit {{ at, peak?, ... }} or an array of them, and this array is empty."),
+            _ when JsInterop.AsDict(hits) is { } single => new[] { single },
+            _ => throw new ArgumentException($"{who} takes a hit {{ at, peak?, ... }} or an array of them.")
+        };
+
+        var parsed = new List<MotionHit>();
+        foreach (var item in list)
+        {
+            var h = JsInterop.AsDict(item) ?? throw new ArgumentException($"Each of {who}'s hits is an object: {{ at, peak?, attack?, ... }}.");
+            Refuse(h, HitKeys, "A hit");
+            if (h["at"] is null) throw new ArgumentException($"Each of {who}'s hits needs 'at', the time of its peak in seconds.");
+            var at = Real(h["at"], "a hit's at (seconds)");
+            var name = $"The hit at {MotionTypes.Time(at)}";
+            double Get(string key, double fallback, bool duration = false)
+            {
+                var v = h[key] ?? shared[key];
+                if (v is null) return fallback;
+                var x = Real(v, $"{name}'s {key}");
+                if (duration && x < 0) throw new ArgumentException($"{name}'s {key} is {MotionTypes.Format(x)}; a duration cannot be negative.");
+                return x;
+            }
+
+            var residual = Get("residual", 0.15);
+            if (residual is < 0 or > 1)
+                throw new ArgumentException($"{name}'s residual is {MotionTypes.Format(residual)}: the share of the rise left after the release, 0 to 1.");
+            var (ka, kr, ks) = Sharpness(h["sharpness"] ?? shared["sharpness"], name);
+            parsed.Add(new MotionHit(at, Get("peak", 1), Get("attack", 0.25, true), Get("hold", 0, true), Get("release", 0.4, true),
+                residual, Get("settle", 0.6, true), ka, kr, ks));
+        }
+
+        return new MotionEnvelope(shared["from"] is { } from ? Real(from, $"{who}'s from") : 0d, parsed);
+    }
+
+    /// <summary>
     /// A point that follows a bone: given where it sits in the rest pose, in composition coordinates, it is
     /// carried by the bone's frame from there. Synfig's bone link.
     /// </summary>
@@ -836,6 +997,29 @@ public sealed class MotionNodeFactory
     };
 
     private static double Real(object? v, string who) => MotionTypes.Read(v, MotionType.Real, who)[0];
+
+    private static void Refuse(IDictionary d, string[] known, string who)
+    {
+        foreach (var key in d.Keys.Cast<object>().Select(k => k.ToString()!))
+            if (!known.Contains(key))
+                throw new ArgumentException($"{who} has no '{key}'. It takes: {string.Join(", ", known)}.");
+    }
+
+    /// <summary>An envelope's sharpness: one number for every phase, or <c>{ attack, release, settle }</c>, each defaulting to 2.5.</summary>
+    private static (double Attack, double Release, double Settle) Sharpness(object? value, string who)
+    {
+        const double fallback = 2.5;
+        if (value is null) return (fallback, fallback, fallback);
+        if (JsInterop.AsDict(value) is not { } d)
+        {
+            var k = Real(value, $"{who}'s sharpness");
+            return (k, k, k);
+        }
+
+        Refuse(d, Phases, $"{who}'s sharpness");
+        double Of(string phase) => d[phase] is { } v ? Real(v, $"{who}'s sharpness.{phase}") : fallback;
+        return (Of("attack"), Of("release"), Of("settle"));
+    }
 
     private static MotionEase Ease(object value, string who) => value.ToString()?.Trim().ToLowerInvariant() switch
     {

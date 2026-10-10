@@ -251,6 +251,42 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
     }
 
     /// <summary>
+    /// The time loop, read off pixels: a disc driven along x by a keyed passage looped forward and, on a second disc,
+    /// backward, the loop lined up off zero so the wrap is exercised. Written as Synfig's own timeloop.
+    /// </summary>
+    [Fact]
+    public void SynfigLoopsTheWayOurTimeLoopDoes()
+    {
+        if (Synfig() is not { } synfig) return;
+
+        var motion = new MotionToolkit();
+        var comp = motion.Composition(Opts(("width", 400d), ("height", 160d), ("fps", 12d), ("duration", 2.5d)));
+        comp.Fill(Opts(("color", "#ffffff")));
+        var passage = Animated("real", (0, 40d, "halt"), (0.5, 360d, "clamped"), (1, 200d, "halt"));
+        var forward = motion.Nodes.TimeLoop(passage, 0.6d, Opts(("linkTime", 0.25d), ("localTime", -0.3d)));
+        var backward = motion.Nodes.TimeLoop(passage, -0.7d, Opts(("linkTime", 0.9d), ("localTime", 0.1d)));
+        comp.Circle(Opts(("origin", motion.Nodes.Composite(forward, 50d)), ("radius", 9d), ("color", "#ff0000")));
+        comp.Circle(Opts(("origin", motion.Nodes.Composite(backward, 110d)), ("radius", 9d), ("color", "#0000ff")));
+
+        Assert.Contains("<timeloop type=\"real\"", comp.ToSif());
+        var theirs = RenderWithSynfig(synfig, comp, "timeloop");
+        var worst = 0d;
+        for (var i = 0; i < theirs.Length; i++)
+        {
+            using var bitmap = theirs[i];
+            var (fx, _) = Centroid(bitmap, c => c.Red > 128 && c.Blue < 128);
+            var (bx, _) = Centroid(bitmap, c => c.Blue > 128 && c.Red < 128);
+            var t = i / comp.Fps;
+            worst = Math.Max(worst, Math.Max(Math.Abs(fx - (double)forward.At(t)), Math.Abs(bx - (double)backward.At(t))));
+            if (Math.Abs(fx - (double)forward.At(t)) > 0.5 || Math.Abs(bx - (double)backward.At(t)) > 0.5)
+                output.WriteLine($"{t:0.000}s: forward synfig {fx:0.0} ours {forward.At(t):0.0}; backward synfig {bx:0.0} ours {backward.At(t):0.0}");
+        }
+
+        output.WriteLine($"worst centre error {worst:0.000}px over {theirs.Length} frames");
+        Assert.True(worst < 0.5, $"worst centre error {worst:0.000}px");
+    }
+
+    /// <summary>
     /// The envelope, which Synfig has no node for, written as a linear key on every frame: a disc driven along x by two
     /// hits, the second retriggering mid-release, measured in Synfig's render at every frame.
     /// </summary>

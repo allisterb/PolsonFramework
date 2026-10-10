@@ -271,7 +271,9 @@ public partial class ConstructiveDrawingToolkit
                 ["height"] = eyeW * 0.45f,
                 ["lowerLift"] = 0f,
                 // How far the lid fold sits above its usual place, in pixels; Hamm's eye wheel moves it (p. 10).
-                ["foldLift"] = 0f
+                ["foldLift"] = 0f,
+                // How far the upper lid has come down to meet the lower, 0 open to 1 shut: a blink (AU45).
+                ["closure"] = 0f
             },
             ["farEye"] = new Dictionary<string, object?>
             {
@@ -282,7 +284,9 @@ public partial class ConstructiveDrawingToolkit
                 ["height"] = eyeWFar * 0.45f,
                 ["lowerLift"] = 0f,
                 // How far the lid fold sits above its usual place, in pixels; Hamm's eye wheel moves it (p. 10).
-                ["foldLift"] = 0f
+                ["foldLift"] = 0f,
+                // How far the upper lid has come down to meet the lower, 0 open to 1 shut: a blink (AU45).
+                ["closure"] = 0f
             },
             ["nearBrow"] = Brow(nearInner, nearOuter),
             ["farBrow"] = Brow(farInner, farOuter),
@@ -600,7 +604,9 @@ public partial class ConstructiveDrawingToolkit
             ["height"] = eyeH,
             ["lowerLift"] = 0f,
             // How far the lid fold sits above its usual place, in pixels; Hamm's eye wheel moves it (p. 10).
-            ["foldLift"] = 0f
+            ["foldLift"] = 0f,
+            // How far the upper lid has come down to meet the lower, 0 open to 1 shut: a blink (AU45).
+            ["closure"] = 0f
         };
 
         // The same brow stations Loomis's head carries, on Hamm's brow line.
@@ -1042,6 +1048,7 @@ public partial class ConstructiveDrawingToolkit
                         {
                             HeadValue.CoordX => (v - o.X) / hh,
                             HeadValue.CoordY => (v - o.Y) / hh,
+                            HeadValue.Fraction => v,
                             _ => v / hh,
                         };
                     }
@@ -1052,6 +1059,7 @@ public partial class ConstructiveDrawingToolkit
                     {
                         HeadValue.CoordX => bo.X + (n * bh),
                         HeadValue.CoordY => bo.Y + (n * bh),
+                        HeadValue.Fraction => Math.Clamp(n, 0f, 1f),
                         _ => n * bh,
                     });
                     break;
@@ -1256,7 +1264,8 @@ public partial class ConstructiveDrawingToolkit
 
     #region Blending
     /// <summary>What a head's leaves mean, which is what says how each is normalised.</summary>
-    private enum HeadValue { Point, Length, CoordX, CoordY }
+    /// <summary>What a head value measures; a <c>Fraction</c> (0–1, such as a lid's closure) blends as it is, unscaled.</summary>
+    private enum HeadValue { Point, Length, CoordX, CoordY, Fraction }
 
     /// <summary>
     /// Every blendable value in a head, by path, with what kind of measurement it is.
@@ -1292,6 +1301,7 @@ public partial class ConstructiveDrawingToolkit
         ("nearEye.height", HeadValue.Length),
         ("nearEye.lowerLift", HeadValue.Length),
         ("nearEye.foldLift", HeadValue.Length),
+        ("nearEye.closure", HeadValue.Fraction),
 
         ("farEye.inner", HeadValue.Point),
         ("farEye.outer", HeadValue.Point),
@@ -1300,6 +1310,7 @@ public partial class ConstructiveDrawingToolkit
         ("farEye.height", HeadValue.Length),
         ("farEye.lowerLift", HeadValue.Length),
         ("farEye.foldLift", HeadValue.Length),
+        ("farEye.closure", HeadValue.Fraction),
 
         ("nearBrow.inner", HeadValue.Point),
         ("nearBrow.peak", HeadValue.Point),

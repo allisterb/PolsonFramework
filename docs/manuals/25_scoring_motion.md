@@ -292,6 +292,15 @@ is Synfig's, and the craft follows from it:
   envelope starts from wherever the first has got to, so a re-take never jumps. `{ from: 3 }` lets it drive an
   eye-wheel setting from its normal. The three-frame lag is then one number: `AU6: n.envelope({ at: 0.55 + 3 / 24 })`.
   `sharpness: 0` is the linear ramp, for comparison.
+- **Give a living face blinks: `AU45: Motion.nodes.blinks({ seed: 2 })`.** A face that never blinks reads as a
+  mask within a few seconds, and one that blinks on a beat reads as a machine; `blinks` spaces them irregularly,
+  closes faster than it opens, and now and then doubles one. Put the ones that matter where they mean something,
+  `at: [1.6]` on a change of thought or a turn of the head, and keep a stare clear with `avoid: [[2, 4]]`. A shut
+  eye is drawn shut, whatever the eye was doing, so a blink over a laugh or a surprise needs nothing else.
+  `near.AU45` is a wink. Give two characters different seeds, or they blink together.
+- **Loop an idle rather than keying it to the end: `Motion.nodes.timeLoop(breath, 3)`.** Key one breath, one sway,
+  one bob, and the loop plays it for the length of the shot; `localTime` lines it up, and a negative duration
+  plays it backwards. Loop the idle and leave the blinks unlooped: a loop repeats exactly, and blinks must not.
 - **Or let a performer give the motion: `{ follow: Character.track('Jumping Jacks') }`.** The recorded clips
   that pose the 3D body drive a drawing too, each bone turned to point where the performer's part points on the
   page. It is only as good as the clip is flat: read `track.warnings` first, and choose a clip that moves across

@@ -107,7 +107,7 @@ public partial class ConstructiveDrawingToolkit
 
     /// <summary>An eye's lid geometry, shared by the drawer and the socket.</summary>
     readonly record struct EyeLidFrame(Point2D Inner, Point2D Outer, Point2D Center, float W, float Dir, float Up, float LowerDrop,
-                                       Point2D Cp1, Point2D Cp2);
+                                       Point2D Cp1, Point2D Cp2, float Closure);
 
     static EyeLidFrame EyeLids(IDictionary eye)
     {
@@ -132,9 +132,21 @@ public partial class ConstructiveDrawingToolkit
         // needs and his laugh shows: the lower lid pushes up over the iris while the upper stays (p. 9). It may
         // rise a little past the corners' line, never further.
         var lowerDrop = MathF.Max(-up * 0.35f, (up * LidFloor) - Num(eye, "lowerLift", 0f));
-        return new EyeLidFrame(inner, outer, center, w, dir, up, lowerDrop,
-            new Point2D(inner.X + dir * w * 0.3f, inner.Y - up), new Point2D(inner.X + dir * w * 0.7f, inner.Y - up * LidCrest));
+
+        // **Closure** (0 open to 1 shut, a blink): the upper lid comes down to meet the lower a little above the lower
+        // lid's lowest point, and the lower rises the rest of the way, so a shut eye is one line that keeps the lower
+        // lid's curve - sagging on a plain face, arched on a laughing one, where the cheek has pushed the lower lid up.
+        // The lids meet on curves of equal depth (a cubic's ¾ d is a quadratic's ½ e), so the shut aperture is a sliver.
+        var c = Math.Clamp(Num(eye, "closure", 0f), 0f, 1f);
+        var meet = lowerDrop * 0.5f * ClosedLidDepth;
+        var upperY1 = inner.Y - up + c * (meet / 0.75f + up);
+        var upperY2 = inner.Y - up * LidCrest + c * (meet / 0.75f + up * LidCrest);
+        return new EyeLidFrame(inner, outer, center, w, dir, up * (1f - c), lowerDrop + c * (2f * meet - lowerDrop),
+            new Point2D(inner.X + dir * w * 0.3f, upperY1), new Point2D(inner.X + dir * w * 0.7f, upperY2), c);
     }
+
+    /// <summary>Where shut lids meet, as a fraction of the open lower lid's depth below the corners.</summary>
+    private const float ClosedLidDepth = 0.8f;
 
     static Point2D Cubic(Point2D a, Point2D b, Point2D c, Point2D d, float t)
     {
@@ -206,6 +218,9 @@ public partial class ConstructiveDrawingToolkit
         var lids = EyeLids(eye);
         Point2D inner = lids.Inner, outer = lids.Outer, center = lids.Center;
         float w = lids.W, dir = lids.Dir, up = lids.Up, lowerDrop = lids.LowerDrop;
+        // A closing lid stretches its fold flat; a shut eye shows no white.
+        foldAmount *= 1f - lids.Closure;
+        var shut = lids.Closure >= 0.98f;
 
         // **The iris, as a settable fraction of the eye's own width, defaulting to the comic canon.**
         // 0.32 is a deliberately large iris and is what every existing script draws; the measured
@@ -338,6 +353,9 @@ public partial class ConstructiveDrawingToolkit
                 lashMarks.AddPath(mark);
             }
 
+            // As the lid closes its lashes swing over to hang down, late, as the lid passes the corners' line; between
+            // the two they point out and read shorter, as they do turning toward the viewer.
+            var swing = lids.Closure * lids.Closure;
             var upperCount = 4 + (int)MathF.Round(6f * lashes);
             for (var i = 0; i < upperCount; i++)
             {
@@ -346,7 +364,10 @@ public partial class ConstructiveDrawingToolkit
                 var p = Cubic(inner, lids.Cp1, lids.Cp2, outer, t);
                 var q = Cubic(inner, lids.Cp1, lids.Cp2, outer, MathF.Min(1f, t + 0.01f));
                 var tangent = new Point2D(q.X - p.X, q.Y - p.Y);
-                Lash(p, Away(p, tangent, true, 15f + 45f * s), w * (0.07f + 0.13f * s) * (0.6f + 0.4f * lashes), -0.15f);
+                var open = Away(p, tangent, true, 15f + 45f * s);
+                var down = swing > 0f ? Away(p, tangent, false, 15f + 45f * s) : open;
+                var d = new Point2D(open.X + (down.X - open.X) * swing, open.Y + (down.Y - open.Y) * swing);
+                Lash(p, d, w * (0.07f + 0.13f * s) * (0.6f + 0.4f * lashes), -0.15f + 0.3f * swing);
             }
 
             var lowerCount = 3 + (int)MathF.Round(3f * lashes);
@@ -365,60 +386,63 @@ public partial class ConstructiveDrawingToolkit
         ctx.Save();
         ApplyMedium(ctx, medium);
 
-        // 1. Sclera — paper, in any medium — then the interior, clipped to the lids.
-        ctx.Save();
-        ctx.FillStyle = scleraColor;
-        ctx.Fill(aperture);
-        ctx.Clip(aperture);
-
-        // 2. Iris & Pupil. Hamm's values (step 8): the iris darkens toward its rim. In a dry medium the iris is laid
-        // as an even mid-tone, so the markings and the rim carry it rather than drowning in the grain.
-        ctx.FillStyle = InMedium(medium, irisColor, 0.4f);
-        ctx.Fill(iris);
-        if (tone > 0f)
+        // 1. Sclera — paper, in any medium — then the interior, clipped to the lids. A shut eye has none.
+        if (!shut)
         {
-            using var rim = SKShader.CreateRadialGradient(new SKPoint(irisX, irisY), irisR,
-                [SKColors.Transparent, new SKColor(0, 0, 0, (byte)(150f * tone))], [0.45f, 1f], SKShaderTileMode.Clamp);
             ctx.Save();
-            ctx.FillStyle = SKShader.CreateCompose(rim, ShaderInMedium(medium, inkColor, 0.4f), SKBlendMode.SrcIn);
+            ctx.FillStyle = scleraColor;
+            ctx.Fill(aperture);
+            ctx.Clip(aperture);
+
+            // 2. Iris & Pupil. Hamm's values (step 8): the iris darkens toward its rim. In a dry medium the iris is laid
+            // as an even mid-tone, so the markings and the rim carry it rather than drowning in the grain.
+            ctx.FillStyle = InMedium(medium, irisColor, 0.4f);
             ctx.Fill(iris);
+            if (tone > 0f)
+            {
+                using var rim = SKShader.CreateRadialGradient(new SKPoint(irisX, irisY), irisR,
+                    [SKColors.Transparent, new SKColor(0, 0, 0, (byte)(150f * tone))], [0.45f, 1f], SKShaderTileMode.Clamp);
+                ctx.Save();
+                ctx.FillStyle = SKShader.CreateCompose(rim, ShaderInMedium(medium, inkColor, 0.4f), SKBlendMode.SrcIn);
+                ctx.Fill(iris);
+                ctx.Restore();
+            }
+            if (markings > 0f)
+            {
+                ctx.Save();
+                ctx.Clip(iris);
+                ctx.GlobalAlpha = 0.3f + 0.7f * markings;
+                ctx.FillStyle = InMedium(medium, inkColor, 0.3f);
+                ctx.Fill(irisMarks);
+                ctx.GlobalAlpha = 0.55f * markings;
+                ctx.FillStyle = InMedium(medium, "#ffffff", 0.35f);
+                ctx.Fill(irisLights);
+                ctx.Restore();
+            }
+            ctx.StrokeStyle = InMedium(medium, inkColor);
+            ctx.LineWidth = Tier(IrisRimTier, w, EyeWidthAt240, weight);
+            ctx.Stroke(iris);                 // dark iris rim
+
+            // Hamm: draw the pupil in its entirety for sparkle (p. 9), so in a dry medium it is laid dense.
+            ctx.FillStyle = InMedium(medium, inkColor, 0.2f);
+            ctx.Fill(pupil);
+
+            // Step 9: the upper lid's shadow over the iris and the white, fading downward.
+            if (tone > 0f)
+            {
+                ctx.Save();
+                ctx.GlobalCompositeOperation = "multiply";
+                FillGraded(ctx, aperture, ShaderInMedium(medium, inkColor),
+                    new Point2D(center.X, inner.Y - up), new Point2D(center.X, inner.Y - up * 0.05f), 0.55f * tone, 0f);
+                ctx.Restore();
+            }
+
+            // The highlight stays paper: Hamm puts it in with opaque white or an eraser.
+            ctx.FillStyle = "#ffffff";
+            ctx.Fill(catchlight);
+
             ctx.Restore();
         }
-        if (markings > 0f)
-        {
-            ctx.Save();
-            ctx.Clip(iris);
-            ctx.GlobalAlpha = 0.3f + 0.7f * markings;
-            ctx.FillStyle = InMedium(medium, inkColor, 0.3f);
-            ctx.Fill(irisMarks);
-            ctx.GlobalAlpha = 0.55f * markings;
-            ctx.FillStyle = InMedium(medium, "#ffffff", 0.35f);
-            ctx.Fill(irisLights);
-            ctx.Restore();
-        }
-        ctx.StrokeStyle = InMedium(medium, inkColor);
-        ctx.LineWidth = Tier(IrisRimTier, w, EyeWidthAt240, weight);
-        ctx.Stroke(iris);                 // dark iris rim
-
-        // Hamm: draw the pupil in its entirety for sparkle (p. 9), so in a dry medium it is laid dense.
-        ctx.FillStyle = InMedium(medium, inkColor, 0.2f);
-        ctx.Fill(pupil);
-
-        // Step 9: the upper lid's shadow over the iris and the white, fading downward.
-        if (tone > 0f)
-        {
-            ctx.Save();
-            ctx.GlobalCompositeOperation = "multiply";
-            FillGraded(ctx, aperture, ShaderInMedium(medium, inkColor),
-                new Point2D(center.X, inner.Y - up), new Point2D(center.X, inner.Y - up * 0.05f), 0.55f * tone, 0f);
-            ctx.Restore();
-        }
-
-        // The highlight stays paper: Hamm puts it in with opaque white or an eraser.
-        ctx.FillStyle = "#ffffff";
-        ctx.Fill(catchlight);
-
-        ctx.Restore();
 
         // 3. Thick Inked S-Curve Upper Eyelid, heavier when lashes grow out of it (step 10).
         ctx.StrokeStyle = InMedium(medium, inkColor);
@@ -1683,6 +1707,13 @@ public partial class ConstructiveDrawingToolkit
             // on its own (`lowerLift`); before that it could only narrow both lids, which is AU7.
             ["AU6"] = (head, w, h, s) => LiftLowerLids(head, 0.030f * h * w, s),
 
+            // Levator relaxed, Orbicularis Oculi Pars Palpebralis contracted - the upper lid comes down to the lower.
+            // A fraction of the way shut rather than a distance, because a blink shuts the eye whatever it was doing:
+            // wide in surprise or narrowed in a laugh, at 1 it is shut. AU45 is the blink, AU43 the lids held closed;
+            // the drawing is the same and the name says which. Sided, it is a wink.
+            ["AU43"] = (head, w, _, s) => CloseLids(head, w, s),
+            ["AU45"] = (head, w, _, s) => CloseLids(head, w, s),
+
             // Zygomatic Major. Loomis's "happy muscles", which pull the corners OUT and diagonally
             // UP - the diagonal is his, and a corner lifted straight up reads as a smirk.
             ["AU12"] = (head, w, h, s) => MoveMouthCorners(head, 0.018f * h * w, -0.032f * h * w, s),
@@ -1805,6 +1836,18 @@ public partial class ConstructiveDrawingToolkit
             if (head[group] is not Dictionary<string, object?> eye) continue;
             var had = eye.TryGetValue("lowerLift", out var v) && v is not null ? Convert.ToSingle(v, CultureInfo.InvariantCulture) : 0f;
             eye["lowerLift"] = had + lift;
+        }
+    }
+
+    /// <summary>Brings the upper lids down by <paramref name="amount"/> of the way shut, which is each eye's <c>closure</c>.</summary>
+    static void CloseLids(Dictionary<string, object?> head, float amount, FaceSide side = FaceSide.Both)
+    {
+        foreach (var group in new[] { "nearEye", "farEye" })
+        {
+            if (!SideCovers(side, group == "nearEye")) continue;
+            if (head[group] is not Dictionary<string, object?> eye) continue;
+            var had = eye.TryGetValue("closure", out var v) && v is not null ? Convert.ToSingle(v, CultureInfo.InvariantCulture) : 0f;
+            eye["closure"] = Math.Clamp(had + amount, 0f, 1f);
         }
     }
 

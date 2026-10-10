@@ -738,6 +738,9 @@ public sealed class MotionEnvelope : MotionNode
 
     /// <summary>When the last hit has settled back to rest, in seconds.</summary>
     public double End => hits[^1].End;
+
+    /// <summary>When each hit peaks, in seconds, in order: for blinks, when the eyes are shut.</summary>
+    public IReadOnlyList<double> Peaks => [.. hits.Select(h => h.At)];
     #endregion
 
     #region Methods
@@ -777,6 +780,55 @@ public sealed class MotionEnvelope : MotionNode
     #endregion
 }
 
+/// <summary>
+/// Another node played over and over: its <c>duration</c> seconds from <c>linkTime</c>, lined up so the loop starts at
+/// <c>localTime</c> (and every <c>duration</c> before and after). A negative duration plays the passage backwards.
+/// </summary>
+/// <remarks>
+/// Synfig's <c>timeloop</c> converter (<c>valuenode_timeloop.cpp</c>; Synfig, GPL-2-or-later), and the same mapping as its
+/// Time Loop layer with <c>symmetrical</c> on. A duration of 0 holds the value at <c>linkTime</c>. Exposed to the
+/// JavaScript sandbox. See <see cref="MotionNode"/>.
+/// </remarks>
+public sealed class MotionTimeLoop : MotionNode
+{
+    #region Constructors
+    // The times are held at single precision because that is how Synfig reads them from a .sif: a frame that lands exactly
+    // on a loop boundary (1.8 / 0.6) then falls on the same side of it in both, where in double it would fall on the other.
+    internal MotionTimeLoop(MotionNode link, double linkTime, double localTime, double duration) : base(link.Kind) =>
+        (this.link, this.linkTime, this.localTime, this.duration) = (link, (float)linkTime, (float)localTime, (float)duration);
+    #endregion
+
+    #region Fields
+    private readonly MotionNode link;
+    private readonly double linkTime, localTime, duration;
+    #endregion
+
+    #region Properties
+    internal override IEnumerable<MotionNode> Children => [link];
+    #endregion
+
+    #region Methods
+    internal override double[] Evaluate(double time) => link.Evaluate(Local(time));
+
+    /// <summary>The time in the looped node that <paramref name="time"/> plays.</summary>
+    internal double Local(double time)
+    {
+        if (duration == 0) return linkTime;
+        var span = Math.Abs(duration);
+        var into = time - localTime;
+        into -= Math.Floor(into / span) * span;
+        return duration > 0 ? linkTime + into : linkTime - into;
+    }
+
+    internal override XElement ToSif(SifWriter sif) =>
+        new("timeloop", new XAttribute("type", Type), sif.Link("link", link),
+            Time("link_time", linkTime), Time("local_time", localTime), Time("duration", duration));
+
+    private static XElement Time(string name, double seconds) =>
+        new(name, new XElement("time", new XAttribute("value", MotionTypes.Time(seconds))));
+    #endregion
+}
+
 /// <summary>One hit of a <see cref="MotionEnvelope"/>, its times in seconds and its peak at <see cref="At"/>.</summary>
 internal sealed record MotionHit(
     double At, double Peak, double Attack, double Hold, double Release, double Residual, double Settle,
@@ -804,6 +856,8 @@ public sealed class MotionNodeFactory
     private static readonly string[] DefaultKeys = ["from", .. HitKeys.Skip(1)];
 
     private static readonly string[] Phases = ["attack", "release", "settle"];
+
+    private static readonly string[] BlinkKeys = ["start", "end", "every", "jitter", "seed", "close", "shut", "open", "double", "at", "avoid"];
     #endregion
 
     #region Methods
@@ -966,6 +1020,93 @@ public sealed class MotionNodeFactory
         }
 
         return new MotionEnvelope(shared["from"] is { } from ? Real(from, $"{who}'s from") : 0d, parsed);
+    }
+
+    /// <summary>
+    /// Blinks at irregular times, as an envelope from 0 to 1 for a face's <c>AU45</c>: <c>{ start?, end?, every?, jitter?,
+    /// seed?, close?, shut?, open?, double?, at?, avoid? }</c>. The same seed gives the same blinks.
+    /// </summary>
+    /// <remarks>
+    /// Seconds: one every <c>every</c> (4) on average, each gap varied by up to <c>jitter</c> (0.5) of it either way, from
+    /// <c>start</c> (0) to <c>end</c> (60). Each closes over <c>close</c> (0.1), stays shut <c>shut</c> (0.05) and opens over
+    /// <c>open</c> (0.15). <c>double</c> (0.1) is the chance a blink is followed straight away by another. <c>at</c> adds
+    /// blinks where they are meant, and the random ones keep clear of them; <c>avoid</c>, <c>[[from, to], ...]</c>, keeps
+    /// every random blink out of those times.
+    /// </remarks>
+    public MotionEnvelope Blinks(object? options = null)
+    {
+        const string who = "Motion.nodes.blinks";
+        var o = options is null ? new Hashtable()
+            : JsInterop.AsDict(options) ?? throw new ArgumentException($"{who}(options) takes an object of blink settings.");
+        Refuse(o, BlinkKeys, $"{who}'s options");
+        double Get(string key, double fallback, double min = 0)
+        {
+            if (o[key] is not { } v) return fallback;
+            var x = Real(v, $"{who}'s {key}");
+            if (x < min) throw new ArgumentException($"{who}'s {key} is {MotionTypes.Format(x)}; it cannot be below {MotionTypes.Format(min)}.");
+            return x;
+        }
+
+        var (start, end) = (Get("start", 0, double.MinValue), Get("end", 60, double.MinValue));
+        var (every, jitter, close, shut, open, chance) = (Get("every", 4), Get("jitter", 0.5), Get("close", 0.1), Get("shut", 0.05), Get("open", 0.15), Get("double", 0.1));
+        if (jitter > 1) throw new ArgumentException($"{who}'s jitter is {MotionTypes.Format(jitter)}: a share of the gap, 0 to 1.");
+        if (chance > 1) throw new ArgumentException($"{who}'s double is {MotionTypes.Format(chance)}: a chance, 0 to 1.");
+        var length = close + shut + open;
+        // A gap shorter than a blink would start the next before the last had opened, which reads as a flutter.
+        if (every * (1 - jitter) < length + 0.05)
+            throw new ArgumentException($"{who}: with every {MotionTypes.Format(every)} and jitter {MotionTypes.Format(jitter)} two blinks could overlap; "
+                + $"the shortest gap must be longer than a blink ({MotionTypes.Format(length)} s).");
+
+        var avoid = Windows(o["avoid"], $"{who}'s avoid");
+        var deliberate = o["at"] is null ? [] : o["at"] is IList list
+            ? list.Cast<object?>().Select((t, i) => Real(t, $"{who}'s at[{i}]")).OrderBy(t => t).ToList()
+            : throw new ArgumentException($"{who}'s at is an array of times in seconds.");
+
+        // Peaks, where the lids are shut: random gaps from the start, then the deliberate ones, the random ones kept clear.
+        var rng = new SeededRandom((uint)Get("seed", 1));
+        var clear = length + 0.15;
+        bool Kept(double p) => p <= end
+            && !avoid.Any(w => p + shut + open > w.From && p - close < w.To)
+            && !deliberate.Any(d => Math.Abs(d - p) < clear);
+        var peaks = new List<double>();
+        for (var t = start + every * rng.Next(); t <= end; t += every * (1 + jitter * (2 * rng.Next() - 1)))
+        {
+            peaks.Add(t);
+            // A double blink: the second closes as soon as the first has opened, and the next gap runs from it.
+            if (rng.Next() < chance) peaks.Add(t += length + 0.05 + close);
+        }
+        peaks = [.. peaks.Where(Kept).Concat(deliberate).OrderBy(t => t)];
+        if (peaks.Count == 0)
+            throw new ArgumentException($"{who}: no blink falls between {MotionTypes.Time(start)} and {MotionTypes.Time(end)}; widen the span or add one with at.");
+
+        return new MotionEnvelope(0, [.. peaks.Select(t => new MotionHit(t, 1, close, shut, open, 0, 0, 2.5, 2.5, 2.5))]);
+    }
+
+    /// <summary>
+    /// A node played over and over: <c>duration</c> seconds of it from <c>linkTime</c> (0), the loop starting at
+    /// <c>localTime</c> (0). Any value type; a negative duration plays it backwards. Synfig's time loop.
+    /// </summary>
+    public MotionTimeLoop TimeLoop(object? link, object? duration, object? options = null)
+    {
+        const string who = "Motion.nodes.timeLoop";
+        if (link is not MotionNode node)
+            throw new ArgumentException($"{who}(node, duration, {{ linkTime, localTime }}) loops a node; a plain value is the same at every time, so looping it changes nothing.");
+        var o = options is null ? new Hashtable()
+            : JsInterop.AsDict(options) ?? throw new ArgumentException($"{who}'s options are {{ linkTime, localTime }}.");
+        Refuse(o, ["linkTime", "localTime"], $"{who}'s options");
+        return new MotionTimeLoop(node,
+            o["linkTime"] is { } a ? Real(a, $"{who}'s linkTime") : 0,
+            o["localTime"] is { } b ? Real(b, $"{who}'s localTime") : 0,
+            Real(duration, $"{who}'s duration (seconds)"));
+    }
+
+    private static List<(double From, double To)> Windows(object? value, string who)
+    {
+        if (value is null) return [];
+        if (value is not IList list) throw new ArgumentException($"{who} is an array of [from, to] times in seconds.");
+        return [.. list.Cast<object?>().Select((w, i) => w is IList pair && pair.Count == 2
+            ? (Real(pair[0], $"{who}[{i}]'s from"), Real(pair[1], $"{who}[{i}]'s to"))
+            : throw new ArgumentException($"{who}[{i}] is [from, to], in seconds."))];
     }
 
     /// <summary>

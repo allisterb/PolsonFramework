@@ -5484,6 +5484,48 @@ comp.render(1);
 - **Write it as a function of `t`.** Frames are rendered in any order, so anything the function remembers between calls will be wrong on the next out-of-order frame. Read everything from `v` and `t`.
 - **It is not Synfig's**, so `comp.toSif()` refuses a composition that has one, naming the layer. Capture it as frames instead.
 
+### A face — `comp.face(options?)`
+
+A constructed head as a layer, **rebuilt every frame from its channels**. A face here is a pure function of numbers (the construction, the character, the Action Units, the eye wheel), so it is never deformed: each frame builds the head those numbers describe and draws it with the feature drawers. Any frame renders directly, in any order. Returns the face, which reports its head at any time.
+
+```javascript
+const n = Motion.nodes;
+const comp = Motion.composition({ width: 360, height: 320, fps: 12, duration: 2 });
+comp.fill({ color: '#f6f3ec' });
+
+const key = (...pts) => n.animated('real', pts.map(([time, value]) => ({ time, value, ease: 'halt' })));
+const face = comp.face({
+    origin: [180, 165], height: 260,
+    yaw: key([0, 0], [2, 20]),
+    channels: {
+        AU12: key([0, 0], [0.5, 1], [1.2, 1], [1.6, 0]),                 // a smile
+        AU6: key([0, 0], [0.62, 0.9], [1.32, 0.9], [1.72, 0]),           // the lower lid, three frames behind it
+        upperLid: key([0, 3], [1.4, 3], [1.46, 5], [1.54, 5], [1.6, 3])  // a blink, by Hamm's eye wheel
+    },
+    look: { eye: { lashes: 0.5 }, nose: { treatment: 'female5' } }
+});
+log('channels: ' + face.channels.join(', ') + '; mouth at 0.8s: ' + JSON.stringify(face.headAt(0.8).mouthGuides.center));
+comp.render(0.8);
+```
+
+`{ origin?, height?, yaw?, pitch?, construction?, character?, channels?, look?, amount?, blend?, desc? }`. Every value is a number or a node; `origin` is a point.
+
+- **Placement**: `origin` and `height` place the head as `createLoomisHead` does; `yaw` and `pitch` turn it, in degrees, as an angle or a real node. `construction: 'doubleCircle'` builds Hamm's front-view head instead and takes no turn.
+- **`character`**: `createParametricHead`'s parameters, so a character can change over a shot (aging, a caricature dial) or hold still.
+- **`channels`**, named in the toolkit's own vocabulary:
+  - **Action Units**: `AU1`, `AU12`, `AU25` ... as `applyActionUnits` takes them, 0 to 1.
+  - **Expressions**: `joy`, `anger`, `fear`, `sadness`, `surprise`, `disgust`, each a weight on that expression's units. They add to the units and to each other, as a pose library blended by weights.
+  - **Eye-wheel settings**: `upperLid`, `lowerLid`, `fold`, `browTop`, `browBottom`, and `browTopInner`/`Outer`, `browBottomInner`/`Outer` for the tilt, in Hamm's numbers with 3 normal. A curve that overshoots a setting is held inside the wheel, so an `auto` ease is safe on them.
+  - Any channel prefixed **`near.`** or **`far.`** acts on that side alone: `near.AU12` is a smirk, `far.browTop` one brow raised.
+- **`look`**: drawing options passed to each part: `skin`, `ink`, `outline` (`false`, or `{ color, width }`), `geometry` (`createHeadGeometry`'s), `planes` (lights the head, `drawHeadPlanes`'s), `lines` (`drawEyeLines`'s), `brow`, `eye`, `nose`, `mouth`, `ears`. `false` leaves a part out. The nose is handed the `pitch` channel, since it cannot read its own.
+- **The face**: `face.headAt(t)` is the head drawn at `t` seconds, every landmark, for placing a speech balloon, a hat or a prop on it; `face.channelsAt(t)` is every channel's value; `face.channels` their names in order.
+
+> [!IMPORTANT]
+> **A channel name the face does not know is refused, listing the three families**, and so is a look key or a drawing option the drawer refuses: they are checked by drawing the first frame at the call, not at frame 40. The construction applies the channels in a fixed order: character, then units and expressions, then the eye wheel, so a wheel setting is read against an expression already made.
+>
+> **The face is not exported**: like `comp.drawn`, it is refused by `toSif` and `toSvg`, because neither format can run the feature drawers. Capture it as frames, a sheet or animated WebP. A head drawn about 300px tall renders in about 45 ms a frame.
+>
+> **Timing is the channels' to carry**, and the corpus has two sources for it: Essa's thesis has an expression rise and fall exponentially and the eyes lag the mouth by about three frames in a smile; Stanchfield (Manual 25 §11) staggers the stops so parts do not all land on one frame. The example keys `AU6` a little after `AU12` for that reason.
 ### Nodes — `Motion.nodes`
 
 - `Motion.nodes.constant(type, value)` — a value that does not change.

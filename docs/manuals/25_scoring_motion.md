@@ -272,6 +272,14 @@ is Synfig's, and the craft follows from it:
   poses as keys — `{ time, rightUpperArm: 55, head: 12 }` — and a bone a key leaves out is at rest. Check
   `rig.reach` is 1 and `rig.unsure` is empty before trusting it. It moves a figure within its view; a turn or a
   foreshortened limb is a new key drawing, from the 3D route.
+- **For a face, key its channels: `comp.face({ origin, height, yaw, channels, look })`.** The face is rebuilt
+  every frame from numbers, so a performance is curves on the vocabulary the head already speaks: Action Units
+  (`AU12` a smile, `AU25` the laugh's rising upper lip), expression weights (`joy: 0.6`), and Hamm's eye wheel
+  (`upperLid` 3 → 5 → 3 is a blink, `browTop` 1 a raised brow), with `near.` or `far.` for one side. Treatments and
+  shapes are identity: hold them in `look` and `character`, so the character stays the same person. Two timing
+  rules from the corpus are worth keying in: the eyes follow the mouth by about three frames in a smile (Essa),
+  and the parts should not all stop on one frame (§11). `face.headAt(t)` places a balloon or a prop on the head
+  at any time. It is not exported to `.sif` or SVG; capture it.
 - **Or let a performer give the motion: `{ follow: Character.track('Jumping Jacks') }`.** The recorded clips
   that pose the 3D body drive a drawing too, each bone turned to point where the performer's part points on the
   page. It is only as good as the clip is flat: read `track.warnings` first, and choose a clip that moves across

@@ -163,6 +163,24 @@ public abstract class MotionLayerList
     }
 
     /// <summary>
+    /// A face, rebuilt every frame from its channels:
+    /// <c>{ origin?, height?, yaw?, pitch?, construction?, character?, channels?, look?, amount?, blend?, desc? }</c>.
+    /// Returns the face, which can report its head at any time.
+    /// </summary>
+    /// <remarks>
+    /// <c>channels</c> takes Action Units (<c>AU12</c>), expressions (<c>joy</c>) and Hamm's eye-wheel settings
+    /// (<c>upperLid</c>, <c>browTopInner</c>, ...), each a number or a node, prefixed <c>near.</c> or <c>far.</c> for one
+    /// side; <c>character</c> takes <c>createParametricHead</c>'s parameters the same way. <c>look</c> passes drawing
+    /// options to each feature drawer.
+    /// </remarks>
+    public MotionFace Face(object? options = null)
+    {
+        var layer = new MotionFaceLayer(new MotionOptions(options, "face", MotionFaceLayer.Options));
+        layers.Add(layer);
+        return new MotionFace(layer);
+    }
+
+    /// <summary>
     /// Catches <c>drawn({ ... })</c> with no function, which would otherwise fail with the binder's
     /// generic "no public methods" message instead of saying what is missing.
     /// </summary>

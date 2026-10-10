@@ -5508,7 +5508,7 @@ log('channels: ' + face.channels.join(', ') + '; mouth at 0.8s: ' + JSON.stringi
 comp.render(0.8);
 ```
 
-`{ origin?, height?, yaw?, pitch?, construction?, character?, channels?, look?, amount?, blend?, desc? }`. Every value is a number or a node; `origin` is a point.
+`{ origin?, height?, yaw?, pitch?, construction?, character?, poses?, channels?, look?, amount?, blend?, desc? }`. Every value is a number or a node; `origin` is a point.
 
 - **Placement**: `origin` and `height` place the head as `createLoomisHead` does; `yaw` and `pitch` turn it, in degrees, as an angle or a real node. `construction: 'doubleCircle'` builds Hamm's front-view head instead and takes no turn.
 - **`character`**: `createParametricHead`'s parameters, so a character can change over a shot (aging, a caricature dial) or hold still.
@@ -5517,8 +5517,16 @@ comp.render(0.8);
   - **Expressions**: `joy`, `anger`, `fear`, `sadness`, `surprise`, `disgust`, each a weight on that expression's units. They add to the units and to each other, as a pose library blended by weights.
   - **Eye-wheel settings**: `upperLid`, `lowerLid`, `fold`, `browTop`, `browBottom`, and `browTopInner`/`Outer`, `browBottomInner`/`Outer` for the tilt, in Hamm's numbers with 3 normal. A curve that overshoots a setting is held inside the wheel, so an `auto` ease is safe on them.
   - Any channel prefixed **`near.`** or **`far.`** acts on that side alone: `near.AU12` is a smirk, `far.browTop` one brow raised.
+- **`poses`**: a pose library, `{ name: { channel: value, ... } }`, each pose a fixed set of channel values. A **channel of the pose's name is its weight**, so poses blend as blend shapes do: Action Units and expressions scale with the weight, and an eye-wheel setting moves by the weight times the pose's distance from the normal 3, on top of what the channels set directly. Poses add to each other; a weight above 1 exaggerates; `near.smile` puts a pose on one side. Defined as channels rather than as heads, a pose works however the head turns. A pose may not take a channel's name, and holds numbers, not nodes: key its weight instead.
+
+  ```javascript
+  const POSES = { smile: { AU12: 1, AU6: 0.8, lowerLid: 2 }, surprised: { browTop: 1, upperLid: 1.5, AU26: 0.4 } };
+  comp.face({ origin: [180, 165], height: 260, poses: POSES,
+              channels: { smile: n.linear('real', 0.5, 0), surprised: 0.3 } });
+  ```
+
 - **`look`**: drawing options passed to each part: `skin`, `ink`, `outline` (`false`, or `{ color, width }`), `geometry` (`createHeadGeometry`'s), `planes` (lights the head, `drawHeadPlanes`'s), `lines` (`drawEyeLines`'s), `brow`, `eye`, `nose`, `mouth`, `ears`. `false` leaves a part out. The nose is handed the `pitch` channel, since it cannot read its own.
-- **The face**: `face.headAt(t)` is the head drawn at `t` seconds, every landmark, for placing a speech balloon, a hat or a prop on it; `face.channelsAt(t)` is every channel's value; `face.channels` their names in order.
+- **The face**: `face.headAt(t)` is the head drawn at `t` seconds, every landmark, for placing a speech balloon, a hat or a prop on it; `face.channelsAt(t)` is every channel's value; `face.channels` their names in order; `face.poses` the library's.
 
 > [!IMPORTANT]
 > **A channel name the face does not know is refused, listing the three families**, and so is a look key or a drawing option the drawer refuses: they are checked by drawing the first frame at the call, not at frame 40. The construction applies the channels in a fixed order: character, then units and expressions, then the eye wheel, so a wheel setting is read against an expression already made.
@@ -5534,7 +5542,8 @@ comp.render(0.8);
 - `Motion.nodes.sine(angle, amp?)` — `amp × sin(angle)`, the angle in degrees.
 - `Motion.nodes.composite(x, y)` — a point from two numbers or two real nodes.
 - `Motion.nodes.add(type, lhs, rhs, scalar?)` — `(lhs + rhs) × scalar`, the scalar defaulting to 1. How a keyed offset is laid on a formula: `n.add('vector', drift, bob)` is a drift with a bob on it, with no group needed.
-- `Motion.nodes.scale(type, link, scalar)` — `link × scalar`. On a colour only red, green and blue are scaled, so `n.scale('color', ink, 0.6)` darkens without fading.
+- `Motion.nodes.scale(type, link, scalar)` — `link × scalar`.
+- `Motion.nodes.weightedAverage(type, items)` — `Σ wᵢ·vᵢ / Σ wᵢ`, items `[[value, weight], ...]` or `[{ value, weight }, ...]`, each value and weight a number or a node; with the weights summing to zero it is the plain average. Synfig's `weighted_average`, written to `.sif` as Synfig writes it (checked against `synfig` within a fifth of a pixel). On a colour only red, green and blue are scaled, so `n.scale('color', ink, 0.6)` darkens without fading.
 
 `type` is `'real'`, `'angle'`, `'vector'` or `'color'`. Values are numbers, `[x, y]` or `{ x, y }`, and CSS colour strings. **A node of the wrong type is refused**, naming the option and both types.
 

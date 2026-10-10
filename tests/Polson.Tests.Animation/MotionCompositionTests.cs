@@ -214,6 +214,41 @@ public class MotionCompositionTests(ITestOutputHelper output) : TestsRuntime
         output.WriteLine($"worst centre error {worst:0.000}px over {theirs.Length} frames");
         Assert.True(worst < 0.5, $"worst centre error {worst:0.000}px");
     }
+
+    /// <summary>
+    /// The weighted average, read off pixels: a disc driven along x by the average of three values whose weights are
+    /// keyed, passing through a moment where every weight is zero. Written as Synfig's own weighted_average.
+    /// </summary>
+    [Fact]
+    public void SynfigAveragesTheWayOurWeightedAverageDoes()
+    {
+        if (Synfig() is not { } synfig) return;
+
+        var motion = new MotionToolkit();
+        var comp = motion.Composition(Opts(("width", 400d), ("height", 120d), ("fps", 8d), ("duration", 2d)));
+        comp.Fill(Opts(("color", "#ffffff")));
+        var x = motion.Nodes.WeightedAverage("real", new object[]
+        {
+            new object[] { 60d, Animated("real", (0, 1d, "linear"), (1, 0d, "linear"), (2, 0d, "linear")) },
+            new object[] { 340d, Animated("real", (0, 0d, "linear"), (1, 0d, "linear"), (2, 3d, "linear")) },
+            new Dictionary<string, object?> { ["value"] = Animated("real", (0, 150d, "halt"), (2, 250d, "halt")), ["weight"] = Animated("real", (0, 0d, "linear"), (1, 0d, "linear"), (2, 1d, "linear")) }
+        });
+        comp.Circle(Opts(("origin", motion.Nodes.Composite(x, 60d)), ("radius", 9d), ("color", "#ff0000")));
+
+        Assert.Contains("<weighted_average type=\"weighted_real\"", comp.ToSif());
+        var theirs = RenderWithSynfig(synfig, comp, "average");
+        var worst = 0d;
+        for (var i = 0; i < theirs.Length; i++)
+        {
+            using var bitmap = theirs[i];
+            var (cx, _) = Centroid(bitmap, c => c.Red > 128 && c.Green < 128);
+            var expected = (double)x.At(i / comp.Fps);
+            worst = Math.Max(worst, Math.Abs(cx - expected));
+        }
+
+        output.WriteLine($"worst centre error {worst:0.000}px over {theirs.Length} frames");
+        Assert.True(worst < 0.5, $"worst centre error {worst:0.000}px");
+    }
     #endregion
 
     #region Private

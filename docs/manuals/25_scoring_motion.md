@@ -240,6 +240,9 @@ is Synfig's, and the craft follows from it:
   or faster without re-keying it — the follow-through that trails an action by a few frames.
 - **Lay a key on a formula with `add`.** `Motion.nodes.add('vector', drift, bob)` is a drift with a bob on
   it; `Motion.nodes.scale('real', swing, 0.5)` is the same swing at half the size. Neither needs a group.
+- **Blend between values with `Motion.nodes.weightedAverage(type, [[value, weight], ...])`.** Key the weights and the
+  value travels between the others by them: a prop handed from one hand's position to the other's, a colour drifting
+  between two lights. It is Synfig's own weighted average and is written to `.sif` as one.
 - **Deliver vector motion as SVG.** `comp.toSvg()` and `comp.saveSvg(path)` write the composition as SMIL
   animation that plays in a browser. Keys are written exactly; formulas, colours and shapes are sampled at
   the frame rate. Keep what must be smooth between frames as keys, and draw a growing bar with
@@ -275,7 +278,9 @@ is Synfig's, and the craft follows from it:
 - **For a face, key its channels: `comp.face({ origin, height, yaw, channels, look })`.** The face is rebuilt
   every frame from numbers, so a performance is curves on the vocabulary the head already speaks: Action Units
   (`AU12` a smile, `AU25` the laugh's rising upper lip), expression weights (`joy: 0.6`), and Hamm's eye wheel
-  (`upperLid` 3 → 5 → 3 is a blink, `browTop` 1 a raised brow), with `near.` or `far.` for one side. Treatments and
+  (`upperLid` 3 → 5 → 3 is a blink, `browTop` 1 a raised brow), with `near.` or `far.` for one side. Build a
+  character's poses once, as a library in `poses`, and key their weights: a performance is then a handful of
+  blend curves (`smile`, `surprised`) rather than a dozen channels, and the same library serves every shot. Treatments and
   shapes are identity: hold them in `look` and `character`, so the character stays the same person. Two timing
   rules from the corpus are worth keying in: the eyes follow the mouth by about three frames in a smile (Essa),
   and the parts should not all stop on one frame (§11). `face.headAt(t)` places a balloon or a prop on the head

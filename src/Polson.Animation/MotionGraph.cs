@@ -635,6 +635,56 @@ public sealed class MotionScale : MotionNode
     #endregion
 }
 
+/// <summary>
+/// The weighted average of several values: <c>Σ wᵢ·vᵢ / Σ wᵢ</c>, each value and each weight its own node. With the
+/// weights summing to zero it is the plain average.
+/// </summary>
+/// <remarks>
+/// Synfig's <c>weighted_average</c> (<c>valuenode_weightedaverage.cpp</c>, <c>ValueAverage::average_generic</c>; Synfig,
+/// GPL-2-or-later): every component of the value is averaged, a colour's alpha with the rest. Exposed to the JavaScript
+/// sandbox. See <see cref="MotionNode"/>.
+/// </remarks>
+public sealed class MotionWeightedAverage : MotionNode
+{
+    #region Constructors
+    internal MotionWeightedAverage(MotionType kind, IReadOnlyList<(MotionNode Value, MotionNode Weight)> items) : base(kind)
+    {
+        if (items.Count == 0) throw new ArgumentException("Motion.nodes.weightedAverage needs at least one value.");
+        this.items = items;
+    }
+    #endregion
+
+    #region Fields
+    private readonly IReadOnlyList<(MotionNode Value, MotionNode Weight)> items;
+    #endregion
+
+    #region Properties
+    internal override IEnumerable<MotionNode> Children => items.SelectMany(i => new[] { i.Value, i.Weight });
+    #endregion
+
+    #region Methods
+    internal override double[] Evaluate(double time)
+    {
+        var weights = items.Select(i => i.Weight.Evaluate(time)[0]).ToArray();
+        var total = weights.Sum();
+        var plain = total == 0d;
+        var scale = plain ? 1d / items.Count : 1d / total;
+        var sum = new double[MotionTypes.Width(Kind)];
+        for (var i = 0; i < items.Count; i++)
+        {
+            var v = items[i].Value.Evaluate(time);
+            var w = (plain ? 1d : weights[i]) * scale;
+            for (var c = 0; c < sum.Length; c++) sum[c] += v[c] * w;
+        }
+        return sum;
+    }
+
+    internal override XElement ToSif(SifWriter sif) =>
+        new("weighted_average", new XAttribute("type", "weighted_" + Type),
+            items.Select(i => new XElement("entry", sif.Linkable("composite", "weighted_" + Type, ("weight", i.Weight), ("value", i.Value)))));
+    #endregion
+}
+
 /// <summary>Builds nodes from script values: <c>Motion.nodes</c>.</summary>
 /// <remarks>
 /// Every factory takes the value type first where it is ambiguous, and refuses a value of the wrong
@@ -730,6 +780,31 @@ public sealed class MotionNodeFactory
     {
         var kind = MotionTypes.Parse(type, "Motion.nodes.scale");
         return new MotionScale(kind, Node(link, kind, "scale's link"), Node(scalar, MotionType.Real, "scale's scalar"));
+    }
+
+    /// <summary>
+    /// The weighted average of several values, each a value or a node, each with a weight that may be a node:
+    /// <c>[[value, weight], ...]</c> or <c>[{ value, weight }, ...]</c>. Any value type.
+    /// </summary>
+    public MotionWeightedAverage WeightedAverage(string type, object? items)
+    {
+        var kind = MotionTypes.Parse(type, "Motion.nodes.weightedAverage");
+        if (items is not IList list || list.Count == 0)
+            throw new ArgumentException("Motion.nodes.weightedAverage(type, items) takes a non-empty array of [value, weight] or { value, weight }.");
+        var pairs = new List<(MotionNode, MotionNode)>();
+        for (var i = 0; i < list.Count; i++)
+        {
+            var who = $"weightedAverage's item {i}";
+            (object? value, object? weight) = list[i] switch
+            {
+                IList pair when pair.Count == 2 => (pair[0], pair[1]),
+                var item when JsInterop.AsDict(item) is { } d => (d["value"], d["weight"]),
+                _ => throw new ArgumentException($"{who} is [value, weight] or {{ value, weight }}.")
+            };
+            if (weight is null) throw new ArgumentException($"{who} has no weight.");
+            pairs.Add((Node(value, kind, $"{who}'s value"), Node(weight, MotionType.Real, $"{who}'s weight")));
+        }
+        return new MotionWeightedAverage(kind, pairs);
     }
 
     /// <summary>

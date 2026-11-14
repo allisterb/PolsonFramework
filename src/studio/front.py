@@ -192,7 +192,11 @@ def offered(state: Any, card: catalogue.Card) -> dict[int, tuple[str, ...] | Non
     A driving studio runs every route. One that only watches runs none, unless it was given a commissioner,
     which then says per workflow — the ADK runtime offers what its own intake offers, so the composer cannot
     take a request the host will refuse. A route missing here is shown, and cannot be chosen.
+
+    A card that needs audiences runs no route while Qloo is off (`catalogue.taste_available`), whatever the host.
     """
+    if card.needs_taste and not catalogue.taste_available():
+        return {}
     if not state.observe_only:
         return {i: None for i in range(len(card.routes))}
     if state.commissioner is None:
@@ -452,6 +456,7 @@ def install(app: FastAPI, templates: Jinja2Templates, base, contain) -> None:
                     styles=styles, offered=runs, designs=designs,
                     can_make=not state.observe_only or state.commissioner is not None,
                     drafts=not state.observe_only,
+                    taste=catalogue.taste_available(),
                     form=form, route=route, refused=refused, ages=catalogue.AGE_BANDS, languages=catalogue.LANGUAGES,
                     checked_by_eye=catalogue.checked_by_eye(), eye_note=catalogue.EYE_NOTE,
                     max_audiences=catalogue.MAX_AUDIENCES, example_places=catalogue.EXAMPLE_PLACES,

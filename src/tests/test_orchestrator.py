@@ -527,3 +527,40 @@ class CliLocationTests(unittest.TestCase):
     def test_without_it_the_checkout_s_build_is_used(self):
         module = self.load(None)
         self.assertEqual(module.CLI_DLL, module.REPO_ROOT / "bin" / "cli" / "Polson.CLI.dll")
+
+
+class QlooSwitchTests(unittest.TestCase):
+    """`qloo_enabled` reads the engine's settings file by the engine's rule (`Program.ConfigureTaste`)."""
+
+    def enabled(self, text: str | None) -> bool:
+        from orchestrator import credentials
+        folder = Path(tempfile.mkdtemp(prefix="polson-settings-"))
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = folder / "appsettings.json"
+        if text is not None:
+            path.write_text(text, encoding="utf-8")
+        return credentials.qloo_enabled(path)
+
+    def test_a_key_turns_it_on(self):
+        self.assertTrue(self.enabled('{"ApiKeys": {"Qloo": "k"}}'))
+
+    def test_no_key_a_blank_key_or_no_file_is_off(self):
+        self.assertFalse(self.enabled('{"ApiKeys": {"Qloo": "  "}}'))
+        self.assertFalse(self.enabled('{"ApiKeys": {}}'))
+        self.assertFalse(self.enabled(None))
+
+    def test_the_switch_turns_a_key_off_and_only_true_leaves_it_on(self):
+        for switch, on in (("false", False), ('"false"', False), ('"False"', False), ("true", True), ('"true"', True),
+                           ('""', True), ('"no"', False), ("0", False)):
+            with self.subTest(switch=switch):
+                self.assertEqual(self.enabled('{"ApiKeys": {"Qloo": "k"}, "Qloo": {"Enabled": %s}}' % switch), on)
+
+    def test_comments_and_trailing_commas_read_as_the_engine_reads_them(self):
+        """The real file had one trailing comma (2026-11-13), which strict JSON refuses and .NET accepts."""
+        text = ('{\n  // keys\n  "ApiKeys": {"Qloo": "k", "Url": "https://x/*y*/",},\n'
+                '  /* off */ "Qloo": {"Enabled": false,},\n}')
+        self.assertFalse(self.enabled(text))
+        self.assertTrue(self.enabled(text.replace("false", "true")))
+
+    def test_an_unreadable_file_is_off(self):
+        self.assertFalse(self.enabled('{"ApiKeys": {"Qloo": "k"'))

@@ -127,6 +127,26 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
 #: (`poster` to `film`), false for `motion`, where no type is the film trailer and `product` is something else.
 UNTYPED_IS_A_CHOICE: frozenset[str] = frozenset({"motion"})
 
+#: The workflow types that are made for audiences and so cannot run while Qloo is off, "" for untyped: a poster of
+#: either kind, a film trailer (untyped `motion`) and a product ad. A report or pitch takes audiences only optionally.
+NEEDS_TASTE: dict[str, frozenset[str]] = {"poster": frozenset({"", "film", "product"}),
+                                          "motion": frozenset({"", "product"})}
+
+
+def taste_available() -> bool:
+    """Whether the engine's `Taste` tool is on, read from the CLI's settings by the studio's own rule
+    (`orchestrator.credentials.qloo_enabled`), so this form, the studio's composer and the engine agree."""
+    shared = Path(__file__).resolve().parent.parent          # `src/`, or `/app` in the image
+    if (shared / "orchestrator").is_dir() and str(shared) not in sys.path:
+        sys.path.insert(0, str(shared))
+    from orchestrator.credentials import qloo_enabled
+    return qloo_enabled()
+
+
+def needs_taste(workflow: str, kind: str, brief: str) -> bool:
+    """Whether this commission cannot be made without Qloo: a type made for audiences, or audiences in the brief."""
+    return kind in NEEDS_TASTE.get(workflow, ()) or audiences_in(brief) > 0
+
 #: Workflows by a former name, as the CLI's `RenamedWorkflows` has them: `trailer` became `motion` on 2026-10-25, since
 #: its types make product ads, report explainers and pitches as well as film trailers.
 RENAMED: dict[str, str] = {"trailer": "motion"}
@@ -779,6 +799,12 @@ def check(name: str, workflow: str, kind: str, brief: str, deadline: str = "",
     if not brief.strip():
         raise Refused(400, "A brief is required — say what you want made.")
 
+    if needs_taste(workflow, kind, brief) and not taste_available():
+        raise Refused(400, (
+            "This commission is made for audiences, and audiences are measured with Qloo's taste data, which is "
+            "turned off here. Leave the audiences out of the brief and choose a workflow that does not need them, "
+            "or turn Qloo on (Qloo:Enabled in bin/cli/appsettings.json)."))
+
     # **Checked here, not by the input's own min/max.** Those are a convenience for a browser;
     # this endpoint is reachable without one, and the ceiling is what keeps a run being halted
     # cleanly by the breaker rather than killed mid-flight by the platform.
@@ -1196,8 +1222,10 @@ def mount(app: FastAPI) -> None:
                     f' data-brief={quoteattr(entry["brief"])}>{escape(entry["label"])}</button>')
 
         chips = ""
+        taste = taste_available()
         for workflow in WORKFLOWS:
-            group = [e for e in STARTERS if e["workflow"] == workflow]
+            group = [e for e in STARTERS if e["workflow"] == workflow
+                     and (taste or not needs_taste(workflow, e["kind"], e["brief"]))]
             if not group:
                 continue
             chips += (f'<p class="group">{escape(LABELS.get(workflow, workflow))}</p>'

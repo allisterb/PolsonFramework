@@ -33,6 +33,19 @@ TECHNIQUES = (
 )
 
 
+#: Qloo on for every test here unless one turns it off: the real switch is in bin/cli/appsettings.json, which no test
+#: may depend on (`catalogue.taste_available`).
+_TASTE = mock.patch.object(catalogue, "taste_available", return_value=True)
+
+
+def setUpModule() -> None:
+    _TASTE.start()
+
+
+def tearDownModule() -> None:
+    _TASTE.stop()
+
+
 def pin_techniques(test: unittest.TestCase) -> None:
     """Serves `TECHNIQUES` as the catalogue for the length of one test."""
     patcher = mock.patch.object(techniques, "catalogue", lambda: TECHNIQUES)
@@ -879,6 +892,53 @@ class FrontRoutingTests(unittest.TestCase):
         reply = client.post("/requests", data=self.compose(), follow_redirects=False)
         self.assertEqual(reply.status_code, 409)
         self.assertEqual(list(self.root.iterdir()), [])
+
+
+class TasteSwitchTests(unittest.TestCase):
+    """With Qloo off (`Qloo:Enabled` false, or no key), nothing that needs an audience is offered or accepted."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="polson-front-"))
+        pin_techniques(self)
+        off = mock.patch.object(catalogue, "taste_available", return_value=False)
+        off.start()
+        self.addCleanup(off.stop)
+        self.client = TestClient(app_mod.create_app(self.root, Registry()))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_cards_made_for_audiences_are_the_four_that_require_them(self):
+        self.assertEqual({c.slug for c in catalogue.CARDS if c.needs_taste},
+                         {"film-trailer", "product-ad", "product-poster", "film-poster"})
+
+    def test_a_card_that_needs_audiences_is_refused(self):
+        with self.assertRaisesRegex(StudioError, "turned off"):
+            catalogue.parse("film-poster", "Be Cool", "0", "", ["1200x1800"], "", [".png"],
+                            {"film": "Be Cool (2005)"}, "A poster.", ["Tokyo, Japan"], [""])
+
+    def test_audiences_on_an_optional_card_are_refused_and_none_is_accepted(self):
+        args = ("infographic", "Apollo", "0", "blueprint", ["2480x3508"], "", [".svg"], {}, "Fuel figures.")
+        with self.assertRaisesRegex(StudioError, "turned off"):
+            catalogue.parse(*args, ["Tokyo, Japan"], [""])
+        self.assertEqual(catalogue.parse(*args).audiences, [])
+
+    def test_home_and_workflows_hide_the_cards_that_need_audiences(self):
+        for path in ("/home", "/workflows"):
+            page = self.client.get(path).text
+            self.assertNotIn('/compose/film-poster"', page, path)
+            self.assertNotIn('/compose/product-ad"', page, path)
+            self.assertIn('/compose/logo"', page, path)
+
+    def test_an_optional_card_has_no_audience_picker(self):
+        page = self.client.get("/compose/infographic").text
+        self.assertNotIn("data-audiences", page)
+        self.assertNotIn('name="aud_place"', page)
+
+    def test_a_hidden_card_reached_by_link_says_why_and_cannot_start(self):
+        page = self.client.get("/compose/film-trailer").text
+        self.assertIn("which is turned off on this studio", page)
+        self.assertRegex(page, r'value="start"\s+disabled')
 
 
 class FakeCommissioner:

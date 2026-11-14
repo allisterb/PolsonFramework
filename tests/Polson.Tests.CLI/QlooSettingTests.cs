@@ -4,7 +4,7 @@ using Polson.CLI;
 using Xunit;
 
 /// <summary>
-/// The Qloo counts read from <c>Qloo:Budget</c> and <c>Qloo:MonthlyReserve</c>.
+/// The Qloo counts read from <c>Qloo:Budget</c> and <c>Qloo:MonthlyReserve</c>, and the <c>Qloo:Enabled</c> switch.
 /// </summary>
 /// <remarks>
 /// Zero is a valid setting for both: a budget of zero turns Qloo off for a session, and a reserve of zero spends
@@ -34,5 +34,23 @@ public class QlooSettingTests
     [InlineData("1.5")]
     public void TestAnUnusableValueFallsBackToTheDefault(string configured) =>
         Assert.Equal(1000, Program.ResolveQlooSetting("Qloo:MonthlyReserve", configured, 1000));
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("true", true)]
+    [InlineData(" True ", true)]
+    [InlineData("false", false)]
+    [InlineData("False", false)]
+    public void TestQlooEnabledReadsTrueAndFalse(string? configured, bool expected) =>
+        Assert.Equal(expected, Program.ResolveQlooEnabled(configured));
+
+    /// <summary>An off switch with a typo stays off: "no" or "0" must not leave a key in use.</summary>
+    [Theory]
+    [InlineData("no")]
+    [InlineData("0")]
+    [InlineData("off")]
+    public void TestAnUnreadableQlooEnabledIsOff(string configured) =>
+        Assert.False(Program.ResolveQlooEnabled(configured));
     #endregion
 }

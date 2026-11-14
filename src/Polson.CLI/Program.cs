@@ -483,6 +483,16 @@ internal class Program : Runtime
     /// </remarks>
     static void ConfigureTaste()
     {
+        // The switch first: a key can stay in the file while Qloo is off, and the studio's form reads the same two
+        // settings (orchestrator/credentials.py `qloo_enabled`), so it never offers audiences the engine will refuse.
+        if (!ResolveQlooEnabled(Setting("Qloo:Enabled")))
+        {
+            DrawingMcpTools.TasteClient = null;
+            Warn("Taste disabled: Qloo:Enabled is not true in {0}. Agents will be told audience taste cannot be fetched.",
+                Path.Combine(AssemblyLocation, "appsettings.json"));
+            return;
+        }
+
         var apiKey = Setting("ApiKeys:Qloo");
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -515,6 +525,20 @@ internal class Program : Runtime
         JsDrawingEngine.TasteImages = new Polson.ExtendedMind.Taste.QlooImageSource(Path.Combine(cache.Location, "images"));
         Info("Taste enabled ({0}; budget: {1} requests per session; monthly reserve: {2}; cache: {3}).",
             Setting("Qloo:BaseUrl") ?? Polson.ExtendedMind.Taste.QlooClient.HackathonBaseUrl, budget, reserve, cache.Location);
+    }
+
+    /// <summary>
+    /// Whether <c>Qloo:Enabled</c> leaves Qloo on: absent or blank is on, <c>true</c> or <c>false</c> as written.
+    /// Anything else is reported and read as <b>off</b> — the opposite of <see cref="ResolveQlooSetting"/>'s
+    /// fallback, because this is an off switch and a typo should not quietly leave a key in use.
+    /// </summary>
+    internal static bool ResolveQlooEnabled(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured)) return true;
+        if (bool.TryParse(configured.Trim(), out var on)) return on;
+
+        Warn("Qloo:Enabled='{0}' is not true or false; Qloo stays off.", configured);
+        return false;
     }
 
     /// <summary>

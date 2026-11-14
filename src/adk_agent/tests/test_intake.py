@@ -38,6 +38,18 @@ import keepalive
 import studio
 import newproject
 
+#: Qloo on for every test here unless one turns it off: the real switch is in bin/cli/appsettings.json, which no test
+#: may depend on (`intake.taste_available`).
+_TASTE = mock.patch.object(intake, "taste_available", return_value=True)
+
+
+def setUpModule() -> None:
+    _TASTE.start()
+
+
+def tearDownModule() -> None:
+    _TASTE.stop()
+
 
 class _Upload:
     """The two members `stage_upload` uses, so the test needs no multipart machinery."""
@@ -549,6 +561,38 @@ class ArchivedNameTests(unittest.TestCase):
 
         self.assertIn("polson_studio.archive", code)
         self.assertNotIn("'studio'", code, "a bare `studio` import finds the agent factory")
+
+
+class TasteSwitchTests(unittest.TestCase):
+    """With Qloo off, a commission made for audiences is refused here, whichever form sent it."""
+
+    def setUp(self) -> None:
+        for patch in (mock.patch.object(intake, "taste_available", return_value=False),
+                      mock.patch.object(intake, "archived_names", return_value=[])):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_a_poster_a_trailer_and_a_product_ad_are_refused(self):
+        for workflow, kind in (("poster", "film"), ("poster", "product"), ("poster", ""), ("motion", ""),
+                               ("motion", "product")):
+            with self.subTest(workflow=workflow, kind=kind), self.assertRaises(intake.Refused) as caught:
+                intake.check("p", workflow, kind, "A piece.")
+            self.assertIn("turned off", str(caught.exception))
+
+    def test_audiences_in_any_brief_are_refused(self):
+        with self.assertRaises(intake.Refused):
+            intake.check("p", "motion", "report", "A report.\n- Audience A: Tokyo, Japan")
+
+    def test_what_needs_no_audience_still_runs(self):
+        for workflow, kind in (("motion", "report"), ("logo", "modern"), ("vector_infographic", "swiss")):
+            with self.subTest(workflow=workflow):
+                intake.check("p", workflow, kind, "A piece.", start=False)
+
+    def test_the_form_offers_no_starter_that_would_be_refused(self):
+        body = TestClient(_app()).get("/new").text
+        for starter in intake.STARTERS:
+            if intake.needs_taste(starter["workflow"], starter["kind"], starter["brief"]):
+                self.assertNotIn(f'data-name="{starter["name"]}"', body, starter["label"])
 
 
 class StarterTests(unittest.TestCase):

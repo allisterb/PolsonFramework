@@ -14,6 +14,7 @@
   <header class="ps-rbar fr-sticky">
     {% if refused %}<p class="fr-notice is-failed" role="alert">{{ refused }}</p>{% endif %}
     {% if not can_make %}<p class="fr-notice">This studio can watch requests but not make them.{% if create_at %} <a class="fr-link" href="{{ create_at }}">Make one on the create page</a>.{% endif %}</p>
+    {% elif not offered and card.needs_taste and not taste %}<p class="fr-notice">A {{ card.title|lower }} is made for its audiences, and audiences are measured with Qloo, which is turned off on this studio. <a class="fr-link" href="{{ base }}/workflows">Choose another workflow</a>.</p>
     {% elif not offered %}<p class="fr-notice">This studio does not make {{ card.title|lower }} requests yet. <a class="fr-link" href="{{ base }}/workflows">Choose another workflow</a>.</p>{% endif %}
     <div class="ps-rbar-top">
       <input class="ps-rbar-title" name="title" aria-label="Request title" required maxlength="80"
@@ -31,7 +32,8 @@
         <span class="ps-field-label">Workflow</span><span class="ps-field-value">{{ card.title }}</span>{{ m.icon('chevron-down', 18) }}
       </a>
 
-      {% if card.audiences %}
+      {#- No audiences while Qloo is off (catalogue.taste_available): the server refuses them too. -#}
+      {% if card.audiences and taste %}
       {%- set given = form.audiences if form.audiences is defined else [] -%}
       <details class="fr-pop" data-audiences {% if card.audiences_optional %}data-optional{% endif %}>
         <summary class="ps-field"><span class="ps-field-label">Audience{% if not card.audiences_optional %}<span class="ps-req" aria-hidden="true"> *</span>{% endif %}</span><span class="ps-field-value" data-summary>{{ 'Anyone (optional)' if card.audiences_optional else 'Who is it for?' }}</span>{{ m.icon('chevron-down', 18) }}</summary>

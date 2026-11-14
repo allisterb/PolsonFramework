@@ -153,7 +153,7 @@ $URL = "https://$S-$N.$R.run.app"
 gcloud run deploy $S --source . --project $P --region $R `
   --no-allow-unauthenticated --cpu 4 --memory 4Gi --max-instances 1 --timeout 3600 --session-affinity `
   --set-secrets "POLSON_AGENT_PLATFORM_KEY=polson-agent-key:latest,POLSON_PARALLEL_KEY=polson-parallel-key:latest,POLSON_QLOO_KEY=polson-qloo-key:latest" `
-  --set-env-vars "^;^POLSON_SELF_URL=$URL;POLSON_ARTIFACT_SERVICE_URI=gs://$B;POLSON_MIRROR_URI=gs://$B/studio;POLSON_ASK_SECONDS=300;POLSON_MAX_CREDIT_SECONDS=900;POLSON_BUDGET_TOKENS=4500000;POLSON_REQUEST_TIMEOUT_SECONDS=300;POLSON_QLOO_BUDGET=360;POLSON_ASSETS_BUDGET=30;POLSON_RESEARCH_PROCESSOR=core;ADK_MAX_LLM_CALLS=500;POLSON_PEEK_STABLE_NAME=1;POLSON_ALLOW_ORIGINS=http://127.0.0.1:8080,http://localhost:8080"
+  --set-env-vars "^;^POLSON_SELF_URL=$URL;POLSON_ARTIFACT_SERVICE_URI=gs://$B;POLSON_MIRROR_URI=gs://$B/studio;POLSON_ASK_SECONDS=60;POLSON_MAX_CREDIT_SECONDS=900;POLSON_BUDGET_TOKENS=4500000;POLSON_REQUEST_TIMEOUT_SECONDS=300;POLSON_QLOO_BUDGET=360;POLSON_ASSETS_BUDGET=30;POLSON_RESEARCH_PROCESSOR=core;ADK_MAX_LLM_CALLS=500;POLSON_PEEK_STABLE_NAME=1;POLSON_ALLOW_ORIGINS=http://127.0.0.1:8080,http://localhost:8080"
 gcloud run services add-iam-policy-binding $S --project $P --region $R --member "serviceAccount:$SA" --role roles/run.invoker
 ```
 
@@ -288,7 +288,9 @@ Worth setting deliberately rather than leaving at defaults:
 - **`POLSON_ASK_SECONDS`**: how long the agent waits on a question it asked the director, default 120. The wait is
   credited back to the token deadline and the role clock, so raising it costs the agent no budget, but it **cannot**
   be credited back to the sandbox's own `Stage.elapsedMinutes`. Raise it for a demo somebody is watching; leave it low
-  for an unattended run, where a long timeout only makes a run sit still.
+  for an unattended run, where a long timeout only makes a run sit still. The public service uses 60: long enough
+  for a visitor browsing other pages to come back and find a question, short enough that one who has left loses a
+  minute rather than five.
 - **`POLSON_MAX_CREDIT_SECONDS`**: how much director-waiting an invocation may have back in total, default 300.
   **The ceiling exists because crediting moves the breaker's anchor and not the wall, and Cloud Run kills a request at
   3600 s whatever the breaker thinks.** Uncapped, a workflow that asks at every turn into an empty room drifts far

@@ -23,6 +23,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from orchestrator import credentials
+
 from . import projects
 from .runs import StudioError
 
@@ -74,6 +76,18 @@ def checked_by_eye() -> frozenset[str]:
 
 #: What is said of such a language wherever it is named.
 EYE_NOTE = "checked by eye, not read back"
+
+
+def taste_available() -> bool:
+    """Whether audiences can be measured here: the engine's `Taste` tool is on (`Qloo:Enabled` and `ApiKeys:Qloo` in
+    the CLI's settings, read as the engine reads them). Off, the form offers no audiences and no card that needs one.
+    Read per call, so the pages follow the file; a running engine reads it once, at start."""
+    return credentials.qloo_enabled()
+
+
+#: Why a request with audiences is refused when Qloo is off, wherever it is refused.
+TASTE_OFF = ("Audiences are measured with Qloo's taste data, which is turned off on this studio. "
+             "Leave the audience out, or turn Qloo on (Qloo:Enabled in bin/cli/appsettings.json).")
 
 #: The poster and trailer briefs name audiences A, B…. Six lets a set span regions (a western, an African, a Middle
 #: Eastern and an Asian audience, say); the run's time, tokens and Qloo budget grow with the count (`intake`).
@@ -217,6 +231,11 @@ class Card:
     @property
     def multi_route(self) -> bool:
         return len(self.routes) > 1
+
+    @property
+    def needs_taste(self) -> bool:
+        """Whether this card cannot be made without Qloo: its audiences are required, and each is a Qloo profile."""
+        return self.audiences and not self.audiences_optional
 
     @property
     def fixed_type(self) -> str:
@@ -571,6 +590,9 @@ def parse(card_slug: str, title: str, route: str, kind: str, sizes: list[str], c
     card = BY_SLUG.get(card_slug)
     if card is None:
         raise StudioError("That workflow is not one the studio offers.")
+    taste = taste_available()
+    if card.needs_taste and not taste:
+        raise StudioError(f"A {card.title.lower()} is made for its audiences, and {TASTE_OFF[0].lower()}{TASTE_OFF[1:]}")
 
     title = " ".join((title or "").split())
     if not title:
@@ -627,6 +649,8 @@ def parse(card_slug: str, title: str, route: str, kind: str, sizes: list[str], c
         chosen_formats.insert(0, allowed[".mp4"])
 
     audiences = parse_audiences(places or [], ages or [], languages) if card.audiences else []
+    if audiences and not taste:
+        raise StudioError(TASTE_OFF)
     if card.audiences and not audiences and not card.audiences_optional:
         raise StudioError(f"Say who the {card.title.lower()} is for: a place and, if it matters, an age band.")
 

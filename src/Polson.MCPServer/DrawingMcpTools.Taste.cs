@@ -109,7 +109,8 @@ public partial class DrawingMcpTools
             return new JsonObject
             {
                 ["ok"] = false,
-                ["error"] = "No Qloo API key is configured, so taste data is unavailable for this whole run.",
+                ["error"] = "No Qloo API key is configured, or Qloo:Enabled is false, so taste data is unavailable for "
+                          + "this whole run.",
                 ["remedy"] = "Do not guess what an audience likes and present it as measured. Design from the brief, and "
                            + "tell the director the taste grounding could not be fetched.",
             };

@@ -96,6 +96,7 @@ SETTINGS = [
     ("POLSON_RESEARCH_BUDGET",        "Research:Budget",             int),
     ("POLSON_RESEARCH_ARCHIVE_DIR",   "Research:ArchiveDir",         str),
     ("POLSON_QLOO_KEY",               "ApiKeys:Qloo",                str),
+    ("POLSON_QLOO_ENABLED",           "Qloo:Enabled",                str),
     ("POLSON_QLOO_BASE_URL",          "Qloo:BaseUrl",                str),
     ("POLSON_QLOO_BUDGET",            "Qloo:Budget",                 int),
     ("POLSON_QLOO_MONTHLY_RESERVE",   "Qloo:MonthlyReserve",         int),

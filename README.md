@@ -97,6 +97,7 @@ An empty key disables its capability; the server says which at startup, and a sc
 | `Assets:Model` · `Assets:SpeechModel` | `gemini-2.5-flash-image` · `gemini-3.8-flash-lite-tts` | The models for generated materials and for narration. |
 | `Documents:Budget` | — | Document reads allowed per run. Listing and `Documents.find` are always free. |
 | `Research:Processor` · `Research:Budget` | `base` · `2` | Parallel's tier for research (`core` is the deployed choice, about $0.025 a run), and runs allowed per session. |
+| `Qloo:Enabled` | `true` | `false` turns Qloo off with the key left in place: the engine refuses `Taste`, and the studio offers no audiences and none of the cards made for them (film trailer, product ad, film and product posters). Anything but `true` or `false` is off. Restart the studio after changing it. |
 | `Qloo:Budget` · `Qloo:MonthlyReserve` | `120` · `1000` | Qloo requests per session, and how much of the key's monthly quota is never spent. |
 | `Verify:Reader` | `gemini` | Who reads finished pieces back: `gemini` (Gemini 3.8 Flash) or `nemotron`. Also `POLSON_VERIFY_READER`. |
 

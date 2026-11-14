@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 #: Repository root, from `src/orchestrator/credentials.py` — two levels up, not three.
@@ -67,6 +68,38 @@ def read_api_key() -> str:
     raise CredentialError(
         f"{CLI_SETTINGS} has no ApiKeys:GoogleAgentPlatform. The MCP server reads the same file, so "
         f"this is the only place the key goes.")
+
+
+#: A JSON string, kept as it is; a comment; or a trailing comma, kept as the bracket after it.
+_LENIENT = re.compile(r'("(?:\\.|[^"\\])*")|//[^\n]*|/\*.*?\*/|,(\s*[}\]])', re.S)
+
+
+def read_settings(path: Path | None = None) -> dict | None:
+    """The CLI's settings as the engine reads them, or None when the file is missing or unreadable.
+
+    .NET's JSON configuration accepts comments and trailing commas, and the file is hand-edited, so a strict
+    `json.loads` disagrees with the engine about a file the engine reads happily (2026-11-13: one trailing comma).
+    """
+    path = path or CLI_SETTINGS
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+        return json.loads(_LENIENT.sub(lambda m: m.group(1) or m.group(2) or "", text))
+    except (OSError, ValueError):
+        return None
+
+
+def qloo_enabled(path: Path | None = None) -> bool:
+    """Whether the engine's `Taste` tool is on, by the rule `Program.ConfigureTaste` applies to the same file:
+    `Qloo:Enabled` absent, blank or true, and a non-blank `ApiKeys:Qloo`. Anything but true or false in the switch
+    is off, as there. A missing or unreadable file is off: the engine would have no key either."""
+    settings = read_settings(path)
+    if not isinstance(settings, dict):
+        return False
+    switch = (settings.get("Qloo") or {}).get("Enabled") if isinstance(settings.get("Qloo"), dict) else None
+    if switch is not None and str(switch).strip().lower() not in ("", "true"):
+        return False
+    key = (settings.get("ApiKeys") or {}).get("Qloo") if isinstance(settings.get("ApiKeys"), dict) else None
+    return isinstance(key, str) and bool(key.strip())
 
 
 def is_public_key(key: str) -> bool:

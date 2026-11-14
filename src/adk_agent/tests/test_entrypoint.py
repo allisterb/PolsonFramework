@@ -40,6 +40,7 @@ ENGINE_KEYS = {
     "Research:Budget",
     "Research:Processor",
     "ApiKeys:Qloo",
+    "Qloo:Enabled",
     "Qloo:BaseUrl",
     "Qloo:Budget",
     "Qloo:MonthlyReserve",

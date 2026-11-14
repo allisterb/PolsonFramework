@@ -5034,7 +5034,7 @@ if (answer.unverified.length) error('Not on their pages: ' + answer.unverified.j
 ## `Documents`
 
 - `Documents.list()` → `DocumentEntry[]` — What the project holds, from its `documents/` folder. **Free, offline, unmetered, and works with no key** — finding out what exists must never cost what reading it costs. Files of a type this surface cannot declare are omitted rather than listed then refused, and the folder's own `README.md` is not listed.
-- `Documents.ask(source: string | byte[], query: string, options?: object)` → `Promise<DocumentAnswer>` — Reads the document and answers the question. `source` is a **project-relative path**, contained exactly as `outFile` is, or the bytes themselves. `options`: `{ model?: string, mimeType?: string, schema?: object, images?: boolean, pages?: string }` — `pages` as a print dialog takes them, `'40-60, 75'`, for a long document (above). A path that is not there comes back naming **what is**, so a near-miss costs one turn rather than several. With `schema` (a JSON Schema object), **`answer.text` is JSON in that shape** — `JSON.parse(answer.text)` — and the schema is part of the cache key.
+- `Documents.ask(source: string | byte[], query: string, options?: object)` → `Promise<DocumentAnswer>` — Reads the document and answers the question. `source` is a **project-relative path**, contained exactly as `outFile` is, or the bytes themselves. `options`: `{ model?: string, mimeType?: string, schema?: object, images?: boolean, pages?: string }` — `pages` as a print dialog takes them, `'40-60, 75'`, for a long document (above). A path that is not there comes back naming **what is**, so a near-miss costs one turn rather than several. With `schema` (a JSON Schema object), **`answer.answer` is the reply parsed into that shape** — `back.answer.lines` — with `answer.text` keeping it as a string; it is null without a schema, or if the reply did not parse. The schema is part of the cache key.
 - `Documents.find(source: string | byte[], phrase: string)` → `Promise<DocumentSearch>` — **The pages a phrase is on, free.** No model reads anything and nothing is spent: the page text `ask` reads, searched for the words, ignoring case and line breaks. `{ success, hits: [{ page, count, context }], more, pages, unsearched, failureName, error }`; `page` counts from 1 as `pages` does. For a long document, find first and then `ask` with `pages` (above). Reads PDFs and text files.
 - `Documents.budget` → `DocumentBudget` — Remaining allowance. **Check before a run of reads.**
 - `Documents.model` → `string` — The first-choice model: Nemotron 3.5 Super VL when a Nemotron service is configured, else Gemini. `options.model` naming a `gemini-…` model sends the document whole to Gemini.
@@ -5156,7 +5156,7 @@ const shots = await Video.ask('documents/reference_spot.mp4',
                       what: { type: 'string' }, text: { type: 'string' } } } } } } });
 if (!shots.success) { error(shots.remedy); exit(shots.failureName); }
 if (shots.warnings.length) for (const w of shots.warnings) error('SCAN: ' + w);
-for (const s of JSON.parse(shots.text).shots) log(`${s.start_s}-${s.end_s}s  ${s.what}  "${s.text}"`);
+for (const s of shots.answer.shots) log(`${s.start_s}-${s.end_s}s  ${s.what}  "${s.text}"`);
 ```
 
 > [!IMPORTANT]
@@ -5187,7 +5187,7 @@ for (const s of JSON.parse(shots.text).shots) log(`${s.start_s}-${s.end_s}s  ${s
 ## `Video`
 
 - `Video.list()` → `DocumentEntry[]` — The clips in the project's `documents/` folder. Free and offline. Your own renders are not listed; pass their path.
-- `Video.ask(source: string | byte[], query: string, options?: object)` → `Promise<DocumentAnswer>` — Watches the clip and answers. `options`: `{ model?: string, mimeType?: string, schema?: object }`, as for `Documents.ask`; with `schema`, `answer.text` is JSON in that shape.
+- `Video.ask(source: string | byte[], query: string, options?: object)` → `Promise<DocumentAnswer>` — Watches the clip and answers. `options`: `{ model?: string, mimeType?: string, schema?: object }`, as for `Documents.ask`; with `schema`, the result's `answer` is the reply parsed into that shape (`shots.answer.shots`), and `text` the same as a string.
 - `Video.budget` → `DocumentBudget` — Remaining clips. `Video.model` → `string` · `Video.isAvailable` → `boolean` · `Video.reader` → `'gemini' | 'nemotron'` — which service watches clips, set by the studio (`Verify:Reader`, Gemini by default). It also reads `Verify.film`'s films, `Verify.image`'s stills and `Verify.claim`'s sheets. On Nemotron, Arabic and Hindi's Devanagari are left unchecked: it misread correct Arabic words and a Hindi film's credits as unrelated sentences, which Gemini read almost exactly.
 
 The answer is a `DocumentAnswer`, with the same `failureName` values, `remedy`, `warnings` and

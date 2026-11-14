@@ -222,6 +222,7 @@ public class DocumentProcessor : Runtime, IDisposable
                 {
                     Success = true,
                     Text = hit.Text,
+                    Answer = Parsed(hit.Text, schema),
                     Warnings = [.. hit.Warnings],
                     Evidence = [.. hit.Evidence],
                     Provenance = new DocumentProvenance
@@ -436,6 +437,7 @@ public class DocumentProcessor : Runtime, IDisposable
             {
                 Success = true,
                 Text = sanitised,
+                Answer = Parsed(sanitised, schema),
                 Warnings = [.. warnings],
                 Evidence = [.. evidence],
                 Provenance = new DocumentProvenance
@@ -619,6 +621,30 @@ public class DocumentProcessor : Runtime, IDisposable
             : throw new JsonException("expected an object"),
         _ => JsonSerializer.Serialize(schema),
     };
+
+    /// <summary>A schema'd answer as script values (<c>answer</c>); null without a schema or when it does not parse.</summary>
+    /// <remarks>A ```json fence is taken off first: a model that does not take a response schema natively may add one.</remarks>
+    internal static object? Parsed(string text, string? schema)
+    {
+        if (schema is null || string.IsNullOrWhiteSpace(text)) return null;
+        var json = text.Trim();
+        if (json.StartsWith("```", StringComparison.Ordinal))
+        {
+            var start = json.IndexOf('\n');
+            var end = json.LastIndexOf("```", StringComparison.Ordinal);
+            json = start < 0 || end <= start ? json : json[(start + 1)..end].Trim();
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return Polson.ExtendedMind.ParallelSearch.JsonInterop.ToClr(doc.RootElement);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>A print dialog's page list, <c>'40-60, 75'</c>, as page numbers from 1, ascending and once each; null when
     /// it is not one.</summary>

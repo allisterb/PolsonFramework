@@ -323,6 +323,11 @@ public partial class JsDrawingEngine : Runtime
                     // PascalCase keys. The exemption exists so an *absent* hook reads as absent
                     // rather than throwing, and that is all it should do.
                     if (MemberIndex.Has(target, member)) return null;
+                    if (member is "toJSON" && target is not null && RecordJson.Applies(target.GetType()))
+                    {
+                        return RecordJson.Hook(e, target);
+                    }
+
                     if (InteropProtocolMembers.Contains(member)) return JsValue.Undefined;
 
                     // Only the misses, and only ones with a real receiver — cheap because a script

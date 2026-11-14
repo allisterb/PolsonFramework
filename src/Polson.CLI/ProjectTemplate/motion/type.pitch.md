@@ -69,7 +69,7 @@ const read = await Documents.ask(DECK, ASK, { schema: SHAPE });
 // 'Pending': the read outlived this script and is finishing into the cache. Run the script again, unchanged.
 if (!read.success) { error(read.remedy); exit(read.failureName); }
 if (read.warnings.length) for (const w of read.warnings) error('SCAN: ' + w);
-const sections = JSON.parse(read.text).sections;
+const sections = read.answer.sections;
 
 // A figure is usable when every number in it, as printed, is in a quote the engine found on its page — each number
 // separately: "$20-30M+ per year" is two numbers.

@@ -334,6 +334,8 @@ reading long documents misread digits and undercount, and nothing about a misrea
 on a chart — so **anything in `answer.unverified` stays out of the piece** until a narrower question,
 naming the table, finds it on its page. A found figure earns its source line twice over: the
 document, and the page, which is what a reader checking a financial graphic will look for first.
+Ask for the figures in a `schema` and they come back as data, `answer.answer`, ready to bind to a scale —
+no number retyped from prose, which is where a transposed digit gets in.
 
 **A figure read off someone else's chart is a reading, not a fact.** A PDF's chart and diagram pages go
 to the model as pictures too, and what it read there is listed in `answer.fromImages` — `evidence.from`

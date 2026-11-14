@@ -22,6 +22,7 @@ and Arabic (2026-10-29), which has rules of its own — see its point below.
       'Translate each numbered line into English, literally, keeping its number. Add nothing and explain nothing.',
       { schema: { type: 'object', required: ['lines'], properties: { lines: { type: 'array', items: { type: 'object',
           required: ['n', 'english'], properties: { n: { type: 'integer' }, english: { type: 'string' } } } } } } });
+  for (const line of back.answer.lines) log(line.n + ': ' + line.english);   // `answer` is the parsed reply
   ```
 
   Compare each back-translation with your English for the same claim, the same figure and the same scope ("all",

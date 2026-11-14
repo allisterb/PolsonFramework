@@ -55,7 +55,7 @@ const read = await Documents.ask(REPORT, ASK, { schema: SHAPE });
 // 'Pending': the read outlived this script and is finishing into the cache. Run the script again, unchanged.
 if (!read.success) { error(read.remedy); exit(read.failureName); }
 if (read.warnings.length) for (const w of read.warnings) error('SCAN: ' + w);
-const answers = JSON.parse(read.text).answers;
+const answers = read.answer.answers;
 
 // A figure is usable when every number in it, as printed, is in a quote the engine found on its page. Each number
 // separately: "$40.4 billion (282 million shares)" is two numbers, and gluing their digits makes one on no page.

@@ -259,6 +259,69 @@ public class DocumentInteropTests : TestsRuntime, IDisposable
         Assert.Equal("true|0|0|[]", Logged(cached));
     }
 
+    /// <summary>
+    /// With a schema, <c>answer</c> is the parsed object — the documented back-translation reads <c>back.answer.lines</c>.
+    /// Before it, the JSON sat in <c>text</c> as a string and two runs (lanternkeeperlang1, 2) read it by eye.
+    /// </summary>
+    [Fact]
+    public async Task TestASchemaAnswerIsParsed()
+    {
+        File.WriteAllText(Path.Combine(root, "lines.md"), "1. Olá");
+        JsDrawingEngine.Documents = new Answering(new DocumentBudget(5), root, new DocumentCache(Path.Combine(root, "cache")),
+            """{"lines":[{"n":1,"english":"Hello"}]}""");
+
+        const string Read = """
+            const a = await Documents.ask('lines.md', 'Translate.', { schema: { type: 'object', properties: {
+                lines: { type: 'array', items: { type: 'object', properties: { n: { type: 'integer' }, english: { type: 'string' } } } } } } });
+            log(a.answer.lines.map(l => l.n + '=' + l.english).join(',') + '|' + a.answer.lines.length + '|' + typeof a.text);
+            """;
+        var fresh = await Run(Read);
+        var cached = await Run(Read);
+
+        Assert.True(fresh.Success, fresh.Error);
+        Assert.Equal("1=Hello|1|string", Logged(fresh));
+        Assert.True(cached.Success, cached.Error);
+        Assert.Equal("1=Hello|1|string", Logged(cached));
+    }
+
+    /// <summary>Without a schema the answer is prose, and <c>answer</c> is null rather than a guess at parsing it.</summary>
+    [Fact]
+    public async Task TestAProseAnswerHasNoParsedForm()
+    {
+        File.WriteAllText(Path.Combine(root, "notes.txt"), "Revenue was 215,938.");
+        JsDrawingEngine.Documents = new Answering(new DocumentBudget(5), root, new DocumentCache(Path.Combine(root, "cache")),
+            """{"looks":"like json"}""");
+
+        var result = await Run("""
+            const a = await Documents.ask('notes.txt', 'What was revenue?');
+            log(String(a.answer));
+            """);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("null", Logged(result));
+    }
+
+    /// <summary>
+    /// The whole answer stringifies in the documented spelling, nested records too. lanternkeeperlang1 and 2 logged it
+    /// as <c>Success</c>, <c>Text</c>, <c>Evidence</c>, <c>Unverified</c> and took the camelCase names to be missing.
+    /// </summary>
+    [Fact]
+    public async Task TestAnAnswerStringifiesInCamelCase()
+    {
+        File.WriteAllText(Path.Combine(root, "notes.txt"), "Revenue was 215,938.");
+        JsDrawingEngine.Documents = new Answering(new DocumentBudget(5), root, new DocumentCache(Path.Combine(root, "cache")));
+
+        var result = await Run("""
+            const a = await Documents.ask('notes.txt', 'What was revenue?');
+            const back = JSON.parse(JSON.stringify(a));
+            log([back.success, back.text, back.provenance.model, Array.isArray(back.unverified), back.Success === undefined,
+                 back.provenance.Model === undefined].join('|'));
+            """);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Equal("true|215,938|fake-model|true|true|true", Logged(result));
+    }
+
     private Task<DrawingExecutionResult> Run(string script) =>
         new DrawingMcpTools(null, null, null, root).ExecuteScript(
             script + " const _c = createCanvas(20,20); _c.getContext('2d').fillRect(0,0,20,20); _c;", 20, 20);
@@ -269,13 +332,13 @@ public class DocumentInteropTests : TestsRuntime, IDisposable
 
     #region Types
     /// <summary>A processor that answers without a network, so the cache path can be reached from a script.</summary>
-    private sealed class Answering(DocumentBudget budget, string root, DocumentCache cache)
+    private sealed class Answering(DocumentBudget budget, string root, DocumentCache cache, string answer = "215,938")
         : DocumentProcessor("test-key", budget, root, "fake-model", cache)
     {
         protected override Task<Generation> Generate(
             byte[] bytes, string mime, string query, string model, string? schema, bool images, int[]? pages,
             System.Threading.CancellationToken ct) =>
-            Task.FromResult(new Generation("215,938", 10, null));
+            Task.FromResult(new Generation(answer, 10, null));
     }
 
     /// <summary>An answer that arrives later, as a real model's does, so the script is suspended at its await.</summary>

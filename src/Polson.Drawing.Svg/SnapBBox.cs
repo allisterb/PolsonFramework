@@ -42,6 +42,16 @@ public class SnapBBox
     #endregion
 
     #region Methods
+    /// <summary>What <c>JSON.stringify</c> writes: Snap's own fields, in Snap's spelling.</summary>
+    /// <remarks>Without it the stringify walked the CLR object and logged <c>Width</c>, <c>X2</c>, <c>R0</c>, so an agent
+    /// took <c>.width</c> to be missing (lanternkeeperlang2).</remarks>
+    public System.Collections.Generic.Dictionary<string, object?> ToJSON(string? key = null) => new()
+    {
+        ["x"] = X, ["y"] = Y, ["width"] = Width, ["height"] = Height, ["w"] = W, ["h"] = H,
+        ["x2"] = X2, ["y2"] = Y2, ["cx"] = Cx, ["cy"] = Cy, ["r0"] = R0, ["r1"] = R1, ["r2"] = R2,
+        ["path"] = Path, ["vb"] = Vb,
+    };
+
     public override string ToString() =>
         string.Create(CultureInfo.InvariantCulture, $"x: {X}, y: {Y}, width: {Width}, height: {Height}");
     #endregion

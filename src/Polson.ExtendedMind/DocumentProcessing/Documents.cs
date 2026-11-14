@@ -180,6 +180,11 @@ public sealed record DocumentAnswer
     /// <summary>The answer, scanned and stripped of concealment characters. Empty on failure.</summary>
     public string Text { get; init; } = string.Empty;
 
+    /// <summary>With a <c>schema</c>, <see cref="Text"/> parsed: <c>back.answer.lines</c>. Null for a prose answer, or one
+    /// that did not parse.</summary>
+    /// <remarks>Two runs read the JSON string in <c>text</c> by eye because nothing said to parse it (lanternkeeperlang1, 2).</remarks>
+    public object? Answer { get; init; }
+
     /// <summary>The failure as a readable name — <c>'None'</c> when it succeeded.</summary>
     public string FailureName => Failure.ToString();
 

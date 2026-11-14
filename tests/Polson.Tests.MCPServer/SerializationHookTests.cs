@@ -145,6 +145,22 @@ public class SerializationHookTests : TestsRuntime
         Assert.Contains(result.Logs, l => l.Contains("7"));
     }
 
+    /// <summary>
+    /// A bounding box stringifies in its documented spelling. lanternkeeperlang2 logged
+    /// <c>{"X":…,"Width":…,"R0":…,"Path":…}</c> and took <c>.width</c> to be missing.
+    /// </summary>
+    [Fact]
+    public void TestABoundingBoxStringifiesInCamelCase()
+    {
+        var text = Logged("""
+            const b = Snap(100, 100).rect(10, 20, 30, 40).getBBox();
+            const back = JSON.parse(JSON.stringify(b));
+            log(`${back.x} ${back.y} ${back.width} ${back.height} ${back.x2} ${back.cy} ${back.Width === undefined}`);
+            """);
+
+        Assert.Equal("10 20 30 40 40 40 true", text);
+    }
+
     /// <summary>A member that genuinely is not there still reads as undefined rather than throwing.</summary>
     [Fact]
     public void TestAnAbsentMemberIsStillUndefinedRatherThanAnError()

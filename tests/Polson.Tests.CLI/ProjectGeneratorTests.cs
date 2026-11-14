@@ -742,6 +742,30 @@ public partial class ProjectGeneratorTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// The `_qloo` twins (2026-11-14) are their own templates — the poster and motion as the Qloo entry built them — but
+    /// take their base workflow's deadline, manuals, default type and techniques. The mainline no longer asks for Qloo.
+    /// </summary>
+    [Fact]
+    public void TestAQlooTwinIsItsOwnTemplateOnItsBaseWorkflowsSettings()
+    {
+        Assert.Equal("poster", ProjectGenerator.BaseWorkflow("poster_qloo"));
+        Assert.Equal("logo", ProjectGenerator.BaseWorkflow("logo"));
+        Assert.Equal(ProjectGenerator.DeadlineFor("poster", null), ProjectGenerator.DeadlineFor("poster_qloo", null));
+        Assert.Equal(90, ProjectGenerator.DeadlineFor("motion_qloo", null, "pitch"));
+        Assert.Equal(Techniques.For("motion").Select(t => t.Id), Techniques.For("motion_qloo").Select(t => t.Id));
+
+        Assert.True(ProjectGenerator.Create(Options("twin", o => { o.Workflow = "poster_qloo"; })));
+        Assert.True(ProjectGenerator.Create(Options("main", o => { o.Workflow = "poster"; })));
+        var twin = File.ReadAllText(Path.Combine(root, "twin", "GEMINI.md"));
+        var main = File.ReadAllText(Path.Combine(root, "main", "GEMINI.md"));
+        // The inlined manuals still describe the Qloo route, fenced as `_qloo`-only; the workflow itself never calls it.
+        Assert.Contains("Taste({ op: 'profile'", twin, StringComparison.Ordinal);
+        Assert.DoesNotContain("Taste({", main, StringComparison.Ordinal);
+        Assert.DoesNotContain("checkReferences()", main, StringComparison.Ordinal);
+        Assert.Contains("film", File.ReadAllText(Path.Combine(root, "twin", "project.json")), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// `trailer` was renamed `motion` (2026-10-25). The old name still works when typed, and a project.json written
     /// before the rename regenerates as `motion` on a reset rather than failing as an unknown workflow.
     /// </summary>

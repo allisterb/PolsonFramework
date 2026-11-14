@@ -7,22 +7,17 @@ Reach for `polson://sdk/core/Motion` (*Layers*, *Type*, *Nodes*, *Video with sou
 
 Answer these in `findings.md`:
 
-- **The audience in the motion.** Quote `pace()`'s counts and the titles behind them, and the grade's
-  references (result id and item). If you compared audiences, quote the comparison's summary
-  (`comparePace`, or `comparePaceAll` for more than two). Did the evidence give the films a reason to
-  move differently, and did yours follow it — or did it show no measurable difference, and where did
-  you put the difference instead? If the profile had nothing to say
-  about a motion choice, which one, and what did you rest it on?
-- **More than one audience** (when the brief named several). Did you fetch every profile and compare them
-  before planning any film? Was each later film's motion drafted from its own evidence before you looked back
-  at the earlier ones? Name what the set shares and what differs, and whether each differing pair's measured
-  holds differ in the direction the comparison gave — or why they did not need to.
-- **A product ad** (type `product`). What did each comparable resolve to, and did `demographics` fit the audiences?
-  How many of each audience's buyers were local-only against the buyers anywhere, and did that list give you
-  anything to design from? Were the brands' design tags the same across audiences — and if so, where did you put the
-  difference? Did the places come back in the right city, and which mood tags did you use? Quote the claim as it
-  appears on screen, and name anything you wanted to say about the product that the brief did not give you. Qloo
-  requests spent, from `status`.
+- **The evidence in the motion.** Quote the pace line and what it rests on — the brief's words, or the research
+  field and its citation — and the grade's. Did the research say anything about how the film moves, and did your
+  holds follow it? If nothing you had said anything about a motion choice, which one, and what did you rest it on?
+- **More than one audience** (when the brief named several). Did every film keep the shared design, beats and pace?
+  Name what each film changed — its lines, its figures' and dates' forms, its face, its reading direction — and
+  anything else, with its citation. How many lines were rewritten after the back-translation, in which languages, and
+  did any beat have to lengthen for one language's reading?
+- **A product ad** (type `product`). What did the research say about the product's category and where each
+  comparable sits in it, and did that fit the brief? Which of it did you design from, and what did you mark
+  *assumed*? Quote the claim as it appears on screen, and name anything you wanted to say about the product that
+  the brief did not give you.
 - **The key messages** (product ad). Quote the descriptor as it appears, and when it first appears. Quote the cold
   viewing's answer for each film word for word. Did any film fail it at first, and what did you change?
 - **The packshot** (product ad without a supplied shot). Was it one generation, and was it the same can in every

@@ -8,9 +8,10 @@ exact, and confident without claiming anything the company did not claim.
 
 Where this type and the instructions above disagree, this type wins: there is no poster to carry over and no film to
 invent. The subject is the company's case. **Audiences are optional.** With none, make one film for the investors the
-brief describes, and no Qloo profile is read (see *Pace* below). With `Audience A`, `Audience B`… lines — investors in
+brief describes. With `Audience A`, `Audience B`… lines — investors in
 Singapore, in London — make **one film per audience**: the case the same in every film, read once from the
-documents, and the telling of it each audience's own (see *More than one audience* below).
+documents, and the telling of it — its language, its figures' forms — each audience's own (see *More than one
+audience* below).
 
 ### What the brief gives
 
@@ -375,8 +376,8 @@ Stage.check('no two texts touch and every text is title-safe at each key moment'
 
 ### More than one audience
 
-The instructions' *More than one audience* holds: every profile first, compared, `Taste.contrast` for a pair, one
-`build(audience)` and the films `artifacts/final_a.mp4`, `final_b.mp4`… What a pitch adds is the rule that keeps a
+The instructions' *More than one audience* holds: one design for the set, each film its audience's language version,
+one `build(audience)` and the films `artifacts/final_a.mp4`, `final_b.mp4`… What a pitch adds is the rule that keeps a
 set honest: **the case is shared and only its telling is the audience's.**
 
 - **One reading, every film.** The same scenes, the same figures, the same projections with the same marks, the same
@@ -395,15 +396,15 @@ set honest: **the case is shared and only its telling is the audience's.**
   a date the documents do not give.
 - **Tell the read-back how each written figure was written**: `{ computed: { '$2億': '200,000,000 / 100,000,000 = 2
   (an oku is a hundred million; the deck prints $200M)' } }`.
-- **Pace, grade and voice are each film's own**, from its profile; the holds never drop below the reading time a figure
-  needs.
+- **Pace and grade are the set's**, decided once; **the voice is each film's**, speaking its language. The holds never
+  drop below the reading time a figure needs in any of the films' languages.
 
 ### Pace
 
-**With no place in the brief, there is no Qloo profile to read**: pace from Manual 25 and the reading time, and mark it
-*assumed* in `direction.md`. **With a place and an age band**, profile the audience for pace and grade exactly as the
-instructions above say. Investors read a figure slower than a word: hold a number at least a second longer than its
-words would need.
+**Pace comes from the brief and the reading time**: the director's words where the brief gives them, and otherwise
+Manual 25 and the reading time, marked *assumed* in `direction.md`. An audience's place and age band do not change it:
+with several audiences, one pace for every film. Investors read a figure slower than a word: hold a number at least a
+second longer than its words would need.
 
 ### The read-back — after delivery
 
@@ -435,8 +436,8 @@ the shared system — type, palette, the marks for actual and projected — with
 last.
 
 **The audience gets a section of its own, before the scenes**: who is watching and where, as the brief has it, then
-one row per choice made for them in the `Choice | Evidence | Kind` table the instructions describe — **Brief**,
-**Qloo** (pace and grade from a profile), **Research** (Bazley et al., Zhang & Han; Calacanis, *Angel*, for the
+one row per choice made for them in the `Choice | Evidence | Kind` table the instructions describe — **Brief** (its
+language, and its pace when it gives one), **Research** (Bazley et al., Zhang & Han; Calacanis, *Angel*, for the
 scene order and the investor's questions), **Rule** (this type's: projections
 marked, scenarios together, figures in the audience's conventions with Unicode CLDR as the evidence), and **Assumed**.
 A choice the audience did not change says so. **With several audiences, one such section per audience**, then the

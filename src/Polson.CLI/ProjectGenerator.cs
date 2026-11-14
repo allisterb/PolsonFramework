@@ -64,6 +64,13 @@ internal static class ProjectGenerator
     /// </summary>
     internal static readonly Dictionary<string, string> RenamedWorkflows = new(StringComparer.OrdinalIgnoreCase) { ["trailer"] = "motion" };
 
+    /// <summary>
+    /// The suffix of a workflow that grounds its audiences in Qloo's taste data: <c>poster_qloo</c> is the poster as it was
+    /// built for the Qloo hackathon, and <c>poster</c> the same craft without Qloo (2026-11-14). A twin is its own template
+    /// directory, but takes its base workflow's deadline, manuals, default type and techniques (<see cref="BaseWorkflow"/>).
+    /// </summary>
+    internal const string QlooSuffix = "_qloo";
+
     static readonly Regex ValidId = new(@"^[A-Za-z0-9._-]{1,64}$", RegexOptions.Compiled);
     #endregion
 
@@ -226,7 +233,7 @@ internal static class ProjectGenerator
         {
             return Fail($"Unknown type '{opts.Type}' for the '{workflow}' workflow. Known: {string.Join(", ", offered)}.");
         }
-        if (type.Length == 0 && DefaultTypes.TryGetValue(workflow, out var fallback))
+        if (type.Length == 0 && DefaultTypes.TryGetValue(BaseWorkflow(workflow), out var fallback))
         {
             type = fallback;
         }
@@ -727,11 +734,17 @@ internal static class ProjectGenerator
         test && deadlineMinutes > 0 ? Math.Max(5, (int)Math.Round(deadlineMinutes * 0.2)) : 0;
 
     /// <summary>The deadline for a project, in minutes. Zero means none. A type's own entry, <c>workflow.type</c>, wins.</summary>
-    internal static int DeadlineFor(string workflow, int? requested, string type = "") =>
-        requested is { } given
-            ? Math.Max(0, given)
-            : type.Length > 0 && WorkflowDeadlines.TryGetValue($"{workflow}.{TypeFamily(type)}", out var forType) ? forType
-            : WorkflowDeadlines.TryGetValue(workflow, out var value) ? value : 0;
+    internal static int DeadlineFor(string workflow, int? requested, string type = "")
+    {
+        if (requested is { } given) return Math.Max(0, given);
+        var name = BaseWorkflow(workflow);
+        return type.Length > 0 && WorkflowDeadlines.TryGetValue($"{name}.{TypeFamily(type)}", out var forType) ? forType
+            : WorkflowDeadlines.TryGetValue(name, out var value) ? value : 0;
+    }
+
+    /// <summary>The workflow a <c>_qloo</c> twin is built on (<c>poster_qloo</c> → <c>poster</c>); any other, itself.</summary>
+    internal static string BaseWorkflow(string workflow) =>
+        workflow.EndsWith(QlooSuffix, StringComparison.OrdinalIgnoreCase) ? workflow[..^QlooSuffix.Length] : workflow;
 
     /// <summary>
     /// The types a workflow offers. What a type <em>means</em> is the workflow's business.
@@ -1547,6 +1560,7 @@ internal static class ProjectGenerator
     /// </summary>
     static StudioManual[] JudgmentManualsFor(string workflow, string type = "")
     {
+        workflow = BaseWorkflow(workflow);
         IEnumerable<string> ids = JudgmentManuals.TryGetValue(workflow, out var forWorkflow) ? forWorkflow : [];
         if (type.Length > 0 && TypeManuals.TryGetValue($"{workflow}.{TypeFamily(type)}", out var forType)) ids = ids.Concat(forType);
         return [.. ids.Distinct().Select(PolsonManuals.Find).OfType<StudioManual>()];

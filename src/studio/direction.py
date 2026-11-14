@@ -25,7 +25,8 @@ MAX_DIRECTION = 200_000
 
 #: Kinds the page has a badge for, by the stem that names each, in the order a reader weighs them. A stem
 #: rather than a word, because the agent writes "Assumed", "assumption", "Judgement on the render", "judgment".
-KINDS = (("qloo", "qloo"), ("research", "research"), ("brief", "brief"), ("assum", "assumed"),
+KINDS = (("qloo", "qloo"), ("research", "research"), ("brief", "brief"), ("document", "document"),
+         ("comput", "computed"), ("rule", "rule"), ("assum", "assumed"),
          ("check", "check"), ("judg", "judgement"), ("workaround", "workaround"))
 
 #: A Taste result's handle as the agent cites it: `t5`, `t12`. Bounded so `t2026` in prose is not one.

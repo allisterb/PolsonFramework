@@ -40,7 +40,7 @@ Each of these switches a capability on; without it, the capability says so at st
 
 | | |
 | :--- | :--- |
-| A [Qloo](https://www.qloo.com/) API key | Audience evidence: profiles, contrasts, the pace test and visual research for posters, trailers, product ads and audience-aware infographics. A hackathon key works only against `https://hackathon.api.qloo.com`, the default. |
+| A [Qloo](https://www.qloo.com/) API key | Only for the `_qloo` workflows (`poster_qloo`, `motion_qloo`): audience evidence from measured taste — profiles, contrasts, the pace test and visual research. Qloo's API is by contract; a hackathon key works only against `https://hackathon.api.qloo.com`, the default. Every other workflow runs without it. |
 | A [Parallel](https://parallel.ai) API key | Research with a citation per field (an infographic's figures, a film's credits, facts outside a filing), and the web check on stated facts in a read-back. |
 | An [NVIDIA NIM](https://build.nvidia.com) or [Nebius Token Factory](https://tokenfactory.nebius.com) key | Nemotron 3.5 Super VL, which reads supplied PDFs with every figure checked against its page. Without either, documents are read by Gemini, unchecked. |
 | `ffmpeg` on PATH | Films as MP4, and narration joined to them. Set `Tools:FFmpeg` if it is elsewhere. |
@@ -97,7 +97,7 @@ An empty key disables its capability; the server says which at startup, and a sc
 | `Assets:Model` · `Assets:SpeechModel` | `gemini-2.5-flash-image` · `gemini-3.8-flash-lite-tts` | The models for generated materials and for narration. |
 | `Documents:Budget` | — | Document reads allowed per run. Listing and `Documents.find` are always free. |
 | `Research:Processor` · `Research:Budget` | `base` · `2` | Parallel's tier for research (`core` is the deployed choice, about $0.025 a run), and runs allowed per session. |
-| `Qloo:Enabled` | `true` | `false` turns Qloo off with the key left in place: the engine refuses `Taste`, and the studio offers no audiences and none of the cards made for them (film trailer, product ad, film and product posters). Anything but `true` or `false` is off. Restart the studio after changing it. |
+| `Qloo:Enabled` | `true` | `false` turns Qloo off with the key left in place: the engine refuses `Taste`, and the studio hides the `_qloo` workflows and their "for audiences" cards. Anything but `true` or `false` is off. Restart the studio after changing it. |
 | `Qloo:Budget` · `Qloo:MonthlyReserve` | `120` · `1000` | Qloo requests per session, and how much of the key's monthly quota is never spent. |
 | `Verify:Reader` | `gemini` | Who reads finished pieces back: `gemini` (Gemini 3.8 Flash) or `nemotron`. Also `POLSON_VERIFY_READER`. |
 
@@ -234,7 +234,7 @@ The folder is where projects are written; it must exist, and it is independent o
 
 | | |
 | :--- | :--- |
-| `http://127.0.0.1:8010/studio/home` | **Start here.** Pick a workflow, write the brief, add audiences and documents, choose sizes and formats. Each request's page then follows the run live: the agent's activity and questions, its Qloo evidence (Audiences, Contrast, Choices), the verification, and the deliverables. |
+| `http://127.0.0.1:8010/studio/home` | **Start here.** Pick a workflow, write the brief, add audiences and documents, choose sizes and formats. Each request's page then follows the run live: the agent's activity and questions, its evidence (with Qloo on, the Audiences, Contrast and Choices views), the verification, and the deliverables. |
 | `http://127.0.0.1:8010/studio/` | The developer view: the live trace, the renders beside the scripts that made them, the sense-making curve. |
 | `http://127.0.0.1:8010/dev-ui/` | Google ADK's own console: sessions, tool calls and artifacts as ADK reports them. |
 
@@ -258,13 +258,14 @@ The deployment adds the variables that only matter on Cloud Run (the keepalive's
 
 ## Workflows
 
-A workflow decides the stages the agent works through and the instructions it is given. A type narrows it. **Audiences** are places with an age band (*Tokyo, aged 45 to 54*): where a workflow takes them, it makes one piece per audience, each designed from that audience's Qloo evidence, with the facts shared and only their telling changed.
+A workflow decides the stages the agent works through and the instructions it is given. A type narrows it. **Audiences** are places with a language and an optional age band (*Tokyo, in Japanese*): where a workflow takes them, it makes one piece per audience as one campaign — one design, with each audience's language, numerals and conventions, every translated line checked. Only the `_qloo` workflows go further and design each audience's piece from its measured taste.
 
 | Workflow | Types | Audiences | What it makes |
 | :--- | :--- | :--- | :--- |
-| `poster` | `film`, `product` | required, 1–6 | A film poster or a product ad, its image, composition and palette decided by each audience's evidence. |
-| `motion` | — (film trailer), `product`, `pitch`, `report`, `report.s1`, `report.10k` | required for a trailer or product ad; optional otherwise | Motion graphics as MP4 and WebP, narrated if asked: a film trailer, a product ad, a startup pitch, or an explainer for a financial document (an S-1, a 10-K) with every figure checked against its page. Pace and grade come from each audience's evidence. |
-| `vector_infographic` | `blueprint`, `brutalist`, `editorial`, `specimen`, `swiss` | optional | A data graphic as **editable SVG**, from sourced and cited figures; with audiences, colours chosen against what each audience watches, numbers written its way. |
+| `poster` | `film`, `product` | optional, 1–6 | A film poster or a print ad, designed from the brief, your documents and research on the film or product. |
+| `motion` | — (film trailer), `product`, `pitch`, `report`, `report.s1`, `report.10k` | optional | Motion graphics as MP4 and WebP, narrated if asked: a film trailer, a product ad, a startup pitch, or an explainer for a financial document (an S-1, a 10-K) with every figure checked against its page. |
+| `poster_qloo`, `motion_qloo` | as above | required for a poster, trailer or product ad | The two above as built for the Qloo hackathon: each audience's image, palette and pace decided by its Qloo taste profile. Need `ApiKeys:Qloo` and `Qloo:Enabled`. |
+| `vector_infographic` | `blueprint`, `brutalist`, `editorial`, `specimen`, `swiss` | optional | A data graphic as **editable SVG**, from sourced and cited figures; with audiences, a version in each one's language, numbers written its way. |
 | `infographic` | same | optional | The same, delivered as raster. |
 | `logo` | `antique`, `geometric`, `modern` | — | A mark and its identity: the mark as SVG and PNG, brand sheet, scale ladder to 16 px, monochrome test, kit of parts and mock-ups. Every word on the mark is checked against the brief. |
 | `cover` | — | — | A book cover, composed as one image. |

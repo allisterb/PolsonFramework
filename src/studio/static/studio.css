@@ -477,6 +477,7 @@ label.modebox .swatch { width: 9px; height: 9px; border-radius: 2px; display: in
 .direction .kind.k-qloo { color: #fff; background: var(--accent); border-color: var(--accent); }
 .direction .kind.k-research { color: #fff; background: var(--good); border-color: var(--good); }
 .direction .kind.k-brief { color: var(--ink); border-color: var(--ink); }
+.direction .kind.k-document, .direction .kind.k-computed, .direction .kind.k-rule { color: var(--ink); border-color: var(--ink); border-style: dotted; }
 .direction .kind.k-assumed { color: #7a5410; background: #fbf0d9; border-color: #e0c27f; }
 .direction .kind.k-verified { color: var(--good); border-color: var(--good); }
 .direction .kind.k-unverified { color: #fff; background: #b3412e; border-color: #b3412e; }

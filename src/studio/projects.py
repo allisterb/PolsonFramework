@@ -56,8 +56,12 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
     "storyboard": (),
     "storyboard_cast": (),
     "cover": (),
-    # Taste-grounded posters (Qloo): a film's, or a product's print ad.
+    # Posters, a film's or a product's print ad, from the brief and research; audiences are language versions.
     "poster": ("film", "product"),
+    # The two Qloo twins: `poster` and `motion` as the hackathon entry built them, each audience designed from its Qloo
+    # taste profile. Offered only while Qloo is on (`catalogue.taste_available`).
+    "poster_qloo": ("film", "product"),
+    "motion_qloo": ("pitch", "product", "report", "report.10k", "report.s1"),
     # The constructed route through a single scene, from Stanchfield's gesture method. No types.
     "sketch_scene": (),
     # One action, keyed and checked, delivered as an animated WebP (Manual 25 §10). No types.
@@ -82,6 +86,16 @@ RENAMED: dict[str, str] = {"trailer": "motion"}
 def canonical(workflow: str) -> str:
     """The workflow's current name: a former one read as what it became, anything else as given."""
     return RENAMED.get(workflow, workflow)
+
+
+#: The suffix of a workflow grounded in Qloo's taste data, as the CLI's `ProjectGenerator.QlooSuffix`.
+QLOO_SUFFIX = "_qloo"
+
+
+def base_workflow(workflow: str) -> str:
+    """The workflow a `_qloo` twin is built on (`poster_qloo` → `poster`); any other, its current name."""
+    workflow = canonical(workflow)
+    return workflow[:-len(QLOO_SUFFIX)] if workflow.endswith(QLOO_SUFFIX) else workflow
 
 
 #: Every type any workflow offers, for building the form's one type control. Derived rather than

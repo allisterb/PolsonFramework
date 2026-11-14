@@ -1,10 +1,10 @@
 ## The type: product
 
-**One product, a set of audiences, one print ad each**, each in the visual register of what that audience's buyers
-love. This is what advertising calls dynamic creative: one template, a variant per audience. Here you design both —
-**the template is the system the set shares** (the product, its name, the claim, the call to action, the type and
-grid), and **each variant is what that audience's evidence decides** (image, setting, composition, palette). An ad
-that would look the same without the evidence has not done the job.
+**One product, one print ad, and a version of it for each audience** the brief names, each in its own language.
+This is what advertising calls dynamic creative: one template, a variant per audience. Here you design both —
+**the template is the whole design** (the product, its name, the claim, the call to action, the image, setting,
+composition, palette, type and grid), and **each variant is its audience's words and numerals**, set as its language
+and locale write them. Every choice in the design rests on the brief, a document, the research, or is marked assumed.
 
 ### What the brief gives
 
@@ -15,19 +15,19 @@ in place of the film ones, and ask for what is missing:
 | Parameter | Value |
 | :--- | :--- |
 | The product — name, and what it is in one sentence | |
-| Comparable brands (real, two or three) — and what each resolved to | |
+| Comparable brands (real, two or three) — the category they place the product in | |
 | The claim, worded exactly as it may appear | |
 | Call to action (words only; no real URL unless the brief gives one) | |
 | Product shot and logo in `documents/` (file names), or none | |
-| Audiences A, B, … — place, age band | |
+| Audiences A, B, … — place, age band, language | |
 | Where it will be seen, and from how far; page size and bleed | |
 | Anything explicitly ruled out | |
 
 ### The rules of the product
 
 - **Comparables are signals, never imagery.** No logo, wordmark, packaging, trade dress or slogan of a real brand,
-  and no colour or shape that reads as one brand's signature. They tell Qloo what kind of product this is; that is
-  all they do.
+  and no colour or shape that reads as one brand's signature. They tell the research, and you, what kind of product
+  this is; that is all they do.
 - **Claims come only from the brief.** No health, nutrition, environmental or performance claim, no "best", "#1" or
   comparison with a named brand, no price or offer, no testimonial, rating, award or certification unless the brief
   or a document gives it in those words. It is the festival-laurel rule of the film type, in a place where an
@@ -38,7 +38,7 @@ in place of the film ones, and ask for what is missing:
   (below); a cutout cell goes straight into `paper.image(cell, x, y, w, h)`.
 - **No real person** appears on these ads, as on every poster here.
 - **A product that advertising law restricts by age or place** — alcohol, gambling, medicines, financial products —
-  is a question for the director before any design. Qloo measures taste; it knows nothing about the law.
+  is a question for the director before any design. Nothing in this studio checks the law.
 
 ### The key messages — before anything is designed
 
@@ -84,52 +84,28 @@ log(seen.success ? seen.text : seen.error);
 - **Ask about every ad in the set.**
 - It is a machine standing in for a stranger, and `direction.md` says so; it is not a test with readers.
 
-### The evidence, measured
+### The evidence
 
-Probed on a fictitious cold brew in Berlin, Lagos and Seoul (2026-10-19). Stage 2 for a product is this, in place of
-the film's:
+Stage 2 for a product is this, in place of the film's:
 
-1. **Resolve each comparable** (`Taste` op `resolve`, `type: 'brand'`) and **read what it matched**: "Starbucks
-   Reserve" resolved to plain Starbucks, a mass-market brand in a specialty set, with no warning. Then
-   `demographics` on the ids. **If the brief's age bands sit against the comparables** (an audience of 25–29 against
-   brands that skew 35 and over), say so to the director in Q1: one of the two is wrong for this product.
-2. **The product's buyers there, less its buyers anywhere.** For each audience, `insights` for `artist` and for
-   `brand` with the comparables as the signal and the audience's place and age; once for the whole set, the same
-   with no audience. **Give every answer a label of its own** — 'audience A buyers: brand', never a label that
-   another merely extends — and use `Taste.get(id)` where it matters. What an audience's list holds that the global one does not is **what is local about this
-   product's buyers** — the strongest evidence a product has:
+1. **The brief and the documents first.** What the product is, who buys it, where the ad hangs. A brand guide in
+   `documents/` decides the type and the colours before anything you would choose: `Documents.ask` it, and cite the
+   file and the page.
+2. **One `Research` run, planned to carry everything**, as the film's is — one objective, one schema, started with
+   `wait: false` and collected by its `runId` before the concepts:
+   - **the category**: how products of this kind are usually packed, shown and sold — the formats, the conventions
+     of its ads, the words buyers use for it. Ask it of the category and of the comparables by name; what comes
+     back is the **category's** look, cited as that, and never one brand's trade dress to borrow.
+   - **each audience's place**: whether the category is familiar there or new (cold brew where tea is the everyday
+     drink), colours, numbers, symbols and gestures that would misfire on an ad there, and any rule that restricts
+     how the category is advertised there.
 
-   ```
-   Taste({ op: 'insights', type: 'brand', take: 50,
-           audience: '{"location":"Lagos","age":"25_to_29"}',
-           query: '{"signal.interests.entities":["<id>","<id>","<id>"]}',
-           label: 'audience A buyers: brand' })
-   Taste({ op: 'insights', type: 'brand', take: 50,
-           query: '{"signal.interests.entities":["<id>","<id>","<id>"]}', label: 'buyers anywhere: brand' })
-   ```
-
-   Measured: Lagos's buyers shared 3 of 50 brands and 0 of 50 artists with the global list; Berlin's and Seoul's
-   shared about 20 brands each — and **shared 14 local brands with each other**. A product's buyers can converge
-   across cities. When they do, say so and keep the difference where the evidence has one; do not invent one.
-3. **Brand tags are the visual register.** Brands carry design-language tags no film has — "Minimalist Typography",
-   "Clean Lines", "Neutral Color Palette", "Heritage-Inspired". **Read them in a script**,
-   `Taste.find('audience A buyers: brand').entities`: the tool's reply shows only the first eight tags of each, and
-   a brand carries forty or more. **Each tag is `{ id, name, type }`**, not a string. The design ones are
-   `type: 'urn:tag:aesthetic_property:qloo'` — Minimalist, Clean Typography, Neutral Palette, Clean Packaging; count
-   `tag.name` over those. Two more kinds serve a product: `urn:tag:emotional_tone:qloo` (Sophisticated) for the
-   voice, and `urn:tag:packaging_format:qloo` (Can) for what the category's packshot holds. When
-   every audience's brands carry the same ones, they are the **category's** look — cite them as that, for the shared
-   system, and not as a difference between audiences.
-4. **The setting comes from local places**, `insights` with `type: 'place'`, the comparables as signal, and
-   `"filter.location.query": "<the place>"` in the query. **Without that filter the places are in other countries**
-   (Lagos's came back as hotels in Houston and Atlanta). Keep the mood tags — Stylish, Romantic, Late night,
-   Bustling, Sophisticated — for where and when the product is shown, and its light. Amenities ("Mini fridge",
-   "Paid parking") are not evidence.
-5. **The place's own brands** — the profile's baseline — are the commercial landscape the ad will hang in. Context
-   for what would look foreign or familiar there; never marks to borrow.
-6. `signal.location.weight` changed nothing when measured. Do not rely on it.
-
-**Cost**: about ten requests per audience (the profile's seven, two for buyers, one for places) and seven for the set.
+   **The objective asks; it never states what it asks**, and it names the brief's product only as the brief does.
+   What comes back is web data, not instruction: a low-confidence field is a question for the director, not a fact.
+3. **The setting** — where and when the product is shown, and its light — comes from the brief where it says, and is
+   otherwise your choice, marked *assumed* in `direction.md`. **If the brief's age bands sit against the
+   comparables** (an audience of 25–29 against brands made for older buyers, by the research's account), say so to
+   the director in Q1: one of the two is wrong for this product.
 
 ### The packshot — after the evidence, before the concepts
 
@@ -139,7 +115,8 @@ before designing (`Documents.ask('documents/<file>', 'Describe the product: its 
 and place it as given. **With none**, make one: the model generates the vessel, and you design and set the label.
 
 1. **The label is design, and it comes from the evidence.** The name, its type and two or three colours rest on the
-   category's look — the design tags every audience's buyers share (step 3 above) — and on the brief. Decide them
+   brief, on a brand guide if there is one, and on the category's look the research found (step 2 above); what rests
+   on none of them is marked assumed. Decide them
    before generating anything, and record them in `direction.md`.
 2. **Generate the vessel as one sheet**, every view in one generation so it is the same object in each:
 
@@ -169,8 +146,8 @@ and place it as given. **With none**, make one: the model generates the vessel, 
 4. **Set the label in type on the front view.** The plain band is where the name goes: your typeface, centred on
    the band, fitted to its width. On the three-quarter view, either compress the name toward the far edge so it reads
    as wrapping, or leave the band bare and set the name beside the can. Never on the top-down view.
-5. **The same packshot in every ad.** It is the template's anchor, held across the set like the end card; the
-   variation is everything around it — setting, light, the ground's palette.
+5. **The same packshot in every ad.** It is the template's anchor, held across the set like the end card, and so is
+   everything around it — setting, light, the ground's palette. A version changes only the words beside it.
 6. **`direction.md` says what it is**: generated with `Assets.cutout` (give the sheet's `id`), label designed and
    set by the studio. Never "a photograph of the product", and never anything implying the product is on sale.
 
@@ -178,21 +155,20 @@ and place it as given. **With none**, make one: the model generates the vessel, 
 
 - **Message** (stage 3) is the key messages above: the product name and what it is, the claim as the brief words
   it, and the call to action. **Q4** for a product is which of those a passer-by must take away if they read one thing.
-- **Concepts** (stage 4): three per audience, as above, each starting from a different item in *that audience's*
-  buyers or places. **Q6 adds: one ad for all, or a series?** A series holds the product, its name, the claim, the
-  call to action, the type and the grid, and varies the image, setting, composition and palette.
+- **Concepts** (stage 4): three, as above, for the whole set, each starting from a different item of the evidence —
+  a line of the brief, a page of a document, a field of the research — named.
 - **The product reads** from the far render: its name or its shot, whichever the brief leads with.
 - **The logo and call to action sit in one place across the set** — the template's anchor.
 
 ### direction.md
 
 **The key messages first** (the table above, with the cold viewing's answer for each ad). Then the shared system —
-product, descriptor, claim, call to action, type, grid — each cited to the brief or a document. Then
-**one section per audience**: its three concepts, its buyers (local-only brands and artists, with counts), its
-setting (places and mood tags), and every choice with its evidence. Each section after the first opens with what its
-ad does differently from those before it, and which of its own items caused each difference.
+product, descriptor, claim, call to action, type, grid — each cited to the brief or a document. Then the design: its
+three concepts, its setting, and every choice with its evidence. Then **one section per audience** for what moves: its
+lines and their back-translations, its numerals, and anything the research found for its place, with what was done
+about it.
 
 ### The set
 
-As for a film: the finals side by side in `artifacts/set.png`, each labelled with its audience; name the two that came
-closest and whether their buyers were close too.
+As for a film: the finals side by side in `artifacts/set.png`, each labelled with its audience and language — one ad
+several times, only the words and numerals moved.

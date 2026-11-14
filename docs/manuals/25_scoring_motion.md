@@ -629,6 +629,9 @@ is Synfig's, and the craft follows from it:
   Measured once: two audiences whose fans' music ran at the same ~100 BPM still differed in their screen
   taste's pace, so **the beat and the holds are separate questions**. And reading an artist's name as
   "steady" gave two different audiences the same pace.
+  **Without `Taste`** (every workflow but `motion_qloo`) no audience's pace is measured: take it once for the film from
+  the brief's words or from research on the subject (its genre, how it moves, cited), else mark it assumed, and give
+  every audience's film the same pace.
 - **Grade the film once, at the top: `comp.colorCorrect({ hue, saturation, exposure, ... })` over everything.** One
   correction is one light, and it holds the frames together where per-layer tweaks pull them apart. The same film graded
   warm for one audience and cool for another is a choice the evidence can make; a keyed `exposure` is a flash on a cut.

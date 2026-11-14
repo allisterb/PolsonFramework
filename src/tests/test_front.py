@@ -132,7 +132,8 @@ class CatalogueTests(unittest.TestCase):
         for field, (value, words) in cases.items():
             with self.subTest(field=field):
                 with self.assertRaises(StudioError) as caught:
-                    catalogue.parse(**{**good, field: value})
+                    # Only a Qloo card requires its audiences; the mainline poster's are optional language versions.
+                    catalogue.parse(**{**good, field: value, **({"card_slug": "film-poster-qloo"} if field == "places" else {})})
                 self.assertIn(words, str(caught.exception))
 
     def test_no_size_and_no_format_are_refused(self):
@@ -286,7 +287,9 @@ class CatalogueTests(unittest.TestCase):
         """The subject — company, film, product, theorem, name, book title — is typed once, first, and never left out."""
         subjects = {"startup-pitch": "company", "film-poster": "film", "film-trailer": "film",
                     "product-poster": "product", "product-ad": "product", "maths-explainer": "topic",
-                    "logo": "name", "book-cover": "book_title"}
+                    "logo": "name", "book-cover": "book_title",
+                    "film-poster-qloo": "film", "film-trailer-qloo": "film", "product-poster-qloo": "product",
+                    "product-ad-qloo": "product"}
         self.assertEqual({c.slug: x.key for c in catalogue.CARDS for x in c.extras if x.subject}, subjects)
         for slug, key in subjects.items():
             card = catalogue.BY_SLUG[slug]
@@ -374,7 +377,8 @@ class CatalogueTests(unittest.TestCase):
         self.assertIn("Audience A: Mumbai", text)
         self.assertIn("One film per audience", text)
         self.assertTrue(catalogue.BY_SLUG["report-explainer"].audiences_optional)
-        self.assertFalse(catalogue.BY_SLUG["film-poster"].audiences_optional)
+        self.assertTrue(catalogue.BY_SLUG["film-poster"].audiences_optional, "language versions, since 2026-11-14")
+        self.assertFalse(catalogue.BY_SLUG["film-poster-qloo"].audiences_optional, "a taste profile per audience")
 
     def test_slugify_gives_a_valid_project_id(self):
         for title in ("Harbour festival trailer", "!!!", "Ünïcode café — poster", "x" * 200):
@@ -754,14 +758,22 @@ class FrontRoutingTests(unittest.TestCase):
         self.assertIn("not a type the studio can read", reply.text)
         self.assertEqual(handed, {})
 
-    def test_a_poster_without_an_audience_is_refused(self):
+    def test_a_qloo_poster_without_an_audience_is_refused(self):
+        handed, patch = self.fake_create()
+        with patch:
+            reply = self.client.post("/requests", data=self.compose(card="film-poster-qloo", aud_place=["", "", ""],
+                                                                    aud_age=["", "", ""]), follow_redirects=False)
+        self.assertEqual(reply.status_code, 409)
+        self.assertIn("Say who the film poster for audiences is for", reply.text)
+        self.assertEqual(handed, {})
+
+    def test_a_mainline_poster_without_an_audience_is_made(self):
         handed, patch = self.fake_create()
         with patch:
             reply = self.client.post("/requests", data=self.compose(aud_place=["", "", ""], aud_age=["", "", ""]),
                                      follow_redirects=False)
-        self.assertEqual(reply.status_code, 409)
-        self.assertIn("Say who the film poster is for", reply.text)
-        self.assertEqual(handed, {})
+        self.assertEqual(reply.status_code, 303)
+        self.assertEqual(handed["workflow"], "poster")
 
     def test_the_request_page_shows_what_the_studio_learned(self):
         p = project_dir(self.root, "pair", workflow="motion")
@@ -908,36 +920,45 @@ class TasteSwitchTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def test_the_cards_made_for_audiences_are_the_four_that_require_them(self):
-        self.assertEqual({c.slug for c in catalogue.CARDS if c.needs_taste},
-                         {"film-trailer", "product-ad", "product-poster", "film-poster"})
+    def test_the_qloo_cards_are_the_four_twins_and_each_has_a_mainline_card(self):
+        twins = {c.slug for c in catalogue.CARDS if c.needs_taste}
+        self.assertEqual(twins, {"film-trailer-qloo", "product-ad-qloo", "product-poster-qloo", "film-poster-qloo"})
+        for slug in twins:
+            twin, main = catalogue.BY_SLUG[slug], catalogue.BY_SLUG[slug.removesuffix("-qloo")]
+            self.assertEqual({r.workflow for r in twin.routes}, {r.workflow + "_qloo" for r in main.routes}, slug)
+            self.assertEqual(twin.types, main.types, slug)
+            self.assertFalse(main.needs_taste or twin.audiences_optional, slug)
 
-    def test_a_card_that_needs_audiences_is_refused(self):
+    def test_a_qloo_card_is_refused(self):
         with self.assertRaisesRegex(StudioError, "turned off"):
-            catalogue.parse("film-poster", "Be Cool", "0", "", ["1200x1800"], "", [".png"],
+            catalogue.parse("film-poster-qloo", "Be Cool", "0", "", ["1200x1800"], "", [".png"],
                             {"film": "Be Cool (2005)"}, "A poster.", ["Tokyo, Japan"], [""])
 
-    def test_audiences_on_an_optional_card_are_refused_and_none_is_accepted(self):
-        args = ("infographic", "Apollo", "0", "blueprint", ["2480x3508"], "", [".svg"], {}, "Fuel figures.")
-        with self.assertRaisesRegex(StudioError, "turned off"):
-            catalogue.parse(*args, ["Tokyo, Japan"], [""])
-        self.assertEqual(catalogue.parse(*args).audiences, [])
+    def test_a_mainline_card_takes_audiences_as_language_versions(self):
+        c = catalogue.parse("film-poster", "Be Cool", "0", "", ["1200x1800"], "", [".png"], {"film": "Be Cool (2005)"},
+                            "A poster.", ["Tokyo, Japan", "Lagos, Nigeria"], ["", ""], ["ja", ""])
+        self.assertEqual((c.workflow, c.kind), ("poster", "film"))
+        self.assertEqual([a[0] for a in c.audiences], ["Tokyo, Japan", "Lagos, Nigeria"])
+        self.assertEqual(catalogue.parse("film-poster", "Be Cool", "0", "", ["1200x1800"], "", [".png"],
+                                         {"film": "Be Cool (2005)"}, "A poster.").audiences, [])
 
-    def test_home_and_workflows_hide_the_cards_that_need_audiences(self):
+    def test_home_and_workflows_hide_the_qloo_cards_and_keep_the_mainline(self):
         for path in ("/home", "/workflows"):
             page = self.client.get(path).text
-            self.assertNotIn('/compose/film-poster"', page, path)
-            self.assertNotIn('/compose/product-ad"', page, path)
-            self.assertIn('/compose/logo"', page, path)
+            self.assertNotIn('/compose/film-poster-qloo"', page, path)
+            self.assertNotIn('/compose/product-ad-qloo"', page, path)
+            self.assertIn('/compose/film-poster"', page, path)
 
-    def test_an_optional_card_has_no_audience_picker(self):
-        page = self.client.get("/compose/infographic").text
-        self.assertNotIn("data-audiences", page)
-        self.assertNotIn('name="aud_place"', page)
-
-    def test_a_hidden_card_reached_by_link_says_why_and_cannot_start(self):
+    def test_a_mainline_card_offers_language_versions_not_taste(self):
         page = self.client.get("/compose/film-trailer").text
+        self.assertIn('name="aud_place"', page)
+        self.assertIn("not a measure of taste", page)
+        self.assertNotIn("paced from what they watch", page)
+
+    def test_a_hidden_qloo_card_reached_by_link_says_why_and_cannot_start(self):
+        page = self.client.get("/compose/film-trailer-qloo").text
         self.assertIn("which is turned off on this studio", page)
+        self.assertNotIn('name="aud_place"', page)
         self.assertRegex(page, r'value="start"\s+disabled')
 
 

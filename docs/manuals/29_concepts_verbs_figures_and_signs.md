@@ -60,6 +60,9 @@ from the centre to the word is where the idea came from, and that is worth keepi
 - **Then a branch per audience, and this is where it adapts to culture.** Seed it from what was measured — the
   audience's distinctive titles and tags, each with the handle of the answer that returned it — and add the brief's
   key words in that audience's language with what they bring to mind there (Toormix's own method, §6).
+  **Without `Taste`** — every workflow but `poster_qloo` and `motion_qloo` — nothing is measured: an audience branch
+  holds only the brief's key words in its language, each `(assumed)`, and the subject's own worlds go in a branch of
+  their own from the research. Nothing is marked measured, so `m.unverified` is empty and need not be checked.
 - **Say where every audience node came from**, because Qloo holds measured taste and not a culture's rules:
   - `*Suspiria* (t1)` or `"Boom Bap" (t4)` — **measured**: checked against that answer, as `Taste.checkReferences`
     checks `direction.md`; a node the answer did not return is drawn as a fault and listed in `unverified`;
@@ -107,6 +110,12 @@ return canvas;
 > **Implemented by**: `Taste.images(...)` — Qloo's own picture of each thing the audience loves, a poster for a film and
 > a logo for a brand — then `Taste.colourField(...)` and `Taste.vocabulary(...)` to measure the set, and
 > `bitmap.palette` for anything further.
+
+> [!NOTE]
+> **The studio's version below needs `Taste`, so it applies only in `poster_qloo` and `motion_qloo`.** Without it there
+> is no audience field to collect or measure: describe the field in words from the research on the subject (its genre's
+> or category's usual look, cited), as one more list for the brain dump, and draw no research board. Never fetch, trace
+> or imitate a picture you were not given. Lupton's method above still holds; only the measurement is missing.
 
 Before sketching, look at the field the piece will stand in. Lupton gives visual research three steps (*Visual
 Research*, pp. 38–41, after the design firm 2x4): **collect** the brand space around the client — logos, names,
@@ -473,7 +482,8 @@ on East/West against Formal/Informal, and each new prototype then staked out its
 **The studio's version** (ours, from the method):
 
 - **Draw it at the choice, not before it.** Once the three concepts exist, plot them with the audience's field — the
-  pictures of §2b — on two axes. It answers the question `concepts.md` otherwise answers in prose: which concept stands
+  pictures of §2b — on two axes. Without `Taste` there is no field: plot the three concepts alone (`field` is optional),
+  on measured or judged axes, and the matrix shows how far apart they really are. It answers the question `concepts.md` otherwise answers in prose: which concept stands
   apart, which belongs, and is either where the piece should be.
 - **Measure the axes where you can.** `lightness` (dark ↔ light), `chroma` (muted ↔ vivid), `colourful` (monochrome ↔
   colourful) and `warmth` (cool ↔ warm) are measured on both the field and a concept, the concept by the same code as
@@ -562,7 +572,8 @@ These are the ones that most often make a picture:
   may change a quantity's size, scale or sign (Manual 13 §2 binds in every frame).
 - **An allusion only works on viewers who know the reference.** For an audience the brief names, choose the allusion
   from what that audience is measured to watch and love (`Taste`), not from what the studio knows; record the titles it
-  rests on. An allusion the audience does not share is an obscure picture.
+  rests on. Without `Taste`, an allusion rests on a cited source that the audience knows it (`Research`), or is marked
+  assumed in `direction.md` for the director to confirm. An allusion the audience does not share is an obscure picture.
 
 ---
 

@@ -85,9 +85,10 @@ def taste_available() -> bool:
     return credentials.qloo_enabled()
 
 
-#: Why a request with audiences is refused when Qloo is off, wherever it is refused.
-TASTE_OFF = ("Audiences are measured with Qloo's taste data, which is turned off on this studio. "
-             "Leave the audience out, or turn Qloo on (Qloo:Enabled in bin/cli/appsettings.json).")
+#: Why a card made for measured audiences is refused when Qloo is off.
+TASTE_OFF = ("audiences are measured with Qloo's taste data, which is turned off on this studio. The card without "
+             "\"for audiences\" makes the same piece from the brief and research, or turn Qloo on (Qloo:Enabled in "
+             "bin/cli/appsettings.json).")
 
 #: The poster and trailer briefs name audiences A, B…. Six lets a set span regions (a western, an African, a Middle
 #: Eastern and an Asian audience, say); the run's time, tokens and Qloo budget grow with the count (`intake`).
@@ -234,8 +235,8 @@ class Card:
 
     @property
     def needs_taste(self) -> bool:
-        """Whether this card cannot be made without Qloo: its audiences are required, and each is a Qloo profile."""
-        return self.audiences and not self.audiences_optional
+        """Whether this card cannot be made without Qloo: it runs a `_qloo` twin, whose audiences are taste profiles."""
+        return any(r.workflow.endswith(projects.QLOO_SUFFIX) for r in self.routes)
 
     @property
     def fixed_type(self) -> str:
@@ -293,37 +294,43 @@ NARRATION = Extra("narration", "Narration", ("Enabled", "Disabled"), "Enabled")
 #: and the WebP a silent copy beside it (the motion template: "A film with sound stays a video").
 SILENT_PREVIEW = "Silent preview"
 
-#: Which film a film poster or trailer is for. A real film by title and year, which the run resolves with Qloo and
-#: researches before it designs; or a new film's title, with its logline and comparables in the brief.
+#: Which film a film poster or trailer is for. A real film by title and year, which the run researches before it
+#: designs (and, in a `_qloo` twin, resolves with Qloo); or a new film's title, with its logline and comparables in the brief.
 FILM = Extra("film", "Film", placeholder="A real film's title and year, e.g. Be Cool (2005), or a new film's title",
              subject=True)
+
+#: What a product ad or print ad asks for, shared by the mainline cards and their Qloo twins. What the director types goes
+#: under the brief, where there is room to write it; the bar keeps the choices.
+PRODUCT: tuple[Extra, ...] = (
+    Extra("product", "Product", placeholder="Its name, and what it is", long=True, rows=2, subject=True),
+    Extra("comparables", "Comparable brands", placeholder="Two or three real brands like it", long=True, rows=2),
+    Extra("claim", "Claim", placeholder="The one claim, worded as it may appear", long=True, rows=2),
+    Extra("cta", "Call to action", placeholder="What the viewer should do next", long=True, rows=2))
+TRAILER_LENGTH = Extra("duration", "Duration", ("15 seconds", "30 seconds"), "15 seconds")
 
 CARDS: tuple[Card, ...] = (
     # **Working workflows first, in rows of three as the pages lay them out** (2026-10-30): what this deployment runs,
     # then what it does not yet (motion graphic, storyboard, comic, painting), so a visitor's eye meets what they can start.
     # The workflow is built and measured around 15-second films; longer ones are more encode parts and more
     # clock, so 30 is the most the form offers. A director who wants longer says so in the brief.
-    Card("film-trailer", "Film trailer", "video", "Video · 15 seconds, one film per audience",
+    # **Without Qloo since 2026-11-14**: the trailer, the ad and the two posters are designed from the brief, the
+    # director's documents and research on the subject, and an audience is a language version of the one design. As the
+    # Qloo entry built them, each audience designed from its taste profile, they are the `-qloo` cards further down.
+    Card("film-trailer", "Film trailer", "video", "Video · 15 seconds",
          (Route("motion", "Motion graphics trailer"),),
          image="film-trailer.webp", alt="A trailer's end card: a cracked vinyl record beside the title",
-         extras=(FILM, Extra("duration", "Duration", ("15 seconds", "30 seconds"), "15 seconds")),
-         audiences=True, types=(),
-         brief="A motion trailer for the film that makes each audience want to see it: true to the film's tone and "
-               "story, with its real credits on the end card."),
-    # Dynamic creative: one product, an ad per audience, each from that audience's buyers (Qloo). The motion
-    # workflow's `product` type; its evidence method is `docs/internal/product-ad-probe.md`.
-    Card("product-ad", "Product ad", "video", "Video · 15 seconds, one ad per audience",
+         extras=(FILM, TRAILER_LENGTH),
+         audiences=True, audiences_optional=True, types=(),
+         brief="A motion trailer for the film: true to the film's tone and story, with its real credits on the end "
+               "card."),
+    # One product, one ad: the motion workflow's `product` type.
+    Card("product-ad", "Product ad", "video", "Video · 15 seconds",
          (Route("motion", "Motion graphics ad"),),
          image="product-ad.webp", alt="A matte black can of cold brew coffee beside its name and call to action",
-         # What the director types goes under the brief, where there is room to write it; the bar keeps the choices.
-         extras=(Extra("product", "Product", placeholder="Its name, and what it is", long=True, rows=2, subject=True),
-                 Extra("comparables", "Comparable brands", placeholder="Two or three real brands like it", long=True, rows=2),
-                 Extra("claim", "Claim", placeholder="The one claim, worded as it may appear", long=True, rows=2),
-                 Extra("cta", "Call to action", placeholder="What the viewer should do next", long=True, rows=2),
-                 Extra("duration", "Duration", ("15 seconds", "30 seconds"), "15 seconds")),
-         audiences=True, types=("product",),
-         brief="A motion ad for the product that makes each audience want to try it, built on its one claim and "
-               "ending on the call to action."),
+         extras=(*PRODUCT, TRAILER_LENGTH),
+         audiences=True, audiences_optional=True, types=("product",),
+         brief="A motion ad for the product that makes the viewer want to try it, built on its one claim and ending "
+               "on the call to action."),
     # An audience's questions answered from a long document the director attaches — an annual report, a 10-K. The
     # motion workflow's `report` type: Nemotron reads the PDF as page text through `Documents.ask`, and every figure
     # on screen is one the engine found on its page. Audiences are optional: with places, a film for each, paced from
@@ -379,26 +386,20 @@ CARDS: tuple[Card, ...] = (
     # The `poster` workflow's two types as two cards, as the video cards split `motion`: one card with a "Kind" inside hid
     # the film poster behind a choice a visitor had to open the card to see. `poster` was the one card before 2026-10-29;
     # a request recorded under it is placed by its type (`card_for`).
-    Card("product-poster", "Product poster", "image", "Image · one print ad per audience",
-         (Route("poster", "Taste-grounded print ad"),),
+    Card("product-poster", "Product poster", "image", "Image · a print ad",
+         (Route("poster", "Print ad"),),
          image="product-poster.webp", alt="Two Nightshift cold brew print ads: a dark bar shelf for Berlin, a pale arc for Seoul",
-         extras=(Extra("product", "Product", placeholder="Its name, and what it is", long=True, rows=2, subject=True),
-                 Extra("comparables", "Comparable brands", placeholder="Two or three real brands like it", long=True, rows=2),
-                 Extra("claim", "Claim", placeholder="The one claim, worded as it may appear", long=True, rows=2),
-                 Extra("cta", "Call to action", placeholder="What the viewer should do next", long=True, rows=2)),
-         audiences=True, types=("product",),
-         brief="A print ad for the product for each audience, built on its one claim and ending on the call to "
-               "action."),
-    Card("film-poster", "Film poster", "image", "Image · one poster per audience",
-         (Route("poster", "Taste-grounded poster"),),
+         extras=PRODUCT,
+         audiences=True, audiences_optional=True, types=("product",),
+         brief="A print ad for the product, built on its one claim and ending on the call to action."),
+    Card("film-poster", "Film poster", "image", "Image · a one-sheet",
+         (Route("poster", "One-sheet poster"),),
          image="film-poster.webp", alt="A Be Cool one-sheet: a gold record label behind crosshairs over a black vinyl",
          extras=(FILM, Extra("headline", "Headline", placeholder="The words that must appear", long=True, rows=2)),
-         audiences=True, types=("film",),
-         brief="A one-sheet poster for the film for each audience: true to its tone, with the title and its real "
-               "billing."),
-    # Audiences optional, as the report explainer's: with places, an infographic per audience with the same figures, its
-    # palette chosen against what that audience watches (Qloo's field) and its numerals and language the locale's
-    # (`_shared/audience_design.md`); without, one piece.
+         audiences=True, audiences_optional=True, types=("film",),
+         brief="A one-sheet poster for the film: true to its tone, with the title and its real billing."),
+    # Audiences optional, as the report explainer's: with places, an infographic per audience with the same figures and
+    # design, its numerals and language the locale's (`_shared/audience_design.md`); without, one piece.
     Card("infographic", "Infographic", "document", "Document · checked figures",
          (Route("vector_infographic", "Vector", "Delivered as SVG, every figure checked"),
           Route("infographic", "Raster", "Delivered as an image")),
@@ -441,6 +442,36 @@ CARDS: tuple[Card, ...] = (
     Card("painting", "Painting", "image", "Image · one scene",
          (Route("painting", "Painted scene"),),
          image="painting.webp", alt="A lit house behind bare trees at dusk"),
+    # **The Qloo twins**: the four cards above as the Qloo entry built them, one piece per audience, each designed from
+    # that audience's measured taste (`poster_qloo`, `motion_qloo`). Audiences are required: they are what is measured.
+    # Shown only while Qloo is on (`taste_available`), which needs a Qloo contract.
+    Card("film-trailer-qloo", "Film trailer for audiences", "video", "Video · 15 seconds, one film per audience (Qloo)",
+         (Route("motion_qloo", "Taste-grounded trailer"),),
+         image="film-trailer.webp", alt="A trailer's end card: a cracked vinyl record beside the title",
+         extras=(FILM, TRAILER_LENGTH), audiences=True, types=(),
+         brief="A motion trailer for the film that makes each audience want to see it: true to the film's tone and "
+               "story, with its real credits on the end card."),
+    # Dynamic creative: one product, an ad per audience, each from that audience's buyers. Its evidence method is
+    # `docs/internal/product-ad-probe.md`.
+    Card("product-ad-qloo", "Product ad for audiences", "video", "Video · 15 seconds, one ad per audience (Qloo)",
+         (Route("motion_qloo", "Taste-grounded ad"),),
+         image="product-ad.webp", alt="A matte black can of cold brew coffee beside its name and call to action",
+         extras=(*PRODUCT, TRAILER_LENGTH), audiences=True, types=("product",),
+         brief="A motion ad for the product that makes each audience want to try it, built on its one claim and "
+               "ending on the call to action."),
+    Card("product-poster-qloo", "Product poster for audiences", "image", "Image · one print ad per audience (Qloo)",
+         (Route("poster_qloo", "Taste-grounded print ad"),),
+         image="product-poster.webp", alt="Two Nightshift cold brew print ads: a dark bar shelf for Berlin, a pale arc for Seoul",
+         extras=PRODUCT, audiences=True, types=("product",),
+         brief="A print ad for the product for each audience, built on its one claim and ending on the call to "
+               "action."),
+    Card("film-poster-qloo", "Film poster for audiences", "image", "Image · one poster per audience (Qloo)",
+         (Route("poster_qloo", "Taste-grounded poster"),),
+         image="film-poster.webp", alt="A Be Cool one-sheet: a gold record label behind crosshairs over a black vinyl",
+         extras=(FILM, Extra("headline", "Headline", placeholder="The words that must appear", long=True, rows=2)),
+         audiences=True, types=("film",),
+         brief="A one-sheet poster for the film for each audience: true to its tone, with the title and its real "
+               "billing."),
 )
 
 BY_SLUG: dict[str, Card] = {c.slug: c for c in CARDS}
@@ -455,7 +486,7 @@ RENAMED: dict[str, str] = {"poster": "film-poster"}
 
 #: The type an untyped project of a workflow is, as the CLI defaults it: an untyped poster is a film poster. Named rather
 #: than read off the card order, which named every untyped poster "Product poster" once that card moved first (2026-10-30).
-UNTYPED_IS: dict[str, str] = {"poster": "film"}
+UNTYPED_IS: dict[str, str] = {"poster": "film", "poster_qloo": "film"}
 
 
 def card_for(workflow: str, type_: str = "") -> Card | None:
@@ -590,9 +621,8 @@ def parse(card_slug: str, title: str, route: str, kind: str, sizes: list[str], c
     card = BY_SLUG.get(card_slug)
     if card is None:
         raise StudioError("That workflow is not one the studio offers.")
-    taste = taste_available()
-    if card.needs_taste and not taste:
-        raise StudioError(f"A {card.title.lower()} is made for its audiences, and {TASTE_OFF[0].lower()}{TASTE_OFF[1:]}")
+    if card.needs_taste and not taste_available():
+        raise StudioError(f"A {card.title.lower()} is designed from each audience's taste, and {TASTE_OFF}")
 
     title = " ".join((title or "").split())
     if not title:
@@ -649,8 +679,6 @@ def parse(card_slug: str, title: str, route: str, kind: str, sizes: list[str], c
         chosen_formats.insert(0, allowed[".mp4"])
 
     audiences = parse_audiences(places or [], ages or [], languages) if card.audiences else []
-    if audiences and not taste:
-        raise StudioError(TASTE_OFF)
     if card.audiences and not audiences and not card.audiences_optional:
         raise StudioError(f"Say who the {card.title.lower()} is for: a place and, if it matters, an age band.")
 

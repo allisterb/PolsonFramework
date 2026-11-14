@@ -56,8 +56,9 @@ internal static class Techniques
     #endregion
 
     #region Methods
-    /// <summary>The techniques that apply to <paramref name="workflow"/>.</summary>
-    internal static Technique[] For(string workflow) => [.. All.Where(t => t.Workflows.Contains(workflow, StringComparer.Ordinal))];
+    /// <summary>The techniques that apply to <paramref name="workflow"/>; a <c>_qloo</c> twin takes its base workflow's.</summary>
+    internal static Technique[] For(string workflow) =>
+        [.. All.Where(t => t.Workflows.Contains(ProjectGenerator.BaseWorkflow(workflow), StringComparer.Ordinal))];
 
     /// <summary>
     /// The director's choices checked against the catalogue and the workflow: each id known, applying to the workflow,
@@ -79,7 +80,7 @@ internal static class Techniques
             {
                 if (All.FirstOrDefault(t => t.Id == id) is not { } known)
                     return (null, $"{flag} {id}: no such technique. For '{workflow}': {string.Join(", ", offered.Select(t => t.Id))}.");
-                if (!known.Workflows.Contains(workflow))
+                if (!known.Workflows.Contains(ProjectGenerator.BaseWorkflow(workflow)))
                     return (null, $"{flag} {id}: {known.Name} is for {string.Join(", ", known.Workflows)}, not '{workflow}'. For '{workflow}': {string.Join(", ", offered.Select(t => t.Id))}.");
             }
         var both = asked.Intersect(refused).ToArray();

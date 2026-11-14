@@ -1300,7 +1300,7 @@
       if (open.has(String(i))) d.open = true;
     });
 
-    const order = ['qloo', 'research', 'brief', 'assumed', 'check', 'judgement', 'workaround', 'other'];
+    const order = ['qloo', 'research', 'brief', 'document', 'computed', 'rule', 'assumed', 'check', 'judgement', 'workaround', 'other'];
     const rc = data.referenceCheck;
     whyTally.textContent = `${rows} choices — ` + order.filter((k) => tally[k])
       .map((k) => `${tally[k]} ${k === 'other' ? 'other' : k}`).join(' · ') +

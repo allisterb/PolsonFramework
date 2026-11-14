@@ -21,9 +21,10 @@ proceed as though the director had chosen it.
 | Parameter | Value |
 | :--- | :--- |
 | What it announces | |
-| Who it is for (one audience, or each of several: A, B…) | |
+| Who it is for (one audience, or each of several: A, B…, each with its language) | |
 | What carries over from a poster or other source in `documents/` | |
 | Length in seconds | |
+| How it should move (its pace), in the director's words — or not stated | |
 | The title, and anything else that must be read | |
 | End card: what it says | |
 | Sound (none, or what) | |

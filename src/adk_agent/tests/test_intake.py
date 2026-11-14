@@ -331,7 +331,7 @@ class WorkflowTypeTests(unittest.TestCase):
         ceiling = intake.RUN_LIMIT_SECONDS
         for workflow in intake.WORKFLOWS:
             with self.subTest(workflow=workflow):
-                minutes = intake.DEADLINES.get(workflow)
+                minutes = intake.DEADLINES.get(intake.base_workflow(workflow))
                 self.assertIsNotNone(minutes, f"{workflow} would take the CLI default unchecked")
 
                 # What `check` actually gives it on this host: the allowance, clamped to the ceiling.
@@ -572,27 +572,35 @@ class TasteSwitchTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def test_a_poster_a_trailer_and_a_product_ad_are_refused(self):
-        for workflow, kind in (("poster", "film"), ("poster", "product"), ("poster", ""), ("motion", ""),
-                               ("motion", "product")):
+    def test_the_qloo_twins_are_refused_and_name_their_mainline(self):
+        for workflow, kind in (("poster_qloo", "film"), ("poster_qloo", ""), ("motion_qloo", ""),
+                               ("motion_qloo", "product"), ("motion_qloo", "report")):
             with self.subTest(workflow=workflow, kind=kind), self.assertRaises(intake.Refused) as caught:
                 intake.check("p", workflow, kind, "A piece.")
             self.assertIn("turned off", str(caught.exception))
+            self.assertIn(f"Choose {workflow.removesuffix('_qloo')},", str(caught.exception))
 
-    def test_audiences_in_any_brief_are_refused(self):
-        with self.assertRaises(intake.Refused):
-            intake.check("p", "motion", "report", "A report.\n- Audience A: Tokyo, Japan")
+    def test_the_mainline_runs_with_audiences_as_language_versions(self):
+        for workflow, kind in (("poster", "film"), ("motion", ""), ("motion", "product"), ("motion", "report"),
+                               ("logo", "modern"), ("vector_infographic", "swiss")):
+            with self.subTest(workflow=workflow, kind=kind):
+                intake.check("p", workflow, kind, "A piece.\n- Audience A: Tokyo, Japan, in Japanese", start=False)
 
-    def test_what_needs_no_audience_still_runs(self):
-        for workflow, kind in (("motion", "report"), ("logo", "modern"), ("vector_infographic", "swiss")):
-            with self.subTest(workflow=workflow):
-                intake.check("p", workflow, kind, "A piece.", start=False)
-
-    def test_the_form_offers_no_starter_that_would_be_refused(self):
+    def test_the_form_offers_neither_twin_nor_its_starters(self):
         body = TestClient(_app()).get("/new").text
+        for workflow in ("poster_qloo", "motion_qloo"):
+            self.assertNotIn(f'value="{workflow}"', body)
         for starter in intake.STARTERS:
-            if intake.needs_taste(starter["workflow"], starter["kind"], starter["brief"]):
+            if intake.needs_taste(starter["workflow"]):
                 self.assertNotIn(f'data-name="{starter["name"]}"', body, starter["label"])
+
+    def test_a_twin_takes_its_base_workflows_deadline(self):
+        with mock.patch.object(intake, "MAX_DEADLINE_MINUTES", 218), \
+             mock.patch.object(intake, "taste_available", return_value=True):
+            self.assertEqual(intake.check("p", "poster_qloo", "film", "A poster.", start=False),
+                             intake.check("p", "poster", "film", "A poster.", start=False))
+            self.assertEqual(intake.check("p", "motion_qloo", "pitch", "A pitch.", start=False),
+                             intake.DEADLINES["motion.pitch"])
 
 
 class StarterTests(unittest.TestCase):

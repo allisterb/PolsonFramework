@@ -7,9 +7,9 @@ or a business desk would publish beside the filing: short, exact, and sourced on
 
 Where this type and the instructions above disagree, this type wins: there is no poster to carry over and no film to
 invent. The subject is the document. **Audiences are optional.** With none, make one film for whoever the brief
-describes, and no Qloo profile is read (see *Pace* below). With `Audience A`, `Audience B`… lines, make **one film per
-audience**: the facts the same in every film, read once from the document, and the writing of them each audience's
-own (see *More than one audience* below).
+describes. With `Audience A`, `Audience B`… lines, make **one film per audience**: the facts the same in every film,
+read once from the document, and the writing of them — its language, its figures' forms — each audience's own (see
+*More than one audience* below).
 
 ### What the brief gives
 
@@ -312,7 +312,7 @@ if (line.unsaid.length) error('the recording says more than the line: ' + line.u
 - **Record the lines in scripts of their own, a few at a time**, never in a script that also encodes: recording
   counts against the script's time limit. Pass the lines to record in `ARGS`, and run the script again until every
   line is cached.
-- With several audiences, **each film is voiced in the language of its words**, by a voice suited to its audience
+- With several audiences, **each film is voiced in the language of its words**, by a voice that speaks it
   (*More than one audience* below), and figures are spoken the way they are written for that audience: "1305億ドル"
   is read in Japanese, not as a dollar figure in English.
 
@@ -366,8 +366,8 @@ once, before the beats, and record it in `direction.md` with its reasons.
 
 ### More than one audience
 
-The instructions' *More than one audience* holds: every profile first, compared, `Taste.contrast` for a pair, one
-`build(audience)` and the films `artifacts/final_a.mp4`, `final_b.mp4`… What a report adds is the rule that keeps a
+The instructions' *More than one audience* holds: one design for the set, each film its audience's language version,
+one `build(audience)` and the films `artifacts/final_a.mp4`, `final_b.mp4`… What a report adds is the rule that keeps a
 set of films honest: **the facts are shared and only their writing is the audience's.**
 
 - **One reading, every film.** Stage 1 reads the document once; every film answers the same questions with the same
@@ -390,15 +390,15 @@ set of films honest: **the facts are shared and only their writing is the audien
 - **Direction colours stay a rule** (above): sign and shape carry direction in every film. Only if the brief asks for
   direction colours does each film use its audience's convention, and only with a source for it (Zhang & Han 2014 for
   red as a rise in mainland China).
-- **Pace and grade are each film's own**, from its profile, as the instructions say; the figures' holds follow the
-  pace, and never drop below the reading time a figure needs.
+- **Pace and grade are the set's**, decided once, as the instructions say; the figures' holds follow the
+  pace, and never drop below the reading time a figure needs in any of the films' languages.
 
 ### Pace
 
-**With no place and age band in the brief, there is no Qloo profile to read**: pace from Manual 25 and the reading
-time, and mark it *assumed* in `direction.md`. A figure is read slower than a word — hold a number at least a second
-longer than its words would need. **With a place and an age band**, profile the audience for pace and grade
-exactly as the instructions above say.
+**Pace comes from the brief and the reading time**: the director's words where the brief gives them (*"calm"*,
+*"brisk"*), and otherwise Manual 25 and the reading time, marked *assumed* in `direction.md`. A figure is read slower
+than a word — hold a number at least a second longer than its words would need. An audience's place and age band do
+not change it: with several audiences, one pace for every film.
 
 ### The read-back — after delivery
 
@@ -434,13 +434,12 @@ palette, the chart style — with its reasons. The read-back's result goes last.
 **The audience gets a section of its own, before the questions**, so whoever watches the film can see why it looks
 the way it does for these viewers. Say who is watching and where, as the brief has it. Then add one row per choice
 made for them, in the `Choice | Evidence | Kind` table the instructions describe, with each kind kept apart:
-- **Brief**: what the brief asked for.
-- **Qloo**: the pace and grade, from a profile, when the brief gives a place and an age band.
+- **Brief**: what the brief asked for — its language for this audience, and its pace when it gives one.
 - **Research**: a checked source, such as Bazley et al. and Zhang & Han for direction colours.
 - **Rule**: this type's rules, such as no red and green for direction and figures arriving whole, and **the figures
   written in the audience's conventions**, with Unicode CLDR named as the evidence for the place's forms (`en-IN`:
   lakh and crore, Indian grouping).
-- **Assumed**: anything decided without evidence, such as pace with no profile.
+- **Assumed**: anything decided without evidence, such as a pace the brief does not set.
 
 A choice the audience did not change says so — *"no red/green: a rule, whatever the place"* — so the reader can
 tell a rule from a reading of these viewers. **With several audiences, one such section per audience**, then the

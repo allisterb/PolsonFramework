@@ -97,10 +97,11 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
     # click, always room to say something unanticipated — so this is the workflow that demonstrates
     # the studio as a partner rather than as a generator.
     "drawing": ("review",),
-    # **The Qloo entry's two.** Both ground the work in an audience's taste through the `Taste` tool, so they need
-    # `POLSON_QLOO_KEY` on the host. A poster reads `documents/` from stage 1 (a brand guide, an earlier poster);
-    # a motion film builds on a poster found there. `film` is the CLI's default for a poster; `product` makes either one
-    # a product ad, the dynamic-creative case (`docs/internal/product-ad-probe.md`).
+    # **The Qloo entry's two, without Qloo since 2026-11-14.** Evidence is the brief, the director's documents and
+    # research on the subject; audiences are language and locale versions. As built for the hackathon, grounded in each
+    # audience's measured taste, they are `poster_qloo` and `motion_qloo` below. A poster reads `documents/` from stage 1
+    # (a brand guide, an earlier poster); a motion film builds on a poster found there. `film` is the CLI's default for a
+    # poster; `product` makes either one a product ad, the dynamic-creative case (`docs/internal/product-ad-probe.md`).
     # Their deadlines are the craft defaults (55 and 70, since the brain dump): no entry in `DEADLINES` below, since the keepalive's
     # ceiling (218) holds both, where the old 38 held neither — and a set of six, at +20 or +25 per audience.
     "poster": ("film", "product"),
@@ -111,6 +112,10 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
     # places, a film per investor audience in its conventions. `report.10k` and `report.s1` are reports on a Form 10-K and
     # a Form S-1, with the questions their readers take to them asked as well as the director's.
     "motion": ("pitch", "product", "report", "report.10k", "report.s1"),
+    # **The Qloo twins**: the two above as the hackathon entry built them, each audience's design from its Qloo taste
+    # profile through the `Taste` tool. Offered only while Qloo is on (`taste_available`): its API is contract-only.
+    "poster_qloo": ("film", "product"),
+    "motion_qloo": ("pitch", "product", "report", "report.10k", "report.s1"),
     # **The Nebius entry's.** A theorem or concept explained in the model's own argument, every formula and claim checked
     # before it is drawn (`Equation`, `Verify.derivation`, `Verify.claim`, whose code Nemotron writes) and the film read
     # back after. Untyped. Documents are optional material (lecture notes, a textbook page), never the subject.
@@ -125,12 +130,16 @@ WORKFLOWS: dict[str, tuple[str, ...]] = {
 #: Workflows whose lone type is **not** what an empty type means. The form selects a workflow's only type for
 #: the visitor, on the reasoning that one type is not a choice — true when the CLI would default to it anyway
 #: (`poster` to `film`), false for `motion`, where no type is the film trailer and `product` is something else.
-UNTYPED_IS_A_CHOICE: frozenset[str] = frozenset({"motion"})
+UNTYPED_IS_A_CHOICE: frozenset[str] = frozenset({"motion", "motion_qloo"})
 
-#: The workflow types that are made for audiences and so cannot run while Qloo is off, "" for untyped: a poster of
-#: either kind, a film trailer (untyped `motion`) and a product ad. A report or pitch takes audiences only optionally.
-NEEDS_TASTE: dict[str, frozenset[str]] = {"poster": frozenset({"", "film", "product"}),
-                                          "motion": frozenset({"", "product"})}
+#: The suffix of a workflow grounded in Qloo's taste data, as the CLI's `ProjectGenerator.QlooSuffix`.
+QLOO_SUFFIX = "_qloo"
+
+
+def base_workflow(workflow: str) -> str:
+    """The workflow a `_qloo` twin is built on (`poster_qloo` → `poster`), whose deadline and budgets it takes; any
+    other, itself. As the CLI's `ProjectGenerator.BaseWorkflow`."""
+    return workflow[:-len(QLOO_SUFFIX)] if workflow.endswith(QLOO_SUFFIX) else workflow
 
 
 def taste_available() -> bool:
@@ -143,9 +152,9 @@ def taste_available() -> bool:
     return qloo_enabled()
 
 
-def needs_taste(workflow: str, kind: str, brief: str) -> bool:
-    """Whether this commission cannot be made without Qloo: a type made for audiences, or audiences in the brief."""
-    return kind in NEEDS_TASTE.get(workflow, ()) or audiences_in(brief) > 0
+def needs_taste(workflow: str) -> bool:
+    """Whether this workflow cannot run without Qloo: a `_qloo` twin. Audiences elsewhere are language versions."""
+    return workflow.endswith(QLOO_SUFFIX)
 
 #: Workflows by a former name, as the CLI's `RenamedWorkflows` has them: `trailer` became `motion` on 2026-10-25, since
 #: its types make product ads, report explainers and pitches as well as film trailers.
@@ -351,6 +360,7 @@ def token_budget(workflow: str, brief: str, kind: str = "") -> int | None:
     """
     # A kind of a type (`report.s1`) takes its own entry, else its family's (`report`), else its workflow's.
     family = kind.split(".", 1)[0]
+    workflow = base_workflow(workflow)
     keyed = lambda table: table.get(f"{workflow}.{kind}", table.get(f"{workflow}.{family}", table.get(workflow, 1.0)))
     scale = keyed(TOKEN_SCALE)
     if NARRATION_ON.search(brief):
@@ -477,14 +487,46 @@ STARTERS: tuple[dict[str, str], ...] = (
                  "reflections, the kind of place a crew would block a chase through. Start with the "
                  "perspective and the darks; I will steer the mood.",
     },
-    # **The Qloo pair: one film, two audiences.** An original film keeps the work clear of any studio's key art; its
-    # comparables are real, and they are how Qloo knows what kind of film it is (`type.film.md`). The audiences
-    # are written as the composer writes them. The trailer is the same film, so a director can run the poster
-    # first and attach it.
+    # **One film, two languages.** An original film keeps the work clear of any studio's key art; its comparables are
+    # real, and research on them tells the run what kind of film it is (`type.film.md`). The audiences are language
+    # versions of one design. The trailer is the same film, so a director can run the poster first and attach it.
     {
-        "label": "Film poster, two cities",
+        "label": "Film poster, two languages",
         "name": "lanternkeeper",
         "workflow": "poster",
+        "kind": "film",
+        "brief": "An original film, The Lantern Keeper: a retired lighthouse keeper is asked to light the "
+                 "lamp one last night, as a storm comes in and the town below loses power. Comparable "
+                 "films: The Lighthouse (2019), The Banshees of Inisherin (2022), Aftersun (2022). "
+                 "Audience A: Lisbon, in Portuguese. Audience B: Seoul, in Korean.",
+    },
+    {
+        "label": "Film trailer, two languages",
+        "name": "lanternkeepertrailer",
+        "workflow": "motion",
+        "kind": "",
+        "brief": "A fifteen-second trailer for an original film, The Lantern Keeper: a retired lighthouse "
+                 "keeper lights the lamp one last night as a storm takes the town's power. Comparable "
+                 "films: The Lighthouse (2019), The Banshees of Inisherin (2022), Aftersun (2022). "
+                 "Audience A: Lisbon, in Portuguese. Audience B: Seoul, in Korean. Silent. If a "
+                 "poster for it is attached, carry its system over.",
+    },
+    {
+        "label": "Product ad",
+        "name": "nightshiftcoldbrew",
+        "workflow": "motion",
+        "kind": "product",
+        "brief": "A fifteen-second ad for Nightshift, a fictitious canned cold brew coffee: slow-steeped for twenty "
+                 "hours, sold chilled. Comparable brands: Blue Bottle Coffee, La Colombe, Stumptown Coffee "
+                 "Roasters. Claim: \"Steeped for twenty hours.\" Call to action: \"Find it chilled.\" "
+                 "Silent. No logo is supplied: set the name in type.",
+    },
+    # **The Qloo pair, as the hackathon entry ran it: one film, two audiences, each designed from its taste profile.**
+    # Comparables are how Qloo knows what kind of film it is. Offered only while Qloo is on.
+    {
+        "label": "Film poster, two cities (Qloo)",
+        "name": "lanternkeeperqloo",
+        "workflow": "poster_qloo",
         "kind": "film",
         "brief": "An original film, The Lantern Keeper: a retired lighthouse keeper is asked to light the "
                  "lamp one last night, as a storm comes in and the town below loses power. Comparable "
@@ -492,9 +534,9 @@ STARTERS: tuple[dict[str, str], ...] = (
                  "Audience A: Lisbon, aged 35 to 44. Audience B: Seoul, aged 25 to 34.",
     },
     {
-        "label": "Film trailer, two cities",
-        "name": "lanternkeepertrailer",
-        "workflow": "motion",
+        "label": "Film trailer, two cities (Qloo)",
+        "name": "lanternkeepertrailerqloo",
+        "workflow": "motion_qloo",
         "kind": "",
         "brief": "A fifteen-second trailer for an original film, The Lantern Keeper: a retired lighthouse "
                  "keeper lights the lamp one last night as a storm takes the town's power. Comparable "
@@ -505,9 +547,9 @@ STARTERS: tuple[dict[str, str], ...] = (
     {
         # A fictitious product with real comparables: the dynamic-creative case. The comparables are the ones the
         # product-ad probe measured, so a run's evidence can be read against docs/internal/product-ad-probe.md.
-        "label": "Product ad, three cities",
-        "name": "nightshiftcoldbrew",
-        "workflow": "motion",
+        "label": "Product ad, three cities (Qloo)",
+        "name": "nightshiftcoldbrewqloo",
+        "workflow": "motion_qloo",
         "kind": "product",
         "brief": "A fifteen-second ad for Nightshift, a fictitious canned cold brew coffee: slow-steeped for twenty "
                  "hours, sold chilled. Comparable brands: Blue Bottle Coffee, La Colombe, Stumptown Coffee "
@@ -799,21 +841,23 @@ def check(name: str, workflow: str, kind: str, brief: str, deadline: str = "",
     if not brief.strip():
         raise Refused(400, "A brief is required — say what you want made.")
 
-    if needs_taste(workflow, kind, brief) and not taste_available():
+    if needs_taste(workflow) and not taste_available():
         raise Refused(400, (
-            "This commission is made for audiences, and audiences are measured with Qloo's taste data, which is "
-            "turned off here. Leave the audiences out of the brief and choose a workflow that does not need them, "
-            "or turn Qloo on (Qloo:Enabled in bin/cli/appsettings.json)."))
+            f"The {workflow} workflow designs for each audience from Qloo's taste data, which is turned off here. "
+            f"Choose {base_workflow(workflow)}, which makes the same piece from the brief and research, or turn Qloo "
+            "on (Qloo:Enabled in bin/cli/appsettings.json)."))
 
     # **Checked here, not by the input's own min/max.** Those are a convenience for a browser;
     # this endpoint is reachable without one, and the ceiling is what keeps a run being halted
     # cleanly by the breaker rather than killed mid-flight by the platform.
     # The host's own allowance, clamped to what this host can stop cleanly. Where the two disagree the smaller
     # wins: a poster's 45 is offered whole with the keepalive on and as 38 without it, never past the run limit.
-    minutes = DEADLINES.get(f"{workflow}.{kind}", DEADLINES.get(workflow))
+    # A `_qloo` twin takes its base workflow's allowances, as the CLI does.
+    base = base_workflow(workflow)
+    minutes = DEADLINES.get(f"{base}.{kind}", DEADLINES.get(base))
     if minutes is not None:
-        if (extra := audiences_in(brief) - AUDIENCES_IN_DEADLINE.get(workflow, 2)) > 0:
-            minutes += PER_AUDIENCE_MINUTES.get(workflow, 0) * extra
+        if (extra := audiences_in(brief) - AUDIENCES_IN_DEADLINE.get(base, 2)) > 0:
+            minutes += PER_AUDIENCE_MINUTES.get(base, 0) * extra
         minutes = min(minutes, MAX_DEADLINE_MINUTES)
     if (asked := deadline.strip()):
         try:
@@ -1198,11 +1242,13 @@ def mount(app: FastAPI) -> None:
         # round trip, and it is the same list the POST validates against, so the two cannot disagree.
         # The **value** stays the template name, which is what the POST validates and what the
         # generator is given; only the visible text is relabelled.
+        # The `_qloo` twins only while Qloo is on: offered and then refused is a form that lies.
+        taste = taste_available()
         options = "".join(
             f'<option value="{w}" data-types="{",".join(types)}"'
             f'{' data-untyped="1"' if w in UNTYPED_IS_A_CHOICE else ''}'
-            f' data-deadline="{DEADLINES.get(w) or ""}">{escape(LABELS.get(w, w))}</option>'
-            for w, types in WORKFLOWS.items())
+            f' data-deadline="{DEADLINES.get(base_workflow(w)) or ""}">{escape(LABELS.get(w, w))}</option>'
+            for w, types in WORKFLOWS.items() if taste or not needs_taste(w))
         types_options = '<option value="">&mdash;</option>' + "".join(
             f'<option value="{t}">{t}</option>' for t in ALL_TYPES)
         accept = ",".join(sorted(DOCUMENT_SUFFIXES))
@@ -1222,10 +1268,10 @@ def mount(app: FastAPI) -> None:
                     f' data-brief={quoteattr(entry["brief"])}>{escape(entry["label"])}</button>')
 
         chips = ""
-        taste = taste_available()
         for workflow in WORKFLOWS:
-            group = [e for e in STARTERS if e["workflow"] == workflow
-                     and (taste or not needs_taste(workflow, e["kind"], e["brief"]))]
+            if needs_taste(workflow) and not taste:
+                continue
+            group = [e for e in STARTERS if e["workflow"] == workflow]
             if not group:
                 continue
             chips += (f'<p class="group">{escape(LABELS.get(workflow, workflow))}</p>'

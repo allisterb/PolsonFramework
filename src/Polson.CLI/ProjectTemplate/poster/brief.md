@@ -24,13 +24,14 @@ director confirms it.
 | What it announces — the film, with its title (fictional, or real with its year) | |
 | Logline, in one sentence | |
 | Comparable titles (real, two or three; optional for a real film) | |
-| Audiences A, B, … (two to six) — each a place, an age band, optionally gender | |
+| Audiences A, B, … (one to six) — each a place, an age band, and its language | |
 | Tagline, if any | |
-| Billing — fictional for a fictional film; the real credits, as text, for a real one | |
+| Billing — the brief's credits for a fictional film, or marked placeholders where it gives none; the real credits, as text, for a real one | |
 | Where it will be seen, and from how far | |
 | Page size (`pdfSize`) and bleed | |
 | Language | |
 | Anything explicitly ruled out | |
 
-> **An audience is a place and a band, never a list of people.** "Under-25s in Lagos" is something Qloo
-> can measure; "people like my nephew" is not, and nothing about a person is sent anywhere.
+> **An audience is a place, a band and a language, never a list of people.** "Under-25s in Lagos, in English"
+> says which version to make and who its words are addressed to; "people like my nephew" does not, and nothing
+> about a person is sent anywhere.

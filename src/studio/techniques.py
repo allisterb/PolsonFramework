@@ -74,8 +74,8 @@ _catalogue: tuple[Technique, ...] | None = None
 
 
 def for_workflow(workflow: str) -> tuple[Technique, ...]:
-    """The techniques that apply to `workflow`, in the catalogue's order."""
-    workflow = projects.canonical(workflow)
+    """The techniques that apply to `workflow`, in the catalogue's order; a `_qloo` twin takes its base workflow's."""
+    workflow = projects.base_workflow(workflow)
     return tuple(t for t in catalogue() if workflow in t.workflows)
 
 

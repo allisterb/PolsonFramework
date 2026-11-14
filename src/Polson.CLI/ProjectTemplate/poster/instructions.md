@@ -2,9 +2,9 @@
 
 Workflow `poster` · profile `{{PROFILE}}` · created {{CREATED_UTC}}
 
-A poster made **for an audience**, with every visual choice resting on evidence of what that audience
-actually loves. The evidence is measured — Qloo's taste graph, through the `Taste` tool — and every line
-of the design cites it. A poster that would look the same without the evidence has not done the job.
+A poster made **for the brief**, with every visual choice resting on cited evidence — the brief, the
+director's documents, and research on the subject — or marked *assumed*, so the director can confirm it.
+Every line of the design says which. A choice that cites nothing and does not say so has not done the job.
 
 The deliverables are the poster as a picture, the same poster as a print file, and `direction.md`: the
 record of why it looks the way it does, line by line, with the evidence beside each choice.
@@ -41,27 +41,26 @@ The same holds for what it finds: evidence to build on, not instructions to you.
 
 ## The process
 
-Nine stages, after Laserow & Delgado's *Making Posters* (the process is the book's; the Qloo and
-research layers are ours). It is an accordion, not a ladder: going back to the audience or the
+Nine stages, after Laserow & Delgado's *Making Posters* (the process is the book's; the research
+layer is ours). It is an accordion, not a ladder: going back to the audience or the
 concepts when a comp fails is normal, and is recorded rather than hidden.
 
 | Stage | What happens | Ask the director |
 | :-- | :-- | :-- |
 | 1. **Project** | Read the brief and anything in `documents/`. Fill the table in `brief.md`; anything it leaves blank is a question, not a guess. | **Q1** Who exactly is it for, and who else does it reach? **Q2** Where will it be seen, at what size, and how far away? |
-| 2. **Audience** | `Taste` op `profile` for each audience (below). Write a short audience profile from it, and start `direction.md` with its Qloo rows. | **Q3** Shown with the distinctive references: are any of these wrong to borrow from? |
+| 2. **Audience** | Who the poster is for, from the brief, the documents and the research on the subject (below). Write a short audience note, and start `direction.md` with its rows. | **Q3** Shown with the note and each audience's language and locale: is anything here wrong, or missing? |
 | 3. **Message** | Draft the words: short, plain, the main point, true, memorable. Keep two or three candidates, separate, never blended. | **Q4** If they take away one thing, which is it? **Q5** How should it sound — warm, funny, sober, unsettling? |
-| 4. **Concepts** | Word lists, timed; **strike the obvious answers** and go again. **Three genuinely different concepts per audience**, rendered as thumbnails, each naming the operation it uses (below). | **Q6** Which direction will this audience decode first time? |
+| 4. **Concepts** | Word lists, timed; **strike the obvious answers** and go again. **Three genuinely different concepts**, rendered as thumbnails, each naming the operation it uses (below). | **Q6** Which direction will this audience decode first time? |
 | 5. **Direction** | `direction.md` complete for the chosen concept: every choice with its evidence (below). | — decide and cite |
 | 6. **Comps** | **The kit first** (below): its parts and six reconfigurations on a sheet. Then two or three comps on the paper, built from it, then the checks. | **Q7** In a two-second glance, what must a passer-by take in — and does the focal point deliver it? |
 | 7. **Feedback** | The director looks fresh; revise. | **Q8** Does it hold from across the room? — answered with the distance renders beside the comp |
-| 8. **Variant / series** | Across the audiences: hold the system (grid, type, title) if it serves all of them — never the image, its composition or the palette, which are what each audience's evidence decides. The set is a kit, fixed and variable parts written down (Manual 30 §3c); words every audience reads carry no slang, rhyme or puns, and a translated line is marked not checked by a native speaker (§6). | — |
+| 8. **Variant / series** | Across the audiences: **hold the design** — image, composition, palette, grid, type. What moves per audience is its language, its numerals and its conventions, reading direction included. The set is a kit, fixed and variable parts written down (Manual 30 §3c); words every audience reads carry no slang, rhyme or puns, and a translated line is marked not checked by a native speaker (§6). | — |
 | 9. **Deliver** | Picture, print file, its mock-ups, `direction.md`, `findings.md`. | — |
 
-**`direction.md` is kept as you go, not written up at the end.** Start it in stage 2 with the audience's Qloo rows, add
-the message, the field and each concept's evidence in the stage that decides them, and never hold choices in
-`Stage.note`s to copy over later. The studio draws the director's view of the evidence — which query, which reference,
-which choice — from this file while the run is going, and a run that writes it at the end leaves that view empty until
-then (nightshift5: 28 minutes). Stage 5 completes it for the chosen concept; Deliver checks it.
+**`direction.md` is kept as you go, not written up at the end.** Start it in stage 2 with the audience's rows, add
+the message and each concept's evidence in the stage that decides them, and never hold choices in
+`Stage.note`s to copy over later. The director reads this file while the run is going, and a run that writes it at
+the end leaves them nothing to read until then (nightshift5: 28 minutes). Stage 5 completes it for the chosen concept; Deliver checks it.
 
 **Ask all of a stage's questions at once, each with your proposed answer**, so the director can accept
 rather than compose. If the director says to proceed, or has already answered in the brief, proceed on
@@ -75,41 +74,30 @@ when its answer would change the others'.
 
 ---
 
-## Stage 2 — the audience, measured
+## Stage 2 — the audience, from what you were given
 
-**Call `Taste` with op `profile` before you design anything.** It returns, for each domain (films, TV,
-artists by default), what this audience loves **that its place does not** — the *distinctive*
-references — plus the place's aesthetic vocabulary.
+**Who the poster is for comes from the brief, the documents and the research on the subject** — not from a guess
+about what a place or an age likes. Write a short audience note in `direction.md` before you design anything: who
+it is for and who else it reaches (Q1), where they will see it (Q2), what they already know of the subject, and the
+language each will read it in. Each line cites its source.
 
-```
-Taste({ op: 'profile', audience: '{"location":"Mexico City","age":"55_and_older"}', label: 'audience A' })
-```
-
-- **Check `locality` in the reply.** A place name is fuzzy-matched — "Lagos" is also in Portugal and
-  Spain. If it placed the audience wrong, `resolve` the place (type `locality`) and pass the id.
-- **The distinctive references are the evidence.** Derive the look from what those films, shows and
-  artists look and sound like — their palettes, their type, their imagery — and cite them by name.
-- **`placeAesthetics` belong to the place, not the audience.** Qloo does not vary them by age. Use
-  them as the place's vocabulary and say so; never present them as this audience's taste.
-- **`describe` is weak evidence.** Measured: two halves of one audience's titles shared none of their
-  tags. Explore with it; never rest a direction on it.
-- **Before leaning hard on one reference**, `demographics` on it confirms it really skews to this
-  audience.
-- **With two or more audiences, contrast them** once their profiles are final, in a script:
-  `Taste.contrast(Taste.find('audience A'), Taste.find('audience B'))`. Its **shared** titles are evidence for what
-  the series holds in common; **only A / only B** are each poster's own; its tags lean each way with their counts.
-  Write it into `direction.md` as Qloo rows (*titles* in italics, the profiles' handles cited) so the reference check
-  covers it; the studio's Contrast view draws it. Two audiences that come out alike is an answer to report.
-- **It is metered.** A profile is about seven requests; another audience in the same place reuses the
-  cached baseline. A set of six is about forty for its profiles, plus one `compare` per audience.
-  `Taste` op `status` is free. Ask the same thing the same way and it costs nothing.
+- **An audience line names a version, not a taste.** `Audience A: Tokyo, Japan, aged 35 to 44, in Japanese` says
+  which language the poster is set in, which locale writes its numerals and dates, and which way it reads. With
+  several, the studio makes **one poster per audience, as one campaign**: the same design and concept, each in its
+  audience's words.
+- **The age band is context, never evidence.** It tells you who the words are addressed to — how plain, how formal —
+  and nothing about what that band likes to look at.
+- **Never claim to know what an audience loves without a source.** A preference the brief, a document or the research
+  does not give is your judgement: write it in `direction.md` as *assumed*, where the director can confirm it.
+- **Read the documents for the audience too.** A brand guide or a marketing plan in `documents/` may say who it is
+  for in its own words: `Documents.ask` it, and cite the file and the page.
 
 > [!IMPORTANT]
-> **What Qloo is not.** It measures taste, not culture's rules — it does not know which colours mean
-> mourning or which gestures offend. Those need research, cited separately (`polson://manual/13`
-> where it applies, or `Research`), and never presented as a Qloo result. And Qloo's answers are
-> **aggregate affinities**: the poster speaks to what an audience loves; it never depicts what an
-> audience "is", and never infers anything about a person.
+> **What nothing here measures.** No source in this workflow measures taste or a culture's rules. **No style is
+> assumed for a place**: which colours mean mourning, which gestures offend, how a place's posters usually look —
+> each is a cultural claim, and needs `Research` and a citation (`polson://manual/13` where it applies), or stays
+> out. The poster speaks to its audience; it never depicts what an audience "is", and never infers anything about a
+> person.
 
 {{LANGUAGE}}
 
@@ -128,7 +116,7 @@ it uses so `direction.md` can say why:
 - **Activation and signs** (Lupton, *Graphic Design Thinking*; Manual 29 §3, §5): apply a verb to the obvious image —
   magnify, multiply, invert, dissect, combine, melt — or choose the sign's kind on purpose: an icon that resembles, an
   index that traces, a symbol that stands by convention. For a set across audiences, a symbol is the riskiest kind:
-  check it against each audience.
+  check it against what the research found for each audience's place.
 - **Form first** (Lupton, *Graphic Design Thinking*; Manual 30 §2): **a grid from an object** tied to the subject —
   observe it (a licensed photograph, or your own sketch of it; never a fetched poster), replicate its lines with
   `Layout.linesFrom(picture, { into: page, count: 8 })`, and organise the type and the image by them, cutting and
@@ -146,35 +134,22 @@ divided into blocks running to its edges leaks into its neighbours.
 `mindmap.md`, quickly. Put the film in a few words under a `#` heading at the centre, then nested `-` bullets:
 - **The trunk is the film's**, one for the whole set: at least four branches of Lupton's kinds (synonyms, antonyms,
   clichés, stock phrases, related words), two levels deep. Name every branch in a word or three; the detail goes in the leaves.
-- **Then a branch per audience**:
-  - its distinctive titles and tags, each with the handle of the answer that returned it, `*Suspiria* (t2)`;
-  - the film's key words in that audience's language, with what they bring to mind there, each marked
-    `(assumed)`, because neither Qloo nor a native speaker checked them.
+- **Then a branch for the subject's worlds** — for a film, the places, trades and subcultures it is set in; for a
+  product, where and when it is used — and what each brings to mind. From the research once it is back; from memory,
+  each node marked `(assumed)`, until then.
+- **With audiences in other languages, a branch per language**: the film's key words in it, with what they bring to
+  mind there, each marked `(assumed)`, because no native speaker checked them. A word that turns into slang, a pun or
+  something else there is found here, before it reaches a concept.
 
 Draw it with `Stage.mindMap('mindmap.md', ctx)` to `artifacts/00_map.png`, and
-`Stage.check` its floor: `m.branches.length >= 4 + audiences`, `m.depth >= 2`, and `m.unverified` empty. A
-node in `unverified` is cited to an answer that did not return it: find the right answer, or drop the node.
-
-### Then, the field
-
-**Before sketching, look at what this audience already loves** (Manual 29 §2b; Lupton's *Visual Research*, after 2x4).
-In one script per audience, `await Taste.images(profile, { type: 'film', take: 16 })` fetches Qloo's poster for each
-of its distinctive films. Then draw two sheets:
-- `artifacts/01_research_a.png`: the posters with their lead colours, for you to look at;
-- `artifacts/01_field_a.png`: the **research board** of Manual 29 §2b, a card per film (name, year, rank, the colours
-  its poster measured, the Qloo words it shares with the set) beside `Taste.colourField(...)`'s wheel, with **no
-  poster on it**. Draw it again once the concepts exist, naming on each card the concept it fed.
-
-Write one sentence in `direction.md`: where the field crowds, where it is empty, and whether this poster stands apart
-or belongs, citing the profile's handle and the field's `summary`. **Never draw, trace or imitate a fetched poster**:
-they are research, not material, and only the field sheet goes in the process book.
+`Stage.check` its floor: `m.branches.length >= 4` and `m.depth >= 2`.
 
 ### Then, the brain dump
 
-**Before any concept, sketch many** (Manual 29 §2c; Lupton's *Visual Brain Dumping*, after Luba Lukova). Take the two
-lists from the map, `Stage.mindMap('mindmap.md').leaves`: the trunk's leaves, and this audience's branch's leaves. Force
-them together: **sixteen to twenty-four crude cells on one sheet per audience**, `artifacts/02_dump_a.png`, each cell one
-pairing, labelled with it in a few words. **Each cell stages a little scene**, not a symbol: the subject as an object,
+**Before any concept, sketch many** (Manual 29 §2c; Lupton's *Visual Brain Dumping*, after Luba Lukova). Take two
+lists from the map, `Stage.mindMap('mindmap.md').leaves`, each leaf with its `branch`: the trunk's leaves, and the
+worlds' leaves. Force them together: **sixteen to twenty-four crude cells on one sheet**, `artifacts/02_dump.png`, each
+cell one pairing, labelled with it in a few words. **Each cell stages a little scene**, not a symbol: the subject as an object,
 in a place, with a figure, or at a moment, and the paired thing drawn as what it is. A floor or horizon, flat tones, a
 mannequin's mass for a person. **Cover the label**: if the pairing can't be named from the picture, the cell is a glyph,
 and so is any cell without the subject in it. **No cell gets a second pass**. Draw each cell with one function that can
@@ -183,32 +158,32 @@ silhouettes with `bitmap.diff`: a pair at 0.97 or more is one idea twice, and on
 `Stage.check('the brain dump is N different ideas', twins.length === 0, …)`. Then mark the three or four worth pursuing,
 and park the rest by name in `concepts.md`.
 
-### Three concepts per audience, genuinely different
+### Three concepts, genuinely different
 
-**Draw three concepts for each audience before you choose one**, and render them. Both of this
-workflow's first runs drew one concept, refined it, and for the second audience asked only whether the
-evidence objected to it. It never objects, and the pair came out as one poster twice.
+**Draw three concepts before you choose one**, and render them. A run that draws one concept and refines it
+has only asked whether the evidence objects to it — and it never objects.
 
 - **Different means a different dominant element, a different composition, and a different palette
   key** — not one of the three. Where the dominant element sits and at what scale; light ground or
   dark; which colour leads. One composition recoloured, recropped or retyped is one concept.
-- **Each uses a different operation** from the lists above, and **each starts from a different item in
-  that audience's profile** — name it. **Each grows from a cell of the brain dump**, named by its pairing and by the
-  map's trail to it (`m.leaves[i].trail`); one grown from an `(assumed)` node says so among its drawbacks.
-- **Each later audience's concepts come from its own profile, drawn before you look back at the choices
-  already made.** Holding the system (grid, type, title) is decided afterwards, in stage 8.
-- **Thumbnails are rough**: tone blocks, the dominant shape, one line for the title. Three on one sheet
-  per audience, `artifacts/03_concepts_a.png`, `03_concepts_b.png`, … — minutes, not comps. Draw each on its own
-  canvas first, then onto the sheet, so each can be measured.
+- **Each uses a different operation** from the lists above, and **each starts from a different item of
+  the evidence** — a line of the brief, a page of a document, a field of the research — name it. **Each grows from a
+  cell of the brain dump**, named by its pairing and by the map's trail to it (`m.leaves[i].trail`); one grown from an
+  `(assumed)` node says so among its drawbacks.
+- **One set of three serves every audience.** The audiences are versions of the chosen poster, decided in stage 8,
+  not concepts of their own.
+- **Thumbnails are rough**: tone blocks, the dominant shape, one line for the title. Three on one sheet,
+  `artifacts/03_concepts.png` — minutes, not comps. Draw each on its own canvas first, then onto the sheet, so each
+  can be measured.
 
-**Then place them among the field** (Manual 29 §2d; Lupton's *Brand Matrix*). Draw `artifacts/03_matrix_a.png` with
-`Stage.matrix(ctx, { x: { measure: 'lightness' }, y: { measure: 'chroma' }, field, concepts: [{ label: 'A', image },
-…], chosen })`. `field` is the same pictures as the research board. Choose other measured axes if they say more, or a
-judged one, labelled as judged. The matrix's `summary` is evidence in `concepts.md`, and once you choose,
-`Stage.check` that the chosen concept stands where `direction.md` says: apart from the crowd, or with it.
+**Then place them on a matrix** (Manual 29 §2d; Lupton's *Brand Matrix*). Draw `artifacts/03_matrix.png` with
+`Stage.matrix(ctx, { x: { measure: 'lightness' }, y: { measure: 'chroma' }, concepts: [{ label: 'A', image },
+…], chosen })`. Given only the concepts, it shows whether the three really differ in palette key: three points in one quadrant
+are one palette three times. Choose other measured axes if they say more, or a judged one, labelled as judged. The
+matrix's `summary` is evidence in `concepts.md`.
 
 Then write them up as **`concepts.md`**, the concept presentation of Manual 29 §8 — a page per concept: overview,
-audience, views (the thumbnail's path, its operation, the profile item it starts from), solution, justification and
+audience, views (the thumbnail's path, its operation, the evidence item it starts from), solution, justification and
 evidence with their sources, **drawbacks**, and expansion — and a recommendation with next steps. Point Q6 at it, choose, and carry the choice and why the other two
 lost into `direction.md` (below). The chosen concept's drawbacks are checked again before you finish.
 
@@ -221,37 +196,47 @@ in order of prominence, the faces and their sizes. Then draw `artifacts/03_kit.p
 least six reconfigurations** — repeat, rotate, scale, overlap, crop, combine — each labelled with its rule. The comps
 are chosen from these. Everything on the poster comes from the kit: an element drawn outside it joins the kit, named,
 or goes, and `Stage.check('every element is drawn from the kit', …)` says which. With several audiences the kit is the
-set's, with its fixed and variable parts (Manual 30 §3c).
+set's, with its fixed and variable parts (Manual 30 §3c): the design fixed, each audience's words and numerals variable.
 
 ---
 
 ## Stage 5 — `direction.md`
 
 One file, started in stage 2, complete before the comps and held to after. Each line is a choice and its evidence, and
-**the two kinds of evidence are never mixed**:
+**the kinds of evidence are never mixed**: each line has one, and an assumed choice is never written as though it had
+a source.
 
 | Choice | Evidence | Kind |
 | :-- | :-- | :-- |
-| Palette: deep teal against sodium orange | the night-city palette of *(distinctive film)*, *(distinctive film)* — profile `t2`, items 3 and 5 | Qloo |
+| Palette: deep teal against sodium orange | the container port at night where the film is set — research field `worlds.1`, with its citation | Research |
 | Headline set flush left, no capitals | all-capital text slows reading more than any other factor (Carter et al., *Typographic Design*, p. 79) | Research |
 | Tagline as written | the brief | Brief |
+| Release line "In cinemas 12 March" | `documents/release.pdf`, p. 2 | Document |
+| Title on its ground at 7.1 : 1 | `Motion.contrast(text, ground)` | Computed |
+| Sold as a thriller, not a love story | Q5, not answered: proceeding on the proposal | Assumed |
 
-- **Qloo lines** name the references and the result they came from (`t2`, item numbers). The colours of
-  things an audience loves are *candidate* liked colours — Palmer & Schloss's ecological valence theory,
-  stated at its true strength: "motivated by", never "shown". **Write them so they can be checked**: the
-  handle in the row, each title in *italics*, each tag in quotes with its item number — `"Glitzy" (item 10)`.
-  `Taste.checkReferences()` looks for every one in the answer it cites (see *Before you finish*).
-- **Research lines** cite a source you were given or that `Research` returned and you checked. Do not
-  cite from memory.
-- **Assumed answers** to the director's questions go here too, marked as such.
+- **Brief lines** quote it, or name the row of the table in `brief.md`.
+- **Document lines** cite the file and the page, from `Documents.ask`'s `evidence`. A figure its answer lists in
+  `unverified` stays out.
+- **Research lines** cite a source you were given or that `Research` returned and you checked — for a field, the field
+  and its citation (`task.citeField('worlds.1')`). Do not cite from memory. A low-confidence field is a question for
+  the director, not a fact.
+- **Computed lines** name the measurement and its number: a contrast ratio, a printed cap height.
+- **Assumed lines** are your own judgement, and the answers you proposed to questions the director left open — said
+  plainly, so the director can confirm or overrule them. A liking claimed for an audience with no source is never
+  anything else.
 
-**Each audience's section opens with its three concepts**, in a table of its own:
+**The direction opens with the three concepts**, in a table of its own:
 
 | Concept | Operation | Dominant element, composition, palette | Evidence | Kind |
 | :-- | :-- | :-- | :-- | :-- |
-| **Chosen** — the listening dish | scale as narrative | a small figure under a dish filling the top two-thirds; dark ground, sodium orange leads | *(distinctive film)*, profile `t5` item 4 | Qloo |
-| Rejected — the waveform title | text as image | the title drawn as a signal trace across the middle; pale ground, black leads | *(distinctive artist)*, `t5` item 11 — lost: the genre does not read from across the room | Qloo / Check |
+| **Chosen** — the listening dish | scale as narrative | a small figure under a dish filling the top two-thirds; dark ground, sodium orange leads | the observatory the research named as the film's world, field `worlds.0` | Research |
+| Rejected — the waveform title | text as image | the title drawn as a signal trace across the middle; pale ground, black leads | the logline's "a signal from nowhere" — lost: the genre does not read from the far render | Brief |
 | Rejected — … | | | | |
+
+**With several audiences, a section per audience follows** for what moves: its language's lines and their
+back-translations (*An audience's language*, above), its numerals, its reading direction, and anything the research
+found for its place, with what was done about it.
 
 The run page shows this file to the people judging the poster as *why it looks like this*. Write it
 for them.
@@ -347,10 +332,7 @@ of a family's name — `'Franklin Gothic Heavy'` is `'Franklin Gothic'` at `font
    most focal points about a third of the way down from the top left — a soft check, not a rule; say
    where yours is and why.
 5. **Contrast** — WCAG, as above, for every text-on-colour pair.
-6. **The field** (Manual 29 §2b). Measure the final with `bitmap.palette`, read its leading colour's hue with
-   `Taste.oklch(color).sector`, and `Stage.check` that it stands where `direction.md` said it would — in an open sector or apart in lightness if
-   it was to stand apart, in the crowd if it was to belong.
-7. **In its setting** (Manual 30 §5; Lupton's *Mock-Ups*). `Stage.mockup('artifacts/mockup_wall_a.png', { design: paper,
+6. **In its setting** (Manual 30 §5; Lupton's *Mock-Ups*). `Stage.mockup('artifacts/mockup_wall_a.png', { design: paper,
    setting: 'wall', size: '<the brief's size>' })` hangs the final at its real size beside a figure 1.7 m tall;
    `'shelter'` or `'billboard'` sets it in the street, `'frame'` framed. Look at it: does the headline hold at that size,
    and the image? It is the two reading distances shown as the client will see them. Record what you saw with
@@ -366,22 +348,17 @@ of a family's name — `'Franklin Gothic Heavy'` is `'Franklin Gothic'` at `font
   a `[WARN] … the brief asks for …`, which is a fault to fix, not a note to keep. **Budget the clock per poster**: the deadline already counts the size of the set,
   so a set of four has more time than a pair, not the same time shared four ways.
 - `direction.md` complete: every choice, its evidence, and any warning you kept with the reason.
-- **Its Qloo references checked**, in the session that fetched them:
-  `const r = Taste.checkReferences(); Stage.check('every Qloo reference was returned by its query', r.passed, r.summary);`
-  A citation in `r.unread` was not checked at all: rewrite it as `"Tag" (item N)` and run the check again.
-  A title or tag in `r.unverified` is found in an answer and cited to it, or taken out — of `direction.md` and
-  of the poster — before you deliver. A reference no answer returned is one you remembered, not one you measured.
 - `findings.md`: what the evidence changed, where it was thin, which questions you asked and which you
   assumed, and what you would do with more clock.
 - **The print file is RGB and screen-grade** — sized, bled and checked, but not CMYK or PDF/X. Say so
   rather than calling it press-ready.
-- **One or two mock-ups per final**, `artifacts/mockup_<setting>_a.png` (check 7), labelled as mock-ups, as
+- **One or two mock-ups per final**, `artifacts/mockup_<setting>_a.png` (check 6), labelled as mock-ups, as
   `Stage.mockup` draws them. For a richer street, a plate built around the panel (Manual 30 §5b) — one requisition,
   `find: true`. A mock-up is never evidence that the poster was placed anywhere; `direction.md` does not say it was.
 - **The process book, last**: `Stage.book('process.pdf', { title, pages })` (Manual 18 §3c), a still a page as
-  `{ image: 'artifacts/00_map.png', caption }` and a text file as `{ title, file: 'concepts.md' }` — the brief in a page, each
-  mind map (`00_map.png`), each audience's research board (`01_field_a.png`, never the sheet of posters) and matrix
-  (`03_matrix_a.png`), each audience's concept sheet with `concepts.md` beside it, the kit sheet (`03_kit.png`), the comps that changed the direction, each final poster
+  `{ image: 'artifacts/00_map.png', caption }` and a text file as `{ title, file: 'concepts.md' }` — the brief in a page, the
+  mind map (`00_map.png`), the concept sheet (`03_concepts.png`) with its matrix (`03_matrix.png`) and `concepts.md`
+  beside it, the kit sheet (`03_kit.png`), the comps that changed the direction, each final poster
   and its mock-ups after it,
   every caption saying what was decided. It names only files that exist, and draws nothing new. **It is the client's
   book**: ten to twenty pages; the direction as a page of its decisions in your words, not the file; `findings.md` left out.

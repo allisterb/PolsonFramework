@@ -32,7 +32,7 @@ decided in their place, and what would change if you answer otherwise.
 
 ### Q2 — <the question, as you would have put it to the client>
 - **What it decides:** <the parts of the piece that rest on the answer>
-- **Decided:** <what you chose> — **because** <the evidence or reason, with its kind: brief, Qloo, research, assumed>
+- **Decided:** <what you chose> — **because** <the evidence or reason, with its kind: brief, document, research, assumed (or Qloo, in a workflow that measures taste)>
 - **If you answer otherwise:** <what would change in the piece, concretely>
 - **Who should answer:** <the client; or the person who can: brand owner, legal, the market's lead, the data's owner>
 

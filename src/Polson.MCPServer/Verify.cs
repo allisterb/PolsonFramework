@@ -82,6 +82,7 @@ public sealed partial class VerifyToolkit
 
         var full = ProjectPath.Resolve(projectRoot, videoPath, "video", "Read");
         if (!File.Exists(full)) throw new FileNotFoundException($"Verify.film: '{videoPath}' is not in the project. Encode it first.", full);
+        var frameSize = FrameSize(videoPath, full);
 
         // A film over the watcher's limit is watched as a smaller copy. becool2's grainy 1080 master was 65 MB, and the agent
         // made a 634 × 356 copy by hand after two refusals (2026-10-25). Strays' frames are still cut from the film itself.
@@ -170,8 +171,16 @@ public sealed partial class VerifyToolkit
         }).ToList();
 
         await Attest(items, stated, t => sources.Wholly(t, computed, scale));
-        return Hold(new FilmCheck(videoPath, comp.Duration, items, strays, answer.Provenance?.Model, answer.Provenance?.Endpoint)
-            { Hash = Hash(full), Ignored = ignored, UnreadableScripts = Scripts, TimeScale = timeScale, Watched = over is null ? null : watched, FilmBytes = over, Limit = limit });
+        var check = Hold(new FilmCheck(videoPath, comp.Duration, items, strays, answer.Provenance?.Model, answer.Provenance?.Endpoint)
+            { Hash = Hash(full), Ignored = ignored, UnreadableScripts = Scripts, TimeScale = timeScale, Watched = over is null ? null : watched, FilmBytes = over, Limit = limit, Size = frameSize });
+        // Measured, so recorded as its own check: the read-back's verdict is about the film's text.
+        if (frameSize is { Width: > 0 } s)
+            record?.Invoke("check", new Dictionary<string, object?>
+            {
+                ["claim"] = SizeClaim(videoPath), ["passed"] = s.Fits, ["by"] = "verify",
+                ["detail"] = $"{s.Width} × {s.Height} px; the brief asks for {string.Join(" or ", s.Asked)}.",
+            });
+        return check;
     }
 
     /// <summary>
@@ -477,6 +486,41 @@ public sealed partial class VerifyToolkit
     internal static string DerivationClaim(string name) => $"{DerivationPrefix}{name}: every step follows from the last";
 
     internal const string DerivationPrefix = "Derivation ";
+
+    /// <summary>The claim a film's size check records: reserved for <c>Verify</c>; <c>Stage.check</c> refuses it.</summary>
+    internal static string SizeClaim(string name) => $"{SizePrefix}{name}: one the brief asks for";
+
+    internal const string SizePrefix = "Delivered size of ";
+
+    /// <summary>
+    /// The film's frame size against the brief's <c>- Sizes:</c>, when it is a deliverable (<c>final*</c>, <c>output*</c>) and
+    /// the brief names any; null otherwise. Read from the encoded file, which is what is delivered.
+    /// </summary>
+    /// <remarks>
+    /// lanternkeeperadk3 (2026-11-15) encoded both trailers at 1280 × 720 to a brief asking for 1920 × 1080, and both
+    /// read-backs passed: they read text, and nothing compared the size, as <c>ExecuteScript</c> does for a still.
+    /// </remarks>
+    private FilmFrameSize? FrameSize(string videoPath, string full)
+    {
+        if (DrawingMcpTools.AskedSizes(videoPath, projectRoot) is not { } asked) return null;
+        var names = DrawingMcpTools.SizeNames(asked);
+        FFmpeg.VideoFormat? format = Path.GetExtension(full).ToLowerInvariant() switch
+        {
+            ".mp4" => FFmpeg.VideoFormat.Mp4,
+            ".webm" => FFmpeg.VideoFormat.WebM,
+            _ => null,
+        };
+        if (format is null) return new(0, 0, names, false, "it is not an .mp4 or .webm");
+        try
+        {
+            var info = FFmpeg.Probe(full, videoPath, format.Value, "Verify.film");
+            return new(info.Width, info.Height, names, asked.Any(a => a.W == info.Width && a.H == info.Height), null);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or TimeoutException or IOException)
+        {
+            return new(0, 0, names, false, ex.Message);
+        }
+    }
 
     /// <summary>The derivation's options: its name, and what <c>Equation.equivalent</c> takes, with a budget for the whole.</summary>
     private static (string Name, EquationCheck.Options Check, int BudgetMs) DerivationOptions(object? options)
@@ -796,6 +840,9 @@ public sealed partial class VerifyToolkit
     #endregion
 }
 
+/// <summary>A film's frame size against the sizes its brief asks for; <c>Error</c> when the file could not be read.</summary>
+public sealed record FilmFrameSize(int Width, int Height, string[] Asked, bool Fits, string? Error);
+
 /// <summary>One reading of something the piece never set, held until the agent has looked at its frame or crop.</summary>
 public sealed class ReadBackStray(int number, string read, double? at, string? frame, string? frameError, string? near, string kind)
 {
@@ -978,7 +1025,10 @@ public sealed class FilmCheck(string video, double duration, Dictionary<string, 
     /// <summary>The watcher's limit, in bytes.</summary>
     public long Limit { get; init; }
 
-    internal override string Note => (TimeScale == 1 ? ""
+    /// <summary>The film's frame size against the brief's sizes; null when it is not a deliverable or the brief names none.</summary>
+    public FilmFrameSize? Size { get; init; }
+
+    internal override string Note => SizeNote + (TimeScale == 1 ? ""
         : $" The watcher's times came back in the wrong unit and were read ×{TimeScale:0.##} to match the film; its seconds are approximate.")
         + (Watched is null ? ""
         : $" Read from {Watched}, a copy at most {VerifyToolkit.WatchHeight} px tall: {Video} is {VerifyToolkit.Megabytes(FilmBytes ?? 0)} MB, "
@@ -991,8 +1041,18 @@ public sealed class FilmCheck(string video, double duration, Dictionary<string, 
         e["duration"] = duration;
         if (TimeScale != 1) e["timeScale"] = TimeScale;
         if (Watched is not null) (e["watched"], e["filmBytes"]) = (Watched, FilmBytes);
+        if (Size is { Error: null } s) (e["size"], e["asked"]) = ($"{s.Width} × {s.Height}", s.Asked);
         return e;
     }
+
+    private string SizeNote => Size switch
+    {
+        null or { Fits: true } => "",
+        { Error: { } why } unread => $" Its size could not be read ({why}), so it was not compared with the brief's {string.Join(" or ", unread.Asked)}.",
+        var s => $" {Video} is {s.Width} × {s.Height} px, and the brief asks for {string.Join(" or ", s.Asked)}: build the composition "
+            + "at a size the brief names (Motion.composition({ width, height, … })) and encode again. Draft small; deliver at size. "
+            + "The size is recorded as a check of its own, apart from this read-back.",
+    };
 
     protected override string MissedNote(Dictionary<string, object?> item) => $"on screen {item["seconds"]:0.#} s";
 }

@@ -379,7 +379,23 @@ public partial class DrawingMcpTools
     /// </remarks>
     internal static (string Warning, string Size, string[] Asked)? OffSize(string outFile, byte[] image, string? projectRoot)
     {
-        var name = Path.GetFileNameWithoutExtension(outFile.Trim());
+        if (AskedSizes(outFile, projectRoot) is not { } asked) return null;
+        using var codec = SkiaSharp.SKCodec.Create(new SkiaSharp.SKMemoryStream(image));
+        if (codec is null) return null;
+        var (w, h) = (codec.Info.Width, codec.Info.Height);
+        if (asked.Any(a => a.W == w && a.H == h)) return null;
+        var names = SizeNames(asked);
+        return ($"{outFile} is {w} × {h} px, and the brief asks for {string.Join(" or ", names)}: render the deliverable at a size "
+            + $"the brief names (pass width and height, or build the paper or canvas at it). Draft small; deliver at size.", $"{w} × {h}", names);
+    }
+
+    /// <summary>
+    /// The pixel sizes the brief's <c>- Sizes:</c> line names, when <paramref name="file"/> is a deliverable (<c>final*</c> or
+    /// <c>output*</c>); null when it is not, or the brief names none.
+    /// </summary>
+    internal static (int W, int H)[]? AskedSizes(string file, string? projectRoot)
+    {
+        var name = Path.GetFileNameWithoutExtension(file.Trim());
         if (!name.StartsWith("final", StringComparison.OrdinalIgnoreCase) && !name.StartsWith("output", StringComparison.OrdinalIgnoreCase))
             return null;
         var brief = projectRoot is null ? null : Path.Combine(projectRoot, "brief.md");
@@ -387,16 +403,10 @@ public partial class DrawingMcpTools
         var line = File.ReadLines(brief).FirstOrDefault(l => l.TrimStart().StartsWith("- Sizes:", StringComparison.OrdinalIgnoreCase));
         if (line is null) return null;
         var asked = BriefSize().Matches(line).Select(m => (W: int.Parse(m.Groups[1].Value), H: int.Parse(m.Groups[2].Value))).ToArray();
-        if (asked.Length == 0) return null;
-
-        using var codec = SkiaSharp.SKCodec.Create(new SkiaSharp.SKMemoryStream(image));
-        if (codec is null) return null;
-        var (w, h) = (codec.Info.Width, codec.Info.Height);
-        if (asked.Any(a => a.W == w && a.H == h)) return null;
-        var names = asked.Select(a => $"{a.W} × {a.H}").ToArray();
-        return ($"{outFile} is {w} × {h} px, and the brief asks for {string.Join(" or ", names)}: render the deliverable at a size "
-            + $"the brief names (pass width and height, or build the paper or canvas at it). Draft small; deliver at size.", $"{w} × {h}", names);
+        return asked.Length == 0 ? null : asked;
     }
+
+    internal static string[] SizeNames((int W, int H)[] sizes) => [.. sizes.Select(a => $"{a.W} × {a.H}")];
 
     [GeneratedRegex(@"(\d{2,5})\s*[×xX]\s*(\d{2,5})")]
     private static partial Regex BriefSize();

@@ -5236,6 +5236,8 @@ for (const s of v.strays) log(`stray ${s.n}: read "${s.read}" at ${s.at} s — l
 
 **Pass the delivered film, whatever its size.** A film over the watcher's 7.5 MB (a grainy 1080 master runs to tens of MB) is read from a copy at most 720 px tall, `artifacts/verify/<name>-watch.mp4`, and `v.summary` says so. Don't make a smaller copy by hand: at 270 px tall one run's small type fell to 7 px and five of eight lines were missed.
 
+**A delivered film is measured against the brief's sizes.** When the film is named `final*` or `output*` and `brief.md` has a `- Sizes:` line, the encoded file's frame size is compared with the sizes it names. A film at none of them is named in `v.summary` (*`artifacts/final_a.mp4 is 1280 × 720 px, and the brief asks for 1920 × 1080`*): build the composition at the brief's size and encode again. Draft small; deliver at size. The size is recorded as a `check` of its own, `Delivered size of <film>: one the brief asks for`, apart from the read-back, whose `passed` is about the text. `Stage.check` refuses that claim too.
+
 **A read-back that read nothing fails**: a piece that set no text, read by a reader that saw none, has been compared with nothing. Pass the canvas or paper the piece was drawn on, after everything is drawn.
 
 **The check records its own verdict.** Each run of it, and each stray settled, records a judged `check` with the claim `Read-back of <film or image>: every text has a source and was read as set` and `v.summary` as its detail. `Stage.check` refuses a claim beginning `Read-back of`. Do not write a verdict for it: a live run dropped its `Verify.image` call and wrote the claim as passed, over a check that had failed.

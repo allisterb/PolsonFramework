@@ -485,6 +485,51 @@ public class VerifyTests : TestsRuntime, IDisposable
         Assert.Contains("Verify.stray('artifacts/final_b.mp4', n, 'misread')", beyond.Message);
     }
 
+    /// <summary>
+    /// A delivered film is measured against the brief's sizes and the result recorded as a check of its own; the read-back's
+    /// verdict stays about its text, and a draft is not measured. lanternkeeperadk3 delivered 1280 × 720 to a 1920 × 1080 brief.
+    /// </summary>
+    [Fact]
+    public async Task TestADeliveredFilmIsMeasuredAgainstTheBriefsSizes()
+    {
+        if (!FFmpeg.Available || !SkiaSharp.SKFontManager.Default.GetFontFamilies().Contains("Arial")) { Info("Skipped: needs ffmpeg and Arial."); return; }
+        File.WriteAllText(Path.Combine(root, "brief.md"), "# Brief\n\n- Sizes: Landscape 320 × 180 px\n");
+        MotionComposition Film(double w, double h)
+        {
+            var comp = new MotionToolkit(root).Composition(new Hashtable { ["width"] = w, ["height"] = h, ["fps"] = 12d, ["duration"] = 2d });
+            comp.Fill(new Hashtable { ["color"] = "#ffffff" });
+            comp.Text(new Hashtable { ["text"] = "BE COOL", ["family"] = "Arial", ["size"] = 30d, ["origin"] = new[] { w / 2, h / 2 } });
+            return comp;
+        }
+        var small = Film(256, 144);
+        small.SaveVideo("artifacts/final_a.mp4");
+        small.SaveVideo("artifacts/draft_a.mp4");
+        var right = Film(320, 180);
+        right.SaveVideo("artifacts/final_b.mp4");
+
+        var events = new List<(string Type, IReadOnlyDictionary<string, object?> Data)>();
+        var watched = new JsonObject { ["items"] = new JsonArray(new JsonObject { ["text"] = "BE COOL", ["from"] = 0, ["to"] = 2 }) }.ToJsonString();
+        using var video = new VideoReader([new NemotronEndpoint(NemotronEndpoint.Nebius, "https://tf.example/v1", "k", NemotronEndpoint.NebiusModel)],
+            new DocumentBudget(5), root, http: new HttpClient(new Answer(watched)));
+        var verify = new VerifyToolkit(video, root, null, (type, data) => events.Add((type, data)));
+        IReadOnlyDictionary<string, object?>? SizeCheck(string film) =>
+            events.LastOrDefault(e => e.Type == "check" && (string?)e.Data["claim"] == VerifyToolkit.SizeClaim(film)).Data;
+
+        var a = await verify.Film(small, "artifacts/final_a.mp4");
+        Assert.True((bool)a["passed"]!, (string)a["summary"]!);             // the text was read as set
+        Assert.Contains("artifacts/final_a.mp4 is 256 × 144 px, and the brief asks for 320 × 180", (string)a["summary"]!);
+        Assert.Equal(false, SizeCheck("artifacts/final_a.mp4")?["passed"]);
+        Assert.Equal("256 × 144", events.Last(e => e.Type == "film.verify").Data["size"]);
+
+        var b = await verify.Film(right, "artifacts/final_b.mp4");
+        Assert.DoesNotContain("the brief asks for", (string)b["summary"]!);
+        Assert.Equal(true, SizeCheck("artifacts/final_b.mp4")?["passed"]);
+
+        var draft = await verify.Film(small, "artifacts/draft_a.mp4");
+        Assert.DoesNotContain("the brief asks for", (string)draft["summary"]!);
+        Assert.Null(SizeCheck("artifacts/draft_a.mp4"));
+    }
+
     /// <summary>A film of three lines and a source line, encoded at 320 × 180 for 3 s, and the reader's answer to it.</summary>
     private async Task<Dictionary<string, object?>> CheckFilm(string name, JsonArray read)
     {

@@ -9,11 +9,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-using Polson.ExtendedMind.DocumentProcessing;
-using Polson.ExtendedMind.ImageGeneration;
-using Polson.ExtendedMind.ParallelSearch;
-using Polson.ExtendedMind.Photos;
-using Polson.ExtendedMind.SpeechGeneration;
 using Polson.Drawing.Mesh;
 using Polson.Drawing.Skia;
 using Polson.Drawing.Svg;
@@ -62,14 +57,14 @@ public sealed record JsReceiver(string Name, Type[] Types, string Area, bool IsI
 /// confused agent months later.
 /// </para>
 /// </remarks>
-public static class JsSurface
+public static partial class JsSurface
 {
     #region Properties
     public static IReadOnlyList<JsReceiver> Receivers { get; } =
     [
         new("console", typeof(JsConsole), "Globals", false),
         new("mina", typeof(Mina), "Globals", false),
-        new("Stage", typeof(StageApi), "Globals", false),
+        .. StudioGlobals,
 
         new("Snap", typeof(Snap), "Snap", false),
         new("Snap.path", typeof(SnapPathApi), "Snap", false),
@@ -101,42 +96,8 @@ public static class JsSurface
         new("bitmap", typeof(SkiaBitmapWrapper), "Skia", true),
         new("imageData", typeof(ImageData), "Skia", true),
 
-        new("Assets", typeof(AssetRequisitionToolkit), "Assets", false),
-        new("material", typeof(MaterialAsset), "Assets", true),
-        new("plate", typeof(BackdropPlate), "Assets", true),
-        new("matte", typeof(MatteAsset), "Assets", true),
-        new("cutout", typeof(CutoutAsset), "Assets", true),
-        new("cell", typeof(CutoutCell), "Assets", true),
-        new("budget", typeof(AssetBudget), "Assets", true),
-        new("spoken", typeof(SpeechAsset), "Assets", true),
-
-        new("Documents", typeof(DocumentProcessor), "Documents", false),
-        new("answer", typeof(DocumentAnswer), "Documents", true),
-        new("entry", typeof(DocumentEntry), "Documents", true),
-        new("evidence", typeof(DocumentEvidence), "Documents", true),
-        new("documentBudget", typeof(DocumentBudget), "Documents", true),
-
-        new("Video", typeof(VideoReader), "Video", false),
-
-        new("Verify", typeof(VerifyToolkit), "Verify", false),
-
-        new("Photo", typeof(PhotoToolkit), "Photo", false),
-        new("photo", typeof(PhotoAsset), "Photo", true),
-        new("subject", typeof(SubjectMatch), "Photo", true),
-        new("licence", typeof(PhotoLicence), "Photo", true),
-        new("photoBudget", typeof(PhotoBudget), "Photo", true),
-
-        // Read-only. Research is commissioned by the Research MCP tool, never from a script.
-        new("Research", typeof(ResearchToolkit), "Research", false),
-        new("task", typeof(ResearchTask), "Research", true),
-        new("basis", typeof(FieldBasis), "Research", true),
-        new("citation", typeof(TaskCitation), "Research", true),
-
-        // Read-only as well. Qloo is asked by the Taste MCP tool, so the agent reads the answer; scripts cite it.
-        new("Taste", typeof(Polson.ExtendedMind.Taste.TasteToolkit), "Taste", false),
-        new("tasteResult", typeof(Polson.ExtendedMind.Taste.TasteResult), "Taste", true),
-        new("tasteBudget", typeof(Polson.ExtendedMind.Taste.QlooBudget), "Taste", true),
-        new("tasteImage", typeof(Polson.ExtendedMind.Taste.TasteImage), "Taste", true),
+        // The studio's cloud surfaces, in JsSymbols.Studio.cs. Polson.Engine has none.
+        .. StudioCloud,
 
         new("Drawing", typeof(ConstructiveDrawingToolkit), "Drawing", false),
         new("Logo", typeof(LogoDesignToolkit), "Logo", false),

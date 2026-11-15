@@ -9,7 +9,7 @@ using Polson.MCPServer;
 using Xunit;
 
 /// <summary>
-/// Executes every runnable example published in <c>docs/Polson.core.md</c>. The SDK reference is the
+/// Executes every runnable example published in <c>docs/Polson.core.md</c> and, served after it, <c>docs/Polson.studio.md</c>. The SDK reference is the
 /// primary — and often the only — view an agent has of the API, so an example that no longer runs is a
 /// functional defect rather than a documentation blemish.
 /// <para>
@@ -63,12 +63,12 @@ public class CoreReferenceExampleTests : TestsRuntime
             var result = engine.Execute(script, 900, 700);
 
             Assert.True(result.Success,
-                $"docs/Polson.core.md:{line} example failed: {result.Error}\n--- script ---\n{script}");
+                $"{Where(line)} example failed: {result.Error}\n--- script ---\n{script}");
 
             // Not every example draws — one declares a stage, one lists fonts, one requisitions and
             // exits — so bytes are asserted only where a surface was actually produced.
             Assert.True(result.ImageBytes is null or { Length: > 0 },
-                $"docs/Polson.core.md:{line} example rendered to zero bytes.");
+                $"{Where(line)} example rendered to zero bytes.");
         }
         finally
         {
@@ -93,6 +93,15 @@ public class CoreReferenceExampleTests : TestsRuntime
     #region Methods
     /// <summary>The reference as the server serves it, placeholders substituted — what an agent reads.</summary>
     private static string Core { get; } = PolsonResources.Docs.Core();
+
+    /// <summary>The line a served example starts on, as a place in its own file: the studio's reference is served after the core's.</summary>
+    private static string Where(int line) => line < StudioStart
+        ? $"docs/Polson.core.md:{line}"
+        : $"docs/Polson.studio.md:{line - StudioStart + 1}";
+
+    private static int StudioStart { get; } = Core.IndexOf("# Polson JavaScript SDK — Studio Reference", StringComparison.Ordinal) is var i and >= 0
+        ? LineOf(Core, i)
+        : int.MaxValue;
 
     private static List<(int Line, string Script)> JavaScriptBlocks(string markdown) =>
         [.. Fence.Matches(markdown)

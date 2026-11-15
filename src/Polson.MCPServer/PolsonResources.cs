@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 
 using ModelContextProtocol.Server;
@@ -15,33 +16,35 @@ public class PolsonResources
     #region Properties
     public static SdkDocSet Docs { get; } = new(
         Label: "Graphics & Drawing",
-        Core: () => ReadEmbedded("Polson.core.md"),
+        // The studio's reference follows the core's where it is embedded, so every slice, index and doc test reads the
+        // two as one document. Polson.Engine embeds only the core, and reads only that.
+        Core: () => ReadEmbedded("Polson.core.md") + (TryReadEmbedded("Polson.studio.md") is { } studio ? "\n" + studio : ""),
         Schema: () => ReadEmbedded("Polson.schema.md"),
         Areas: SdkDocs.PolsonAreas,
         Extras: [],
         CorePreamble: ["Execution model", "Global Functions"],
         SchemaPreamble: ["Execution Envelopes"]);
+
+    private static Assembly Assembly => typeof(PolsonResources).Assembly;
     #endregion
 
     #region Methods
-    public static string ReadEmbedded(string name)
-    {
-        var assembly = typeof(PolsonResources).Assembly;
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"Embedded SDK doc '{name}' was not found in assembly {assembly.FullName}. Available: {string.Join(", ", assembly.GetManifestResourceNames())}");
+    public static string ReadEmbedded(string name) => TryReadEmbedded(name)
+        ?? throw new InvalidOperationException($"Embedded SDK doc '{name}' was not found in assembly {Assembly.FullName}. Available: {string.Join(", ", Assembly.GetManifestResourceNames())}");
 
-        using var stream = assembly.GetManifestResourceStream(resourceName)
+    /// <summary>An embedded SDK doc, or null when this build does not carry it, as <c>Polson.Engine</c> carries no studio reference.</summary>
+    public static string? TryReadEmbedded(string name)
+    {
+        var resourceName = Assembly.GetManifestResourceNames()
+            .FirstOrDefault(n => n.EndsWith(name, StringComparison.OrdinalIgnoreCase));
+        if (resourceName is null) return null;
+
+        using var stream = Assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Failed to open stream for '{resourceName}'");
         using var reader = new StreamReader(stream);
-        var content = reader.ReadToEnd();
 
-        if (name.Contains("Polson.core.md", StringComparison.OrdinalIgnoreCase))
-        {
-            content = content.Replace("{{SCRIPT_TIMEOUT_SECONDS}}", JsDrawingEngine.ScriptTimeoutSeconds.ToString());
-        }
-
-        return content;
+        // The script limit is stated in the core reference and the studio's; a doc without it is unchanged.
+        return reader.ReadToEnd().Replace("{{SCRIPT_TIMEOUT_SECONDS}}", JsDrawingEngine.ScriptTimeoutSeconds.ToString());
     }
 
     public static string Index(SdkDocSet set) =>

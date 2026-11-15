@@ -9,8 +9,8 @@ using Polson.ExtendedMind.Photos;
 
 /// <summary>The studio's half of <see cref="JsDrawingEngine"/>: the cloud surfaces and the run's own globals.</summary>
 /// <remarks>
-/// Kept apart so <c>Polson.Engine</c> can link <c>JsDrawingEngine.cs</c> without ExtendedMind or the run record's
-/// <c>Stage</c>. A build without this file registers none of these globals: <see cref="RegisterStudio"/> has no
+/// Kept apart so <c>Polson.Engine</c> can link <c>JsDrawingEngine.cs</c> without ExtendedMind.
+/// A build without this file registers none of these globals: <see cref="RegisterStudio"/> has no
 /// body there, and its call compiles away.
 /// </remarks>
 public partial class JsDrawingEngine
@@ -60,8 +60,6 @@ public partial class JsDrawingEngine
     #region Methods
     partial void RegisterStudio(Engine engine, SessionContext? session, string? executionId, DrawingExecutionResult result)
     {
-        engine.SetValue("Stage", new StageApi(session, Events, executionId, result, ProjectRoot));
-
         // Cloud asset requisition. Registered even when disabled so scripts can branch on the
         // returned failure rather than on the global being absent.
         var assets = Assets ?? new AssetRequisitionToolkit(null, new RequisitionCache(), new AssetBudget(0), "agent");

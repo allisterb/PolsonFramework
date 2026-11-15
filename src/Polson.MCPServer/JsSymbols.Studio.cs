@@ -6,20 +6,15 @@ using Polson.ExtendedMind.ParallelSearch;
 using Polson.ExtendedMind.Photos;
 using Polson.ExtendedMind.SpeechGeneration;
 
-/// <summary>The studio's receivers: the run record's <c>Stage</c>, and the cloud surfaces.</summary>
+/// <summary>The studio's receivers: the cloud surfaces.</summary>
 /// <remarks>
-/// Spread into <see cref="Receivers"/> where they always stood, so the studio's index reads as it did. Properties
-/// rather than fields: <see cref="Receivers"/> is initialised from them, and field order across partial files is
-/// not defined. <c>Polson.Engine</c> declares both empty.
+/// Spread into <see cref="Receivers"/> where they always stood, so the studio's index reads as it did. A property
+/// rather than a field: <see cref="Receivers"/> is initialised from it, and field order across partial files is
+/// not defined. <c>Polson.Engine</c> declares it empty.
 /// </remarks>
 public static partial class JsSurface
 {
     #region Properties
-    private static JsReceiver[] StudioGlobals =>
-    [
-        new("Stage", typeof(StageApi), "Globals", false),
-    ];
-
     private static JsReceiver[] StudioCloud =>
     [
         new("Assets", typeof(AssetRequisitionToolkit), "Assets", false),

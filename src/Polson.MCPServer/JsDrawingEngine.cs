@@ -349,6 +349,8 @@ public partial class JsDrawingEngine : Runtime
             // nothing behind it that reaches .NET — and `{}` when none were given, so `ARGS.x ?? d` works.
             engine.SetValue("ARGS", new Jint.Native.Json.JsonParser(engine).Parse(argsJson ?? "{}"));
 
+            engine.SetValue("Stage", new StageApi(session, Events, executionId, result, ProjectRoot));
+
             // Pure .NET Console object
             var jsConsole = new JsConsole(result.Logs);
             engine.SetValue("console", jsConsole);

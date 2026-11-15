@@ -68,7 +68,7 @@ public class FaceOnFigureScriptTests : TestsRuntime, IDisposable
               open: shut(0.05), blinkPeak: peak, closedAtBlink: shut(peakT)
             }));
             return comp.render(1.0);
-            """, 400, 640);
+            """, 400, 640, includeBytes: true);
 
         Assert.True(result.Success, result.Error);
         var read = JsonDocument.Parse(result.Logs.Single(l => l.StartsWith("[LOG] {"))["[LOG] ".Length..]).RootElement;

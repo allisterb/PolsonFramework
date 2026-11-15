@@ -97,10 +97,13 @@ public static class PdfBook
             drawn.Add(c => RenderContents(c, title, [.. entries.Select(e => (e.Title!, e.Number))], cover ? 2 : 1, total, look));
         }
         var number = first - 1;
-        foreach (var (page, lines, continued, overflow) in layouts)
+        for (var i = 0; i < layouts.Count; i++)
         {
+            var (page, lines, continued, overflow) = layouts[i];
             var n = ++number;
-            drawn.Add(c => Render(c, title, page, lines, continued, overflow, n, total, look));
+            // Only a page's own continuation is an overflow, so the next part being one means this part's text goes on.
+            var continues = i + 1 < layouts.Count && layouts[i + 1].Overflow;
+            drawn.Add(c => Render(c, title, page, lines, continued, overflow, continues, n, total, look));
         }
         if (close) drawn.Add(c => RenderClose(c, title, style.Close!, style.Cover?.Studio, total, look));
 
@@ -286,7 +289,12 @@ public static class PdfBook
         canvas.DrawLine(Margin, HeaderY + 9, Width - Margin, HeaderY + 9, rule);
     }
 
-    private static void Render(SKCanvas canvas, string book, Page page, List<Line> lines, bool continued, bool overflow, int number, int total, Look look)
+    /// <remarks>
+    /// A page whose text goes on says so at its foot. lanternkeepermotion1 (2026-11-14) proofed a story page that ended
+    /// "…arrives in amber and / cools to", took the treatment for cut off, and never opened the page it continued on.
+    /// </remarks>
+    private static void Render(SKCanvas canvas, string book, Page page, List<Line> lines, bool continued, bool overflow, bool continues,
+        int number, int total, Look look)
     {
         canvas.Clear(Look.Ground);
         using var ink = new SKPaint { Color = Look.Ink, IsAntialias = true };
@@ -322,6 +330,12 @@ public static class PdfBook
             if (line.Text.Length == 0) continue;
             using var font = new SKFont(line.Strong ? look.Bold : look.Regular, line.Size);
             Text(canvas, line.Text, x + line.Indent, y - line.Size * 0.3f, SKTextAlign.Left, font, ink);
+        }
+
+        if (continues)
+        {
+            using var small = new SKFont(look.Regular, 10);
+            Text(canvas, $"continued on page {number + 1} →", Width - Margin, Height - Margin / 2, SKTextAlign.Right, small, muted);
         }
     }
 

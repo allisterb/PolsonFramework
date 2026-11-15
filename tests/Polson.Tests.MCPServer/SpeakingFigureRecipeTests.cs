@@ -88,7 +88,7 @@ public class SpeakingFigureRecipeTests : TestsRuntime, IDisposable
             return comp.render(at(LINES[1].phonemes.find(p => p.mouth === 'MBP')));
             """;
 
-        var result = await new DrawingMcpTools(null, null, null, root).ExecuteScript(script, 240, 320);
+        var result = await new DrawingMcpTools(null, null, null, root).ExecuteScript(script, 240, 320, includeBytes: true);
 
         Assert.True(result.Success, result.Error + "\n--- script ---\n" + script);
         var read = JsonDocument.Parse(result.Logs.Single(l => l.StartsWith("[LOG] {")).Substring("[LOG] ".Length)).RootElement;

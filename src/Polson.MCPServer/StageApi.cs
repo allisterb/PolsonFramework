@@ -247,6 +247,11 @@ public sealed class StageApi
             if (overflows[i] > MaxOverflow)
                 warnings.Add($"'{pages[i].Title ?? $"page {i + 1}"}' runs on for {overflows[i] + 1} pages: a book page is read at a glance. "
                     + "Write its substance as a page of text — the decisions and their evidence — rather than passing the whole file.");
+            // Beside an image the text has half the page, so a page of prose runs over, and its proof looks cut off:
+            // lanternkeepermotion1 read its story page alone and took the treatment for truncated.
+            else if (overflows[i] > 0 && pages[i].Image is not null)
+                warnings.Add($"'{pages[i].Title ?? $"page {i + 1}"}' has more text than fits beside its image, so it continues on the "
+                    + "next page: proof both, or give the image a page of its own.");
         foreach (var w in warnings) result?.Logs.Add("[WARN] Stage.book: " + w);
         var output = ProjectPath.Resolve(projectRoot, filePath, nameof(filePath), "Write to");
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);

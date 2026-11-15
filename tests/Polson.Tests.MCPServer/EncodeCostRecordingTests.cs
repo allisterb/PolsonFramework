@@ -133,6 +133,26 @@ public class EncodeCostRecordingTests : TestsRuntime, IDisposable
         Assert.True(File.Exists(Path.Combine(root, "quiet.webp")));
         Assert.True(result.ImageSize > 0);
     }
+
+    /// <summary>Without outFile the render is not inlined either, and the log says how to see it.</summary>
+    /// <remarks>
+    /// lanternkeeperadk2: a script that saved its own boards and left a canvas as its value got ~123,000 characters of
+    /// base64 back on each of nine calls, and the run died past the model's context window.
+    /// </remarks>
+    [Fact]
+    public async Task TestNoOutFileDoesNotInlineBytesAndSaysSo()
+    {
+        var result = await Tools().ExecuteScript(script: Scene, width: 1200, height: 760);
+
+        Assert.True(result.Success, result.Error);
+        Assert.Null(result.ImageBytes);
+        Assert.True(result.ImageSize > 0);
+        Assert.Empty(OfType("script.bytesInlined"));
+        Assert.Contains(result.Logs, l => l.StartsWith("[INFO] The render") && l.Contains("outFile") && l.Contains("render: false"));
+
+        // Asked for explicitly, and declined explicitly, it says nothing.
+        Assert.DoesNotContain((await Tools().ExecuteScript(script: Scene, includeBytes: false)).Logs, l => l.StartsWith("[INFO] The render"));
+    }
     #endregion
 
     #region Render Opt-Out Tests

@@ -126,9 +126,10 @@ public class DocumentReachabilityTests : TestsRuntime
     [Fact]
     public void TestALargeDocumentListsItsSectionsAndReturnsOne()
     {
-        var whole = Tools().ReadDoc("polson://sdk/core/Motion");
-        var sections = whole["sections"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
-        Assert.Contains(sections, s => s.Contains("Motion.timeline()", StringComparison.Ordinal));
+        var large = PolsonResources.KnownUris().First(u => PolsonResources.Read(u)!.Length is > 20_000 and <= DrawingMcpTools.MaxReturnedChars);
+        var whole = Tools().ReadDoc(large);
+        Assert.NotNull(whole["text"]);
+        Assert.NotEmpty(whole["sections"]!.AsArray());
 
         var part = Tools().ReadDoc("polson://sdk/core/Motion", section: "motion.timeline()");
         Assert.True(part["found"]!.GetValue<bool>());
@@ -136,7 +137,67 @@ public class DocumentReachabilityTests : TestsRuntime
         Assert.StartsWith("## The Score", text, StringComparison.Ordinal);
         Assert.Contains("tl.seek", text, StringComparison.Ordinal);
         Assert.DoesNotContain("## The Model", text, StringComparison.Ordinal);   // stops at the next heading of its level
-        Assert.True(text.Length < whole["length"]!.GetValue<int>() / 3);
+    }
+
+    /// <summary>
+    /// Too large to return, a document returns only its outline. Claude Code refused the 162,530-character Motion
+    /// reference in lanternkeepermotion1 and showed the agent none of the result, so the sections listed beside the text
+    /// never reached it and it guessed section names.
+    /// </summary>
+    [Fact]
+    public void TestATooLargeDocumentReturnsItsOutline()
+    {
+        var whole = Tools().ReadDoc("polson://sdk/core/Motion");
+        Assert.True(whole["found"]!.GetValue<bool>());
+        Assert.False(whole["returned"]!.GetValue<bool>());
+        Assert.Null(whole["text"]);
+        Assert.True(whole["length"]!.GetValue<int>() > DrawingMcpTools.MaxReturnedChars);
+
+        var sections = whole["sections"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
+        var timeline = sections.First(s => s.Contains("Motion.timeline()", StringComparison.Ordinal));
+        Assert.Matches(@" · [\d,]+ chars$", timeline);
+
+        // The outline line pasted back whole reads that section.
+        var part = Tools().ReadDoc("polson://sdk/core/Motion", section: timeline);
+        Assert.True(part["found"]!.GetValue<bool>());
+        Assert.StartsWith("## The Score", part["text"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    /// <summary>Every published document comes back as text or an outline small enough to return.</summary>
+    [Fact]
+    public void TestNoReadReturnsMoreThanTheLimit()
+    {
+        foreach (var uri in PolsonResources.KnownUris())
+        {
+            var result = Tools().ReadDoc(uri).ToJsonString();
+            Assert.True(result.Length < 2 * DrawingMcpTools.MaxReturnedChars, $"{uri}: {result.Length:N0} characters returned");
+        }
+    }
+
+    /// <summary>The symbol index has no headings to outline, so it lists its receivers, each a slice that can be read.</summary>
+    [Fact]
+    public void TestTheSymbolIndexListsItsReceivers()
+    {
+        var whole = Tools().ReadDoc("polson://sdk/symbols");
+        Assert.False(whole["returned"]!.GetValue<bool>());
+        var receivers = whole["receivers"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
+        Assert.Contains(receivers, r => r.StartsWith("polson://sdk/symbols/ctx · ", StringComparison.Ordinal));
+
+        var ctx = Tools().ReadDoc("polson://sdk/symbols/ctx");
+        Assert.True(ctx["found"]!.GetValue<bool>());
+        Assert.Contains("fillText", ctx["text"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TestReadingTheWholeMotionReferenceBySectionStaysUnderTheLimit()
+    {
+        var whole = Tools().ReadDoc("polson://sdk/core/Motion");
+        foreach (var line in whole["sections"]!.AsArray().Select(n => n!.GetValue<string>()))
+        {
+            var part = Tools().ReadDoc("polson://sdk/core/Motion", section: line);
+            Assert.True(part["found"]!.GetValue<bool>(), line);
+            Assert.True(part.ToJsonString().Length < 2 * DrawingMcpTools.MaxReturnedChars, line);
+        }
     }
 
     [Fact]

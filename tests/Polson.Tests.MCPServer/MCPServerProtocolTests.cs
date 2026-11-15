@@ -68,7 +68,8 @@ public class MCPServerProtocolTests : TestsRuntime, IAsyncLifetime
         {
             ["script"] = script,
             ["width"] = 300,
-            ["height"] = 300
+            ["height"] = 300,
+            ["includeBytes"] = true
         });
 
         Assert.True(r.IsError != true, $"CallToolAsync failed: {Text(r)}");
@@ -214,7 +215,8 @@ public class MCPServerProtocolTests : TestsRuntime, IAsyncLifetime
         // 2. Second execution on the SAME session reads from Session dictionary
         var r = await client.CallToolAsync("ExecuteScript", new Dictionary<string, object?>
         {
-            ["script"] = "var s = Snap(200, 200); s.circle(100, 100, Session['radius']).attr('fill', Session['color']); log('radius=' + Session['radius']); s;"
+            ["script"] = "var s = Snap(200, 200); s.circle(100, 100, Session['radius']).attr('fill', Session['color']); log('radius=' + Session['radius']); s;",
+            ["includeBytes"] = true
         });
         Assert.True(r.IsError != true, $"Read failed: {Text(r)}");
         var text = Text(r);

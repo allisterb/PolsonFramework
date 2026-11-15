@@ -64,6 +64,30 @@ public class VerifyTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// A text of two lines read as two readings is seen whole, with no stray. lanternkeepermotion1 (2026-11-14): the first
+    /// line's reading paired with the whole text, and every second line came back as text the film never set.
+    /// </summary>
+    [Fact]
+    public void TestEachLineOfATwoLineTextReadApartIsThatText()
+    {
+        var shown = new[] { Shown("Na noite em que a vila\nfica às escuras,", 2.6, 6.0), Shown("O FAROLEIRO", 11.5, 15) };
+        var outcome = FilmReadBack.Match(shown, [Read("Na noite em que a vila", 3), Read("fica às escuras,", 3.2), Read("O FAROLEIRO", 12)]);
+
+        Assert.Equal("Na noite em que a vila\nfica às escuras,", outcome.Seen[0]?.Text);
+        Assert.Empty(outcome.Strays);
+
+        // Read second line first, the reading still runs in the order the lines were set.
+        var reversed = FilmReadBack.Match(shown, [Read("fica às escuras,", 3), Read("Na noite em que a vila", 3.2)]);
+        Assert.Equal("Na noite em que a vila\nfica às escuras,", reversed.Seen[0]?.Text);
+        Assert.Empty(reversed.Strays);
+
+        // A line the film did not set is still a stray, beside a text of two lines or not.
+        var ghost = FilmReadBack.Match(shown, [Read("Na noite em que a vila", 3), Read("fica às escuras,", 3.2), Read("Um farol apagado", 4)]);
+        Assert.Single(ghost.Strays);
+        Assert.Equal("Um farol apagado", ghost.Strays[0].Reading.Text);
+    }
+
+    /// <summary>
     /// Lines in other scripts are seen as set, read back the way Nemotron read them in the language probe (2026-10-27):
     /// Hindi without the nukta (बाज़ार as बाजार, an accepted spelling), Chinese with ASCII brackets for full-width ones,
     /// Japanese and Korean exactly. The figure in each still has to be the one set.

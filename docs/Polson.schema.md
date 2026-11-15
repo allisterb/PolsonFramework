@@ -33,7 +33,7 @@ The result envelope produced by executing a JavaScript drawing script:
     "imageBytes": {
       "type": ["array", "null"],
       "items": { "type": "integer", "minimum": 0, "maximum": 255 },
-      "description": "Rendered image byte stream (encoded as WebP, PNG, or JPEG; default: WebP Q=85). Omitted when saved to disk via outFile unless includeBytes is true."
+      "description": "Rendered image byte stream (encoded as WebP, PNG, or JPEG; default: WebP Q=85). Omitted unless includeBytes is true."
     },
     "imageFilePath": {
       "type": ["string", "null"],

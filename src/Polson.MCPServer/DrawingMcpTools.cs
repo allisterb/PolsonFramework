@@ -658,6 +658,14 @@ public partial class DrawingMcpTools
     /// <summary>Above this a document lists its sections, so a host that cannot take it whole can ask for parts.</summary>
     private const int LargeDocChars = 20_000;
 
+    /// <summary>
+    /// Above this a document or section is not returned at all, only its outline. Claude Code refuses an MCP result over
+    /// 25,000 tokens and saves it to a file, showing the agent none of it — the sections listed beside the text included —
+    /// so lanternkeepermotion1 got nothing back from the 162,530-character Motion reference and guessed section names.
+    /// The JSON escaping roughly doubles some characters, so this leaves room under that limit.
+    /// </summary>
+    internal const int MaxReturnedChars = 60_000;
+
     /// <summary>Every Markdown heading outside a code fence, with its level and where it starts.</summary>
     private static List<(int Level, string Title, int Offset)> DocHeadings(string body)
     {
@@ -682,6 +690,58 @@ public partial class DrawingMcpTools
     private static JsonArray SectionList(List<(int Level, string Title, int Offset)> headings) =>
         [.. headings.Select(h => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(new string('#', h.Level) + " " + h.Title)!)];
 
+    /// <summary>A dropped render smaller than this goes unmentioned: a probe's blank canvas is not a picture anyone missed.</summary>
+    private const int NotInlinedNoteBytes = 4096;
+
+    /// <summary>The log line for a render that was made but not returned, or null when none is owed.</summary>
+    /// <remarks>
+    /// Inlining used to be the default whenever <c>outFile</c> was omitted, and an agent whose script saves its own
+    /// files that way and leaves a canvas as its value got the canvas back as base64 text on every call. In
+    /// lanternkeeperadk2 (2026-11-15) that was ~123,000 characters a run, nine runs, and the context passed Gemini's
+    /// 1,048,576-token window with one of two films made. A model cannot see an image in base64 text, so the
+    /// default bought nothing; it now takes <c>includeBytes: true</c>.
+    /// </remarks>
+    private static string? NotInlined(DrawingExecutionResult result, string? outFile, bool? includeBytes, bool script = true) =>
+        result.ImageSize >= NotInlinedNoteBytes && includeBytes is null && string.IsNullOrWhiteSpace(outFile)
+            ? $"[INFO] The render ({result.ImageSize:N0} bytes) was not returned: give outFile to save it and look at the file"
+              + (script ? ", or render: false if this script draws nothing you need to see." : ".")
+            : null;
+
+    /// <summary>Where a heading's section ends: the next heading at its level or above, or the end of the body.</summary>
+    private static int SectionEnd(List<(int Level, string Title, int Offset)> headings, int index, int bodyLength) =>
+        headings.Skip(index + 1).FirstOrDefault(h => h.Level <= headings[index].Level) is { Title: not null } next ? next.Offset : bodyLength;
+
+    /// <summary>
+    /// The headings from <paramref name="from"/> up to <paramref name="to"/>, each with its section's size — the deepest
+    /// level dropped until the list itself fits comfortably in a result, since the whole reference has thousands.
+    /// </summary>
+    private static JsonArray Outline(List<(int Level, string Title, int Offset)> headings, int bodyLength, int from, int to)
+    {
+        var lines = headings.Select((h, i) => (h.Level, Line: $"{new string('#', h.Level)} {h.Title} · {SectionEnd(headings, i, bodyLength) - h.Offset:N0} chars", h.Offset))
+            .Where(x => x.Offset >= from && x.Offset < to).ToList();
+        while (lines.Count > 0 && lines.Sum(x => x.Line.Length) > MaxReturnedChars / 2 && lines.Max(x => x.Level) > lines.Min(x => x.Level))
+        {
+            var deepest = lines.Max(x => x.Level);
+            lines = [.. lines.Where(x => x.Level < deepest)];
+        }
+        return [.. lines.Select(x => (JsonNode)System.Text.Json.Nodes.JsonValue.Create(x.Line)!)];
+    }
+
+    /// <summary>The reply for text too large to return: its outline, and how to read it a part at a time.</summary>
+    private static JsonObject TooLarge(string uri, string? section, int length, JsonArray outline) => new()
+    {
+        ["uri"] = uri,
+        ["found"] = true,
+        ["section"] = section,
+        ["length"] = length,
+        ["returned"] = false,
+        ["sections"] = outline,
+        ["hint"] = $"{length:N0} characters is more than one result can carry (Claude Code refuses it and saves it where "
+            + $"you cannot see it), so only the outline is returned. Call ReadDoc('{uri}', section) with one of `sections` "
+            + "— its heading text, without the #s or the size — choosing one under "
+            + $"{MaxReturnedChars:N0} characters; a larger one returns its own outline in turn."
+    };
+
     [McpServerTool(Name = "ReadDoc")]
     [Description("Reads a studio document IN FULL by its `polson://` URI and returns the text — the SDK method " +
         "reference (polson://sdk/core/{Area}), the schemas (polson://sdk/schema/{Area}), the symbol index " +
@@ -689,8 +749,9 @@ public partial class DrawingMcpTools
         "hands you a `uri` and you need the parameters, not the summary: Search returns excerpts and signatures, " +
         "this returns the whole document. Bare forms work too — '13', 'manual/13', 'sdk/core/Chart'. An unknown " +
         "URI lists what is actually published rather than returning nothing. A large document also lists its " +
-        "`sections`; pass `section` (a heading, or part of one) to read just that part, which is the way to read " +
-        "a document too big for your host to return whole.")]
+        "`sections`; pass `section` (a heading, or part of one) to read just that part. One over 60,000 characters " +
+        "— the Motion reference is 160,000 — returns only its outline, each heading with its size, and you read it " +
+        "a section at a time.")]
     public JsonObject ReadDoc(
         [Description("The document URI, e.g. 'polson://sdk/core/Chart' or 'polson://manual/13'.")] string uri,
         [Description("Optional. A heading, or part of one, e.g. 'Motion.save' or 'A Character Beat'. Returns that " +
@@ -703,7 +764,11 @@ public partial class DrawingMcpTools
         if (body is not null && !string.IsNullOrWhiteSpace(section))
         {
             var headings = DocHeadings(body);
-            var match = headings.FirstOrDefault(h => h.Title.Contains(section.Trim(), StringComparison.OrdinalIgnoreCase));
+            // An outline line pasted back whole — "### Layers · 23,529 chars" — is the heading it names.
+            var wanted = System.Text.RegularExpressions.Regex.Replace(section.Trim().TrimStart('#').Trim(), @"\s*·\s*[\d,]+ chars$", "");
+            var index = headings.FindIndex(h => h.Title.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) index = headings.FindIndex(h => h.Title.Contains(wanted, StringComparison.OrdinalIgnoreCase));
+            var match = index < 0 ? default : headings[index];
             if (match.Title is null)
             {
                 return new JsonObject
@@ -716,8 +781,13 @@ public partial class DrawingMcpTools
                 };
             }
 
-            var end = headings.FirstOrDefault(h => h.Offset > match.Offset && h.Level <= match.Level).Offset;
-            var text = body[match.Offset..(end > match.Offset ? end : body.Length)].TrimEnd();
+            var end = SectionEnd(headings, index, body.Length);
+            var text = body[match.Offset..end].TrimEnd();
+            // A section with no headings inside it has no smaller part to offer, so it comes back whole.
+            if (text.Length > MaxReturnedChars && Outline(headings, body.Length, match.Offset + 1, end) is { Count: > 0 } parts)
+            {
+                return TooLarge(uri, match.Title, text.Length, parts);
+            }
 
             Events.Append("doc.read", fields: new Dictionary<string, object?>
             {
@@ -734,6 +804,47 @@ public partial class DrawingMcpTools
                 ["section"] = match.Title,
                 ["length"] = text.Length,
                 ["text"] = text
+            };
+        }
+
+        if (body is { Length: > MaxReturnedChars } && Outline(DocHeadings(body), body.Length, 0, body.Length) is { Count: > 0 } outline)
+        {
+            Events.Append("doc.read", fields: new Dictionary<string, object?>
+            {
+                ["uri"] = uri,
+                ["via"] = nameof(ReadDoc),
+                ["outline"] = true,
+                ["chars"] = body.Length
+            });
+            return TooLarge(uri, null, body.Length, outline);
+        }
+
+        // Too large with no headings to offer: the symbol index (723,340 characters of JSON) is read a receiver at a time.
+        if (body is { Length: > MaxReturnedChars })
+        {
+            if (uri.Trim().TrimEnd('/').EndsWith("sdk/symbols", StringComparison.OrdinalIgnoreCase))
+            {
+                return new JsonObject
+                {
+                    ["uri"] = uri,
+                    ["found"] = true,
+                    ["length"] = body.Length,
+                    ["returned"] = false,
+                    ["receivers"] = new JsonArray([.. JsSymbolManifest.Symbols.GroupBy(s => s.Receiver, StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(g => g.Key, StringComparer.Ordinal)
+                        .Select(g => (JsonNode)System.Text.Json.Nodes.JsonValue.Create($"polson://sdk/symbols/{g.Key} · {g.Count()} symbols")!)]),
+                    ["hint"] = $"The whole index is {body.Length:N0} characters, more than one result can carry. ReadDoc one receiver's "
+                        + "slice from `receivers` — 'polson://sdk/symbols/ctx' — which lists everything callable on it."
+                };
+            }
+            return new JsonObject
+            {
+                ["uri"] = uri,
+                ["found"] = true,
+                ["length"] = body.Length,
+                ["truncated"] = true,
+                ["hint"] = $"Only the first {MaxReturnedChars:N0} of {body.Length:N0} characters: the rest is more than one result can carry.",
+                ["text"] = body[..MaxReturnedChars]
             };
         }
 
@@ -797,7 +908,7 @@ public partial class DrawingMcpTools
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
         [Description("Optional file path where the rendered image should be saved, relative to the project directory (e.g. 'artifacts/stage1.webp'). Paths outside the project are refused.")] string? outFile = null,
         [Description("Optional file path where the rendered SVG XML should be saved, relative to the project directory (e.g. 'artifacts/stage1.svg'). Paths outside the project are refused.")] string? outSvg = null,
-        [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default: true if outFile is omitted, false if outFile is specified). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null,
+        [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default false: without outFile the render is made and not returned, and the log says so). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null,
         [Description("Set false for a script that draws nothing you need to look at — a measurement or probe pass that samples pixels, diffs against an earlier stage, or stashes a canvas in Session for the next call. A canvas is otherwise rasterised and encoded whenever the script created one, even when the script returns something else, which costs roughly 150 ms at 1600x1200 for an image nothing reads. Refused together with outFile, which asks for the render this suppresses.")] bool? render = null,
         [Description("Optional path to a JavaScript file to execute INSTEAD of `script`, relative to the project directory (e.g. 'artwork.js'). Use this when iterating on a file you maintain: edit the file with your ordinary editor, then run it — rather than re-sending the whole program on every call. Paths outside the project are refused. Give either `script` or `scriptFile`, never both.")] string? scriptFile = null,
         [Description("Optional path for a PRINT PDF of the returned paper, relative to the project directory (e.g. 'artifacts/poster.pdf'). Vector: text stays text with its fonts embedded. Needs `pdfSize`, and the script must RETURN a Snap paper — a canvas is refused. The paper is the trimmed page; draw backgrounds and anything touching an edge past the paper's edges by the bleed, or the response warns that the artwork stops at the trim. RGB, not CMYK or PDF/X. See polson://manual/14.")] string? outPdf = null,
@@ -1142,9 +1253,9 @@ public partial class DrawingMcpTools
             result.ExecutionId = executionId;
 
             result.ImageSize = result.ImageBytes?.Length ?? 0;
-            var shouldIncludeBytes = includeBytes ?? string.IsNullOrWhiteSpace(outFile);
-            if (!shouldIncludeBytes)
+            if (includeBytes != true)
             {
+                if (NotInlined(result, outFile, includeBytes) is { } note) result.Logs.Add(note);
                 result.ImageBytes = null;
             }
             else if (result.ImageSize > 0)
@@ -2000,7 +2111,7 @@ public partial class DrawingMcpTools
         [Description("Output image encoding format ('webp', 'png', 'jpeg'). Defaults to the one outFile's extension names, else 'webp'; a format that contradicts outFile's extension is refused.")] string? format = null,
         [Description("Image encoding quality (1-100; default 85).")] int? quality = null,
         [Description("Optional file path where the rendered image should be saved, relative to the project directory. Paths outside the project are refused.")] string? outFile = null,
-        [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default: true if outFile is omitted, false if outFile is specified). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null)
+        [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default false: without outFile the render is made and not returned, and the log says so). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null)
     => Recorded(nameof(RenderSvg), () =>
     {
         // Exactly one source. Accepting both and picking one would silently render markup the caller
@@ -2051,9 +2162,9 @@ public partial class DrawingMcpTools
             }
 
             result.ImageSize = result.ImageBytes?.Length ?? 0;
-            var shouldIncludeBytes = includeBytes ?? string.IsNullOrWhiteSpace(outFile);
-            if (!shouldIncludeBytes)
+            if (includeBytes != true)
             {
+                if (NotInlined(result, outFile, includeBytes, script: false) is { } note) result.Logs.Add(note);
                 result.ImageBytes = null;
             }
             else if (result.ImageSize > 0)

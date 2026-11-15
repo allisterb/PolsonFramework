@@ -66,6 +66,11 @@ MAX_OPTIONS = 6
 #: A question is a sentence and an option is a phrase. Both reach a browser, and both are clipped
 #: rather than refused — a question that arrives truncated is still answerable, and one refused for
 #: length costs the agent a turn to discover why.
+#:
+#: **Clipped at a word, marked with "…", and an option is clipped only on the page.** It used to be
+#: cut mid-word and silently, and the cut text was what a click sent back, so the agent's own answer
+#: returned to it as "…animate the blackou" (lanternkeeperadk1, 2026-11-14). A click now returns the
+#: option as the agent wrote it.
 MAX_QUESTION = 500
 MAX_OPTION = 120
 
@@ -158,20 +163,23 @@ def make_tool(project_dir: str | Path):
                 in measurements. They can see the renders and the notes, not your reasoning.
             options: The answers you would accept, best first — for example
                 `["Warm and editorial", "Cool and technical"]`. Pass an empty list `[]` for an open
-                question. At most 6; longer lists are clipped.
+                question. At most 6; longer lists are clipped. Each is a short phrase: the page shows
+                120 characters of one and cuts the rest, though a click returns your whole option.
 
         Returns:
             A dict with `answered`, and `answer` carrying what the director said or clicked. When
             `answered` is False, `answer` says why — nobody was there, or they asked you to decide —
             and you should choose, say in a `Stage.note` which you chose and why, and carry on.
         """
-        asked = (question or "").strip()[:MAX_QUESTION]
+        asked = _clip((question or "").strip(), MAX_QUESTION)
         if not asked:
             return {"answered": False, "answer": "No question was asked, so nothing was put to the "
                                                  "director. Call this with a question, or decide."}
 
-        choices = [str(o).strip()[:MAX_OPTION] for o in (options or []) if str(o).strip()]
-        choices = choices[:MAX_OPTIONS]
+        offered = [str(o).strip() for o in (options or []) if str(o).strip()][:MAX_OPTIONS]
+        # What the page shows → what the agent wrote, so a click on a clipped option is returned whole.
+        meant = {_clip(o, MAX_OPTION): o for o in offered}
+        choices = list(meant)
 
         with _lock:
             open_now = [q for q, f in _pending.get(project, {}).items() if not f.done()]
@@ -228,7 +236,8 @@ def make_tool(project_dir: str | Path):
         # A click and a typed reply can both arrive: the page submits the text field alongside the
         # option button. Both are given, in that order, rather than one being dropped — the typed
         # line is usually a qualification of the click rather than an alternative to it.
-        said = " ".join(part for part in (", ".join(answer["selected"]), answer["text"]) if part)
+        selected = [meant.get(s, s) for s in answer["selected"]]
+        said = " ".join(part for part in (", ".join(selected), answer["text"]) if part)
         _write(log, timestamp, "answer", id=question_id, text=said)
         return {"answered": True, "waitedSeconds": round(waited, 1), "answer": said}
 
@@ -237,6 +246,17 @@ def make_tool(project_dir: str | Path):
 
 
 # region Implementation
+def _clip(text: str, limit: int) -> str:
+    """`text` in at most `limit` characters: cut at the last word that fits and marked with "…"."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit - 1]
+    # A word boundary only if one is reasonably near the end; a single long token is cut where it is.
+    if (space := head.rfind(" ")) >= limit // 2:
+        head = head[:space]
+    return head.rstrip(" ,;:—-") + "…"
+
+
 def _settle(future: asyncio.Future, answer: dict[str, Any]) -> None:
     if not future.done():
         future.set_result(answer)

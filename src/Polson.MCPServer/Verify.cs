@@ -1136,6 +1136,32 @@ internal static class FilmReadBack
             if (k >= 0) { used[k] = true; seen[i] = read[k]; }
         }
 
+        // A reading of one line of a text of several is that text, not a stray. A reading of the first line is near enough
+        // the whole to pair with it above, which left the second line's reading over: lanternkeepermotion1 (2026-11-14) set
+        // each two-line caption as one text, and every second line came back as text the film never set.
+        for (var k = 0; k < read.Count; k++)
+        {
+            if (used[k]) continue;
+            var figures = MatchFigures(read[k].Text);
+            var i = Enumerable.Range(0, shown.Count).FirstOrDefault(i => seen[i] is not null && shown[i].Text.Contains('\n')
+                && InTime(shown[i], read[k]) && shown[i].Text.Split('\n').Any(l => Normal(l).Length > 0
+                    && Similarity(l, read[k].Text) >= 0.6 && figures.SequenceEqual(MatchFigures(l))), -1);
+            if (i < 0) continue;
+            used[k] = true;
+            var had = seen[i]!;
+            if (Similarity(read[k].Text, had.Text) < 0.95 && !Normal(had.Text).Contains(Normal(read[k].Text), StringComparison.Ordinal))
+            {
+                // Kept in the order the lines were set, so the reading reads as the text does.
+                var lines = shown[i].Text.Split('\n');
+                int Line(string t) => Array.FindIndex(lines, l => Similarity(l, t) >= 0.6) is var n and >= 0 ? n : int.MaxValue;
+                var text = Line(read[k].Text) < Line(had.Text.Split('\n')[0]) ? read[k].Text + "\n" + had.Text : had.Text + "\n" + read[k].Text;
+                seen[i] = had with { Text = text, From = Min(had.From, read[k].From), To = Max(had.To, read[k].To) };
+            }
+        }
+
+        static double? Min(double? a, double? b) => a is null ? b : b is null ? a : Math.Min(a.Value, b.Value);
+        static double? Max(double? a, double? b) => a is null ? b : b is null ? a : Math.Max(a.Value, b.Value);
+
         var strays = read.Select((r, k) => (r, k)).Where(x => !used[x.k]).Select(x =>
         {
             var near = shown.Where(s => s.From is not null && InTime(s, x.r)).Select(s => (s, score: Words(s.Text, x.r.Text)))

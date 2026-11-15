@@ -266,7 +266,7 @@ public static partial class MindMap
         for (var i = 0; i < centre.Lines.Length; i++)
             ctx.FillText(centre.Lines[i], cx, cy + (i - (centre.Lines.Length - 1) / 2f) * lead);
 
-        if (legend) Legend(ctx, x + 4, y + height - 10, family, root.Descendants.Any(n => n.Verified == false));
+        if (legend) Legend(ctx, x + 4, y + height - 10, family, [.. root.Descendants.Select(n => (n.Kind, n.Verified))]);
         ctx.Restore();
         return size;
     }
@@ -322,22 +322,46 @@ public static partial class MindMap
     private static (float Width, float Height) PillSize(CanvasRenderingContext2D ctx, string text, float maxWidth, float size, string family, bool bold)
     {
         ctx.Font = $"{(bold ? "bold " : "")}{size}px {family}";
-        return (Width(ctx, Fit(ctx, text, maxWidth - 16)) + 16, size + 10);
+        var lines = PillLines(ctx, text, maxWidth - 16);
+        return (lines.Max(l => Width(ctx, l)) + 16, PillHeight(lines.Length, size));
     }
+
+    /// <summary>
+    /// A pill's name on one line, or broken onto two between words when one line would be cut; cut only past that.
+    /// lanternkeepermotion1 (2026-11-14) drew "Coastal unease" as "Coastal u…" in a pill that had room for two lines.
+    /// </summary>
+    private static string[] PillLines(CanvasRenderingContext2D ctx, string text, float width)
+    {
+        if (Width(ctx, text) <= width) return [text];
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        // The break that leaves the longer line shortest, so the two lines balance.
+        var split = Enumerable.Range(1, Math.Max(0, words.Length - 1))
+            .Select(k => (First: string.Join(' ', words[..k]), Second: string.Join(' ', words[k..])))
+            .OrderBy(p => MathF.Max(Width(ctx, p.First), Width(ctx, p.Second)))
+            .FirstOrDefault();
+        return split.First is null ? [Fit(ctx, text, width)] : [Fit(ctx, split.First, width), Fit(ctx, split.Second, width)];
+    }
+
+    private static float PillHeight(int lines, float size) => size + 10 + (lines - 1) * size * 1.15f;
 
     private static void Pill(CanvasRenderingContext2D ctx, string text, float x, float y, float maxWidth, float size, string family, string fill, bool bold)
     {
         ctx.Font = $"{(bold ? "bold " : "")}{size}px {family}";
-        var label = Fit(ctx, text, maxWidth - 16);
-        var w = Width(ctx, label) + 16;
-        var h = size + 10;
+        var lines = PillLines(ctx, text, maxWidth - 16);
+        var w = lines.Max(l => Width(ctx, l)) + 16;
+        var h = PillHeight(lines.Length, size);
         ctx.FillStyle = fill;
-        ctx.BeginPath(); ctx.RoundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.Fill();
+        ctx.BeginPath(); ctx.RoundRect(x - w / 2, y - h / 2, w, h, (size + 10) / 2); ctx.Fill();
         ctx.FillStyle = "#ffffff"; ctx.TextAlign = "center"; ctx.TextBaseline = "middle";
-        ctx.FillText(label, x, y + 0.5f);
+        for (var i = 0; i < lines.Length; i++)
+            ctx.FillText(lines[i], x, y + 0.5f + (i - (lines.Length - 1) / 2f) * size * 1.15f);
     }
 
-    private static void Legend(CanvasRenderingContext2D ctx, float x, float y, string family, bool faults)
+    /// <summary>
+    /// A key to the marks the map uses, and only those: a map with no measured leaf — every map made without Qloo — would
+    /// otherwise explain a mark it never draws, and name a service the work never used (lanternkeepermotion1).
+    /// </summary>
+    private static void Legend(CanvasRenderingContext2D ctx, float x, float y, string family, IReadOnlyList<(MindMapKind Kind, bool? Verified)> used)
     {
         ctx.Font = $"11px {family}"; ctx.TextAlign = "left"; ctx.TextBaseline = "middle"; ctx.FillStyle = "#6b675e";
         var entries = new List<(MindMapKind Kind, bool? Verified, string Label)>
@@ -345,8 +369,8 @@ public static partial class MindMap
             (MindMapKind.Measured, true, "measured: a Qloo answer returned it"),
             (MindMapKind.Assumed, null, "assumed: not measured or checked"),
             (MindMapKind.Plain, null, "an association"),
-        };
-        if (faults) entries.Add((MindMapKind.Measured, false, "cited to an answer that did not return it"));
+            (MindMapKind.Measured, false, "cited to an answer that did not return it"),
+        }.Where(e => used.Any(u => u.Kind == e.Kind && (e.Kind != MindMapKind.Measured || (u.Verified == false) == (e.Verified == false))));
         foreach (var (kind, verified, label) in entries)
         {
             Mark(ctx, new MindMapNode { Text = "", Kind = kind, Depth = 1, Verified = verified }, x + 5, y);
@@ -399,7 +423,11 @@ public static partial class MindMap
             else kind = MindMapKind.Assumed;
         }
         bool? tag = text.StartsWith('"') || text.StartsWith('“') ? true : text.StartsWith('*') ? false : null;
-        text = Markup().Replace(text, "").Trim().Trim('"', '“', '”').Trim();
+        text = Markup().Replace(text, "").Trim();
+        // Quotes come off only when they wrap the whole label: trimmed from each end apart, '"unhurried pace" (Banshees)'
+        // lost its opening quote and kept its closing one (lanternkeepermotion1).
+        if (text.Length >= 2 && text[0] is '"' or '“' && text[^1] is '"' or '”' && text[1..^1].IndexOfAny(['"', '“', '”']) < 0)
+            text = text[1..^1].Trim();
         return (text, kind, handle, kind == MindMapKind.Measured ? tag : null);
     }
 

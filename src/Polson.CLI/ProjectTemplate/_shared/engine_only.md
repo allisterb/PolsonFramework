@@ -17,7 +17,8 @@ Concretely, and these are the ways it actually goes wrong:
 
 **2. Every fact you need about the API.** Look things up with `Search`, and read `polson://sdk/*` and
 `polson://manual/*` **with `ReadDoc(uri)`** — `ReadDoc('polson://sdk/core/Chart')` returns the whole
-document in the tool result. Do not grep the filesystem for the implementation, do not search the web,
+document in the tool result. One too large for a single result, such as `polson://sdk/core/Motion`, returns
+its outline instead, each heading with its size: read it with `ReadDoc(uri, section)`. Do not grep the filesystem for the implementation, do not search the web,
 and do not work from memory of a similar library. The API is large and specific, and a call invented
 from memory that happens to sound plausible fails in ways that cost more than the lookup.
 

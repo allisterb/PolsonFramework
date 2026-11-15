@@ -73,6 +73,33 @@ public class ProcessBookTests : TestsRuntime, IDisposable
     }
 
     /// <summary>
+    /// A page of prose beside an image runs over, and its proof looks cut off: lanternkeepermotion1 read its story page alone
+    /// and took the treatment for truncated. It is warned, and the same prose without an image is not.
+    /// </summary>
+    [Fact]
+    public void TestTextThatRunsPastItsImageIsWarned()
+    {
+        File.WriteAllText(Path.Combine(root, "treatment.md"), "# Treatment\n\n" + string.Join("\n\n", Enumerable.Range(1, 7).Select(i =>
+            $"Paragraph {i}. The lens catches, the light runs outward through the prisms ring after ring, the glass sharpening as it lights, "
+            + "and the beam swings in over the dark roofs while the rain keeps falling on the town below.")));
+
+        var beside = Run("""
+            const b = Stage.book('pitch.pdf', { title: 'Harbour', cover: false, pages: [{ title: 'The story', file: 'treatment.md', image: 'artifacts/frame.png' }] });
+            log('pages ' + b.pages);
+            """);
+        var alone = Run("""
+            const b = Stage.book('pitch2.pdf', { title: 'Harbour', cover: false, pages: [{ title: 'The story', file: 'treatment.md' }] });
+            log('pages ' + b.pages);
+            """);
+
+        Assert.True(beside.Success, beside.Error);
+        Assert.Contains(beside.Logs, l => l.EndsWith("pages 2", StringComparison.Ordinal));
+        Assert.Contains(beside.Logs, l => l.StartsWith("[WARN] Stage.book: 'The story' has more text than fits beside its image", StringComparison.Ordinal));
+        Assert.Contains(alone.Logs, l => l.EndsWith("pages 1", StringComparison.Ordinal));
+        Assert.DoesNotContain(alone.Logs, l => l.StartsWith("[WARN]", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Shaw's frame for a book (Design for Motion, ch. 4): a cover by default and none when refused, contents once it runs
     /// past eight pages, a closing page for a pitch, and the piece's typeface and accent — a typeface not installed said so.
     /// </summary>

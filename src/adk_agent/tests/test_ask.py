@@ -163,6 +163,27 @@ class AskChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(opened["text"]), ask.MAX_QUESTION)
         self.assertEqual(len(opened["options"]), ask.MAX_OPTIONS)
 
+    async def test_a_long_option_is_shown_cut_at_a_word_and_returned_whole(self):
+        """lanternkeeperadk1: an option cut mid-word came back to the agent as its answer, cut."""
+        long = ("Carry over the poster's minimalist silhouettes, warm amber radiating beam, and "
+                "localized typography; animate the blackout and the lamp's ignition")
+        asking = asyncio.create_task(self.tool("What carries over?", [long, "Start afresh"], FakeContext()))
+        for _ in range(200):
+            if self.recorded("question.open"):
+                break
+            await asyncio.sleep(0.01)
+
+        shown = self.recorded("question.open")[0]["options"][0]
+        self.assertLessEqual(len(shown), ask.MAX_OPTION)
+        self.assertTrue(shown.endswith("…"))
+        self.assertTrue(long.startswith(shown[:-1]))
+        self.assertIn(long[len(shown) - 1], " ;,")         # cut at a word, not inside one
+
+        await self.answer_when_asked(selected=[shown])
+        result = await asking
+        self.assertEqual(result["answer"], long)
+        self.assertEqual(self.recorded("answer")[0]["text"], long)
+
     async def test_answering_twice_is_refused(self):
         """The second window's click. The route turns this into a 409, not a 404."""
         asking = asyncio.create_task(self.tool("Warm or cool?", ["Warm"], FakeContext()))

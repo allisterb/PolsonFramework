@@ -46,6 +46,9 @@ public class SandboxEscapeTests : TestsRuntime
 
         Assert.False(result.Success);
         Assert.False(File.Exists(target));
+        // Said as what it is: not read-only, not a typo.
+        Assert.Contains("no script can reach a library object's own members", result.Error);
+        Assert.DoesNotContain("read-only", result.Error);
     }
 
     [Theory]

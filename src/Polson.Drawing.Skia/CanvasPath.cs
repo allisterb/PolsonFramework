@@ -1,4 +1,5 @@
-﻿namespace Polson.Drawing.Skia;
+﻿// SPDX-License-Identifier: MIT
+namespace Polson.Drawing.Skia;
 
 using System;
 using System.Collections;
@@ -350,13 +351,22 @@ public class CanvasPath : IDisposable
         return sum * 0.5;
     }
 
+    /// <summary>Even-odd: a ray from <paramref name="p"/> toward +x crosses the outline an odd number of times when inside.</summary>
     static bool Encloses(SKPoint[] polygon, SKPoint p)
     {
+        if (polygon.Length == 0) return false;
         var inside = false;
-        for (int i = 0, j = polygon.Length - 1; i < polygon.Length; j = i++)
-            if ((polygon[i].Y > p.Y) != (polygon[j].Y > p.Y) &&
-                p.X < (polygon[j].X - polygon[i].X) * (p.Y - polygon[i].Y) / (polygon[j].Y - polygon[i].Y) + polygon[i].X)
-                inside = !inside;
+        var previous = polygon[^1];
+        foreach (var current in polygon)
+        {
+            // An edge counts when it straddles the ray's height, and the point where it does lies right of p.
+            if ((current.Y > p.Y) != (previous.Y > p.Y))
+            {
+                var along = (p.Y - current.Y) / (previous.Y - current.Y);
+                if (p.X < current.X + along * (previous.X - current.X)) inside = !inside;
+            }
+            previous = current;
+        }
         return inside;
     }
 

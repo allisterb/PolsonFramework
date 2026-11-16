@@ -8,6 +8,14 @@
     <FileVersion>$(ProjectAssemblyVersion)</FileVersion>
   </PropertyGroup>
 
+  <!-- MIT, unlike the AGPL-3.0 of the rest of the repository: see LICENSE in this directory. It must reference no
+       AGPL project (Polson.Animation, Polson.MCPServer, Polson.ExtendedMind, Polson.Engine); LicenceBoundaryTests
+       fails the build's tests if one does. -->
+  <PropertyGroup Label="Licence">
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2026 Allister Beharry</Copyright>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Polson.Tests.Drawing" />
     <InternalsVisibleTo Include="Polson.MCPServer" />

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 namespace Polson;
 
 /// <summary>A recorded motion flattened onto the page: per frame, where each body part points and where the hips are.</summary>

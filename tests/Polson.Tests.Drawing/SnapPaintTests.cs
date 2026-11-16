@@ -45,6 +45,27 @@ public class SnapPaintTests : TestsRuntime
         Assert.True(result.Success, result.Error);
     }
 
+    /// <summary>
+    /// The HSL conversion was rewritten on 2026-11-15 to clear its provenance; these are the values the old one gave,
+    /// so the rewrite changed nothing a drawing can see.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 100, 50, 255, 0, 0)]
+    [InlineData(120, 100, 50, 0, 255, 0)]
+    [InlineData(240, 100, 50, 0, 0, 255)]
+    [InlineData(200, 50, 40, 51, 119, 153)]
+    [InlineData(330, 80, 70, 239, 117, 178)]
+    [InlineData(390, 100, 50, 255, 127, 0)]
+    [InlineData(0, 0, 50, 127, 127, 127)]
+    public void TestAnHslFillIsTheColourItNames(int h, int s, int l, int r, int g, int b)
+    {
+        var colour = Polson.Drawing.Svg.SnapAttributes.ParseColor($"hsl({h}, {s}%, {l}%)");
+
+        Assert.InRange(colour.R, r - 1, r + 1);
+        Assert.InRange(colour.G, g - 1, g + 1);
+        Assert.InRange(colour.B, b - 1, b + 1);
+    }
+
     [Fact]
     public void TestAGradientIsStillAPaint()
     {

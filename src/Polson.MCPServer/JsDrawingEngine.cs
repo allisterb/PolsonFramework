@@ -934,9 +934,20 @@ public partial class JsDrawingEngine : Runtime
         var jsType = type?.Name ?? m.Groups["type"].Value;
         if (type is null) return $"{message}'. Check the spelling against polson://sdk/index.";
 
+        // A member that exists but is filtered out (ScriptMayReach) is neither a typo nor read-only, and reported as
+        // read-only it sent the reader looking for a setter that would never help.
+        if (type.GetMember(member, BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.IgnoreCase)
+                is { Length: > 0 } found && !found.Any(ScriptMayReach))
+        {
+            return $"'{jsType}.{member}' belongs to a {type.Assembly.GetName().Name} object, and no script can reach a " +
+                "library object's own members: it passes through a script into other SDK calls, but that is all. Use the " +
+                "SDK's calls on the object you had before it. See polson://sdk/index.";
+        }
+
         // Filtered through the same exclusion the manifest uses, so a suggestion is never a call the
         // reference does not document — proposing `getType` would be worse than proposing nothing.
         var names = type.GetMembers(BindingFlags.Public | BindingFlags.Instance)
+            .Where(ScriptMayReach)
             .Where(x => x is PropertyInfo or MethodInfo and not { IsSpecialName: true })
             .Where(x => !JsSurface.NotSurface.Contains(x.Name))
             .Where(x => !x.Name.StartsWith("op_", StringComparison.Ordinal))

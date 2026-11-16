@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 namespace Polson.Drawing.Mesh;
 
 using System;
@@ -635,13 +636,22 @@ internal static class FaceBake
         return [.. hull];
     }
 
+    /// <summary>Even-odd: a ray from <paramref name="q"/> toward +x crosses the outline an odd number of times when inside.</summary>
     internal static bool Inside(SKPoint[] poly, SKPoint q)
     {
+        if (poly.Length == 0) return false;
         var inside = false;
-        for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
-            if ((poly[i].Y > q.Y) != (poly[j].Y > q.Y)
-                && q.X < ((poly[j].X - poly[i].X) * (q.Y - poly[i].Y) / (poly[j].Y - poly[i].Y)) + poly[i].X)
-                inside = !inside;
+        var previous = poly[^1];
+        foreach (var current in poly)
+        {
+            // An edge counts when it straddles the ray's height, and the point where it does lies right of q.
+            if ((current.Y > q.Y) != (previous.Y > q.Y))
+            {
+                var along = (q.Y - current.Y) / (previous.Y - current.Y);
+                if (q.X < current.X + along * (previous.X - current.X)) inside = !inside;
+            }
+            previous = current;
+        }
         return inside;
     }
 

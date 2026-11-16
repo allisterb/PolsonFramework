@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 namespace Polson.Drawing.Svg;
 
 using System.Collections.Generic;

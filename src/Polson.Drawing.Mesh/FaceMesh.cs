@@ -1,4 +1,5 @@
-﻿namespace Polson.Drawing.Mesh;
+﻿// SPDX-License-Identifier: MIT
+namespace Polson.Drawing.Mesh;
 
 using System;
 using System.Collections;

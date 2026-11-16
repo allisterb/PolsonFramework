@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 global using global::Svg;
 global using global::Svg.Transforms;
 global using global::Svg.Pathing;

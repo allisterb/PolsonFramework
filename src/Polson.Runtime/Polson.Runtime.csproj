@@ -6,6 +6,14 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Polson</RootNamespace>
   </PropertyGroup>
+
+  <!-- MIT, unlike the AGPL-3.0 of the rest of the repository: see LICENSE in this directory. It must reference no
+       AGPL project (Polson.Animation, Polson.MCPServer, Polson.ExtendedMind, Polson.Engine); LicenceBoundaryTests
+       fails the build's tests if one does. -->
+  <PropertyGroup Label="Licence">
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2026 Allister Beharry</Copyright>
+  </PropertyGroup>
   
   <ItemGroup>
    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />

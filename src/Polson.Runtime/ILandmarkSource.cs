@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 namespace Polson;
 
 /// <summary>Named points found in an image, in its pixels: a body detection, or anything else that names joints.</summary>

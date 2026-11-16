@@ -35,7 +35,8 @@ PORTED = [
     ("svg-brush", "MIT", "its authors",
      "Polson.Drawing.Svg: `SnapBrush`'s approach, adapted."),
     ("Snap.svg", "Apache-2.0", "Copyright (c) 2013 - 2017 Adobe Systems Incorporated",
-     "Polson.Drawing.Svg: the `Snap` API is modelled on Snap.svg's, reimplemented over Svg.Skia."),
+     "Polson.Drawing.Svg: the `Snap` API is modelled on Snap.svg's and reimplemented over Svg.Skia; `Mina`'s "
+     "bounce, elastic, back-in and back-out easings are translated from its `src/mina.js`."),
     ("Unicode CLDR", "Unicode-3.0", "Copyright (c) 1991-2025 Unicode, Inc.",
      "Polson.Drawing.Skia: `Data/cldr-numbers.json`, derived from CLDR 48.0 number formats; the notice travels in the "
      "file's own header. https://www.unicode.org/license.txt"),

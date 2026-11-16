@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Ported from CSharpMath, CSharpMath.Evaluation/Evaluation.cs, at commit ddd8b984952196024ef85ce54651973e4564bca4
 // (the commit the CSharpMath.Evaluation 1.0.0-pre.2 package was built from):
 //

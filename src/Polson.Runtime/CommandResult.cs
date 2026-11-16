@@ -1,4 +1,5 @@
-﻿namespace Polson;
+﻿// SPDX-License-Identifier: MIT
+namespace Polson;
 
 using System;
 

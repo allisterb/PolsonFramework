@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 namespace Polson.Drawing.Svg;
 
 using System;
@@ -577,33 +578,32 @@ public static partial class SnapAttributes
         return float.Parse(str, CultureInfo.InvariantCulture);
     }
 
+    /// <summary>CSS <c>hsl()</c> to RGB by chroma: the sextant of the hue picks which channel carries C and which X.</summary>
+    /// <remarks>
+    /// The same construction as <c>SkiaColorParser.HslToRgb</c>, so a colour reads alike on a paper and on a canvas.
+    /// Rewritten on 2026-11-15: the previous body was the widely copied JavaScript <c>hue2rgb</c> snippet, whose
+    /// sources are CC BY-SA or unlicensed, which an MIT library cannot carry.
+    /// </remarks>
     private static Color HslToRgb(float h, float s, float l, float a)
     {
-        h = (h % 360f + 360f) % 360f / 360f;
-        float r, g, b;
-        if (s == 0f)
-        {
-            r = g = b = l;
-        }
-        else
-        {
-            var q = l < 0.5f ? l * (1f + s) : l + s - l * s;
-            var p = 2f * l - q;
-            r = HueToRgb(p, q, h + 1f / 3f);
-            g = HueToRgb(p, q, h);
-            b = HueToRgb(p, q, h - 1f / 3f);
-        }
-        return Color.FromArgb((int)(a * 255f), (int)(r * 255f), (int)(g * 255f), (int)(b * 255f));
-    }
+        h = (h % 360f + 360f) % 360f;
+        s = Math.Clamp(s, 0f, 1f);
+        l = Math.Clamp(l, 0f, 1f);
 
-    private static float HueToRgb(float p, float q, float t)
-    {
-        if (t < 0f) t += 1f;
-        if (t > 1f) t -= 1f;
-        if (t < 1f / 6f) return p + (q - p) * 6f * t;
-        if (t < 1f / 2f) return q;
-        if (t < 2f / 3f) return p + (q - p) * (2f / 3f - t) * 6f;
-        return p;
+        var chroma = (1f - MathF.Abs(2f * l - 1f)) * s;
+        var second = chroma * (1f - MathF.Abs(h / 60f % 2f - 1f));
+        var lift = l - chroma / 2f;
+
+        var (r, g, b) = (int)(h / 60f) switch
+        {
+            0 => (chroma, second, 0f),
+            1 => (second, chroma, 0f),
+            2 => (0f, chroma, second),
+            3 => (0f, second, chroma),
+            4 => (second, 0f, chroma),
+            _ => (chroma, 0f, second),
+        };
+        return Color.FromArgb((int)(Math.Clamp(a, 0f, 1f) * 255f), (int)((r + lift) * 255f), (int)((g + lift) * 255f), (int)((b + lift) * 255f));
     }
 
     private static SvgStrokeLineCap ParseStrokeLineCap(string val) =>

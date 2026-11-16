@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 namespace Polson.Drawing.Skia;
 
 using System;

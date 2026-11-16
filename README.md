@@ -287,4 +287,15 @@ A workflow decides the stages the agent works through and the instructions it is
 
 ## Licence
 
-[AGPL-3.0](LICENSE).
+By directory, as each directory's own `LICENSE` file says:
+
+- **MIT:** the drawing libraries, [`src/Polson.Runtime`](src/Polson.Runtime/LICENSE),
+  [`src/Polson.Drawing.Svg`](src/Polson.Drawing.Svg/LICENSE), [`src/Polson.Drawing.Skia`](src/Polson.Drawing.Skia/LICENSE)
+  and [`src/Polson.Drawing.Mesh`](src/Polson.Drawing.Mesh/LICENSE). A .NET program can reference them without taking on
+  the AGPL.
+- **CC BY-SA 4.0:** the manuals and documents in [`docs/`](docs/LICENSE).
+- **AGPL-3.0:** everything else ([`LICENSE`](LICENSE)), including `Polson.Animation`, whose Synfig ports are
+  GPL-2.0-or-later, and the MCP server, studio and engine built on it. A program that includes `Polson.Animation` is
+  AGPL-3.0 as a whole, whatever the licence of the libraries inside it.
+
+Third-party code keeps its own licence wherever it sits; each port says so in its file and in its directory's `LICENSE`.

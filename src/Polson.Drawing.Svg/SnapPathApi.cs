@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 namespace Polson.Drawing.Svg;
 
 /// <summary>The <c>Snap.path</c> shorthand helpers, returning SVG path data strings.</summary>

@@ -1,3 +1,14 @@
+// SPDX-License-Identifier: MIT AND Apache-2.0
+// The bounce, elastic, back-in and back-out easings are translated from Snap.svg, src/mina.js:
+//
+//   Copyright (c) 2013 - 2017 Adobe Systems Incorporated. All rights reserved.
+//   Licensed under the Apache License, Version 2.0; a copy is in this directory, licenses/Apache-2.0.txt.
+//   Snap.svg's NOTICE: "Snap.svg is licensed under the Apache license version 2.0, January 2004".
+//
+// Changes: translated from JavaScript to C#; elastic's .075 is written as its period over four; back-in and back-out
+// return 0 and 1 unchanged at both ends, where Snap's checks one end each. Linear, ease-in, ease-out and ease-in-out are this file's own (Snap's
+// are powers, these are sines). The rest of the file is under this directory's MIT licence.
+
 namespace Polson.Drawing.Svg;
 
 using System;

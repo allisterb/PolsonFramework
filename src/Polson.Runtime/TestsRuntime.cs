@@ -1,4 +1,5 @@
-﻿namespace Polson.Tests;
+﻿// SPDX-License-Identifier: MIT
+namespace Polson.Tests;
 
 using Microsoft.Extensions.Configuration;
 using System;

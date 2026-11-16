@@ -1208,6 +1208,7 @@ public class CanvasRenderingContext2D
         }
         else if (svgObj is string svgXml)
         {
+            ScriptLimits.Ensure();
             using var skSvg = new SKSvg();
             skSvg.FromSvg(svgXml);
             if (skSvg.Picture != null)

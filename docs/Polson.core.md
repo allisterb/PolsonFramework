@@ -4,6 +4,8 @@ This is the **core** reference for the Polson JavaScript (JS) SDK — the typed 
 
 The **JSON schema for every parameter and return model type** named below lives in the companion schema document (`Polson.schema.md`). Both documents are served **sliced by subject area**: read `polson://sdk/index` for the map, `polson://sdk/core/{Area}` for an area's methods, and `polson://sdk/schema/{Area}` for the fields of what they return. This entire document is also available at `polson://sdk/core/all`.
 
+**Some passages point at the studio's parts, which this reference does not document**: its design manuals (`polson://manual/…`), its cloud calls (`Assets`, `Photo`, `Documents`, `Video`, `Verify`, `Research` and `Taste`) and its `GenerateCharacter` tool. They are documented in the studio reference, `Polson.studio.md`, and exist only where the studio is installed. In a build without them, such as Polson Engine, those globals are `undefined`, `ReadDoc` on a manual lists what is published instead, and the passage's own advice still holds.
+
 ---
 
 ## Execution model

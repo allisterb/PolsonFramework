@@ -64,7 +64,12 @@ public abstract class Runtime
 
     public static Assembly? EntryAssembly { get; protected set; }
 
-    public static string AssemblyLocation { get; } = Path.GetDirectoryName(Assembly.GetAssembly(typeof(Runtime))!.Location)!;
+    /// <summary>The directory this assembly was loaded from; in a single-file publish, which has no file per assembly, the app's.</summary>
+#pragma warning disable IL3000 // Location is empty in a single-file app, which is the case handled.
+    public static string AssemblyLocation { get; } = Assembly.GetAssembly(typeof(Runtime))!.Location is { Length: > 0 } location
+        ? Path.GetDirectoryName(location)!
+        : AppContext.BaseDirectory;
+#pragma warning restore IL3000
 
     public static Version AssemblyVersion { get; } = Assembly.GetAssembly(typeof(Runtime))!.GetName().Version!;
         

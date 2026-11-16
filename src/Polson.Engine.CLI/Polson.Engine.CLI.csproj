@@ -16,6 +16,19 @@
     <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops>
   </PropertyGroup>
 
+  <!-- A release is one executable per platform, with the runtime and the Skia and HarfBuzz natives inside it. Only a
+       publish that names a platform (-r) takes these, so an ordinary build stays portable. tools/publish-engine.py
+       publishes from a copy of the source, because a -r restore adds a platform section to the lock file of every
+       project the engine references. -->
+  <PropertyGroup Label="Publish" Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <AssemblyName>polson-engine</AssemblyName>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.9.1" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />

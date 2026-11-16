@@ -416,7 +416,7 @@ public partial class DrawingMcpTools
             Refuse("the script did not return a Snap paper, so there is no vector page to print. A raster canvas "
                 + "cannot carry a bleed and prints at whatever resolution it was drawn. Build the poster on "
                 + "Snap(width, height), place any raster material with paper.image(bitmap, x, y, w, h), and return "
-                + "the paper. See polson://manual/14.", "not-a-paper");
+                + "the paper." + PrintManual, "not-a-paper");
             return;
         }
 
@@ -457,11 +457,7 @@ public partial class DrawingMcpTools
     }
 
     [McpServerTool(Name = "Search")]
-    [Description("Searches the studio's design knowledge and API reference for passages relevant to a technique, " +
-        "and returns them ranked with the SDK calls that implement them. The corpus is the studio manuals — classical " +
-        "drawing, perspective, lighting, anatomy, composition, logo geometry, typography, distilled from the studio " +
-        "reference library — plus the Polson JS SDK core and schema documents. CALL THIS FIRST when you know what you " +
-        "want to draw but not how the studio does it (e.g. 'two point perspective box', 'cast shadow falloff', " +
+    [Description(SearchLead + " (e.g. 'two point perspective box', 'cast shadow falloff', " +
         "'golden ratio logo grid', 'optical kerning'). Each result carries a resource URI to read in full — " +
         "fetch it with ReadDoc(uri) when you need the parameters rather than the summary.\n\n" +
         "ONE TOPIC PER SEARCH. This ranks passages by word overlap; it is not syntax-aware, has no AND/OR " +
@@ -481,7 +477,7 @@ public partial class DrawingMcpTools
     public Task<JsonObject> Search(
         [Description("What you are trying to do or find, in natural language or as an API name (e.g. 'construct a perspective cylinder').")] string query,
         [Description("Number of passages to return (1-25; default 5).")] int? k = null,
-        [Description("Corpus to search: 'all' (default), 'manual' for design theory only, 'sdk' for the API reference only.")] string? scope = null,
+        [Description("Corpus to search: " + SearchScopes)] string? scope = null,
         [Description("true to inline each passage in full. Default false: results carry a short snippet plus the " +
             "call signatures, and you read the whole document with ReadDoc(uri) if you need it. Full text costs " +
             "roughly ten times as much and is usually read once and discarded.")] bool? fullText = null,
@@ -705,17 +701,15 @@ public partial class DrawingMcpTools
     };
 
     [McpServerTool(Name = "ReadDoc")]
-    [Description("Reads a studio document IN FULL by its `polson://` URI and returns the text — the SDK method " +
-        "reference (polson://sdk/core/{Area}), the schemas (polson://sdk/schema/{Area}), the symbol index " +
-        "(polson://sdk/symbols), or a studio manual (polson://manual/13). This is the tool to call when Search " +
+    [Description(ReadDocLead + " This is the tool to call when Search " +
         "hands you a `uri` and you need the parameters, not the summary: Search returns excerpts and signatures, " +
-        "this returns the whole document. Bare forms work too — '13', 'manual/13', 'sdk/core/Chart'. An unknown " +
+        "this returns the whole document. Bare forms work too — " + ReadDocBareForms + ". An unknown " +
         "URI lists what is actually published rather than returning nothing. A large document also lists its " +
         "`sections`; pass `section` (a heading, or part of one) to read just that part. One over 60,000 characters " +
         "— the Motion reference is 160,000 — returns only its outline, each heading with its size, and you read it " +
         "a section at a time.")]
     public JsonObject ReadDoc(
-        [Description("The document URI, e.g. 'polson://sdk/core/Chart' or 'polson://manual/13'.")] string uri,
+        [Description("The document URI, e.g. " + ReadDocExample + ".")] string uri,
         [Description("Optional. A heading, or part of one, e.g. 'Motion.save' or 'A Character Beat'. Returns that " +
             "section, through to the next heading at the same or a higher level.")] string? section = null)
     => Recorded(nameof(ReadDoc), () =>
@@ -873,7 +867,7 @@ public partial class DrawingMcpTools
         [Description("AVOID THIS. Whether to inline the rendered image into the JSON response as base64 (default false: without outFile the render is made and not returned, and the log says so). Base64 inflates the image by a third and the whole of it is delivered as TEXT in your context window - a routine 1200x760 WebP is ~126,000 characters, tens of thousands of tokens, and a PNG is four times that. It is not an image content block, so it costs the window without necessarily being viewable. Pass outFile instead and open the saved path with your host's file/image reader; that is both cheaper and the only way you reliably SEE the render.")] bool? includeBytes = null,
         [Description("Set false for a script that draws nothing you need to look at — a measurement or probe pass that samples pixels, diffs against an earlier stage, or stashes a canvas in Session for the next call. A canvas is otherwise rasterised and encoded whenever the script created one, even when the script returns something else, which costs roughly 150 ms at 1600x1200 for an image nothing reads. Refused together with outFile, which asks for the render this suppresses.")] bool? render = null,
         [Description("Optional path to a JavaScript file to execute INSTEAD of `script`, relative to the project directory (e.g. 'artwork.js'). Use this when iterating on a file you maintain: edit the file with your ordinary editor, then run it — rather than re-sending the whole program on every call. Paths outside the project are refused. Give either `script` or `scriptFile`, never both.")] string? scriptFile = null,
-        [Description("Optional path for a PRINT PDF of the returned paper, relative to the project directory (e.g. 'artifacts/poster.pdf'). Vector: text stays text with its fonts embedded. Needs `pdfSize`, and the script must RETURN a Snap paper — a canvas is refused. The paper is the trimmed page; draw backgrounds and anything touching an edge past the paper's edges by the bleed, or the response warns that the artwork stops at the trim. RGB, not CMYK or PDF/X. See polson://manual/14.")] string? outPdf = null,
+        [Description("Optional path for a PRINT PDF of the returned paper, relative to the project directory (e.g. 'artifacts/poster.pdf'). Vector: text stays text with its fonts embedded. Needs `pdfSize`, and the script must RETURN a Snap paper — a canvas is refused. The paper is the trimmed page; draw backgrounds and anything touching an edge past the paper's edges by the bleed, or the response warns that the artwork stops at the trim. RGB, not CMYK or PDF/X." + PrintManual)] string? outPdf = null,
         [Description("The trimmed page size for outPdf: 'A0'-'A6', 'B0'-'B3', 'letter', 'legal', 'tabloid' (named sizes follow the paper's orientation), or width x height with a unit, e.g. '420x594mm', '18x24in'. The paper must be in the same proportions.")] string? pdfSize = null,
         [Description("Bleed added outside the trim on every side for outPdf, with a unit: '3mm' (default; usual in Europe), '0.125in' (usual in the US), or '0' for none. Ask the print shop.")] string? pdfBleed = null,
         [Description("How far inside the trim text must stay for outPdf, with a unit: '5mm' by default, '0' to skip. Text closer than this, or past the trim, is warned about by what it says.")] string? pdfSafeMargin = null,
@@ -1110,7 +1104,7 @@ public partial class DrawingMcpTools
                         + "CSS background does not fetch external resources, so the picture is simply missing — and "
                         + "this renderer does not fetch them either, which is why the peek shows a broken-image cross. "
                         + "Pass the object rather than a path — paper.image(photo, x, y, w, h) or "
-                        + "paper.image(bitmap, ...) — and it is inlined as a data URI. See polson://manual/14.");
+                        + "paper.image(bitmap, ...) — and it is inlined as a data URI." + PrintManual);
 
                     Events.Append("render.unresolvedimage", session.Stage, executionId, new Dictionary<string, object?>
                     {
@@ -1129,7 +1123,7 @@ public partial class DrawingMcpTools
                     $"[WARN] outSvg '{outSvg}' wrote nothing: this script produced no vector document, " +
                     "so there is no SVG markup to save. A raster canvas (createCanvas / getContext('2d')) " +
                     "renders to pixels only. Build the scene on a Snap paper — Snap(width, height) — and " +
-                    "return it, or drop outSvg. See polson://manual/14.");
+                    "return it, or drop outSvg." + PrintManual);
 
                 Events.Append("render.novector", session.Stage, executionId, new Dictionary<string, object?>
                 {

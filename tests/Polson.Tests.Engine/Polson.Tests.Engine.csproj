@@ -2,7 +2,7 @@
 
   <!-- Polson.Engine checked as it ships. The doc tests are Polson.Tests.MCPServer's own files, compiled here against
        the engine: the reference it serves documents only calls it has, has every call it documents, and every runnable
-       example in it runs. EngineSurfaceTests checks what the engine leaves out. -->
+       example in it runs. SandboxEscapeTests holds it to the sandbox. EngineSurfaceTests checks what it leaves out. -->
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\Polson.Tests.MCPServer\ApiDocumentationTests.cs;..\Polson.Tests.MCPServer\CoreReferenceExampleTests.cs;..\Polson.Tests.MCPServer\SdkIndexCoverageTests.cs"
+    <Compile Include="..\Polson.Tests.MCPServer\ApiDocumentationTests.cs;..\Polson.Tests.MCPServer\CoreReferenceExampleTests.cs;..\Polson.Tests.MCPServer\SdkIndexCoverageTests.cs;..\Polson.Tests.MCPServer\SandboxEscapeTests.cs"
              LinkBase="MCPServer" />
   </ItemGroup>
 

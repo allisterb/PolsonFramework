@@ -132,6 +132,7 @@ public partial class JsDrawingEngine : Runtime
     public async Task<DrawingExecutionResult> ExecuteAsync(string jsScript, int defaultWidth = 800, int defaultHeight = 600, SessionContext? session = null, string format = "webp", int quality = 85, CancellationToken ct = default, string? executionId = null, bool render = true, string? scriptPath = null, string? argsJson = null)
     {
         ArgumentNullException.ThrowIfNull(jsScript);
+        ScriptLimits.Ensure();
 
         var result = new DrawingExecutionResult
         {
@@ -192,6 +193,9 @@ public partial class JsDrawingEngine : Runtime
                 options.TimeoutInterval(TimeSpan.FromSeconds(ScriptTimeoutSeconds));
                 options.LimitRecursion(100);
                 options.MaxStatements(MaxStatements);
+
+                // Only the SDK's own members, and the platform's harmless ones, are reachable; see ScriptMayReach.
+                options.SetTypeResolver(ScriptTypes);
 
                 // A script names an enum with a string, because that is what the SDK reference
                 // documents. See EnumStringTypeConverter.
@@ -1027,6 +1031,42 @@ public partial class JsDrawingEngine : Runtime
               || IsIndexOrLength(member)
               || ((ObjectInstance)engine.Intrinsics.Array.Get("prototype")).HasProperty(member)
             : MemberIndex.Has(target, member);
+
+    /// <summary>
+    /// Whether a script may reach a .NET member: the SDK's own (any <c>Polson.*</c> assembly), a value type's (colours,
+    /// points, rectangles: copies holding no handle), or the platform's, outside reflection, IO, processes, networking,
+    /// interop, security and threads. Every other library's classes are opaque.
+    /// </summary>
+    /// <remarks>
+    /// The SDK hands scripts some library objects as they are: a canvas's <c>SKBitmap</c> and <c>SKCanvas</c>, a paper's
+    /// <c>SvgDocument</c>, an element's <c>SvgElement</c>. Jint reached every public member on them. Measured on
+    /// 2026-11-15: <c>skBitmap.getPixels()</c> returned a native address, <c>setPixels</c> aliased two bitmaps,
+    /// <c>skCanvas.dispose()</c> followed by a draw crashed the host with an access violation, and
+    /// <c>paper.document.write(path)</c> wrote a file outside the project. Such an object still passes through a script
+    /// and back into the SDK; it only has no members of its own there. <see cref="MemberIndex"/> applies the same rule,
+    /// so <c>has(...)</c> and <c>suggest(...)</c> agree with it.
+    /// </remarks>
+    internal static bool ScriptMayReach(MemberInfo member)
+    {
+        if (member.DeclaringType is not { } type) return true;
+
+        var assembly = type.Assembly.GetName().Name ?? "";
+        if (assembly.StartsWith("Polson.", StringComparison.Ordinal)) return true;
+
+        var platform = assembly is "System" or "mscorlib" or "netstandard" || assembly.StartsWith("System.", StringComparison.Ordinal);
+        if (!platform) return type.IsValueType;
+
+        var ns = type.Namespace ?? "";
+        return !Array.Exists(UnreachableNamespaces, n => ns == n || ns.StartsWith(n + ".", StringComparison.Ordinal))
+            || ns.StartsWith("System.Threading.Tasks", StringComparison.Ordinal);
+    }
+
+    /// <summary>Platform namespaces with no member a drawing script needs and several it must not have.</summary>
+    private static readonly string[] UnreachableNamespaces =
+        ["System.IO", "System.Reflection", "System.Diagnostics", "System.Net", "System.Runtime", "System.Security", "System.Threading"];
+
+    /// <summary>Jint's type resolver with <see cref="ScriptMayReach"/> as its filter; one instance, so its cache is shared.</summary>
+    private static readonly TypeResolver ScriptTypes = new() { MemberFilter = ScriptMayReach };
 
     /// <summary>A collection the engine wraps as a list: enumerable, and neither a string nor a dictionary.</summary>
     private static bool IsList(object? target) => target is IEnumerable and not string and not IDictionary;

@@ -1,0 +1,123 @@
+"""Writes src/Polson.Engine/THIRD-PARTY-NOTICES.md: every package Polson Engine ships, from the engine CLI's lock file
+and each package's own .nuspec in the NuGet cache, after the ported sources listed below.
+
+    py -3.13 tools/engine-notices.py
+
+Rerun it whenever a package in the engine's graph changes; tools/publish-engine.py ships the file as it is. A package
+missing from the cache stops the script rather than being listed without a licence.
+"""
+import json, os, pathlib, sys, xml.etree.ElementTree as ET
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+LOCK = ROOT / "src/Polson.Engine.CLI/packages.lock.json"
+OUT = ROOT / "src/Polson.Engine/THIRD-PARTY-NOTICES.md"
+CACHE = pathlib.Path(os.environ.get("NUGET_PACKAGES", pathlib.Path.home() / ".nuget" / "packages"))
+
+# Read from each file's own provenance note. A new port adds its row here, with the note it carries.
+PORTED = [
+    ("Synfig", "GPL-2.0-or-later", "the Synfig contributors",
+     "Polson.Animation: `MotionBlend`, `MotionBlur`, `MotionBones`, `MotionColorCorrect`, `MotionDeformation`, "
+     "`MotionGradient`, `MotionGraph`, `MotionLumaKey`, `MotionNoise`, `MotionPosterize`, `MotionShadow`, `MotionText`, "
+     "ported; `MotionComposition`, `MotionSvg` and `MotionSwitch` follow its layer model."),
+    ("Papagayo-NG", "GPL-2.0-or-later", "the Morevna Project, after Mike Clifton's Papagayo (2005)",
+     "Polson.Animation: `MotionSpeech`'s phoneme-to-mouth tables."),
+    ("EffectCraft", "MIT OR Apache-2.0", "the ArtCraft Team and contributors",
+     "Polson.Animation: `MotionTextSelectors`, ported; `MotionSpace` and `MotionWipe` after its geometry and transitions."),
+    ("paper.js `PathFitter`", "MIT", "Jürg Lehni and Jonathan Puckey",
+     "Polson.Animation: `MotionCurveFit`, ported, read beside Spillman.SkiaSharp.PathFitter (MIT, Copyright (c) 2020 "
+     "Dalton Spillman). The algorithm is Philip J. Schneider's, from *Graphics Gems* (1990)."),
+    ("CSharpMath.Evaluation", "MIT", "the CSharpMath contributors",
+     "Polson.Drawing.Skia: `MathEvaluation`, ported at commit ddd8b984."),
+    ("Mesh2Motion", "MIT", "Copyright (c) 2025 Scott Petrovic",
+     "Polson.Drawing.Mesh: `SkinWeights`, ported from its solvers; `PoseRetarget` follows its retargeting method. "
+     "Its models and animations are CC0 or licensed per model, are not part of this package, and are listed in "
+     "`src/Polson.Drawing.Mesh/Library/README.md`."),
+    ("svg-brush", "MIT", "its authors",
+     "Polson.Drawing.Svg: `SnapBrush`'s approach, adapted."),
+    ("Snap.svg", "Apache-2.0", "Copyright (c) 2013 - 2017 Adobe Systems Incorporated",
+     "Polson.Drawing.Svg: the `Snap` API is modelled on Snap.svg's, reimplemented over Svg.Skia."),
+    ("Unicode CLDR", "Unicode-3.0", "Copyright (c) 1991-2025 Unicode, Inc.",
+     "Polson.Drawing.Skia: `Data/cldr-numbers.json`, derived from CLDR 48.0 number formats; the notice travels in the "
+     "file's own header. https://www.unicode.org/license.txt"),
+]
+
+LICENCE_FILES = {"MIT": "MIT.txt", "Apache-2.0": "Apache-2.0.txt", "BSD-2-Clause": "BSD-2-Clause.txt",
+                 "BSD-3-Clause": "BSD-3-Clause.txt", "MS-PL": "MS-PL.txt"}
+
+# Packages whose nuspec names a file rather than an expression; read from that file, 2026-11-15.
+FILE_LICENCES = {"CommandLineParser": "MIT", "GenericTensor": "MIT"}
+
+
+def nuspec(name: str, version: str) -> dict:
+    folder = CACHE / name.lower() / version.lower()
+    spec = next(folder.glob("*.nuspec"), None)
+    if spec is None:
+        sys.exit(f"{name} {version} is not in the NuGet cache ({folder}); restore the engine first.")
+    meta = next(e for e in ET.parse(spec).getroot() if e.tag.endswith("metadata"))
+    get = lambda tag: next((e for e in meta if e.tag.endswith(tag)), None)
+    licence = get("license")
+    expression = (licence.text if licence is not None and licence.get("type") == "expression" else None) or FILE_LICENCES.get(name)
+    if expression is None:
+        sys.exit(f"{name} {version} names no licence expression; read its licence and add it to FILE_LICENCES.")
+    text = lambda tag: (get(tag).text or "").strip() if get(tag) is not None else ""
+    return {"licence": expression, "copyright": text("copyright") or text("authors"), "url": text("projectUrl")}
+
+
+def main() -> int:
+    graph = json.loads(LOCK.read_text(encoding="utf-8"))["dependencies"]["net10.0"]
+    packages = sorted(((n, d["resolved"]) for n, d in graph.items() if d["type"] != "Project"), key=lambda p: p[0].lower())
+
+    lines = [
+        "# Third-party notices for Polson Engine",
+        "",
+        "Polson Engine is licensed under the GNU Affero General Public License v3.0 (`LICENSE`). It contains, or is derived",
+        "from, the works below, under their own licences. The texts of those licences are in `licenses/`, and the notices",
+        "of the .NET runtime and of Skia, HarfBuzz and their dependencies, which the executable carries, are in `notices/`.",
+        "",
+        f"Generated by `tools/engine-notices.py` from `{LOCK.relative_to(ROOT).as_posix()}` and each package's own metadata.",
+        "",
+        "## Ported and adapted source",
+        "",
+        "| Work | Licence | Copyright | In Polson Engine |",
+        "| --- | --- | --- | --- |",
+        *[f"| {w} | {l} | {c} | {where} |" for w, l, c, where in PORTED],
+        "",
+        "## Packages",
+        "",
+        "| Package | Version | Licence | Copyright |",
+        "| --- | --- | --- | --- |",
+    ]
+    used = set()
+    for name, version in packages:
+        meta = nuspec(name, version)
+        used.update(part for part in meta["licence"].replace("(", " ").replace(")", " ").split() if part not in ("OR", "AND"))
+        link = f"[{name}]({meta['url']})" if meta["url"] else name
+        lines.append(f"| {link} | {version} | {meta['licence']} | {meta['copyright'].replace('|', '/')} |")
+
+    lines += [
+        "",
+        "## Bundled runtime and natives",
+        "",
+        "A release executable is self-contained:",
+        "",
+        "- the .NET runtime and ASP.NET Core, MIT, the .NET Foundation and contributors: `notices/dotnet-runtime.txt` and",
+        "  `notices/aspnetcore.txt`;",
+        "- Skia, HarfBuzz and the libraries they build on, inside SkiaSharp's and HarfBuzzSharp's native assets:",
+        "  `notices/skia-harfbuzz.txt`.",
+        "",
+        "## Licence texts",
+        "",
+        *[f"- {l}: `licenses/{LICENCE_FILES[l]}`" for l in sorted(used) if l in LICENCE_FILES],
+        *[f"- {l}: a public-domain dedication, which asks for no notice." for l in sorted(used) if l == "CC0-1.0"],
+        "",
+    ]
+    missing = sorted(l for l in used if l not in LICENCE_FILES and l != "CC0-1.0")
+    if missing:
+        sys.exit(f"No text in src/Polson.Engine/licenses/ for {', '.join(missing)}.")
+    OUT.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    print(f"{OUT.relative_to(ROOT)}: {len(packages)} packages, licences {', '.join(sorted(used))}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

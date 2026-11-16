@@ -21,6 +21,7 @@ public class SkiaCanvas : IDisposable, IDataUriSource, ILosslessImageSource
     /// <summary>A canvas of another pixel format: float, for arithmetic that must not clamp until the end.</summary>
     internal SkiaCanvas(int width, int height, SKColorType colorType)
     {
+        ScriptLimits.CheckRaster(width, height, "A canvas");
         Width = Math.Max(1, width);
         Height = Math.Max(1, height);
 

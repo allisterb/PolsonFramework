@@ -28,6 +28,23 @@ using Polson.Drawing.Svg;
 public partial class DrawingMcpTools
 {
     #region Constants & Static Properties
+    // What the tool descriptions say of the corpus. Polson.Engine defines the same names for a server with the SDK
+    // reference only, in DrawingMcpTools.Engine.cs.
+    private const string SearchLead = "Searches the studio's design knowledge and API reference for passages relevant to a technique, " +
+        "and returns them ranked with the SDK calls that implement them. The corpus is the studio manuals — classical " +
+        "drawing, perspective, lighting, anatomy, composition, logo geometry, typography, distilled from the studio " +
+        "reference library — plus the Polson JS SDK core and schema documents. CALL THIS FIRST when you know what you " +
+        "want to draw but not how the studio does it";
+    private const string SearchScopes = "'all' (default), 'manual' for design theory only, 'sdk' for the API reference only.";
+    private const string ReadDocLead = "Reads a studio document IN FULL by its `polson://` URI and returns the text — the SDK method " +
+        "reference (polson://sdk/core/{Area}), the schemas (polson://sdk/schema/{Area}), the symbol index " +
+        "(polson://sdk/symbols), or a studio manual (polson://manual/13).";
+    private const string ReadDocBareForms = "'13', 'manual/13', 'sdk/core/Chart'";
+    private const string ReadDocExample = "'polson://sdk/core/Chart' or 'polson://manual/13'";
+
+    /// <summary>Where a print or vector warning points for more: the poster manual, which only the studio has.</summary>
+    private const string PrintManual = " See polson://manual/14.";
+
     /// <summary>
     /// Research transport, configured once at startup and picked up by every tools instance — the
     /// same arrangement as <see cref="JsDrawingEngine.Assets"/>. Null when no key is configured.

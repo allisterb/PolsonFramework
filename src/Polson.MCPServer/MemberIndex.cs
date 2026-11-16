@@ -106,6 +106,7 @@ internal static class MemberIndex
             // deciding what to write must not point at something no script should call.
             if (JsSurface.NotSurface.Contains(member.Name)) continue;
             if (member.Name.StartsWith("op_", StringComparison.Ordinal)) continue;
+            if (!JsDrawingEngine.ScriptMayReach(member)) continue;
 
             names.Add(member.Name);
 

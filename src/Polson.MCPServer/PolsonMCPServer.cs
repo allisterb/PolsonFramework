@@ -18,6 +18,10 @@ public class PolsonMCPServer : Runtime
 {
     #region Constants
     public const string CorsPolicyName = "PolsonMcpCors";
+
+    /// <summary>Whether a browser origin is on this machine: <c>localhost</c>, <c>127.0.0.1</c> or <c>[::1]</c>, any port.</summary>
+    internal static bool IsLoopbackOrigin(string origin) =>
+        Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" && uri.IsLoopback;
     #endregion
 
     #region Methods
@@ -81,12 +85,18 @@ public class PolsonMCPServer : Runtime
             .AddProvider(loggerProvider)
             .SetMinimumLevel(LogLevel.Trace);
 
+        // The server runs scripts and writes files with no authentication, so only this machine may call it. A browser
+        // page from anywhere else could otherwise drive it through CORS (any origin was allowed until 2026-11-15), or
+        // through DNS rebinding, where a hostile name resolves to 127.0.0.1 and the Host header still carries the name.
+        builder.Services.Configure<Microsoft.AspNetCore.HostFiltering.HostFilteringOptions>(options =>
+            options.AllowedHosts = ["localhost", "127.0.0.1", "[::1]"]);
+
         builder.Services.AddCors(options =>
         {
             options.AddPolicy(CorsPolicyName, policy =>
             {
                 policy
-                    .AllowAnyOrigin()
+                    .SetIsOriginAllowed(IsLoopbackOrigin)
                     .AllowAnyHeader()
                     .AllowAnyMethod()
                     .WithExposedHeaders("Mcp-Session-Id");

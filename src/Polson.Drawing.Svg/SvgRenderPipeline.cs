@@ -7,6 +7,11 @@ using SkiaSharp;
 
 public static class SvgRenderPipeline
 {
+    #region Constructors
+    /// <summary>No render here fetches an external reference; see <see cref="ScriptLimits"/>.</summary>
+    static SvgRenderPipeline() => ScriptLimits.Ensure();
+    #endregion
+
     #region Methods
     /// <summary>
     /// Seeks a loaded document to <paramref name="atTime"/>, so an SVG carrying SMIL animation
@@ -79,6 +84,7 @@ public static class SvgRenderPipeline
 
         if (targetWidth <= 0) targetWidth = 800;
         if (targetHeight <= 0) targetHeight = 600;
+        ScriptLimits.CheckRaster(targetWidth, targetHeight, "A render");
 
         using var bitmap = new SKBitmap(targetWidth, targetHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
         using (var canvas = new SKCanvas(bitmap))
@@ -122,6 +128,7 @@ public static class SvgRenderPipeline
         var pictureBounds = skSvg.Picture?.CullRect ?? SKRect.Create(0, 0, 800, 600);
         var targetWidth = width ?? (int)MathF.Ceiling(pictureBounds.Width > 0 ? pictureBounds.Width : 800f);
         var targetHeight = height ?? (int)MathF.Ceiling(pictureBounds.Height > 0 ? pictureBounds.Height : 600f);
+        ScriptLimits.CheckRaster(targetWidth, targetHeight, "A render");
 
         var bitmap = new SKBitmap(targetWidth, targetHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
         using (var canvas = new SKCanvas(bitmap))

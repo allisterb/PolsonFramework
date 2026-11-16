@@ -138,6 +138,9 @@ public static class SdkDocs
         {
             var coreSlice = Slice(core, area.HeadingText);
             var schemaSlice = Slice(schema, area.HeadingText);
+            // An area the docs do not carry is not in this build: Polson.Engine has no Assets, Photo, Documents, Video
+            // or Research, and an empty entry would advertise them.
+            if (coreSlice is null && schemaSlice is null) continue;
             var methods = MethodNames(coreSlice ?? "", area.Name);
             var models = ModelNames(schemaSlice ?? "");
             index.AppendLine($"## {area.Name}");
@@ -169,7 +172,10 @@ public static class SdkDocs
 
     public static string BuildSchemaSignpost(SdkDocSet set)
     {
-        var areas = string.Join(", ", set.Areas.Select(a => a.Name));
+        var (core, schema) = (set.Core(), set.Schema());
+        var areas = string.Join(", ", set.Areas
+            .Where(a => Slice(core, a.HeadingText) is not null || Slice(schema, a.HeadingText) is not null)
+            .Select(a => a.Name));
         return $$"""
             # Polson JavaScript SDK — Schemas ({{set.Label}})
 

@@ -11,6 +11,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Polson.Tests.Drawing" />
     <InternalsVisibleTo Include="Polson.MCPServer" />
+    <InternalsVisibleTo Include="Polson.Engine" />
     <InternalsVisibleTo Include="Polson.Drawing.Mesh" />
     <InternalsVisibleTo Include="Polson.Tests.Drawing.Mesh" />
     <InternalsVisibleTo Include="Polson.Animation" />

@@ -11,6 +11,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Polson.Tests.Animation" />
     <InternalsVisibleTo Include="Polson.MCPServer" />
+    <InternalsVisibleTo Include="Polson.Engine" />
   </ItemGroup>
 
   <!-- Animation draws through both drawing projects; neither of them references this one, and that

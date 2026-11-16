@@ -326,7 +326,8 @@ public class DrawingTests : TestsRuntime
             var p = s.path('M 50 50 L 350 50 L 350 350 Z').attr({ fill: '#6366f1' });
         ";
 
-        var execResult = await tools.ExecuteSvgScript(script, 400, 400);
+        // Bytes are not returned by default since includeBytes became opt-in; this test is about the bytes.
+        var execResult = await tools.ExecuteSvgScript(script, 400, 400, includeBytes: true);
         Assert.True(execResult.Success, execResult.Error);
         Assert.NotNull(execResult.ImageBytes);
 

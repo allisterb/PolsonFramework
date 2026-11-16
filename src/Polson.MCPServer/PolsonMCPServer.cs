@@ -178,8 +178,12 @@ public class PolsonMCPServer : Runtime
         mcp.WithTools(tools);
         mcp.WithResources<PolsonResources>();
         mcp.WithResources(PolsonResources.AreaResources(PolsonResources.Docs));
-        mcp.WithResources<PolsonManuals>();
-        mcp.WithResources(PolsonManuals.ManualResources());
+        // Polson.Engine embeds no manuals, and advertises none.
+        if (PolsonManuals.All.Count > 0)
+        {
+            mcp.WithResources<PolsonManuals>();
+            mcp.WithResources(PolsonManuals.ManualResources());
+        }
 
         return tools;
     }

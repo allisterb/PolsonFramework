@@ -207,6 +207,9 @@ public class PolsonResources
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0) return null;
 
+        // A build with no manuals embedded, as Polson.Engine is, publishes nothing under manual/.
+        if (PolsonManuals.All.Count == 0 && !segments[0].Equals("sdk", StringComparison.OrdinalIgnoreCase)) return null;
+
         if (segments[0].Equals("manual", StringComparison.OrdinalIgnoreCase))
         {
             if (segments.Length == 1) return PolsonManuals.ManualIndex();
@@ -256,9 +259,9 @@ public class PolsonResources
     {
         var uris = new List<string>
         {
-            "polson://sdk/index", "polson://sdk/core/all", "polson://sdk/schema/all",
-            "polson://sdk/symbols", "polson://manual/index"
+            "polson://sdk/index", "polson://sdk/core/all", "polson://sdk/schema/all", "polson://sdk/symbols"
         };
+        if (PolsonManuals.All.Count > 0) uris.Add("polson://manual/index");
 
         foreach (var area in Docs.Addressable)
         {

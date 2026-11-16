@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Polson Engine: the drawing engine on its own, for other developers. The drawing and animation libraries, the
+       sandboxed JS engine, and an MCP server serving the SDK reference; no studio, no cloud services, no manuals.
+
+       It shares source with Polson.MCPServer rather than binaries. The drawing projects are referenced; the server's
+       files are compiled here as links, leaving out the studio's: the *.Studio.cs partials, Taste, Characters,
+       Verify, ClientWords and FigureVerifier. What is left compiles without Polson.ExtendedMind because the studio's
+       parts of the shared classes were moved into those partials, and the two hooks they leave behind
+       (RegisterStudio, CheckClientWords, RefuseRecordedClaim) are body-less partial methods that compile away here.
+
+       The types keep the Polson.MCPServer namespace. Nothing references both assemblies: the studio does not use
+       this one. See docs/internal/polson-engine-plan.md §0.6. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Polson.MCPServer</RootNamespace>
+    <AssemblyVersion>$(ProjectAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(ProjectAssemblyVersion)</FileVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jint" Version="4.9.2" />
+    <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Polson.MCPServer\*.cs;..\Polson.MCPServer\Knowledge\*.cs;..\Polson.MCPServer\Memory\*.cs"
+             Exclude="..\Polson.MCPServer\*.Studio.cs;..\Polson.MCPServer\DrawingMcpTools.Taste.cs;..\Polson.MCPServer\DrawingMcpTools.Characters.cs;..\Polson.MCPServer\Verify*.cs;..\Polson.MCPServer\ClientWords.cs;..\Polson.MCPServer\FigureVerifier.cs"
+             LinkBase="MCPServer" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The SDK reference only. Polson.studio.md is the studio's and the manuals are not shipped (plan §4.3), so
+         PolsonResources serves the core and schema alone and Search has no manuals to search. -->
+    <EmbeddedResource Include="..\..\docs\Polson.core.md;..\..\docs\Polson.schema.md" Link="docs\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Polson.Tests.Engine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Polson.Runtime\Polson.Runtime.csproj" />
+    <ProjectReference Include="..\Polson.Drawing.Svg\Polson.Drawing.Svg.csproj" />
+    <ProjectReference Include="..\Polson.Drawing.Skia\Polson.Drawing.Skia.csproj" />
+    <ProjectReference Include="..\Polson.Drawing.Mesh\Polson.Drawing.Mesh.csproj" />
+    <ProjectReference Include="..\Polson.Animation\Polson.Animation.csproj" />
+  </ItemGroup>
+
+</Project>

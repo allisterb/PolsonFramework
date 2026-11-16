@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Polson Engine's command line: `eval` and `server` (stdio or HTTP MCP). The handlers are the studio CLI's own,
+       compiled here from Polson.CLI/Program.Engine.cs; Program.cs in this directory is the engine's entry point and
+       startup, which configures the local tools and no cloud service. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Polson.CLI</RootNamespace>
+    <AssemblyVersion>$(ProjectAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(ProjectAssemblyVersion)</FileVersion>
+    <!-- As the studio's CLI, and for its reason: the engine's per-pixel work is loops, optimised from the first call. -->
+    <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.9.1" />
+    <PackageReference Include="Spectre.Console" Version="0.54.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Polson.CLI\Options.cs;..\Polson.CLI\Program.Engine.cs" LinkBase="CLI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Polson.Engine\Polson.Engine.csproj" />
+    <ProjectReference Include="..\Polson.Runtime\Polson.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>
